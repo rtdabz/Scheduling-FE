@@ -4,7 +4,12 @@ import 'driver.js/dist/driver.css'
 
 export function useTour() {
   useEffect(() => {
-    const hasSeen = localStorage.getItem('wicars_tour_done')
+    // Unique key per user to ensure everyone gets the tour once
+    const userJson = localStorage.getItem('user')
+    const user = userJson ? JSON.parse(userJson) : null
+    const tourKey = user ? `wicars_tour_done_${user.username}` : 'wicars_tour_done_guest'
+
+    const hasSeen = localStorage.getItem(tourKey)
     if (hasSeen) return
 
     const driverObj = driver({
@@ -66,7 +71,7 @@ export function useTour() {
         }
       ].filter(step => document.querySelector(step.element as string)),
       onDestroyed: () => {
-        localStorage.setItem('wicars_tour_done', 'true')
+        localStorage.setItem(tourKey, 'true')
       }
     })
 

@@ -12,10 +12,10 @@ export const deanNav: NavSection[] = [
   {
     section: 'MAIN MENU',
     items: [
-      { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'Class Schedules', path: '/schedules', icon: CalendarDays, id: 'sidebar-schedules' },
-      { label: 'Faculty', path: '/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
-      { label: 'Subjects', path: '/subjects', icon: BookOpen },
+      { label: 'Dashboard', path: '/dean/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
+      { label: 'Class Schedules', path: '/dean/schedules', icon: CalendarDays, id: 'sidebar-schedules' },
+      { label: 'Faculty', path: '/dean/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
+      { label: 'Rooms', path: '/dean/rooms', icon: BookOpen, id: 'sidebar-rooms' },
     ]
   },
   {

@@ -18,6 +18,26 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
+  // Get user data from localStorage
+  const userJson = localStorage.getItem('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+
+  // Format initials
+  const getInitials = (name: string) => {
+    return name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'AD';
+  };
+
+  // Format role for display
+  const formatRole = (role: string) => {
+    const roles: Record<string, string> = {
+      'vpaa': 'VPAA',
+      'dean': 'Dean',
+      'secretary': 'Secretary',
+      'program_head': 'Program Head'
+    };
+    return roles[role?.toLowerCase()] || role || 'User';
+  };
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -122,12 +142,18 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
               className="flex items-center gap-3 cursor-pointer p-1 rounded-full hover:bg-white/5 transition-colors pr-3"
             >
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] flex items-center justify-center flex-shrink-0 shadow-sm">
-                <span className="text-white text-sm font-semibold font-display">AD</span>
+                <span className="text-white text-sm font-semibold font-display">
+                  {user ? getInitials(user.name) : 'AD'}
+                </span>
               </div>
               
               <div className="hidden sm:flex flex-col">
-                <span className="text-sm text-white font-medium leading-none">Administrator</span>
-                <span className="text-xs text-[#E8D5C4]/60 mt-1 leading-none">VPAA</span>
+                <span className="text-sm text-white font-medium leading-none">
+                  {user?.name || 'Administrator'}
+                </span>
+                <span className="text-xs text-[#E8D5C4]/60 mt-1 leading-none">
+                  {formatRole(user?.role)}
+                </span>
               </div>
             </div>
 
@@ -135,8 +161,8 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
             {showProfile && (
               <div className="absolute right-0 mt-2 w-56 bg-[#1C0507] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
                 <div className="p-4 border-b border-white/10 bg-white/5">
-                  <p className="text-sm font-semibold text-white">Administrator</p>
-                  <p className="text-xs text-[#E8D5C4]/60 truncate">admin@tcc.edu.ph</p>
+                  <p className="text-sm font-semibold text-white">{user?.name || 'Administrator'}</p>
+                  <p className="text-xs text-[#E8D5C4]/60 truncate">{user?.username || 'admin'}@tcc.edu.ph</p>
                 </div>
                 <div className="p-2">
                   <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-[#E8D5C4] hover:bg-white/5 hover:text-white rounded-lg transition-colors">
@@ -158,6 +184,8 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                 <div className="p-2 border-t border-white/10">
                   <button 
                     onClick={() => {
+                      localStorage.removeItem('token');
+                      localStorage.removeItem('user');
                       toast.success('Logged Out', 'You have been successfully signed out.');
                       navigate('/');
                     }}

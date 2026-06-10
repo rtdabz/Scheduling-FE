@@ -26,7 +26,19 @@ const handleSubmit = async (e: React.FormEvent) => {
         };
         const role = roleNames[res.data.user.role] || 'User';
         toast.success('Login Successful', `Welcome back ${role}!`);
-        navigate('/dashboard');
+        
+        // Dynamic redirection based on role
+        if (res.data.user.role === 'vpaa') {
+          navigate('/dashboard');
+        } else if (res.data.user.role === 'dean') {
+          navigate('/dean/dashboard');
+        } else if (res.data.user.role === 'secretary') {
+          navigate('/sec_ph/dashboard');
+        } else if (res.data.user.role === 'program_head') {
+          navigate('/program_head/dashboard');
+        } else {
+          navigate('/dashboard');
+        }
     } catch (error) {
         toast.error('Login Failed', 'Invalid username or password.');
     }
