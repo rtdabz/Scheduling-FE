@@ -3,19 +3,27 @@ import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import { useToast } from '../context/ToastContext';
+import api from '../lib/api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success('Login Successful', 'Welcome back to WICARS!');
-    navigate('/dashboard');
-  };
+    try {
+        const res = await api.post('/login', { username, password });
+        localStorage.setItem('token', res.data.token);
+        localStorage.setItem('user', JSON.stringify(res.data.user));
+        toast.success('Login Successful', 'Welcome back to WICARS!');
+        navigate('/dashboard');
+    } catch (error) {
+        toast.error('Login Failed', 'Invalid username or password.');
+    }
+};
 
   return (
     <div className="min-h-screen flex w-full">
@@ -72,23 +80,23 @@ export default function LoginPage() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
-            {/* Email */}
+            {/* Username */}
             <div className="space-y-2">
-              <label htmlFor="email" className="block text-sm font-medium text-text">
-                Email address
+              <label htmlFor="username" className="block text-sm font-medium text-text">
+                Username
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                   <Mail className="h-5 w-5 text-muted" />
                 </div>
                 <input
-                  id="email"
-                  type="email"
+                  id="username"
+                  type="text"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="block w-full h-12 pl-11 pr-4 bg-transparent border border-border rounded-xl text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all duration-300 outline-none"
-                  placeholder="admin@tcc.edu.ph"
+                  placeholder="admin"
                 />
               </div>
             </div>
