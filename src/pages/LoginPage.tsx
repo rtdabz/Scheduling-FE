@@ -18,7 +18,14 @@ const handleSubmit = async (e: React.FormEvent) => {
         const res = await api.post('/login', { username, password });
         localStorage.setItem('token', res.data.token);
         localStorage.setItem('user', JSON.stringify(res.data.user));
-        toast.success('Login Successful', 'Welcome back to WICARS!');
+        const roleNames: Record<string, string> = {
+          'vpaa': 'VPAA',
+          'dean': 'Dean',
+          'secretary': 'Secretary',
+          'program_head': 'Program Head',
+        };
+        const role = roleNames[res.data.user.role] || 'User';
+        toast.success('Login Successful', `Welcome back ${role}!`);
         navigate('/dashboard');
     } catch (error) {
         toast.error('Login Failed', 'Invalid username or password.');

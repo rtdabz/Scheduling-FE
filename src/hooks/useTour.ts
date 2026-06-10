@@ -47,6 +47,15 @@ export function useTour() {
           }
         },
         {
+          element: '#sidebar-users',
+          popover: {
+            title: 'Users',
+            description: 'Manage and view information about system users.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
           element: '#sidebar-profile',
           popover: {
             title: 'Your Profile',

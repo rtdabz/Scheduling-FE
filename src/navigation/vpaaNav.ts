@@ -25,7 +25,8 @@ export const vpaaNav: NavSection[] = [
     items: [
       { label: 'Reports', path: '/reports', icon: FileBarChart },
       { label: 'Activity Log', path: '/activity-log', icon: ClipboardList },
-      { label: 'User Management', path: '/users', icon: Users },
+      { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
+      { label: 'Department Management', path: '/departments', icon: Users, id: 'sidebar-departments' },
       { label: 'Settings', path: '/settings', icon: Settings },
     ]
   }
