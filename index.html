@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/src/assets/logo.jpg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <title>WICARS</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+  <script>
+    const img = new Image();
+    img.src = '/src/assets/logo.jpg';
+    img.onload = () => {
+      const size = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, 0, 0, size, size);
+      const link = document.querySelector("link[rel='icon']");
+      link.href = canvas.toDataURL('image/png');
+    };
+  </script>
+  </body>
+</html>
