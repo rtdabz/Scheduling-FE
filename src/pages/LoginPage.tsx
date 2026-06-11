@@ -47,12 +47,9 @@ const handleSubmit = async (e: React.FormEvent) => {
   return (
     <div className="min-h-screen flex w-full">
       {/* Left Panel */}
-      <div className="hidden md:flex flex-1 relative bg-sidebar overflow-hidden items-center justify-center p-12">
+      <div className="hidden md:flex flex-1 relative bg-[#4e0a10] overflow-hidden items-center justify-center p-12">
         {/* Animated Background Shapes */}
         <div className="absolute inset-0 z-0">
-           {/* Diagonal gradient overlay */}
-           <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-sidebar to-black z-10 opacity-80" />
-           
            {/* Shapes */}
            <div className="absolute top-[10%] left-[20%] w-64 h-64 rounded-full border border-accent/20 animate-float opacity-20" />
            <div className="absolute bottom-[20%] right-[10%] w-48 h-48 rounded-[2rem] border border-primary-light/10 animate-float-slow rotate-45 opacity-20" />
@@ -63,7 +60,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         {/* Content */}
         <div className="relative z-20 flex flex-col items-center text-center max-w-lg">
           <img src={logo} alt="TCC Logo" className="w-28 h-28 object-contain rounded-full mb-6" />
-          <h1 className="font-display text-5xl text-white font-bold mb-2">WICARS</h1>
+          <h1 className="font-display text-4xl text-white font-bold mb-2">Tagoloan Community College</h1>
           <p className="text-sidebar-text text-sm tracking-widest uppercase mb-6 opacity-80">
             Academic Scheduling System
           </p>

@@ -53,7 +53,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#1C0507] border-b border-white/10 flex items-center">
+    <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#4e0a10] border-b border-white/10 flex items-center">
       
       {/* SECTION 1 — width matches sidebar */}
       <div className={`
@@ -95,12 +95,12 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
               className="relative p-2 text-[#E8D5C4] hover:text-white transition-colors rounded-full hover:bg-white/5 cursor-pointer"
             >
               <Bell size={20} />
-              <span className="absolute top-1 right-2 w-2 h-2 bg-[#C9952A] rounded-full border border-[#1C0507]" />
+              <span className="absolute top-1 right-2 w-2 h-2 bg-[#C9952A] rounded-full border border-[#4e0a10]" />
             </button>
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-[#1C0507] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+              <div className="absolute right-0 mt-2 w-80 bg-[#4e0a10] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
                 <div className="p-4 border-b border-white/10 flex justify-between items-center">
                   <h3 className="text-white font-semibold">Notifications</h3>
                   <button className="text-xs text-[#C9952A] hover:underline">Mark all as read</button>
@@ -159,7 +159,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
 
             {/* Profile Dropdown */}
             {showProfile && (
-              <div className="absolute right-0 mt-2 w-56 bg-[#1C0507] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+              <div className="absolute right-0 mt-2 w-56 bg-[#4e0a10] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
                 <div className="p-4 border-b border-white/10 bg-white/5">
                   <p className="text-sm font-semibold text-white">{user?.name || 'Administrator'}</p>
                   <p className="text-xs text-[#E8D5C4]/60 truncate">{user?.username || 'admin'}@tcc.edu.ph</p>

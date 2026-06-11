@@ -17,7 +17,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
     <div 
       className={`
         fixed top-0 left-0 z-30 h-screen
-        bg-[#1C0507] border-r border-white/5
+        bg-[#4e0a10] border-r border-white/5
         flex flex-col
         transition-all duration-300 ease-in-out
         ${isOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}

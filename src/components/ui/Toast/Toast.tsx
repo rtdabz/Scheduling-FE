@@ -30,7 +30,7 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
   return (
     <div
       className={`
-        relative min-w-[320px] max-w-[400px] bg-[#1C0507]/95 backdrop-blur-md 
+        relative min-w-[320px] max-w-[400px] bg-[#4e0a10]/95 backdrop-blur-md 
         rounded-2xl shadow-2xl shadow-black/40 border border-white/10 border-l-4
         overflow-hidden px-4 py-3.5 flex items-start gap-3
         ${toast.exiting ? 'animate-toastOut' : 'animate-toastIn'}

@@ -16,16 +16,16 @@ export default {
       },
       colors: {
         primary: {
-          DEFAULT: '#7B1113',
-          dark:    '#560b0d',
-          light:   '#9e1518',
+          DEFAULT: '#4e0a10',
+          dark:    '#34070a',
+          light:   '#640d14',
         },
         accent: {
           DEFAULT: '#C9952A',
           light:   '#F5C842',
         },
         sidebar: {
-          DEFAULT: '#1C0507',
+          DEFAULT: '#4e0a10',
           text: '#E8D5C4',
         },
         parchment: '#F7F4F0',
