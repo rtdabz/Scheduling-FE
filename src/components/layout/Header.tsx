@@ -100,33 +100,33 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-[#4e0a10] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
-                <div className="p-4 border-b border-white/10 flex justify-between items-center">
-                  <h3 className="text-white font-semibold">Notifications</h3>
+              <div className="absolute right-0 mt-2 w-80 bg-[#FAF9F6] border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
+                <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                  <h3 className="text-gray-800 font-semibold">Notifications</h3>
                   <button className="text-xs text-[#C9952A] hover:underline">Mark all as read</button>
                 </div>
                 <div className="max-h-96 overflow-y-auto">
                   {[
                     { title: 'New Schedule Request', desc: 'BSIT 3A requested a room change.', time: '5m ago', icon: <MessageSquare size={16} /> },
                     { title: 'System Update', desc: 'WICARS v1.0.2 is now live.', time: '1h ago', icon: <Settings size={16} /> },
-                    { title: 'Success', desc: 'Conflict check completed successfully.', time: '2h ago', icon: <Check size={16} />, color: 'text-green-500' },
+                    { title: 'Success', desc: 'Conflict check completed successfully.', time: '2h ago', icon: <Check size={16} />, color: 'text-green-600' },
                   ].map((notif, i) => (
-                    <div key={i} className="p-4 border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer">
+                    <div key={i} className="p-4 border-b border-gray-100 hover:bg-gray-100 transition-colors cursor-pointer">
                       <div className="flex gap-3">
-                        <div className={`mt-1 p-2 rounded-lg bg-white/5 ${notif.color || 'text-[#C9952A]'}`}>
+                        <div className={`mt-1 p-2 rounded-lg bg-white/60 shadow-sm ${notif.color || 'text-[#C9952A]'}`}>
                           {notif.icon}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-white">{notif.title}</p>
-                          <p className="text-xs text-[#E8D5C4]/60 mt-0.5 line-clamp-2">{notif.desc}</p>
-                          <p className="text-[10px] text-[#E8D5C4]/40 mt-1">{notif.time}</p>
+                          <p className="text-sm font-medium text-gray-800">{notif.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.desc}</p>
+                          <p className="text-[10px] text-gray-400 mt-1">{notif.time}</p>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="p-3 text-center border-t border-white/10">
-                  <button className="text-sm text-[#E8D5C4]/60 hover:text-white transition-colors w-full">View all notifications</button>
+                <div className="p-3 text-center border-t border-gray-200">
+                  <button className="text-sm text-gray-500 hover:text-gray-800 transition-colors w-full">View all notifications</button>
                 </div>
               </div>
             )}
@@ -159,16 +159,16 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
 
             {/* Profile Dropdown */}
             {showProfile && (
-              <div className="absolute right-0 mt-2 w-56 bg-[#4e0a10] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
-                <div className="p-4 border-b border-white/10 bg-white/5">
-                  <p className="text-sm font-semibold text-white">{user?.name || 'Administrator'}</p>
-                  <p className="text-xs text-[#E8D5C4]/60 truncate">{user?.username || 'admin'}@tcc.edu.ph</p>
+              <div className="absolute right-0 mt-2 w-56 bg-[#FAF9F6] border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
+                <div className="p-4 border-b border-gray-200 bg-gray-50">
+                  <p className="text-sm font-semibold text-gray-800">{user?.name || 'Administrator'}</p>
+                  <p className="text-xs text-gray-500 truncate">{user?.username || 'admin'}@tcc.edu.ph</p>
                 </div>
                 <div className="p-2">
-                  <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-[#E8D5C4] hover:bg-white/5 hover:text-white rounded-lg transition-colors">
+                  <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors">
                     <User size={16} /> My Profile
                   </button>
-                  <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-[#E8D5C4] hover:bg-white/5 hover:text-white rounded-lg transition-colors">
+                  <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors">
                     <Settings size={16} /> Settings
                   </button>
                   <button 
@@ -181,7 +181,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                     <RefreshCw size={16} /> Restart Tour
                   </button>
                 </div>
-                <div className="p-2 border-t border-white/10">
+                <div className="p-2 border-t border-gray-200">
                   <button 
                     onClick={() => {
                       localStorage.removeItem('token');
@@ -189,7 +189,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                       toast.success('Logged Out', 'You have been successfully signed out.');
                       navigate('/');
                     }}
-                    className="flex items-center gap-3 w-full px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded-lg transition-colors cursor-pointer"
+                    className="flex items-center gap-3 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                   >
                     <LogOut size={16} /> Log Out
                   </button>
