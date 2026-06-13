@@ -8,6 +8,7 @@ import Faculty from './pages/vpaa/Faculty'
 import Rooms from './pages/vpaa/Rooms'
 import Users from './pages/vpaa/Users'
 import Departments from './pages/vpaa/Departments'
+import Reports from './pages/vpaa/Reports'
 
 // Other Role Pages
 import DeanDashboard from './pages/dean/DashboardPage'
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/rooms" element={<Rooms />} />
           <Route path="/users" element={<Users />} />
           <Route path="/departments" element={<Departments />} />
+          <Route path="/reports" element={<Reports />} />
 
           {/* Dean Routes */}
           <Route path="/dean/dashboard" element={<DeanDashboard />} />
