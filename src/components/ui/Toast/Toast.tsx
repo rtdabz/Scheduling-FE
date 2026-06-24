@@ -30,8 +30,8 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
   return (
     <div
       className={`
-        relative min-w-[320px] max-w-[400px] bg-[#4e0a10]/95 backdrop-blur-md 
-        rounded-2xl shadow-2xl shadow-black/40 border border-white/10 border-l-4
+        relative min-w-[320px] max-w-[400px] bg-parchment backdrop-blur-md 
+        rounded-2xl shadow-xl border border-border border-l-4
         overflow-hidden px-4 py-3.5 flex items-start gap-3
         ${toast.exiting ? 'animate-toastOut' : 'animate-toastIn'}
       `}
@@ -40,13 +40,13 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
       <Icon size={22} style={{ color: ICON_COLORS[toast.type] }} className="flex-shrink-0" />
       
       <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-semibold text-white">{toast.title}</h4>
-        <p className="text-xs text-[#E8D5C4]/80">{toast.message}</p>
+        <h4 className="text-sm font-semibold text-text">{toast.title}</h4>
+        <p className="text-xs text-muted">{toast.message}</p>
       </div>
 
       <button
         onClick={() => onDismiss(toast.id)}
-        className="text-[#E8D5C4]/50 hover:text-white transition-colors p-1"
+        className="text-muted hover:text-text transition-colors p-1"
       >
         <X size={16} />
       </button>
