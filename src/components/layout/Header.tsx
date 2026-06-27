@@ -53,7 +53,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#4e0a10] border-b border-white/10 flex items-center">
+    <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#4e0a10]/95 backdrop-blur-md border-b border-white/10 flex items-center shadow-lg shadow-black/10">
       
       {/* SECTION 1 — width matches sidebar */}
       <div className={`
@@ -61,97 +61,108 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
         border-r border-white/10
         transition-all duration-300 ease-in-out
         overflow-hidden
+        bg-black/10
         ${sidebarOpen ? 'w-64 px-4' : 'w-0 md:w-16 justify-center px-0'}
       `}>
-        <img src={logo} alt="TCC Logo" className="w-10 h-10 object-contain rounded-full flex-shrink-0" />
+        <div className="relative group flex items-center">
+          <img 
+            src={logo} 
+            alt="TCC Logo" 
+            className="w-10 h-10 object-contain rounded-full flex-shrink-0 ring-2 ring-[#C9952A]/40 ring-offset-2 ring-offset-[#4e0a10] group-hover:rotate-12 transition-transform duration-500" 
+          />
+        </div>
         {sidebarOpen && (
-          <div className="ml-2 items-baseline gap-1 whitespace-nowrap hidden sm:flex">
-            <span className="font-display text-white font-bold text-lg">TCC</span>
-            <span className="text-[#E8D5C4]/60 text-sm">Scheduling</span>
+          <div className="ml-3 items-baseline gap-1 whitespace-nowrap hidden sm:flex">
+            <span className="font-display text-white font-extrabold text-lg tracking-wider bg-gradient-to-r from-white to-[#E8D5C4] bg-clip-text text-transparent">TCC</span>
+            <span className="text-[#C9952A] text-sm font-bold uppercase tracking-tight">Scheduling</span>
           </div>
         )}
       </div>
 
       {/* SECTION 2 — flexible, takes remaining space */}
-      <div className="flex flex-1 items-center justify-between px-4 h-full">
+      <div className="flex flex-1 items-center justify-between px-5 h-full">
         
         {/* Left of section 2: Hamburger button */}
         <button
           onClick={onToggleSidebar}
-          className="p-2 rounded-lg hover:bg-white/10 transition-all duration-300 text-white cursor-pointer"
+          className="p-2 rounded-xl hover:bg-white/10 text-white cursor-pointer active:scale-95 border border-transparent hover:border-white/5 shadow-sm transition-all duration-300"
           aria-label="Toggle Menu"
         >
           <div className={`transition-transform duration-500 ${sidebarOpen ? 'rotate-180' : 'rotate-0'}`}>
-            <Menu size={22} />
+            <Menu size={20} />
           </div>
         </button>
 
         {/* Right of section 2: Notifications, divider, avatar */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           {/* Notifications */}
-          <div className="relative" ref={notifRef}>
+          <div className="relative flex" ref={notifRef}>
             <button 
               onClick={() => setShowNotifications(!showNotifications)}
-              className="relative p-2 text-[#E8D5C4] hover:text-white transition-colors rounded-full hover:bg-white/5 cursor-pointer"
+              className={`relative p-2 text-[#E8D5C4] hover:text-white transition-all duration-300 rounded-xl hover:bg-white/10 border border-transparent hover:border-white/5 cursor-pointer ${
+                showNotifications ? 'bg-white/10 border-white/10 text-white' : ''
+              }`}
             >
               <Bell size={20} />
-              <span className="absolute top-1 right-2 w-2 h-2 bg-[#C9952A] rounded-full border border-[#4e0a10]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#C9952A] rounded-full border border-[#4e0a10] animate-pulse" />
             </button>
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-[#FAF9F6] border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
-                <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                  <h3 className="text-gray-800 font-semibold">Notifications</h3>
-                  <button className="text-xs text-[#C9952A] hover:underline">Mark all as read</button>
+              <div className="absolute right-0 mt-12 w-96 bg-[#F7F4F0] border border-slate-200/80 rounded-2xl shadow-2xl overflow-hidden z-50 animate-slide-in origin-top-right">
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                  <h3 className="text-gray-800 font-bold tracking-tight">Notifications</h3>
+                  <button className="text-xs font-semibold text-[#C9952A] hover:text-[#a0741c] hover:underline transition-colors">Mark all as read</button>
                 </div>
-                <div className="max-h-96 overflow-y-auto">
+                <div className="max-h-80 overflow-y-auto">
                   {[
                     { title: 'New Schedule Request', desc: 'BSIT 3A requested a room change.', time: '5m ago', icon: <MessageSquare size={16} /> },
                     { title: 'System Update', desc: 'WICARS v1.0.2 is now live.', time: '1h ago', icon: <Settings size={16} /> },
-                    { title: 'Success', desc: 'Conflict check completed successfully.', time: '2h ago', icon: <Check size={16} />, color: 'text-green-600' },
+                    { title: 'Success', desc: 'Conflict check completed successfully.', time: '2h ago', icon: <Check size={16} />, color: 'text-green-600 bg-green-50' },
                   ].map((notif, i) => (
-                    <div key={i} className="p-4 border-b border-gray-100 hover:bg-gray-100 transition-colors cursor-pointer">
+                    <div key={i} className="p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group">
                       <div className="flex gap-3">
-                        <div className={`mt-1 p-2 rounded-lg bg-white/60 shadow-sm ${notif.color || 'text-[#C9952A]'}`}>
+                        <div className={`mt-0.5 p-2 rounded-xl border border-gray-200/50 shadow-sm transition-all duration-300 flex-shrink-0 h-fit ${notif.color || 'text-[#C9952A] bg-gray-50'}`}>
                           {notif.icon}
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{notif.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.desc}</p>
-                          <p className="text-[10px] text-gray-400 mt-1">{notif.time}</p>
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800 group-hover:text-gray-900 transition-colors">{notif.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed line-clamp-2">{notif.desc}</p>
+                          <p className="text-[10px] text-gray-400 font-semibold mt-1">{notif.time}</p>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="p-3 text-center border-t border-gray-200">
-                  <button className="text-sm text-gray-500 hover:text-gray-800 transition-colors w-full">View all notifications</button>
+                <div className="p-3.5 text-center border-t border-gray-100 bg-gray-50/50">
+                  <button className="text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors w-full">View all notifications</button>
                 </div>
               </div>
             )}
           </div>
 
           {/* Divider */}
-          <div className="w-px h-6 bg-white/20 mx-1"></div>
+          <div className="w-px h-6 bg-white/20"></div>
 
           {/* User profile */}
-          <div className="relative" ref={profileRef} id="sidebar-profile">
+          <div className="relative flex" ref={profileRef} id="sidebar-profile">
             <div 
               onClick={() => setShowProfile(!showProfile)}
-              className="flex items-center gap-3 cursor-pointer p-1 rounded-full hover:bg-white/5 transition-colors pr-3"
+              className={`flex items-center gap-3 cursor-pointer p-1 rounded-xl hover:bg-white/10 pr-3 border border-transparent hover:border-white/5 transition-all duration-300 ${
+                showProfile ? 'bg-white/10 border-white/10' : ''
+              }`}
             >
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] flex items-center justify-center flex-shrink-0 shadow-sm">
-                <span className="text-white text-sm font-semibold font-display">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ring-white/10">
+                <span className="text-white text-sm font-bold font-display">
                   {user ? getInitials(user.name) : 'AD'}
                 </span>
               </div>
               
               <div className="hidden sm:flex flex-col">
-                <span className="text-sm text-white font-medium leading-none">
+                <span className="text-sm text-white font-semibold leading-none">
                   {user?.name || 'Administrator'}
                 </span>
-                <span className="text-xs text-[#E8D5C4]/60 mt-1 leading-none">
+                <span className="text-xs text-[#E8D5C4]/60 mt-1 leading-none font-medium">
                   {formatRole(user?.role)}
                 </span>
               </div>
@@ -159,29 +170,32 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
 
             {/* Profile Dropdown */}
             {showProfile && (
-              <div className="absolute right-0 mt-2 w-56 bg-[#FAF9F6] border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
-                <div className="p-4 border-b border-gray-200 bg-gray-50">
-                  <p className="text-sm font-semibold text-gray-800">{user?.name || 'Administrator'}</p>
-                  <p className="text-xs text-gray-500 truncate">{user?.username || 'admin'}@tcc.edu.ph</p>
+              <div className="absolute right-0 mt-12 w-60 bg-[#F7F4F0] border border-slate-200/80 rounded-2xl shadow-2xl overflow-hidden z-50 animate-slide-in origin-top-right">
+                <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex flex-col gap-0.5">
+                  <p className="text-sm font-bold text-gray-800 leading-tight">{user?.name || 'Administrator'}</p>
+                  <p className="text-xs text-gray-500 font-medium truncate">{user?.username || 'admin'}@tcc.edu.ph</p>
+                  <span className="inline-flex w-fit items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#4e0a10]/10 text-[#7B1113] border border-[#4e0a10]/10 mt-1.5 uppercase tracking-wider">
+                    {formatRole(user?.role)}
+                  </span>
                 </div>
-                <div className="p-2">
-                  <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors">
-                    <User size={16} /> My Profile
+                <div className="p-2 space-y-0.5">
+                  <button className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-gray-700 hover:bg-[#4e0a10]/5 hover:text-[#7B1113] rounded-xl transition-all duration-200 font-semibold cursor-pointer">
+                    <User size={16} className="text-[#C9952A]" /> My Profile
                   </button>
-                  <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors">
-                    <Settings size={16} /> Settings
+                  <button className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-gray-700 hover:bg-[#4e0a10]/5 hover:text-[#7B1113] rounded-xl transition-all duration-200 font-semibold cursor-pointer">
+                    <Settings size={16} className="text-[#C9952A]" /> Settings
                   </button>
                   <button 
                     onClick={() => {
                       localStorage.removeItem('wicars_tour_done');
                       window.location.reload();
                     }}
-                    className="flex items-center gap-3 w-full px-3 py-2 text-sm text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors"
+                    className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-[#C9952A] hover:bg-[#C9952A]/10 rounded-xl transition-all duration-200 font-bold cursor-pointer"
                   >
-                    <RefreshCw size={16} /> Restart Tour
+                    <RefreshCw size={16} className="text-[#C9952A]" /> Restart Tour
                   </button>
                 </div>
-                <div className="p-2 border-t border-gray-200">
+                <div className="p-2 border-t border-gray-100">
                   <button 
                     onClick={() => {
                       localStorage.removeItem('token');
@@ -189,7 +203,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                       toast.success('Logged Out', 'You have been successfully signed out.');
                       navigate('/');
                     }}
-                    className="flex items-center gap-3 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                    className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 rounded-xl transition-all duration-200 font-bold cursor-pointer"
                   >
                     <LogOut size={16} /> Log Out
                   </button>

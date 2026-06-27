@@ -47,6 +47,7 @@ export interface Schedule {
   day: string; // "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
   startTime: string; // e.g. "09:00 AM"
   endTime: string; // e.g. "10:30 AM"
+  mode: 'on-site' | 'online' | 'field';
 }
 
 // Static Mock Data
@@ -127,7 +128,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Lab 101",
     day: "Mon",
     startTime: "09:00 AM",
-    endTime: "10:30 AM"
+    endTime: "10:30 AM",
+    mode: "on-site"
   },
   {
     id: "sched-2",
@@ -141,7 +143,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 301",
     day: "Wed",
     startTime: "09:00 AM",
-    endTime: "10:30 AM"
+    endTime: "10:30 AM",
+    mode: "online"
   },
   {
     id: "sched-3",
@@ -155,7 +158,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Lab 102",
     day: "Tue",
     startTime: "10:30 AM",
-    endTime: "12:00 PM"
+    endTime: "12:00 PM",
+    mode: "on-site"
   },
   {
     id: "sched-4",
@@ -169,7 +173,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Lab 101",
     day: "Thu",
     startTime: "01:00 PM",
-    endTime: "03:00 PM"
+    endTime: "03:00 PM",
+    mode: "on-site"
   },
   
   // CAS (Yellow/Amber)
@@ -185,7 +190,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 302",
     day: "Mon",
     startTime: "01:00 PM",
-    endTime: "02:30 PM"
+    endTime: "02:30 PM",
+    mode: "on-site"
   },
   {
     id: "sched-6",
@@ -199,7 +205,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 302",
     day: "Wed",
     startTime: "01:00 PM",
-    endTime: "02:30 PM"
+    endTime: "02:30 PM",
+    mode: "online"
   },
   {
     id: "sched-7",
@@ -213,7 +220,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "AVR Room",
     day: "Fri",
     startTime: "09:00 AM",
-    endTime: "10:30 AM"
+    endTime: "10:30 AM",
+    mode: "on-site"
   },
   
   // CED (Purple)
@@ -229,7 +237,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 301",
     day: "Tue",
     startTime: "08:30 AM",
-    endTime: "10:00 AM"
+    endTime: "10:00 AM",
+    mode: "on-site"
   },
   {
     id: "sched-9",
@@ -243,7 +252,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 301",
     day: "Thu",
     startTime: "08:30 AM",
-    endTime: "10:00 AM"
+    endTime: "10:00 AM",
+    mode: "online"
   },
   
   // CBA (Emerald)
@@ -259,7 +269,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 302",
     day: "Mon",
     startTime: "10:30 AM",
-    endTime: "12:00 PM"
+    endTime: "12:00 PM",
+    mode: "on-site"
   },
   {
     id: "sched-11",
@@ -273,7 +284,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 302",
     day: "Wed",
     startTime: "10:30 AM",
-    endTime: "12:00 PM"
+    endTime: "12:00 PM",
+    mode: "online"
   },
   
   // CHM (Rose)
@@ -289,9 +301,10 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "AVR Room",
     day: "Fri",
     startTime: "01:30 PM",
-    endTime: "03:30 PM"
+    endTime: "03:30 PM",
+    mode: "on-site"
   },
-
+ 
   // CLIS (Sky)
   {
     id: "sched-13",
@@ -305,9 +318,10 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Room 301",
     day: "Sat",
     startTime: "09:00 AM",
-    endTime: "12:00 PM"
+    endTime: "12:00 PM",
+    mode: "on-site"
   },
-
+ 
   // CCJPS (Red)
   {
     id: "sched-14",
@@ -321,7 +335,8 @@ const MOCK_SCHEDULES: Schedule[] = [
     roomName: "Gymnasium",
     day: "Tue",
     startTime: "01:30 PM",
-    endTime: "03:00 PM"
+    endTime: "03:00 PM",
+    mode: "on-site"
   }
 ];
 
@@ -502,6 +517,7 @@ export default function ScheduleViewer() {
   const [selectedSectionId, setSelectedSectionId] = useState<string>("All");
   const [selectedFacultyId, setSelectedFacultyId] = useState<string>("All");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("All");
+  const [selectedMode, setSelectedMode] = useState<string>("All");
   
   // Hover State for tooltips
   const [hoveredScheduleId, setHoveredScheduleId] = useState<string | null>(null);
@@ -542,6 +558,7 @@ export default function ScheduleViewer() {
     setSelectedSectionId("All");
     setSelectedFacultyId("All");
     setSelectedRoomId("All");
+    setSelectedMode("All");
   };
 
   // Real-time schedules filtering (AND logic)
@@ -559,6 +576,9 @@ export default function ScheduleViewer() {
     if (selectedRoomId !== "All") {
       const roomObj = MOCK_ROOMS.find((r) => r.id === selectedRoomId);
       if (!roomObj || s.roomName !== roomObj.name) return false;
+    }
+    if (selectedMode !== "All" && s.mode !== selectedMode) {
+      return false;
     }
     return true;
   });
@@ -637,6 +657,27 @@ export default function ScheduleViewer() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Mode Filter */}
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0">
+            {(['All', 'on-site', 'online', 'field'] as const).map((m) => {
+              const isSelected = selectedMode === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setSelectedMode(m)}
+                  className={`px-3.5 h-8 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#4e0a10] text-[#E8D5C4] shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {m === 'All' ? 'All Modes' : m === 'on-site' ? 'On-Site' : m === 'online' ? 'Online' : 'Field'}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -744,9 +785,20 @@ export default function ScheduleViewer() {
                                 <span className="font-extrabold text-[10px] tracking-wide leading-none truncate">
                                   {s.subjectCode}
                                 </span>
-                                <span className={`text-[8px] px-1 rounded font-extrabold border shrink-0 ${badgeClasses}`}>
-                                  {s.sectionName}
-                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className={`text-[8px] px-1 rounded font-extrabold border ${badgeClasses}`}>
+                                    {s.sectionName}
+                                  </span>
+                                  <span className={`text-[8px] px-1 rounded font-bold border uppercase ${
+                                    s.mode === 'on-site'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : s.mode === 'online'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-amber-50 text-amber-705 border-amber-200'
+                                  }`}>
+                                    {s.mode === 'on-site' ? 'On-Site' : s.mode === 'online' ? 'Online' : 'Field'}
+                                  </span>
+                                </div>
                               </div>
                               <div className="text-[9px] font-medium leading-tight mt-0.5 truncate opacity-90">
                                 {s.subjectName}

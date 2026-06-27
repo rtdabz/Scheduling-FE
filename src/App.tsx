@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 // VPAA Pages
 import DashboardPage from './pages/vpaa/DashboardPage'
 import Schedules from './pages/vpaa/Schedules'
+import ScheduleApprovalPage from './pages/vpaa/ScheduleApprovalPage'
 import Faculty from './pages/vpaa/Faculty'
 import Rooms from './pages/vpaa/Rooms'
 import Users from './pages/vpaa/Users'
@@ -28,6 +29,7 @@ export default function App() {
           {/* VPAA Routes */}
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/schedules" element={<Schedules />} />
+          <Route path="/schedules/approval" element={<ScheduleApprovalPage />} />
           <Route path="/faculty" element={<Faculty />} />
           <Route path="/rooms" element={<Rooms />} />
           <Route path="/users" element={<Users />} />

@@ -7,7 +7,9 @@ import {
   ClipboardList, 
   Users, 
   Settings,
-  Building2
+  Building2,
+  Calendar,
+  ClipboardCheck
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -16,7 +18,25 @@ export const vpaaNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'Schedules', path: '/schedules', icon: CalendarDays, id: 'sidebar-schedules' },
+      {
+        label: 'Schedules',
+        icon: CalendarDays,
+        id: 'sidebar-schedules',
+        children: [
+          { 
+            label: 'All Schedules', 
+            path: '/schedules', 
+            icon: Calendar,
+            id: 'sidebar-all-schedules' 
+          },
+          { 
+            label: 'Schedule Approval', 
+            path: '/schedules/approval', 
+            icon: ClipboardCheck,
+            id: 'sidebar-schedule-approval' 
+          },
+        ]
+      },
       { label: 'Faculty', path: '/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
       { label: 'Rooms', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
     ]

@@ -14,7 +14,7 @@ export function useTour() {
 
     const driverObj = driver({
       showProgress: true,
-      steps: [
+      steps: ([
         {
           element: '#sidebar-dashboard',
           popover: {
@@ -69,7 +69,7 @@ export function useTour() {
             align: 'end'
           }
         }
-      ].filter(step => document.querySelector(step.element as string)),
+      ].filter(step => document.querySelector(step.element as string))) as any,
       onDestroyed: () => {
         localStorage.setItem(tourKey, 'true')
       }
