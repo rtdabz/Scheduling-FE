@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
-import { 
-  Pencil, 
-  Trash2, 
-  Search, 
-  AlertTriangle, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown, 
-  X, 
-  Loader2 
+import {
+  Pencil,
+  Trash2,
+  Search,
+  AlertTriangle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  X,
+  Loader2
 } from 'lucide-react';
 import {
   useReactTable,
@@ -20,15 +20,17 @@ import {
   flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import api from '../../lib/api';
 
 interface User {
   id: number;
-  name: string;        // e.g. "Juan dela Cruz"
-  username: string;    // e.g. "jdelacruz"
-  role: string;        // "Dean" | "Secretary" | "Program Head"
-  department: string | null;  // e.g. "College of Computing Studies" or null
+  name: string;
+  username: string;
+  role: string;
+  department: string | null;
+  department_id: number | null;
   status: 'Active' | 'Inactive';
-  createdAt: string;   // ISO date string
+  createdAt: string;
 }
 
 interface Department {
@@ -37,43 +39,59 @@ interface Department {
   department_code: string;
 }
 
-const MOCK_DEPARTMENTS: Department[] = [
-  { id: 1, department_code: 'CAS', department_name: 'College of Arts and Sciences' },
-  { id: 2, department_code: 'CIT', department_name: 'College of Information Technology' },
-  { id: 3, department_code: 'CED', department_name: 'College of Education' },
-  { id: 4, department_code: 'CBA', department_name: 'College of Business Administration' },
-  { id: 5, department_code: 'CHM', department_name: 'College of Hospitality Management' },
-  { id: 6, department_code: 'CLIS', department_name: 'College of Library and Information Science' },
-  { id: 7, department_code: 'CCJPS', department_name: 'College of Criminal Justice and Public Safety' }
-];
+interface ApiDepartment {
+  id: number;
+  department_name: string;
+  department_code: string;
+}
 
-const MOCK_USERS: User[] = [
-  { id: 1, name: 'Juan dela Cruz', username: 'jdelacruz', role: 'Dean', department: 'College of Arts and Sciences', status: 'Active', createdAt: '2025-01-15T08:00:00Z' },
-  { id: 2, name: 'Maria Santos', username: 'msantos', role: 'Secretary', department: 'College of Information Technology', status: 'Active', createdAt: '2025-01-20T09:30:00Z' },
-  { id: 3, name: 'Sarah Jenkins', username: 'sjenkins', role: 'Dean', department: 'College of Education', status: 'Active', createdAt: '2025-02-02T11:00:00Z' },
-  { id: 4, name: 'John Smith', username: 'jsmith', role: 'Secretary', department: 'College of Business Administration', status: 'Inactive', createdAt: '2025-02-10T14:15:00Z' },
-  { id: 5, name: 'Robert Davis', username: 'rdavis', role: 'Dean', department: 'College of Hospitality Management', status: 'Active', createdAt: '2025-02-18T10:00:00Z' }
-];
+interface ApiUser {
+  id: number;
+  name: string;
+  username: string;
+  role: string;
+  department_id: number | null;
+  department: ApiDepartment | null;
+  created_at: string;
+}
+
+const DISPLAY_ROLE_MAP: Record<string, string> = {
+  'dean': 'Dean',
+  'program_head': 'Program Head',
+  'secretary': 'Secretary',
+};
+
+const API_ROLE_MAP: Record<string, string> = {
+  'Dean': 'dean',
+  'Program Head': 'program_head',
+  'Secretary': 'secretary',
+};
+
+const mapApiUser = (u: ApiUser): User => ({
+  id: u.id,
+  name: u.name,
+  username: u.username,
+  role: DISPLAY_ROLE_MAP[u.role] || u.role,
+  department: u.department ? u.department.department_name : null,
+  department_id: u.department_id,
+  status: 'Active',
+  createdAt: u.created_at,
+});
 
 export default function Users() {
   const { toast } = useToast();
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [departments] = useState<Department[]>(MOCK_DEPARTMENTS);
+  const [users, setUsers] = useState<User[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Table States
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-  // Modal & Form state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  
+
   const [formData, setFormData] = useState({
     name: '',
     username: '',
@@ -87,7 +105,6 @@ export default function Users() {
   const [deptError, setDeptError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Delete modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
 
@@ -95,7 +112,6 @@ export default function Users() {
     fetchData();
   }, []);
 
-  // Auto-generate username and password based on role and department (only when creating)
   useEffect(() => {
     if (!isEditMode && formData.role && formData.department_id) {
       const dept = departments.find(d => d.id === parseInt(formData.department_id));
@@ -104,7 +120,6 @@ export default function Users() {
           .split(' ')
           .map(word => word.charAt(0).toUpperCase() + word.slice(1))
           .join('');
-        
         const generatedUser = `${dept.department_code}${roleName}`;
         setFormData(prev => ({
           ...prev,
@@ -117,15 +132,23 @@ export default function Users() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      const [usersRes, deptsRes] = await Promise.all([
+        api.get<ApiUser[]>('/user'),
+        api.get<ApiDepartment[]>('/departments'),
+      ]);
+      setUsers(usersRes.data.map(mapApiUser));
+      setDepartments(deptsRes.data);
+    } catch {
+      toast.error('Error', 'Failed to load user data.');
+    } finally {
       setIsLoading(false);
-    }, 150);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
     let hasError = false;
     if (!formData.name.trim()) {
       setNameError('Full name is required');
@@ -147,60 +170,50 @@ export default function Users() {
     if (hasError) return;
 
     setIsSubmitting(true);
-    
-    setTimeout(() => {
-      try {
-        const selectedDept = departments.find(d => d.id === parseInt(formData.department_id));
-        const departmentName = selectedDept ? selectedDept.department_name : null;
 
-        if (isEditMode && editingId !== null) {
-          setUsers(prev => prev.map(user => 
-            user.id === editingId 
-              ? { 
-                  ...user, 
-                  name: formData.name.trim(), 
-                  role: formData.role, 
-                  department: departmentName,
-                  status: formData.status
-                }
-              : user
-          ));
-          toast.success('Success', 'User account updated successfully');
-        } else {
-          const newUser: User = {
-            id: Date.now(),
-            name: formData.name.trim(),
-            username: formData.username,
-            role: formData.role,
-            department: departmentName,
-            status: formData.status,
-            createdAt: new Date().toISOString()
-          };
-          setUsers(prev => [newUser, ...prev]);
-          toast.success('Success', 'User account created successfully');
-        }
-        
-        // Reset and close
-        setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
-        setIsModalOpen(false);
-        setIsEditMode(false);
-        setEditingId(null);
-      } catch (error) {
-        toast.error('Error', 'Failed to save user account');
-      } finally {
-        setIsSubmitting(false);
+    try {
+      const apiRole = API_ROLE_MAP[formData.role] || formData.role.toLowerCase();
+
+      if (isEditMode && editingId !== null) {
+        const res = await api.put<{ data: ApiUser }>(`/user/${editingId}`, {
+          name: formData.name.trim(),
+          role: apiRole,
+          department_id: parseInt(formData.department_id),
+        });
+        setUsers(prev => prev.map(u => u.id === editingId ? mapApiUser(res.data.data) : u));
+        toast.success('Success', 'User account updated successfully');
+      } else {
+        const res = await api.post<{ data: ApiUser }>('/user', {
+          name: formData.name.trim(),
+          username: formData.username,
+          password: formData.password,
+          role: apiRole,
+          department_id: parseInt(formData.department_id),
+        });
+        setUsers(prev => [mapApiUser(res.data.data), ...prev]);
+        toast.success('Success', 'User account created successfully');
       }
-    }, 1000);
+
+      setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
+      setIsModalOpen(false);
+      setIsEditMode(false);
+      setEditingId(null);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      const message = err?.response?.data?.message || 'Failed to save user account';
+      toast.error('Error', message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleEditClick = (user: User) => {
-    const matchedDept = departments.find(d => d.department_name === user.department);
     setFormData({
       name: user.name,
       username: user.username,
       password: '••••••••',
       role: user.role,
-      department_id: matchedDept ? matchedDept.id.toString() : '',
+      department_id: user.department_id ? user.department_id.toString() : '',
       status: user.status
     });
     setNameError('');
@@ -215,12 +228,18 @@ export default function Users() {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDeleteUser = () => {
+  const confirmDeleteUser = async () => {
     if (idToDelete !== null) {
-      setUsers(prev => prev.filter(user => user.id !== idToDelete));
-      toast.success('Deleted', 'User removed successfully');
-      setIsDeleteModalOpen(false);
-      setIdToDelete(null);
+      try {
+        await api.delete(`/user/${idToDelete}`);
+        setUsers(prev => prev.filter(user => user.id !== idToDelete));
+        toast.success('Deleted', 'User removed successfully');
+      } catch {
+        toast.error('Error', 'Failed to delete user');
+      } finally {
+        setIsDeleteModalOpen(false);
+        setIdToDelete(null);
+      }
     }
   };
 
@@ -231,7 +250,6 @@ export default function Users() {
     return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
   };
 
-  // Define Columns for TanStack Table
   const columns = useMemo<ColumnDef<User>[]>(
     () => [
       {
@@ -293,8 +311,8 @@ export default function Users() {
           const isActive = statusVal.toLowerCase() === 'active';
           return (
             <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-              isActive 
-                ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60' 
+              isActive
+                ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60'
                 : 'bg-gray-100 text-gray-600 border-gray-200'
             }`}>
               {statusVal}
@@ -322,9 +340,8 @@ export default function Users() {
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
-            {/* Edit Button */}
             <div className="relative group">
-              <button 
+              <button
                 onClick={() => handleEditClick(row.original)}
                 className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
@@ -334,9 +351,8 @@ export default function Users() {
                 Edit
               </span>
             </div>
-            {/* Delete Button */}
             <div className="relative group">
-              <button 
+              <button
                 onClick={() => triggerDeleteConfirmation(row.original.id)}
                 className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
               >
@@ -353,15 +369,10 @@ export default function Users() {
     [users, departments]
   );
 
-  // TanStack Table Instance
   const table = useReactTable<User>({
     data: users,
     columns,
-    state: {
-      globalFilter,
-      sorting,
-      pagination,
-    },
+    state: { globalFilter, sorting, pagination },
     onGlobalFilterChange: setGlobalFilter,
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
@@ -373,7 +384,6 @@ export default function Users() {
 
   return (
     <div className="p-6">
-      {/* Page Header */}
       <div className="mb-6">
         <p className="text-muted text-sm mb-1">Home / User Management</p>
         <h1 className="font-display text-3xl font-bold text-[#1A1410]">User Management</h1>
@@ -381,11 +391,10 @@ export default function Users() {
         <div className="w-12 h-0.5 bg-[#C9952A] mt-3"></div>
       </div>
 
-      {/* Top Bar Section */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
         <div className="relative flex-1 sm:max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input 
+          <input
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
@@ -393,7 +402,7 @@ export default function Users() {
             className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
           />
         </div>
-        <button 
+        <button
           onClick={() => {
             setIsEditMode(false);
             setEditingId(null);
@@ -408,7 +417,6 @@ export default function Users() {
         </button>
       </div>
 
-      {/* Table Section */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -416,8 +424,8 @@ export default function Users() {
               {table.getHeaderGroups().map(headerGroup => (
                 <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
                   {headerGroup.headers.map(header => (
-                    <th 
-                      key={header.id} 
+                    <th
+                      key={header.id}
                       className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
                     >
                       {header.isPlaceholder ? null : (
@@ -462,8 +470,8 @@ export default function Users() {
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row, index) => (
-                  <tr 
-                    key={row.id} 
+                  <tr
+                    key={row.id}
                     className={`transition-colors h-12 hover:bg-gray-50/70 ${
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                     }`}
@@ -471,11 +479,9 @@ export default function Users() {
                     {row.getVisibleCells().map(cell => {
                       const isNoWrap = ['username', 'role', 'status', 'createdAt', 'actions'].includes(cell.column.id);
                       return (
-                        <td 
-                          key={cell.id} 
-                          className={`px-4 py-2.5 align-middle text-xs ${
-                            isNoWrap ? 'whitespace-nowrap' : ''
-                          }`}
+                        <td
+                          key={cell.id}
+                          className={`px-4 py-2.5 align-middle text-xs ${isNoWrap ? 'whitespace-nowrap' : ''}`}
                         >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
@@ -488,7 +494,6 @@ export default function Users() {
           </table>
         </div>
 
-        {/* Pagination Section */}
         {table.getFilteredRowModel().rows.length > 0 && (
           <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
             <div className="flex items-center gap-4">
@@ -499,25 +504,19 @@ export default function Users() {
                   table.getFilteredRowModel().rows.length
                 )} of {table.getFilteredRowModel().rows.length} users
               </div>
-              
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 font-semibold">Show</span>
                 <select
                   value={table.getState().pagination.pageSize}
-                  onChange={e => {
-                    table.setPageSize(Number(e.target.value));
-                  }}
+                  onChange={e => table.setPageSize(Number(e.target.value))}
                   className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
                 >
                   {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
-                    </option>
+                    <option key={pageSize} value={pageSize}>{pageSize}</option>
                   ))}
                 </select>
               </div>
             </div>
-
             <div className="flex items-center gap-2">
               <button
                 onClick={() => table.setPageIndex(0)}
@@ -555,7 +554,6 @@ export default function Users() {
         )}
       </div>
 
-      {/* Creation / Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -563,9 +561,9 @@ export default function Users() {
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode ? 'Edit User Account' : 'Create New Account'}
               </h2>
-              <button 
+              <button
                 type="button"
-                onClick={() => setIsModalOpen(false)} 
+                onClick={() => setIsModalOpen(false)}
                 className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
               >
                 <X size={20} />
@@ -576,18 +574,16 @@ export default function Users() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                   Full Name <span className="text-red-500">*</span>
                 </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={formData.name}
                   onChange={(e) => {
-                    setFormData({...formData, name: e.target.value});
+                    setFormData({ ...formData, name: e.target.value });
                     setNameError('');
                   }}
                   placeholder="e.g. Juan dela Cruz"
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    nameError 
-                      ? 'border-red-500 focus:ring-red-500' 
-                      : 'border-gray-200 focus:ring-[#C9952A]'
+                    nameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
                   }`}
                 />
                 {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
@@ -598,8 +594,8 @@ export default function Users() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                     Username
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={formData.username}
                     readOnly
                     placeholder={isEditMode ? '' : 'Auto-generated'}
@@ -610,8 +606,8 @@ export default function Users() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                     Password
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={formData.password}
                     readOnly
                     placeholder={isEditMode ? '' : 'Auto-generated'}
@@ -625,9 +621,9 @@ export default function Users() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                     Role
                   </label>
-                  <select 
+                  <select
                     value={formData.role}
-                    onChange={(e) => setFormData({...formData, role: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
                   >
                     <option value="Dean">Dean</option>
@@ -635,15 +631,14 @@ export default function Users() {
                     <option value="Secretary">Secretary</option>
                   </select>
                 </div>
-
                 {isEditMode && (
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                       Status
                     </label>
-                    <select 
+                    <select
                       value={formData.status}
-                      onChange={(e) => setFormData({...formData, status: e.target.value as 'Active' | 'Inactive'})}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Active' | 'Inactive' })}
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
                     >
                       <option value="Active">Active</option>
@@ -657,16 +652,14 @@ export default function Users() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                   Assigned Department <span className="text-red-500">*</span>
                 </label>
-                <select 
+                <select
                   value={formData.department_id}
                   onChange={(e) => {
-                    setFormData({...formData, department_id: e.target.value});
+                    setFormData({ ...formData, department_id: e.target.value });
                     setDeptError('');
                   }}
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm cursor-pointer transition-all ${
-                    deptError 
-                      ? 'border-red-500 focus:ring-red-500' 
-                      : 'border-gray-200 focus:ring-[#C9952A]'
+                    deptError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
                   }`}
                 >
                   <option value="">Select a department...</option>
@@ -678,21 +671,21 @@ export default function Users() {
               </div>
 
               <div className="flex gap-3 pt-3">
-                <button 
+                <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   type="submit"
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                  {isSubmitting 
-                    ? (isEditMode ? 'Saving...' : 'Creating...') 
+                  {isSubmitting
+                    ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : 'Create Account')
                   }
                 </button>
@@ -702,7 +695,6 @@ export default function Users() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
