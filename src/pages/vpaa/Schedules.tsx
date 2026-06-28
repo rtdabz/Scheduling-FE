@@ -1,4 +1,4 @@
-import SchedulerPanel from './SchedulerPanel';
+import SchedulerPanel from '../ClassSchedules/SchedulerPanel';
 import ScheduleViewer from './ScheduleViewer';
 
 export default function Schedules() {

@@ -1,26 +1,36 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react';
 import LoginPage from './pages/LoginPage'
 
 // VPAA Pages
-import DashboardPage from './pages/vpaa/DashboardPage'
-import Schedules from './pages/vpaa/Schedules'
-import ScheduleApprovalPage from './pages/vpaa/ScheduleApprovalPage'
-import Faculty from './pages/vpaa/Faculty'
-import Rooms from './pages/vpaa/Rooms'
-import Users from './pages/vpaa/Users'
-import Departments from './pages/vpaa/Departments'
-import Reports from './pages/vpaa/Reports'
+const DashboardPage = lazy(() => import('./pages/vpaa/DashboardPage'));
+const Schedules = lazy(() => import('./pages/vpaa/Schedules'));
+const ScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
+const Faculty = lazy(() => import('./pages/vpaa/Faculty'));
+const Rooms = lazy(() => import('./pages/vpaa/Rooms'));
+const Users = lazy(() => import('./pages/vpaa/Users'));
+const Departments = lazy(() => import('./pages/vpaa/Departments'));
+const Reports = lazy(() => import('./pages/vpaa/Reports'));
 
 // Other Role Pages
-import DeanDashboard from './pages/dean/DashboardPage'
-import SecPHDashboard from './pages/secretary/DashboardPage'
-import ProgramHeadDashboard from './pages/program_head/DashboardPage'
+const DeanDashboard = lazy(() => import('./pages/dean/DashboardPage'));
+const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
+const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprovalPage'));
+const SecPHDashboard = lazy(() => import('./pages/secretary/DashboardPage'));
+const SecPHSchedules = lazy(() => import('./pages/secretary/Schedules'));
+const ProgramHeadDashboard = lazy(() => import('./pages/program_head/DashboardPage'));
+const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
 
 import AppLayout from './components/layout/AppLayout'
 
 export default function App() {
   return (
     <BrowserRouter>
+      <Suspense fallback={
+          <div className="min-h-screen flex items-center justify-center">
+              <p className="text-muted text-sm">Loading...</p>
+          </div>
+      }></Suspense>
       <Routes>
         <Route path="/" element={<LoginPage />} />
         
@@ -38,17 +48,20 @@ export default function App() {
 
           {/* Dean Routes */}
           <Route path="/dean/dashboard" element={<DeanDashboard />} />
-          <Route path="/dean/schedules" element={<Schedules />} /> {/* Shared pages for now */}
+          <Route path="/dean/schedules" element={<DeanSchedules />} />
+          <Route path="/dean/schedules/approval" element={<DeanScheduleApprovalPage />} />
           <Route path="/dean/faculty" element={<Faculty />} />
           <Route path="/dean/rooms" element={<Rooms />} />
+          <Route path="/dean/reports" element={<Reports />} />
+          <Route path="/dean/users" element={<Users />} />
 
           {/* Secretary Routes */}
           <Route path="/sec_ph/dashboard" element={<SecPHDashboard />} />
-          <Route path="/sec_ph/schedules" element={<Schedules />} />
+          <Route path="/sec_ph/schedules" element={<SecPHSchedules />} />
           
           {/* Program Head Routes */}
           <Route path="/program_head/dashboard" element={<ProgramHeadDashboard />} />
-          <Route path="/program_head/schedules" element={<Schedules />} />
+          <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
           <Route path="/program_head/faculty" element={<Faculty />} />
           <Route path="/program_head/rooms" element={<Rooms />} />
         </Route>
