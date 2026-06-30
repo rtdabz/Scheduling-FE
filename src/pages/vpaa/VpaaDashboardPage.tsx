@@ -1,7 +1,7 @@
 import { useTour } from '../../hooks/useTour'
 import { useToast } from '../../context/ToastContext'
 
-export default function DashboardPage() {
+export default function VpaaDashboardPage() {
   useTour()
   const { toast } = useToast()
   

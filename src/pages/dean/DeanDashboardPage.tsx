@@ -1,6 +1,6 @@
 import { useTour } from '../../hooks/useTour'
 
-export default function DashboardPage() {
+export default function DeanDashboardPage() {
   useTour()
   
   const userJson = localStorage.getItem('user');

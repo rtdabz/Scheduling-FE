@@ -1,6 +1,4 @@
-import React from 'react';
-
-export default function DashboardPage() {
+export default function ProgramHeadDashboardPage() {
   const userJson = localStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
 

@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { lazy, Suspense } from 'react';
 import LoginPage from './pages/LoginPage'
+import type { UserRole } from './pages/Dashboard';
 
 // VPAA Pages
-const DashboardPage = lazy(() => import('./pages/vpaa/DashboardPage'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Schedules = lazy(() => import('./pages/vpaa/Schedules'));
 const ScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
 const Faculty = lazy(() => import('./pages/vpaa/Faculty'));
@@ -13,15 +14,25 @@ const Departments = lazy(() => import('./pages/vpaa/Departments'));
 const Reports = lazy(() => import('./pages/vpaa/Reports'));
 
 // Other Role Pages
-const DeanDashboard = lazy(() => import('./pages/dean/DashboardPage'));
 const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
 const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprovalPage'));
-const SecPHDashboard = lazy(() => import('./pages/secretary/DashboardPage'));
 const SecPHSchedules = lazy(() => import('./pages/secretary/Schedules'));
-const ProgramHeadDashboard = lazy(() => import('./pages/program_head/DashboardPage'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
 
 import AppLayout from './components/layout/AppLayout'
+
+interface StoredUser {
+  role?: string;
+}
+
+const getDashboardRole = (): UserRole | string => {
+  const userJson = localStorage.getItem('user');
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+
+  return user?.role?.toLowerCase() || '';
+};
+
+const DashboardRoute = () => <Dashboard role={getDashboardRole()} />;
 
 export default function App() {
   return (
@@ -37,7 +48,7 @@ export default function App() {
         {/* Main Layout wrapper for all authenticated routes */}
         <Route element={<AppLayout />}>
           {/* VPAA Routes */}
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<DashboardRoute />} />
           <Route path="/schedules" element={<Schedules />} />
           <Route path="/schedules/approval" element={<ScheduleApprovalPage />} />
           <Route path="/faculty" element={<Faculty />} />
@@ -47,7 +58,7 @@ export default function App() {
           <Route path="/reports" element={<Reports />} />
 
           {/* Dean Routes */}
-          <Route path="/dean/dashboard" element={<DeanDashboard />} />
+          <Route path="/dean/dashboard" element={<DashboardRoute />} />
           <Route path="/dean/schedules" element={<DeanSchedules />} />
           <Route path="/dean/schedules/approval" element={<DeanScheduleApprovalPage />} />
           <Route path="/dean/faculty" element={<Faculty />} />
@@ -56,11 +67,11 @@ export default function App() {
           <Route path="/dean/users" element={<Users />} />
 
           {/* Secretary Routes */}
-          <Route path="/sec_ph/dashboard" element={<SecPHDashboard />} />
+          <Route path="/sec_ph/dashboard" element={<DashboardRoute />} />
           <Route path="/sec_ph/schedules" element={<SecPHSchedules />} />
           
           {/* Program Head Routes */}
-          <Route path="/program_head/dashboard" element={<ProgramHeadDashboard />} />
+          <Route path="/program_head/dashboard" element={<DashboardRoute />} />
           <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
           <Route path="/program_head/faculty" element={<Faculty />} />
           <Route path="/program_head/rooms" element={<Rooms />} />
