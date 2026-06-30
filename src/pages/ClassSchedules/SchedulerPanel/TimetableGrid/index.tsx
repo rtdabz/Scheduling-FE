@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Calendar, Clock, Info, Trash2, X } from "lucide-react";
+import { AlertTriangle, Calendar, Clock, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -27,6 +27,10 @@ interface TimetableGridProps {
   setDeleteConfirmScheduleId: (id: string | null) => void;
   conflictInfo: ConflictInfo | null;
   setConflictInfo: (value: ConflictInfo | null) => void;
+  placementSubjectId: string | null;
+  movingScheduleId: string | null;
+  cancelPlacement: () => void;
+  handleCellClick: (d: number, t: number) => void;
   getClassesCountForDay: (dayIdx: number) => number;
   getDragOverConflict: (d: number, t: number) => boolean;
   handleClearAll: () => void;
@@ -54,6 +58,10 @@ export default function TimetableGrid({
   setDeleteConfirmScheduleId,
   conflictInfo,
   setConflictInfo,
+  placementSubjectId,
+  movingScheduleId,
+  cancelPlacement,
+  handleCellClick,
   getClassesCountForDay,
   getDragOverConflict,
   handleClearAll,
@@ -65,6 +73,13 @@ export default function TimetableGrid({
   handleRemoveSchedule,
   handleScheduleCardClick
 }: TimetableGridProps) {
+  const isPlacementMode = !!(placementSubjectId || movingScheduleId);
+  const placementLabel = placementSubjectId
+    ? MOCK_SUBJECTS.find((s) => s.id === placementSubjectId)?.code ?? "subject"
+    : movingScheduleId
+    ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
+    : "";
+
   return (
     <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/30 shrink-0">
@@ -108,6 +123,24 @@ export default function TimetableGrid({
       </div>
 
       <div className="flex-1 overflow-auto bg-slate-50/20 relative">
+        {isPlacementMode && (
+          <div className="sticky top-0 z-40 mx-3 mt-3 mb-1 flex items-center gap-2.5 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 shadow-sm">
+            {movingScheduleId ? <Move className="w-5 h-5 text-blue-700 shrink-0" /> : <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />}
+            <p className="text-sm font-semibold text-blue-900">
+              {movingScheduleId ? "Moving" : "Placing"}{" "}
+              <span className="font-extrabold">{placementLabel}</span>
+              {" "}— now click an empty time slot in the grid.
+            </p>
+            <button
+              type="button"
+              onClick={cancelPlacement}
+              className="ml-auto flex items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              Cancel
+            </button>
+          </div>
+        )}
         {!selectedSectionId ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-20">
             <AlertTriangle className="w-12 h-12 text-amber-500 mb-3 animate-bounce" />
@@ -174,9 +207,11 @@ export default function TimetableGrid({
                         hasConflict={hasConflict}
                         isEditable={isEditable}
                         isPhase2Active={isPhase2Active}
+                        isPlacementMode={isPlacementMode}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
+                        onCellClick={handleCellClick}
                       />
                     );
                   })}
@@ -195,6 +230,7 @@ export default function TimetableGrid({
                     isPhase2Active={isPhase2Active}
                     currentStatus={currentStatus}
                     draggedScheduleId={draggedScheduleId}
+                    isMoving={movingScheduleId === schedule.id}
                     deleteConfirmScheduleId={deleteConfirmScheduleId}
                     setDeleteConfirmScheduleId={setDeleteConfirmScheduleId}
                     onDragStart={handleDragStartFromCell}

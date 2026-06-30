@@ -22,6 +22,10 @@ export const useScheduler = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
 
+  // Click-to-place / click-to-move (mouse-free alternative to drag-and-drop)
+  const [placementSubjectId, setPlacementSubjectId] = useState<string | null>(null);
+  const [movingScheduleId, setMovingScheduleId] = useState<string | null>(null);
+
   const [schedules, setSchedules] = useState<ScheduleItem[]>(DEFAULT_SCHEDULES);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("sec-cit-1");
   const [scheduleStatus, setScheduleStatus] = useState<Record<string, ScheduleItem["status"]>>({
@@ -223,6 +227,7 @@ export const useScheduler = () => {
     setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
     setDeleteConfirmScheduleId(null);
     setConflictInfo(null);
+    setMovingScheduleId((prev) => (prev === scheduleId ? null : prev));
   };
 
   const handleClearAll = () => {
@@ -230,6 +235,8 @@ export const useScheduler = () => {
     if (confirm("Are you sure you want to clear the entire schedule for this section?")) {
       setSchedules((prev) => prev.filter((s) => s.sectionId !== selectedSectionId));
       setConflictInfo(null);
+      setPlacementSubjectId(null);
+      setMovingScheduleId(null);
     }
   };
 
@@ -324,6 +331,8 @@ export const useScheduler = () => {
     setSelectedSectionId(sectionId);
     setIsSectionDropdownOpen(false);
     setConflictInfo(null);
+    setPlacementSubjectId(null);
+    setMovingScheduleId(null);
   };
 
   const handleScheduleCardClick = (scheduleId: string) => {
@@ -337,6 +346,87 @@ export const useScheduler = () => {
       });
       setPopupValidationError("");
       setPopupConflictWarning("");
+      return;
+    }
+    // Plotting phase: clicking a placed class arms it for relocation
+    if (isEditable) {
+      setPlacementSubjectId(null);
+      setConflictInfo(null);
+      setMovingScheduleId((prev) => (prev === scheduleId ? null : scheduleId));
+    }
+  };
+
+  // Arm a subject from the bank for click-to-place
+  const handleSubjectCardClick = (subjectId: string) => {
+    if (!isEditable) return;
+    setMovingScheduleId(null);
+    setConflictInfo(null);
+    setPlacementSubjectId((prev) => (prev === subjectId ? null : subjectId));
+  };
+
+  // Cancel any armed placement/move
+  const cancelPlacement = () => {
+    setPlacementSubjectId(null);
+    setMovingScheduleId(null);
+  };
+
+  // Click a time slot to place the armed subject or move the armed class
+  const handleCellClick = (dayIndex: number, timeIndex: number) => {
+    if (!isEditable) return;
+
+    if (placementSubjectId) {
+      setDropContext({
+        subjectId: placementSubjectId,
+        dayIndex,
+        startSlot: timeIndex,
+        isRescheduling: false
+      });
+      setPlacementSubjectId(null);
+      return;
+    }
+
+    if (movingScheduleId) {
+      const sched = schedules.find((s) => s.id === movingScheduleId);
+      if (!sched) {
+        setMovingScheduleId(null);
+        return;
+      }
+      const conflict = checkConflict(
+        sched.subjectId,
+        sched.sectionId,
+        null,
+        sched.roomId,
+        dayIndex,
+        timeIndex,
+        sched.durationSlots,
+        sched.id
+      );
+      if (conflict) {
+        // Keep the class armed so the user can try another slot
+        setConflictInfo({
+          dayIndex,
+          startSlot: timeIndex,
+          durationSlots: sched.durationSlots,
+          message: conflict.message
+        });
+        return;
+      }
+      setSchedules((prev) =>
+        prev.map((s) =>
+          s.id === movingScheduleId
+            ? {
+                ...s,
+                dayIndex,
+                startSlot: timeIndex,
+                day: DAYS[dayIndex],
+                startTime: slotToTimeStr(timeIndex),
+                endTime: slotToTimeStr(timeIndex + s.durationSlots)
+              }
+            : s
+        )
+      );
+      setMovingScheduleId(null);
+      setConflictInfo(null);
     }
   };
 
@@ -415,6 +505,11 @@ export const useScheduler = () => {
     dragFromCell,
     deleteConfirmScheduleId,
     setDeleteConfirmScheduleId,
+    placementSubjectId,
+    movingScheduleId,
+    handleSubjectCardClick,
+    handleCellClick,
+    cancelPlacement,
     searchQuery,
     setSearchQuery,
     hoveredCell,

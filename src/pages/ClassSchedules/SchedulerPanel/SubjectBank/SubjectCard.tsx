@@ -1,5 +1,5 @@
 import type React from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, MousePointerClick } from "lucide-react";
 import { getCategoryStyles, getLeftAccentBorder } from "../constants";
 import type { Subject } from "../types";
 
@@ -8,6 +8,8 @@ interface SubjectCardProps {
   isPlaced: boolean;
   isEditable: boolean;
   isDragging: boolean;
+  isSelected: boolean;
+  onClick: (id: string) => void;
   onDragStart: (e: React.DragEvent, id: string) => void;
   onDragEnd: () => void;
 }
@@ -17,6 +19,8 @@ export default function SubjectCard({
   isPlaced,
   isEditable,
   isDragging,
+  isSelected,
+  onClick,
   onDragStart,
   onDragEnd
 }: SubjectCardProps) {
@@ -28,14 +32,26 @@ export default function SubjectCard({
       draggable={isEditable}
       onDragStart={(e) => onDragStart(e, subject.id)}
       onDragEnd={onDragEnd}
+      onClick={() => isEditable && onClick(subject.id)}
+      onKeyDown={(e) => {
+        if (isEditable && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick(subject.id);
+        }
+      }}
+      role={isEditable ? "button" : undefined}
+      tabIndex={isEditable ? 0 : undefined}
+      aria-pressed={isEditable ? isSelected : undefined}
       title={subject.name}
-      className={`bg-white border border-gray-200 rounded-xl p-3 mb-2 select-none transition-all duration-150 ${leftBorder} ${
+      className={`bg-white border rounded-xl p-3 mb-2 select-none transition-all duration-150 motion-reduce:transition-none ${leftBorder} ${
+        isSelected
+          ? "border-[#4e0a10] ring-2 ring-[#4e0a10]/40 shadow-md"
+          : "border-gray-200"
+      } ${
         !isEditable
           ? "opacity-60 cursor-not-allowed"
-          : isPlaced
-          ? "opacity-60 cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-0.5"
-          : "cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-0.5"
-      } ${isDragging ? "opacity-50 scale-95 rotate-1 shadow-lg" : ""}`}
+          : "cursor-pointer hover:shadow-md hover:-translate-y-0.5 motion-reduce:hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[#4e0a10]/50"
+      } ${isPlaced && !isSelected ? "opacity-60" : ""} ${isDragging ? "opacity-50 scale-95 rotate-1 shadow-lg" : ""}`}
     >
       <div className="flex justify-between items-start gap-1">
         <span className="text-sm font-bold text-gray-800 uppercase leading-tight">
@@ -54,14 +70,20 @@ export default function SubjectCard({
         </div>
       </div>
 
-      <div className="text-xs text-gray-500 mt-1 leading-tight line-clamp-1">
+      <div className="text-xs text-gray-600 mt-1 leading-tight line-clamp-1">
         {subject.name}
       </div>
 
-      <div className="mt-2">
+      <div className="mt-2 flex items-center justify-between gap-2">
         <span className={`text-xs rounded-full px-2 py-0.5 border font-medium inline-block ${styles.typeBadge}`}>
           {styles.label}
         </span>
+        {isSelected && (
+          <span className="flex items-center gap-1 text-[11px] font-bold text-[#4e0a10]">
+            <MousePointerClick className="w-3.5 h-3.5" />
+            Click a slot
+          </span>
+        )}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ interface ScheduleCardProps {
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
   draggedScheduleId: string | null;
+  isMoving: boolean;
   deleteConfirmScheduleId: string | null;
   setDeleteConfirmScheduleId: (id: string | null) => void;
   onDragStart: (e: React.DragEvent, s: ScheduleItem) => void;
@@ -31,6 +32,7 @@ export default function ScheduleCard({
   isPhase2Active,
   currentStatus,
   draggedScheduleId,
+  isMoving,
   deleteConfirmScheduleId,
   setDeleteConfirmScheduleId,
   onDragStart,
@@ -56,17 +58,17 @@ export default function ScheduleCard({
       onDragStart={(e) => !isPhase2Active && onDragStart(e, schedule)}
       onDragEnd={onDragEnd}
       onClick={() => onCardClick(schedule.id)}
-      className={`w-full rounded-xl border-2 border-l-4 box-border relative shadow-sm hover:shadow-md hover:scale-[1.02] hover:z-10 transition-all duration-150 group overflow-hidden p-2 ${gridStyles.container} ${
+      className={`w-full rounded-xl border-2 border-l-4 box-border relative shadow-sm hover:shadow-md hover:scale-[1.02] hover:z-10 transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-hidden p-2 ${gridStyles.container} ${
         isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
       } ${
         isAwaitingFaculty
-          ? "animate-pulse border-orange-400 cursor-pointer"
+          ? "border-orange-400 ring-2 ring-orange-300 cursor-pointer"
           : isFacultyAssigned
           ? "cursor-pointer"
           : isEditable
           ? "cursor-grab active:cursor-grabbing"
           : "cursor-not-allowed"
-      } ${currentStatus === "finalized" ? "cursor-default" : ""}`}
+      } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-20" : ""} ${currentStatus === "finalized" ? "cursor-default" : ""}`}
       style={{
         gridColumn: schedule.dayIndex + 2,
         gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}`,
@@ -81,10 +83,11 @@ export default function ScheduleCard({
               e.stopPropagation();
               setDeleteConfirmScheduleId(schedule.id);
             }}
-            className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-opacity duration-150 opacity-0 group-hover:opacity-100"
+            aria-label={`Remove ${subject.code}`}
             title="Remove Schedule"
+            className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 shadow-sm ring-1 ring-white transition-colors duration-150"
           >
-            <X className="w-2.5 h-2.5" />
+            <X className="w-3.5 h-3.5" />
           </button>
           {deleteConfirmScheduleId === schedule.id && (
             <div
@@ -125,7 +128,7 @@ export default function ScheduleCard({
             <span className={`text-xs font-bold uppercase tracking-wide truncate ${gridStyles.text}`}>
               {subject.code}
             </span>
-            <div className="flex gap-1 shrink-0 pr-4">
+            <div className="flex gap-1 shrink-0 pr-7">
               <span className={`text-[10px] bg-white/70 rounded-full px-1.5 py-0.5 font-bold ${gridStyles.badgeText}`}>
                 {subject.units}u
               </span>

@@ -12,6 +12,8 @@ interface CategorySectionProps {
   scheduledSubjectIds: Set<string>;
   isEditable: boolean;
   dragSubjectId: string | null;
+  placementSubjectId: string | null;
+  onSubjectClick: (id: string) => void;
   onDragStart: (e: React.DragEvent, id: string) => void;
   onDragEnd: () => void;
 }
@@ -32,6 +34,8 @@ export default function CategorySection({
   scheduledSubjectIds,
   isEditable,
   dragSubjectId,
+  placementSubjectId,
+  onSubjectClick,
   onDragStart,
   onDragEnd
 }: CategorySectionProps) {
@@ -72,6 +76,8 @@ export default function CategorySection({
               isPlaced={scheduledSubjectIds.has(subject.id)}
               isEditable={isEditable}
               isDragging={dragSubjectId === subject.id}
+              isSelected={placementSubjectId === subject.id}
+              onClick={onSubjectClick}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             />

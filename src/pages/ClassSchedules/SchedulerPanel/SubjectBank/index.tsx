@@ -18,6 +18,8 @@ interface SubjectBankProps {
   scheduledSubjectIds: Set<string>;
   isEditable: boolean;
   dragSubjectId: string | null;
+  placementSubjectId: string | null;
+  handleSubjectCardClick: (id: string) => void;
   handleDragStartFromBank: (e: React.DragEvent, id: string) => void;
   handleDragEnd: () => void;
 }
@@ -37,6 +39,8 @@ export default function SubjectBank({
   scheduledSubjectIds,
   isEditable,
   dragSubjectId,
+  placementSubjectId,
+  handleSubjectCardClick,
   handleDragStartFromBank,
   handleDragEnd
 }: SubjectBankProps) {
@@ -53,8 +57,8 @@ export default function SubjectBank({
           <BookOpen className="w-5 h-5 text-[#4e0a10]" />
           <span className="text-base font-semibold text-gray-800">Subject Bank</span>
         </div>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Drag subjects onto the timetable
+        <p className="text-xs text-gray-500 mt-0.5">
+          Click a subject, then click a time slot — or drag it onto the timetable
         </p>
         <div className="flex items-center gap-2 mt-2.5">
           <span className="flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5 text-[10px] font-semibold">
@@ -115,6 +119,8 @@ export default function SubjectBank({
                 scheduledSubjectIds={scheduledSubjectIds}
                 isEditable={isEditable}
                 dragSubjectId={dragSubjectId}
+                placementSubjectId={placementSubjectId}
+                onSubjectClick={handleSubjectCardClick}
                 onDragStart={handleDragStartFromBank}
                 onDragEnd={handleDragEnd}
               />
