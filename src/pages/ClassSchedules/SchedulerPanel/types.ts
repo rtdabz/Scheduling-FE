@@ -9,6 +9,7 @@ export interface Subject {
 export interface Section {
   id: string;
   name: string;
+  yearLevel: number;
 }
 
 export interface Faculty {

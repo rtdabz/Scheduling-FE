@@ -7,19 +7,25 @@ import {
   MOCK_ROOMS,
   MOCK_SECTIONS,
   MOCK_SUBJECTS,
+  YEAR_LEVELS,
+  getSubjectClassification,
   slotToTimeStr
 } from "../constants";
 import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject } from "../types";
+import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
+import { useToast } from "../../../../context/ToastContext";
 
 export const useScheduler = () => {
+  const { toast } = useToast();
   const [placed, setPlaced] = useState<Record<string, string>>({});
   const [dragSubjectId, setDragSubjectId] = useState<string | null>(null);
   const [draggedScheduleId, setDraggedScheduleId] = useState<string | null>(null);
   const [dragFromCell, setDragFromCell] = useState<string | null>(null);
   const [deleteConfirmScheduleId, setDeleteConfirmScheduleId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [subjectClassFilter, setSubjectClassFilter] = useState<SubjectClassification>("all");
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
 
   // Click-to-place / click-to-move (mouse-free alternative to drag-and-drop)
@@ -28,6 +34,11 @@ export const useScheduler = () => {
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>(DEFAULT_SCHEDULES);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("sec-cit-1");
+  // Year-level filter (1st–4th year). null = All Years.
+  const [selectedYearLevel, setSelectedYearLevel] = useState<number | null>(
+    () => MOCK_SECTIONS.find((s) => s.id === "sec-cit-1")?.yearLevel ?? null
+  );
+  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [scheduleStatus, setScheduleStatus] = useState<Record<string, ScheduleItem["status"]>>({
     "sec-cit-1": "draft",
     "sec-cit-2": "faculty_assignment",
@@ -47,6 +58,10 @@ export const useScheduler = () => {
   const [popupConflictWarning, setPopupConflictWarning] = useState<string>("");
 
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [roomViewRoomId, setRoomViewRoomId] = useState<string>(MOCK_ROOMS[0]?.id ?? "");
   const [isAssignedListCollapsed, setIsAssignedListCollapsed] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
@@ -63,6 +78,13 @@ export const useScheduler = () => {
 
   const sectionSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
   const scheduledSubjectIds = new Set(sectionSchedules.map((s) => s.subjectId));
+
+  // Sections available for the active year-level filter (null = all years).
+  const visibleSections =
+    selectedYearLevel == null
+      ? MOCK_SECTIONS
+      : MOCK_SECTIONS.filter((s) => s.yearLevel === selectedYearLevel);
+  const yearLevels = YEAR_LEVELS;
   const totalSubjects = MOCK_SUBJECTS.length;
   const totalScheduled = new Set(sectionSchedules.map((s) => s.subjectId)).size;
 
@@ -79,6 +101,9 @@ export const useScheduler = () => {
   const listCategories: Subject["category"][] = ["major", "gec", "gee", "pathfit", "nstp"];
 
   const filteredSubjects = MOCK_SUBJECTS.filter((subject) => {
+    if (subjectClassFilter !== "all" && getSubjectClassification(subject.category) !== subjectClassFilter) {
+      return false;
+    }
     const term = searchQuery.toLowerCase().trim();
     if (!term) return true;
     return (
@@ -231,14 +256,29 @@ export const useScheduler = () => {
   };
 
   const handleClearAll = () => {
-    if (!isEditable) return;
-    if (confirm("Are you sure you want to clear the entire schedule for this section?")) {
-      setSchedules((prev) => prev.filter((s) => s.sectionId !== selectedSectionId));
-      setConflictInfo(null);
-      setPlacementSubjectId(null);
-      setMovingScheduleId(null);
-    }
+    if (!isEditable || sectionSchedules.length === 0) return;
+    setIsClearAllModalOpen(true);
   };
+
+  const confirmClearAll = () => {
+    if (!isEditable) {
+      setIsClearAllModalOpen(false);
+      return;
+    }
+    const clearedCount = sectionSchedules.length;
+    const sectionName = MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name ?? "the section";
+    setSchedules((prev) => prev.filter((s) => s.sectionId !== selectedSectionId));
+    setConflictInfo(null);
+    setPlacementSubjectId(null);
+    setMovingScheduleId(null);
+    setIsClearAllModalOpen(false);
+    toast.success(
+      "Schedule Cleared",
+      `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
+    );
+  };
+
+  const cancelClearAll = () => setIsClearAllModalOpen(false);
 
   const handleSubmitForApproval = () => {
     if (!selectedSectionId) return;
@@ -333,6 +373,24 @@ export const useScheduler = () => {
     setConflictInfo(null);
     setPlacementSubjectId(null);
     setMovingScheduleId(null);
+  };
+
+  const handleYearLevelSelect = (year: number | null) => {
+    setSelectedYearLevel(year);
+    setIsYearDropdownOpen(false);
+    // If the current section no longer belongs to the chosen year, clear it
+    // so the user picks a section within that year level.
+    if (year != null) {
+      const stillValid = MOCK_SECTIONS.some(
+        (s) => s.id === selectedSectionId && s.yearLevel === year
+      );
+      if (!stillValid) {
+        setSelectedSectionId("");
+        setConflictInfo(null);
+        setPlacementSubjectId(null);
+        setMovingScheduleId(null);
+      }
+    }
   };
 
   const handleScheduleCardClick = (scheduleId: string) => {
@@ -512,10 +570,18 @@ export const useScheduler = () => {
     cancelPlacement,
     searchQuery,
     setSearchQuery,
+    subjectClassFilter,
+    setSubjectClassFilter,
     hoveredCell,
     schedules,
     setSchedules,
     selectedSectionId,
+    selectedYearLevel,
+    isYearDropdownOpen,
+    setIsYearDropdownOpen,
+    handleYearLevelSelect,
+    visibleSections,
+    yearLevels,
     scheduleStatus,
     setScheduleStatus,
     dropContext,
@@ -533,6 +599,16 @@ export const useScheduler = () => {
     popupConflictWarning,
     isSectionDropdownOpen,
     setIsSectionDropdownOpen,
+    isClearAllModalOpen,
+    confirmClearAll,
+    cancelClearAll,
+    isRoomViewOpen,
+    setIsRoomViewOpen,
+    schedules,
+    isPrintModalOpen,
+    setIsPrintModalOpen,
+    roomViewRoomId,
+    setRoomViewRoomId,
     isAssignedListCollapsed,
     setIsAssignedListCollapsed,
     collapsedCategories,

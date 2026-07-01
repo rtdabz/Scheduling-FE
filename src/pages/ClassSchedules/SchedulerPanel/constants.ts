@@ -16,12 +16,36 @@ export const MOCK_SUBJECTS: Subject[] = [
 ];
 
 export const MOCK_SECTIONS: Section[] = [
-  { id: "sec-cit-1", name: "BSCS 4A" },
-  { id: "sec-cit-2", name: "BSCS 4B" },
-  { id: "sec-cit-3", name: "BSIT 3A" },
-  { id: "sec-cas-1", name: "BS-Psych 1A" },
-  { id: "sec-cas-2", name: "BS-Psych 2A" }
+  { id: "sec-cas-1", name: "BS-Psych 1A", yearLevel: 1 },
+  { id: "sec-cas-2", name: "BS-Psych 2A", yearLevel: 2 },
+  { id: "sec-cit-3", name: "BSIT 3A", yearLevel: 3 },
+  { id: "sec-cit-1", name: "BSCS 4A", yearLevel: 4 },
+  { id: "sec-cit-2", name: "BSCS 4B", yearLevel: 4 }
 ];
+
+// Distinct year levels available for the section filter (ascending).
+export const YEAR_LEVELS: number[] = Array.from(
+  new Set(MOCK_SECTIONS.map((s) => s.yearLevel))
+).sort((a, b) => a - b);
+
+export const yearLevelLabel = (year: number): string => {
+  switch (year) {
+    case 1: return "1st Year";
+    case 2: return "2nd Year";
+    case 3: return "3rd Year";
+    case 4: return "4th Year";
+    default: return `${year}th Year`;
+  }
+};
+
+// Subject classification for the Major/Minor filter.
+// "major" categories are the program core; everything else (GEC/GEE/PATHFIT/NSTP)
+// is treated as a "minor" (general-education) subject.
+export type SubjectClassification = "all" | "major" | "minor";
+
+export const getSubjectClassification = (
+  category: Subject["category"]
+): Exclude<SubjectClassification, "all"> => (category === "major" ? "major" : "minor");
 
 export const MOCK_FACULTY: Faculty[] = [
   { id: "fac-1", name: "Dr. Alan Turing" },

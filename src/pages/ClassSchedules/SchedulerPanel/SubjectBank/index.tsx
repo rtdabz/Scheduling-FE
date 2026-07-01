@@ -1,6 +1,7 @@
 import type React from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, Search, X } from "lucide-react";
 import type { Subject } from "../types";
+import type { SubjectClassification } from "../constants";
 import CategorySection from "./CategorySection";
 
 interface SubjectBankProps {
@@ -11,6 +12,8 @@ interface SubjectBankProps {
   totalSubjects: number;
   searchQuery: string;
   setSearchQuery: (value: string) => void;
+  subjectClassFilter: SubjectClassification;
+  setSubjectClassFilter: (value: SubjectClassification) => void;
   listCategories: Subject["category"][];
   filteredSubjects: Subject[];
   collapsedCategories: Record<string, boolean>;
@@ -32,6 +35,8 @@ export default function SubjectBank({
   totalSubjects,
   searchQuery,
   setSearchQuery,
+  subjectClassFilter,
+  setSubjectClassFilter,
   listCategories,
   filteredSubjects,
   collapsedCategories,
@@ -49,6 +54,12 @@ export default function SubjectBank({
   const visibleCategories = listCategories.filter((c) =>
     filteredSubjects.some((s) => s.category === c)
   );
+
+  const classFilters: { value: SubjectClassification; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "major", label: "Major" },
+    { value: "minor", label: "Minor" }
+  ];
 
   return (
     <div className="w-full lg:w-1/4 min-w-[280px] shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden h-full">
@@ -90,6 +101,24 @@ export default function SubjectBank({
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+        </div>
+
+        <div className="flex items-center gap-1 mt-2.5 bg-gray-100 rounded-lg p-0.5" role="group" aria-label="Filter subjects by type">
+          {classFilters.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={subjectClassFilter === value}
+              onClick={() => setSubjectClassFilter(value)}
+              className={`flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-colors ${
+                subjectClassFilter === value
+                  ? "bg-white text-[#4e0a10] shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 

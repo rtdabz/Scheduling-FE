@@ -1,13 +1,19 @@
 import type React from "react";
-import { CheckCircle2, ChevronDown, LayoutGrid, Users } from "lucide-react";
-import { MOCK_SECTIONS } from "./constants";
-import type { ScheduleItem } from "./types";
+import { CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, Users } from "lucide-react";
+import { MOCK_SECTIONS, yearLevelLabel } from "./constants";
+import type { ScheduleItem, Section } from "./types";
 
 interface TopBarProps {
   selectedSectionId: string;
   isSectionDropdownOpen: boolean;
   setIsSectionDropdownOpen: (value: boolean) => void;
   handleSectionSelect: (sectionId: string) => void;
+  selectedYearLevel: number | null;
+  isYearDropdownOpen: boolean;
+  setIsYearDropdownOpen: (value: boolean) => void;
+  handleYearLevelSelect: (year: number | null) => void;
+  visibleSections: Section[];
+  yearLevels: number[];
   currentStatus: ScheduleItem["status"];
   setScheduleStatus: React.Dispatch<React.SetStateAction<Record<string, ScheduleItem["status"]>>>;
   isPhase1Completed: boolean;
@@ -15,6 +21,7 @@ interface TopBarProps {
   isPhase2Completed: boolean;
   renderStatusBadge: (status: ScheduleItem["status"]) => React.ReactNode;
   renderActionButton: () => React.ReactNode;
+  onPrint: () => void;
 }
 
 export default function TopBar({
@@ -22,17 +29,68 @@ export default function TopBar({
   isSectionDropdownOpen,
   setIsSectionDropdownOpen,
   handleSectionSelect,
+  selectedYearLevel,
+  isYearDropdownOpen,
+  setIsYearDropdownOpen,
+  handleYearLevelSelect,
+  visibleSections,
+  yearLevels,
   currentStatus,
   setScheduleStatus,
   isPhase1Completed,
   isPhase2Active,
   isPhase2Completed,
   renderStatusBadge,
-  renderActionButton
+  renderActionButton,
+  onPrint
 }: TopBarProps) {
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white px-6 py-4 border-b border-gray-200 rounded-t-2xl shadow-sm">
       <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-gray-500 font-medium">Year Level:</span>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsYearDropdownOpen(!isYearDropdownOpen)}
+            className="flex items-center justify-between text-sm bg-white border border-gray-300 rounded-lg px-4 py-2 outline-none hover:border-gray-400 focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] font-medium gap-2 min-w-[150px] transition-colors"
+          >
+            <span className="flex items-center gap-2 text-gray-800">
+              <GraduationCap className="w-4 h-4 text-[#4e0a10]" />
+              {selectedYearLevel == null ? "All Year Levels" : yearLevelLabel(selectedYearLevel)}
+            </span>
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isYearDropdownOpen ? "rotate-180" : ""}`} />
+          </button>
+          {isYearDropdownOpen && (
+            <div className="absolute left-0 mt-1.5 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 animate-in fade-in slide-in-from-top-1 duration-150">
+              <button
+                type="button"
+                onClick={() => handleYearLevelSelect(null)}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  selectedYearLevel == null
+                    ? "text-[#4e0a10] bg-[#4e0a10]/5 font-semibold"
+                    : "text-gray-700 font-normal hover:bg-gray-50"
+                }`}
+              >
+                All Year Levels
+              </button>
+              {yearLevels.map((year) => (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => handleYearLevelSelect(year)}
+                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                    selectedYearLevel === year
+                      ? "text-[#4e0a10] bg-[#4e0a10]/5 font-semibold"
+                      : "text-gray-700 font-normal hover:bg-gray-50"
+                  }`}
+                >
+                  {yearLevelLabel(year)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <span className="text-sm text-gray-500 font-medium">Section:</span>
         <div className="relative">
           <button
@@ -45,20 +103,24 @@ export default function TopBar({
           </button>
           {isSectionDropdownOpen && (
             <div className="absolute left-0 mt-1.5 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 animate-in fade-in slide-in-from-top-1 duration-150">
-              {MOCK_SECTIONS.map((sec) => (
-                <button
-                  key={sec.id}
-                  type="button"
-                  onClick={() => handleSectionSelect(sec.id)}
-                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                    selectedSectionId === sec.id
-                      ? "text-[#4e0a10] bg-[#4e0a10]/5 font-semibold"
-                      : "text-gray-700 font-normal hover:bg-gray-50"
-                  }`}
-                >
-                  {sec.name}
-                </button>
-              ))}
+              {visibleSections.length === 0 ? (
+                <p className="px-4 py-2.5 text-sm text-gray-400">No sections for this year level.</p>
+              ) : (
+                visibleSections.map((sec) => (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    onClick={() => handleSectionSelect(sec.id)}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                      selectedSectionId === sec.id
+                        ? "text-[#4e0a10] bg-[#4e0a10]/5 font-semibold"
+                        : "text-gray-700 font-normal hover:bg-gray-50"
+                    }`}
+                  >
+                    {sec.name}
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>
@@ -124,6 +186,15 @@ export default function TopBar({
       <div className="flex items-center gap-3 md:ml-auto">
         {renderStatusBadge(currentStatus)}
         {renderActionButton()}
+        <button
+          type="button"
+          onClick={onPrint}
+          title="Print Schedule"
+          className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+        >
+          <Printer className="w-4 h-4" />
+          <span>Print</span>
+        </button>
         <div className="w-px h-7 bg-gray-200 mx-1" />
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-400 font-medium">DEV:</span>

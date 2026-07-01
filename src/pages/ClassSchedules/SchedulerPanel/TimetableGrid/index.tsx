@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Calendar, Clock, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import { AlertTriangle, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -34,6 +34,7 @@ interface TimetableGridProps {
   getClassesCountForDay: (dayIdx: number) => number;
   getDragOverConflict: (d: number, t: number) => boolean;
   handleClearAll: () => void;
+  setIsRoomViewOpen: (value: boolean) => void;
   handleDragOver: (e: React.DragEvent, d: number, t: number) => void;
   handleDragLeave: () => void;
   handleDrop: (e: React.DragEvent, d: number, t: number) => void;
@@ -65,6 +66,7 @@ export default function TimetableGrid({
   getClassesCountForDay,
   getDragOverConflict,
   handleClearAll,
+  setIsRoomViewOpen,
   handleDragOver,
   handleDragLeave,
   handleDrop,
@@ -106,6 +108,14 @@ export default function TimetableGrid({
               {Math.max(0, totalSubjects - totalScheduled)} Unplaced
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsRoomViewOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
+          >
+            <DoorOpen className="w-3.5 h-3.5" />
+            Room View
+          </button>
           <button
             type="button"
             onClick={handleClearAll}
