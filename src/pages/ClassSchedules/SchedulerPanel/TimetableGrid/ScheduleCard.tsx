@@ -4,12 +4,12 @@ import {
   getGridCardStyles,
   getGridModeBadgeClass,
   MOCK_FACULTY,
-  MOCK_ROOMS,
   SLOT_HEIGHT_PX
 } from "../constants";
-import type { ScheduleItem, Subject } from "../types";
+import type { ScheduleItem, Subject, Room } from "../types";
 
 interface ScheduleCardProps {
+  rooms: Room[];
   schedule: ScheduleItem;
   subject: Subject;
   isEditable: boolean;
@@ -26,6 +26,7 @@ interface ScheduleCardProps {
 }
 
 export default function ScheduleCard({
+  rooms,
   schedule,
   subject,
   isEditable,
@@ -41,7 +42,7 @@ export default function ScheduleCard({
   onCardClick
 }: ScheduleCardProps) {
   const faculty = MOCK_FACULTY.find((f) => f.id === schedule.facultyId);
-  const room = MOCK_ROOMS.find((r) => r.id === schedule.roomId);
+  const room = rooms.find((r) => r.id === schedule.roomId);
   const gridStyles = getGridCardStyles(subject.category);
   const modeBadgeClass = getGridModeBadgeClass(schedule.mode);
   const isDraggingThis = draggedScheduleId === schedule.id;

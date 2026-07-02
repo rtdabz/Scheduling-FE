@@ -11,14 +11,42 @@ import {
   getSubjectClassification,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject } from "../types";
+import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room } from "../types";
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
+import api from "../../../../lib/api";
 
 export const useScheduler = () => {
   const { toast } = useToast();
+  const [rooms, setRooms] = useState<Room[]>([]);
+
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        const res = await api.get<any[]>('/rooms');
+        const userJson = localStorage.getItem('user');
+        const user = userJson ? JSON.parse(userJson) : null;
+        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+        
+        let apiRooms = res.data;
+        if (!isVpaa && user?.department_id) {
+          apiRooms = apiRooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(user.department_id));
+        }
+
+        const mappedRooms = apiRooms.map((r: any) => ({
+          id: r.id.toString(),
+          name: r.room_code + (r.room_name ? ` - ${r.room_name}` : '')
+        }));
+        setRooms(mappedRooms);
+      } catch (err) {
+        setRooms(MOCK_ROOMS);
+      }
+    };
+    fetchRooms();
+  }, []);
+
   const [placed, setPlaced] = useState<Record<string, string>>({});
   const [dragSubjectId, setDragSubjectId] = useState<string | null>(null);
   const [draggedScheduleId, setDraggedScheduleId] = useState<string | null>(null);
@@ -63,7 +91,13 @@ export const useScheduler = () => {
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [roomViewRoomId, setRoomViewRoomId] = useState<string>(MOCK_ROOMS[0]?.id ?? "");
+  const [roomViewRoomId, setRoomViewRoomId] = useState<string>("");
+
+  useEffect(() => {
+    if (rooms.length > 0 && !roomViewRoomId) {
+      setRoomViewRoomId(rooms[0].id);
+    }
+  }, [rooms, roomViewRoomId]);
   const [isAssignedListCollapsed, setIsAssignedListCollapsed] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
@@ -118,7 +152,8 @@ export const useScheduler = () => {
     schedules,
     selectedSectionId,
     dragSubjectId,
-    draggedScheduleId
+    draggedScheduleId,
+    rooms
   });
 
   useEffect(() => {
@@ -221,7 +256,7 @@ export const useScheduler = () => {
       setDropContext(null);
       return;
     }
-    const room = MOCK_ROOMS.find((r) => r.id === modalRoomId);
+    const room = rooms.find((r) => r.id === modalRoomId);
     const section = MOCK_SECTIONS.find((s) => s.id === selectedSectionId);
     if (dropContext.isRescheduling && dropContext.scheduleId) {
       setSchedules((prev) =>
@@ -623,6 +658,7 @@ export const useScheduler = () => {
     setSubjectClassFilter,
     hoveredCell,
     schedules,
+    rooms,
     setSchedules,
     selectedSectionId,
     selectedYearLevel,

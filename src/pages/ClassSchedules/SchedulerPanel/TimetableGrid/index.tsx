@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { AlertTriangle, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import api from "../../../../lib/api";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -8,11 +9,12 @@ import {
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, ScheduleItem } from "../types";
+import type { ConflictInfo, ScheduleItem, Room } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 
 interface TimetableGridProps {
+  rooms: Room[];
   selectedSectionId: string;
   totalScheduled: number;
   totalSubjects: number;
@@ -46,6 +48,7 @@ interface TimetableGridProps {
 }
 
 export default function TimetableGrid({
+  rooms,
   selectedSectionId,
   totalScheduled,
   totalSubjects,
@@ -77,6 +80,28 @@ export default function TimetableGrid({
   handleScheduleCardClick,
   handleEditMovingSchedule
 }: TimetableGridProps) {
+  const [activeTermText, setActiveTermText] = useState("1st Semester AY 2026-2027");
+
+  useEffect(() => {
+    const fetchActiveTerm = async () => {
+      try {
+        const res = await api.get<{ semester: string; academic_year: string }>('/terms/active');
+        if (res.data && res.data.semester && res.data.academic_year) {
+          const semMap: Record<string, string> = {
+            '1st': '1st Semester',
+            '2nd': '2nd Semester',
+            'summer': 'Summer'
+          };
+          const sem = semMap[res.data.semester] || res.data.semester;
+          setActiveTermText(`${sem} AY ${res.data.academic_year}`);
+        }
+      } catch {
+        // Fallback to default
+      }
+    };
+    fetchActiveTerm();
+  }, []);
+
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const placementLabel = placementSubjectId
     ? MOCK_SUBJECTS.find((s) => s.id === placementSubjectId)?.code ?? "subject"
@@ -97,7 +122,7 @@ export default function TimetableGrid({
               {selectedSectionId ? (MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
             </span>
             <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-md text-[10px] font-bold">
-              1st Semester AY 2026-2027
+              {activeTermText}
             </span>
           </div>
         </div>
@@ -247,6 +272,7 @@ export default function TimetableGrid({
                 return (
                   <ScheduleCard
                     key={schedule.id}
+                    rooms={rooms}
                     schedule={schedule}
                     subject={subject}
                     isEditable={isEditable}

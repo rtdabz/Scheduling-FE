@@ -1,15 +1,13 @@
-import { 
-  LayoutDashboard, 
-  CalendarDays, 
-  GraduationCap, 
+import {
+  LayoutDashboard,
+  CalendarDays,
+  GraduationCap,
   DoorOpen,
-  FileBarChart, 
-  ClipboardList, 
-  Users, 
+  FileBarChart,
+  ClipboardList,
+  Users,
   Settings,
-  Building2,
-  Calendar,
-  ClipboardCheck
+  Building2
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -23,17 +21,15 @@ export const vpaaNav: NavSection[] = [
         icon: CalendarDays,
         id: 'sidebar-schedules',
         children: [
-          { 
-            label: 'All Schedules', 
-            path: '/schedules', 
-            icon: Calendar,
-            id: 'sidebar-all-schedules' 
+          {
+            label: 'All Schedules',
+            path: '/schedules',
+            id: 'sidebar-all-schedules'
           },
-          { 
-            label: 'Schedule Approval', 
-            path: '/schedules/approval', 
-            icon: ClipboardCheck,
-            id: 'sidebar-schedule-approval' 
+          {
+            label: 'Schedule Approval',
+            path: '/schedules/approval',
+            id: 'sidebar-schedule-approval'
           },
         ]
       },

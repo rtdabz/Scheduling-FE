@@ -3,14 +3,14 @@ import { CalendarClock, ChevronDown, DoorOpen, MapPin, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
-  MOCK_ROOMS,
   SLOT_HEIGHT_PX,
   getGridCardStyles,
   slotToTimeStr
 } from "../constants";
-import type { ScheduleItem } from "../types";
+import type { ScheduleItem, Room } from "../types";
 
 interface RoomViewModalProps {
+  rooms: Room[];
   isRoomViewOpen: boolean;
   setIsRoomViewOpen: (value: boolean) => void;
   roomViewRoomId: string;
@@ -21,6 +21,7 @@ interface RoomViewModalProps {
 const SLOT_COUNT = 28;
 
 export default function RoomViewModal({
+  rooms,
   isRoomViewOpen,
   setIsRoomViewOpen,
   roomViewRoomId,
@@ -39,7 +40,7 @@ export default function RoomViewModal({
 
   if (!isRoomViewOpen) return null;
 
-  const room = MOCK_ROOMS.find((r) => r.id === roomViewRoomId);
+  const room = rooms.find((r) => r.id === roomViewRoomId);
   const roomClasses = schedules.filter((s) => s.roomId === roomViewRoomId);
 
   return (
@@ -75,7 +76,7 @@ export default function RoomViewModal({
                 onChange={(e) => setRoomViewRoomId(e.target.value)}
                 className="appearance-none border border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] min-w-[180px]"
               >
-                {MOCK_ROOMS.map((r) => (
+                {rooms.map((r) => (
                   <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
               </select>

@@ -110,8 +110,8 @@ const MOCK_ROOMS: Room[] = [
   { id: "room-lab102", name: "Lab 102" },
   { id: "room-r301", name: "Room 301" },
   { id: "room-r302", name: "Room 302" },
-  { id: "room-avr", name: "AVR Room" },
-  { id: "room-gym", name: "Gymnasium" }
+  { id: "room-avr", name: "Online" },
+  { id: "room-gym", name: "Field" }
 ];
 
 const MOCK_SCHEDULES: Schedule[] = [

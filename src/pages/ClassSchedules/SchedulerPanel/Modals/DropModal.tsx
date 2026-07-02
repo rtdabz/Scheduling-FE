@@ -1,9 +1,10 @@
 import type React from "react";
 import { AlertTriangle, Building2, CalendarDays, CalendarPlus, ChevronDown, Clock, Loader2, MapPin, Monitor, TreePine, X } from "lucide-react";
-import { DAYS, getCategoryStyles, getLeftAccentBorder, MOCK_ROOMS, slotToTimeStr } from "../constants";
-import type { DropContext, Subject } from "../types";
+import { DAYS, getCategoryStyles, getLeftAccentBorder, slotToTimeStr } from "../constants";
+import type { DropContext, Subject, Room } from "../types";
 
 interface DropModalProps {
+  rooms: Room[];
   dropContext: DropContext | null;
   dropSubject: Subject | null;
   dropSubjectIsField: boolean;
@@ -24,6 +25,7 @@ interface DropModalProps {
 }
 
 export default function DropModal({
+  rooms,
   dropContext,
   dropSubject,
   dropSubjectIsField,
@@ -153,7 +155,7 @@ export default function DropModal({
                     }`}
                   >
                     <option value="">Select a room...</option>
-                    {MOCK_ROOMS.map((r) => (
+                    {rooms.map((r) => (
                       <option key={r.id} value={r.id}>{r.name}</option>
                     ))}
                   </select>
