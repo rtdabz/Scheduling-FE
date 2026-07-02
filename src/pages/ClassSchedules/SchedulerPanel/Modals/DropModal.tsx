@@ -11,6 +11,10 @@ interface DropModalProps {
   setModalRoomId: (value: string) => void;
   modalClassMode: "on-site" | "online" | "field";
   setModalClassMode: (value: "on-site" | "online" | "field") => void;
+  modalIsHybrid: boolean;
+  setModalIsHybrid: (value: boolean) => void;
+  modalPreferredPattern: "MW" | "TTh" | null;
+  setModalPreferredPattern: (value: "MW" | "TTh" | null) => void;
   modalValidationError: string;
   setModalValidationError: (value: string) => void;
   modalConflict: string | null;
@@ -27,6 +31,10 @@ export default function DropModal({
   setModalRoomId,
   modalClassMode,
   setModalClassMode,
+  modalIsHybrid,
+  setModalIsHybrid,
+  modalPreferredPattern,
+  setModalPreferredPattern,
   modalValidationError,
   setModalValidationError,
   modalConflict,
@@ -133,23 +141,34 @@ export default function DropModal({
             </label>
             <div className="relative">
               <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-              <select
-                value={modalRoomId}
-                onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
-                className={`w-full appearance-none border rounded-lg pl-9 pr-8 py-2.5 text-sm outline-none transition-all focus:ring-2 focus:ring-amber-400 focus:border-transparent ${
-                  modalValidationError && !modalRoomId
-                    ? "border-red-400 bg-red-50 text-red-700 focus:ring-red-400"
-                    : "border-gray-200 bg-white text-gray-700"
-                }`}
-              >
-                <option value="">Select a room...</option>
-                {MOCK_ROOMS.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              {modalClassMode === "on-site" ? (
+                <>
+                  <select
+                    value={modalRoomId}
+                    onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
+                    className={`w-full appearance-none border rounded-lg pl-9 pr-8 py-2.5 text-sm outline-none transition-all focus:ring-2 focus:ring-amber-400 focus:border-transparent ${
+                      modalValidationError && !modalRoomId
+                        ? "border-red-400 bg-red-50 text-red-700 focus:ring-red-400"
+                        : "border-gray-200 bg-white text-gray-700"
+                    }`}
+                  >
+                    <option value="">Select a room...</option>
+                    {MOCK_ROOMS.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </>
+              ) : (
+                <input
+                  type="text"
+                  readOnly
+                  value={modalClassMode === "online" ? "Online" : "Field"}
+                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-medium capitalize"
+                />
+              )}
             </div>
-            {modalValidationError && !modalRoomId && (
+            {modalClassMode === "on-site" && modalValidationError && !modalRoomId && (
               <p className="text-xs text-red-500 mt-1">{modalValidationError}</p>
             )}
           </div>
@@ -189,6 +208,52 @@ export default function DropModal({
             {dropSubjectIsField && (
               <p className="text-xs text-orange-500 mt-1">Field mode is required for this subject type.</p>
             )}
+          </div>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50/50">
+            <span className="text-xs font-semibold text-gray-700">Hybrid (On-site & Online)</span>
+            <button
+              type="button"
+              onClick={() => setModalIsHybrid(!modalIsHybrid)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                modalIsHybrid ? "bg-[#4e0a10]" : "bg-gray-200"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  modalIsHybrid ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Preferred Meeting Pattern
+            </label>
+            <div className="flex gap-2">
+              {([
+                { value: null, label: "None" },
+                { value: "MW" as const, label: "MW (Mon–Wed)" },
+                { value: "TTh" as const, label: "TTh (Tue–Thu)" }
+              ]).map(({ value: p, label }) => {
+                const isSelected = modalPreferredPattern === p;
+                return (
+                  <button
+                    key={String(p)}
+                    type="button"
+                    onClick={() => setModalPreferredPattern(p)}
+                    className={`flex-1 py-2 border rounded-lg text-xs font-semibold transition-all ${
+                      isSelected
+                        ? "bg-[#4e0a10] text-white border-[#4e0a10]"
+                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {hasConflict && (

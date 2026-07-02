@@ -50,6 +50,8 @@ export const useScheduler = () => {
   const [dropContext, setDropContext] = useState<DropContext | null>(null);
   const [modalRoomId, setModalRoomId] = useState<string>("");
   const [modalClassMode, setModalClassMode] = useState<"on-site" | "online" | "field">("on-site");
+  const [modalIsHybrid, setModalIsHybrid] = useState<boolean>(false);
+  const [modalPreferredPattern, setModalPreferredPattern] = useState<"MW" | "TTh" | null>(null);
   const [modalValidationError, setModalValidationError] = useState<string>("");
   const [modalConflict, setModalConflict] = useState<string | null>(null);
 
@@ -140,14 +142,28 @@ export const useScheduler = () => {
       if (existing) {
         setModalRoomId(existing.roomId);
         setModalClassMode(existing.mode ?? "on-site");
+        setModalIsHybrid(existing.isHybrid ?? false);
+        setModalPreferredPattern(existing.preferredPattern ?? null);
       }
     } else {
       setModalRoomId("");
       setModalClassMode("on-site");
+      setModalIsHybrid(false);
+      setModalPreferredPattern(null);
     }
     setModalValidationError("");
     setModalConflict(null);
   }, [dropContext, schedules]);
+
+  useEffect(() => {
+    if (modalClassMode === "online") {
+      setModalRoomId("online");
+    } else if (modalClassMode === "field") {
+      setModalRoomId("field");
+    } else if (modalClassMode === "on-site" && (modalRoomId === "online" || modalRoomId === "field")) {
+      setModalRoomId("");
+    }
+  }, [modalClassMode]);
 
   useEffect(() => {
     if (dropContext && modalRoomId) {
@@ -207,28 +223,47 @@ export const useScheduler = () => {
     }
     const room = MOCK_ROOMS.find((r) => r.id === modalRoomId);
     const section = MOCK_SECTIONS.find((s) => s.id === selectedSectionId);
-    const newSchedule: ScheduleItem = {
-      id: `sched-${Date.now()}`,
-      subjectId: dropContext.subjectId,
-      subjectCode: subject.code,
-      subjectName: subject.name,
-      subjectType: subject.category,
-      sectionName: section?.name ?? "",
-      roomName: room?.name ?? "",
-      day: DAYS[dropContext.dayIndex],
-      startTime: slotToTimeStr(dropContext.startSlot),
-      endTime: slotToTimeStr(dropContext.startSlot + durationSlots),
-      mode: modalClassMode,
-      facultyName: null,
-      facultyId: null,
-      status: "draft",
-      dayIndex: dropContext.dayIndex,
-      startSlot: dropContext.startSlot,
-      durationSlots,
-      sectionId: selectedSectionId,
-      roomId: modalRoomId
-    };
-    setSchedules((prev) => [...prev, newSchedule]);
+    if (dropContext.isRescheduling && dropContext.scheduleId) {
+      setSchedules((prev) =>
+        prev.map((s) =>
+          s.id === dropContext.scheduleId
+            ? {
+                ...s,
+                roomId: modalRoomId,
+                roomName: modalRoomId === "online" ? "Online" : modalRoomId === "field" ? "Field" : (room?.name ?? ""),
+                mode: modalClassMode,
+                isHybrid: modalIsHybrid,
+                preferredPattern: modalPreferredPattern
+              }
+            : s
+        )
+      );
+    } else {
+      const newSchedule: ScheduleItem = {
+        id: `sched-${Date.now()}`,
+        subjectId: dropContext.subjectId,
+        subjectCode: subject.code,
+        subjectName: subject.name,
+        subjectType: subject.category,
+        sectionName: section?.name ?? "",
+        roomName: modalRoomId === "online" ? "Online" : modalRoomId === "field" ? "Field" : (room?.name ?? ""),
+        day: DAYS[dropContext.dayIndex],
+        startTime: slotToTimeStr(dropContext.startSlot),
+        endTime: slotToTimeStr(dropContext.startSlot + durationSlots),
+        mode: modalClassMode,
+        isHybrid: modalIsHybrid,
+        preferredPattern: modalPreferredPattern,
+        facultyName: null,
+        facultyId: null,
+        status: "draft",
+        dayIndex: dropContext.dayIndex,
+        startSlot: dropContext.startSlot,
+        durationSlots,
+        sectionId: selectedSectionId,
+        roomId: modalRoomId
+      };
+      setSchedules((prev) => [...prev, newSchedule]);
+    }
     setDropContext(null);
     setConflictInfo(null);
   };
@@ -391,6 +426,20 @@ export const useScheduler = () => {
         setMovingScheduleId(null);
       }
     }
+  };
+
+  const handleEditMovingSchedule = () => {
+    if (!movingScheduleId) return;
+    const sched = schedules.find((s) => s.id === movingScheduleId);
+    if (!sched) return;
+    setDropContext({
+      subjectId: sched.subjectId,
+      dayIndex: sched.dayIndex,
+      startSlot: sched.startSlot,
+      isRescheduling: true,
+      scheduleId: sched.id
+    });
+    setMovingScheduleId(null);
   };
 
   const handleScheduleCardClick = (scheduleId: string) => {
@@ -590,9 +639,14 @@ export const useScheduler = () => {
     setModalRoomId,
     modalClassMode,
     setModalClassMode,
+    modalIsHybrid,
+    setModalIsHybrid,
+    modalPreferredPattern,
+    setModalPreferredPattern,
     modalValidationError,
     setModalValidationError,
     modalConflict,
+    handleEditMovingSchedule,
     facultyAssignmentPopup,
     setFacultyAssignmentPopup,
     popupValidationError,
@@ -604,7 +658,6 @@ export const useScheduler = () => {
     cancelClearAll,
     isRoomViewOpen,
     setIsRoomViewOpen,
-    schedules,
     isPrintModalOpen,
     setIsPrintModalOpen,
     roomViewRoomId,

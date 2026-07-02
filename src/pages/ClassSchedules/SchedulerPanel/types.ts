@@ -50,6 +50,8 @@ export interface ScheduleItem {
   durationSlots: number;
   sectionId: string;
   roomId: string;
+  isHybrid?: boolean;
+  preferredPattern?: "MW" | "TTh" | null;
 }
 
 export interface DropContext {

@@ -2,12 +2,12 @@ import { useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
-import tccLogo from "../../../../assets/logo.jpg";
-import municipalLogo from "../../../../assets/municipal-logo.png";
-import type { ScheduleItem } from "../types";
-import { MOCK_SECTIONS } from "../constants";
+import tccLogo from "../../../assets/logo.jpg";
+import municipalLogo from "../../../assets/municipal-logo.png";
+import type { ScheduleItem } from "./types";
+import { MOCK_SECTIONS } from "./constants";
 
-interface PrintScheduleModalProps {
+interface PrintScheduleProps {
   isPrintModalOpen: boolean;
   setIsPrintModalOpen: (value: boolean) => void;
   allSchedules: ScheduleItem[];
@@ -25,12 +25,12 @@ const SIGNATORIES = {
   approvedBy: { name: "ATTY. NADYA B. EMANO-ELIPE", role: "OIC-College President" },
 };
 
-export default function PrintScheduleModal({
+export default function PrintSchedule({
   isPrintModalOpen,
   setIsPrintModalOpen,
   allSchedules,
   selectedSectionId,
-}: PrintScheduleModalProps) {
+}: PrintScheduleProps) {
 
   useEffect(() => {
     if (isPrintModalOpen) {
@@ -182,7 +182,11 @@ export default function PrintScheduleModal({
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(255, 255, 255);
-    doc.text(`COLLEGE OF ${COLLEGE_OF}`, 148.5, currentY + 5, { align: "center" });
+    doc.setDrawColor(201, 149, 42);
+    doc.setLineWidth(0.15);
+    doc.text(`COLLEGE OF ${COLLEGE_OF}`, 148.5, currentY + 5, { align: "center", renderingMode: "fillThenStroke" } as any);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
 
     // AY Bar
     doc.setFillColor(255, 255, 255);
@@ -200,7 +204,7 @@ export default function PrintScheduleModal({
 
     targetSections.forEach((section) => {
       // Prevent orphaned header bar at page bottom
-      if (currentY > 175) {
+      if (currentY > 145) {
         doc.addPage();
         currentY = 15;
       }
@@ -247,19 +251,29 @@ export default function PrintScheduleModal({
         item.roomName
       ]);
 
-      if (filledRows.length === 0) {
-        for (let i = 0; i < 10; i++) {
-          body.push(["", "", "", "", "", "", "", ""]);
-        }
+      const rowHeight = 5.5;
+      const headerHeight = 11;
+      const remainingHeight = 185 - currentY;
+      const realRowsHeight = headerHeight + (filledRows.length * rowHeight);
+      const spaceAfterRealRows = remainingHeight - realRowsHeight;
+      const maxEmptyRows = Math.max(0, Math.floor(spaceAfterRealRows / rowHeight));
+      const targetTotalRows = 8;
+      const desiredEmptyRows = Math.max(0, targetTotalRows - filledRows.length);
+      const emptyRowsToAdd = Math.min(desiredEmptyRows, maxEmptyRows);
+
+      for (let i = 0; i < emptyRowsToAdd; i++) {
+        body.push(["", "", "", "", "", "", "", ""]);
       }
 
       autoTable(doc, {
         startY: currentY,
-        margin: { left: 15, right: 15, bottom: 25 },
+        margin: { left: 15, right: 15, top: 15, bottom: 25 },
         tableWidth: 267,
         theme: 'grid',
         head: head,
         body: body,
+        rowPageBreak: 'avoid',
+        showHead: 'firstPage',
         styles: {
           font: "helvetica",
           fontSize: 9,

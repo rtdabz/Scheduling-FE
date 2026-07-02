@@ -6,7 +6,7 @@ import DropModal from "./Modals/DropModal";
 import FacultyModal from "./Modals/FacultyModal";
 import ClearAllModal from "./Modals/ClearAllModal";
 import RoomViewModal from "./Modals/RoomViewModal";
-import PrintScheduleModal from "./Modals/PrintScheduleModal";
+import PrintSchedule from "./PrintSchedule";
 import { useScheduler } from "./hooks/useScheduler";
 
 export default function SchedulerPanel() {
@@ -26,7 +26,7 @@ export default function SchedulerPanel() {
       <FacultyModal {...scheduler} />
       <ClearAllModal {...scheduler} />
       <RoomViewModal {...scheduler} />
-      <PrintScheduleModal
+      <PrintSchedule
         isPrintModalOpen={scheduler.isPrintModalOpen}
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}

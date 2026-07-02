@@ -45,7 +45,7 @@ export const useConflict = ({
             message: `Section conflict: This section already has a class (${sub?.code ?? ""}) scheduled at this time.`
           };
         }
-        if (roomId && s.roomId === roomId) {
+        if (roomId && roomId !== "online" && roomId !== "field" && s.roomId === roomId) {
           const room = MOCK_ROOMS.find((r) => r.id === roomId);
           return {
             conflictType: "room",
