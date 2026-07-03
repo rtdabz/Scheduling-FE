@@ -50,7 +50,8 @@ const handleSubmit = async (e: React.FormEvent) => {
             id: 'mock-' + role,
             name: `Mock ${role.toUpperCase()}`,
             username: username || 'secretary',
-            role: role
+            role: role,
+            department_id: role === 'dean' ? 1 : (role === 'secretary' || role === 'program_head' ? 6 : null)
           };
           localStorage.setItem('token', 'mock-token-12345');
           localStorage.setItem('user', JSON.stringify(mockUser));

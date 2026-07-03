@@ -37,11 +37,20 @@ export const useScheduler = () => {
 
         const mappedRooms = apiRooms.map((r: any) => ({
           id: r.id.toString(),
-          name: r.room_code + (r.room_name ? ` - ${r.room_name}` : '')
+          name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
+          departmentId: r.department_id
         }));
         setRooms(mappedRooms);
       } catch (err) {
-        setRooms(MOCK_ROOMS);
+        const userJson = localStorage.getItem('user');
+        const user = userJson ? JSON.parse(userJson) : null;
+        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+        
+        let fallbackRooms = MOCK_ROOMS;
+        if (!isVpaa && user?.department_id) {
+          fallbackRooms = MOCK_ROOMS.filter(r => r.departmentId !== undefined && Number(r.departmentId) === Number(user.department_id));
+        }
+        setRooms(fallbackRooms);
       }
     };
     fetchRooms();

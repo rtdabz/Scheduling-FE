@@ -56,25 +56,62 @@ export const MOCK_FACULTY: Faculty[] = [
 ];
 
 export const MOCK_ROOMS: Room[] = [
-  { id: "room-1", name: "Lab 101" },
-  { id: "room-2", name: "Lab 102" },
-  { id: "room-3", name: "Room 301" },
-  { id: "room-4", name: "Room 302" },
-  { id: "room-5", name: "AVR Room" },
-  { id: "room-6", name: "Gymnasium" }
+  // AS Rooms
+  { id: "1", name: "NEE 201", departmentId: 1 },
+  { id: "2", name: "NEE 202", departmentId: 1 },
+  { id: "3", name: "NEE 203", departmentId: 1 },
+  // BA Rooms
+  { id: "4", name: "BA 201", departmentId: 2 },
+  { id: "5", name: "BA 202", departmentId: 2 },
+  { id: "6", name: "BA 203", departmentId: 2 },
+  { id: "7", name: "BA 204", departmentId: 2 },
+  { id: "8", name: "BA 205", departmentId: 2 },
+  { id: "9", name: "BA 206", departmentId: 2 },
+  { id: "10", name: "BA Simulation", departmentId: 2 },
+  // EDUC Rooms
+  { id: "11", name: "Educ 101", departmentId: 4 },
+  { id: "12", name: "Educ 102", departmentId: 4 },
+  { id: "13", name: "Educ 103", departmentId: 4 },
+  { id: "14", name: "Educ 104", departmentId: 4 },
+  { id: "15", name: "NEE 301", departmentId: 4 },
+  { id: "16", name: "NEE 302", departmentId: 4 },
+  { id: "17", name: "NEE 303", departmentId: 4 },
+  // HM Rooms
+  { id: "18", name: "HM 201", departmentId: 5 },
+  { id: "19", name: "HM 202", departmentId: 5 },
+  { id: "20", name: "HM 203", departmentId: 5 },
+  { id: "21", name: "HM 204", departmentId: 5 },
+  { id: "22", name: "HM Simulation", departmentId: 5 },
+  // IT Rooms
+  { id: "23", name: "IT 105", departmentId: 6 },
+  { id: "24", name: "NEE 204", departmentId: 6 },
+  { id: "25", name: "CompLab1 - Laboratory 1", departmentId: 6 },
+  { id: "26", name: "CompLab2 - Laboratory 2", departmentId: 6 },
+  { id: "27", name: "CompLab3 - Laboratory 3", departmentId: 6 },
+  { id: "28", name: "CompLab4 - Laboratory 4", departmentId: 6 },
+  // LIS Rooms
+  { id: "29", name: "Lib Bldg - Library", departmentId: 7 },
+  { id: "30", name: "Educ 105", departmentId: 7 },
+  { id: "31", name: "NEE 304", departmentId: 7 },
+  { id: "32", name: "GF", departmentId: 7 },
+  // MID Rooms
+  { id: "33", name: "NEE 101", departmentId: 8 },
+  { id: "34", name: "NEE 102", departmentId: 8 },
+  { id: "35", name: "NEE 103", departmentId: 8 },
+  { id: "36", name: "NEE 104", departmentId: 8 }
 ];
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export const DEFAULT_SCHEDULES: ScheduleItem[] = [
-  { id: "sched-1", subjectId: "cs-401", subjectCode: "CS 401", subjectName: "Intelligent Systems", subjectType: "major", sectionName: "BSCS 4A", roomName: "Lab 101", day: "Mon", startTime: "7:00 AM", endTime: "10:00 AM", mode: "on-site", facultyName: null, facultyId: null, status: "draft", dayIndex: 0, startSlot: 0, durationSlots: 6, sectionId: "sec-cit-1", roomId: "room-1" },
-  { id: "sched-2", subjectId: "cs-402", subjectCode: "CS 402", subjectName: "Software Engineering", subjectType: "major", sectionName: "BSCS 4A", roomName: "Lab 102", day: "Wed", startTime: "9:00 AM", endTime: "12:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "draft", dayIndex: 2, startSlot: 4, durationSlots: 6, sectionId: "sec-cit-1", roomId: "room-2" },
-  { id: "sched-3", subjectId: "ge-101", subjectCode: "GE 101", subjectName: "Understanding the Self", subjectType: "gec", sectionName: "BSCS 4A", roomName: "Room 301", day: "Tue", startTime: "10:00 AM", endTime: "1:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "draft", dayIndex: 1, startSlot: 6, durationSlots: 6, sectionId: "sec-cit-1", roomId: "room-3" },
-  { id: "sched-4", subjectId: "gee-101", subjectCode: "GEE 101", subjectName: "GE Elective 1 (Environmental Science)", subjectType: "gee", sectionName: "BSCS 4A", roomName: "Room 302", day: "Thu", startTime: "1:00 PM", endTime: "4:00 PM", mode: "online", facultyName: null, facultyId: null, status: "draft", dayIndex: 3, startSlot: 12, durationSlots: 6, sectionId: "sec-cit-1", roomId: "room-4" },
-  { id: "sched-5", subjectId: "pe-101", subjectCode: "PATHFIT 1", subjectName: "Movement Competency Training", subjectType: "pathfit", sectionName: "BSCS 4A", roomName: "Gymnasium", day: "Fri", startTime: "8:00 AM", endTime: "10:00 AM", mode: "field", facultyName: null, facultyId: null, status: "draft", dayIndex: 4, startSlot: 2, durationSlots: 4, sectionId: "sec-cit-1", roomId: "room-6" },
-  { id: "sched-6", subjectId: "cs-403", subjectCode: "CS 403", subjectName: "Network Security", subjectType: "major", sectionName: "BSCS 4B", roomName: "Lab 101", day: "Mon", startTime: "10:00 AM", endTime: "1:00 PM", mode: "on-site", facultyName: "Dr. Alan Turing", facultyId: "fac-1", status: "faculty_assignment", dayIndex: 0, startSlot: 6, durationSlots: 6, sectionId: "sec-cit-2", roomId: "room-1" },
-  { id: "sched-7", subjectId: "cs-404", subjectCode: "CS 404", subjectName: "Data Science & Analytics", subjectType: "major", sectionName: "BSCS 4B", roomName: "Lab 102", day: "Wed", startTime: "1:00 PM", endTime: "4:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "faculty_assignment", dayIndex: 2, startSlot: 12, durationSlots: 6, sectionId: "sec-cit-2", roomId: "room-2" },
-  { id: "sched-8", subjectId: "ge-102", subjectCode: "GE 102", subjectName: "Readings in Philippine History", subjectType: "gec", sectionName: "BSCS 4B", roomName: "Room 301", day: "Fri", startTime: "10:00 AM", endTime: "1:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "faculty_assignment", dayIndex: 4, startSlot: 6, durationSlots: 6, sectionId: "sec-cit-2", roomId: "room-3" }
+  { id: "sched-1", subjectId: "cs-401", subjectCode: "CS 401", subjectName: "Intelligent Systems", subjectType: "major", sectionName: "BSCS 4A", roomName: "CompLab1 - Laboratory 1", day: "Mon", startTime: "7:00 AM", endTime: "10:00 AM", mode: "on-site", facultyName: null, facultyId: null, status: "draft", dayIndex: 0, startSlot: 0, durationSlots: 6, sectionId: "sec-cit-1", roomId: "25" },
+  { id: "sched-2", subjectId: "cs-402", subjectCode: "CS 402", subjectName: "Software Engineering", subjectType: "major", sectionName: "BSCS 4A", roomName: "CompLab2 - Laboratory 2", day: "Wed", startTime: "9:00 AM", endTime: "12:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "draft", dayIndex: 2, startSlot: 4, durationSlots: 6, sectionId: "sec-cit-1", roomId: "26" },
+  { id: "sched-3", subjectId: "ge-101", subjectCode: "GE 101", subjectName: "Understanding the Self", subjectType: "gec", sectionName: "BSCS 4A", roomName: "IT 105", day: "Tue", startTime: "10:00 AM", endTime: "1:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "draft", dayIndex: 1, startSlot: 6, durationSlots: 6, sectionId: "sec-cit-1", roomId: "23" },
+  { id: "sched-4", subjectId: "gee-101", subjectCode: "GEE 101", subjectName: "GE Elective 1 (Environmental Science)", subjectType: "gee", sectionName: "BSCS 4A", roomName: "NEE 204", day: "Thu", startTime: "1:00 PM", endTime: "4:00 PM", mode: "online", facultyName: null, facultyId: null, status: "draft", dayIndex: 3, startSlot: 12, durationSlots: 6, sectionId: "sec-cit-1", roomId: "24" },
+  { id: "sched-5", subjectId: "pe-101", subjectCode: "PATHFIT 1", subjectName: "Movement Competency Training", subjectType: "pathfit", sectionName: "BSCS 4A", roomName: "Field", day: "Fri", startTime: "8:00 AM", endTime: "10:00 AM", mode: "field", facultyName: null, facultyId: null, status: "draft", dayIndex: 4, startSlot: 2, durationSlots: 4, sectionId: "sec-cit-1", roomId: "field" },
+  { id: "sched-6", subjectId: "cs-403", subjectCode: "CS 403", subjectName: "Network Security", subjectType: "major", sectionName: "BSCS 4B", roomName: "CompLab1 - Laboratory 1", day: "Mon", startTime: "10:00 AM", endTime: "1:00 PM", mode: "on-site", facultyName: "Dr. Alan Turing", facultyId: "fac-1", status: "faculty_assignment", dayIndex: 0, startSlot: 6, durationSlots: 6, sectionId: "sec-cit-2", roomId: "25" },
+  { id: "sched-7", subjectId: "cs-404", subjectCode: "CS 404", subjectName: "Data Science & Analytics", subjectType: "major", sectionName: "BSCS 4B", roomName: "CompLab2 - Laboratory 2", day: "Wed", startTime: "1:00 PM", endTime: "4:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "faculty_assignment", dayIndex: 2, startSlot: 12, durationSlots: 6, sectionId: "sec-cit-2", roomId: "26" },
+  { id: "sched-8", subjectId: "ge-102", subjectCode: "GE 102", subjectName: "Readings in Philippine History", subjectType: "gec", sectionName: "BSCS 4B", roomName: "IT 105", day: "Fri", startTime: "10:00 AM", endTime: "1:00 PM", mode: "on-site", facultyName: null, facultyId: null, status: "faculty_assignment", dayIndex: 4, startSlot: 6, durationSlots: 6, sectionId: "sec-cit-2", roomId: "23" }
 ];
 
 export const SLOT_HEIGHT_PX = 24;

@@ -20,6 +20,7 @@ export interface Faculty {
 export interface Room {
   id: string;
   name: string;
+  departmentId?: number;
 }
 
 export interface ScheduleItem {
