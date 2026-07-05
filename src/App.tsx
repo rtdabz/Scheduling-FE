@@ -35,14 +35,34 @@ interface StoredUser {
   role?: string;
 }
 
-const getDashboardRole = (): UserRole | string => {
+const getStoredRole = (): string => {
   const userJson = localStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
-
   return user?.role?.toLowerCase() || '';
 };
 
+const getDashboardRole = (): UserRole | string => getStoredRole();
+
+const getDashboardPath = (role: string): string => {
+  if (role === 'dean') return '/dean/dashboard';
+  if (role === 'secretary') return '/sec_ph/dashboard';
+  if (role === 'program_head') return '/program_head/dashboard';
+  return '/dashboard';
+};
+
 const DashboardRoute = () => <Dashboard role={getDashboardRole()} />;
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem('token');
+  if (!token) return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
+
+const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem('token');
+  if (token) return <Navigate to={getDashboardPath(getStoredRole())} replace />;
+  return <>{children}</>;
+};
 
 export default function App() {
   return (
@@ -51,46 +71,47 @@ export default function App() {
           <div className="min-h-screen flex items-center justify-center">
               <p className="text-muted text-sm">Loading...</p>
           </div>
-      }></Suspense>
-      <Routes>
-        <Route path="/" element={<LoginPage />} />
+      }>
+        <Routes>
+          <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
         
-        {/* Main Layout wrapper for all authenticated routes */}
-        <Route element={<AppLayout />}>
-          {/* VPAA Routes */}
-          <Route path="/dashboard" element={<DashboardRoute />} />
-          <Route path="/schedules" element={<Schedules />} />
-          <Route path="/schedules/approval" element={<ScheduleApprovalPage />} />
-          <Route path="/faculty" element={<Faculty />} />
-          <Route path="/rooms" element={<Rooms />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/departments" element={<Departments />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
+          {/* Main Layout wrapper for all authenticated routes */}
+          <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+            {/* VPAA Routes */}
+            <Route path="/dashboard" element={<DashboardRoute />} />
+            <Route path="/schedules" element={<Schedules />} />
+            <Route path="/schedules/approval" element={<ScheduleApprovalPage />} />
+            <Route path="/faculty" element={<Faculty />} />
+            <Route path="/rooms" element={<Rooms />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/departments" element={<Departments />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
 
-          {/* Dean Routes */}
-          <Route path="/dean/dashboard" element={<DashboardRoute />} />
-          <Route path="/dean/schedules" element={<DeanSchedules />} />
-          <Route path="/dean/schedules/approval" element={<DeanScheduleApprovalPage />} />
-          <Route path="/dean/faculty" element={<Faculty />} />
-          <Route path="/dean/rooms" element={<Rooms />} />
-          <Route path="/dean/reports" element={<Reports />} />
-          <Route path="/dean/users" element={<Users />} />
+            {/* Dean Routes */}
+            <Route path="/dean/dashboard" element={<DashboardRoute />} />
+            <Route path="/dean/schedules" element={<DeanSchedules />} />
+            <Route path="/dean/schedules/approval" element={<DeanScheduleApprovalPage />} />
+            <Route path="/dean/faculty" element={<Faculty />} />
+            <Route path="/dean/rooms" element={<Rooms />} />
+            <Route path="/dean/reports" element={<Reports />} />
+            <Route path="/dean/users" element={<Users />} />
 
-          {/* Secretary Routes */}
-          <Route path="/sec_ph/dashboard" element={<DashboardRoute />} />
-          <Route path="/sec_ph/schedules" element={<SecPHSchedules />} />
-          <Route path="/sec_ph/rooms" element={<Rooms />} />
-          
-          {/* Program Head Routes */}
-          <Route path="/program_head/dashboard" element={<DashboardRoute />} />
-          <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
-          <Route path="/program_head/faculty" element={<Faculty />} />
-          <Route path="/program_head/rooms" element={<Rooms />} />
-        </Route>
+            {/* Secretary Routes */}
+            <Route path="/sec_ph/dashboard" element={<DashboardRoute />} />
+            <Route path="/sec_ph/schedules" element={<SecPHSchedules />} />
+            <Route path="/sec_ph/rooms" element={<Rooms />} />
+            
+            {/* Program Head Routes */}
+            <Route path="/program_head/dashboard" element={<DashboardRoute />} />
+            <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
+            <Route path="/program_head/faculty" element={<Faculty />} />
+            <Route path="/program_head/rooms" element={<Rooms />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

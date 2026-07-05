@@ -4,16 +4,16 @@ import api from "../../../../lib/api";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
-  MOCK_SECTIONS,
   MOCK_SUBJECTS,
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, ScheduleItem, Room } from "../types";
+import type { ConflictInfo, ScheduleItem, Room, Section } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 
 interface TimetableGridProps {
+  sections: Section[];
   rooms: Room[];
   selectedSectionId: string;
   totalScheduled: number;
@@ -48,6 +48,7 @@ interface TimetableGridProps {
 }
 
 export default function TimetableGrid({
+  sections,
   rooms,
   selectedSectionId,
   totalScheduled,
@@ -119,7 +120,7 @@ export default function TimetableGrid({
           </h2>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <span className="bg-[#4e0a10]/15 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase">
-              {selectedSectionId ? (MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
+              {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
             </span>
             <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-md text-[10px] font-bold">
               {activeTermText}

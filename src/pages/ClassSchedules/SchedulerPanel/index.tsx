@@ -27,6 +27,7 @@ export default function SchedulerPanel() {
       <ClearAllModal {...scheduler} />
       <RoomViewModal {...scheduler} />
       <PrintSchedule
+        sections={scheduler.sections}
         isPrintModalOpen={scheduler.isPrintModalOpen}
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}

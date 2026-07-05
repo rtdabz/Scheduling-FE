@@ -71,6 +71,8 @@ export default function Rooms() {
   const userJson = localStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+  const isDean = user?.role?.toLowerCase() === 'dean';
+  const canManageRooms = isVpaa || isDean;
 
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
@@ -223,118 +225,125 @@ export default function Rooms() {
   };
 
   const columns = useMemo<ColumnDef<Room>[]>(
-    () => [
-      {
-        accessorKey: 'room_code',
-        header: 'Room Code',
-        cell: info => (
-          <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
-            {info.getValue() as string}
-          </span>
-        )
-      },
-      {
-        accessorKey: 'room_name',
-        header: 'Room Name',
-        cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
-      },
-      {
-        accessorKey: 'room_type',
-        header: 'Room Type',
-        cell: info => {
-          const val = (info.getValue() as string) || '';
-          let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-          if (val === 'laboratory') {
-            badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
-          } else if (val === 'online') {
-            badgeColor = 'bg-green-50 text-green-700 border-green-200';
-          } else if (val === 'field') {
-            badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-          }
-          return (
-            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-              {val}
+    () => {
+      const cols: ColumnDef<Room>[] = [
+        {
+          accessorKey: 'room_code',
+          header: 'Room Code',
+          cell: info => (
+            <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
+              {info.getValue() as string}
             </span>
-          );
-        }
-      },
-      {
-        accessorKey: 'status',
-        header: 'Status',
-        cell: info => {
-          const val = (info.getValue() as string) || 'available';
-          let badgeColor = 'bg-green-50 text-green-700 border-green-200';
-          if (val === 'occupied') {
-            badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-          } else if (val === 'maintenance') {
-            badgeColor = 'bg-red-50 text-red-700 border-red-200';
-          }
-          return (
-            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-              {val}
-            </span>
-          );
-        }
-      },
-      {
-        accessorKey: 'department',
-        header: 'Department',
-        cell: info => {
-          const dept = info.getValue() as Department | null;
-          return (
-            <span className="text-gray-700 font-semibold text-xs">
-              {dept ? `${dept.department_code} - ${dept.department_name}` : 'General / All'}
-            </span>
-          );
-        }
-      },
-      {
-        accessorKey: 'createdAt',
-        header: 'Created At',
-        cell: info => {
-          const val = info.getValue() as string;
-          if (!val) return '—';
-          try {
-            const date = new Date(val);
-            return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-          } catch {
-            return '—';
-          }
-        }
-      },
-      {
-        id: 'actions',
-        header: () => <div className="text-right">Actions</div>,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-1.5">
-            <div className="relative group">
-              <button
-                onClick={() => handleEditClick(row.original)}
-                className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-              >
-                <Pencil size={17} />
-              </button>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                Edit
+          )
+        },
+        {
+          accessorKey: 'room_name',
+          header: 'Room Name',
+          cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
+        },
+        {
+          accessorKey: 'room_type',
+          header: 'Room Type',
+          cell: info => {
+            const val = (info.getValue() as string) || '';
+            let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
+            if (val === 'laboratory') {
+              badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
+            } else if (val === 'online') {
+              badgeColor = 'bg-green-50 text-green-700 border-green-200';
+            } else if (val === 'field') {
+              badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
+            }
+            return (
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
+                {val}
               </span>
-            </div>
-            <div className="relative group">
-              <button
-                onClick={() => triggerDeleteConfirmation(row.original.id)}
-                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-              >
-                <Trash2 size={17} />
-              </button>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                Delete
+            );
+          }
+        },
+        {
+          accessorKey: 'status',
+          header: 'Status',
+          cell: info => {
+            const val = (info.getValue() as string) || 'available';
+            let badgeColor = 'bg-green-50 text-green-700 border-green-200';
+            if (val === 'occupied') {
+              badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
+            } else if (val === 'maintenance') {
+              badgeColor = 'bg-red-50 text-red-700 border-red-200';
+            }
+            return (
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
+                {val}
               </span>
+            );
+          }
+        },
+        {
+          accessorKey: 'department',
+          header: 'Department',
+          cell: info => {
+            const dept = info.getValue() as Department | null;
+            return (
+              <span className="text-gray-700 font-semibold text-xs">
+                {dept ? `${dept.department_code} - ${dept.department_name}` : 'General / All'}
+              </span>
+            );
+          }
+        },
+        {
+          accessorKey: 'createdAt',
+          header: 'Created At',
+          cell: info => {
+            const val = info.getValue() as string;
+            if (!val) return '—';
+            try {
+              const date = new Date(val);
+              return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+            } catch {
+              return '—';
+            }
+          }
+        }
+      ];
+
+      if (canManageRooms) {
+        cols.push({
+          id: 'actions',
+          header: () => <div className="text-right">Actions</div>,
+          enableSorting: false,
+          cell: ({ row }) => (
+            <div className="flex justify-end gap-1.5">
+              <div className="relative group">
+                <button
+                  onClick={() => handleEditClick(row.original)}
+                  className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Pencil size={17} />
+                </button>
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+                  Edit
+                </span>
+              </div>
+              <div className="relative group">
+                <button
+                  onClick={() => triggerDeleteConfirmation(row.original.id)}
+                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Trash2 size={17} />
+                </button>
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+                  Delete
+                </span>
+              </div>
             </div>
-          </div>
-        )
+          )
+        });
       }
-    ],
-    []
+
+      return cols;
+    },
+    [canManageRooms]
   );
 
   const table = useReactTable<Room>({
@@ -376,23 +385,25 @@ export default function Rooms() {
             className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
           />
         </div>
-        <button
-          onClick={() => {
-            setIsEditMode(false);
-            setEditingId(null);
-            setRoomCode('');
-            setRoomName('');
-            setRoomType('lecture');
-            setStatus('available');
-            setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
-            setCodeError('');
-            setNameError('');
-            setIsModalOpen(true);
-          }}
-          className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
-        >
-          <span className="text-lg leading-none">+</span> Add Room
-        </button>
+        {canManageRooms && (
+          <button
+            onClick={() => {
+              setIsEditMode(false);
+              setEditingId(null);
+              setRoomCode('');
+              setRoomName('');
+              setRoomType('lecture');
+              setStatus('available');
+              setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
+              setCodeError('');
+              setNameError('');
+              setIsModalOpen(true);
+            }}
+            className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
+          >
+            <span className="text-lg leading-none">+</span> Add Room
+          </button>
+        )}
       </div>
 
       {/* Table Section */}
@@ -613,8 +624,6 @@ export default function Rooms() {
                   >
                     <option value="lecture">Lecture</option>
                     <option value="laboratory">Laboratory</option>
-                    <option value="online">Online</option>
-                    <option value="field">Field</option>
                   </select>
                 </div>
 

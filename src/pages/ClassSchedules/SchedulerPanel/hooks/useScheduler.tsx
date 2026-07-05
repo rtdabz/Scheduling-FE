@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { CheckCircle2, LayoutGrid, Users } from "lucide-react";
 import {
   DAYS,
@@ -7,11 +7,10 @@ import {
   MOCK_ROOMS,
   MOCK_SECTIONS,
   MOCK_SUBJECTS,
-  YEAR_LEVELS,
   getSubjectClassification,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room } from "../types";
+import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room, Section } from "../types";
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
@@ -21,6 +20,7 @@ import api from "../../../../lib/api";
 export const useScheduler = () => {
   const { toast } = useToast();
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
 
   useEffect(() => {
     const fetchRooms = async () => {
@@ -29,7 +29,7 @@ export const useScheduler = () => {
         const userJson = localStorage.getItem('user');
         const user = userJson ? JSON.parse(userJson) : null;
         const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-        
+
         let apiRooms = res.data;
         if (!isVpaa && user?.department_id) {
           apiRooms = apiRooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(user.department_id));
@@ -45,7 +45,7 @@ export const useScheduler = () => {
         const userJson = localStorage.getItem('user');
         const user = userJson ? JSON.parse(userJson) : null;
         const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-        
+
         let fallbackRooms = MOCK_ROOMS;
         if (!isVpaa && user?.department_id) {
           fallbackRooms = MOCK_ROOMS.filter(r => r.departmentId !== undefined && Number(r.departmentId) === Number(user.department_id));
@@ -54,6 +54,42 @@ export const useScheduler = () => {
       }
     };
     fetchRooms();
+  }, []);
+
+  useEffect(() => {
+    const fetchSections = async () => {
+      try {
+        const userJson = localStorage.getItem('user');
+        const user = userJson ? JSON.parse(userJson) : null;
+        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+
+        let res;
+        if (!isVpaa && user?.department_id) {
+          res = await api.get<any[]>(`/sections/department/${user.department_id}`);
+        } else {
+          res = await api.get<any[]>('/sections');
+        }
+
+        const mapped: Section[] = res.data.map((s: any) => ({
+          id: s.id.toString(),
+          name: s.section_name,
+          yearLevel: Number(s.year_level),
+          departmentId: s.department_id
+        }));
+        setSections(mapped.length > 0 ? mapped : MOCK_SECTIONS);
+      } catch {
+        const userJson = localStorage.getItem('user');
+        const user = userJson ? JSON.parse(userJson) : null;
+        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+
+        if (!isVpaa && user?.department_id) {
+          setSections(MOCK_SECTIONS.filter(s => s.id.startsWith('sec-cit')));
+        } else {
+          setSections(MOCK_SECTIONS);
+        }
+      }
+    };
+    fetchSections();
   }, []);
 
   const [placed, setPlaced] = useState<Record<string, string>>({});
@@ -70,11 +106,8 @@ export const useScheduler = () => {
   const [movingScheduleId, setMovingScheduleId] = useState<string | null>(null);
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>(DEFAULT_SCHEDULES);
-  const [selectedSectionId, setSelectedSectionId] = useState<string>("sec-cit-1");
-  // Year-level filter (1st–4th year). null = All Years.
-  const [selectedYearLevel, setSelectedYearLevel] = useState<number | null>(
-    () => MOCK_SECTIONS.find((s) => s.id === "sec-cit-1")?.yearLevel ?? null
-  );
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
+  const [selectedYearLevel, setSelectedYearLevel] = useState<number | null>(null);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [scheduleStatus, setScheduleStatus] = useState<Record<string, ScheduleItem["status"]>>({
     "sec-cit-1": "draft",
@@ -124,12 +157,16 @@ export const useScheduler = () => {
   const sectionSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
   const scheduledSubjectIds = new Set(sectionSchedules.map((s) => s.subjectId));
 
-  // Sections available for the active year-level filter (null = all years).
-  const visibleSections =
-    selectedYearLevel == null
-      ? MOCK_SECTIONS
-      : MOCK_SECTIONS.filter((s) => s.yearLevel === selectedYearLevel);
-  const yearLevels = YEAR_LEVELS;
+  const visibleSections = useMemo(
+    () => selectedYearLevel == null
+      ? sections
+      : sections.filter((s) => s.yearLevel === selectedYearLevel),
+    [sections, selectedYearLevel]
+  );
+  const yearLevels = useMemo(
+    () => Array.from(new Set(sections.map((s) => s.yearLevel))).sort((a, b) => a - b),
+    [sections]
+  );
   const totalSubjects = MOCK_SUBJECTS.length;
   const totalScheduled = new Set(sectionSchedules.map((s) => s.subjectId)).size;
 
@@ -266,7 +303,7 @@ export const useScheduler = () => {
       return;
     }
     const room = rooms.find((r) => r.id === modalRoomId);
-    const section = MOCK_SECTIONS.find((s) => s.id === selectedSectionId);
+    const section = sections.find((s) => s.id === selectedSectionId);
     if (dropContext.isRescheduling && dropContext.scheduleId) {
       setSchedules((prev) =>
         prev.map((s) =>
@@ -345,7 +382,7 @@ export const useScheduler = () => {
       return;
     }
     const clearedCount = sectionSchedules.length;
-    const sectionName = MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name ?? "the section";
+    const sectionName = sections.find((s) => s.id === selectedSectionId)?.name ?? "the section";
     setSchedules((prev) => prev.filter((s) => s.sectionId !== selectedSectionId));
     setConflictInfo(null);
     setPlacementSubjectId(null);
@@ -460,7 +497,7 @@ export const useScheduler = () => {
     // If the current section no longer belongs to the chosen year, clear it
     // so the user picks a section within that year level.
     if (year != null) {
-      const stillValid = MOCK_SECTIONS.some(
+      const stillValid = sections.some(
         (s) => s.id === selectedSectionId && s.yearLevel === year
       );
       if (!stillValid) {
@@ -668,6 +705,7 @@ export const useScheduler = () => {
     hoveredCell,
     schedules,
     rooms,
+    sections,
     setSchedules,
     selectedSectionId,
     selectedYearLevel,

@@ -16,11 +16,11 @@ export const MOCK_SUBJECTS: Subject[] = [
 ];
 
 export const MOCK_SECTIONS: Section[] = [
-  { id: "sec-cas-1", name: "BS-Psych 1A", yearLevel: 1 },
-  { id: "sec-cas-2", name: "BS-Psych 2A", yearLevel: 2 },
-  { id: "sec-cit-3", name: "BSIT 3A", yearLevel: 3 },
-  { id: "sec-cit-1", name: "BSCS 4A", yearLevel: 4 },
-  { id: "sec-cit-2", name: "BSCS 4B", yearLevel: 4 }
+  { id: "sec-cas-1", name: "BS-Psych 1A", yearLevel: 1, departmentId: 1 },
+  { id: "sec-cas-2", name: "BS-Psych 2A", yearLevel: 2, departmentId: 1 },
+  { id: "sec-cit-3", name: "BSIT 3A", yearLevel: 3, departmentId: 6 },
+  { id: "sec-cit-1", name: "BSCS 4A", yearLevel: 4, departmentId: 6 },
+  { id: "sec-cit-2", name: "BSCS 4B", yearLevel: 4, departmentId: 6 }
 ];
 
 // Distinct year levels available for the section filter (ascending).

@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, Trash2, X } from "lucide-react";
-import { MOCK_SECTIONS } from "../constants";
-import type { ScheduleItem } from "../types";
+import type { ScheduleItem, Section } from "../types";
 
 interface ClearAllModalProps {
+  sections: Section[];
   isClearAllModalOpen: boolean;
   selectedSectionId: string;
   sectionSchedules: ScheduleItem[];
@@ -12,6 +12,7 @@ interface ClearAllModalProps {
 }
 
 export default function ClearAllModal({
+  sections,
   isClearAllModalOpen,
   selectedSectionId,
   sectionSchedules,
@@ -33,7 +34,7 @@ export default function ClearAllModal({
 
   if (!isClearAllModalOpen) return null;
 
-  const sectionName = MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name ?? "this section";
+  const sectionName = sections.find((s) => s.id === selectedSectionId)?.name ?? "this section";
   const classCount = sectionSchedules.length;
 
   return (

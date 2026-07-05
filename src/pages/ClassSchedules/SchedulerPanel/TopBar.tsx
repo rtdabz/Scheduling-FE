@@ -1,9 +1,10 @@
 import type React from "react";
 import { CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, Users } from "lucide-react";
-import { MOCK_SECTIONS, yearLevelLabel } from "./constants";
+import { yearLevelLabel } from "./constants";
 import type { ScheduleItem, Section } from "./types";
 
 interface TopBarProps {
+  sections: Section[];
   selectedSectionId: string;
   isSectionDropdownOpen: boolean;
   setIsSectionDropdownOpen: (value: boolean) => void;
@@ -25,6 +26,7 @@ interface TopBarProps {
 }
 
 export default function TopBar({
+  sections,
   selectedSectionId,
   isSectionDropdownOpen,
   setIsSectionDropdownOpen,
@@ -104,7 +106,7 @@ export default function TopBar({
                 onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
                 className="flex items-center justify-between text-sm bg-white border border-gray-300 rounded-lg px-4 py-2 outline-none hover:border-gray-400 focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] font-medium gap-2 min-w-[160px] transition-colors"
               >
-                <span className="text-gray-808">{MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name ?? "-- Choose Section --"}</span>
+                <span className="text-gray-808">{sections.find((s) => s.id === selectedSectionId)?.name ?? "-- Choose Section --"}</span>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isSectionDropdownOpen ? "rotate-180" : ""}`} />
               </button>
               {isSectionDropdownOpen && (
@@ -136,7 +138,7 @@ export default function TopBar({
             <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg select-none">
               <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Active:</span>
               <span className="text-sm font-bold text-amber-800">
-                {MOCK_SECTIONS.find((s) => s.id === selectedSectionId)?.name}
+                {sections.find((s) => s.id === selectedSectionId)?.name}
               </span>
             </div>
           )}

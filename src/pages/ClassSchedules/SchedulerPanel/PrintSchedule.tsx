@@ -4,10 +4,10 @@ import autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ScheduleItem } from "./types";
-import { MOCK_SECTIONS } from "./constants";
+import type { ScheduleItem, Section } from "./types";
 
 interface PrintScheduleProps {
+  sections: Section[];
   isPrintModalOpen: boolean;
   setIsPrintModalOpen: (value: boolean) => void;
   allSchedules: ScheduleItem[];
@@ -26,6 +26,7 @@ const SIGNATORIES = {
 };
 
 export default function PrintSchedule({
+  sections,
   isPrintModalOpen,
   setIsPrintModalOpen,
   allSchedules,
@@ -198,9 +199,11 @@ export default function PrintSchedule({
 
     currentY += 13;
 
-    // Determine target department prefix (e.g. "cit" or "cas" from "sec-cit-1")
-    const targetPrefix = selectedSectionId.split("-")[1] || "cit";
-    const targetSections = MOCK_SECTIONS.filter((s) => s.id.split("-")[1] === targetPrefix);
+    // Determine target sections belonging to the same department as the active section
+    const activeSection = sections.find((s) => s.id === selectedSectionId);
+    const targetSections = activeSection
+      ? sections.filter((s) => s.departmentId === activeSection.departmentId)
+      : sections;
 
     targetSections.forEach((section) => {
       // Prevent orphaned header bar at page bottom

@@ -10,6 +10,7 @@ export interface Section {
   id: string;
   name: string;
   yearLevel: number;
+  departmentId?: number;
 }
 
 export interface Faculty {
