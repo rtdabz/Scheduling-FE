@@ -4,17 +4,17 @@ import api from "../../../../lib/api";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
-  MOCK_SUBJECTS,
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, ScheduleItem, Room, Section } from "../types";
+import type { ConflictInfo, ScheduleItem, Room, Section, Subject } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 
 interface TimetableGridProps {
   sections: Section[];
   rooms: Room[];
+  subjects: Subject[];
   selectedSectionId: string;
   totalScheduled: number;
   totalSubjects: number;
@@ -50,6 +50,7 @@ interface TimetableGridProps {
 export default function TimetableGrid({
   sections,
   rooms,
+  subjects,
   selectedSectionId,
   totalScheduled,
   totalSubjects,
@@ -105,7 +106,7 @@ export default function TimetableGrid({
 
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const placementLabel = placementSubjectId
-    ? MOCK_SUBJECTS.find((s) => s.id === placementSubjectId)?.code ?? "subject"
+    ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
     : movingScheduleId
     ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
     : "";
@@ -268,7 +269,7 @@ export default function TimetableGrid({
               ))}
 
               {sectionSchedules.map((schedule) => {
-                const subject = MOCK_SUBJECTS.find((s) => s.id === schedule.subjectId);
+                const subject = subjects.find((s) => s.id === schedule.subjectId);
                 if (!subject) return null;
                 return (
                   <ScheduleCard

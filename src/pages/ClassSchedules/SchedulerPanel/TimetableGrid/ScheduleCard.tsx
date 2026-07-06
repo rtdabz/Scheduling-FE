@@ -3,7 +3,6 @@ import { CheckCircle2, Clock, MapPin, User, UserPlus, X } from "lucide-react";
 import {
   getGridCardStyles,
   getGridModeBadgeClass,
-  MOCK_FACULTY,
   SLOT_HEIGHT_PX
 } from "../constants";
 import type { ScheduleItem, Subject, Room } from "../types";
@@ -41,7 +40,6 @@ export default function ScheduleCard({
   onDelete,
   onCardClick
 }: ScheduleCardProps) {
-  const faculty = MOCK_FACULTY.find((f) => f.id === schedule.facultyId);
   const room = rooms.find((r) => r.id === schedule.roomId);
   const gridStyles = getGridCardStyles(subject.category);
   const modeBadgeClass = getGridModeBadgeClass(schedule.mode);
@@ -149,7 +147,7 @@ export default function ScheduleCard({
               <div className="flex items-center gap-1 truncate">
                 <User className="w-3 h-3 shrink-0 text-gray-400" />
                 {hasFaculty ? (
-                  <span className="text-[10px] text-gray-500 truncate">{faculty?.name ?? schedule.facultyName}</span>
+                  <span className="text-[10px] text-gray-500 truncate">{schedule.facultyName}</span>
                 ) : (
                   <span className="text-[10px] text-gray-400 italic truncate">No Faculty</span>
                 )}

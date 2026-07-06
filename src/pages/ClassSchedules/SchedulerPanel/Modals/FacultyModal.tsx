@@ -1,7 +1,7 @@
 import type React from "react";
 import { AlertTriangle, User, X } from "lucide-react";
-import { getCategoryStyles, MOCK_FACULTY, MOCK_SUBJECTS } from "../constants";
-import type { FacultyAssignmentPopupState, ScheduleItem } from "../types";
+import { getCategoryStyles } from "../constants";
+import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
   facultyAssignmentPopup: FacultyAssignmentPopupState | null;
@@ -12,6 +12,8 @@ interface FacultyModalProps {
   handlePopupFacultyChange: (facultyId: string) => void;
   handleAssignFaculty: (e: React.FormEvent) => void;
   handleRemoveFaculty: () => void;
+  subjects: Subject[];
+  faculties: Faculty[];
 }
 
 export default function FacultyModal({
@@ -22,12 +24,14 @@ export default function FacultyModal({
   setFacultyAssignmentPopup,
   handlePopupFacultyChange,
   handleAssignFaculty,
-  handleRemoveFaculty
+  handleRemoveFaculty,
+  subjects,
+  faculties
 }: FacultyModalProps) {
   if (!facultyAssignmentPopup) return null;
   const schedule = schedules.find((s) => s.id === facultyAssignmentPopup.scheduleId);
   if (!schedule) return null;
-  const subject = MOCK_SUBJECTS.find((s) => s.id === schedule.subjectId);
+  const subject = subjects.find((s) => s.id === schedule.subjectId);
   const subStyles = subject ? getCategoryStyles(subject.category) : null;
 
   return (
@@ -74,7 +78,7 @@ export default function FacultyModal({
               className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-[#4e0a10] font-semibold transition-colors"
             >
               <option value="">-- Choose Faculty --</option>
-              {MOCK_FACULTY.map((f) => (
+              {faculties.map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
             </select>

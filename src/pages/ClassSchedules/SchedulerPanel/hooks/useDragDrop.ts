@@ -1,6 +1,6 @@
 import type React from "react";
-import { DAYS, MOCK_SUBJECTS, slotToTimeStr } from "../constants";
-import type { ConflictInfo, DropContext, ScheduleItem } from "../types";
+import { DAYS, slotToTimeStr } from "../constants";
+import type { ConflictInfo, DropContext, ScheduleItem, Subject } from "../types";
 
 type CheckConflict = (
   subjectId: string,
@@ -19,6 +19,7 @@ interface UseDragDropParams {
   dragSubjectId: string | null;
   draggedScheduleId: string | null;
   hoveredCell: string | null;
+  subjects: Subject[];
   setDragSubjectId: React.Dispatch<React.SetStateAction<string | null>>;
   setDraggedScheduleId: React.Dispatch<React.SetStateAction<string | null>>;
   setDragFromCell: React.Dispatch<React.SetStateAction<string | null>>;
@@ -27,6 +28,7 @@ interface UseDragDropParams {
   setDropContext: React.Dispatch<React.SetStateAction<DropContext | null>>;
   setConflictInfo: React.Dispatch<React.SetStateAction<ConflictInfo | null>>;
   checkConflict: CheckConflict;
+  onScheduleRelocated?: (scheduleId: string, dayIndex: number, timeIndex: number) => void;
 }
 
 export const useDragDrop = ({
@@ -35,6 +37,7 @@ export const useDragDrop = ({
   dragSubjectId,
   draggedScheduleId,
   hoveredCell,
+  subjects,
   setDragSubjectId,
   setDraggedScheduleId,
   setDragFromCell,
@@ -42,7 +45,8 @@ export const useDragDrop = ({
   setSchedules,
   setDropContext,
   setConflictInfo,
-  checkConflict
+  checkConflict,
+  onScheduleRelocated
 }: UseDragDropParams) => {
   const handleDragStartFromBank = (e: React.DragEvent, subjectId: string) => {
     setDragSubjectId(subjectId);
@@ -105,23 +109,31 @@ export const useDragDrop = ({
         return;
       }
 
-      setSchedules((prev) =>
-        prev.map((s) =>
-          s.id === draggedScheduleId
-            ? {
-                ...s,
-                dayIndex,
-                startSlot: timeIndex,
-                day: DAYS[dayIndex],
-                startTime: slotToTimeStr(timeIndex),
-                endTime: slotToTimeStr(timeIndex + s.durationSlots)
-              }
-            : s
-        )
-      );
+      if (onScheduleRelocated) {
+        onScheduleRelocated(draggedScheduleId, dayIndex, timeIndex);
+      } else {
+        setSchedules((prev) =>
+          prev.map((s) =>
+            s.id === draggedScheduleId
+              ? {
+                  ...s,
+                  dayIndex,
+                  startSlot: timeIndex,
+                  day: DAYS[dayIndex],
+                  startTime: slotToTimeStr(timeIndex),
+                  endTime: slotToTimeStr(timeIndex + s.durationSlots)
+                }
+              : s
+          )
+        );
+      }
       setDraggedScheduleId(null);
       setDragFromCell(null);
     } else {
+      const subjectId = e.dataTransfer.getData("text/plain") || dragSubjectId;
+      if (!subjectId) return;
+      const sub = subjects.find((s) => s.id === subjectId);
+      if (!sub) return;
       setDropContext({ subjectId, dayIndex, startSlot: timeIndex, isRescheduling: false });
       setDragSubjectId(null);
     }

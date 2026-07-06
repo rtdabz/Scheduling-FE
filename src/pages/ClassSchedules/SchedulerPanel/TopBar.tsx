@@ -16,7 +16,7 @@ interface TopBarProps {
   visibleSections: Section[];
   yearLevels: number[];
   currentStatus: ScheduleItem["status"];
-  setScheduleStatus: React.Dispatch<React.SetStateAction<Record<string, ScheduleItem["status"]>>>;
+  setScheduleStatus: (value: any) => void;
   isPhase1Completed: boolean;
   isPhase2Active: boolean;
   isPhase2Completed: boolean;

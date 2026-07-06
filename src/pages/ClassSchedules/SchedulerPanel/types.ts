@@ -3,7 +3,12 @@ export interface Subject {
   code: string;
   name: string;
   units: number;
+  lectureHours: number;
+  labHours: number;
   category: "major" | "gec" | "gee" | "pathfit" | "nstp";
+  semester: "1st" | "2nd" | "summer";
+  departmentId: number | null;
+  yearLevel?: number;
 }
 
 export interface Section {

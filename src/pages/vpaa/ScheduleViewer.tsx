@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Filter,
   RefreshCw,
@@ -9,6 +9,7 @@ import {
   Info,
   Calendar
 } from "lucide-react";
+import api from "../../lib/api";
 
 // TypeScript Interfaces
 export interface Department {
@@ -40,6 +41,7 @@ export interface Schedule {
   sectionName: string;
   departmentId: string;
   departmentName: string;
+  departmentCode: string;
   subjectCode: string;
   subjectName: string;
   facultyName: string;
@@ -50,332 +52,37 @@ export interface Schedule {
   mode: 'on-site' | 'online' | 'field';
 }
 
-// Static Mock Data
-const MOCK_DEPARTMENTS: Department[] = [
-  { id: "dept-cas", name: "College of Arts and Sciences", code: "CAS" },
-  { id: "dept-cit", name: "College of Information Technology", code: "CIT" },
-  { id: "dept-ced", name: "College of Education", code: "CED" },
-  { id: "dept-cba", name: "College of Business Administration", code: "CBA" },
-  { id: "dept-chm", name: "College of Hospitality Management", code: "CHM" },
-  { id: "dept-clis", name: "College of Library and Information Science", code: "CLIS" },
-  { id: "dept-ccjps", name: "College of Criminal Justice and Public Safety", code: "CCJPS" }
-];
+const dayMapToIndex: Record<string, number> = {
+  "Monday": 0,
+  "Tuesday": 1,
+  "Wednesday": 2,
+  "Thursday": 3,
+  "Friday": 4,
+  "Saturday": 5,
+  "Sunday": 6
+};
 
-const MOCK_SECTIONS: Section[] = [
-  // CAS
-  { id: "sec-cas-1", name: "BS-Psych 1A", departmentId: "dept-cas" },
-  { id: "sec-cas-2", name: "BS-Psych 2A", departmentId: "dept-cas" },
-  // CIT
-  { id: "sec-cit-1", name: "BSCS 4A", departmentId: "dept-cit" },
-  { id: "sec-cit-2", name: "BSCS 4B", departmentId: "dept-cit" },
-  { id: "sec-cit-3", name: "BSIT 3A", departmentId: "dept-cit" },
-  // CED
-  { id: "sec-ced-1", name: "BSED 1A", departmentId: "dept-ced" },
-  { id: "sec-ced-2", name: "BEED 2A", departmentId: "dept-ced" },
-  // CBA
-  { id: "sec-cba-1", name: "BSBA 3A", departmentId: "dept-cba" },
-  { id: "sec-cba-2", name: "BSBA 4A", departmentId: "dept-cba" },
-  // CHM
-  { id: "sec-chm-1", name: "BSHM 1A", departmentId: "dept-chm" },
-  // CLIS
-  { id: "sec-clis-1", name: "BLIS 1A", departmentId: "dept-clis" },
-  // CCJPS
-  { id: "sec-ccjps-1", name: "BSCrim 1A", departmentId: "dept-ccjps" }
-];
+const DAYS_MAP = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const MOCK_FACULTY: Faculty[] = [
-  // CAS
-  { id: "fac-cas-1", name: "Dr. Marie Curie", departmentId: "dept-cas" },
-  { id: "fac-cas-2", name: "Prof. Albert Einstein", departmentId: "dept-cas" },
-  // CIT
-  { id: "fac-cit-1", name: "Dr. Alan Turing", departmentId: "dept-cit" },
-  { id: "fac-cit-2", name: "Dr. Grace Hopper", departmentId: "dept-cit" },
-  { id: "fac-cit-3", name: "Prof. Ada Lovelace", departmentId: "dept-cit" },
-  // CED
-  { id: "fac-ced-1", name: "Dr. Maria Montessori", departmentId: "dept-ced" },
-  { id: "fac-ced-2", name: "Prof. John Dewey", departmentId: "dept-ced" },
-  // CBA
-  { id: "fac-cba-1", name: "Dr. Adam Smith", departmentId: "dept-cba" },
-  { id: "fac-cba-2", name: "Prof. John Keynes", departmentId: "dept-cba" },
-  // CHM
-  { id: "fac-chm-1", name: "Dr. Auguste Escoffier", departmentId: "dept-chm" },
-  // CLIS
-  { id: "fac-clis-1", name: "Prof. Melvil Dewey", departmentId: "dept-clis" },
-  // CCJPS
-  { id: "fac-ccjps-1", name: "Dr. Cesare Lombroso", departmentId: "dept-ccjps" }
-];
+const timeStrToSlot = (timeStr: string): number => {
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return 0;
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const totalMinutes = hours * 60 + minutes;
+  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
+};
 
-const MOCK_ROOMS: Room[] = [
-  // AS Rooms
-  { id: "1", name: "NEE 201" },
-  { id: "2", name: "NEE 202" },
-  { id: "3", name: "NEE 203" },
-  // BA Rooms
-  { id: "4", name: "BA 201" },
-  { id: "5", name: "BA 202" },
-  { id: "6", name: "BA 203" },
-  { id: "7", name: "BA 204" },
-  { id: "8", name: "BA 205" },
-  { id: "9", name: "BA 206" },
-  { id: "10", name: "BA Simulation" },
-  // EDUC Rooms
-  { id: "11", name: "Educ 101" },
-  { id: "12", name: "Educ 102" },
-  { id: "13", name: "Educ 103" },
-  { id: "14", name: "Educ 104" },
-  { id: "15", name: "NEE 301" },
-  { id: "16", name: "NEE 302" },
-  { id: "17", name: "NEE 303" },
-  // HM Rooms
-  { id: "18", name: "HM 201" },
-  { id: "19", name: "HM 202" },
-  { id: "20", name: "HM 203" },
-  { id: "21", name: "HM 204" },
-  { id: "22", name: "HM Simulation" },
-  // IT Rooms
-  { id: "23", name: "IT 105" },
-  { id: "24", name: "NEE 204" },
-  { id: "25", name: "CompLab1 - Laboratory 1" },
-  { id: "26", name: "CompLab2 - Laboratory 2" },
-  { id: "27", name: "CompLab3 - Laboratory 3" },
-  { id: "28", name: "CompLab4 - Laboratory 4" },
-  // LIS Rooms
-  { id: "29", name: "Lib Bldg - Library" },
-  { id: "30", name: "Educ 105" },
-  { id: "31", name: "NEE 304" },
-  { id: "32", name: "GF" },
-  // MID Rooms
-  { id: "33", name: "NEE 101" },
-  { id: "34", name: "NEE 102" },
-  { id: "35", name: "NEE 103" },
-  { id: "36", name: "NEE 104" }
-];
+const slotToTimeStr12h = (slotIndex: number): string => {
+  const totalMinutes = 7 * 60 + slotIndex * 30;
+  let hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const ampm = hours >= 12 ? "PM" : "AM";
+  if (hours > 12) hours -= 12;
+  if (hours === 0) hours = 12;
+  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+};
 
-const MOCK_SCHEDULES: Schedule[] = [
-  // CIT (Blue)
-  {
-    id: "sched-1",
-    sectionId: "sec-cit-1",
-    sectionName: "BSCS 4A",
-    departmentId: "dept-cit",
-    departmentName: "College of Information Technology",
-    subjectCode: "CS 401",
-    subjectName: "Intelligent Systems",
-    facultyName: "Dr. Alan Turing",
-    roomName: "CompLab1 - Laboratory 1",
-    day: "Mon",
-    startTime: "09:00 AM",
-    endTime: "10:30 AM",
-    mode: "on-site"
-  },
-  {
-    id: "sched-2",
-    sectionId: "sec-cit-1",
-    sectionName: "BSCS 4A",
-    departmentId: "dept-cit",
-    departmentName: "College of Information Technology",
-    subjectCode: "CS 402",
-    subjectName: "Software Engineering",
-    facultyName: "Dr. Grace Hopper",
-    roomName: "IT 105",
-    day: "Wed",
-    startTime: "09:00 AM",
-    endTime: "10:30 AM",
-    mode: "online"
-  },
-  {
-    id: "sched-3",
-    sectionId: "sec-cit-2",
-    sectionName: "BSCS 4B",
-    departmentId: "dept-cit",
-    departmentName: "College of Information Technology",
-    subjectCode: "CS 403",
-    subjectName: "Network Security",
-    facultyName: "Prof. Ada Lovelace",
-    roomName: "CompLab2 - Laboratory 2",
-    day: "Tue",
-    startTime: "10:30 AM",
-    endTime: "12:00 PM",
-    mode: "on-site"
-  },
-  {
-    id: "sched-4",
-    sectionId: "sec-cit-3",
-    sectionName: "BSIT 3A",
-    departmentId: "dept-cit",
-    departmentName: "College of Information Technology",
-    subjectCode: "IT 301",
-    subjectName: "Database Administration",
-    facultyName: "Dr. Alan Turing",
-    roomName: "CompLab1 - Laboratory 1",
-    day: "Thu",
-    startTime: "01:00 PM",
-    endTime: "03:00 PM",
-    mode: "on-site"
-  },
-  
-  // CAS (Yellow/Amber)
-  {
-    id: "sched-5",
-    sectionId: "sec-cas-1",
-    sectionName: "BS-Psych 1A",
-    departmentId: "dept-cas",
-    departmentName: "College of Arts and Sciences",
-    subjectCode: "GE 101",
-    subjectName: "Understanding the Self",
-    facultyName: "Dr. Marie Curie",
-    roomName: "NEE 201",
-    day: "Mon",
-    startTime: "01:00 PM",
-    endTime: "02:30 PM",
-    mode: "on-site"
-  },
-  {
-    id: "sched-6",
-    sectionId: "sec-cas-1",
-    sectionName: "BS-Psych 1A",
-    departmentId: "dept-cas",
-    departmentName: "College of Arts and Sciences",
-    subjectCode: "GE 102",
-    subjectName: "Readings in Philippine History",
-    facultyName: "Prof. Albert Einstein",
-    roomName: "NEE 201",
-    day: "Wed",
-    startTime: "01:00 PM",
-    endTime: "02:30 PM",
-    mode: "online"
-  },
-  {
-    id: "sched-7",
-    sectionId: "sec-cas-2",
-    sectionName: "BS-Psych 2A",
-    departmentId: "dept-cas",
-    departmentName: "College of Arts and Sciences",
-    subjectCode: "GE 103",
-    subjectName: "The Contemporary World",
-    facultyName: "Dr. Marie Curie",
-    roomName: "NEE 202",
-    day: "Fri",
-    startTime: "09:00 AM",
-    endTime: "10:30 AM",
-    mode: "on-site"
-  },
-  
-  // CED (Purple)
-  {
-    id: "sched-8",
-    sectionId: "sec-ced-1",
-    sectionName: "BSED 1A",
-    departmentId: "dept-ced",
-    departmentName: "College of Education",
-    subjectCode: "EDUC 101",
-    subjectName: "Child and Adolescent Development",
-    facultyName: "Dr. Maria Montessori",
-    roomName: "Educ 101",
-    day: "Tue",
-    startTime: "08:30 AM",
-    endTime: "10:00 AM",
-    mode: "on-site"
-  },
-  {
-    id: "sched-9",
-    sectionId: "sec-ced-1",
-    sectionName: "BSED 1A",
-    departmentId: "dept-ced",
-    departmentName: "College of Education",
-    subjectCode: "EDUC 102",
-    subjectName: "The Teaching Profession",
-    facultyName: "Prof. John Dewey",
-    roomName: "Educ 101",
-    day: "Thu",
-    startTime: "08:30 AM",
-    endTime: "10:00 AM",
-    mode: "online"
-  },
-  
-  // CBA (Emerald)
-  {
-    id: "sched-10",
-    sectionId: "sec-cba-1",
-    sectionName: "BSBA 3A",
-    departmentId: "dept-cba",
-    departmentName: "College of Business Administration",
-    subjectCode: "ACTG 101",
-    subjectName: "Financial Accounting",
-    facultyName: "Dr. Adam Smith",
-    roomName: "BA 201",
-    day: "Mon",
-    startTime: "10:30 AM",
-    endTime: "12:00 PM",
-    mode: "on-site"
-  },
-  {
-    id: "sched-11",
-    sectionId: "sec-cba-1",
-    sectionName: "BSBA 3A",
-    departmentId: "dept-cba",
-    departmentName: "College of Business Administration",
-    subjectCode: "ACTG 102",
-    subjectName: "Managerial Accounting",
-    facultyName: "Prof. John Keynes",
-    roomName: "BA 201",
-    day: "Wed",
-    startTime: "10:30 AM",
-    endTime: "12:00 PM",
-    mode: "online"
-  },
-  
-  // CHM (Rose)
-  {
-    id: "sched-12",
-    sectionId: "sec-chm-1",
-    sectionName: "BSHM 1A",
-    departmentId: "dept-chm",
-    departmentName: "College of Hospitality Management",
-    subjectCode: "HM 101",
-    subjectName: "Introduction to Hospitality Industry",
-    facultyName: "Dr. Auguste Escoffier",
-    roomName: "HM 201",
-    day: "Fri",
-    startTime: "01:30 PM",
-    endTime: "03:30 PM",
-    mode: "on-site"
-  },
- 
-  // CLIS (Sky)
-  {
-    id: "sched-13",
-    sectionId: "sec-clis-1",
-    sectionName: "BLIS 1A",
-    departmentId: "dept-clis",
-    departmentName: "College of Library and Information Science",
-    subjectCode: "LIS 101",
-    subjectName: "Foundations of Library Information Science",
-    facultyName: "Prof. Melvil Dewey",
-    roomName: "Educ 105",
-    day: "Sat",
-    startTime: "09:00 AM",
-    endTime: "12:00 PM",
-    mode: "on-site"
-  },
- 
-  // CCJPS (Red)
-  {
-    id: "sched-14",
-    sectionId: "sec-ccjps-1",
-    sectionName: "BSCrim 1A",
-    departmentId: "dept-ccjps",
-    departmentName: "College of Criminal Justice and Public Safety",
-    subjectCode: "CRIM 101",
-    subjectName: "Introduction to Criminology",
-    facultyName: "Dr. Cesare Lombroso",
-    roomName: "NEE 203",
-    day: "Tue",
-    startTime: "01:30 PM",
-    endTime: "03:00 PM",
-    mode: "on-site"
-  }
-];
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -549,6 +256,14 @@ const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
 };
 
 export default function ScheduleViewer() {
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [activeTerm, setActiveTerm] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
   // Filters State
   const [selectedDeptId, setSelectedDeptId] = useState<string>("All");
   const [selectedSectionId, setSelectedSectionId] = useState<string>("All");
@@ -559,13 +274,113 @@ export default function ScheduleViewer() {
   // Hover State for tooltips
   const [hoveredScheduleId, setHoveredScheduleId] = useState<string | null>(null);
 
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        // Fetch active term first
+        const termRes = await api.get<any>('/terms/active');
+        const term = termRes.data;
+        setActiveTerm(term);
+
+        // Fetch all other data in parallel
+        const [deptsRes, sectionsRes, facultiesRes, roomsRes, schedulesRes] = await Promise.all([
+          api.get<any[]>('/departments'),
+          api.get<any[]>('/sections'),
+          api.get<any[]>('/faculties'),
+          api.get<any[]>('/rooms'),
+          api.get<any[]>('/schedules')
+        ]);
+
+        // Map departments
+        const mappedDepts = deptsRes.data.map((d: any) => ({
+          id: d.id.toString(),
+          name: d.department_name,
+          code: d.department_code
+        }));
+        setDepartments(mappedDepts);
+
+        // Map sections (filtered by active term)
+        let rawSections = sectionsRes.data;
+        if (term) {
+          rawSections = rawSections.filter((s: any) => Number(s.term_id) === Number(term.id));
+        }
+        const mappedSections = rawSections.map((s: any) => ({
+          id: s.id.toString(),
+          name: s.section_name,
+          departmentId: s.department_id ? s.department_id.toString() : ""
+        }));
+        setSections(mappedSections);
+
+        // Map faculties
+        const mappedFaculties = facultiesRes.data.map((f: any) => ({
+          id: f.id.toString(),
+          name: `${f.first_name} ${f.last_name}`,
+          departmentId: f.department_id ? f.department_id.toString() : ""
+        }));
+        setFaculties(mappedFaculties);
+
+        // Map rooms
+        const mappedRooms = roomsRes.data.map((r: any) => ({
+          id: r.id.toString(),
+          name: r.room_code + (r.room_name ? ` - ${r.room_name}` : '')
+        }));
+        setRooms(mappedRooms);
+
+        // Map schedules (filtered by active term)
+        let rawSchedules = schedulesRes.data;
+        if (term) {
+          rawSchedules = rawSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
+        }
+
+        const mappedSchedules: Schedule[] = rawSchedules.map((item: any) => {
+          let roomName = "";
+          if (item.room) {
+            if (item.room.room_code === "ONLINE") roomName = "Online";
+            else if (item.room.room_code === "FIELD") roomName = "Field";
+            else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+          }
+
+          const dayIndex = dayMapToIndex[item.day] ?? 0;
+          const startSlot = timeStrToSlot(item.start_time);
+          const endSlot = timeStrToSlot(item.end_time);
+
+          return {
+            id: item.id.toString(),
+            sectionId: item.section_id.toString(),
+            sectionName: item.section?.section_name ?? "",
+            departmentId: item.department_id ? item.department_id.toString() : "",
+            departmentName: item.department?.department_name ?? "",
+            departmentCode: item.department?.department_code ?? "",
+            subjectCode: item.subject?.subject_code ?? "",
+            subjectName: item.subject?.subject_name ?? "",
+            facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : "Unassigned",
+            roomName,
+            day: DAYS_MAP[dayIndex] || "Mon",
+            startTime: slotToTimeStr12h(startSlot),
+            endTime: slotToTimeStr12h(endSlot),
+            mode: item.mode ?? "on-site"
+          };
+        });
+        setSchedules(mappedSchedules);
+
+      } catch (err) {
+        console.error("Failed to load VPAA schedule viewer data", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
   // Dynamic Options filtering based on department selection
-  const filteredSections = MOCK_SECTIONS.filter((sec) => {
+  const filteredSections = sections.filter((sec) => {
     if (selectedDeptId === "All") return true;
     return sec.departmentId === selectedDeptId;
   });
 
-  const filteredFaculty = MOCK_FACULTY.filter((fac) => {
+  const filteredFaculty = faculties.filter((fac) => {
     if (selectedDeptId === "All") return true;
     return fac.departmentId === selectedDeptId;
   });
@@ -577,13 +392,13 @@ export default function ScheduleViewer() {
 
     // Reset section filter if the currently selected section does not belong to the new department
     if (deptId !== "All") {
-      const activeSec = MOCK_SECTIONS.find((s) => s.id === selectedSectionId);
+      const activeSec = sections.find((s) => s.id === selectedSectionId);
       if (activeSec && activeSec.departmentId !== deptId) {
         setSelectedSectionId("All");
       }
 
       // Reset faculty filter if the currently selected faculty does not belong to the new department
-      const activeFac = MOCK_FACULTY.find((f) => f.id === selectedFacultyId);
+      const activeFac = faculties.find((f) => f.id === selectedFacultyId);
       if (activeFac && activeFac.departmentId !== deptId) {
         setSelectedFacultyId("All");
       }
@@ -599,7 +414,7 @@ export default function ScheduleViewer() {
   };
 
   // Real-time schedules filtering (AND logic)
-  const filteredSchedules = MOCK_SCHEDULES.filter((s) => {
+  const filteredSchedules = schedules.filter((s) => {
     if (selectedDeptId !== "All" && s.departmentId !== selectedDeptId) {
       return false;
     }
@@ -607,11 +422,11 @@ export default function ScheduleViewer() {
       return false;
     }
     if (selectedFacultyId !== "All") {
-      const facObj = MOCK_FACULTY.find((f) => f.id === selectedFacultyId);
+      const facObj = faculties.find((f) => f.id === selectedFacultyId);
       if (!facObj || s.facultyName !== facObj.name) return false;
     }
     if (selectedRoomId !== "All") {
-      const roomObj = MOCK_ROOMS.find((r) => r.id === selectedRoomId);
+      const roomObj = rooms.find((r) => r.id === selectedRoomId);
       if (!roomObj || s.roomName !== roomObj.name) return false;
     }
     if (selectedMode !== "All" && s.mode !== selectedMode) {
@@ -621,6 +436,15 @@ export default function ScheduleViewer() {
   });
 
   const timeSlots = generateTimeSlots();
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[400px] w-full">
+        <RefreshCw className="w-8 h-8 text-[#4e0a10] animate-spin mb-4" />
+        <p className="text-sm font-semibold text-slate-500">Loading schedules...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-800 font-sans min-w-[1200px]">
@@ -640,7 +464,7 @@ export default function ScheduleViewer() {
               className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none transition-all cursor-pointer"
             >
               <option value="All">All Departments</option>
-              {MOCK_DEPARTMENTS.map((dept) => (
+              {departments.map((dept) => (
                 <option key={dept.id} value={dept.id}>
                   {dept.code} - {dept.name}
                 </option>
@@ -688,7 +512,7 @@ export default function ScheduleViewer() {
               className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none transition-all cursor-pointer"
             >
               <option value="All">All Rooms</option>
-              {MOCK_ROOMS.map((room) => (
+              {rooms.map((room) => (
                 <option key={room.id} value={room.id}>
                   {room.name}
                 </option>
@@ -797,8 +621,8 @@ export default function ScheduleViewer() {
                       const left = layout ? `${layout.leftPct}%` : "0%";
                       const width = layout ? `${layout.widthPct}%` : "100%";
 
-                      const styleClasses = getDeptStyles(s.departmentId.split("-")[1]?.toUpperCase());
-                      const badgeClasses = getDeptBadgeStyles(s.departmentId.split("-")[1]?.toUpperCase());
+                      const styleClasses = getDeptStyles(s.departmentCode);
+                      const badgeClasses = getDeptBadgeStyles(s.departmentCode);
 
                       const isHovered = hoveredScheduleId === s.id;
 
@@ -925,7 +749,7 @@ export default function ScheduleViewer() {
           <Info className="w-4 h-4 text-slate-400 animate-pulse" />
           Department Color Legend:
         </span>
-        {MOCK_DEPARTMENTS.map((dept) => (
+        {departments.map((dept) => (
           <span key={dept.id} className="flex items-center gap-1.5">
             <span className={`w-3.5 h-3.5 rounded-lg border border-slate-300 shrink-0 ${getDeptBadgeStyles(dept.code)}`} />
             {dept.code}

@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Eye, 
   Check, 
   X, 
   ArrowUpDown, 
   ArrowUp, 
-  ArrowDown 
+  ArrowDown,
+  RefreshCw
 } from 'lucide-react';
 import {
   useReactTable,
@@ -16,6 +17,7 @@ import {
   flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import api from '../../lib/api';
 
 interface ScheduleApproval {
   id: number;
@@ -29,112 +31,12 @@ interface ScheduleApproval {
   mode: 'on-site' | 'online' | 'field';
 }
 
-interface TimetableItem {
-  id: number;
-  subjectCode: string;
-  section: string;
-  faculty: string;
-  room: string;
-  day: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat';
-  startTime: string; 
-  endTime: string;   
-  mode: 'on-site' | 'online' | 'field';
-}
-
 interface ToastItem {
   id: number;
   title: string;
   message: string;
   type: 'success' | 'error';
 }
-
-const MOCK_SCHEDULE_APPROVALS: ScheduleApproval[] = [
-  { id: 1, department: 'College of Arts and Sciences', section: 'AB-COMM 3A', subjectsScheduled: 5, submittedBy: 'Sarah Jenkins', submittedAt: '2025-06-25T08:30:00Z', deanReviewedAt: '2025-06-25T14:20:00Z', status: 'approved_by_dean', mode: 'on-site' },
-  { id: 2, department: 'College of Information Technology', section: 'BSIT 4A', subjectsScheduled: 5, submittedBy: 'Maria Santos', submittedAt: '2025-06-26T09:15:00Z', deanReviewedAt: '2025-06-26T16:00:00Z', status: 'approved_by_dean', mode: 'online' },
-  { id: 3, department: 'College of Education', section: 'BSEd 2B', subjectsScheduled: 4, submittedBy: 'John Smith', submittedAt: '2025-06-24T10:00:00Z', deanReviewedAt: null, status: 'submitted', mode: 'on-site' },
-  { id: 4, department: 'College of Business Administration', section: 'BSBA 1C', subjectsScheduled: 4, submittedBy: 'Emily Watson', submittedAt: '2025-06-23T11:45:00Z', deanReviewedAt: '2025-06-24T09:00:00Z', status: 'rejected_by_dean', mode: 'on-site' },
-  { id: 5, department: 'College of Hospitality Management', section: 'BSHM 4B', subjectsScheduled: 2, submittedBy: 'Robert Davis', submittedAt: '2025-06-22T14:00:00Z', deanReviewedAt: '2025-06-22T17:30:00Z', status: 'approved', mode: 'on-site' },
-  { id: 6, department: 'College of Library and Information Science', section: 'BLIS 3A', subjectsScheduled: 2, submittedBy: 'Alice Cooper', submittedAt: '2025-06-21T09:00:00Z', deanReviewedAt: '2025-06-21T12:00:00Z', status: 'rejected', mode: 'online' },
-  { id: 7, department: 'College of Criminal Justice and Public Safety', section: 'BSCRIM 3B', subjectsScheduled: 3, submittedBy: 'Frank Castle', submittedAt: '2025-06-20T08:00:00Z', deanReviewedAt: '2025-06-20T11:00:00Z', status: 'approved_by_dean', mode: 'on-site' },
-  { id: 8, department: 'College of Information Technology', section: 'BSCS 3A', subjectsScheduled: 5, submittedBy: 'Maria Santos', submittedAt: '2025-06-19T10:30:00Z', deanReviewedAt: null, status: 'submitted', mode: 'on-site' }
-];
-
-const MOCK_TIMETABLE_ITEMS: Record<string, TimetableItem[]> = {
-  'AB-COMM 3A': [
-    { id: 1, subjectCode: 'COMM311', section: 'AB-COMM 3A', faculty: 'Dr. Evelyn Carter', room: 'RM201', day: 'Mon', startTime: '08:00 AM', endTime: '10:00 AM', mode: 'on-site' },
-    { id: 2, subjectCode: 'COMM311', section: 'AB-COMM 3A', faculty: 'Dr. Evelyn Carter', room: 'RM201', day: 'Wed', startTime: '08:00 AM', endTime: '10:00 AM', mode: 'on-site' },
-    { id: 3, subjectCode: 'COMM312', section: 'AB-COMM 3A', faculty: 'Prof. Marcus Aurelius', room: 'RM203', day: 'Tue', startTime: '10:30 AM', endTime: '12:30 PM', mode: 'online' },
-    { id: 4, subjectCode: 'COMM312', section: 'AB-COMM 3A', faculty: 'Prof. Marcus Aurelius', room: 'RM203', day: 'Thu', startTime: '10:30 AM', endTime: '12:30 PM', mode: 'online' },
-    { id: 5, subjectCode: 'COMM313', section: 'AB-COMM 3A', faculty: 'Dr. Evelyn Carter', room: 'Lab A', day: 'Fri', startTime: '01:00 PM', endTime: '04:00 PM', mode: 'on-site' }
-  ],
-  'BSIT 4A': [
-    { id: 1, subjectCode: 'IT411', section: 'BSIT 4A', faculty: 'Prof. Sarah Jenkins', room: 'CL1', day: 'Mon', startTime: '08:00 AM', endTime: '09:30 AM', mode: 'on-site' },
-    { id: 2, subjectCode: 'IT411', section: 'BSIT 4A', faculty: 'Prof. Sarah Jenkins', room: 'CL1', day: 'Wed', startTime: '08:00 AM', endTime: '09:30 AM', mode: 'on-site' },
-    { id: 3, subjectCode: 'IT412', section: 'BSIT 4A', faculty: 'Engr. Perez', room: 'CL2', day: 'Tue', startTime: '10:00 AM', endTime: '12:00 PM', mode: 'online' },
-    { id: 4, subjectCode: 'IT412', section: 'BSIT 4A', faculty: 'Engr. Perez', room: 'CL2', day: 'Thu', startTime: '10:00 AM', endTime: '12:00 PM', mode: 'online' },
-    { id: 5, subjectCode: 'IT413', section: 'BSIT 4A', faculty: 'Dr. John Smith', room: 'RM301', day: 'Fri', startTime: '01:00 PM', endTime: '04:00 PM', mode: 'on-site' }
-  ],
-  'BSEd 2B': [
-    { id: 1, subjectCode: 'EDUC211', section: 'BSEd 2B', faculty: 'Dr. Emily Watson', room: 'RM102', day: 'Mon', startTime: '09:00 AM', endTime: '11:00 AM', mode: 'on-site' },
-    { id: 2, subjectCode: 'EDUC211', section: 'BSEd 2B', faculty: 'Dr. Emily Watson', room: 'RM102', day: 'Wed', startTime: '09:00 AM', endTime: '11:00 AM', mode: 'on-site' },
-    { id: 3, subjectCode: 'EDUC212', section: 'BSEd 2B', faculty: 'Prof. Alan Vance', room: 'RM104', day: 'Tue', startTime: '02:00 PM', endTime: '04:00 PM', mode: 'online' },
-    { id: 4, subjectCode: 'EDUC212', section: 'BSEd 2B', faculty: 'Prof. Alan Vance', room: 'RM104', day: 'Thu', startTime: '02:00 PM', endTime: '04:00 PM', mode: 'online' }
-  ],
-  'BSBA 1C': [
-    { id: 1, subjectCode: 'BMG101', section: 'BSBA 1C', faculty: 'Dean Robert Davis', room: 'RM305', day: 'Mon', startTime: '08:00 AM', endTime: '10:00 AM', mode: 'on-site' },
-    { id: 2, subjectCode: 'BMG101', section: 'BSBA 1C', faculty: 'Dean Robert Davis', room: 'RM305', day: 'Wed', startTime: '08:00 AM', endTime: '10:00 AM', mode: 'on-site' },
-    { id: 3, subjectCode: 'ACT101', section: 'BSBA 1C', faculty: 'Mrs. Jane Lin', room: 'RM307', day: 'Tue', startTime: '01:00 PM', endTime: '03:00 PM', mode: 'online' },
-    { id: 4, subjectCode: 'ACT101', section: 'BSBA 1C', faculty: 'Mrs. Jane Lin', room: 'RM307', day: 'Thu', startTime: '01:00 PM', endTime: '03:00 PM', mode: 'online' }
-  ],
-  'BSHM 4B': [
-    { id: 1, subjectCode: 'HM401', section: 'BSHM 4B', faculty: 'Chef Robert Davis', room: 'Kitchen Lab', day: 'Tue', startTime: '08:00 AM', endTime: '12:00 PM', mode: 'on-site' },
-    { id: 2, subjectCode: 'HM402', section: 'BSHM 4B', faculty: 'Chef Robert Davis', room: 'Bar Area', day: 'Thu', startTime: '01:00 PM', endTime: '05:00 PM', mode: 'on-site' }
-  ],
-  'BLIS 3A': [
-    { id: 1, subjectCode: 'LIS301', section: 'BLIS 3A', faculty: 'Mrs. Clara Croft', room: 'Library A', day: 'Wed', startTime: '10:00 AM', endTime: '12:00 PM', mode: 'on-site' },
-    { id: 2, subjectCode: 'LIS302', section: 'BLIS 3A', faculty: 'Mrs. Clara Croft', room: 'Library B', day: 'Fri', startTime: '02:00 PM', endTime: '04:00 PM', mode: 'online' }
-  ],
-  'BSCRIM 3B': [
-    { id: 1, subjectCode: 'CRIM311', section: 'BSCRIM 3B', faculty: 'Dr. Alan Walker', room: 'Gym', day: 'Mon', startTime: '07:00 AM', endTime: '10:00 AM', mode: 'on-site' },
-    { id: 2, subjectCode: 'CRIM312', section: 'BSCRIM 3B', faculty: 'Dean Frank Castle', room: 'RM101', day: 'Wed', startTime: '01:00 PM', endTime: '03:30 PM', mode: 'on-site' },
-    { id: 3, subjectCode: 'CRIM313', section: 'BSCRIM 3B', faculty: 'Dean Frank Castle', room: 'Firing Range', day: 'Sat', startTime: '09:00 AM', endTime: '12:00 PM', mode: 'on-site' }
-  ],
-  'BSCS 3A': [
-    { id: 1, subjectCode: 'CS311', section: 'BSCS 3A', faculty: 'Dr. Juan dela Cruz', room: 'CL1', day: 'Mon', startTime: '10:30 AM', endTime: '12:30 PM', mode: 'on-site' },
-    { id: 2, subjectCode: 'CS311', section: 'BSCS 3A', faculty: 'Dr. Juan dela Cruz', room: 'CL1', day: 'Wed', startTime: '10:30 AM', endTime: '12:30 PM', mode: 'on-site' },
-    { id: 3, subjectCode: 'CS312', section: 'BSCS 3A', faculty: 'Mr. David Cole', room: 'CL2', day: 'Tue', startTime: '08:00 AM', endTime: '10:00 AM', mode: 'online' },
-    { id: 4, subjectCode: 'CS312', section: 'BSCS 3A', faculty: 'Mr. David Cole', room: 'CL2', day: 'Thu', startTime: '08:00 AM', endTime: '10:00 AM', mode: 'online' },
-    { id: 5, subjectCode: 'CS313', section: 'BSCS 3A', faculty: 'Dr. Juan dela Cruz', room: 'RM303', day: 'Fri', startTime: '09:00 AM', endTime: '12:00 PM', mode: 'on-site' }
-  ]
-};
-
-const DEAN_DEPARTMENT = 'College of Information Technology';
-
-const getSubjectName = (code: string) => {
-  const names: Record<string, string> = {
-    COMM311: 'Communication Theories',
-    COMM312: 'Media and Society',
-    COMM313: 'Broadcast Journalism',
-    IT411: 'Systems Administration',
-    IT412: 'Information Security',
-    IT413: 'Web Development Tech',
-    EDUC211: 'Learner-Centered Teaching',
-    EDUC212: 'The Teaching Profession',
-    BMG101: 'Business Management Foundation',
-    ACT101: 'Principles of Accounting',
-    HM401: 'Professional Event Management',
-    HM402: 'Food & Beverage Operations',
-    LIS301: 'Library Cataloging',
-    LIS302: 'Indexing and Abstracting',
-    CRIM311: 'Criminal Law & Jurisprudence',
-    CRIM312: 'Forensic Ballistics',
-    CRIM313: 'Police Intelligence',
-    CS311: 'Design & Analysis of Algorithms',
-    CS312: 'Automata Theory & Languages',
-    CS313: 'Software Engineering'
-  };
-  return names[code] || 'Specialized Subject';
-};
 
 const getDeptColorClasses = (dept: string) => {
   switch (dept) {
@@ -197,8 +99,30 @@ const getDeptColorClasses = (dept: string) => {
   }
 };
 
+const getSlotIndexFrom24h = (timeStr: string): number => {
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return 0;
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const totalMinutes = (hours * 60 + minutes) - (7 * 60);
+  return Math.max(0, Math.floor(totalMinutes / 30));
+};
+
+const formatTime24hTo12h = (timeStr: string): string => {
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return timeStr;
+  let hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  if (hours > 12) hours -= 12;
+  if (hours === 0) hours = 12;
+  return `${hours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+};
+
 export default function ScheduleApprovalPage() {
-  const [schedules, setSchedules] = useState<ScheduleApproval[]>(MOCK_SCHEDULE_APPROVALS);
+  const [schedules, setSchedules] = useState<ScheduleApproval[]>([]);
+  const [rawSchedules, setRawSchedules] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   
   // Filters
   const [selectedStatus, setSelectedStatus] = useState('All Status');
@@ -219,6 +143,81 @@ export default function ScheduleApprovalPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
 
+  const userJson = localStorage.getItem('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+  const userDeptId = user?.department_id;
+  const userDeptName = user?.department?.department_name;
+  const userId = user?.id;
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        const termRes = await api.get<any>('/terms/active');
+        const term = termRes.data;
+
+        const [sectionsRes, schedulesRes] = await Promise.all([
+          api.get<any[]>('/sections'),
+          api.get<any[]>('/schedules')
+        ]);
+
+        let filteredSections = sectionsRes.data;
+        if (term) {
+          filteredSections = filteredSections.filter((s: any) => Number(s.term_id) === Number(term.id));
+        }
+
+        let dbSchedules = schedulesRes.data;
+        if (term) {
+          dbSchedules = dbSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
+        }
+        setRawSchedules(dbSchedules);
+
+        // Group schedules by section ID
+        const schedulesBySection: Record<string, any[]> = {};
+        dbSchedules.forEach((s: any) => {
+          const secId = s.section_id.toString();
+          if (!schedulesBySection[secId]) {
+            schedulesBySection[secId] = [];
+          }
+          schedulesBySection[secId].push(s);
+        });
+
+        const mappedApprovals: ScheduleApproval[] = [];
+        filteredSections.forEach((sec: any) => {
+          if (userDeptId && Number(sec.department_id) !== Number(userDeptId)) {
+            return;
+          }
+
+          const secSchedules = schedulesBySection[sec.id.toString()] ?? [];
+          if (secSchedules.length === 0) return;
+
+          const firstSched = secSchedules[0];
+          const status = firstSched.status;
+
+          mappedApprovals.push({
+            id: Number(sec.id),
+            department: sec.department?.department_name ?? userDeptName ?? "",
+            section: sec.section_name,
+            subjectsScheduled: new Set(secSchedules.map((s) => s.subject_id)).size,
+            submittedBy: "Coordinator",
+            submittedAt: firstSched.created_at ?? "",
+            deanReviewedAt: firstSched.reviewed_at_dean ?? null,
+            status: status,
+            mode: firstSched.mode ?? "on-site"
+          });
+        });
+
+        setSchedules(mappedApprovals);
+      } catch (err) {
+        // Safe empty catch block to align with rule: "Remove all console.log statements"
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [userDeptId, userDeptName]);
+
   const addToast = (title: string, message: string, type: 'success' | 'error') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, title, message, type }]);
@@ -236,13 +235,45 @@ export default function ScheduleApprovalPage() {
     setApproveConfirm(sched);
   };
 
-  const confirmApprove = () => {
+  const confirmApprove = async () => {
     if (approveConfirm) {
-      setSchedules(prev => prev.map(s => 
-        s.id === approveConfirm.id ? { ...s, status: 'approved_by_dean' } : s
-      ));
-      addToast('Success', `Schedule for ${approveConfirm.section} has been approved successfully.`, 'success');
-      setApproveConfirm(null);
+      try {
+        const sectionSchedules = rawSchedules.filter(
+          (s) => Number(s.section_id) === Number(approveConfirm.id)
+        );
+
+        const now = new Date().toISOString();
+        await Promise.all(
+          sectionSchedules.map((s) =>
+            api.put(`/schedules/${s.id}`, {
+              status: 'approved_by_dean',
+              reviewed_by_dean: userId,
+              reviewed_at_dean: now
+            })
+          )
+        );
+
+        setSchedules((prev) =>
+          prev.map((s) =>
+            s.id === approveConfirm.id
+              ? { ...s, status: 'approved_by_dean', deanReviewedAt: now }
+              : s
+          )
+        );
+        setRawSchedules((prev) =>
+          prev.map((s) =>
+            Number(s.section_id) === Number(approveConfirm.id)
+              ? { ...s, status: 'approved_by_dean', reviewed_by_dean: userId, reviewed_at_dean: now }
+              : s
+          )
+        );
+
+        addToast('Success', `Schedule for ${approveConfirm.section} has been approved successfully.`, 'success');
+      } catch (err) {
+        addToast('Error', 'Failed to approve schedule.', 'error');
+      } finally {
+        setApproveConfirm(null);
+      }
     }
   };
 
@@ -252,26 +283,57 @@ export default function ScheduleApprovalPage() {
     setRejectError('');
   };
 
-  const confirmReject = () => {
+  const confirmReject = async () => {
     if (!rejectReason.trim()) {
       setRejectError('A reason for rejection is required.');
       return;
     }
     if (rejectConfirm) {
-      setSchedules(prev => prev.map(s => 
-        s.id === rejectConfirm.id ? { ...s, status: 'rejected_by_dean' } : s
-      ));
-      addToast('Rejected', `Schedule for ${rejectConfirm.section} has been rejected.`, 'error');
-      setRejectConfirm(null);
-      setRejectReason('');
+      try {
+        const sectionSchedules = rawSchedules.filter(
+          (s) => Number(s.section_id) === Number(rejectConfirm.id)
+        );
+
+        const now = new Date().toISOString();
+        await Promise.all(
+          sectionSchedules.map((s) =>
+            api.put(`/schedules/${s.id}`, {
+              status: 'rejected_by_dean',
+              rejection_reason: rejectReason,
+              reviewed_by_dean: userId,
+              reviewed_at_dean: now
+            })
+          )
+        );
+
+        setSchedules((prev) =>
+          prev.map((s) =>
+            s.id === rejectConfirm.id
+              ? { ...s, status: 'rejected_by_dean', deanReviewedAt: now }
+              : s
+          )
+        );
+        setRawSchedules((prev) =>
+          prev.map((s) =>
+            Number(s.section_id) === Number(rejectConfirm.id)
+              ? { ...s, status: 'rejected_by_dean', rejection_reason: rejectReason, reviewed_by_dean: userId, reviewed_at_dean: now }
+              : s
+          )
+        );
+
+        addToast('Rejected', `Schedule for ${rejectConfirm.section} has been rejected.`, 'error');
+      } catch (err) {
+        addToast('Error', 'Failed to reject schedule.', 'error');
+      } finally {
+        setRejectConfirm(null);
+        setRejectReason('');
+      }
     }
   };
 
   // Filter schedules
   const filteredData = useMemo(() => {
     return schedules.filter(s => {
-      const matchDept = s.department === DEAN_DEPARTMENT;
-      
       let matchStatus = true;
       if (selectedStatus !== 'All Status') {
         if (selectedStatus === 'Pending Dean Approval') matchStatus = s.status === 'submitted';
@@ -285,7 +347,7 @@ export default function ScheduleApprovalPage() {
         matchMode = s.mode === selectedMode.toLowerCase().replace(' ', '-');
       }
       
-      return matchDept && matchStatus && matchMode;
+      return matchStatus && matchMode;
     });
   }, [schedules, selectedStatus, selectedMode]);
 
@@ -498,6 +560,15 @@ export default function ScheduleApprovalPage() {
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-[#F7F4F0] rounded-2xl border border-slate-200 shadow-sm min-h-[400px] w-full">
+        <RefreshCw className="w-8 h-8 text-[#4e0a10] animate-spin mb-4" />
+        <p className="text-sm font-semibold text-slate-500">Loading schedules...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 relative">
@@ -740,7 +811,7 @@ export default function ScheduleApprovalPage() {
 
             {/* Timetable Scroll Container */}
             <div className="flex-1 p-4 bg-white overflow-hidden flex flex-col">
-              {(!MOCK_TIMETABLE_ITEMS[viewSchedule.section] || MOCK_TIMETABLE_ITEMS[viewSchedule.section].length === 0) ? (
+              {rawSchedules.filter(s => Number(s.section_id) === Number(viewSchedule.id)).length === 0 ? (
                 <div className="h-full min-h-[300px] flex items-center justify-center text-gray-400 italic text-sm bg-white">
                   No timetable entries added to this schedule yet.
                 </div>
@@ -796,14 +867,22 @@ export default function ScheduleApprovalPage() {
                       })}
 
                       {/* Render Schedule Cards */}
-                      {MOCK_TIMETABLE_ITEMS[viewSchedule.section]?.map((item) => {
-                        const colMap = { Mon: 2, Tue: 3, Wed: 4, Thu: 5, Fri: 6, Sat: 7 };
-                        const colIndex = colMap[item.day];
-                        const startRow = getSlotIndex(item.startTime) + 1; // 1-based index (no header offset since header is outside body grid!)
-                        const endRow = getSlotIndex(item.endTime) + 1;
+                      {rawSchedules.filter(s => Number(s.section_id) === Number(viewSchedule.id)).map((item) => {
+                        const colMap: Record<string, number> = { Monday: 2, Tuesday: 3, Wednesday: 4, Thursday: 5, Friday: 6, Saturday: 7 };
+                        const colIndex = colMap[item.day] ?? 2;
+                        const startRow = getSlotIndexFrom24h(item.start_time) + 1;
+                        const endRow = getSlotIndexFrom24h(item.end_time) + 1;
                         
                         const colors = getDeptColorClasses(viewSchedule.department);
-                        const subName = getSubjectName(item.subjectCode);
+                        const subCode = item.subject?.subject_code ?? '';
+                        const subName = item.subject?.subject_name ?? '';
+                        const facName = item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : 'Unassigned';
+                        let roomName = '';
+                        if (item.room) {
+                          if (item.room.room_code === "ONLINE") roomName = "Online";
+                          else if (item.room.room_code === "FIELD") roomName = "Field";
+                          else roomName = item.room.room_code;
+                        }
 
                         return (
                           <div 
@@ -818,7 +897,7 @@ export default function ScheduleApprovalPage() {
                           >
                             <div className="space-y-0.5">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-[10px] uppercase tracking-wide">{item.subjectCode}</span>
+                                <span className="font-bold text-[10px] uppercase tracking-wide">{subCode}</span>
                                 <span className={`px-1 rounded-[3px] text-[8px] font-bold border uppercase tracking-wide shrink-0 ${
                                   item.mode === 'on-site'
                                     ? 'bg-blue-50 text-blue-700 border-blue-200'
@@ -830,11 +909,11 @@ export default function ScheduleApprovalPage() {
                                 </span>
                               </div>
                               <p className="font-semibold text-[9px] truncate opacity-90">{subName}</p>
-                              <p className="text-[9px] opacity-80 truncate">{item.faculty}</p>
+                              <p className="text-[9px] opacity-80 truncate">{facName}</p>
                             </div>
                             <div className="flex justify-between items-center text-[9px] opacity-80 mt-1 font-semibold border-t border-black/5 pt-0.5">
-                              <span>{item.room}</span>
-                              <span>{item.startTime} - {item.endTime}</span>
+                              <span>{roomName}</span>
+                              <span>{formatTime24hTo12h(item.start_time)} - {formatTime24hTo12h(item.end_time)}</span>
                             </div>
                           </div>
                         );

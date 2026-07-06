@@ -2,25 +2,51 @@ import React, { useEffect, useState, useMemo } from "react";
 import { CheckCircle2, LayoutGrid, Users } from "lucide-react";
 import {
   DAYS,
-  DEFAULT_SCHEDULES,
-  MOCK_FACULTY,
-  MOCK_ROOMS,
-  MOCK_SECTIONS,
-  MOCK_SUBJECTS,
   getSubjectClassification,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room, Section } from "../types";
+import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room, Section, Faculty } from "../types";
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
 
+const dayMapToIndex: Record<string, number> = {
+  "Monday": 0,
+  "Tuesday": 1,
+  "Wednesday": 2,
+  "Thursday": 3,
+  "Friday": 4,
+  "Saturday": 5,
+  "Sunday": 6
+};
+
+const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const timeStrToSlot = (timeStr: string): number => {
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return 0;
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const totalMinutes = hours * 60 + minutes;
+  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
+};
+
+const slotToTime24h = (slotIndex: number): string => {
+  const totalMinutes = 7 * 60 + slotIndex * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+};
+
 export const useScheduler = () => {
   const { toast } = useToast();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
+  const [activeTerm, setActiveTerm] = useState<any>(null);
 
   useEffect(() => {
     const fetchRooms = async () => {
@@ -32,7 +58,7 @@ export const useScheduler = () => {
 
         let apiRooms = res.data;
         if (!isVpaa && user?.department_id) {
-          apiRooms = apiRooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(user.department_id));
+          apiRooms = apiRooms.filter(r => r.department_id === null || Number(r.department_id) === Number(user.department_id));
         }
 
         const mappedRooms = apiRooms.map((r: any) => ({
@@ -42,15 +68,8 @@ export const useScheduler = () => {
         }));
         setRooms(mappedRooms);
       } catch (err) {
-        const userJson = localStorage.getItem('user');
-        const user = userJson ? JSON.parse(userJson) : null;
-        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-
-        let fallbackRooms = MOCK_ROOMS;
-        if (!isVpaa && user?.department_id) {
-          fallbackRooms = MOCK_ROOMS.filter(r => r.departmentId !== undefined && Number(r.departmentId) === Number(user.department_id));
-        }
-        setRooms(fallbackRooms);
+        console.error("Failed to fetch rooms", err);
+        setRooms([]);
       }
     };
     fetchRooms();
@@ -70,26 +89,91 @@ export const useScheduler = () => {
           res = await api.get<any[]>('/sections');
         }
 
-        const mapped: Section[] = res.data.map((s: any) => ({
+        let apiSections = res.data;
+        if (activeTerm) {
+          apiSections = apiSections.filter((s: any) => Number(s.term_id) === Number(activeTerm.id));
+        }
+
+        const mapped: Section[] = apiSections.map((s: any) => ({
           id: s.id.toString(),
           name: s.section_name,
           yearLevel: Number(s.year_level),
           departmentId: s.department_id
         }));
-        setSections(mapped.length > 0 ? mapped : MOCK_SECTIONS);
-      } catch {
+        setSections(mapped);
+      } catch (err) {
+        console.error("Failed to fetch sections", err);
+        setSections([]);
+      }
+    };
+    fetchSections();
+  }, [activeTerm]);
+
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      try {
+        const res = await api.get<any[]>('/subjects');
         const userJson = localStorage.getItem('user');
         const user = userJson ? JSON.parse(userJson) : null;
         const isVpaa = user?.role?.toLowerCase() === 'vpaa';
 
+        let apiSubjects = res.data;
         if (!isVpaa && user?.department_id) {
-          setSections(MOCK_SECTIONS.filter(s => s.id.startsWith('sec-cit')));
-        } else {
-          setSections(MOCK_SECTIONS);
+          apiSubjects = apiSubjects.filter((s: any) =>
+            s.department_id === null ||
+            s.subject_category === 'gec' ||               // ← add this line
+            Number(s.department_id) === Number(user.department_id)
+          );
         }
+
+      const mapped: Subject[] = apiSubjects.map((s: any) => ({
+        id: s.id.toString(),
+        code: s.subject_code,
+        name: s.subject_name,
+        units: s.units,
+        lectureHours: s.lecture_hours ?? 0,
+        labHours: s.lab_hours ?? 0,
+        category: s.subject_category as Subject['category'],
+        semester: s.semester as Subject['semester'],
+        departmentId: s.department_id ?? null,
+        yearLevel: Number(s.year_level),   // ← add this
+      }));
+
+        setSubjects(mapped);
+      } catch (err) {
+        console.error("Failed to fetch subjects", err);
+        setSubjects([]);
       }
     };
-    fetchSections();
+    fetchSubjects();
+  }, []);
+
+  useEffect(() => {
+    const fetchFaculties = async () => {
+      try {
+        const res = await api.get<any[]>('/faculties');
+        const mapped = res.data.map((f: any) => ({
+          id: f.id.toString(),
+          name: `${f.first_name} ${f.last_name}`
+        }));
+        setFaculties(mapped);
+      } catch (err) {
+        console.error("Failed to fetch faculties", err);
+      }
+    };
+    fetchFaculties();
+  }, []);
+
+  useEffect(() => {
+    const fetchActiveTerm = async () => {
+      try {
+        const res = await api.get<any>('/terms/active');
+        setActiveTerm(res.data);
+      } catch (err) {
+        console.error("Failed to fetch active term", err);
+      }
+    };
+    fetchActiveTerm();
   }, []);
 
   const [placed, setPlaced] = useState<Record<string, string>>({});
@@ -105,17 +189,71 @@ export const useScheduler = () => {
   const [placementSubjectId, setPlacementSubjectId] = useState<string | null>(null);
   const [movingScheduleId, setMovingScheduleId] = useState<string | null>(null);
 
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(DEFAULT_SCHEDULES);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedYearLevel, setSelectedYearLevel] = useState<number | null>(null);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
-  const [scheduleStatus, setScheduleStatus] = useState<Record<string, ScheduleItem["status"]>>({
-    "sec-cit-1": "draft",
-    "sec-cit-2": "faculty_assignment",
-    "sec-cit-3": "draft",
-    "sec-cas-1": "draft",
-    "sec-cas-2": "draft"
-  });
+  const [scheduleStatus, setScheduleStatus] = useState<Record<string, ScheduleItem["status"]>>({});
+
+  const refreshSchedules = async () => {
+    try {
+      const res = await api.get<any[]>('/schedules');
+      let apiData = res.data;
+      if (activeTerm) {
+        apiData = apiData.filter((item: any) => Number(item.term_id) === Number(activeTerm.id));
+      }
+      const mapped = apiData.map((item: any) => {
+        const dayIndex = dayMapToIndex[item.day] ?? 0;
+        const startSlot = timeStrToSlot(item.start_time);
+        const endSlot = timeStrToSlot(item.end_time);
+        const durationSlots = endSlot - startSlot;
+
+        let roomName = "";
+        if (item.room) {
+          if (item.room.room_code === "ONLINE") roomName = "Online";
+          else if (item.room.room_code === "FIELD") roomName = "Field";
+          else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+        }
+
+        let roomIdStr = item.room_id.toString();
+        if (item.room?.room_code === "ONLINE") roomIdStr = "online";
+        else if (item.room?.room_code === "FIELD") roomIdStr = "field";
+
+        return {
+          id: item.id.toString(),
+          subjectId: item.subject_id.toString(),
+          subjectCode: item.subject?.subject_code ?? "",
+          subjectName: item.subject?.subject_name ?? "",
+          subjectType: item.subject?.subject_category as any,
+          sectionName: item.section?.section_name ?? "",
+          roomName,
+          day: DAYS[dayIndex] || "Mon",
+          startTime: slotToTimeStr(startSlot),
+          endTime: slotToTimeStr(endSlot),
+          mode: item.mode ?? "on-site",
+          facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
+          facultyId: item.faculty_id ? item.faculty_id.toString() : null,
+          status: item.status,
+          dayIndex,
+          startSlot,
+          durationSlots,
+          sectionId: item.section_id.toString(),
+          roomId: roomIdStr,
+          isHybrid: !!item.is_hybrid,
+          preferredPattern: item.preferred_pattern
+        };
+      });
+      setSchedules(mapped);
+    } catch (err) {
+      console.error("Failed to fetch schedules", err);
+    }
+  };
+
+  useEffect(() => {
+    if (rooms.length > 0) {
+      refreshSchedules();
+    }
+  }, [rooms, activeTerm]);
 
   const [dropContext, setDropContext] = useState<DropContext | null>(null);
   const [modalRoomId, setModalRoomId] = useState<string>("");
@@ -145,9 +283,13 @@ export const useScheduler = () => {
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
   const [isModalLoading, setIsModalLoading] = useState(false);
 
-  const currentStatus: ScheduleItem["status"] = selectedSectionId
-    ? (scheduleStatus[selectedSectionId] ?? "draft")
-    : "draft";
+  const currentStatus: ScheduleItem["status"] = useMemo(() => {
+    if (selectedSectionId && scheduleStatus[selectedSectionId]) {
+      return scheduleStatus[selectedSectionId];
+    }
+    const secSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
+    return secSchedules.length > 0 ? secSchedules[0].status : "draft";
+  }, [schedules, selectedSectionId, scheduleStatus]);
 
   const isPhase2Active = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isEditable = currentStatus === "draft";
@@ -167,7 +309,19 @@ export const useScheduler = () => {
     () => Array.from(new Set(sections.map((s) => s.yearLevel))).sort((a, b) => a - b),
     [sections]
   );
-  const totalSubjects = MOCK_SUBJECTS.length;
+  const selectedSection = sections.find((s) => s.id === selectedSectionId);
+
+  const semesterSubjects = useMemo(() => {
+    if (sections.length === 0) return [];
+    if (!activeTerm?.semester) return subjects;
+    return subjects.filter((s) => s.semester === activeTerm.semester);
+  }, [subjects, activeTerm, sections]);
+
+  const totalSubjects = useMemo(() => {
+    if (!selectedSection) return semesterSubjects.length;
+    return semesterSubjects.filter((s) => s.yearLevel === selectedSection.yearLevel).length;
+  }, [semesterSubjects, selectedSection]);
+
   const totalScheduled = new Set(sectionSchedules.map((s) => s.subjectId)).size;
 
   const totalSlotsCount = sectionSchedules.length;
@@ -175,31 +329,41 @@ export const useScheduler = () => {
   const unassignedSlotsCount = totalSlotsCount - assignedSlotsCount;
 
   const dropSubject = dropContext
-    ? MOCK_SUBJECTS.find((s) => s.id === dropContext.subjectId) ?? null
+    ? subjects.find((s) => s.id === dropContext.subjectId) ?? null
     : null;
   const dropSubjectIsField =
     dropSubject?.category === "pathfit" || dropSubject?.category === "nstp";
 
   const listCategories: Subject["category"][] = ["major", "gec", "gee", "pathfit", "nstp"];
 
-  const filteredSubjects = MOCK_SUBJECTS.filter((subject) => {
-    if (subjectClassFilter !== "all" && getSubjectClassification(subject.category) !== subjectClassFilter) {
-      return false;
-    }
-    const term = searchQuery.toLowerCase().trim();
-    if (!term) return true;
-    return (
-      subject.code.toLowerCase().includes(term) ||
-      subject.name.toLowerCase().includes(term)
-    );
-  });
+  const filteredSubjects = useMemo(() => {
+    return semesterSubjects.filter((subject) => {
+      // Year-level filter — respects the currently selected section's year
+      if (selectedSection && subject.yearLevel !== selectedSection.yearLevel) {
+        return false;
+      }
+
+      if (subjectClassFilter !== "all" && getSubjectClassification(subject.category) !== subjectClassFilter) {
+        return false;
+      }
+
+      const term = searchQuery.toLowerCase().trim();
+      if (!term) return true;
+      return (
+        subject.code.toLowerCase().includes(term) ||
+        subject.name.toLowerCase().includes(term)
+      );
+    });
+  }, [semesterSubjects, selectedSection, subjectClassFilter, searchQuery]);
 
   const { checkConflict, checkFacultyConflict, getDragOverConflict } = useConflict({
     schedules,
     selectedSectionId,
     dragSubjectId,
     draggedScheduleId,
-    rooms
+    rooms,
+    subjects,
+    faculties
   });
 
   useEffect(() => {
@@ -214,7 +378,7 @@ export const useScheduler = () => {
 
   useEffect(() => {
     if (!dropContext) return;
-    const subject = MOCK_SUBJECTS.find((s) => s.id === dropContext.subjectId);
+    const subject = subjects.find((s) => s.id === dropContext.subjectId);
     const isFieldSubject = subject?.category === "pathfit" || subject?.category === "nstp";
     if (isFieldSubject) {
       setModalClassMode("field");
@@ -248,7 +412,7 @@ export const useScheduler = () => {
 
   useEffect(() => {
     if (dropContext && modalRoomId) {
-      const subject = MOCK_SUBJECTS.find((s) => s.id === dropContext.subjectId);
+      const subject = subjects.find((s) => s.id === dropContext.subjectId);
       if (subject) {
         const conflict = checkConflict(
           dropContext.subjectId,
@@ -267,12 +431,34 @@ export const useScheduler = () => {
     }
   }, [modalRoomId, dropContext]);
 
+  const onScheduleRelocated = async (scheduleId: string, dayIndex: number, startSlot: number) => {
+    const sched = schedules.find((s) => s.id === scheduleId);
+    if (!sched) return;
+    const dayName = fullDayNames[dayIndex];
+    const startTime24h = slotToTime24h(startSlot);
+    const endTime24h = slotToTime24h(startSlot + sched.durationSlots);
+
+    try {
+      await api.put(`/schedules/${scheduleId}`, {
+        day: dayName,
+        start_time: startTime24h,
+        end_time: endTime24h
+      });
+      toast.success("Schedule Relocated", "Class schedule successfully updated.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Relocation Failed", "Could not save the new schedule slot.");
+    }
+  };
+
   const dragDrop = useDragDrop({
     schedules,
     selectedSectionId,
     dragSubjectId,
     draggedScheduleId,
     hoveredCell,
+    subjects,
     setDragSubjectId,
     setDraggedScheduleId,
     setDragFromCell,
@@ -280,70 +466,81 @@ export const useScheduler = () => {
     setSchedules,
     setDropContext,
     setConflictInfo,
-    checkConflict
+    checkConflict,
+    onScheduleRelocated
   });
 
-  const handleConfirmSchedule = (e: React.FormEvent) => {
+  const handleConfirmSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dropContext) return;
+    if (!dropContext || !activeTerm) return;
     if (!modalRoomId) {
       setModalValidationError("Please select a Room before confirming.");
       return;
     }
-    const subject = MOCK_SUBJECTS.find((s) => s.id === dropContext.subjectId);
+    const subject = subjects.find((s) => s.id === dropContext.subjectId);
     if (!subject) return;
     const durationSlots = subject.units * 2;
     const conflict = checkConflict(
       dropContext.subjectId, selectedSectionId, null, modalRoomId,
-      dropContext.dayIndex, dropContext.startSlot, durationSlots
+      dropContext.dayIndex, dropContext.startSlot, durationSlots,
+      dropContext.isRescheduling ? dropContext.scheduleId : undefined
     );
     if (conflict) {
       setConflictInfo({ dayIndex: dropContext.dayIndex, startSlot: dropContext.startSlot, durationSlots, message: conflict.message });
       setDropContext(null);
       return;
     }
-    const room = rooms.find((r) => r.id === modalRoomId);
+    
     const section = sections.find((s) => s.id === selectedSectionId);
-    if (dropContext.isRescheduling && dropContext.scheduleId) {
-      setSchedules((prev) =>
-        prev.map((s) =>
-          s.id === dropContext.scheduleId
-            ? {
-                ...s,
-                roomId: modalRoomId,
-                roomName: modalRoomId === "online" ? "Online" : modalRoomId === "field" ? "Field" : (room?.name ?? ""),
-                mode: modalClassMode,
-                isHybrid: modalIsHybrid,
-                preferredPattern: modalPreferredPattern
-              }
-            : s
-        )
-      );
-    } else {
-      const newSchedule: ScheduleItem = {
-        id: `sched-${Date.now()}`,
-        subjectId: dropContext.subjectId,
-        subjectCode: subject.code,
-        subjectName: subject.name,
-        subjectType: subject.category,
-        sectionName: section?.name ?? "",
-        roomName: modalRoomId === "online" ? "Online" : modalRoomId === "field" ? "Field" : (room?.name ?? ""),
-        day: DAYS[dropContext.dayIndex],
-        startTime: slotToTimeStr(dropContext.startSlot),
-        endTime: slotToTimeStr(dropContext.startSlot + durationSlots),
-        mode: modalClassMode,
-        isHybrid: modalIsHybrid,
-        preferredPattern: modalPreferredPattern,
-        facultyName: null,
-        facultyId: null,
-        status: "draft",
-        dayIndex: dropContext.dayIndex,
-        startSlot: dropContext.startSlot,
-        durationSlots,
-        sectionId: selectedSectionId,
-        roomId: modalRoomId
-      };
-      setSchedules((prev) => [...prev, newSchedule]);
+    if (!section) return;
+
+    let resolvedRoomId = modalRoomId;
+    if (modalRoomId === "online") {
+      const onlineRoom = rooms.find(r => r.name.toLowerCase().includes("online"));
+      if (onlineRoom) resolvedRoomId = onlineRoom.id;
+    } else if (modalRoomId === "field") {
+      const fieldRoom = rooms.find(r => r.name.toLowerCase().includes("field"));
+      if (fieldRoom) resolvedRoomId = fieldRoom.id;
+    }
+
+    const dayName = fullDayNames[dropContext.dayIndex];
+    const startTime24h = slotToTime24h(dropContext.startSlot);
+    const endTime24h = slotToTime24h(dropContext.startSlot + durationSlots);
+
+    try {
+      if (dropContext.isRescheduling && dropContext.scheduleId) {
+        await api.put(`/schedules/${dropContext.scheduleId}`, {
+          room_id: Number(resolvedRoomId),
+          day: dayName,
+          start_time: startTime24h,
+          end_time: endTime24h,
+          mode: modalClassMode,
+          is_hybrid: modalIsHybrid,
+          preferred_pattern: modalPreferredPattern
+        });
+        toast.success("Schedule Updated", "Class schedule successfully relocated.");
+      } else {
+        await api.post('/schedules', {
+          term_id: activeTerm.id,
+          section_id: Number(selectedSectionId),
+          subject_id: Number(dropContext.subjectId),
+          faculty_id: null,
+          room_id: Number(resolvedRoomId),
+          department_id: section.departmentId,
+          day: dayName,
+          start_time: startTime24h,
+          end_time: endTime24h,
+          mode: modalClassMode,
+          is_hybrid: modalIsHybrid,
+          preferred_pattern: modalPreferredPattern,
+          status: "draft"
+        });
+        toast.success("Schedule Created", "Class schedule successfully plotted.");
+      }
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Operation Failed", "Could not save the schedule to the database.");
     }
     setDropContext(null);
     setConflictInfo(null);
@@ -363,9 +560,16 @@ export const useScheduler = () => {
     }, 500);
   };
 
-  const handleRemoveSchedule = (scheduleId: string) => {
+  const handleRemoveSchedule = async (scheduleId: string) => {
     if (!isEditable) return;
-    setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
+    try {
+      await api.delete(`/schedules/${scheduleId}`);
+      toast.success("Schedule Removed", "Class schedule successfully removed.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remove schedule", "An error occurred.");
+    }
     setDeleteConfirmScheduleId(null);
     setConflictInfo(null);
     setMovingScheduleId((prev) => (prev === scheduleId ? null : prev));
@@ -376,44 +580,94 @@ export const useScheduler = () => {
     setIsClearAllModalOpen(true);
   };
 
-  const confirmClearAll = () => {
+  const confirmClearAll = async () => {
     if (!isEditable) {
       setIsClearAllModalOpen(false);
       return;
     }
     const clearedCount = sectionSchedules.length;
     const sectionName = sections.find((s) => s.id === selectedSectionId)?.name ?? "the section";
-    setSchedules((prev) => prev.filter((s) => s.sectionId !== selectedSectionId));
+    try {
+      await Promise.all(sectionSchedules.map((s) => api.delete(`/schedules/${s.id}`)));
+      toast.success(
+        "Schedule Cleared",
+        `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
+      );
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to clear schedules", "An error occurred.");
+    }
     setConflictInfo(null);
     setPlacementSubjectId(null);
     setMovingScheduleId(null);
     setIsClearAllModalOpen(false);
-    toast.success(
-      "Schedule Cleared",
-      `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
-    );
   };
 
   const cancelClearAll = () => setIsClearAllModalOpen(false);
 
-  const handleSubmitForApproval = () => {
+  const handleSubmitForApproval = async () => {
     if (!selectedSectionId) return;
-    setScheduleStatus((prev) => ({ ...prev, [selectedSectionId]: "submitted" }));
+    try {
+      await Promise.all(
+        sectionSchedules.map((s) =>
+          api.put(`/schedules/${s.id}`, { status: "submitted" })
+        )
+      );
+      toast.success("Submitted for Approval", "Schedule submitted successfully.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to submit", "An error occurred.");
+    }
   };
 
-  const handleResubmit = () => {
+  const handleResubmit = async () => {
     if (!selectedSectionId) return;
-    setScheduleStatus((prev) => ({ ...prev, [selectedSectionId]: "draft" }));
+    try {
+      await Promise.all(
+        sectionSchedules.map((s) =>
+          api.put(`/schedules/${s.id}`, { status: "draft" })
+        )
+      );
+      toast.success("Resubmitted", "Schedule successfully returned to draft.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to resubmit", "An error occurred.");
+    }
   };
 
-  const handleStartFacultyAssignment = () => {
+  const handleStartFacultyAssignment = async () => {
     if (!selectedSectionId) return;
-    setScheduleStatus((prev) => ({ ...prev, [selectedSectionId]: "faculty_assignment" }));
+    try {
+      await Promise.all(
+        sectionSchedules.map((s) =>
+          api.put(`/schedules/${s.id}`, { status: "faculty_assignment" })
+        )
+      );
+      toast.success("Faculty Assignment Started", "Faculty assignment phase is now active.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to start faculty assignment", "An error occurred.");
+    }
   };
 
-  const handleFinalize = () => {
+  const handleFinalize = async () => {
     if (!selectedSectionId) return;
-    setScheduleStatus((prev) => ({ ...prev, [selectedSectionId]: "finalized" }));
+    try {
+      await Promise.all(
+        sectionSchedules.map((s) =>
+          api.put(`/schedules/${s.id}`, { status: "finalized" })
+        )
+      );
+      toast.success("Finalized", "Schedule successfully marked as finalized.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to finalize", "An error occurred.");
+    }
   };
 
   const handlePopupFacultyChange = (fId: string) => {
@@ -428,7 +682,7 @@ export const useScheduler = () => {
     }
   };
 
-  const handleAssignFaculty = (e: React.FormEvent) => {
+  const handleAssignFaculty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!facultyAssignmentPopup) return;
     const { scheduleId, facultyId } = facultyAssignmentPopup;
@@ -436,45 +690,67 @@ export const useScheduler = () => {
       setPopupValidationError("Please select a faculty member first.");
       return;
     }
-    const fac = MOCK_FACULTY.find((f) => f.id === facultyId);
+    const fac = faculties.find((f) => f.id === facultyId);
     if (!fac) return;
-    setSchedules((prev) =>
-      prev.map((s) => (s.id === scheduleId ? { ...s, facultyId, facultyName: fac.name } : s))
-    );
+    try {
+      await api.put(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
+      toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to assign faculty", "An error occurred.");
+    }
     setFacultyAssignmentPopup(null);
   };
 
-  const handleRemoveFaculty = () => {
+  const handleRemoveFaculty = async () => {
     if (!facultyAssignmentPopup) return;
     const { scheduleId } = facultyAssignmentPopup;
-    setSchedules((prev) =>
-      prev.map((s) => (s.id === scheduleId ? { ...s, facultyId: null, facultyName: null } : s))
-    );
+    try {
+      await api.put(`/schedules/${scheduleId}`, { faculty_id: null });
+      toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remove faculty", "An error occurred.");
+    }
     setFacultyAssignmentPopup(null);
   };
 
-  const handleInlineFacultyAssign = (slotId: string, facId: string) => {
+  const handleInlineFacultyAssign = async (slotId: string, facId: string) => {
     if (!facId) return;
-    const fac = MOCK_FACULTY.find((f) => f.id === facId);
+    const fac = faculties.find((f) => f.id === facId);
     if (!fac) return;
     const conflict = checkFacultyConflict(facId, slotId);
     if (conflict) {
       if (confirm(`${conflict}\n\nAssign anyway?`)) {
-        setSchedules((prev) =>
-          prev.map((s) => s.id === slotId ? { ...s, facultyId: facId, facultyName: fac.name } : s)
-        );
+        try {
+          await api.put(`/schedules/${slotId}`, { faculty_id: Number(facId) });
+          await refreshSchedules();
+        } catch (err) {
+          console.error(err);
+          toast.error("Failed to assign faculty", "An error occurred.");
+        }
       }
     } else {
-      setSchedules((prev) =>
-        prev.map((s) => s.id === slotId ? { ...s, facultyId: facId, facultyName: fac.name } : s)
-      );
+      try {
+        await api.put(`/schedules/${slotId}`, { faculty_id: Number(facId) });
+        await refreshSchedules();
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to assign faculty", "An error occurred.");
+      }
     }
   };
 
-  const handleRemoveInlineFaculty = (slotId: string) => {
-    setSchedules((prev) =>
-      prev.map((s) => s.id === slotId ? { ...s, facultyId: null, facultyName: null } : s)
-    );
+  const handleRemoveInlineFaculty = async (slotId: string) => {
+    try {
+      await api.put(`/schedules/${slotId}`, { faculty_id: null });
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remove faculty", "An error occurred.");
+    }
   };
 
   const getClassesCountForDay = (dayIdx: number) =>
@@ -599,20 +875,21 @@ export const useScheduler = () => {
         });
         return;
       }
-      setSchedules((prev) =>
-        prev.map((s) =>
-          s.id === movingScheduleId
-            ? {
-                ...s,
-                dayIndex,
-                startSlot: timeIndex,
-                day: DAYS[dayIndex],
-                startTime: slotToTimeStr(timeIndex),
-                endTime: slotToTimeStr(timeIndex + s.durationSlots)
-              }
-            : s
-        )
-      );
+      const dayName = fullDayNames[dayIndex];
+      const startTime24h = slotToTime24h(timeIndex);
+      const endTime24h = slotToTime24h(timeIndex + sched.durationSlots);
+
+      api.put(`/schedules/${sched.id}`, {
+        day: dayName,
+        start_time: startTime24h,
+        end_time: endTime24h
+      }).then(() => {
+        refreshSchedules();
+        toast.success("Schedule Relocated", "Class schedule successfully relocated.");
+      }).catch(err => {
+        console.error(err);
+        toast.error("Failed to relocate schedule", "An error occurred.");
+      });
       setMovingScheduleId(null);
       setConflictInfo(null);
     }
@@ -621,13 +898,13 @@ export const useScheduler = () => {
   const renderStatusBadge = (status: ScheduleItem["status"]) => {
     const configs: Record<string, { cls: string; label: string }> = {
       draft: { cls: "bg-slate-500 text-white", label: "Draft" },
-      submitted: { cls: "bg-yellow-500 text-white", label: "Submitted" },
-      approved_by_dean: { cls: "bg-blue-600 text-white", label: "Approved by Dean" },
+      submitted: { cls: "bg-yellow-500 text-white", label: "Pending Dean Approval" },
+      approved_by_dean: { cls: "bg-blue-600 text-white", label: "Pending VPAA Approval" },
       rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
-      approved: { cls: "bg-green-600 text-white", label: "Approved (VPAA)" },
+      approved: { cls: "bg-green-600 text-white", label: "Approved" },
       faculty_assignment: { cls: "bg-purple-600 text-white", label: "Faculty Assignment" },
       finalized: { cls: "bg-emerald-800 text-white", label: "Finalized" },
-      rejected: { cls: "bg-red-600 text-white", label: "Rejected" }
+      rejected: { cls: "bg-red-605 text-white", label: "Rejected" }
     };
     const cfg = configs[status];
     if (!cfg) return null;
@@ -644,9 +921,9 @@ export const useScheduler = () => {
       case "draft":
         return <button onClick={handleSubmitForApproval} className="px-4 py-2 bg-[#4e0a10] hover:bg-[#3a0809] text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Submit for Approval</button>;
       case "submitted":
-        return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Approval</button>;
+        return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
       case "approved_by_dean":
-        return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Awaiting VPAA Approval</button>;
+        return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending VPAA Approval</button>;
       case "rejected_by_dean":
         return <button onClick={handleResubmit} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Resubmit to Dean</button>;
       case "rejected":
@@ -706,6 +983,7 @@ export const useScheduler = () => {
     schedules,
     rooms,
     sections,
+    subjects,
     setSchedules,
     selectedSectionId,
     selectedYearLevel,

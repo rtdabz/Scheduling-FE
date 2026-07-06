@@ -1,18 +1,18 @@
 import type { ScheduleItem, Section, Subject, Faculty, Room } from "./types";
 
 export const MOCK_SUBJECTS: Subject[] = [
-  { id: "ge-101", code: "GE 101", name: "Understanding the Self", units: 3, category: "gec" },
-  { id: "ge-102", code: "GE 102", name: "Readings in Philippine History", units: 3, category: "gec" },
-  { id: "ge-103", code: "GE 103", name: "The Contemporary World", units: 3, category: "gec" },
-  { id: "ge-104", code: "GE 104", name: "Mathematics in the Modern World", units: 3, category: "gec" },
-  { id: "cs-401", code: "CS 401", name: "Intelligent Systems", units: 3, category: "major" },
-  { id: "cs-402", code: "CS 402", name: "Software Engineering", units: 3, category: "major" },
-  { id: "cs-403", code: "CS 403", name: "Network Security", units: 3, category: "major" },
-  { id: "cs-404", code: "CS 404", name: "Data Science & Analytics", units: 3, category: "major" },
-  { id: "gee-101", code: "GEE 101", name: "GE Elective 1 (Environmental Science)", units: 3, category: "gee" },
-  { id: "gee-102", code: "GEE 102", name: "GE Elective 2 (Entrepreneurship)", units: 3, category: "gee" },
-  { id: "pe-101", code: "PATHFIT 1", name: "Movement Competency Training", units: 2, category: "pathfit" },
-  { id: "nstp-101", code: "NSTP 1", name: "National Service Training Program 1", units: 3, category: "nstp" }
+  { id: "ge-101", code: "GE 101", name: "Understanding the Self", units: 3, lectureHours: 3, labHours: 0, category: "gec", semester: "1st", departmentId: null, yearLevel: 1 },
+  { id: "ge-102", code: "GE 102", name: "Readings in Philippine History", units: 3, lectureHours: 3, labHours: 0, category: "gec", semester: "2nd", departmentId: null, yearLevel: 1 },
+  { id: "ge-103", code: "GE 103", name: "The Contemporary World", units: 3, lectureHours: 3, labHours: 0, category: "gec", semester: "1st", departmentId: null, yearLevel: 1 },
+  { id: "ge-104", code: "GE 104", name: "Mathematics in the Modern World", units: 3, lectureHours: 3, labHours: 0, category: "gec", semester: "2nd", departmentId: null, yearLevel: 1 },
+  { id: "cs-401", code: "CS 401", name: "Intelligent Systems", units: 3, lectureHours: 3, labHours: 0, category: "major", semester: "1st", departmentId: 6, yearLevel: 4 },
+  { id: "cs-402", code: "CS 402", name: "Software Engineering", units: 3, lectureHours: 3, labHours: 0, category: "major", semester: "1st", departmentId: 6, yearLevel: 4 },
+  { id: "cs-403", code: "CS 403", name: "Network Security", units: 3, lectureHours: 3, labHours: 0, category: "major", semester: "1st", departmentId: 6, yearLevel: 4 },
+  { id: "cs-404", code: "CS 404", name: "Data Science & Analytics", units: 3, lectureHours: 3, labHours: 0, category: "major", semester: "2nd", departmentId: 6, yearLevel: 4 },
+  { id: "gee-101", code: "GEE 101", name: "GE Elective 1 (Environmental Science)", units: 3, lectureHours: 3, labHours: 0, category: "gee", semester: "1st", departmentId: null, yearLevel: 1 },
+  { id: "gee-102", code: "GEE 102", name: "GE Elective 2 (Entrepreneurship)", units: 3, lectureHours: 3, labHours: 0, category: "gee", semester: "2nd", departmentId: null, yearLevel: 1 },
+  { id: "pe-101", code: "PATHFIT 1", name: "Movement Competency Training", units: 2, lectureHours: 2, labHours: 0, category: "pathfit", semester: "1st", departmentId: null, yearLevel: 1 },
+  { id: "nstp-101", code: "NSTP 1", name: "National Service Training Program 1", units: 3, lectureHours: 3, labHours: 0, category: "nstp", semester: "1st", departmentId: null, yearLevel: 1 },
 ];
 
 export const MOCK_SECTIONS: Section[] = [

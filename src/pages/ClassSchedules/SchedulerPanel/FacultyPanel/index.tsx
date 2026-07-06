@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Users, X } from "lucide-react";
-import { MOCK_FACULTY, MOCK_SUBJECTS } from "../constants";
-import type { ScheduleItem } from "../types";
+import type { ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyPanelProps {
   isPhase2Active: boolean;
@@ -15,6 +14,8 @@ interface FacultyPanelProps {
   handleInlineFacultyAssign: (slotId: string, facId: string) => void;
   handleRemoveInlineFaculty: (slotId: string) => void;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
+  subjects: Subject[];
+  faculties: Faculty[];
 }
 
 export default function FacultyPanel({
@@ -28,7 +29,9 @@ export default function FacultyPanel({
   setIsAssignedListCollapsed,
   handleInlineFacultyAssign,
   handleRemoveInlineFaculty,
-  checkFacultyConflict
+  checkFacultyConflict,
+  subjects,
+  faculties
 }: FacultyPanelProps) {
   const [openDropdownSlotId, setOpenDropdownSlotId] = useState<string | null>(null);
   const [selectedFacultyBySlot, setSelectedFacultyBySlot] = useState<Record<string, string>>({});
@@ -116,9 +119,9 @@ export default function FacultyPanel({
               ) : (
                 <div>
                   {sectionSchedules.filter((s) => !s.facultyId).map((slot) => {
-                    const sub = MOCK_SUBJECTS.find((s) => s.id === slot.subjectId);
+                    const sub = subjects.find((s) => s.id === slot.subjectId);
                     const selectedFacultyId = selectedFacultyBySlot[slot.id] ?? "";
-                    const selectedFaculty = MOCK_FACULTY.find((f) => f.id === selectedFacultyId);
+                    const selectedFaculty = faculties.find((f) => f.id === selectedFacultyId);
                     const conflictWarning = conflictWarningBySlot[slot.id] ?? "";
 
                     return (
@@ -152,7 +155,7 @@ export default function FacultyPanel({
                               >
                                 -- Assign Faculty --
                               </button>
-                              {MOCK_FACULTY.map((faculty) => (
+                              {faculties.map((faculty) => (
                                 <button
                                   key={faculty.id}
                                   type="button"
@@ -208,7 +211,7 @@ export default function FacultyPanel({
                     <div className="text-center py-4 text-slate-400 text-xs">No slots assigned yet</div>
                   ) : (
                     sectionSchedules.filter((s) => s.facultyId).map((slot) => {
-                      const sub = MOCK_SUBJECTS.find((s) => s.id === slot.subjectId);
+                      const sub = subjects.find((s) => s.id === slot.subjectId);
                       return (
                         <div key={slot.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 shadow-sm mb-2 flex justify-between items-center">
                           <div className="min-w-0">

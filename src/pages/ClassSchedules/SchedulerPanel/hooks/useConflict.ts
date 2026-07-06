@@ -1,11 +1,13 @@
-import { MOCK_FACULTY, MOCK_ROOMS, MOCK_SUBJECTS } from "../constants";
-import type { ScheduleItem } from "../types";
+import type { ScheduleItem, Subject, Faculty } from "../types";
 
 interface UseConflictParams {
   schedules: ScheduleItem[];
   selectedSectionId: string;
   dragSubjectId: string | null;
   draggedScheduleId: string | null;
+  rooms: { id: string; name: string }[];
+  subjects: Subject[];
+  faculties: Faculty[];
 }
 
 type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
@@ -14,7 +16,10 @@ export const useConflict = ({
   schedules,
   selectedSectionId,
   dragSubjectId,
-  draggedScheduleId
+  draggedScheduleId,
+  rooms,
+  subjects,
+  faculties
 }: UseConflictParams) => {
   const checkConflict = (
     subjectId: string,
@@ -39,21 +44,21 @@ export const useConflict = ({
       const overlaps = dayIndex === s.dayIndex && startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
         if (s.sectionId === sectionId) {
-          const sub = MOCK_SUBJECTS.find((x) => x.id === s.subjectId);
+          const sub = subjects.find((x) => x.id === s.subjectId);
           return {
             conflictType: "section",
             message: `Section conflict: This section already has a class (${sub?.code ?? ""}) scheduled at this time.`
           };
         }
         if (roomId && roomId !== "online" && roomId !== "field" && s.roomId === roomId) {
-          const room = MOCK_ROOMS.find((r) => r.id === roomId);
+          const room = rooms.find((r) => r.id === roomId);
           return {
             conflictType: "room",
             message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time.`
           };
         }
         if (facultyId && s.facultyId === facultyId) {
-          const faculty = MOCK_FACULTY.find((f) => f.id === facultyId);
+          const faculty = faculties.find((f) => f.id === facultyId);
           return {
             conflictType: "faculty",
             message: `Faculty conflict: ${faculty?.name ?? "Selected faculty"} is already teaching at this time.`
@@ -74,7 +79,7 @@ export const useConflict = ({
       const sEnd = s.startSlot + s.durationSlots;
       const overlaps = target.dayIndex === s.dayIndex && target.startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
-        const fac = MOCK_FACULTY.find((f) => f.id === facultyId);
+        const fac = faculties.find((f) => f.id === facultyId);
         return `Faculty Conflict: ${fac?.name ?? facultyId} is already scheduled in section ${s.sectionName} at ${s.startTime} – ${s.endTime}.`;
       }
     }
@@ -93,7 +98,7 @@ export const useConflict = ({
       subjectId = sched.subjectId;
       excludeId = sched.id;
     } else if (dragSubjectId) {
-      const sub = MOCK_SUBJECTS.find((s) => s.id === dragSubjectId);
+      const sub = subjects.find((s) => s.id === dragSubjectId);
       if (!sub) return false;
       dur = sub.units * 2;
       subjectId = sub.id;

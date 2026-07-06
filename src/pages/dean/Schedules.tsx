@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Calendar, Clock, Layers, MapPin, RefreshCw, User } from "lucide-react";
+import api from "../../lib/api";
 
 interface Section {
   id: string;
@@ -23,25 +24,38 @@ interface Schedule {
   mode: "on-site" | "online" | "field";
 }
 
-const DEAN_DEPARTMENT = "College of Information Technology";
+const dayMapToIndex: Record<string, number> = {
+  "Monday": 0,
+  "Tuesday": 1,
+  "Wednesday": 2,
+  "Thursday": 3,
+  "Friday": 4,
+  "Saturday": 5,
+  "Sunday": 6
+};
+
+const DAYS_MAP: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const timeStrToSlot = (timeStr: string): number => {
+  const parts = timeStr.split(':');
+  if (parts.length < 2) return 0;
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const totalMinutes = hours * 60 + minutes;
+  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
+};
+
+const slotToTimeStr12h = (slotIndex: number): string => {
+  const totalMinutes = 7 * 60 + slotIndex * 30;
+  let hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const ampm = hours >= 12 ? "PM" : "AM";
+  if (hours > 12) hours -= 12;
+  if (hours === 0) hours = 12;
+  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+};
+
 const DAYS: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const MOCK_SECTIONS: Section[] = [
-  { id: "sec-cit-1", name: "BSCS 4A", departmentName: "College of Information Technology" },
-  { id: "sec-cit-2", name: "BSCS 4B", departmentName: "College of Information Technology" },
-  { id: "sec-cit-3", name: "BSIT 3A", departmentName: "College of Information Technology" },
-  { id: "sec-cas-1", name: "BS-Psych 1A", departmentName: "College of Arts and Sciences" }
-];
-
-const MOCK_SCHEDULES: Schedule[] = [
-  { id: "sched-1", sectionId: "sec-cit-1", sectionName: "BSCS 4A", departmentName: "College of Information Technology", subjectCode: "CS 401", subjectName: "Intelligent Systems", subjectType: "major", facultyName: "Dr. Alan Turing", roomName: "Lab 101", day: "Mon", startTime: "7:00 AM", endTime: "10:00 AM", mode: "on-site" },
-  { id: "sched-2", sectionId: "sec-cit-1", sectionName: "BSCS 4A", departmentName: "College of Information Technology", subjectCode: "CS 402", subjectName: "Software Engineering", subjectType: "major", facultyName: "Dr. Grace Hopper", roomName: "Lab 102", day: "Wed", startTime: "9:00 AM", endTime: "12:00 PM", mode: "on-site" },
-  { id: "sched-3", sectionId: "sec-cit-1", sectionName: "BSCS 4A", departmentName: "College of Information Technology", subjectCode: "GE 101", subjectName: "Understanding the Self", subjectType: "gec", facultyName: "Prof. Ada Lovelace", roomName: "Room 301", day: "Tue", startTime: "10:00 AM", endTime: "1:00 PM", mode: "online" },
-  { id: "sched-4", sectionId: "sec-cit-2", sectionName: "BSCS 4B", departmentName: "College of Information Technology", subjectCode: "CS 403", subjectName: "Network Security", subjectType: "major", facultyName: "Dr. Alan Turing", roomName: "Lab 101", day: "Thu", startTime: "1:00 PM", endTime: "4:00 PM", mode: "on-site" },
-  { id: "sched-5", sectionId: "sec-cit-3", sectionName: "BSIT 3A", departmentName: "College of Information Technology", subjectCode: "PATHFIT 1", subjectName: "Movement Competency Training", subjectType: "pathfit", facultyName: null, roomName: "Gymnasium", day: "Fri", startTime: "8:00 AM", endTime: "10:00 AM", mode: "field" },
-  { id: "sched-6", sectionId: "sec-cas-1", sectionName: "BS-Psych 1A", departmentName: "College of Arts and Sciences", subjectCode: "GE 102", subjectName: "Readings in Philippine History", subjectType: "gec", facultyName: "Dr. Marie Curie", roomName: "Room 302", day: "Mon", startTime: "1:00 PM", endTime: "4:00 PM", mode: "on-site" }
-];
-
 const START_HOUR = 7;
 const END_HOUR = 21;
 const SLOT_HEIGHT_PX = 24;
@@ -87,36 +101,124 @@ const getSubjectStyles = (type: Schedule["subjectType"]) => {
 const getModeBadge = (mode: Schedule["mode"]) => {
   switch (mode) {
     case "on-site":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-50 text-blue-700 border border-blue-200";
     case "online":
-      return "bg-green-100 text-green-700";
+      return "bg-emerald-50 text-emerald-700 border border-emerald-200";
     case "field":
-      return "bg-orange-100 text-orange-700";
+      return "bg-amber-50 text-amber-700 border border-amber-200";
     default:
-      return "bg-slate-100 text-slate-700";
+      return "bg-slate-50 text-slate-700 border border-slate-200";
   }
 };
 
 export default function Schedules() {
   const [selectedSectionId, setSelectedSectionId] = useState("All");
   const [selectedMode, setSelectedMode] = useState("All");
+  const [sections, setSections] = useState<Section[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const deanSections = MOCK_SECTIONS.filter((section) => section.departmentName === DEAN_DEPARTMENT);
+  const userJson = localStorage.getItem('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+  const userDeptId = user?.department_id;
+  const userDeptName = user?.department?.department_name || "College of Information Technology";
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        const termRes = await api.get<any>('/terms/active');
+        const term = termRes.data;
+
+        const [sectionsRes, schedulesRes] = await Promise.all([
+          api.get<any[]>('/sections'),
+          api.get<any[]>('/schedules')
+        ]);
+
+        let rawSections = sectionsRes.data;
+        if (term) {
+          rawSections = rawSections.filter((s: any) => Number(s.term_id) === Number(term.id));
+        }
+        if (userDeptId) {
+          rawSections = rawSections.filter((s: any) => Number(s.department_id) === Number(userDeptId));
+        }
+        const mappedSections = rawSections.map((s: any) => ({
+          id: s.id.toString(),
+          name: s.section_name,
+          departmentName: s.department?.department_name ?? ""
+        }));
+        setSections(mappedSections);
+
+        let rawSchedules = schedulesRes.data;
+        if (term) {
+          rawSchedules = rawSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
+        }
+        if (userDeptId) {
+          rawSchedules = rawSchedules.filter((s: any) => Number(s.department_id) === Number(userDeptId));
+        }
+
+        const mappedSchedules: Schedule[] = rawSchedules.map((item: any) => {
+          let roomName = "";
+          if (item.room) {
+            if (item.room.room_code === "ONLINE") roomName = "Online";
+            else if (item.room.room_code === "FIELD") roomName = "Field";
+            else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+          }
+
+          const dayIndex = dayMapToIndex[item.day] ?? 0;
+          const startSlot = timeStrToSlot(item.start_time);
+          const endSlot = timeStrToSlot(item.end_time);
+
+          return {
+            id: item.id.toString(),
+            sectionId: item.section_id.toString(),
+            sectionName: item.section?.section_name ?? "",
+            departmentName: item.department?.department_name ?? "",
+            subjectCode: item.subject?.subject_code ?? "",
+            subjectName: item.subject?.subject_name ?? "",
+            subjectType: item.subject?.subject_category as any,
+            facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
+            roomName,
+            day: DAYS_MAP[dayIndex] || "Mon",
+            startTime: slotToTimeStr12h(startSlot),
+            endTime: slotToTimeStr12h(endSlot),
+            mode: item.mode ?? "on-site"
+          };
+        });
+        setSchedules(mappedSchedules);
+      } catch (err) {
+        // Safe empty catch block
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [userDeptId]);
+
   const timeSlots = Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, index) => slotToTime(index));
 
   const filteredSchedules = useMemo(() => {
-    return MOCK_SCHEDULES.filter((schedule) => {
-      if (schedule.departmentName !== DEAN_DEPARTMENT) return false;
+    return schedules.filter((schedule) => {
       if (selectedSectionId !== "All" && schedule.sectionId !== selectedSectionId) return false;
       if (selectedMode !== "All" && schedule.mode !== selectedMode) return false;
       return true;
     });
-  }, [selectedMode, selectedSectionId]);
+  }, [schedules, selectedMode, selectedSectionId]);
 
   const handleResetFilters = () => {
     setSelectedSectionId("All");
     setSelectedMode("All");
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[400px] w-full">
+        <RefreshCw className="w-8 h-8 text-[#4e0a10] animate-spin mb-4" />
+        <p className="text-sm font-semibold text-slate-500">Loading schedules...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -136,7 +238,7 @@ export default function Schedules() {
               className="h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-[#4e0a10] cursor-pointer"
             >
               <option value="All">All Sections</option>
-              {deanSections.map((section) => (
+              {sections.map((section) => (
                 <option key={section.id} value={section.id}>{section.name}</option>
               ))}
             </select>
@@ -260,7 +362,7 @@ export default function Schedules() {
           </span>
           <span className="flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-slate-400" />
-            {DEAN_DEPARTMENT}
+            {userDeptName}
           </span>
         </div>
       </div>
