@@ -10,7 +10,8 @@ type CheckConflict = (
   dayIndex: number,
   startSlot: number,
   durationSlots: number,
-  excludeScheduleId?: string
+  excludeScheduleId?: string | string[],
+  preferredPattern?: "MW" | "TTh" | null
 ) => { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
 interface UseDragDropParams {
@@ -99,7 +100,8 @@ export const useDragDrop = ({
         dayIndex,
         timeIndex,
         sched.durationSlots,
-        sched.id
+        sched.id,
+        sched.preferredPattern
       );
 
       if (conflict) {

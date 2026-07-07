@@ -29,8 +29,26 @@ export const useConflict = ({
     dayIndex: number,
     startSlot: number,
     durationSlots: number,
-    excludeScheduleId?: string
+    excludeScheduleId?: string | string[],
+    preferredPattern?: "MW" | "TTh" | null
   ): ConflictResult => {
+    // Validate Preferred Meeting Pattern
+    if (preferredPattern === "MW") {
+      if (dayIndex !== 0 && dayIndex !== 2) {
+        return {
+          conflictType: "section",
+          message: "Preferred pattern conflict: MW subjects can only be scheduled on Monday or Wednesday."
+        };
+      }
+    } else if (preferredPattern === "TTh") {
+      if (dayIndex !== 1 && dayIndex !== 3) {
+        return {
+          conflictType: "section",
+          message: "Preferred pattern conflict: TTh subjects can only be scheduled on Tuesday or Thursday."
+        };
+      }
+    }
+
     const endSlot = startSlot + durationSlots;
     if (endSlot > 28) {
       return {
@@ -39,7 +57,10 @@ export const useConflict = ({
       };
     }
     for (const s of schedules) {
-      if (excludeScheduleId && s.id === excludeScheduleId) continue;
+      if (excludeScheduleId) {
+        const excludes = Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId];
+        if (excludes.includes(s.id)) continue;
+      }
       const sEnd = s.startSlot + s.durationSlots;
       const overlaps = dayIndex === s.dayIndex && startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
@@ -90,6 +111,7 @@ export const useConflict = ({
     let dur = 6;
     let subjectId = "";
     let excludeId: string | undefined;
+    let prefPattern: "MW" | "TTh" | null = null;
 
     if (draggedScheduleId) {
       const sched = schedules.find((s) => s.id === draggedScheduleId);
@@ -97,6 +119,7 @@ export const useConflict = ({
       dur = sched.durationSlots;
       subjectId = sched.subjectId;
       excludeId = sched.id;
+      prefPattern = sched.preferredPattern ?? null;
     } else if (dragSubjectId) {
       const sub = subjects.find((s) => s.id === dragSubjectId);
       if (!sub) return false;
@@ -106,7 +129,7 @@ export const useConflict = ({
       return false;
     }
 
-    return checkConflict(subjectId, selectedSectionId, null, "", d, t, dur, excludeId) !== null;
+    return checkConflict(subjectId, selectedSectionId, null, "", d, t, dur, excludeId, prefPattern) !== null;
   };
 
   return { checkConflict, checkFacultyConflict, getDragOverConflict };

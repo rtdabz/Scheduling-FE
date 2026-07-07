@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { CheckCircle2, LayoutGrid, Users } from "lucide-react";
 import {
   DAYS,
@@ -48,85 +48,36 @@ export const useScheduler = () => {
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [activeTerm, setActiveTerm] = useState<any>(null);
 
+  // Single parallel fetch for all reference data on mount
   useEffect(() => {
-    const fetchRooms = async () => {
-      try {
-        const res = await api.get<any[]>('/rooms');
-        const userJson = localStorage.getItem('user');
-        const user = userJson ? JSON.parse(userJson) : null;
-        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+    let active = true;
+    const controller = new AbortController();
+    const signal = controller.signal;
 
-        let apiRooms = res.data;
-        if (!isVpaa && user?.department_id) {
-          apiRooms = apiRooms.filter(r => r.department_id === null || Number(r.department_id) === Number(user.department_id));
-        }
+    const userJson = localStorage.getItem('user');
+    const user = userJson ? JSON.parse(userJson) : null;
+    const isVpaa = user?.role?.toLowerCase() === 'vpaa';
 
-        const mappedRooms = apiRooms.map((r: any) => ({
-          id: r.id.toString(),
-          name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
-          departmentId: r.department_id
-        }));
-        setRooms(mappedRooms);
-      } catch (err) {
-        console.error("Failed to fetch rooms", err);
-        setRooms([]);
+    const fetchRooms = api.get<any[]>('/rooms', { signal }).then(res => {
+      let apiRooms = res.data;
+      if (!isVpaa && user?.department_id) {
+        apiRooms = apiRooms.filter((r: any) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
       }
-    };
-    fetchRooms();
-  }, []);
+      return apiRooms.map((r: any) => ({
+        id: r.id.toString(),
+        name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
+        departmentId: r.department_id
+      }));
+    });
 
-  useEffect(() => {
-    const fetchSections = async () => {
-      try {
-        const userJson = localStorage.getItem('user');
-        const user = userJson ? JSON.parse(userJson) : null;
-        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+    // Query subjects using department_id parameter to filter at database level
+    const subjectsUrl = !isVpaa && user?.department_id
+      ? `/subjects?department_id=${user.department_id}`
+      : '/subjects';
 
-        let res;
-        if (!isVpaa && user?.department_id) {
-          res = await api.get<any[]>(`/sections/department/${user.department_id}`);
-        } else {
-          res = await api.get<any[]>('/sections');
-        }
-
-        let apiSections = res.data;
-        if (activeTerm) {
-          apiSections = apiSections.filter((s: any) => Number(s.term_id) === Number(activeTerm.id));
-        }
-
-        const mapped: Section[] = apiSections.map((s: any) => ({
-          id: s.id.toString(),
-          name: s.section_name,
-          yearLevel: Number(s.year_level),
-          departmentId: s.department_id
-        }));
-        setSections(mapped);
-      } catch (err) {
-        console.error("Failed to fetch sections", err);
-        setSections([]);
-      }
-    };
-    fetchSections();
-  }, [activeTerm]);
-
-  useEffect(() => {
-    const fetchSubjects = async () => {
-      try {
-        const res = await api.get<any[]>('/subjects');
-        const userJson = localStorage.getItem('user');
-        const user = userJson ? JSON.parse(userJson) : null;
-        const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-
-        let apiSubjects = res.data;
-        if (!isVpaa && user?.department_id) {
-          apiSubjects = apiSubjects.filter((s: any) =>
-            s.department_id === null ||
-            s.subject_category === 'gec' ||               // ← add this line
-            Number(s.department_id) === Number(user.department_id)
-          );
-        }
-
-      const mapped: Subject[] = apiSubjects.map((s: any) => ({
+    const fetchSubjects = api.get<any[]>(subjectsUrl, { signal }).then(res => {
+      const apiSubjects = res.data;
+      return apiSubjects.map((s: any) => ({
         id: s.id.toString(),
         code: s.subject_code,
         name: s.subject_name,
@@ -136,47 +87,105 @@ export const useScheduler = () => {
         category: s.subject_category as Subject['category'],
         semester: s.semester as Subject['semester'],
         departmentId: s.department_id ?? null,
-        yearLevel: Number(s.year_level),   // ← add this
+        yearLevel: Number(s.year_level),
       }));
+    });
 
-        setSubjects(mapped);
-      } catch (err) {
-        console.error("Failed to fetch subjects", err);
-        setSubjects([]);
-      }
+    const fetchFaculties = api.get<any[]>('/faculties', { signal }).then(res =>
+      res.data.map((f: any) => ({
+        id: f.id.toString(),
+        name: `${f.first_name} ${f.last_name}`
+      }))
+    );
+
+    const fetchTerm = api.get<any>('/terms/active', { signal }).then(res => res.data);
+
+    // Parallel fetch sections and schedules
+    const sectionsUrl = !isVpaa && user?.department_id
+      ? `/sections/department/${user.department_id}`
+      : '/sections';
+    const fetchSections = api.get<any[]>(sectionsUrl, { signal }).then(res => res.data);
+    const fetchSchedules = api.get<any[]>('/schedules', { signal }).then(res => res.data);
+
+    Promise.all([fetchRooms, fetchSubjects, fetchFaculties, fetchTerm, fetchSections, fetchSchedules])
+      .then(([mappedRooms, mappedSubjects, mappedFaculties, term, rawSections, rawSchedules]) => {
+        if (!active) return;
+
+        setRooms(mappedRooms);
+        setSubjects(mappedSubjects);
+        setFaculties(mappedFaculties);
+        setActiveTerm(term);
+
+        // Filter sections by term_id immediately once loaded
+        const filteredSections = rawSections
+          .filter((s: any) => Number(s.term_id) === Number(term.id))
+          .map((s: any) => ({
+            id: s.id.toString(),
+            name: s.section_name,
+            yearLevel: Number(s.year_level),
+            departmentId: s.department_id
+          }));
+        setSections(filteredSections);
+
+        // Filter and map schedules by term_id immediately once loaded
+        const filteredSchedules = rawSchedules
+          .filter((item: any) => Number(item.term_id) === Number(term.id))
+          .map((item: any) => {
+            const dayIndex = dayMapToIndex[item.day] ?? 0;
+            const startSlot = timeStrToSlot(item.start_time);
+            const endSlot = timeStrToSlot(item.end_time);
+            const durationSlots = endSlot - startSlot;
+
+            let roomName = "";
+            if (item.room) {
+              if (item.room.room_code === "ONLINE") roomName = "Online";
+              else if (item.room.room_code === "FIELD") roomName = "Field";
+              else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+            }
+
+            let roomIdStr = item.room_id.toString();
+            if (item.room?.room_code === "ONLINE") roomIdStr = "online";
+            else if (item.room?.room_code === "FIELD") roomIdStr = "field";
+
+            return {
+              id: item.id.toString(),
+              subjectId: item.subject_id.toString(),
+              subjectCode: item.subject?.subject_code ?? "",
+              subjectName: item.subject?.subject_name ?? "",
+              subjectType: item.subject?.subject_category as any,
+              sectionName: item.section?.section_name ?? "",
+              roomName,
+              day: DAYS[dayIndex] || "Mon",
+              startTime: slotToTimeStr(startSlot),
+              endTime: slotToTimeStr(endSlot),
+              mode: item.mode ?? "on-site",
+              facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
+              facultyId: item.faculty_id ? item.faculty_id.toString() : null,
+              status: item.status,
+              dayIndex,
+              startSlot,
+              durationSlots,
+              sectionId: item.section_id.toString(),
+              roomId: roomIdStr,
+              isHybrid: !!item.is_hybrid,
+              preferredPattern: item.preferred_pattern
+            };
+          });
+        setSchedules(filteredSchedules);
+      })
+      .catch(() => {
+        // Safe no-op on abort or fetch error to preserve previous/alternate state instances
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
     };
-    fetchSubjects();
   }, []);
 
-  useEffect(() => {
-    const fetchFaculties = async () => {
-      try {
-        const res = await api.get<any[]>('/faculties');
-        const mapped = res.data.map((f: any) => ({
-          id: f.id.toString(),
-          name: `${f.first_name} ${f.last_name}`
-        }));
-        setFaculties(mapped);
-      } catch (err) {
-        console.error("Failed to fetch faculties", err);
-      }
-    };
-    fetchFaculties();
-  }, []);
 
-  useEffect(() => {
-    const fetchActiveTerm = async () => {
-      try {
-        const res = await api.get<any>('/terms/active');
-        setActiveTerm(res.data);
-      } catch (err) {
-        console.error("Failed to fetch active term", err);
-      }
-    };
-    fetchActiveTerm();
-  }, []);
 
-  const [placed, setPlaced] = useState<Record<string, string>>({});
+
   const [dragSubjectId, setDragSubjectId] = useState<string | null>(null);
   const [draggedScheduleId, setDraggedScheduleId] = useState<string | null>(null);
   const [dragFromCell, setDragFromCell] = useState<string | null>(null);
@@ -191,11 +200,9 @@ export const useScheduler = () => {
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
-  const [selectedYearLevel, setSelectedYearLevel] = useState<number | null>(null);
-  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
-  const [scheduleStatus, setScheduleStatus] = useState<Record<string, ScheduleItem["status"]>>({});
 
-  const refreshSchedules = async () => {
+
+  const refreshSchedules = useCallback(async () => {
     try {
       const res = await api.get<any[]>('/schedules');
       let apiData = res.data;
@@ -244,22 +251,33 @@ export const useScheduler = () => {
         };
       });
       setSchedules(mapped);
-    } catch (err) {
-      console.error("Failed to fetch schedules", err);
+    } catch {
+      // silently fail
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTerm]);
+
+  const isInitialLoadedRef = useRef(false);
 
   useEffect(() => {
-    if (rooms.length > 0) {
-      refreshSchedules();
+    if (activeTerm) {
+      if (isInitialLoadedRef.current) {
+        refreshSchedules();
+      } else {
+        isInitialLoadedRef.current = true;
+      }
     }
-  }, [rooms, activeTerm]);
+  }, [activeTerm, refreshSchedules]);
 
   const [dropContext, setDropContext] = useState<DropContext | null>(null);
   const [modalRoomId, setModalRoomId] = useState<string>("");
   const [modalClassMode, setModalClassMode] = useState<"on-site" | "online" | "field">("on-site");
   const [modalIsHybrid, setModalIsHybrid] = useState<boolean>(false);
   const [modalPreferredPattern, setModalPreferredPattern] = useState<"MW" | "TTh" | null>(null);
+  const [modalDay1StartSlot, setModalDay1StartSlot] = useState<number>(0);
+  const [modalDay1Duration, setModalDay1Duration] = useState<number>(0);
+  const [modalDay2StartSlot, setModalDay2StartSlot] = useState<number>(0);
+  const [isDay2ModifiedByUser, setIsDay2ModifiedByUser] = useState<boolean>(false);
   const [modalValidationError, setModalValidationError] = useState<string>("");
   const [modalConflict, setModalConflict] = useState<string | null>(null);
 
@@ -283,33 +301,46 @@ export const useScheduler = () => {
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
   const [isModalLoading, setIsModalLoading] = useState(false);
 
+  // Memoize derived section schedules to avoid repeated filtering
+  const sectionSchedules = useMemo(
+    () => schedules.filter((s) => s.sectionId === selectedSectionId),
+    [schedules, selectedSectionId]
+  );
+
   const currentStatus: ScheduleItem["status"] = useMemo(() => {
-    if (selectedSectionId && scheduleStatus[selectedSectionId]) {
-      return scheduleStatus[selectedSectionId];
-    }
-    const secSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
-    return secSchedules.length > 0 ? secSchedules[0].status : "draft";
-  }, [schedules, selectedSectionId, scheduleStatus]);
+    return sectionSchedules.length > 0 ? sectionSchedules[0].status : "draft";
+  }, [sectionSchedules]);
 
   const isPhase2Active = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isEditable = currentStatus === "draft";
   const isPhase1Completed = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
 
-  const sectionSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
-  const scheduledSubjectIds = new Set(sectionSchedules.map((s) => s.subjectId));
+  const scheduledSubjectIds = useMemo(
+    () => new Set(sectionSchedules.map((s) => s.subjectId)),
+    [sectionSchedules]
+  );
 
-  const visibleSections = useMemo(
-    () => selectedYearLevel == null
-      ? sections
-      : sections.filter((s) => s.yearLevel === selectedYearLevel),
-    [sections, selectedYearLevel]
+  const groupedSections = useMemo(() => {
+    const groups: Record<number, Section[]> = {};
+    sections.forEach((sec) => {
+      if (!groups[sec.yearLevel]) {
+        groups[sec.yearLevel] = [];
+      }
+      groups[sec.yearLevel].push(sec);
+    });
+    return Object.keys(groups)
+      .map((ylStr) => Number(ylStr))
+      .sort((a, b) => a - b)
+      .map((yl) => ({
+        yearLevel: yl,
+        sections: groups[yl].sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+  }, [sections]);
+  const selectedSection = useMemo(
+    () => sections.find((s) => s.id === selectedSectionId),
+    [sections, selectedSectionId]
   );
-  const yearLevels = useMemo(
-    () => Array.from(new Set(sections.map((s) => s.yearLevel))).sort((a, b) => a - b),
-    [sections]
-  );
-  const selectedSection = sections.find((s) => s.id === selectedSectionId);
 
   const semesterSubjects = useMemo(() => {
     if (sections.length === 0) return [];
@@ -322,10 +353,16 @@ export const useScheduler = () => {
     return semesterSubjects.filter((s) => s.yearLevel === selectedSection.yearLevel).length;
   }, [semesterSubjects, selectedSection]);
 
-  const totalScheduled = new Set(sectionSchedules.map((s) => s.subjectId)).size;
+  const totalScheduled = useMemo(
+    () => new Set(sectionSchedules.map((s) => s.subjectId)).size,
+    [sectionSchedules]
+  );
 
   const totalSlotsCount = sectionSchedules.length;
-  const assignedSlotsCount = sectionSchedules.filter((s) => !!s.facultyId).length;
+  const assignedSlotsCount = useMemo(
+    () => sectionSchedules.filter((s) => !!s.facultyId).length,
+    [sectionSchedules]
+  );
   const unassignedSlotsCount = totalSlotsCount - assignedSlotsCount;
 
   const dropSubject = dropContext
@@ -366,39 +403,92 @@ export const useScheduler = () => {
     faculties
   });
 
-  useEffect(() => {
+  // Derive placed map from schedules — no extra state or render cycle needed
+  const placed = useMemo(() => {
     const nextPlaced: Record<string, string> = {};
     schedules.forEach((s) => {
       for (let offset = 0; offset < s.durationSlots; offset++) {
         nextPlaced[`${s.dayIndex}-${s.startSlot + offset}`] = s.subjectId;
       }
     });
-    setPlaced(nextPlaced);
+    return nextPlaced;
   }, [schedules]);
 
   useEffect(() => {
-    if (!dropContext) return;
-    const subject = subjects.find((s) => s.id === dropContext.subjectId);
-    const isFieldSubject = subject?.category === "pathfit" || subject?.category === "nstp";
-    if (isFieldSubject) {
-      setModalClassMode("field");
-    } else if (dropContext.isRescheduling && dropContext.scheduleId) {
-      const existing = schedules.find((s) => s.id === dropContext.scheduleId);
-      if (existing) {
-        setModalRoomId(existing.roomId);
-        setModalClassMode(existing.mode ?? "on-site");
-        setModalIsHybrid(existing.isHybrid ?? false);
-        setModalPreferredPattern(existing.preferredPattern ?? null);
+    if (dropContext) {
+      const subject = subjects.find((s) => s.id === dropContext.subjectId);
+      const isFieldSubject = subject?.category === "pathfit" || subject?.category === "nstp";
+      const totalSlots = subject ? subject.units * 2 : 0;
+      const defaultDuration = Math.floor(totalSlots / 2);
+
+      if (isFieldSubject) {
+        setModalClassMode("field");
+        setModalRoomId("");
+        setModalIsHybrid(false);
+        setModalPreferredPattern(null);
+        setModalDay1StartSlot(dropContext.startSlot);
+        setModalDay1Duration(totalSlots);
+        setModalDay2StartSlot(dropContext.startSlot);
+        setIsDay2ModifiedByUser(false);
+      } else if (dropContext.isRescheduling && dropContext.scheduleId) {
+        const targetSched = schedules.find((s) => s.id === dropContext.scheduleId);
+        if (targetSched) {
+          setModalRoomId(targetSched.roomId);
+          setModalClassMode(targetSched.mode ?? "on-site");
+          setModalIsHybrid(targetSched.isHybrid ?? false);
+          setModalPreferredPattern(targetSched.preferredPattern ?? null);
+
+          const existing = schedules.filter(
+            (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
+          );
+          const sorted = [...existing].sort((a, b) => a.dayIndex - b.dayIndex);
+
+          if (sorted.length >= 2) {
+            setModalDay1StartSlot(sorted[0].startSlot);
+            setModalDay1Duration(sorted[0].durationSlots);
+            setModalDay2StartSlot(sorted[1].startSlot);
+            setIsDay2ModifiedByUser(true);
+          } else if (sorted.length === 1) {
+            setModalDay1StartSlot(sorted[0].startSlot);
+            setModalDay1Duration(sorted[0].durationSlots);
+            setModalDay2StartSlot(sorted[0].startSlot);
+            setIsDay2ModifiedByUser(false);
+          } else {
+            setModalDay1StartSlot(dropContext.startSlot);
+            setModalDay1Duration(totalSlots);
+            setModalDay2StartSlot(dropContext.startSlot);
+            setIsDay2ModifiedByUser(false);
+          }
+        }
+      } else {
+        setModalRoomId("");
+        setModalClassMode("on-site");
+        setModalIsHybrid(false);
+        setModalPreferredPattern(null);
+        setModalDay1StartSlot(dropContext.startSlot);
+        setModalDay1Duration(defaultDuration);
+        setModalDay2StartSlot(dropContext.startSlot);
+        setIsDay2ModifiedByUser(false);
       }
     } else {
       setModalRoomId("");
       setModalClassMode("on-site");
       setModalIsHybrid(false);
       setModalPreferredPattern(null);
+      setModalDay1StartSlot(0);
+      setModalDay1Duration(0);
+      setModalDay2StartSlot(0);
+      setIsDay2ModifiedByUser(false);
     }
     setModalValidationError("");
     setModalConflict(null);
-  }, [dropContext, schedules]);
+  }, [dropContext, schedules, selectedSectionId]);
+
+  useEffect(() => {
+    if (!isDay2ModifiedByUser) {
+      setModalDay2StartSlot(modalDay1StartSlot);
+    }
+  }, [modalDay1StartSlot, isDay2ModifiedByUser]);
 
   useEffect(() => {
     if (modalClassMode === "online") {
@@ -414,22 +504,62 @@ export const useScheduler = () => {
     if (dropContext && modalRoomId) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
       if (subject) {
-        const conflict = checkConflict(
-          dropContext.subjectId,
-          selectedSectionId,
-          null,
-          modalRoomId,
-          dropContext.dayIndex,
-          dropContext.startSlot,
-          subject.units * 2,
-          dropContext.isRescheduling ? dropContext.scheduleId : undefined
-        );
+        const excludeIds = dropContext.isRescheduling
+          ? schedules.filter(s => s.subjectId === subject.id && s.sectionId === selectedSectionId).map(s => s.id)
+          : [];
+
+        const totalSlots = subject.units * 2;
+        const d1 = modalDay1Duration;
+        const d2 = totalSlots - d1;
+
+        let conflict: { message: string } | null = null;
+
+        if (modalPreferredPattern === "MW") {
+          if (d1 > 0) {
+            conflict = checkConflict(
+              dropContext.subjectId, selectedSectionId, null, modalRoomId,
+              0, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
+            );
+          }
+          if (!conflict && d2 > 0) {
+            conflict = checkConflict(
+              dropContext.subjectId, selectedSectionId, null, modalRoomId,
+              2, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
+            );
+          }
+        } else if (modalPreferredPattern === "TTh") {
+          if (d1 > 0) {
+            conflict = checkConflict(
+              dropContext.subjectId, selectedSectionId, null, modalRoomId,
+              1, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
+            );
+          }
+          if (!conflict && d2 > 0) {
+            conflict = checkConflict(
+              dropContext.subjectId, selectedSectionId, null, modalRoomId,
+              3, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
+            );
+          }
+        } else {
+          conflict = checkConflict(
+            dropContext.subjectId, selectedSectionId, null, modalRoomId,
+            dropContext.dayIndex, dropContext.startSlot, totalSlots, excludeIds, modalPreferredPattern
+          );
+        }
+
         setModalConflict(conflict ? conflict.message : null);
       }
     } else {
       setModalConflict(null);
     }
-  }, [modalRoomId, dropContext]);
+  }, [
+    modalRoomId,
+    dropContext,
+    modalPreferredPattern,
+    modalDay1StartSlot,
+    modalDay1Duration,
+    modalDay2StartSlot
+  ]);
 
   const onScheduleRelocated = async (scheduleId: string, dayIndex: number, startSlot: number) => {
     const sched = schedules.find((s) => s.id === scheduleId);
@@ -479,18 +609,73 @@ export const useScheduler = () => {
     }
     const subject = subjects.find((s) => s.id === dropContext.subjectId);
     if (!subject) return;
-    const durationSlots = subject.units * 2;
-    const conflict = checkConflict(
-      dropContext.subjectId, selectedSectionId, null, modalRoomId,
-      dropContext.dayIndex, dropContext.startSlot, durationSlots,
-      dropContext.isRescheduling ? dropContext.scheduleId : undefined
-    );
-    if (conflict) {
-      setConflictInfo({ dayIndex: dropContext.dayIndex, startSlot: dropContext.startSlot, durationSlots, message: conflict.message });
-      setDropContext(null);
+
+    const totalSlots = subject.units * 2;
+    const d1 = modalDay1Duration;
+    const d2 = totalSlots - d1;
+
+    // Exclude current slots from conflict checking when rescheduling
+    const excludeIds = dropContext.isRescheduling
+      ? schedules.filter(s => s.subjectId === subject.id && s.sectionId === selectedSectionId).map(s => s.id)
+      : [];
+
+    let resolvedDay1StartSlot = -1;
+    let resolvedDay2StartSlot = -1;
+
+    // Check if the current user-specified slots have no conflicts
+    let currentHasConflict = false;
+    if (modalPreferredPattern === "MW") {
+      const conflictMon = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 0, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
+      const conflictWed = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 2, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
+      if (conflictMon || conflictWed) currentHasConflict = true;
+    } else if (modalPreferredPattern === "TTh") {
+      const conflictTue = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 1, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
+      const conflictThu = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 3, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
+      if (conflictTue || conflictThu) currentHasConflict = true;
+    } else {
+      const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, dropContext.dayIndex, dropContext.startSlot, totalSlots, excludeIds, modalPreferredPattern);
+      if (conflict) currentHasConflict = true;
+    }
+
+    if (!currentHasConflict) {
+      resolvedDay1StartSlot = modalPreferredPattern ? modalDay1StartSlot : dropContext.startSlot;
+      resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? modalDay2StartSlot : -1;
+    } else {
+      // Slot search resolution: look circularly for a slot where both segments fit
+      const maxSlots = 28;
+      const maxDuration = Math.max(d1, d2);
+
+      for (let offset = 0; offset < maxSlots; offset++) {
+        const s = (modalDay1StartSlot + offset) % (maxSlots - maxDuration + 1);
+        if (s + maxDuration > maxSlots) continue;
+
+        let hasConflict = false;
+        if (modalPreferredPattern === "MW") {
+          const conflictMon = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 0, s, d1, excludeIds, modalPreferredPattern) : null;
+          const conflictWed = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 2, s, d2, excludeIds, modalPreferredPattern) : null;
+          if (conflictMon || conflictWed) hasConflict = true;
+        } else if (modalPreferredPattern === "TTh") {
+          const conflictTue = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 1, s, d1, excludeIds, modalPreferredPattern) : null;
+          const conflictThu = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 3, s, d2, excludeIds, modalPreferredPattern) : null;
+          if (conflictTue || conflictThu) hasConflict = true;
+        } else {
+          const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, dropContext.dayIndex, s, totalSlots, excludeIds, modalPreferredPattern);
+          if (conflict) hasConflict = true;
+        }
+
+        if (!hasConflict) {
+          resolvedDay1StartSlot = s;
+          resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? s : -1;
+          break;
+        }
+      }
+    }
+
+    if (resolvedDay1StartSlot === -1) {
+      setModalValidationError("No available time slots found that satisfy all scheduling constraints.");
       return;
     }
-    
+
     const section = sections.find((s) => s.id === selectedSectionId);
     if (!section) return;
 
@@ -503,47 +688,153 @@ export const useScheduler = () => {
       if (fieldRoom) resolvedRoomId = fieldRoom.id;
     }
 
-    const dayName = fullDayNames[dropContext.dayIndex];
-    const startTime24h = slotToTime24h(dropContext.startSlot);
-    const endTime24h = slotToTime24h(dropContext.startSlot + durationSlots);
+    const targetDays = [];
+    if (modalPreferredPattern === "MW") {
+      if (d1 > 0) targetDays.push({ day: "Monday", startSlot: resolvedDay1StartSlot, duration: d1 });
+      if (d2 > 0) targetDays.push({ day: "Wednesday", startSlot: resolvedDay2StartSlot, duration: d2 });
+    } else if (modalPreferredPattern === "TTh") {
+      if (d1 > 0) targetDays.push({ day: "Tuesday", startSlot: resolvedDay1StartSlot, duration: d1 });
+      if (d2 > 0) targetDays.push({ day: "Thursday", startSlot: resolvedDay2StartSlot, duration: d2 });
+    } else {
+      targetDays.push({ day: fullDayNames[dropContext.dayIndex], startSlot: resolvedDay1StartSlot, duration: totalSlots });
+    }
 
+    setIsModalLoading(true);
     try {
-      if (dropContext.isRescheduling && dropContext.scheduleId) {
-        await api.put(`/schedules/${dropContext.scheduleId}`, {
-          room_id: Number(resolvedRoomId),
-          day: dayName,
-          start_time: startTime24h,
-          end_time: endTime24h,
-          mode: modalClassMode,
-          is_hybrid: modalIsHybrid,
-          preferred_pattern: modalPreferredPattern
-        });
-        toast.success("Schedule Updated", "Class schedule successfully relocated.");
+      if (dropContext.isRescheduling) {
+        const existingRecords = schedules.filter(
+          s => s.subjectId === subject.id && s.sectionId === selectedSectionId
+        );
+
+        if (targetDays.length === 2) {
+          if (existingRecords.length === 2) {
+            await api.put(`/schedules/${existingRecords[0].id}`, {
+              room_id: Number(resolvedRoomId),
+              day: targetDays[0].day,
+              start_time: slotToTime24h(targetDays[0].startSlot),
+              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
+              mode: modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_pattern: modalPreferredPattern
+            });
+            await api.put(`/schedules/${existingRecords[1].id}`, {
+              room_id: Number(resolvedRoomId),
+              day: targetDays[1].day,
+              start_time: slotToTime24h(targetDays[1].startSlot),
+              end_time: slotToTime24h(targetDays[1].startSlot + targetDays[1].duration),
+              mode: modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_pattern: modalPreferredPattern
+            });
+          } else if (existingRecords.length === 1) {
+            await api.put(`/schedules/${existingRecords[0].id}`, {
+              room_id: Number(resolvedRoomId),
+              day: targetDays[0].day,
+              start_time: slotToTime24h(targetDays[0].startSlot),
+              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
+              mode: modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_pattern: modalPreferredPattern
+            });
+            await api.post('/schedules', {
+              term_id: activeTerm.id,
+              section_id: Number(selectedSectionId),
+              subject_id: Number(subject.id),
+              faculty_id: null,
+              room_id: Number(resolvedRoomId),
+              department_id: section.departmentId,
+              day: targetDays[1].day,
+              start_time: slotToTime24h(targetDays[1].startSlot),
+              end_time: slotToTime24h(targetDays[1].startSlot + targetDays[1].duration),
+              mode: modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_pattern: modalPreferredPattern,
+              status: "draft"
+            });
+          } else {
+            for (const t of targetDays) {
+              await api.post('/schedules', {
+                term_id: activeTerm.id,
+                section_id: Number(selectedSectionId),
+                subject_id: Number(subject.id),
+                faculty_id: null,
+                room_id: Number(resolvedRoomId),
+                department_id: section.departmentId,
+                day: t.day,
+                start_time: slotToTime24h(t.startSlot),
+                end_time: slotToTime24h(t.startSlot + t.duration),
+                mode: modalClassMode,
+                is_hybrid: modalIsHybrid,
+                preferred_pattern: modalPreferredPattern,
+                status: "draft"
+              });
+            }
+          }
+        } else {
+          // targetDays.length === 1
+          if (existingRecords.length === 2) {
+            await api.put(`/schedules/${existingRecords[0].id}`, {
+              room_id: Number(resolvedRoomId),
+              day: targetDays[0].day,
+              start_time: slotToTime24h(targetDays[0].startSlot),
+              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
+              mode: modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_pattern: modalPreferredPattern
+            });
+            await api.delete(`/schedules/${existingRecords[1].id}`);
+          } else if (existingRecords.length === 1) {
+            await api.put(`/schedules/${existingRecords[0].id}`, {
+              room_id: Number(resolvedRoomId),
+              day: targetDays[0].day,
+              start_time: slotToTime24h(targetDays[0].startSlot),
+              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
+              mode: modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_pattern: modalPreferredPattern
+            });
+          }
+        }
+
+        if (resolvedDay1StartSlot !== modalDay1StartSlot) {
+          toast.success("Schedule Updated at Alternative Time", `Preferred time was occupied. Relocated to ${slotToTimeStr(resolvedDay1StartSlot)}.`);
+        } else {
+          toast.success("Schedule Updated", "Class schedule successfully updated.");
+        }
       } else {
-        await api.post('/schedules', {
-          term_id: activeTerm.id,
-          section_id: Number(selectedSectionId),
-          subject_id: Number(dropContext.subjectId),
-          faculty_id: null,
-          room_id: Number(resolvedRoomId),
-          department_id: section.departmentId,
-          day: dayName,
-          start_time: startTime24h,
-          end_time: endTime24h,
-          mode: modalClassMode,
-          is_hybrid: modalIsHybrid,
-          preferred_pattern: modalPreferredPattern,
-          status: "draft"
-        });
-        toast.success("Schedule Created", "Class schedule successfully plotted.");
+        for (const t of targetDays) {
+          await api.post('/schedules', {
+            term_id: activeTerm.id,
+            section_id: Number(selectedSectionId),
+            subject_id: Number(subject.id),
+            faculty_id: null,
+            room_id: Number(resolvedRoomId),
+            department_id: section.departmentId,
+            day: t.day,
+            start_time: slotToTime24h(t.startSlot),
+            end_time: slotToTime24h(t.startSlot + t.duration),
+            mode: modalClassMode,
+            is_hybrid: modalIsHybrid,
+            preferred_pattern: modalPreferredPattern,
+            status: "draft"
+          });
+        }
+
+        if (resolvedDay1StartSlot !== modalDay1StartSlot) {
+          toast.success("Schedule Created at Alternative Time", `Preferred time was occupied. Plotted to ${slotToTimeStr(resolvedDay1StartSlot)}.`);
+        } else {
+          toast.success("Schedule Created", "Class schedule successfully plotted.");
+        }
       }
       await refreshSchedules();
     } catch (err) {
       console.error(err);
       toast.error("Operation Failed", "Could not save the schedule to the database.");
+    } finally {
+      setIsModalLoading(false);
+      setDropContext(null);
+      setConflictInfo(null);
     }
-    setDropContext(null);
-    setConflictInfo(null);
   };
 
   const handleModalConfirm = (e: React.FormEvent) => {
@@ -553,17 +844,23 @@ export const useScheduler = () => {
       return;
     }
     if (modalConflict) return;
-    setIsModalLoading(true);
-    setTimeout(() => {
-      setIsModalLoading(false);
-      handleConfirmSchedule(e);
-    }, 500);
+    handleConfirmSchedule(e);
   };
 
   const handleRemoveSchedule = async (scheduleId: string) => {
     if (!isEditable) return;
+    const target = schedules.find(s => s.id === scheduleId);
     try {
-      await api.delete(`/schedules/${scheduleId}`);
+      if (target && target.preferredPattern) {
+        const linked = schedules.filter(
+          s => s.subjectId === target.subjectId &&
+               s.sectionId === target.sectionId &&
+               s.preferredPattern === target.preferredPattern
+        );
+        await Promise.all(linked.map(s => api.delete(`/schedules/${s.id}`)));
+      } else {
+        await api.delete(`/schedules/${scheduleId}`);
+      }
       toast.success("Schedule Removed", "Class schedule successfully removed.");
       await refreshSchedules();
     } catch (err) {
@@ -767,23 +1064,6 @@ export const useScheduler = () => {
     setMovingScheduleId(null);
   };
 
-  const handleYearLevelSelect = (year: number | null) => {
-    setSelectedYearLevel(year);
-    setIsYearDropdownOpen(false);
-    // If the current section no longer belongs to the chosen year, clear it
-    // so the user picks a section within that year level.
-    if (year != null) {
-      const stillValid = sections.some(
-        (s) => s.id === selectedSectionId && s.yearLevel === year
-      );
-      if (!stillValid) {
-        setSelectedSectionId("");
-        setConflictInfo(null);
-        setPlacementSubjectId(null);
-        setMovingScheduleId(null);
-      }
-    }
-  };
 
   const handleEditMovingSchedule = () => {
     if (!movingScheduleId) return;
@@ -863,7 +1143,8 @@ export const useScheduler = () => {
         dayIndex,
         timeIndex,
         sched.durationSlots,
-        sched.id
+        sched.id,
+        sched.preferredPattern
       );
       if (conflict) {
         // Keep the class armed so the user can try another slot
@@ -963,8 +1244,20 @@ export const useScheduler = () => {
     ? <CheckCircle2 className="w-4 h-4" />
     : <Users className="w-4 h-4" />;
 
+  const activeTermText = useMemo(() => {
+    if (!activeTerm) return "";
+    const semMap: Record<string, string> = {
+      '1st': '1st Semester',
+      '2nd': '2nd Semester',
+      'summer': 'Summer'
+    };
+    const sem = semMap[activeTerm.semester] || activeTerm.semester || '';
+    return `${sem} AY ${activeTerm.academic_year || ''}`;
+  }, [activeTerm]);
+
   return {
     placed,
+    activeTermText,
     dragSubjectId,
     draggedScheduleId,
     dragFromCell,
@@ -984,16 +1277,11 @@ export const useScheduler = () => {
     rooms,
     sections,
     subjects,
+    faculties,
+    isModalLoading,
     setSchedules,
     selectedSectionId,
-    selectedYearLevel,
-    isYearDropdownOpen,
-    setIsYearDropdownOpen,
-    handleYearLevelSelect,
-    visibleSections,
-    yearLevels,
-    scheduleStatus,
-    setScheduleStatus,
+    groupedSections,
     dropContext,
     setDropContext,
     modalRoomId,
@@ -1004,6 +1292,14 @@ export const useScheduler = () => {
     setModalIsHybrid,
     modalPreferredPattern,
     setModalPreferredPattern,
+    modalDay1StartSlot,
+    setModalDay1StartSlot,
+    modalDay1Duration,
+    setModalDay1Duration,
+    modalDay2StartSlot,
+    setModalDay2StartSlot,
+    isDay2ModifiedByUser,
+    setIsDay2ModifiedByUser,
     modalValidationError,
     setModalValidationError,
     modalConflict,
@@ -1028,7 +1324,6 @@ export const useScheduler = () => {
     collapsedCategories,
     conflictInfo,
     setConflictInfo,
-    isModalLoading,
     currentStatus,
     isPhase2Active,
     isEditable,

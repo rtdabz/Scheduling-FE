@@ -1,4 +1,4 @@
-import type React from "react";
+import React, { memo } from "react";
 import { CheckCircle2, Clock, MapPin, User, UserPlus, X } from "lucide-react";
 import {
   getGridCardStyles,
@@ -24,7 +24,7 @@ interface ScheduleCardProps {
   onCardClick: (id: string) => void;
 }
 
-export default function ScheduleCard({
+const ScheduleCard = memo(function ScheduleCard({
   rooms,
   schedule,
   subject,
@@ -172,4 +172,6 @@ export default function ScheduleCard({
       )}
     </div>
   );
-}
+});
+
+export default ScheduleCard;

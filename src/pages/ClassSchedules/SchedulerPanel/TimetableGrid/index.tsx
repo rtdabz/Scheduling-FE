@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { AlertTriangle, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
-import api from "../../../../lib/api";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -15,6 +14,7 @@ interface TimetableGridProps {
   sections: Section[];
   rooms: Room[];
   subjects: Subject[];
+  activeTermText: string;
   selectedSectionId: string;
   totalScheduled: number;
   totalSubjects: number;
@@ -51,6 +51,7 @@ export default function TimetableGrid({
   sections,
   rooms,
   subjects,
+  activeTermText,
   selectedSectionId,
   totalScheduled,
   totalSubjects,
@@ -82,28 +83,6 @@ export default function TimetableGrid({
   handleScheduleCardClick,
   handleEditMovingSchedule
 }: TimetableGridProps) {
-  const [activeTermText, setActiveTermText] = useState("1st Semester AY 2026-2027");
-
-  useEffect(() => {
-    const fetchActiveTerm = async () => {
-      try {
-        const res = await api.get<{ semester: string; academic_year: string }>('/terms/active');
-        if (res.data && res.data.semester && res.data.academic_year) {
-          const semMap: Record<string, string> = {
-            '1st': '1st Semester',
-            '2nd': '2nd Semester',
-            'summer': 'Summer'
-          };
-          const sem = semMap[res.data.semester] || res.data.semester;
-          setActiveTermText(`${sem} AY ${res.data.academic_year}`);
-        }
-      } catch {
-        // Fallback to default
-      }
-    };
-    fetchActiveTerm();
-  }, []);
-
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const placementLabel = placementSubjectId
     ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
@@ -202,7 +181,7 @@ export default function TimetableGrid({
         ) : (
           <div className="overflow-x-auto">
             <div
-              className="min-w-[900px] border border-black rounded-xl overflow-hidden shadow-sm bg-white relative select-none"
+              className="min-w-[900px] border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none"
               style={{
                 display: "grid",
                 gridTemplateColumns: "80px repeat(6, minmax(0, 1fr))",
@@ -210,7 +189,7 @@ export default function TimetableGrid({
               }}
             >
               <div
-                className="bg-[#4e0a10]/5 border-r border-b border-black p-2 font-bold text-[10px] text-[#4e0a10] text-center uppercase tracking-wider select-none flex items-center justify-center sticky top-0 left-0 z-30"
+                className="bg-[#4e0a10]/5 border-r border-b border-slate-200 p-2 font-bold text-[10px] text-[#4e0a10] text-center uppercase tracking-wider select-none flex items-center justify-center sticky top-0 left-0 z-30"
                 style={{ gridColumn: 1, gridRow: 1 }}
               >
                 <Clock className="w-3.5 h-3.5 mr-1" />
@@ -220,11 +199,11 @@ export default function TimetableGrid({
               {DAYS.map((day, dIdx) => (
                 <div
                   key={day}
-                  className="bg-[#4e0a10]/5 border-r border-b border-black p-1.5 font-bold text-xs text-slate-700 text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20"
+                  className="bg-[#4e0a10]/5 border-r border-b border-slate-200 p-1.5 font-bold text-xs text-slate-700 text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20"
                   style={{ gridColumn: dIdx + 2, gridRow: 1 }}
                 >
                   <span className="text-slate-800 font-extrabold">{day}</span>
-                  <span className="text-[9px] text-black font-bold mt-0.5 bg-white/60 px-1.5 py-0.5 rounded-full border border-black">
+                  <span className="text-[9px] text-slate-500 font-bold mt-0.5 bg-white/60 px-1.5 py-0.5 rounded-full border border-slate-100">
                     {getClassesCountForDay(dIdx)} {getClassesCountForDay(dIdx) === 1 ? "Class" : "Classes"}
                   </span>
                 </div>
@@ -234,7 +213,7 @@ export default function TimetableGrid({
                 <React.Fragment key={`row-${t}`}>
                   {t % 2 === 0 && (
                     <div
-                      className="h-[48px] bg-slate-50/90 border-r border-b border-black text-[9px] font-bold text-slate-500 flex flex-col justify-center items-center select-none sticky left-0 z-10 px-1"
+                      className="h-[48px] bg-slate-50/90 border-r border-b border-slate-200 text-[9px] font-bold text-slate-500 flex flex-col justify-center items-center select-none sticky left-0 z-10 px-1"
                       style={{ gridColumn: 1, gridRow: `${t + 2} / span 2` }}
                     >
                       <span className="font-extrabold text-slate-600 whitespace-nowrap">

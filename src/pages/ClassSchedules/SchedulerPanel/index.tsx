@@ -19,7 +19,7 @@ export default function SchedulerPanel() {
       <div className="flex flex-col lg:flex-row gap-6 w-full h-[700px] min-h-[600px] overflow-hidden">
         <FacultyPanel {...scheduler} />
         <SubjectBank {...scheduler} />
-        <TimetableGrid {...scheduler} />
+        <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
       </div>
 
       <DropModal {...scheduler} />

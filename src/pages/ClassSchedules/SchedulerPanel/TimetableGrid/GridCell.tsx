@@ -1,4 +1,4 @@
-import type React from "react";
+import React, { memo } from "react";
 import { AlertTriangle, Plus } from "lucide-react";
 
 interface GridCellProps {
@@ -15,7 +15,7 @@ interface GridCellProps {
   onCellClick: (d: number, t: number) => void;
 }
 
-export default function GridCell({
+const GridCell = memo(function GridCell({
   dayIndex,
   timeIndex,
   isHovered,
@@ -45,7 +45,7 @@ export default function GridCell({
           onCellClick(dayIndex, timeIndex);
         }
       }}
-      className={`group border-r border-b border-black transition-all duration-150 relative flex items-center justify-center ${
+      className={`group border-r border-b border-slate-100 transition-all duration-150 relative flex items-center justify-center ${
         isHovered
           ? hasConflict
             ? "bg-rose-100 ring-2 ring-rose-500/20 ring-inset"
@@ -71,4 +71,6 @@ export default function GridCell({
       )}
     </div>
   );
-}
+});
+
+export default GridCell;
