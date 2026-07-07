@@ -1,5 +1,5 @@
-import type React from "react";
-import { AlertTriangle, Building2, CalendarDays, CalendarPlus, ChevronDown, Clock, Loader2, MapPin, Monitor, TreePine, X } from "lucide-react";
+import React, { useState } from "react";
+import { AlertTriangle, Building2, CalendarDays, CalendarPlus, ChevronDown, ChevronRight, Clock, Loader2, MapPin, Monitor, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, getLeftAccentBorder, slotToTimeStr } from "../constants";
 import type { DropContext, Subject, Room } from "../types";
 
@@ -61,6 +61,8 @@ export default function DropModal({
   handleModalConfirm
 }: DropModalProps) {
   if (!dropContext || !dropSubject) return null;
+
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   const FULL_DAYS: Record<string, string> = {
     Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday",
@@ -127,63 +129,32 @@ export default function DropModal({
                 <p className="text-xs text-gray-500 mt-1">{dropSubject.name}</p>
               </div>
 
-              {/* Class Mode Selection */}
+              {/* Core Assigned Room (Read-only status) */}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Class Mode <span className="text-red-500 ml-0.5">*</span>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Assigned Room
                 </label>
-                <div className="flex gap-2">
-                  {([
-                    { value: "on-site" as const, label: "On-Site", Icon: Building2, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" },
-                    { value: "online" as const, label: "Online", Icon: Monitor, selectedCls: "bg-green-600 text-white border-green-600" },
-                    { value: "field" as const, label: "Field", Icon: TreePine, selectedCls: "bg-orange-600 text-white border-orange-600" }
-                  ]).map(({ value: m, label, Icon, selectedCls }) => {
-                    const isSelected = modalClassMode === m;
-                    const isDisabledMode = dropSubjectIsField && m !== "field";
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        disabled={isDisabledMode}
-                        onClick={() => setModalClassMode(m)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 border rounded-lg text-xs font-medium transition-all ${
-                          isSelected
-                            ? selectedCls
-                            : isDisabledMode
-                            ? "opacity-50 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                            : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        {label}
-                      </button>
-                    );
-                  })}
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                  <input
+                    type="text"
+                    readOnly
+                    value={
+                      modalClassMode === "on-site"
+                        ? rooms.find((r) => r.id === modalRoomId)?.name || "Auto-assigning first available room..."
+                        : modalClassMode === "online"
+                        ? "Online"
+                        : "Field"
+                    }
+                    className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-xs bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-medium"
+                  />
                 </div>
-                {dropSubjectIsField && (
-                  <p className="text-xs text-orange-500 mt-1">Field mode is required for this subject type.</p>
+                {modalClassMode === "on-site" && modalValidationError && !modalRoomId && (
+                  <p className="text-xs text-red-500 mt-1">{modalValidationError}</p>
                 )}
               </div>
 
-              {/* Hybrid Mode Toggle */}
-              <div className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50/50">
-                <span className="text-xs font-semibold text-gray-700">Hybrid (On-site & Online)</span>
-                <button
-                  type="button"
-                  onClick={() => setModalIsHybrid(!modalIsHybrid)}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    modalIsHybrid ? "bg-[#4e0a10]" : "bg-gray-200"
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      modalIsHybrid ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* Preferred Pattern Selector */}
+              {/* Preferred Pattern Selector (Core) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                   Preferred Meeting Pattern
@@ -213,42 +184,104 @@ export default function DropModal({
                 </div>
               </div>
 
-              {/* Room Selection */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                  Room <span className="text-red-500 ml-0.5">*</span>
-                </label>
-                <div className="relative">
-                  <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                  {modalClassMode === "on-site" ? (
-                    <>
-                      <select
-                        value={modalRoomId}
-                        onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
-                        className={`w-full appearance-none border rounded-lg pl-9 pr-8 py-2 text-xs outline-none transition-all focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] ${
-                          modalValidationError && !modalRoomId
-                            ? "border-red-400 bg-red-50 text-red-700 focus:ring-red-400"
-                            : "border-gray-200 bg-white text-gray-700"
+              {/* Advanced Options (Collapsible) */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/20">
+                <button
+                  type="button"
+                  onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100 hover:bg-gray-100 transition-colors"
+                >
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                    Advanced Options
+                  </span>
+                  {isAdvancedOpen ? (
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
+
+                {isAdvancedOpen && (
+                  <div className="p-4 space-y-4 bg-white animate-in fade-in slide-in-from-top-1 duration-150">
+                    {/* Class Mode Selection */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                        Class Mode
+                      </label>
+                      <div className="flex gap-2">
+                        {([
+                          { value: "on-site" as const, label: "On-Site", Icon: Building2, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" },
+                          { value: "online" as const, label: "Online", Icon: Monitor, selectedCls: "bg-green-600 text-white border-green-600" },
+                          { value: "field" as const, label: "Field", Icon: TreePine, selectedCls: "bg-orange-600 text-white border-orange-600" }
+                        ]).map(({ value: m, label, Icon, selectedCls }) => {
+                          const isSelected = modalClassMode === m;
+                          const isDisabledMode = dropSubjectIsField && m !== "field";
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              disabled={isDisabledMode}
+                              onClick={() => setModalClassMode(m)}
+                              className={`flex-1 flex items-center justify-center gap-1.5 py-2 border rounded-lg text-xs font-medium transition-all ${
+                                isSelected
+                                  ? selectedCls
+                                  : isDisabledMode
+                                  ? "opacity-50 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
+                              }`}
+                            >
+                              <Icon className="w-3.5 h-3.5" />
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {dropSubjectIsField && (
+                        <p className="text-xs text-orange-500 mt-1">Field mode is required for this subject type.</p>
+                      )}
+                    </div>
+
+                    {/* Hybrid Mode Toggle */}
+                    <div className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50/50">
+                      <span className="text-xs font-semibold text-gray-700">Hybrid (On-site & Online)</span>
+                      <button
+                        type="button"
+                        onClick={() => setModalIsHybrid(!modalIsHybrid)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          modalIsHybrid ? "bg-[#4e0a10]" : "bg-gray-200"
                         }`}
                       >
-                        <option value="">Select a room...</option>
-                        {rooms.map((r) => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </>
-                  ) : (
-                    <input
-                      type="text"
-                      readOnly
-                      value={modalClassMode === "online" ? "Online" : "Field"}
-                      className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-xs bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-medium capitalize"
-                    />
-                  )}
-                </div>
-                {modalClassMode === "on-site" && modalValidationError && !modalRoomId && (
-                  <p className="text-xs text-red-500 mt-1">{modalValidationError}</p>
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            modalIsHybrid ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Manual Room Override Select */}
+                    {modalClassMode === "on-site" && (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                          Manual Room Override
+                        </label>
+                        <div className="relative">
+                          <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                          <select
+                            value={modalRoomId}
+                            onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
+                            className={`w-full appearance-none border rounded-lg pl-9 pr-8 py-2 text-xs outline-none transition-all focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] border-gray-200 bg-white text-gray-700`}
+                          >
+                            <option value="">Select a room...</option>
+                            {rooms.map((r) => (
+                              <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

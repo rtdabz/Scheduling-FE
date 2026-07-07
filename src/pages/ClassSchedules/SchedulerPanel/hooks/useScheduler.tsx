@@ -66,7 +66,8 @@ export const useScheduler = () => {
       return apiRooms.map((r: any) => ({
         id: r.id.toString(),
         name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
-        departmentId: r.department_id
+        departmentId: r.department_id,
+        roomType: r.room_type
       }));
     });
 
@@ -88,6 +89,7 @@ export const useScheduler = () => {
         semester: s.semester as Subject['semester'],
         departmentId: s.department_id ?? null,
         yearLevel: Number(s.year_level),
+        roomTypeRequired: s.room_type_required
       }));
     });
 
@@ -461,7 +463,29 @@ export const useScheduler = () => {
           }
         }
       } else {
-        setModalRoomId("");
+        let resolvedRoomId = "";
+        if (subject && !isFieldSubject) {
+          const matchingTypeRooms = rooms.filter(r => 
+            !subject.roomTypeRequired || r.roomType === subject.roomTypeRequired
+          );
+          const nonConflictingRoom = matchingTypeRooms.find(r => {
+            const conflict = checkConflict(
+              subject.id,
+              selectedSectionId,
+              null,
+              r.id,
+              dropContext.dayIndex,
+              dropContext.startSlot,
+              defaultDuration,
+              undefined,
+              null
+            );
+            return !conflict || conflict.conflictType !== "room";
+          });
+          resolvedRoomId = nonConflictingRoom?.id || (matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (rooms.length > 0 ? rooms[0].id : ""));
+        }
+
+        setModalRoomId(resolvedRoomId);
         setModalClassMode("on-site");
         setModalIsHybrid(false);
         setModalPreferredPattern(null);
@@ -491,14 +515,29 @@ export const useScheduler = () => {
   }, [modalDay1StartSlot, isDay2ModifiedByUser]);
 
   useEffect(() => {
+    if (modalPreferredPattern) {
+      setIsDay2ModifiedByUser(false);
+      setModalDay2StartSlot(modalDay1StartSlot);
+    }
+  }, [modalPreferredPattern, modalDay1StartSlot]);
+
+  useEffect(() => {
     if (modalClassMode === "online") {
       setModalRoomId("online");
     } else if (modalClassMode === "field") {
       setModalRoomId("field");
     } else if (modalClassMode === "on-site" && (modalRoomId === "online" || modalRoomId === "field")) {
-      setModalRoomId("");
+      // Re-assign first available room if none is set
+      if (!modalRoomId || modalRoomId === "online" || modalRoomId === "field") {
+        const subject = dropContext ? subjects.find((s) => s.id === dropContext.subjectId) : null;
+        const matchingTypeRooms = rooms.filter(r => 
+          !subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired
+        );
+        const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (rooms.length > 0 ? rooms[0].id : "");
+        setModalRoomId(defaultRoomId);
+      }
     }
-  }, [modalClassMode]);
+  }, [modalClassMode, dropContext, subjects, rooms]);
 
   useEffect(() => {
     if (dropContext && modalRoomId) {

@@ -9,6 +9,7 @@ export interface Subject {
   semester: "1st" | "2nd" | "summer";
   departmentId: number | null;
   yearLevel?: number;
+  roomTypeRequired?: string;
 }
 
 export interface Section {
@@ -27,6 +28,7 @@ export interface Room {
   id: string;
   name: string;
   departmentId?: number;
+  roomType?: string;
 }
 
 export interface ScheduleItem {
