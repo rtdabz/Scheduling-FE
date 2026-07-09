@@ -11,9 +11,12 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
 const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+    setIsLoading(true);
     try {
         const res = await api.post('/login', { username, password });
         localStorage.setItem('token', res.data.token);
@@ -39,36 +42,10 @@ const handleSubmit = async (e: React.FormEvent) => {
         } else {
           navigate('/dashboard');
         }
-    } catch (error) {
-        // Developer fallback: mock login when Laravel backend is offline
-        const lowerUsername = username.toLowerCase().trim();
-        const validMockRoles = ['admin', 'vpaa', 'secretary', 'dean', 'program_head'];
-        
-        if (validMockRoles.includes(lowerUsername) || username === '') {
-          const role = lowerUsername === 'admin' ? 'vpaa' : (lowerUsername || 'secretary');
-          const mockUser = {
-            id: 'mock-' + role,
-            name: `Mock ${role.toUpperCase()}`,
-            username: username || 'secretary',
-            role: role,
-            department_id: role === 'dean' ? 1 : (role === 'secretary' || role === 'program_head' ? 6 : null)
-          };
-          localStorage.setItem('token', 'mock-token-12345');
-          localStorage.setItem('user', JSON.stringify(mockUser));
-          toast.success('Login Successful (Dev Mode)', `Welcome back ${mockUser.name}!`);
-          
-          if (role === 'vpaa') {
-            navigate('/dashboard');
-          } else if (role === 'dean') {
-            navigate('/dean/dashboard');
-          } else if (role === 'secretary') {
-            navigate('/sec_ph/dashboard');
-          } else if (role === 'program_head') {
-            navigate('/program_head/dashboard');
-          }
-          return;
-        }
+    } catch {
         toast.error('Login Failed', 'Invalid username or password.');
+    } finally {
+        setIsLoading(false);
     }
 };
 
@@ -176,9 +153,19 @@ const handleSubmit = async (e: React.FormEvent) => {
             <div className="pt-2">
               <button
                 type="submit"
-                className="w-full h-12 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-all duration-300 active:scale-[0.98] relative overflow-hidden group"
+                disabled={isLoading}
+                className="w-full h-12 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-all duration-300 active:scale-[0.98] relative overflow-hidden group disabled:opacity-50 disabled:pointer-events-none"
               >
-                <span className="relative z-10">Sign In</span>
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  {isLoading ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    'Sign In'
+                  )}
+                </span>
                 {/* Shimmer effect via before pseudo element */}
                 <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent,rgba(255,255,255,0.1),transparent)] bg-[length:200%_100%] animate-shimmer opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>

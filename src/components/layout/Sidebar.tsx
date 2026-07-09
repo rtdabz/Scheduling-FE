@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import Skeleton from '../ui/Skeleton';
 import type { NavSection, NavItem } from '../../navigation/types';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
@@ -13,7 +14,13 @@ interface SidebarProps {
 export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  const [isCountLoading, setIsCountLoading] = useState(true);
   const pendingCount = 3;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsCountLoading(false), 800);
+    return () => clearTimeout(timer);
+  }, []);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({
@@ -138,9 +145,13 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                   {child.label}
                                 </span>
                                 {child.id === 'sidebar-schedule-approval' && pendingCount > 0 && (
-                                  <span className="ml-auto bg-[#C9952A] text-[#4e0a10] text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                                    {pendingCount >= 9 ? '9+' : pendingCount}
-                                  </span>
+                                  isCountLoading ? (
+                                    <Skeleton className="ml-auto h-4 w-6 rounded-full bg-white/20" />
+                                  ) : (
+                                    <span className="ml-auto bg-[#C9952A] text-[#4e0a10] text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                                      {pendingCount >= 9 ? '9+' : pendingCount}
+                                    </span>
+                                  )
                                 )}
                               </NavLink>
                             );

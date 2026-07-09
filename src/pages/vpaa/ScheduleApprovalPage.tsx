@@ -18,6 +18,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import Skeleton from '../../components/ui/Skeleton';
 
 interface ScheduleApproval {
   id: number;
@@ -564,14 +565,7 @@ export default function ScheduleApprovalPage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 bg-[#F7F4F0] rounded-2xl border border-slate-200 shadow-sm min-h-[400px] w-full">
-        <RefreshCw className="w-8 h-8 text-[#4e0a10] animate-spin mb-4" />
-        <p className="text-sm font-semibold text-slate-500">Loading schedules...</p>
-      </div>
-    );
-  }
+
 
   return (
     <div className="p-6 relative">
@@ -698,7 +692,47 @@ export default function ScheduleApprovalPage() {
               ))}
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredData.length === 0 ? (
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, index) => (
+                  <tr 
+                    key={`skeleton-row-${index}`} 
+                    className={`h-12 border-b border-gray-100 ${
+                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
+                    }`}
+                  >
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-32" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-12 mx-auto" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-28" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                      <Skeleton className="h-4 w-36" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                      <Skeleton className="h-4 w-36" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-24 rounded-full" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-16 rounded-full" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
+                      <div className="flex justify-end gap-2">
+                        <Skeleton className="h-8 w-8 rounded-lg" />
+                        <Skeleton className="h-8 w-8 rounded-lg" />
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : filteredData.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">

@@ -9,6 +9,7 @@ import {
 import type { ConflictInfo, ScheduleItem, Room, Section, Subject } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
+import Skeleton from "../../../../components/ui/Skeleton";
 
 interface TimetableGridProps {
   sections: Section[];
@@ -45,6 +46,7 @@ interface TimetableGridProps {
   handleRemoveSchedule: (id: string) => void;
   handleScheduleCardClick: (id: string) => void;
   handleEditMovingSchedule: () => void;
+  isLoading?: boolean;
 }
 
 export default function TimetableGrid({
@@ -81,7 +83,8 @@ export default function TimetableGrid({
   handleDragEnd,
   handleRemoveSchedule,
   handleScheduleCardClick,
-  handleEditMovingSchedule
+  handleEditMovingSchedule,
+  isLoading = false
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const placementLabel = placementSubjectId
@@ -247,29 +250,60 @@ export default function TimetableGrid({
                 </React.Fragment>
               ))}
 
-              {sectionSchedules.map((schedule) => {
-                const subject = subjects.find((s) => s.id === schedule.subjectId);
-                if (!subject) return null;
-                return (
-                  <ScheduleCard
-                    key={schedule.id}
-                    rooms={rooms}
-                    schedule={schedule}
-                    subject={subject}
-                    isEditable={isEditable}
-                    isPhase2Active={isPhase2Active}
-                    currentStatus={currentStatus}
-                    draggedScheduleId={draggedScheduleId}
-                    isMoving={movingScheduleId === schedule.id}
-                    deleteConfirmScheduleId={deleteConfirmScheduleId}
-                    setDeleteConfirmScheduleId={setDeleteConfirmScheduleId}
-                    onDragStart={handleDragStartFromCell}
-                    onDragEnd={handleDragEnd}
-                    onDelete={handleRemoveSchedule}
-                    onCardClick={handleScheduleCardClick}
-                  />
-                );
-              })}
+              {isLoading ? (
+                [
+                  { id: 'sk-grid-1', dayIndex: 0, startSlot: 2, durationSlots: 4, height: 4 * SLOT_HEIGHT_PX },
+                  { id: 'sk-grid-2', dayIndex: 2, startSlot: 6, durationSlots: 3, height: 3 * SLOT_HEIGHT_PX },
+                  { id: 'sk-grid-3', dayIndex: 4, startSlot: 10, durationSlots: 4, height: 4 * SLOT_HEIGHT_PX }
+                ].map((sk) => (
+                  <div
+                    key={sk.id}
+                    className="z-10 rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between"
+                    style={{
+                      gridColumn: sk.dayIndex + 2,
+                      gridRow: `${sk.startSlot + 2} / span ${sk.durationSlots}`,
+                      height: `${sk.height}px`
+                    }}
+                  >
+                    <div className="flex flex-col h-full justify-between">
+                      <div>
+                        <Skeleton className="h-3 w-16 mb-1.5" />
+                        <Skeleton className="h-2.5 w-24 mb-1" />
+                        <Skeleton className="h-2 w-12" />
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Skeleton className="h-3.5 w-12 rounded-full" />
+                        <Skeleton className="h-3.5 w-12 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                sectionSchedules.map((schedule) => {
+                  const subject = subjects.find((s) => s.id === schedule.subjectId);
+                  if (!subject) return null;
+                  return (
+                    <ScheduleCard
+                      key={schedule.id}
+                      rooms={rooms}
+                      schedule={schedule}
+                      subject={subject}
+                      isEditable={isEditable}
+                      isPhase2Active={isPhase2Active}
+                      currentStatus={currentStatus}
+                      draggedScheduleId={draggedScheduleId}
+                      isMoving={movingScheduleId === schedule.id}
+                      deleteConfirmScheduleId={deleteConfirmScheduleId}
+                      setDeleteConfirmScheduleId={setDeleteConfirmScheduleId}
+                      onDragStart={handleDragStartFromCell}
+                      onDragEnd={handleDragEnd}
+                      onDelete={handleRemoveSchedule}
+                      onCardClick={handleScheduleCardClick}
+                      onEditMoving={handleEditMovingSchedule}
+                    />
+                  );
+                })
+              )}
             </div>
           </div>
         )}

@@ -47,6 +47,7 @@ export const useScheduler = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [activeTerm, setActiveTerm] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
@@ -177,6 +178,9 @@ export const useScheduler = () => {
       })
       .catch(() => {
         // Safe no-op on abort or fetch error to preserve previous/alternate state instances
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
       });
 
     return () => {
@@ -291,6 +295,7 @@ export const useScheduler = () => {
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isTeachingLoadOpen, setIsTeachingLoadOpen] = useState(false);
   const [roomViewRoomId, setRoomViewRoomId] = useState<string>("");
 
   useEffect(() => {
@@ -1317,6 +1322,7 @@ export const useScheduler = () => {
     sections,
     subjects,
     faculties,
+    isLoading,
     isModalLoading,
     setSchedules,
     selectedSectionId,
@@ -1356,6 +1362,8 @@ export const useScheduler = () => {
     setIsRoomViewOpen,
     isPrintModalOpen,
     setIsPrintModalOpen,
+    isTeachingLoadOpen,
+    setIsTeachingLoadOpen,
     roomViewRoomId,
     setRoomViewRoomId,
     isAssignedListCollapsed,

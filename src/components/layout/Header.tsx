@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Menu, Bell, User, Settings, LogOut, MessageSquare, Check, RefreshCw } from 'lucide-react';
 import logo from '../../assets/logo.jpg';
 import { useToast } from '../../context/ToastContext';
+import api from '../../lib/api';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -14,6 +15,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   const { toast } = useToast();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -197,15 +199,32 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                 </div>
                 <div className="p-2 border-t border-gray-100">
                   <button 
-                    onClick={() => {
-                      localStorage.removeItem('token');
-                      localStorage.removeItem('user');
-                      toast.success('Logged Out', 'You have been successfully signed out.');
-                      navigate('/');
+                    disabled={isLoggingOut}
+                    onClick={async () => {
+                      if (isLoggingOut) return;
+                      setIsLoggingOut(true);
+                      try {
+                        await api.post('/logout');
+                      } finally {
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                        toast.success('Logged Out', 'You have been successfully signed out.');
+                        navigate('/');
+                        setIsLoggingOut(false);
+                      }
                     }}
-                    className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 rounded-xl transition-all duration-200 font-bold cursor-pointer"
+                    className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 rounded-xl transition-all duration-200 font-bold cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <LogOut size={16} /> Log Out
+                    {isLoggingOut ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                        Signing out...
+                      </>
+                    ) : (
+                      <>
+                        <LogOut size={16} /> Log Out
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

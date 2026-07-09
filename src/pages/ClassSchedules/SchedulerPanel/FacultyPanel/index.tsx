@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Users, X } from "lucide-react";
 import type { ScheduleItem, Subject, Faculty } from "../types";
+import Skeleton from "../../../../components/ui/Skeleton";
 
 interface FacultyPanelProps {
   isPhase2Active: boolean;
@@ -16,6 +17,7 @@ interface FacultyPanelProps {
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   subjects: Subject[];
   faculties: Faculty[];
+  isLoading?: boolean;
 }
 
 export default function FacultyPanel({
@@ -31,7 +33,8 @@ export default function FacultyPanel({
   handleRemoveInlineFaculty,
   checkFacultyConflict,
   subjects,
-  faculties
+  faculties,
+  isLoading = false
 }: FacultyPanelProps) {
   const [openDropdownSlotId, setOpenDropdownSlotId] = useState<string | null>(null);
   const [selectedFacultyBySlot, setSelectedFacultyBySlot] = useState<Record<string, string>>({});
@@ -98,7 +101,20 @@ export default function FacultyPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        {totalSlotsCount === 0 ? (
+        {isLoading ? (
+          Array.from({ length: 4 }).map((_, idx) => (
+            <div key={`sk-faculty-${idx}`} className="border border-slate-200 rounded-xl p-3 bg-white shadow-sm mb-2 animate-pulse">
+              <div className="flex justify-between items-center">
+                <div className="min-w-0 flex-1 pr-4">
+                  <Skeleton className="h-4 w-20 mb-1.5" />
+                  <Skeleton className="h-2.5 w-full" />
+                </div>
+                <Skeleton className="h-5 w-16 rounded" />
+              </div>
+              <Skeleton className="h-8 w-full mt-3 rounded-lg" />
+            </div>
+          ))
+        ) : totalSlotsCount === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
             <Users className="text-gray-300 w-8 h-8" />
             <p className="text-sm text-gray-400 font-medium mt-2">No subjects scheduled yet</p>

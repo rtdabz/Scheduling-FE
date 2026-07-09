@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
+import Skeleton from '../../components/ui/Skeleton';
 import { 
   Pencil, 
   Trash2, 
@@ -76,7 +77,7 @@ export default function Departments() {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-    }, 150);
+    }, 800);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -353,11 +354,39 @@ export default function Departments() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500 italic">
-                    Loading departments...
-                  </td>
-                </tr>
+                Array.from({ length: 6 }).map((_, index) => (
+                  <tr 
+                    key={`skeleton-row-${index}`} 
+                    className={`h-12 border-b border-gray-100 ${
+                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
+                    }`}
+                  >
+                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                      <Skeleton className="h-5 w-12 rounded-full" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-48" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-32" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-8 mx-auto" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-8 mx-auto" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
+                      <div className="flex justify-end gap-2">
+                        <Skeleton className="h-8 w-8 rounded-lg" />
+                        <Skeleton className="h-8 w-8 rounded-lg" />
+                      </div>
+                    </td>
+                  </tr>
+                ))
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-16 text-center text-gray-400">

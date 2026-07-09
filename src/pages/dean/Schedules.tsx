@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Calendar, Clock, Layers, MapPin, RefreshCw, User } from "lucide-react";
 import api from "../../lib/api";
+import Skeleton from "../../components/ui/Skeleton";
 
 interface Section {
   id: string;
@@ -211,14 +212,7 @@ export default function Schedules() {
     setSelectedMode("All");
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[400px] w-full">
-        <RefreshCw className="w-8 h-8 text-[#4e0a10] animate-spin mb-4" />
-        <p className="text-sm font-semibold text-slate-500">Loading schedules...</p>
-      </div>
-    );
-  }
+
 
   return (
     <div>
@@ -303,7 +297,37 @@ export default function Schedules() {
                   </div>
                 ))}
 
-                {filteredSchedules.map((schedule) => {
+                {isLoading ? (
+                  [
+                    { id: 'sk-1', dayIndex: 0, startSlot: 2, endSlot: 6, height: 4 * SLOT_HEIGHT_PX, durationSlots: 4 },
+                    { id: 'sk-2', dayIndex: 1, startSlot: 8, endSlot: 11, height: 3 * SLOT_HEIGHT_PX, durationSlots: 3 },
+                    { id: 'sk-3', dayIndex: 2, startSlot: 4, endSlot: 8, height: 4 * SLOT_HEIGHT_PX, durationSlots: 4 },
+                    { id: 'sk-4', dayIndex: 4, startSlot: 12, endSlot: 15, height: 3 * SLOT_HEIGHT_PX, durationSlots: 3 }
+                  ].map((sk) => (
+                    <div
+                      key={sk.id}
+                      className="z-10 rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between"
+                      style={{
+                        gridColumn: sk.dayIndex + 2,
+                        gridRow: `${sk.startSlot + 1} / span ${sk.durationSlots}`,
+                        height: `${sk.height}px`
+                      }}
+                    >
+                      <div className="flex flex-col h-full justify-between">
+                        <div className="min-w-0">
+                          <Skeleton className="h-3 w-16 mb-1.5" />
+                          <Skeleton className="h-2.5 w-10 mb-1" />
+                          <Skeleton className="h-2 w-12" />
+                        </div>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Skeleton className="h-3.5 w-8 rounded-full" />
+                          <Skeleton className="h-3.5 w-8 rounded-full" />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  filteredSchedules.map((schedule) => {
                   const startSlot = parseTimeToSlot(schedule.startTime);
                   const endSlot = parseTimeToSlot(schedule.endTime);
                   const durationSlots = Math.max(1, endSlot - startSlot);

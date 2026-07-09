@@ -1,7 +1,8 @@
 import type React from "react";
-import { CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, Users } from "lucide-react";
+import { CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, Users, FileText } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { ScheduleItem, Section } from "./types";
+import Skeleton from "../../../components/ui/Skeleton";
 
 interface GroupedYear {
   yearLevel: number;
@@ -22,6 +23,8 @@ interface TopBarProps {
   renderStatusBadge: (status: ScheduleItem["status"]) => React.ReactNode;
   renderActionButton: () => React.ReactNode;
   onPrint: () => void;
+  onTeachingLoad: () => void;
+  isLoading?: boolean;
 }
 
 export default function TopBar({
@@ -37,7 +40,9 @@ export default function TopBar({
   isPhase2Completed,
   renderStatusBadge,
   renderActionButton,
-  onPrint
+  onPrint,
+  onTeachingLoad,
+  isLoading = false
 }: TopBarProps) {
   const selectedSection = sections.find((s) => s.id === selectedSectionId);
 
@@ -57,9 +62,13 @@ export default function TopBar({
               >
                 <span className="flex items-center gap-2 text-gray-800">
                   <GraduationCap className="w-4 h-4 text-[#4e0a10]" />
-                  {selectedSection
-                    ? `${selectedSection.name} — ${yearLevelLabel(selectedSection.yearLevel)}`
-                    : "Select a Section"}
+                  {isLoading ? (
+                    <Skeleton className="h-4 w-32" />
+                  ) : selectedSection ? (
+                    `${selectedSection.name} — ${yearLevelLabel(selectedSection.yearLevel)}`
+                  ) : (
+                    "Select a Section"
+                  )}
                 </span>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isSectionDropdownOpen ? "rotate-180" : ""}`} />
               </button>
@@ -95,7 +104,11 @@ export default function TopBar({
             </div>
           </div>
 
-          {selectedSectionId && selectedSection && (
+          {isLoading ? (
+            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg select-none">
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ) : selectedSectionId && selectedSection && (
             <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg select-none">
               <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Active:</span>
               <span className="text-sm font-bold text-amber-800">
@@ -115,6 +128,15 @@ export default function TopBar({
           >
             <Printer className="w-4 h-4" />
             <span>Print Schedule</span>
+          </button>
+          <button
+            type="button"
+            onClick={onTeachingLoad}
+            title="Teaching Load"
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-sm font-medium rounded-lg transition-colors cursor-pointer shadow-sm border border-transparent"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Teaching Load</span>
           </button>
         </div>
       </div>
@@ -170,8 +192,17 @@ export default function TopBar({
 
         {/* Right: Approval & Workflow Actions */}
         <div className="flex items-center gap-3">
-          {renderStatusBadge(currentStatus)}
-          {renderActionButton()}
+          {isLoading ? (
+            <>
+              <Skeleton className="h-6 w-20 rounded-full" />
+              <Skeleton className="h-9 w-28 rounded-lg" />
+            </>
+          ) : (
+            <>
+              {renderStatusBadge(currentStatus)}
+              {renderActionButton()}
+            </>
+          )}
         </div>
       </div>
     </div>

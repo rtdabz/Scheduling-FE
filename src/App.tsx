@@ -1,13 +1,3 @@
-// PROBLEM EXPLANATION:
-// The error "Cannot find module './pages/vpaa/Settings'" occurs because 'Settings.tsx' was recently created
-// and was untracked by Git, which causes the IDE's TypeScript language server on Windows to fail to resolve
-// the new file path in the workspace.
-// 
-// HOW TO FIX/RESOLVED:
-// 1. We staged the file using `git add src/pages/vpaa/Settings.tsx` to make it tracked.
-// 2. If your IDE/editor still shows this error, please reload your IDE or restart the TypeScript server
-//    (in VS Code: press Ctrl+Shift+P, and select "TypeScript: Restart TS Server") to clear the diagnostics cache.
-
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import LoginPage from './pages/LoginPage';

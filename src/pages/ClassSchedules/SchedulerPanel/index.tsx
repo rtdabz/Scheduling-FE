@@ -7,6 +7,7 @@ import FacultyModal from "./Modals/FacultyModal";
 import ClearAllModal from "./Modals/ClearAllModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
+import TeachingLoad from "./TeachingLoad";
 import { useScheduler } from "./hooks/useScheduler";
 
 export default function SchedulerPanel() {
@@ -14,7 +15,11 @@ export default function SchedulerPanel() {
 
   return (
     <div className="flex flex-col gap-6 w-full text-slate-800 antialiased">
-      <TopBar {...scheduler} onPrint={() => scheduler.setIsPrintModalOpen(true)} />
+      <TopBar
+        {...scheduler}
+        onPrint={() => scheduler.setIsPrintModalOpen(true)}
+        onTeachingLoad={() => scheduler.setIsTeachingLoadOpen(true)}
+      />
 
       <div className="flex flex-col lg:flex-row gap-6 w-full h-[700px] min-h-[600px] overflow-hidden">
         <FacultyPanel {...scheduler} />
@@ -32,6 +37,13 @@ export default function SchedulerPanel() {
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}
         selectedSectionId={scheduler.selectedSectionId}
+      />
+      <TeachingLoad
+        faculties={scheduler.faculties}
+        allSchedules={scheduler.schedules}
+        subjects={scheduler.subjects}
+        isTeachingLoadOpen={scheduler.isTeachingLoadOpen}
+        setIsTeachingLoadOpen={scheduler.setIsTeachingLoadOpen}
       />
     </div>
   );

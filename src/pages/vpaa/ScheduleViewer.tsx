@@ -10,6 +10,7 @@ import {
   Calendar
 } from "lucide-react";
 import api from "../../lib/api";
+import Skeleton from "../../components/ui/Skeleton";
 
 // TypeScript Interfaces
 export interface Department {
@@ -437,14 +438,7 @@ export default function ScheduleViewer() {
 
   const timeSlots = generateTimeSlots();
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[400px] w-full">
-        <RefreshCw className="w-8 h-8 text-[#4e0a10] animate-spin mb-4" />
-        <p className="text-sm font-semibold text-slate-500">Loading schedules...</p>
-      </div>
-    );
-  }
+
 
   return (
     <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-800 font-sans min-w-[1200px]">
@@ -609,8 +603,44 @@ export default function ScheduleViewer() {
                       />
                     ))}
 
-                    {/* Absolutely Positioned Schedule Cards */}
-                    {daySchedules.map((s) => {
+                    {isLoading ? (
+                      (
+                        {
+                          'Monday': [{ startIdx: 2, endIdx: 6 }],
+                          'Wednesday': [{ startIdx: 4, endIdx: 8 }],
+                          'Friday': [{ startIdx: 10, endIdx: 14 }]
+                        } as Record<string, { startIdx: number; endIdx: number }[]>
+                      )[day]?.map((sk, idx) => {
+                        const top = sk.startIdx * 40;
+                        const height = (sk.endIdx - sk.startIdx) * 40;
+                        return (
+                          <div
+                            key={`sk-card-${idx}`}
+                            className="absolute border border-[#E2D9D0] bg-[#F7F4F0]/85 p-2 flex flex-col justify-between select-none rounded-xl shadow-sm animate-pulse"
+                            style={{
+                              top: `${top + 2}px`,
+                              height: `${height - 4}px`,
+                              left: '2px',
+                              width: 'calc(100% - 4px)',
+                              zIndex: 10
+                            }}
+                          >
+                            <div className="flex flex-col h-full justify-between overflow-hidden">
+                              <div>
+                                <Skeleton className="h-3 w-16 mb-1.5" />
+                                <Skeleton className="h-2.5 w-full mb-1" />
+                                <Skeleton className="h-2 w-12" />
+                              </div>
+                              <div className="flex items-center gap-1 mt-1">
+                                <Skeleton className="h-3.5 w-10 rounded-full" />
+                                <Skeleton className="h-3.5 w-10 rounded-full" />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      daySchedules.map((s) => {
                       const startIdx = parseTimeToSlotIndex(s.startTime);
                       const endIdx = parseTimeToSlotIndex(s.endTime);
                       
@@ -729,10 +759,10 @@ export default function ScheduleViewer() {
                               </div>
                             </div>
                           )}
-
                         </div>
                       );
                     })}
+                  )}
 
                   </div>
                 </div>
