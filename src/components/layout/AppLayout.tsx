@@ -23,7 +23,7 @@ export default function AppLayout() {
     if (role === 'program_head') return programHeadNav;
 
     if (location.pathname.startsWith('/dean')) return deanNav;
-    if (location.pathname.startsWith('/sec_ph')) return secretaryNav;
+    if (location.pathname.startsWith('/secretary')) return secretaryNav;
     if (location.pathname.startsWith('/program_head')) return programHeadNav;
     return vpaaNav;
   }

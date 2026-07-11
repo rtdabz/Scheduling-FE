@@ -639,8 +639,7 @@ export default function ScheduleViewer() {
                           </div>
                         );
                       })
-                    ) : (
-                      daySchedules.map((s) => {
+                    ) : daySchedules.map((s) => {
                       const startIdx = parseTimeToSlotIndex(s.startTime);
                       const endIdx = parseTimeToSlotIndex(s.endTime);
                       
@@ -762,7 +761,6 @@ export default function ScheduleViewer() {
                         </div>
                       );
                     })}
-                  )}
 
                   </div>
                 </div>

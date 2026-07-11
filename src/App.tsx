@@ -35,7 +35,7 @@ const getDashboardRole = (): UserRole | string => getStoredRole();
 
 const getDashboardPath = (role: string): string => {
   if (role === 'dean') return '/dean/dashboard';
-  if (role === 'secretary') return '/sec_ph/dashboard';
+  if (role === 'secretary') return '/secretary/dashboard';
   if (role === 'program_head') return '/program_head/dashboard';
   return '/dashboard';
 };
@@ -88,9 +88,9 @@ export default function App() {
             <Route path="/dean/users" element={<Users />} />
 
             {/* Secretary Routes */}
-            <Route path="/sec_ph/dashboard" element={<DashboardRoute />} />
-            <Route path="/sec_ph/schedules" element={<SecPHSchedules />} />
-            <Route path="/sec_ph/rooms" element={<Rooms />} />
+            <Route path="/secretary/dashboard" element={<DashboardRoute />} />
+            <Route path="/secretary/schedules" element={<SecPHSchedules />} />
+            <Route path="/secretary/rooms" element={<Rooms />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />

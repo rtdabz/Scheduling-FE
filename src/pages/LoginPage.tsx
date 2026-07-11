@@ -36,7 +36,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         } else if (res.data.user.role === 'dean') {
           navigate('/dean/dashboard');
         } else if (res.data.user.role === 'secretary') {
-          navigate('/sec_ph/dashboard');
+          navigate('/secretary/dashboard');
         } else if (res.data.user.role === 'program_head') {
           navigate('/program_head/dashboard');
         } else {

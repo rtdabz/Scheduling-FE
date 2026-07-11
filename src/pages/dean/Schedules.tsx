@@ -373,7 +373,7 @@ export default function Schedules() {
                       </div>
                     </div>
                   );
-                })}
+                  }))}
               </div>
             </div>
           </div>

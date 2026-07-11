@@ -299,7 +299,6 @@ export default function TimetableGrid({
                       onDragEnd={handleDragEnd}
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
-                      onEditMoving={handleEditMovingSchedule}
                     />
                   );
                 })
