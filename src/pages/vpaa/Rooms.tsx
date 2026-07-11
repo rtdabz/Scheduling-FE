@@ -69,7 +69,7 @@ export default function Rooms() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';

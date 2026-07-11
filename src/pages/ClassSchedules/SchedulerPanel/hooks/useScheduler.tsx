@@ -55,7 +55,7 @@ export const useScheduler = () => {
     const controller = new AbortController();
     const signal = controller.signal;
 
-    const userJson = localStorage.getItem('user');
+    const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
     const user = userJson ? JSON.parse(userJson) : null;
     const isVpaa = user?.role?.toLowerCase() === 'vpaa';
 

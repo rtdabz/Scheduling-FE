@@ -119,7 +119,7 @@ export default function Schedules() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name || "College of Information Technology";

@@ -5,7 +5,7 @@ import 'driver.js/dist/driver.css'
 export function useTour() {
   useEffect(() => {
     // Unique key per user to ensure everyone gets the tour once
-    const userJson = localStorage.getItem('user')
+    const userJson = localStorage.getItem('user') || sessionStorage.getItem('user')
     const user = userJson ? JSON.parse(userJson) : null
     const tourKey = user ? `wicars_tour_done_${user.username}` : 'wicars_tour_done_guest'
 

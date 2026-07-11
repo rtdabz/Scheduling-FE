@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
+import api from './lib/api';
 
 // VPAA Pages
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -26,7 +27,7 @@ interface StoredUser {
 }
 
 const getStoredRole = (): string => {
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   return user?.role?.toLowerCase() || '';
 };
@@ -43,18 +44,36 @@ const getDashboardPath = (role: string): string => {
 const DashboardRoute = () => <Dashboard role={getDashboardRole()} />;
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
   if (!token) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
   if (token) return <Navigate to={getDashboardPath(getStoredRole())} replace />;
   return <>{children}</>;
 };
 
 export default function App() {
+  useEffect(() => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+
+    api.get('/me')
+      .then((res) => {
+        const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
+        storage.setItem('user', JSON.stringify(res.data));
+      })
+      .catch(() => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        window.location.href = '/';
+      });
+  }, []);
+
   return (
     <BrowserRouter>
       <Suspense fallback={

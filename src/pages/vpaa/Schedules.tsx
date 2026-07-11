@@ -2,7 +2,7 @@ import SchedulerPanel from '../ClassSchedules/SchedulerPanel';
 import ScheduleViewer from './ScheduleViewer';
 
 export default function Schedules() {
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
 

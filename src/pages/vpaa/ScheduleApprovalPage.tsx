@@ -146,7 +146,7 @@ export default function ScheduleApprovalPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
 
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userId = user?.id;
 

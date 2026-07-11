@@ -11,7 +11,7 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const location = useLocation()
 
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
 
   const getNavItems = () => {

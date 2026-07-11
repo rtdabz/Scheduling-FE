@@ -6,7 +6,7 @@ export default function SecretaryDashboardPage() {
   useTour();
   const [isLoading, setIsLoading] = useState(true);
   
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
 
   useEffect(() => {

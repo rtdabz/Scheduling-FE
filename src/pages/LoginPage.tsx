@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
 const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +20,9 @@ const handleSubmit = async (e: React.FormEvent) => {
     setIsLoading(true);
     try {
         const res = await api.post('/login', { username, password });
-        localStorage.setItem('token', res.data.token);
-        localStorage.setItem('user', JSON.stringify(res.data.user));
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem('token', res.data.token);
+        storage.setItem('user', JSON.stringify(res.data.user));
         const roleNames: Record<string, string> = {
           'vpaa': 'VPAA',
           'dean': 'Dean',
@@ -148,6 +150,19 @@ const handleSubmit = async (e: React.FormEvent) => {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
+            </div>
+
+            {/* Remember Me */}
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-text">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-primary focus:ring-accent/20 focus:ring-offset-0 focus:ring-2 accent-primary transition-all cursor-pointer"
+                />
+                <span className="text-sm font-medium">Remember Me</span>
+              </label>
             </div>
 
             <div className="pt-2">

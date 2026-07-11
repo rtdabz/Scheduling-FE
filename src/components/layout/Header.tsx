@@ -208,6 +208,8 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                       } finally {
                         localStorage.removeItem('token');
                         localStorage.removeItem('user');
+                        sessionStorage.removeItem('token');
+                        sessionStorage.removeItem('user');
                         toast.success('Logged Out', 'You have been successfully signed out.');
                         navigate('/');
                         setIsLoggingOut(false);
