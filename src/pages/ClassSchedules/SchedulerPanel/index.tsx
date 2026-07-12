@@ -44,6 +44,11 @@ export default function SchedulerPanel() {
         subjects={scheduler.subjects}
         isTeachingLoadOpen={scheduler.isTeachingLoadOpen}
         setIsTeachingLoadOpen={scheduler.setIsTeachingLoadOpen}
+        sections={scheduler.sections}
+        activeTerm={scheduler.activeTerm}
+        users={scheduler.users}
+        departments={scheduler.departments}
+        selectedSectionId={scheduler.selectedSectionId}
       />
     </div>
   );

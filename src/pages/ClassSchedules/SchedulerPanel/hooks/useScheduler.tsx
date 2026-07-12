@@ -47,6 +47,8 @@ export const useScheduler = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [activeTerm, setActiveTerm] = useState<any>(null);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Single parallel fetch for all reference data on mount
@@ -97,7 +99,12 @@ export const useScheduler = () => {
     const fetchFaculties = api.get<any[]>('/faculties', { signal }).then(res =>
       res.data.map((f: any) => ({
         id: f.id.toString(),
-        name: `${f.first_name} ${f.last_name}`
+        name: `${f.first_name} ${f.last_name}`,
+        employmentType: f.employment_type,
+        departmentId: f.department_id,
+        departmentCode: f.department?.department_code,
+        departmentName: f.department?.department_name,
+        maxUnits: f.max_units ? Number(f.max_units) : undefined
       }))
     );
 
@@ -109,15 +116,19 @@ export const useScheduler = () => {
       : '/sections';
     const fetchSections = api.get<any[]>(sectionsUrl, { signal }).then(res => res.data);
     const fetchSchedules = api.get<any[]>('/schedules', { signal }).then(res => res.data);
+    const fetchDepartments = api.get<any[]>('/departments', { signal }).then(res => res.data);
+    const fetchUsers = api.get<any[]>('/user', { signal }).then(res => res.data);
 
-    Promise.all([fetchRooms, fetchSubjects, fetchFaculties, fetchTerm, fetchSections, fetchSchedules])
-      .then(([mappedRooms, mappedSubjects, mappedFaculties, term, rawSections, rawSchedules]) => {
+    Promise.all([fetchRooms, fetchSubjects, fetchFaculties, fetchTerm, fetchSections, fetchSchedules, fetchDepartments, fetchUsers])
+      .then(([mappedRooms, mappedSubjects, mappedFaculties, term, rawSections, rawSchedules, rawDepartments, rawUsers]) => {
         if (!active) return;
 
         setRooms(mappedRooms);
         setSubjects(mappedSubjects);
         setFaculties(mappedFaculties);
         setActiveTerm(term);
+        setDepartments(rawDepartments);
+        setUsers(rawUsers);
 
         // Filter sections by term_id immediately once loaded
         const filteredSections = rawSections
@@ -126,7 +137,8 @@ export const useScheduler = () => {
             id: s.id.toString(),
             name: s.section_name,
             yearLevel: Number(s.year_level),
-            departmentId: s.department_id
+            departmentId: s.department_id,
+            numberOfStudents: Number(s.number_of_students)
           }));
         setSections(filteredSections);
 
@@ -1364,6 +1376,9 @@ export const useScheduler = () => {
     setIsPrintModalOpen,
     isTeachingLoadOpen,
     setIsTeachingLoadOpen,
+    activeTerm,
+    departments,
+    users,
     roomViewRoomId,
     setRoomViewRoomId,
     isAssignedListCollapsed,

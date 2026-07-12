@@ -17,11 +17,17 @@ export interface Section {
   name: string;
   yearLevel: number;
   departmentId?: number;
+  numberOfStudents?: number;
 }
 
 export interface Faculty {
   id: string;
   name: string;
+  employmentType?: "full-time" | "part-time";
+  departmentId?: number;
+  departmentCode?: string;
+  departmentName?: string;
+  maxUnits?: number;
 }
 
 export interface Room {

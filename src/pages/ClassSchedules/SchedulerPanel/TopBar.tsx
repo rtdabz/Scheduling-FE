@@ -132,11 +132,11 @@ export default function TopBar({
           <button
             type="button"
             onClick={onTeachingLoad}
-            title="Teaching Load"
+            title="Print Teaching Load"
             className="flex items-center gap-1.5 px-3 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-sm font-medium rounded-lg transition-colors cursor-pointer shadow-sm border border-transparent"
           >
             <FileText className="w-4 h-4" />
-            <span>Teaching Load</span>
+            <span>Print Teaching Load</span>
           </button>
         </div>
       </div>
