@@ -267,16 +267,18 @@ export default function DropModal({
                         </label>
                         <div className="relative">
                           <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                          <select
-                            value={modalRoomId}
-                            onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
-                            className={`w-full appearance-none border rounded-lg pl-9 pr-8 py-2 text-xs outline-none transition-all focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] border-gray-200 bg-white text-gray-700`}
-                          >
-                            <option value="">Select a room...</option>
-                            {rooms.map((r) => (
-                              <option key={r.id} value={r.id}>{r.name}</option>
-                            ))}
-                          </select>
+                            <select
+                              value={modalRoomId}
+                              onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
+                              className={`w-full appearance-none border rounded-lg pl-9 pr-8 py-2 text-xs outline-none transition-all focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] border-gray-200 bg-white text-gray-700`}
+                            >
+                              <option value="">Select a room...</option>
+                              {rooms
+                                .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
+                                .map((r) => (
+                                  <option key={r.id} value={r.id}>{r.name}</option>
+                                ))}
+                            </select>
                           <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
                       </div>

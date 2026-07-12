@@ -5,7 +5,7 @@ interface UseConflictParams {
   selectedSectionId: string;
   dragSubjectId: string | null;
   draggedScheduleId: string | null;
-  rooms: { id: string; name: string }[];
+  rooms: { id: string; name: string; roomType?: string }[];
   subjects: Subject[];
   faculties: Faculty[];
 }
@@ -55,6 +55,18 @@ export const useConflict = ({
         conflictType: "section",
         message: "The schedule duration exceeds the grid operating hours (9:00 PM)."
       };
+    }
+
+    // Room-type compatibility check
+    if (roomId && roomId !== "online" && roomId !== "field") {
+      const room = rooms.find((r) => r.id === roomId);
+      const subject = subjects.find((s) => s.id === subjectId);
+      if (room?.roomType && subject?.roomTypeRequired && room.roomType !== subject.roomTypeRequired) {
+        return {
+          conflictType: "room",
+          message: `Room type mismatch: ${subject.code} requires a '${subject.roomTypeRequired}' room, but '${room.name}' is a '${room.roomType}' room.`
+        };
+      }
     }
     for (const s of schedules) {
       if (excludeScheduleId) {

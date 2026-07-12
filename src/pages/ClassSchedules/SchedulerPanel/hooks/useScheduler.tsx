@@ -883,9 +883,15 @@ export const useScheduler = () => {
         }
       }
       await refreshSchedules();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error("Operation Failed", "Could not save the schedule to the database.");
+      const violations = err?.response?.data?.violations;
+      if (Array.isArray(violations) && violations.length > 0) {
+        const messages = violations.map((v: any) => v.message).join(" ");
+        toast.error("Schedule Conflict", messages);
+      } else {
+        toast.error("Operation Failed", "Could not save the schedule to the database.");
+      }
     } finally {
       setIsModalLoading(false);
       setDropContext(null);
