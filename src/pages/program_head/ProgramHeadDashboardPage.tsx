@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useTour } from '../../hooks/useTour';
 import Skeleton from '../../components/ui/Skeleton';
 
 export default function ProgramHeadDashboardPage() {
+  useTour();
   const [isLoading, setIsLoading] = useState(true);
   
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');

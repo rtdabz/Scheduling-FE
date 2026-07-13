@@ -20,8 +20,8 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  // Get user data from localStorage
-  const userJson = localStorage.getItem('user');
+  // Get user data from localStorage or sessionStorage
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
 
   // Format initials
@@ -189,8 +189,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                   </button>
                   <button 
                     onClick={() => {
-                      localStorage.removeItem('wicars_tour_done');
-                      window.location.reload();
+                      window.dispatchEvent(new CustomEvent('restart-tour'));
                     }}
                     className="flex items-center gap-3 w-full px-3.5 py-2 text-sm text-[#C9952A] hover:bg-[#C9952A]/10 rounded-xl transition-all duration-200 font-bold cursor-pointer"
                   >

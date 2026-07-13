@@ -9,12 +9,12 @@ export function useTour() {
     const user = userJson ? JSON.parse(userJson) : null
     const tourKey = user ? `wicars_tour_done_${user.username}` : 'wicars_tour_done_guest'
 
-    const hasSeen = localStorage.getItem(tourKey)
-    if (hasSeen) return
+    let isComponentMounted = true
+    let activeDriver: any = null
 
-    const driverObj = driver({
-      showProgress: true,
-      steps: ([
+    const startTour = () => {
+      // Filter steps to ensure elements are present in the DOM
+      const steps = [
         {
           element: '#sidebar-dashboard',
           popover: {
@@ -69,12 +69,55 @@ export function useTour() {
             align: 'end'
           }
         }
-      ].filter(step => document.querySelector(step.element as string))) as any,
-      onDestroyed: () => {
-        localStorage.setItem(tourKey, 'true')
+      ].filter(step => document.querySelector(step.element as string))
+
+      // If no target elements are found, do not run the tour yet
+      if (steps.length === 0) return
+
+      const driverObj = driver({
+        showProgress: true,
+        steps: steps as any,
+        onDestroyed: () => {
+          // Only mark the tour as seen if the destruction is user-initiated (not unmounting)
+          if (isComponentMounted) {
+            localStorage.setItem(tourKey, 'true')
+          }
+        }
+      })
+
+      driverObj.drive()
+      activeDriver = driverObj
+    }
+
+    const init = () => {
+      const hasSeen = localStorage.getItem(tourKey)
+      if (!hasSeen && isComponentMounted) {
+        startTour()
       }
+    }
+
+    // Run tour logic on frame buffer to make sure DOM is painted
+    const rafId = requestAnimationFrame(() => {
+      init()
     })
 
-    driverObj.drive()
+    const handleRestart = () => {
+      localStorage.removeItem(tourKey)
+      if (activeDriver) {
+        activeDriver.destroy()
+      }
+      startTour()
+    }
+
+    window.addEventListener('restart-tour', handleRestart)
+
+    return () => {
+      isComponentMounted = false
+      cancelAnimationFrame(rafId)
+      if (activeDriver) {
+        activeDriver.destroy()
+      }
+      window.removeEventListener('restart-tour', handleRestart)
+    }
   }, [])
 }

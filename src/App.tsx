@@ -6,7 +6,7 @@ import AppLayout from './components/layout/AppLayout';
 import api from './lib/api';
 
 // VPAA Pages
-const Dashboard = lazy(() => import('./pages/Dashboard'));
+import Dashboard from './pages/Dashboard';
 const Schedules = lazy(() => import('./pages/vpaa/Schedules'));
 const ScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
 const Faculty = lazy(() => import('./pages/vpaa/Faculty'));
