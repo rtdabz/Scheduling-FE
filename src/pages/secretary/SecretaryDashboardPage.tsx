@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   CalendarDays, 
@@ -8,12 +8,15 @@ import {
   Layers,
   Users,
   BookOpen,
-  TrendingUp
+  TrendingUp,
+  ArrowRight,
+  CalendarPlus,
+  AlertTriangle
 } from 'lucide-react';
 import { useTour } from '../../hooks/useTour';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
-import DepartmentScheduleStatusCard from '../../components/ui/DepartmentScheduleStatusCard';
+import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 
 interface Schedule {
   id: number;
@@ -37,7 +40,19 @@ interface Section {
 
 interface Faculty {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
+  middle_name?: string | null;
+  employment_type: 'full-time' | 'part-time';
+  max_units: number;
+  assigned_units?: number;
+  department_id: number;
+  department?: {
+    id: number;
+    department_name: string;
+    department_code: string;
+  } | null;
+  status: string;
 }
 
 interface Subject {
@@ -79,7 +94,7 @@ export default function SecretaryDashboardPage() {
   
   // User info
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? (JSON.parse(userJson) as { name?: string; department_id?: number }) : null;
+  const user = userJson ? (JSON.parse(userJson) as { name?: string; department_id?: number; role?: string }) : null;
 
   // Stats State
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -88,6 +103,13 @@ export default function SecretaryDashboardPage() {
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [activeTerm, setActiveTerm] = useState<Term | null>(null);
+
+  // Department schedule status progress hook
+  const {
+    draftingProgress,
+    yearLevels,
+    stageCounts,
+  } = useDepartmentScheduleStatus(user?.department_id);
 
 
   useEffect(() => {
@@ -133,25 +155,72 @@ export default function SecretaryDashboardPage() {
   const isTermActive = !!activeTerm;
 
   // Counts for Stage Breakdown
-  const draftCount        = schedules.filter(s => !['submitted', 'faculty_assignment', 'finalized', 'approved_by_dean', 'approved'].includes(s.status)).length;
-  const submittedCount    = schedules.filter(s => ['submitted', 'faculty_assignment', 'finalized'].includes(s.status)).length;
-  const deanApprovedCount = schedules.filter(s => s.status === 'approved_by_dean').length;
-  const approvedCount     = schedules.filter(s => s.status === 'approved').length;
+  const draftCount        = stageCounts?.draft ?? 0;
+  const submittedCount    = stageCounts?.submitted ?? 0;
+  const deanApprovedCount = stageCounts?.approved_by_dean ?? 0;
+  const approvedCount     = stageCounts?.approved ?? 0;
+  const totalDeptSchedules = draftCount + submittedCount + deanApprovedCount + approvedCount;
 
   // Percentages for Stage Breakdown (handle division by zero)
-  const draftPercent = totalSchedules > 0 ? Math.round((draftCount / totalSchedules) * 100) : 0;
-  const submittedPercent = totalSchedules > 0 ? Math.round((submittedCount / totalSchedules) * 100) : 0;
-  const deanApprovedPercent = totalSchedules > 0 ? Math.round((deanApprovedCount / totalSchedules) * 100) : 0;
-  const approvedPercent = totalSchedules > 0 ? Math.round((approvedCount / totalSchedules) * 100) : 0;
+  const draftPercent = totalDeptSchedules > 0 ? Math.round((draftCount / totalDeptSchedules) * 100) : 0;
+  const submittedPercent = totalDeptSchedules > 0 ? Math.round((submittedCount / totalDeptSchedules) * 100) : 0;
+  const deanApprovedPercent = totalDeptSchedules > 0 ? Math.round((deanApprovedCount / totalDeptSchedules) * 100) : 0;
+  const approvedPercent = totalDeptSchedules > 0 ? Math.round((approvedCount / totalDeptSchedules) * 100) : 0;
 
   // Room Utilization calculations
   const utilizedRoomIds = new Set(schedules.filter(s => s.room_id).map(s => s.room_id));
   const utilizationRate = rooms.length > 0 ? Math.round((utilizedRoomIds.size / rooms.length) * 100) : 0;
 
   // Radial Ring circumference calculations
-  const radius = 36;
+  const radius = 70;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (utilizationRate / 100) * circumference;
+
+  // Derived faculties list (top 3 sorted by workload % descending)
+  const processedFaculties = useMemo(() => {
+    let list = [...faculties];
+    
+    // Filter by department if secretary has a department_id
+    if (user?.department_id) {
+      list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id));
+    }
+
+    list.sort((a, b) => {
+      const pctA = (a.assigned_units || 0) / (a.max_units || 21);
+      const pctB = (b.assigned_units || 0) / (b.max_units || 21);
+      return pctB - pctA;
+    });
+
+    return list.slice(0, 3);
+  }, [faculties, user?.department_id]);
+
+  const facultyStats = useMemo(() => {
+    // Stats are computed over all department faculties (or all if VPAA)
+    const list = user?.department_id 
+      ? faculties.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id))
+      : faculties;
+
+    let total = list.length;
+    let fullyLoaded = 0;
+    let underloaded = 0;
+    let overloaded = 0;
+
+    list.forEach(f => {
+      const assigned = f.assigned_units || 0;
+      const max = f.max_units || 21;
+      const pct = max > 0 ? (assigned / max) * 100 : 0;
+
+      if (pct > 100) {
+        overloaded++;
+      } else if (pct === 100) {
+        fullyLoaded++;
+      } else {
+        underloaded++;
+      }
+    });
+
+    return { total, fullyLoaded, underloaded, overloaded };
+  }, [faculties, user?.department_id]);
 
 
   return (
@@ -170,14 +239,15 @@ export default function SecretaryDashboardPage() {
       </div>
 
       {/* Greeting Banner */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-[#4e0a10] to-[#2c0508] p-6 sm:p-8 rounded-2xl text-white shadow-md border border-[#4e0a10]/20">
-        <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full blur-2xl -mr-12 -mt-12 pointer-events-none" />
-        <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-[#C9952A]/5 rounded-full blur-3xl -ml-12 -mb-12 pointer-events-none" />
-        <div className="relative z-10">
-          <h1 className="font-display text-xl sm:text-2xl font-black tracking-tight text-white">
-            Welcome back, <span className="text-[#C9952A]">{user?.name || 'Secretary'}</span>!
-          </h1>
-        </div>
+      <div className="bg-[#5A1220] py-4 px-6 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="font-sans text-base font-medium tracking-tight text-white">
+          Welcome back, <span className="text-[#F5A623] font-medium">{user?.name || 'Secretary User'}</span>!
+        </h1>
+        {activeTerm && (
+          <span className="text-xs sm:text-sm text-[#F5A623]/85 font-medium tracking-wide">
+            {activeTerm.term_name}
+          </span>
+        )}
       </div>
 
       {isLoading ? (
@@ -185,7 +255,7 @@ export default function SecretaryDashboardPage() {
           {/* Skeleton Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm animate-pulse min-h-[98px] flex flex-col justify-between">
+              <div key={i} className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 animate-pulse min-h-[98px] flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <Skeleton className="h-3 w-14" />
                   <Skeleton className="h-6 w-6 rounded-lg" />
@@ -195,55 +265,62 @@ export default function SecretaryDashboardPage() {
             ))}
           </div>
 
-          {/* Skeleton Analytics — Stage Distribution + stacked Status Card & Room Gauge */}
+          {/* Skeleton Analytics — Stage Distribution, Room Gauge & Faculty Load */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-pulse space-y-4">
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-4 w-full rounded-full mt-2" />
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full rounded-xl" />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-6">
-              {/* Skeleton compact status card */}
-              <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm animate-pulse space-y-3">
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1.5">
-                    <Skeleton className="h-4 w-28" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                  <Skeleton className="h-6 w-10" />
+            {/* Stage Breakdown Skeleton */}
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[340px]">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-5 w-24 rounded-full" />
                 </div>
-                <Skeleton className="h-2 w-full rounded-full" />
-                <div className="flex gap-2">
+                <Skeleton className="h-4 w-full rounded-full mt-2" />
+                <div className="grid grid-cols-2 gap-3 mt-4">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-2.5 w-2.5 rounded-full" />
+                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
                   ))}
                 </div>
-                <Skeleton className="h-8 w-full rounded-xl" />
-                <Skeleton className="h-10 w-full rounded-xl" />
               </div>
+              <Skeleton className="h-10 w-full rounded-xl mt-4" />
+            </div>
 
-              {/* Skeleton Room Utilization Gauge */}
-              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-pulse flex flex-col items-center justify-center gap-4 min-h-[250px]">
+            {/* Room Utilization Skeleton */}
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col items-center justify-center gap-4 min-h-[340px]">
+              <div className="self-start">
                 <Skeleton className="h-5 w-36" />
-                <Skeleton className="h-32 w-32 rounded-full" />
-                <Skeleton className="h-4 w-40" />
               </div>
+              <Skeleton className="h-32 w-32 rounded-full" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+
+            {/* Faculty Load Skeleton */}
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[340px]">
+              <div className="space-y-4">
+                <Skeleton className="h-5 w-32" />
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="space-y-2">
+                      <div className="flex justify-between">
+                        <Skeleton className="h-3.5 w-28" />
+                        <Skeleton className="h-3 w-10" />
+                      </div>
+                      <Skeleton className="h-2 w-full rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Skeleton className="h-4 w-28 self-end" />
             </div>
           </div>
 
           {/* Skeleton Quick Actions & Activity — prevents shift from missing section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-pulse space-y-4">
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-4">
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-28 w-full rounded-xl" />
               <Skeleton className="h-28 w-full rounded-xl" />
             </div>
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-pulse space-y-5 min-h-[280px]">
+            <div className="lg:col-span-2 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-5 min-h-[280px]">
               <Skeleton className="h-5 w-36" />
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex gap-3 items-start">
@@ -262,11 +339,10 @@ export default function SecretaryDashboardPage() {
           {/* Metrics Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
             {/* Total Schedules */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 relative group overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-[#4e0a10] opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
               <div className="flex items-center justify-between text-gray-400 mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">Schedules</span>
-                <div className="p-1.5 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10]">
+                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
                   <CalendarDays className="w-4 h-4" />
                 </div>
               </div>
@@ -274,11 +350,10 @@ export default function SecretaryDashboardPage() {
             </div>
 
             {/* Pending Approvals */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 relative group overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-[#C9952A] opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
               <div className="flex items-center justify-between text-gray-400 mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">Pending</span>
-                <div className="p-1.5 rounded-lg bg-[#C9952A]/5 text-[#C9952A]">
+                <div className="p-1.5 rounded-lg bg-[#F5A623]/5 text-[#F5A623]">
                   <Clock className="w-4 h-4" />
                 </div>
               </div>
@@ -286,11 +361,10 @@ export default function SecretaryDashboardPage() {
             </div>
 
             {/* Sections */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 relative group overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
               <div className="flex items-center justify-between text-gray-400 mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">Sections</span>
-                <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
+                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
                   <Layers className="w-4 h-4" />
                 </div>
               </div>
@@ -298,11 +372,10 @@ export default function SecretaryDashboardPage() {
             </div>
 
             {/* Faculty */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 relative group overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-purple-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
               <div className="flex items-center justify-between text-gray-400 mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">Faculty</span>
-                <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
+                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
                   <Users className="w-4 h-4" />
                 </div>
               </div>
@@ -310,11 +383,10 @@ export default function SecretaryDashboardPage() {
             </div>
 
             {/* Rooms */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 relative group overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
               <div className="flex items-center justify-between text-gray-400 mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">Rooms</span>
-                <div className="p-1.5 rounded-lg bg-cyan-50 text-cyan-600">
+                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
                   <DoorOpen className="w-4 h-4" />
                 </div>
               </div>
@@ -322,11 +394,10 @@ export default function SecretaryDashboardPage() {
             </div>
 
             {/* Subjects */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all duration-300 relative group overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-teal-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
               <div className="flex items-center justify-between text-gray-400 mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wider">Subjects</span>
-                <div className="p-1.5 rounded-lg bg-teal-50 text-teal-600">
+                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
                   <BookOpen className="w-4 h-4" />
                 </div>
               </div>
@@ -337,30 +408,38 @@ export default function SecretaryDashboardPage() {
           {/* Analytics Column Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Stage Distribution Chart */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <div className="lg:col-span-1 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
-                  <TrendingUp className="w-5 h-5 text-[#4e0a10]" />
-                  <span>Schedules Stage Breakdown</span>
+                <div className="flex items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-2.5 text-gray-800 font-bold">
+                    <TrendingUp className="w-5 h-5 text-[#5A1220]" />
+                    <span>Schedules Stage Breakdown</span>
+                  </div>
+                  {user?.department_id && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#5A1220]/10 text-[#5A1220] text-xs font-bold border border-[#5A1220]/15">
+                      {draftingProgress}% Completed
+                    </span>
+                  )}
                 </div>
 
                 {/* Progress bar container */}
-                {totalSchedules === 0 ? (
-                  <div className="py-8 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-2xl text-center">
+                {totalDeptSchedules === 0 ? (
+                  <div className="py-8 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-xl text-center">
                     <p className="text-gray-400 text-sm">No scheduled section data available.</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Visual Segment Bar */}
-                    <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden shadow-inner">
-                      <div style={{ width: `${draftPercent}%` }} className="bg-gray-400 h-full transition-all duration-500" title={`Draft: ${draftCount}`} />
-                      <div style={{ width: `${submittedPercent}%` }} className="bg-amber-500 h-full transition-all duration-500" title={`Submitted: ${submittedCount}`} />
-                      <div style={{ width: `${deanApprovedPercent}%` }} className="bg-blue-600 h-full transition-all duration-500" title={`Dean Approved: ${deanApprovedCount}`} />
-                      <div style={{ width: `${approvedPercent}%` }} className="bg-emerald-600 h-full transition-all duration-500" title={`Approved: ${approvedCount}`} />
+                    {/* Visual Progress Bar */}
+                    <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden">
+                      <div
+                        style={{ width: `${draftingProgress}%` }}
+                        className="bg-[#5A1220] h-full transition-all duration-500"
+                        title={`Progress: ${draftingProgress}%`}
+                      />
                     </div>
 
                     {/* Numeric breakdown details */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+                    <div className="grid grid-cols-2 gap-4 mt-6">
                       <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                         <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
                           <span className="w-2.5 h-2.5 rounded-full bg-gray-400 block" />
@@ -369,86 +448,174 @@ export default function SecretaryDashboardPage() {
                         <p className="text-xl font-extrabold text-gray-800 mt-1">{draftCount} <span className="text-xs text-gray-400 font-medium">({draftPercent}%)</span></p>
                       </div>
 
-                      <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100">
+                      <div className="p-3 bg-[#F5A623]/5 rounded-xl border border-[#F5A623]/20">
                         <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#F5A623] block" />
                           Submitted
                         </div>
                         <p className="text-xl font-extrabold text-gray-800 mt-1">{submittedCount} <span className="text-xs text-gray-400 font-medium">({submittedPercent}%)</span></p>
                       </div>
 
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                      <div className="p-3 bg-[#5A1220]/5 rounded-xl border border-[#5A1220]/20">
                         <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#5A1220] block" />
                           Dean Approved
                         </div>
                         <p className="text-xl font-extrabold text-gray-800 mt-1">{deanApprovedCount} <span className="text-xs text-gray-400 font-medium">({deanApprovedPercent}%)</span></p>
                       </div>
 
-                      <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                      <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
                         <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-gray-800 block" />
                           VPAA Approved
                         </div>
                         <p className="text-xl font-extrabold text-gray-800 mt-1">{approvedCount} <span className="text-xs text-gray-400 font-medium">({approvedPercent}%)</span></p>
                       </div>
+                    </div>
+
+                    {/* Footer note row & Action */}
+                    <div className="mt-6 pt-4 border-t border-gray-100 flex flex-col gap-4">
+                      <div className="text-xs text-gray-500 flex items-center justify-between">
+                        <span>{
+                          yearLevels && yearLevels.length > 0
+                            ? (yearLevels.filter(yl => !yl.isComplete).map(yl => yl.label).length === 0
+                              ? 'All year levels drafted'
+                              : `Pending: ${yearLevels.filter(yl => !yl.isComplete).map(yl => yl.label).join(', ')} draft`)
+                            : 'No schedule status data'
+                        }</span>
+                        <span className="font-medium text-gray-400">Updated just now</span>
+                      </div>
+
+                      <button
+                        onClick={() => navigate('/secretary/schedules')}
+                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#5A1220]/5 hover:bg-[#5A1220]/10 text-[#5A1220] text-sm font-bold border border-[#5A1220]/10 transition-colors"
+                      >
+                        View details
+                        <ArrowRight size={14} />
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Right: Department Schedule Status overview + Room Utilization Gauge */}
-            <div className="flex flex-col gap-6">
-              {user?.department_id && (
-                <DepartmentScheduleStatusCard departmentId={user.department_id} />
-              )}
+            {/* Room Utilization Gauge */}
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between flex-1">
+              <div>
+                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
+                  <DoorOpen className="w-5 h-5 text-[#5A1220]" />
+                  <span>Room Utilization</span>
+                </div>
 
-              {/* Room Utilization Gauge */}
-              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between flex-1">
-                <div>
-                  <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
-                    <DoorOpen className="w-5 h-5 text-[#4e0a10]" />
-                    <span>Room Utilization</span>
-                  </div>
-
-                  <div className="flex flex-col items-center justify-center py-4 relative">
-                    <div className="relative flex items-center justify-center">
-                      <svg className="w-32 h-32 transform -rotate-90">
-                        {/* Background circle */}
-                        <circle
-                          cx="64"
-                          cy="64"
-                          r={radius}
-                          className="stroke-gray-100 fill-transparent"
-                          strokeWidth="8"
-                        />
-                        {/* Foreground Circle Progress */}
-                        <circle
-                          cx="64"
-                          cy="64"
-                          r={radius}
-                          className="stroke-[#4e0a10] fill-transparent transition-all duration-500"
-                          strokeWidth="8"
-                          strokeDasharray={circumference}
-                          strokeDashoffset={strokeDashoffset}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      {/* Ring Label overlay */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-2xl font-black text-gray-800">{utilizationRate}%</span>
-                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Rate</span>
-                      </div>
+                <div className="flex flex-col items-center justify-center py-4 relative">
+                  <div className="relative flex items-center justify-center">
+                    <svg className="w-48 h-48 transform -rotate-90">
+                      {/* Background circle */}
+                      <circle
+                        cx="96"
+                        cy="96"
+                        r={radius}
+                        className="stroke-gray-100 fill-transparent"
+                        strokeWidth="12"
+                      />
+                      {/* Foreground Circle Progress */}
+                      <circle
+                        cx="96"
+                        cy="96"
+                        r={radius}
+                        className="stroke-[#5A1220] fill-transparent transition-all duration-500"
+                        strokeWidth="12"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    {/* Ring Label overlay */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-4xl font-extrabold text-gray-800">{utilizationRate}%</span>
+                      <span className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Utilization</span>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="border-t border-gray-150/60 pt-4 text-center mt-4">
-                  <p className="text-sm text-gray-600">
-                    <span className="font-bold text-gray-800">{utilizedRoomIds.size}</span> out of <span className="font-bold text-gray-800">{rooms.length}</span> rooms scheduled.
-                  </p>
+              <div className="border-t border-gray-100 pt-4 text-center mt-4">
+                <p className="text-sm text-gray-600">
+                  <span className="font-bold text-gray-800">{utilizedRoomIds.size}</span> out of <span className="font-bold text-gray-800">{rooms.length}</span> rooms scheduled.
+                </p>
+              </div>
+            </div>
+
+            {/* Faculty Teaching Load Card */}
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between min-h-[340px]">
+              <div>
+                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-5">
+                  <Users className="w-5 h-5 text-[#5A1220]" />
+                  <span>Faculty Load</span>
                 </div>
+
+                <div className="space-y-4 font-sans">
+                  {processedFaculties.length === 0 ? (
+                    <p className="text-center text-gray-400 text-xs py-4 font-sans">No instructors found.</p>
+                  ) : (
+                    processedFaculties.map((f) => {
+                      const assigned = f.assigned_units || 0;
+                      const max = f.max_units || 21;
+                      const pct = max > 0 ? Math.round((assigned / max) * 100) : 0;
+                      
+                      let barColor = 'bg-[#F5A623]';
+                      let textColor = 'text-[#F5A623] bg-amber-50 border-amber-200';
+                      if (pct > 100) {
+                        barColor = 'bg-red-500';
+                        textColor = 'text-red-600 bg-red-50 border-red-200';
+                      } else if (pct === 100) {
+                        barColor = 'bg-emerald-500';
+                        textColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+                      }
+
+                      const middleInitial = f.middle_name ? `${f.middle_name.charAt(0)}.` : '';
+                      const fullName = `${f.last_name}, ${f.first_name} ${middleInitial}`.trim();
+                      const deptCode = f.department?.department_code || 'N/A';
+
+                      return (
+                        <div key={f.id} className="space-y-1 pb-2 border-b border-gray-100 last:border-0 last:pb-0 font-sans">
+                          <div className="flex justify-between items-center text-xs font-sans">
+                            <span className="font-bold text-gray-800 truncate max-w-[130px]" title={fullName}>{fullName}</span>
+                            <span className="text-[9px] bg-gray-100 text-gray-500 border border-gray-200 rounded px-1.5 py-0.5 font-bold uppercase">
+                              {deptCode}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between gap-2 text-[10px] font-sans">
+                            <div className="flex-1 bg-gray-100 h-2 rounded-full overflow-hidden max-w-[120px]">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                                style={{ width: `${Math.min(pct, 100)}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-semibold text-gray-400">
+                                {assigned}/{max}
+                              </span>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${textColor}`}>
+                                {pct}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end border-t border-gray-100 pt-3">
+                <button
+                  onClick={() => navigate(user?.role?.toLowerCase() === 'secretary' ? '/secretary/instructors' : '/faculty')}
+                  className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline flex items-center gap-1.5 cursor-pointer"
+                >
+                  View all faculty &rarr;
+                </button>
               </div>
             </div>
           </div>
@@ -456,31 +623,45 @@ export default function SecretaryDashboardPage() {
           {/* Quick Actions & Recent Activities Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Quick Actions Panel */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-4">
+            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col gap-4">
               <h2 className="text-gray-800 font-bold text-lg">Quick Actions</h2>
-              <div className="flex-1 flex flex-col sm:flex-row lg:flex-col gap-4">
+              <div className="flex flex-col gap-3">
                 <button
                   onClick={() => navigate('/secretary/schedules')}
-                  className="flex-1 flex flex-col items-center justify-center p-6 bg-white border border-gray-150 rounded-xl hover:shadow-lg transition-all duration-300 text-gray-700 hover:text-[#4e0a10] group"
+                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
                 >
-                  <CalendarDays className="w-8 h-8 text-[#4e0a10] mb-3 group-hover:scale-105 transition-transform" />
-                  <span className="text-sm font-bold text-center">Manage Class Schedules</span>
+                  <CalendarDays className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
+                  <span className="text-sm font-bold text-left">Manage Class Schedules</span>
                 </button>
                 <button
                   onClick={() => navigate('/secretary/rooms')}
-                  className="flex-1 flex flex-col items-center justify-center p-6 bg-white border border-gray-150 rounded-xl hover:shadow-lg transition-all duration-300 text-gray-700 hover:text-[#4e0a10] group"
+                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
                 >
-                  <DoorOpen className="w-8 h-8 text-[#4e0a10] mb-3 group-hover:scale-105 transition-transform" />
-                  <span className="text-sm font-bold text-center">View Room Assignments</span>
+                  <DoorOpen className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
+                  <span className="text-sm font-bold text-left">View Room Assignments</span>
+                </button>
+                <button
+                  onClick={() => navigate('/secretary/schedules')}
+                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
+                >
+                  <CalendarPlus className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
+                  <span className="text-sm font-bold text-left">Add New Schedule</span>
+                </button>
+                <button
+                  onClick={() => navigate('/secretary/schedules')}
+                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
+                >
+                  <AlertTriangle className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
+                  <span className="text-sm font-bold text-left">Check Conflicts</span>
                 </button>
               </div>
             </div>
 
             {/* Activities Timeline Feed */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between min-h-[280px]">
+            <div className="lg:col-span-2 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between min-h-[280px]">
               <div>
                 <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
-                  <ClipboardList className="w-5 h-5 text-[#4e0a10]" />
+                  <ClipboardList className="w-5 h-5 text-[#5A1220]" />
                   <span>Recent Activity</span>
                 </div>
 
@@ -488,9 +669,11 @@ export default function SecretaryDashboardPage() {
                   <p className="text-muted text-sm italic">No recent activity logged.</p>
                 ) : (
                   <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
-                    {mockActivities.map((act) => (
+                    {mockActivities.map((act, index) => (
                       <div key={act.id} className="relative flex items-start gap-4">
-                        <div className="absolute -left-[22px] mt-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#C9952A] flex items-center justify-center" />
+                        <div className={`absolute -left-[22px] mt-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 ${
+                          index === 0 ? 'border-[#F5A623]' : 'border-gray-300'
+                        } flex items-center justify-center`} />
                         <div className="flex-1">
                           <p className="text-sm text-gray-700 leading-snug">{act.action}</p>
                           <span className="text-xs text-gray-400 mt-1 block font-medium">{act.timestamp}</span>
@@ -504,7 +687,7 @@ export default function SecretaryDashboardPage() {
               <div className="mt-6 flex justify-end border-t border-gray-100 pt-4">
                 <button
                   onClick={() => navigate('/activity-log')}
-                  className="text-xs font-bold text-[#4e0a10] hover:text-[#3d080c] hover:underline flex items-center gap-1.5"
+                  className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline flex items-center gap-1.5"
                 >
                   View Activity Logs &rarr;
                 </button>

@@ -40,11 +40,11 @@ export const vpaaNav: NavSection[] = [
   {
     section: 'SYSTEM',
     items: [
-      { label: 'Reports', path: '/reports', icon: FileBarChart },
-      { label: 'Activity Log', path: '/activity-log', icon: ClipboardList },
+      { label: 'Reports', path: '/reports', icon: FileBarChart, id: 'sidebar-reports' },
+      { label: 'Activity Log', path: '/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
       { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
-      { label: 'Settings', path: '/settings', icon: Settings },
+      { label: 'Settings', path: '/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }
 ]

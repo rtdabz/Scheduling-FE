@@ -28,7 +28,16 @@ export function useTour() {
           element: '#sidebar-schedules',
           popover: {
             title: 'Class Schedules',
-            description: 'View all finalized conflict-free schedules here.',
+            description: 'View all conflict-free academic schedules here.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-sections',
+          popover: {
+            title: 'Sections',
+            description: 'Manage student classes, years, and sections.',
             side: 'right',
             align: 'start'
           }
@@ -37,7 +46,16 @@ export function useTour() {
           element: '#sidebar-faculty',
           popover: {
             title: 'Faculty',
-            description: 'Manage and view information about your faculty members.',
+            description: 'Manage faculty profiles and check workload progression.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-instructors',
+          popover: {
+            title: 'Instructors',
+            description: 'Manage instructor profiles and check workload progression.',
             side: 'right',
             align: 'start'
           }
@@ -46,7 +64,34 @@ export function useTour() {
           element: '#sidebar-rooms',
           popover: {
             title: 'Rooms',
-            description: 'View and manage available rooms and their schedules.',
+            description: 'Manage classroom assignments and resources.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-subjects',
+          popover: {
+            title: 'Subjects',
+            description: 'Manage and structure academic courses and subjects.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-reports',
+          popover: {
+            title: 'Reports',
+            description: 'Generate reports on schedules, rooms, and loads.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-activity-log',
+          popover: {
+            title: 'Activity Log',
+            description: 'Track operations and system changes in real time.',
             side: 'right',
             align: 'start'
           }
@@ -54,8 +99,26 @@ export function useTour() {
         {
           element: '#sidebar-users',
           popover: {
-            title: 'Users',
-            description: 'Manage and view information about system users.',
+            title: 'User Management',
+            description: 'Manage system accounts and access credentials.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-departments',
+          popover: {
+            title: 'Departments',
+            description: 'Configure and manage academic colleges and departments.',
+            side: 'right',
+            align: 'start'
+          }
+        },
+        {
+          element: '#sidebar-settings',
+          popover: {
+            title: 'Settings',
+            description: 'Configure active semesters, terms, and solver criteria.',
             side: 'right',
             align: 'start'
           }
@@ -64,7 +127,7 @@ export function useTour() {
           element: '#sidebar-profile',
           popover: {
             title: 'Your Profile',
-            description: 'Manage your personal settings and account preferences.',
+            description: 'Manage personal settings and account preferences.',
             side: 'bottom',
             align: 'end'
           }

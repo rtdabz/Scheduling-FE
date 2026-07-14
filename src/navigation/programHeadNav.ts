@@ -45,13 +45,13 @@ export const programHeadNav: NavSection[] = [
     section: 'System',
     items: [
       {
-        id: 'reports',
+        id: 'sidebar-reports',
         label: 'Reports',
         path: '/program_head/reports',
         icon: FileText
       },
       {
-        id: 'settings',
+        id: 'sidebar-settings',
         label: 'Settings',
         path: '/program_head/settings',
         icon: Settings

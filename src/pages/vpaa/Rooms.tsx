@@ -365,7 +365,7 @@ export default function Rooms() {
   });
 
   return (
-    <div className="p-6">
+    <div>
       {/* Page Header */}
       <div className="mb-6">
         <p className="text-muted text-sm mb-1">Home / Rooms</p>

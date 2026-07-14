@@ -1,10 +1,12 @@
 import { 
   LayoutDashboard, 
   CalendarDays, 
-  AlertTriangle, 
   DoorOpen, 
   BookOpen, 
-  ClipboardList 
+  ClipboardList, 
+  Users, 
+  UserPlus,
+  Settings,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -14,6 +16,8 @@ export const secretaryNav: NavSection[] = [
     items: [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       { label: 'Class Schedules', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-schedules' },
+      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections' },
+      { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors' },
       { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
       { label: 'Subjects', path: '/secretary/subjects', icon: BookOpen, id: 'sidebar-subjects' },
     ]
@@ -21,7 +25,8 @@ export const secretaryNav: NavSection[] = [
   {
     section: 'SYSTEM',
     items: [
-      { label: 'Activity Log', path: '/activity-log', icon: ClipboardList },
+      { label: 'Activity Log', path: '/secretary/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
+      { label: 'Settings', path: '/secretary/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }
 ]

@@ -22,6 +22,7 @@ const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprova
 const SecPHSchedules = lazy(() => import('./pages/secretary/Schedules'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
 const SecretarySubjects = lazy(() => import('./pages/secretary/Subjects'));
+const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
 
 interface StoredUser {
   role?: string;
@@ -136,6 +137,8 @@ export default function App() {
             <Route path="/secretary/schedules" element={<SecPHSchedules />} />
             <Route path="/secretary/rooms" element={<Rooms />} />
             <Route path="/secretary/subjects" element={<SecretarySubjects />} />
+            <Route path="/secretary/sections" element={<SecretarySections />} />
+            <Route path="/secretary/instructors" element={<Faculty />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />

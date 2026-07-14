@@ -22,7 +22,7 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3 animate-pulse min-h-[200px]">
+      <div className="bg-white rounded-xl border-[0.5px] border-gray-200 p-5 space-y-3 animate-pulse min-h-[200px]">
         <div className="flex justify-between items-start">
           <div className="space-y-1.5">
             <Skeleton className="h-4 w-32" />
@@ -44,7 +44,7 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
 
   if (error || !departmentId) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-center min-h-[200px]">
+      <div className="bg-white rounded-xl border-[0.5px] border-gray-200 p-5 flex items-center justify-center min-h-[200px]">
         <p className="text-xs text-gray-400 italic text-center">
           {error ?? 'No department assigned.'}
         </p>
@@ -67,7 +67,7 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
       : `Pending: ${pendingYears.join(', ')} draft`;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-3">
+    <div className="bg-white rounded-xl border-[0.5px] border-gray-200 p-5 flex flex-col gap-3">
 
       {/* Header row */}
       <div className="flex items-start justify-between">
@@ -77,7 +77,7 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
             {draftedCount}/{totalSections} sections drafted
           </p>
         </div>
-        <span className="text-lg font-black text-[#4e0a10] leading-none">
+        <span className="text-lg font-black text-[#5A1220] leading-none">
           {draftingProgress}%
         </span>
       </div>
@@ -85,7 +85,7 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
       {/* Progress bar */}
       <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
         <div
-          className="h-full bg-[#4e0a10] rounded-full transition-all duration-700"
+          className="h-full bg-[#5A1220] rounded-full transition-all duration-700"
           style={{ width: `${draftingProgress}%` }}
         />
       </div>
@@ -96,7 +96,7 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
           <div key={idx} className="flex items-center gap-2">
             <div
               className={`w-2.5 h-2.5 rounded-full transition-all ${
-                dot.hasItems ? 'bg-[#4e0a10]' : 'bg-gray-200'
+                dot.hasItems ? 'bg-[#5A1220]' : 'bg-gray-200'
               }`}
             />
             {idx < dotStatuses.length - 1 && (
@@ -107,14 +107,14 @@ export default function DepartmentScheduleStatusCard({ departmentId }: Departmen
       </div>
 
       {/* Status hint */}
-      <div className="bg-gray-50 rounded-xl px-3 py-2 border border-gray-100">
+      <div className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
         <p className="text-xs text-gray-500 leading-snug">{pendingText}</p>
       </div>
 
       {/* View details button */}
       <button
         onClick={() => navigate('/secretary/schedules')}
-        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 text-[#4e0a10] text-sm font-bold border border-[#4e0a10]/10 transition-colors"
+        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#5A1220]/5 hover:bg-[#5A1220]/10 text-[#5A1220] text-sm font-bold border border-[#5A1220]/10 transition-colors"
       >
         View details
         <ArrowRight size={14} />
