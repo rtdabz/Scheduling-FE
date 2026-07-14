@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/logo.jpg';
@@ -14,6 +14,14 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  useEffect(() => {
+    const expired = sessionStorage.getItem('session_expired');
+    if (expired) {
+      toast.warning('Session Expired', 'Your session has expired. Please log in again.');
+      sessionStorage.removeItem('session_expired');
+    }
+  }, [toast]);
+
 const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
@@ -23,6 +31,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         const storage = rememberMe ? localStorage : sessionStorage;
         storage.setItem('token', res.data.token);
         storage.setItem('user', JSON.stringify(res.data.user));
+        localStorage.setItem('lastActivity', Date.now().toString());
         const roleNames: Record<string, string> = {
           'vpaa': 'VPAA',
           'dean': 'Dean',

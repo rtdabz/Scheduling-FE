@@ -21,6 +21,7 @@ const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
 const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprovalPage'));
 const SecPHSchedules = lazy(() => import('./pages/secretary/Schedules'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
+const SecretarySubjects = lazy(() => import('./pages/secretary/Subjects'));
 
 interface StoredUser {
   role?: string;
@@ -59,6 +60,30 @@ export default function App() {
   useEffect(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (!token) return;
+
+    // Check if inactivity timeout has occurred before loading
+    const lastActivity = localStorage.getItem('lastActivity');
+    if (lastActivity) {
+      const diff = Date.now() - parseInt(lastActivity, 10);
+      if (diff > 120 * 60 * 1000) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('lastActivity');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        sessionStorage.setItem('session_expired', 'true');
+
+        // Clear cookies
+        document.cookie.split(';').forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, '')
+            .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+        });
+
+        window.location.href = '/';
+        return;
+      }
+    }
 
     api.get('/me')
       .then((res) => {
@@ -110,6 +135,7 @@ export default function App() {
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
             <Route path="/secretary/schedules" element={<SecPHSchedules />} />
             <Route path="/secretary/rooms" element={<Rooms />} />
+            <Route path="/secretary/subjects" element={<SecretarySubjects />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />

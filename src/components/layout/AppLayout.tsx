@@ -6,8 +6,10 @@ import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
+import { useSessionTimeout } from '../../hooks/useSessionTimeout'
 
 export default function AppLayout() {
+  useSessionTimeout()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const location = useLocation()
 

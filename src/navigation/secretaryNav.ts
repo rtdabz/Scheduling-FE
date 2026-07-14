@@ -15,6 +15,7 @@ export const secretaryNav: NavSection[] = [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       { label: 'Class Schedules', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-schedules' },
       { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Subjects', path: '/secretary/subjects', icon: BookOpen, id: 'sidebar-subjects' },
     ]
   },
   {
