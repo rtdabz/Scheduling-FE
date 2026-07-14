@@ -60,7 +60,6 @@ const handleSubmit = async (e: React.FormEvent) => {
            {/* Shapes */}
            <div className="absolute top-[10%] left-[20%] w-64 h-64 rounded-full border border-accent/20 animate-float opacity-20" />
            <div className="absolute bottom-[20%] right-[10%] w-48 h-48 rounded-[2rem] border border-primary-light/10 animate-float-slow rotate-45 opacity-20" />
-           <div className="absolute top-[40%] right-[30%] w-px h-96 bg-accent/20 rotate-45 animate-float-med" />
            <div className="absolute bottom-[10%] left-[30%] w-32 h-32 rounded-full bg-primary-light/5 animate-float blur-3xl" />
         </div>
 
@@ -140,7 +139,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full h-12 pl-11 pr-11 bg-transparent border border-border rounded-xl text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all duration-300 outline-none"
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                 />
                 <button
                   type="button"
@@ -153,7 +152,7 @@ const handleSubmit = async (e: React.FormEvent) => {
             </div>
 
             {/* Remember Me */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center justify-between mt-5 pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-text">
                 <input
                   type="checkbox"
