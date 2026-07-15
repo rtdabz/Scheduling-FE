@@ -19,7 +19,8 @@ import {
   FileBarChart,
   CheckSquare,
   DoorOpen,
-  AlertCircle
+  AlertCircle,
+  Building2
 } from 'lucide-react';
 
 interface Faculty {
