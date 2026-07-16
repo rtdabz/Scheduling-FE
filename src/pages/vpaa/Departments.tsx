@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
-import { 
+import {
   Pencil, 
   Trash2, 
   Search, 
@@ -21,6 +21,7 @@ import {
   flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -42,10 +43,16 @@ const MOCK_DEPARTMENTS: Department[] = [
   { id: 7, code: 'CCJPS', name: 'College of Criminal Justice and Public Safety', dean: 'Dr. Alan Walker', facultyCount: 12, sectionsCount: 6, createdAt: '2025-02-25T14:00:00Z' }
 ];
 
+interface DepartmentsPageData {
+  departments: Department[];
+}
+
 export default function Departments() {
   const { toast } = useToast();
-  const [departments, setDepartments] = useState<Department[]>(MOCK_DEPARTMENTS);
-  const [isLoading, setIsLoading] = useState(false);
+  const departmentsCacheKey = 'page:departments';
+  const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
+  const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? MOCK_DEPARTMENTS);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
   
   // Table States
   const [globalFilter, setGlobalFilter] = useState('');
@@ -74,8 +81,14 @@ export default function Departments() {
   }, []);
 
   const fetchDepartments = async () => {
+    if (hasCachedData(departmentsCacheKey)) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setTimeout(() => {
+      setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: MOCK_DEPARTMENTS });
       setIsLoading(false);
     }, 800);
   };
@@ -115,11 +128,15 @@ export default function Departments() {
     setTimeout(() => {
       try {
         if (isEditMode && editingId !== null) {
-          setDepartments(prev => prev.map(dept => 
-            dept.id === editingId 
-              ? { ...dept, name: trimmedName, code: trimmedCode }
-              : dept
-          ));
+          setDepartments(prev => {
+            const nextDepartments = prev.map(dept => 
+              dept.id === editingId 
+                ? { ...dept, name: trimmedName, code: trimmedCode }
+                : dept
+            );
+            setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+            return nextDepartments;
+          });
           toast.success('Success', 'Department updated successfully');
         } else {
           const newDept: Department = {
@@ -131,7 +148,11 @@ export default function Departments() {
             sectionsCount: 0,
             createdAt: new Date().toISOString()
           };
-          setDepartments(prev => [newDept, ...prev]);
+          setDepartments(prev => {
+            const nextDepartments = [newDept, ...prev];
+            setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+            return nextDepartments;
+          });
           toast.success('Success', 'Department created successfully');
         }
         
@@ -167,7 +188,11 @@ export default function Departments() {
 
   const confirmDeleteDepartment = () => {
     if (idToDelete !== null) {
-      setDepartments(prev => prev.filter(dept => dept.id !== idToDelete));
+      setDepartments(prev => {
+        const nextDepartments = prev.filter(dept => dept.id !== idToDelete);
+        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+        return nextDepartments;
+      });
       toast.success('Deleted', 'Department removed');
       setIsDeleteModalOpen(false);
       setIdToDelete(null);

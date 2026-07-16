@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Calendar, Clock, Layers, MapPin, RefreshCw, User } from "lucide-react";
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
+import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
 
 interface Section {
   id: string;
@@ -23,6 +24,11 @@ interface Schedule {
   startTime: string;
   endTime: string;
   mode: "on-site" | "online" | "field";
+}
+
+interface DeanSchedulesPageData {
+  sections: Section[];
+  schedules: Schedule[];
 }
 
 const dayMapToIndex: Record<string, number> = {
@@ -115,16 +121,22 @@ const getModeBadge = (mode: Schedule["mode"]) => {
 export default function Schedules() {
   const [selectedSectionId, setSelectedSectionId] = useState("All");
   const [selectedMode, setSelectedMode] = useState("All");
-  const [sections, setSections] = useState<Section[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name || "College of Information Technology";
+  const deanSchedulesCacheKey = `page:dean-schedules:${userDeptId ?? 'all'}`;
+  const cachedDeanSchedulesData = getCachedData<DeanSchedulesPageData>(deanSchedulesCacheKey);
+  const [sections, setSections] = useState<Section[]>(cachedDeanSchedulesData?.sections ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedDeanSchedulesData?.schedules ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(deanSchedulesCacheKey));
 
   useEffect(() => {
+    if (hasCachedData(deanSchedulesCacheKey)) {
+      setIsLoading(false);
+      return;
+    }
+
     const loadData = async () => {
       try {
         setIsLoading(true);
@@ -187,6 +199,10 @@ export default function Schedules() {
           };
         });
         setSchedules(mappedSchedules);
+        setCachedData<DeanSchedulesPageData>(deanSchedulesCacheKey, {
+          sections: mappedSections,
+          schedules: mappedSchedules,
+        });
       } catch (err) {
         // Safe empty catch block
       } finally {
@@ -195,7 +211,7 @@ export default function Schedules() {
     };
 
     loadData();
-  }, [userDeptId]);
+  }, [deanSchedulesCacheKey, userDeptId]);
 
   const timeSlots = Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, index) => slotToTime(index));
 

@@ -1,22 +1,36 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  CalendarDays, 
-  DoorOpen, 
+import {
+  AlertTriangle,
+  BookOpen,
+  CalendarDays,
+  CalendarPlus,
   ClipboardList,
   Clock,
+  DoorOpen,
   Layers,
-  Users,
-  BookOpen,
   TrendingUp,
-  ArrowRight,
-  CalendarPlus,
-  AlertTriangle
+  Users,
 } from 'lucide-react';
 import { useTour } from '../../hooks/useTour';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import {
+  ActivityFeed,
+  AttentionPanel,
+  ScheduleProgressCard,
+  QuickActionsPanel,
+  RadialProgressCard,
+  SummaryMetricCard,
+  TeachingLoadCard,
+  type ActivityFeedItem,
+  type AttentionItem,
+  type ProgressStage,
+  type QuickAction,
+  type TeachingLoadItem,
+} from '../../components/overview';
 
 interface Schedule {
   id: number;
@@ -36,6 +50,7 @@ interface Room {
 interface Section {
   id: number;
   section_name: string;
+  department_id?: number | null;
 }
 
 interface Faculty {
@@ -67,122 +82,137 @@ interface Term {
   status: string;
 }
 
-interface ActivityLog {
-  id: number;
-  action: string;
-  timestamp: string;
+interface StoredUser {
+  id?: number;
+  name?: string;
+  department_id?: number;
+  role?: string;
 }
 
-interface SectionStatus {
-  id: number;
-  section_name: string;
-  status: string;
+interface SchedulingOverviewData {
+  schedules: Schedule[];
+  rooms: Room[];
+  sections: Section[];
+  faculties: Faculty[];
+  subjects: Subject[];
+  activeTerm: Term | null;
 }
 
-const mockActivities: ActivityLog[] = [
-  { id: 1, action: "You submitted BSCS 4A for approval", timestamp: "2 hours ago" },
-  { id: 2, action: "You added CS 401 to BSCS 4A schedule", timestamp: "4 hours ago" },
-  { id: 3, action: "Room 101 was assigned to BSIT 2B", timestamp: "5 hours ago" },
-  { id: 4, action: "Draft schedule created for BSIT 3A", timestamp: "1 day ago" },
-  { id: 5, action: "Logged in to admin portal", timestamp: "2 days ago" },
-];
-
-export default function SecretaryDashboardPage() {
+export default function SecretarySchedulingOperationsPage() {
   useTour();
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // User info
+
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? (JSON.parse(userJson) as { name?: string; department_id?: number; role?: string }) : null;
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  const overviewCacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const cachedOverviewData = getCachedData<SchedulingOverviewData>(overviewCacheKey);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(overviewCacheKey));
+  const [lastUpdated, setLastUpdated] = useState('');
 
-  // Stats State
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(null);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedOverviewData?.schedules ?? []);
+  const [rooms, setRooms] = useState<Room[]>(cachedOverviewData?.rooms ?? []);
+  const [sections, setSections] = useState<Section[]>(cachedOverviewData?.sections ?? []);
+  const [faculties, setFaculties] = useState<Faculty[]>(cachedOverviewData?.faculties ?? []);
+  const [subjects, setSubjects] = useState<Subject[]>(cachedOverviewData?.subjects ?? []);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedOverviewData?.activeTerm ?? null);
 
-  // Department schedule status progress hook
   const {
     draftingProgress,
     yearLevels,
     stageCounts,
   } = useDepartmentScheduleStatus(user?.department_id);
 
-
   useEffect(() => {
+    let active = true;
+
     const loadData = async () => {
+      const shouldShowSkeleton = !hasCachedData(overviewCacheKey);
       try {
-        setIsLoading(true);
+        setIsLoading(shouldShowSkeleton);
 
-        const [
-          schedulesRes,
-          roomsRes,
-          sectionsRes,
-          facultiesRes,
-          subjectsRes,
-          activeTermRes
-        ] = await Promise.all([
-          api.get<Schedule[]>('/schedules').catch(() => null),
-          api.get<Room[]>('/rooms').catch(() => null),
-          api.get<Section[]>('/sections').catch(() => null),
-          api.get<Faculty[]>('/faculties').catch(() => null),
-          api.get<Subject[]>('/subjects').catch(() => null),
-          api.get<Term>('/terms/active').catch(() => null)
-        ]);
+        const data = await loadCachedData<SchedulingOverviewData>(overviewCacheKey, async () => {
+          const [
+            schedulesRes,
+            roomsRes,
+            sectionsRes,
+            facultiesRes,
+            subjectsRes,
+            activeTermRes,
+          ] = await Promise.all([
+            api.get<Schedule[]>('/schedules').catch(() => null),
+            api.get<Room[]>('/rooms').catch(() => null),
+            api.get<Section[]>('/sections').catch(() => null),
+            api.get<Faculty[]>('/faculties').catch(() => null),
+            api.get<Subject[]>('/subjects').catch(() => null),
+            api.get<Term>('/terms/active').catch(() => null),
+          ]);
 
-        setSchedules(schedulesRes?.data || []);
-        setRooms(roomsRes?.data || []);
-        setSections(sectionsRes?.data || []);
-        setFaculties(facultiesRes?.data || []);
-        setSubjects(subjectsRes?.data || []);
-        setActiveTerm(activeTermRes?.data || null);
+          return {
+            schedules: schedulesRes?.data || [],
+            rooms: roomsRes?.data || [],
+            sections: sectionsRes?.data || [],
+            faculties: facultiesRes?.data || [],
+            subjects: subjectsRes?.data || [],
+            activeTerm: activeTermRes?.data || null,
+          };
+        });
 
+        if (!active) return;
+        setSchedules(data.schedules);
+        setRooms(data.rooms);
+        setSections(data.sections);
+        setFaculties(data.faculties);
+        setSubjects(data.subjects);
+        setActiveTerm(data.activeTerm);
+        setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       } catch {
-        // Fallback — data stays at defaults
+        if (active) {
+          setIsLoading(false);
+        }
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
 
     loadData();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [overviewCacheKey]);
 
   const totalSchedules = schedules.length;
-  const pendingApprovals = schedules.filter(s => s.status === 'submitted' || s.status === 'approved_by_dean').length;
-  const isTermActive = !!activeTerm;
+  const pendingApprovals = schedules.filter(schedule => schedule.status === 'submitted' || schedule.status === 'approved_by_dean').length;
 
-  // Counts for Stage Breakdown
-  const draftCount        = stageCounts?.draft ?? 0;
-  const submittedCount    = stageCounts?.submitted ?? 0;
+  const visibleSections = useMemo(() => {
+    if (!user?.department_id) return sections;
+    return sections.filter(section => !section.department_id || Number(section.department_id) === Number(user.department_id));
+  }, [sections, user?.department_id]);
+
+  const scheduledSectionIds = useMemo(() => new Set(schedules.map(schedule => schedule.section_id)), [schedules]);
+  const unscheduledSectionsCount = visibleSections.filter(section => !scheduledSectionIds.has(section.id)).length;
+
+  const draftCount = stageCounts?.draft ?? 0;
+  const submittedCount = stageCounts?.submitted ?? 0;
   const deanApprovedCount = stageCounts?.approved_by_dean ?? 0;
-  const approvedCount     = stageCounts?.approved ?? 0;
+  const approvedCount = stageCounts?.approved ?? 0;
   const totalDeptSchedules = draftCount + submittedCount + deanApprovedCount + approvedCount;
 
-  // Percentages for Stage Breakdown (handle division by zero)
   const draftPercent = totalDeptSchedules > 0 ? Math.round((draftCount / totalDeptSchedules) * 100) : 0;
   const submittedPercent = totalDeptSchedules > 0 ? Math.round((submittedCount / totalDeptSchedules) * 100) : 0;
   const deanApprovedPercent = totalDeptSchedules > 0 ? Math.round((deanApprovedCount / totalDeptSchedules) * 100) : 0;
   const approvedPercent = totalDeptSchedules > 0 ? Math.round((approvedCount / totalDeptSchedules) * 100) : 0;
 
-  // Room Utilization calculations
-  const utilizedRoomIds = new Set(schedules.filter(s => s.room_id).map(s => s.room_id));
+  const utilizedRoomIds = useMemo(() => new Set(schedules.filter(schedule => schedule.room_id).map(schedule => schedule.room_id)), [schedules]);
   const utilizationRate = rooms.length > 0 ? Math.round((utilizedRoomIds.size / rooms.length) * 100) : 0;
 
-  // Radial Ring circumference calculations
-  const radius = 70;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (utilizationRate / 100) * circumference;
-
-  // Derived faculties list (top 3 sorted by workload % descending)
   const processedFaculties = useMemo(() => {
     let list = [...faculties];
-    
-    // Filter by department if secretary has a department_id
+
     if (user?.department_id) {
-      list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id));
+      list = list.filter(faculty => faculty.department_id !== null && Number(faculty.department_id) === Number(user.department_id));
     }
 
     list.sort((a, b) => {
@@ -195,19 +225,17 @@ export default function SecretaryDashboardPage() {
   }, [faculties, user?.department_id]);
 
   const facultyStats = useMemo(() => {
-    // Stats are computed over all department faculties (or all if VPAA)
-    const list = user?.department_id 
-      ? faculties.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id))
+    const list = user?.department_id
+      ? faculties.filter(faculty => faculty.department_id !== null && Number(faculty.department_id) === Number(user.department_id))
       : faculties;
 
-    let total = list.length;
     let fullyLoaded = 0;
     let underloaded = 0;
     let overloaded = 0;
 
-    list.forEach(f => {
-      const assigned = f.assigned_units || 0;
-      const max = f.max_units || 21;
+    list.forEach((faculty) => {
+      const assigned = faculty.assigned_units || 0;
+      const max = faculty.max_units || 21;
       const pct = max > 0 ? (assigned / max) * 100 : 0;
 
       if (pct > 100) {
@@ -219,26 +247,233 @@ export default function SecretaryDashboardPage() {
       }
     });
 
-    return { total, fullyLoaded, underloaded, overloaded };
+    return { total: list.length, fullyLoaded, underloaded, overloaded };
   }, [faculties, user?.department_id]);
 
+  const needsAttention = useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = [];
+
+    if (unscheduledSectionsCount > 0) {
+      items.push({
+        id: 'unscheduled-sections',
+        title: 'Unscheduled Sections',
+        description: 'Some sections do not have schedule entries yet.',
+        count: unscheduledSectionsCount,
+        actionLabel: 'Open scheduler',
+        path: '/secretary/schedules',
+        tone: 'warning',
+      });
+    }
+
+    if (pendingApprovals > 0) {
+      items.push({
+        id: 'pending-approvals',
+        title: 'Pending Reviews',
+        description: 'Schedules are waiting in the approval flow.',
+        count: pendingApprovals,
+        actionLabel: 'View schedules',
+        path: '/secretary/schedules',
+        tone: 'info',
+      });
+    }
+
+    if (facultyStats.overloaded > 0) {
+      items.push({
+        id: 'overloaded-faculty',
+        title: 'Overloaded Faculty',
+        description: 'Review teaching loads before final submission.',
+        count: facultyStats.overloaded,
+        actionLabel: 'Review faculty',
+        path: '/secretary/instructors',
+        tone: 'danger',
+      });
+    }
+
+    if (utilizationRate >= 90) {
+      items.push({
+        id: 'room-capacity',
+        title: 'High Room Usage',
+        description: 'Room utilization is nearing capacity.',
+        count: utilizationRate,
+        actionLabel: 'Check rooms',
+        path: '/secretary/rooms',
+        tone: 'warning',
+        showPercent: true,
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        id: 'ready-status',
+        title: 'No Immediate Issues',
+        description: 'Current schedule data has no urgent overview alerts.',
+        count: draftingProgress,
+        actionLabel: 'Continue scheduling',
+        path: '/secretary/schedules',
+        tone: 'success',
+        showPercent: true,
+      });
+    }
+
+    return items.slice(0, 3);
+  }, [draftingProgress, facultyStats.overloaded, pendingApprovals, unscheduledSectionsCount, utilizationRate]);
+
+  const activitySummary = useMemo<ActivityFeedItem[]>(() => {
+    const activities: ActivityFeedItem[] = [];
+
+    if (pendingApprovals > 0) {
+      activities.push({
+        id: 1,
+        action: `${pendingApprovals} schedule${pendingApprovals === 1 ? '' : 's'} currently pending review.`,
+        timestamp: lastUpdated ? `Updated ${lastUpdated}` : 'Current overview data',
+      });
+    }
+
+    if (draftCount > 0) {
+      activities.push({
+        id: 2,
+        action: `${draftCount} section${draftCount === 1 ? '' : 's'} remain in draft status.`,
+        timestamp: 'Schedule stage summary',
+      });
+    }
+
+    if (facultyStats.overloaded > 0) {
+      activities.push({
+        id: 3,
+        action: `${facultyStats.overloaded} faculty member${facultyStats.overloaded === 1 ? '' : 's'} may need load balancing.`,
+        timestamp: 'Faculty load overview',
+      });
+    }
+
+    if (unscheduledSectionsCount > 0) {
+      activities.push({
+        id: 4,
+        action: `${unscheduledSectionsCount} section${unscheduledSectionsCount === 1 ? '' : 's'} still need schedule entries.`,
+        timestamp: 'Section readiness check',
+      });
+    }
+
+    if (activities.length === 0) {
+      activities.push({
+        id: 5,
+        action: 'No urgent schedule, room, or faculty load alerts detected.',
+        timestamp: lastUpdated ? `Updated ${lastUpdated}` : 'Current overview data',
+      });
+    }
+
+    return activities.slice(0, 5);
+  }, [draftCount, facultyStats.overloaded, lastUpdated, pendingApprovals, unscheduledSectionsCount]);
+
+  const progressStages = useMemo<ProgressStage[]>(() => [
+    {
+      id: 'draft',
+      label: 'Draft',
+      count: draftCount,
+      percent: draftPercent,
+      dotClassName: 'bg-gray-400',
+      cardClassName: 'bg-gray-50 border-gray-100',
+    },
+    {
+      id: 'submitted',
+      label: 'Submitted',
+      count: submittedCount,
+      percent: submittedPercent,
+      dotClassName: 'bg-[#F5A623]',
+      cardClassName: 'bg-[#F5A623]/5 border-[#F5A623]/20',
+    },
+    {
+      id: 'dean-approved',
+      label: 'Dean Approved',
+      count: deanApprovedCount,
+      percent: deanApprovedPercent,
+      dotClassName: 'bg-[#5A1220]',
+      cardClassName: 'bg-[#5A1220]/5 border-[#5A1220]/20',
+    },
+    {
+      id: 'approved',
+      label: 'VPAA Approved',
+      count: approvedCount,
+      percent: approvedPercent,
+      dotClassName: 'bg-gray-800',
+      cardClassName: 'bg-gray-50 border-gray-200',
+    },
+  ], [approvedCount, approvedPercent, deanApprovedCount, deanApprovedPercent, draftCount, draftPercent, submittedCount, submittedPercent]);
+
+  const teachingLoadItems = useMemo<TeachingLoadItem[]>(() => (
+    processedFaculties.map((faculty) => {
+      const middleInitial = faculty.middle_name ? `${faculty.middle_name.charAt(0)}.` : '';
+      const fullName = `${faculty.last_name}, ${faculty.first_name} ${middleInitial}`.trim();
+
+      return {
+        id: faculty.id,
+        name: fullName,
+        assignedUnits: faculty.assigned_units || 0,
+        maxUnits: faculty.max_units || 21,
+        badgeLabel: faculty.department?.department_code || 'N/A',
+      };
+    })
+  ), [processedFaculties]);
+
+  const quickActions = useMemo<QuickAction[]>(() => [
+    {
+      id: 'open-scheduler',
+      label: 'Open Scheduler',
+      description: 'Create, place, and adjust class schedules',
+      icon: CalendarPlus,
+      onClick: () => navigate('/secretary/schedules'),
+    },
+    {
+      id: 'review-rooms',
+      label: 'Review Rooms',
+      description: 'Check room availability and assignments',
+      icon: DoorOpen,
+      onClick: () => navigate('/secretary/rooms'),
+    },
+    {
+      id: 'manage-subjects',
+      label: 'Manage Subjects',
+      description: 'Maintain subject details used by scheduling',
+      icon: BookOpen,
+      onClick: () => navigate('/secretary/subjects'),
+    },
+    {
+      id: 'review-faculty-load',
+      label: 'Review Faculty Load',
+      description: 'Balance instructor assignments and units',
+      icon: Users,
+      onClick: () => navigate('/secretary/instructors'),
+    },
+  ], [navigate]);
+
+  const progressFooterNote = useMemo(() => {
+    if (!yearLevels || yearLevels.length === 0) return 'No schedule status data';
+
+    const incompleteYearLevels = yearLevels.filter(yearLevel => !yearLevel.isComplete).map(yearLevel => yearLevel.label);
+
+    return incompleteYearLevels.length === 0
+      ? 'All year levels have moved beyond draft'
+      : `Needs work: ${incompleteYearLevels.join(', ')}`;
+  }, [yearLevels]);
 
   return (
     <div className="space-y-8 pb-12 transition-opacity duration-200">
-      {/* Breadcrumb Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <p className="text-muted text-xs tracking-wider uppercase">Home / Dashboard</p>
+          <p className="text-muted text-xs tracking-wider uppercase">Home / Scheduling Operations</p>
         </div>
         {activeTerm && (
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-150 text-xs font-semibold">
+          <div className="inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-150 text-xs font-semibold">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Active Term: {activeTerm.term_name}
+            {lastUpdated && (
+              <span className="text-emerald-600/70 border-l border-emerald-200 pl-2">
+                Updated {lastUpdated}
+              </span>
+            )}
           </div>
         )}
       </div>
 
-      {/* Greeting Banner */}
       <div className="bg-[#5A1220] py-4 px-6 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="font-sans text-base font-medium tracking-tight text-white">
           Welcome back, <span className="text-[#F5A623] font-medium">{user?.name || 'Secretary User'}</span>!
@@ -251,11 +486,10 @@ export default function SecretaryDashboardPage() {
       </div>
 
       {isLoading ? (
-      <div className="space-y-8">
-          {/* Skeleton Metrics */}
+        <div className="space-y-8">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 animate-pulse min-h-[98px] flex flex-col justify-between">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 animate-pulse min-h-[98px] flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <Skeleton className="h-3 w-14" />
                   <Skeleton className="h-6 w-6 rounded-lg" />
@@ -265,9 +499,7 @@ export default function SecretaryDashboardPage() {
             ))}
           </div>
 
-          {/* Skeleton Analytics — Stage Distribution, Room Gauge & Faculty Load */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Stage Breakdown Skeleton */}
             <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[340px]">
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
@@ -276,15 +508,14 @@ export default function SecretaryDashboardPage() {
                 </div>
                 <Skeleton className="h-4 w-full rounded-full mt-2" />
                 <div className="grid grid-cols-2 gap-3 mt-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={index} className="h-14 w-full rounded-xl" />
                   ))}
                 </div>
               </div>
               <Skeleton className="h-10 w-full rounded-xl mt-4" />
             </div>
 
-            {/* Room Utilization Skeleton */}
             <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col items-center justify-center gap-4 min-h-[340px]">
               <div className="self-start">
                 <Skeleton className="h-5 w-36" />
@@ -293,13 +524,12 @@ export default function SecretaryDashboardPage() {
               <Skeleton className="h-4 w-40" />
             </div>
 
-            {/* Faculty Load Skeleton */}
             <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[340px]">
               <div className="space-y-4">
                 <Skeleton className="h-5 w-32" />
                 <div className="space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="space-y-2">
                       <div className="flex justify-between">
                         <Skeleton className="h-3.5 w-28" />
                         <Skeleton className="h-3 w-10" />
@@ -313,7 +543,6 @@ export default function SecretaryDashboardPage() {
             </div>
           </div>
 
-          {/* Skeleton Quick Actions & Activity — prevents shift from missing section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-4">
               <Skeleton className="h-5 w-32" />
@@ -322,8 +551,8 @@ export default function SecretaryDashboardPage() {
             </div>
             <div className="lg:col-span-2 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-5 min-h-[280px]">
               <Skeleton className="h-5 w-36" />
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex gap-3 items-start">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="flex gap-3 items-start">
                   <Skeleton className="h-3.5 w-3.5 rounded-full flex-shrink-0 mt-1" />
                   <div className="flex-1 space-y-1.5">
                     <Skeleton className="h-3.5 w-full" />
@@ -336,363 +565,66 @@ export default function SecretaryDashboardPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* Metrics Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-            {/* Total Schedules */}
-            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
-              <div className="flex items-center justify-between text-gray-400 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Schedules</span>
-                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
-                  <CalendarDays className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-3xl font-extrabold text-gray-900">{totalSchedules}</p>
-            </div>
-
-            {/* Pending Approvals */}
-            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
-              <div className="flex items-center justify-between text-gray-400 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Pending</span>
-                <div className="p-1.5 rounded-lg bg-[#F5A623]/5 text-[#F5A623]">
-                  <Clock className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-3xl font-extrabold text-gray-900">{pendingApprovals}</p>
-            </div>
-
-            {/* Sections */}
-            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
-              <div className="flex items-center justify-between text-gray-400 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Sections</span>
-                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
-                  <Layers className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-3xl font-extrabold text-gray-900">{sections.length}</p>
-            </div>
-
-            {/* Faculty */}
-            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
-              <div className="flex items-center justify-between text-gray-400 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Faculty</span>
-                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
-                  <Users className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-3xl font-extrabold text-gray-900">{faculties.length}</p>
-            </div>
-
-            {/* Rooms */}
-            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
-              <div className="flex items-center justify-between text-gray-400 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Rooms</span>
-                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
-                  <DoorOpen className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-3xl font-extrabold text-gray-900">{rooms.length}</p>
-            </div>
-
-            {/* Subjects */}
-            <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 relative group overflow-hidden">
-              <div className="flex items-center justify-between text-gray-400 mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider">Subjects</span>
-                <div className="p-1.5 rounded-lg bg-[#5A1220]/5 text-[#5A1220]">
-                  <BookOpen className="w-4 h-4" />
-                </div>
-              </div>
-              <p className="text-3xl font-extrabold text-gray-900">{subjects.length}</p>
-            </div>
+            <SummaryMetricCard label="Schedules" value={totalSchedules} icon={CalendarDays} />
+            <SummaryMetricCard label="Pending" value={pendingApprovals} icon={Clock} iconClassName="text-[#F5A623]" iconWrapperClassName="bg-[#F5A623]/5" />
+            <SummaryMetricCard label="Sections" value={visibleSections.length} icon={Layers} />
+            <SummaryMetricCard label="Faculty" value={facultyStats.total} icon={Users} />
+            <SummaryMetricCard label="Rooms" value={rooms.length} icon={DoorOpen} />
+            <SummaryMetricCard label="Subjects" value={subjects.length} icon={BookOpen} />
           </div>
 
-          {/* Analytics Column Grid */}
+          <AttentionPanel
+            title="Needs Attention"
+            subtitle="Priority items for today's scheduling work"
+            icon={AlertTriangle}
+            items={needsAttention}
+            onAction={navigate}
+          />
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Stage Distribution Chart */}
-            <div className="lg:col-span-1 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-4 mb-6">
-                  <div className="flex items-center gap-2.5 text-gray-800 font-bold">
-                    <TrendingUp className="w-5 h-5 text-[#5A1220]" />
-                    <span>Schedules Stage Breakdown</span>
-                  </div>
-                  {user?.department_id && (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#5A1220]/10 text-[#5A1220] text-xs font-bold border border-[#5A1220]/15">
-                      {draftingProgress}% Completed
-                    </span>
-                  )}
-                </div>
+            <ScheduleProgressCard
+              title="Schedule Completion Status"
+              icon={TrendingUp}
+              progress={draftingProgress}
+              emptyMessage="No scheduled section data available."
+              stages={progressStages}
+              footerNote={progressFooterNote}
+              footerMeta={lastUpdated ? `Updated ${lastUpdated}` : 'Current data'}
+              actionLabel="View details"
+              onAction={() => navigate('/secretary/schedules')}
+              showBadge={Boolean(user?.department_id)}
+              badgeLabel={`${draftingProgress}% Ready`}
+            />
 
-                {/* Progress bar container */}
-                {totalDeptSchedules === 0 ? (
-                  <div className="py-8 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-xl text-center">
-                    <p className="text-gray-400 text-sm">No scheduled section data available.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Visual Progress Bar */}
-                    <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden">
-                      <div
-                        style={{ width: `${draftingProgress}%` }}
-                        className="bg-[#5A1220] h-full transition-all duration-500"
-                        title={`Progress: ${draftingProgress}%`}
-                      />
-                    </div>
+            <RadialProgressCard
+              title="Room Utilization"
+              icon={DoorOpen}
+              value={utilizationRate}
+              label="Utilization"
+              footer={`${utilizedRoomIds.size} out of ${rooms.length} rooms scheduled.`}
+            />
 
-                    {/* Numeric breakdown details */}
-                    <div className="grid grid-cols-2 gap-4 mt-6">
-                      <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-gray-400 block" />
-                          Draft
-                        </div>
-                        <p className="text-xl font-extrabold text-gray-800 mt-1">{draftCount} <span className="text-xs text-gray-400 font-medium">({draftPercent}%)</span></p>
-                      </div>
-
-                      <div className="p-3 bg-[#F5A623]/5 rounded-xl border border-[#F5A623]/20">
-                        <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#F5A623] block" />
-                          Submitted
-                        </div>
-                        <p className="text-xl font-extrabold text-gray-800 mt-1">{submittedCount} <span className="text-xs text-gray-400 font-medium">({submittedPercent}%)</span></p>
-                      </div>
-
-                      <div className="p-3 bg-[#5A1220]/5 rounded-xl border border-[#5A1220]/20">
-                        <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#5A1220] block" />
-                          Dean Approved
-                        </div>
-                        <p className="text-xl font-extrabold text-gray-800 mt-1">{deanApprovedCount} <span className="text-xs text-gray-400 font-medium">({deanApprovedPercent}%)</span></p>
-                      </div>
-
-                      <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
-                        <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold">
-                          <span className="w-2.5 h-2.5 rounded-full bg-gray-800 block" />
-                          VPAA Approved
-                        </div>
-                        <p className="text-xl font-extrabold text-gray-800 mt-1">{approvedCount} <span className="text-xs text-gray-400 font-medium">({approvedPercent}%)</span></p>
-                      </div>
-                    </div>
-
-                    {/* Footer note row & Action */}
-                    <div className="mt-6 pt-4 border-t border-gray-100 flex flex-col gap-4">
-                      <div className="text-xs text-gray-500 flex items-center justify-between">
-                        <span>{
-                          yearLevels && yearLevels.length > 0
-                            ? (yearLevels.filter(yl => !yl.isComplete).map(yl => yl.label).length === 0
-                              ? 'All year levels drafted'
-                              : `Pending: ${yearLevels.filter(yl => !yl.isComplete).map(yl => yl.label).join(', ')} draft`)
-                            : 'No schedule status data'
-                        }</span>
-                        <span className="font-medium text-gray-400">Updated just now</span>
-                      </div>
-
-                      <button
-                        onClick={() => navigate('/secretary/schedules')}
-                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#5A1220]/5 hover:bg-[#5A1220]/10 text-[#5A1220] text-sm font-bold border border-[#5A1220]/10 transition-colors"
-                      >
-                        View details
-                        <ArrowRight size={14} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Room Utilization Gauge */}
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between flex-1">
-              <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
-                  <DoorOpen className="w-5 h-5 text-[#5A1220]" />
-                  <span>Room Utilization</span>
-                </div>
-
-                <div className="flex flex-col items-center justify-center py-4 relative">
-                  <div className="relative flex items-center justify-center">
-                    <svg className="w-48 h-48 transform -rotate-90">
-                      {/* Background circle */}
-                      <circle
-                        cx="96"
-                        cy="96"
-                        r={radius}
-                        className="stroke-gray-100 fill-transparent"
-                        strokeWidth="12"
-                      />
-                      {/* Foreground Circle Progress */}
-                      <circle
-                        cx="96"
-                        cy="96"
-                        r={radius}
-                        className="stroke-[#5A1220] fill-transparent transition-all duration-500"
-                        strokeWidth="12"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeDashoffset}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    {/* Ring Label overlay */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-4xl font-extrabold text-gray-800">{utilizationRate}%</span>
-                      <span className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Utilization</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-100 pt-4 text-center mt-4">
-                <p className="text-sm text-gray-600">
-                  <span className="font-bold text-gray-800">{utilizedRoomIds.size}</span> out of <span className="font-bold text-gray-800">{rooms.length}</span> rooms scheduled.
-                </p>
-              </div>
-            </div>
-
-            {/* Faculty Teaching Load Card */}
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between min-h-[340px]">
-              <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-5">
-                  <Users className="w-5 h-5 text-[#5A1220]" />
-                  <span>Faculty Load</span>
-                </div>
-
-                <div className="space-y-4 font-sans">
-                  {processedFaculties.length === 0 ? (
-                    <p className="text-center text-gray-400 text-xs py-4 font-sans">No instructors found.</p>
-                  ) : (
-                    processedFaculties.map((f) => {
-                      const assigned = f.assigned_units || 0;
-                      const max = f.max_units || 21;
-                      const pct = max > 0 ? Math.round((assigned / max) * 100) : 0;
-                      
-                      let barColor = 'bg-[#F5A623]';
-                      let textColor = 'text-[#F5A623] bg-amber-50 border-amber-200';
-                      if (pct > 100) {
-                        barColor = 'bg-red-500';
-                        textColor = 'text-red-600 bg-red-50 border-red-200';
-                      } else if (pct === 100) {
-                        barColor = 'bg-emerald-500';
-                        textColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
-                      }
-
-                      const middleInitial = f.middle_name ? `${f.middle_name.charAt(0)}.` : '';
-                      const fullName = `${f.last_name}, ${f.first_name} ${middleInitial}`.trim();
-                      const deptCode = f.department?.department_code || 'N/A';
-
-                      return (
-                        <div key={f.id} className="space-y-1 pb-2 border-b border-gray-100 last:border-0 last:pb-0 font-sans">
-                          <div className="flex justify-between items-center text-xs font-sans">
-                            <span className="font-bold text-gray-800 truncate max-w-[130px]" title={fullName}>{fullName}</span>
-                            <span className="text-[9px] bg-gray-100 text-gray-500 border border-gray-200 rounded px-1.5 py-0.5 font-bold uppercase">
-                              {deptCode}
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center justify-between gap-2 text-[10px] font-sans">
-                            <div className="flex-1 bg-gray-100 h-2 rounded-full overflow-hidden max-w-[120px]">
-                              <div
-                                className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                                style={{ width: `${Math.min(pct, 100)}%` }}
-                              />
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="font-semibold text-gray-400">
-                                {assigned}/{max}
-                              </span>
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${textColor}`}>
-                                {pct}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4 flex justify-end border-t border-gray-100 pt-3">
-                <button
-                  onClick={() => navigate(user?.role?.toLowerCase() === 'secretary' ? '/secretary/instructors' : '/faculty')}
-                  className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline flex items-center gap-1.5 cursor-pointer"
-                >
-                  View all faculty &rarr;
-                </button>
-              </div>
-            </div>
+            <TeachingLoadCard
+              title="Faculty Load"
+              icon={Users}
+              items={teachingLoadItems}
+              emptyMessage="No instructors found."
+              actionLabel="View all faculty ->"
+              onAction={() => navigate(user?.role?.toLowerCase() === 'secretary' ? '/secretary/instructors' : '/faculty')}
+            />
           </div>
 
-          {/* Quick Actions & Recent Activities Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Quick Actions Panel */}
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col gap-4">
-              <h2 className="text-gray-800 font-bold text-lg">Quick Actions</h2>
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={() => navigate('/secretary/schedules')}
-                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
-                >
-                  <CalendarDays className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
-                  <span className="text-sm font-bold text-left">Manage Class Schedules</span>
-                </button>
-                <button
-                  onClick={() => navigate('/secretary/rooms')}
-                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
-                >
-                  <DoorOpen className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
-                  <span className="text-sm font-bold text-left">View Room Assignments</span>
-                </button>
-                <button
-                  onClick={() => navigate('/secretary/schedules')}
-                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
-                >
-                  <CalendarPlus className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
-                  <span className="text-sm font-bold text-left">Add New Schedule</span>
-                </button>
-                <button
-                  onClick={() => navigate('/secretary/schedules')}
-                  className="w-full h-11 px-4 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group"
-                >
-                  <AlertTriangle className="w-5 h-5 text-[#5A1220] group-hover:scale-105 transition-transform flex-shrink-0" />
-                  <span className="text-sm font-bold text-left">Check Conflicts</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Activities Timeline Feed */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between min-h-[280px]">
-              <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
-                  <ClipboardList className="w-5 h-5 text-[#5A1220]" />
-                  <span>Recent Activity</span>
-                </div>
-
-                {mockActivities.length === 0 ? (
-                  <p className="text-muted text-sm italic">No recent activity logged.</p>
-                ) : (
-                  <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
-                    {mockActivities.map((act, index) => (
-                      <div key={act.id} className="relative flex items-start gap-4">
-                        <div className={`absolute -left-[22px] mt-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 ${
-                          index === 0 ? 'border-[#F5A623]' : 'border-gray-300'
-                        } flex items-center justify-center`} />
-                        <div className="flex-1">
-                          <p className="text-sm text-gray-700 leading-snug">{act.action}</p>
-                          <span className="text-xs text-gray-400 mt-1 block font-medium">{act.timestamp}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6 flex justify-end border-t border-gray-100 pt-4">
-                <button
-                  onClick={() => navigate('/activity-log')}
-                  className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline flex items-center gap-1.5"
-                >
-                  View Activity Logs &rarr;
-                </button>
-              </div>
-            </div>
+            <QuickActionsPanel title="Quick Actions" actions={quickActions} />
+            <ActivityFeed
+              title="Current Activity Summary"
+              icon={ClipboardList}
+              items={activitySummary}
+              emptyMessage="No current activity summary available."
+              actionLabel="Open scheduling workspace ->"
+              onAction={() => navigate('/secretary/schedules')}
+            />
           </div>
         </div>
       )}

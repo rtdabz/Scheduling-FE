@@ -10,7 +10,7 @@ interface DepartmentScheduleStatusProps {
   departmentId: number;
 }
 
-const STAGE_LABELS = ['Draft', 'Submitted', 'Dean approved', 'VPAA approved'];
+const STAGE_LABELS = ['Draft', 'Done', 'Submitted', 'Dean approved', 'VPAA approved'];
 
 export default function DepartmentScheduleStatus({ departmentId }: DepartmentScheduleStatusProps) {
   const navigate = useNavigate();
@@ -31,6 +31,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
 
   const stageCountValues = [
     stageCounts.draft,
+    stageCounts.completed,
     stageCounts.submitted,
     stageCounts.approved_by_dean,
     stageCounts.approved,
@@ -61,7 +62,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         </div>
         <Skeleton className="h-2 w-full rounded-full" />
         <div className="flex justify-between gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex-1 space-y-2 flex flex-col items-center">
               <Skeleton className="h-12 w-12 rounded-2xl" />
               <Skeleton className="h-3 w-16" />
@@ -72,7 +73,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         </div>
         <div className="space-y-2 pt-4 border-t border-gray-100">
           <Skeleton className="h-3 w-40" />
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full rounded-xl" />
           ))}
         </div>

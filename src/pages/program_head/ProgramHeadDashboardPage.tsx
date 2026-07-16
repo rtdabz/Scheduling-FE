@@ -3,6 +3,7 @@ import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import {
@@ -80,22 +81,39 @@ interface SectionProgressItem {
   statusColor: string;
 }
 
+interface StoredUser {
+  id?: number;
+  name?: string;
+  department_id?: number;
+  role?: string;
+}
+
+interface DashboardData {
+  faculties: Faculty[];
+  sections: Section[];
+  subjects: Subject[];
+  schedules: Schedule[];
+  activeTerm: Term | null;
+}
+
 export default function ProgramHeadDashboardPage() {
   useTour();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
 
   // User
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  const dashboardCacheKey = `dashboard:${user?.role ?? 'program_head'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const cachedDashboardData = getCachedData<DashboardData>(dashboardCacheKey);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(dashboardCacheKey));
 
   // States
-  const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(null);
+  const [faculties, setFaculties] = useState<Faculty[]>(cachedDashboardData?.faculties ?? []);
+  const [sections, setSections] = useState<Section[]>(cachedDashboardData?.sections ?? []);
+  const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedDashboardData?.schedules ?? []);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
 
   // Hook for department schedules stage counts
   const {
@@ -104,36 +122,57 @@ export default function ProgramHeadDashboardPage() {
   } = useDepartmentScheduleStatus(user?.department_id);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        const [
-          facultiesRes,
-          sectionsRes,
-          subjectsRes,
-          schedulesRes,
-          activeTermRes
-        ] = await Promise.all([
-          api.get<Faculty[]>('/faculties').catch(() => null),
-          api.get<Section[]>('/sections').catch(() => null),
-          api.get<Subject[]>('/subjects').catch(() => null),
-          api.get<Schedule[]>('/schedules').catch(() => null),
-          api.get<Term>('/terms/active').catch(() => null)
-        ]);
+    let active = true;
 
-        setFaculties(facultiesRes?.data || []);
-        setSections(sectionsRes?.data || []);
-        setSubjects(subjectsRes?.data || []);
-        setSchedules(schedulesRes?.data || []);
-        setActiveTerm(activeTermRes?.data || null);
+    const loadData = async () => {
+      const shouldShowSkeleton = !hasCachedData(dashboardCacheKey);
+      try {
+        setIsLoading(shouldShowSkeleton);
+        const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
+          const [
+            facultiesRes,
+            sectionsRes,
+            subjectsRes,
+            schedulesRes,
+            activeTermRes
+          ] = await Promise.all([
+            api.get<Faculty[]>('/faculties').catch(() => null),
+            api.get<Section[]>('/sections').catch(() => null),
+            api.get<Subject[]>('/subjects').catch(() => null),
+            api.get<Schedule[]>('/schedules').catch(() => null),
+            api.get<Term>('/terms/active').catch(() => null)
+          ]);
+
+          return {
+            faculties: facultiesRes?.data || [],
+            sections: sectionsRes?.data || [],
+            subjects: subjectsRes?.data || [],
+            schedules: schedulesRes?.data || [],
+            activeTerm: activeTermRes?.data || null,
+          };
+        });
+
+        if (!active) return;
+        setFaculties(data.faculties);
+        setSections(data.sections);
+        setSubjects(data.subjects);
+        setSchedules(data.schedules);
+        setActiveTerm(data.activeTerm);
       } catch {
         toast.error('Error', 'Failed to load dashboard data.');
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
+
     loadData();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [dashboardCacheKey, toast]);
 
   // ── 1. Grouped Schedule Status Map ──
   const scheduleStatusMap = useMemo(() => {

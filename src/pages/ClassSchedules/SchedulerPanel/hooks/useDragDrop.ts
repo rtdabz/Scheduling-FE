@@ -11,7 +11,7 @@ type CheckConflict = (
   startSlot: number,
   durationSlots: number,
   excludeScheduleId?: string | string[],
-  preferredPattern?: "MW" | "TTh" | null
+  preferredPattern?: string | null
 ) => { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
 interface UseDragDropParams {

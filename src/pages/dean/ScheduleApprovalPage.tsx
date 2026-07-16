@@ -19,6 +19,8 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
+import { clearDataCache, getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { useToast } from '../../context/ToastContext';
 
 interface ScheduleApproval {
   id: number;
@@ -32,11 +34,18 @@ interface ScheduleApproval {
   mode: 'on-site' | 'online' | 'field';
 }
 
-interface ToastItem {
-  id: number;
-  title: string;
-  message: string;
-  type: 'success' | 'error';
+const getDepartmentApprovalStatus = (items: any[]): ScheduleApproval['status'] => {
+  const statuses = items.map((item) => item.status);
+  if (statuses.includes('submitted')) return 'submitted';
+  if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
+  if (statuses.includes('approved_by_dean')) return 'approved_by_dean';
+  if (statuses.includes('rejected')) return 'rejected';
+  return 'approved';
+};
+
+interface ScheduleApprovalPageData {
+  schedules: ScheduleApproval[];
+  rawSchedules: any[];
 }
 
 const getDeptColorClasses = (dept: string) => {
@@ -121,9 +130,17 @@ const formatTime24hTo12h = (timeStr: string): string => {
 };
 
 export default function ScheduleApprovalPage() {
-  const [schedules, setSchedules] = useState<ScheduleApproval[]>([]);
-  const [rawSchedules, setRawSchedules] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { toast } = useToast();
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+  const userDeptId = user?.department_id;
+  const userDeptName = user?.department?.department_name;
+  const userId = user?.id;
+  const approvalCacheKey = `page:dean-schedule-approval:${userDeptId ?? 'all'}`;
+  const cachedApprovalData = getCachedData<ScheduleApprovalPageData>(approvalCacheKey);
+  const [schedules, setSchedules] = useState<ScheduleApproval[]>(cachedApprovalData?.schedules ?? []);
+  const [rawSchedules, setRawSchedules] = useState<any[]>(cachedApprovalData?.rawSchedules ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(approvalCacheKey));
   
   // Filters
   const [selectedStatus, setSelectedStatus] = useState('All Status');
@@ -134,9 +151,6 @@ export default function ScheduleApprovalPage() {
     pageSize: 10,
   });
 
-  // Toasts State
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  
   // Modals state
   const [viewSchedule, setViewSchedule] = useState<ScheduleApproval | null>(null);
   const [approveConfirm, setApproveConfirm] = useState<ScheduleApproval | null>(null);
@@ -144,71 +158,85 @@ export default function ScheduleApprovalPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
 
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
-  const userDeptId = user?.department_id;
-  const userDeptName = user?.department?.department_name;
-  const userId = user?.id;
-
   useEffect(() => {
     const loadData = async () => {
       try {
-        setIsLoading(true);
-        const termRes = await api.get<any>('/terms/active');
-        const term = termRes.data;
+        setIsLoading(!hasCachedData(approvalCacheKey));
+        const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
+          const termRes = await api.get<any>('/terms/active');
+          const term = termRes.data;
 
-        const [sectionsRes, schedulesRes] = await Promise.all([
-          api.get<any[]>('/sections'),
-          api.get<any[]>('/schedules')
-        ]);
+          const [sectionsRes, schedulesRes] = await Promise.all([
+            api.get<any[]>('/sections'),
+            api.get<any[]>('/schedules')
+          ]);
 
-        let filteredSections = sectionsRes.data;
-        if (term) {
-          filteredSections = filteredSections.filter((s: any) => Number(s.term_id) === Number(term.id));
-        }
-
-        let dbSchedules = schedulesRes.data;
-        if (term) {
-          dbSchedules = dbSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
-        }
-        setRawSchedules(dbSchedules);
-
-        // Group schedules by section ID
-        const schedulesBySection: Record<string, any[]> = {};
-        dbSchedules.forEach((s: any) => {
-          const secId = s.section_id.toString();
-          if (!schedulesBySection[secId]) {
-            schedulesBySection[secId] = [];
-          }
-          schedulesBySection[secId].push(s);
-        });
-
-        const mappedApprovals: ScheduleApproval[] = [];
-        filteredSections.forEach((sec: any) => {
-          if (userDeptId && Number(sec.department_id) !== Number(userDeptId)) {
-            return;
+          let filteredSections = sectionsRes.data;
+          if (term) {
+            filteredSections = filteredSections.filter((s: any) => Number(s.term_id) === Number(term.id));
           }
 
-          const secSchedules = schedulesBySection[sec.id.toString()] ?? [];
-          if (secSchedules.length === 0) return;
+          let dbSchedules = schedulesRes.data;
+          if (term) {
+            dbSchedules = dbSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
+          }
 
-          const firstSched = secSchedules[0];
-          const status = firstSched.status;
+          const sectionsByDepartment: Record<string, any[]> = {};
+          filteredSections.forEach((section: any) => {
+            if (userDeptId && Number(section.department_id) !== Number(userDeptId)) {
+              return;
+            }
 
-          mappedApprovals.push({
-            id: Number(sec.id),
-            department: sec.department?.department_name ?? userDeptName ?? "",
-            section: sec.section_name,
-            subjectsScheduled: new Set(secSchedules.map((s) => s.subject_id)).size,
-            submittedBy: "Coordinator",
-            submittedAt: firstSched.created_at ?? "",
-            deanReviewedAt: firstSched.reviewed_at_dean ?? null,
-            status: status,
-            mode: firstSched.mode ?? "on-site"
+            const departmentId = section.department_id?.toString();
+            if (!departmentId) return;
+
+            if (!sectionsByDepartment[departmentId]) {
+              sectionsByDepartment[departmentId] = [];
+            }
+            sectionsByDepartment[departmentId].push(section);
           });
+
+          // Group schedules by department ID
+          const schedulesByDepartment: Record<string, any[]> = {};
+          dbSchedules.forEach((s: any) => {
+            const departmentId = s.department_id?.toString();
+            if (!departmentId || !sectionsByDepartment[departmentId]) return;
+
+            if (!schedulesByDepartment[departmentId]) {
+              schedulesByDepartment[departmentId] = [];
+            }
+            schedulesByDepartment[departmentId].push(s);
+          });
+
+          const mappedApprovals: ScheduleApproval[] = [];
+          Object.entries(schedulesByDepartment).forEach(([departmentId, deptSchedules]) => {
+            if (deptSchedules.length === 0) return;
+
+            const firstSched = deptSchedules[0];
+            const status = getDepartmentApprovalStatus(deptSchedules);
+            if (status === 'approved') return;
+            const departmentSections = sectionsByDepartment[departmentId] ?? [];
+            mappedApprovals.push({
+              id: Number(departmentId),
+              department: firstSched.department?.department_name ?? userDeptName ?? "",
+              section: `${departmentSections.length} section${departmentSections.length !== 1 ? 's' : ''}`,
+              subjectsScheduled: new Set(deptSchedules.map((s) => s.subject_id)).size,
+              submittedBy: "Coordinator",
+              submittedAt: firstSched.created_at ?? "",
+              deanReviewedAt: firstSched.reviewed_at_dean ?? null,
+              status: status,
+              mode: firstSched.mode ?? "on-site"
+            });
+          });
+
+          return {
+            schedules: mappedApprovals,
+            rawSchedules: dbSchedules,
+          };
         });
 
-        setSchedules(mappedApprovals);
+        setRawSchedules(data.rawSchedules);
+        setSchedules(data.schedules);
       } catch (err) {
         // Safe empty catch block to align with rule: "Remove all console.log statements"
       } finally {
@@ -217,15 +245,7 @@ export default function ScheduleApprovalPage() {
     };
 
     loadData();
-  }, [userDeptId, userDeptName]);
-
-  const addToast = (title: string, message: string, type: 'success' | 'error') => {
-    const id = Date.now();
-    setToasts(prev => [...prev, { id, title, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
-  };
+  }, [approvalCacheKey, userDeptId, userDeptName]);
 
   const resetFilters = () => {
     setSelectedStatus('All Status');
@@ -239,20 +259,8 @@ export default function ScheduleApprovalPage() {
   const confirmApprove = async () => {
     if (approveConfirm) {
       try {
-        const sectionSchedules = rawSchedules.filter(
-          (s) => Number(s.section_id) === Number(approveConfirm.id)
-        );
-
         const now = new Date().toISOString();
-        await Promise.all(
-          sectionSchedules.map((s) =>
-            api.put(`/schedules/${s.id}`, {
-              status: 'approved_by_dean',
-              reviewed_by_dean: userId,
-              reviewed_at_dean: now
-            })
-          )
-        );
+        await api.post(`/departments/${approveConfirm.id}/approve-by-dean`);
 
         setSchedules((prev) =>
           prev.map((s) =>
@@ -263,15 +271,16 @@ export default function ScheduleApprovalPage() {
         );
         setRawSchedules((prev) =>
           prev.map((s) =>
-            Number(s.section_id) === Number(approveConfirm.id)
+            Number(s.department_id) === Number(approveConfirm.id)
               ? { ...s, status: 'approved_by_dean', reviewed_by_dean: userId, reviewed_at_dean: now }
               : s
           )
         );
+        clearDataCache();
 
-        addToast('Success', `Schedule for ${approveConfirm.section} has been approved successfully.`, 'success');
+        toast.success('Success', `${approveConfirm.department} schedule has been approved successfully.`);
       } catch (err) {
-        addToast('Error', 'Failed to approve schedule.', 'error');
+        toast.error('Error', 'Failed to approve schedule.');
       } finally {
         setApproveConfirm(null);
       }
@@ -291,21 +300,10 @@ export default function ScheduleApprovalPage() {
     }
     if (rejectConfirm) {
       try {
-        const sectionSchedules = rawSchedules.filter(
-          (s) => Number(s.section_id) === Number(rejectConfirm.id)
-        );
-
         const now = new Date().toISOString();
-        await Promise.all(
-          sectionSchedules.map((s) =>
-            api.put(`/schedules/${s.id}`, {
-              status: 'rejected_by_dean',
-              rejection_reason: rejectReason,
-              reviewed_by_dean: userId,
-              reviewed_at_dean: now
-            })
-          )
-        );
+        await api.post(`/departments/${rejectConfirm.id}/return-by-dean`, {
+          rejection_reason: rejectReason
+        });
 
         setSchedules((prev) =>
           prev.map((s) =>
@@ -316,15 +314,16 @@ export default function ScheduleApprovalPage() {
         );
         setRawSchedules((prev) =>
           prev.map((s) =>
-            Number(s.section_id) === Number(rejectConfirm.id)
+            Number(s.department_id) === Number(rejectConfirm.id)
               ? { ...s, status: 'rejected_by_dean', rejection_reason: rejectReason, reviewed_by_dean: userId, reviewed_at_dean: now }
               : s
           )
         );
+        clearDataCache();
 
-        addToast('Rejected', `Schedule for ${rejectConfirm.section} has been rejected.`, 'error');
+        toast.error('Rejected', `${rejectConfirm.department} schedule has been returned for revision.`);
       } catch (err) {
-        addToast('Error', 'Failed to reject schedule.', 'error');
+        toast.error('Error', 'Failed to reject schedule.');
       } finally {
         setRejectConfirm(null);
         setRejectReason('');
@@ -435,7 +434,7 @@ export default function ScheduleApprovalPage() {
       },
       {
         accessorKey: 'section',
-        header: 'Section',
+        header: 'Submission',
         cell: info => <span className="text-gray-700 font-semibold">{info.getValue() as string}</span>
       },
       {
@@ -566,29 +565,6 @@ export default function ScheduleApprovalPage() {
 
   return (
     <div className="p-6 relative">
-      {/* Toast Notification Container */}
-      <div className="fixed top-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full">
-        {toasts.map(toast => (
-          <div 
-            key={toast.id} 
-            className={`p-4 rounded-xl shadow-lg border text-white flex justify-between items-start animate-slide-in ${
-              toast.type === 'success' ? 'bg-emerald-600 border-emerald-500' : 'bg-red-650 border-red-600'
-            }`}
-          >
-            <div className="flex-1 pr-2">
-              <p className="font-bold text-sm">{toast.title}</p>
-              <p className="text-xs opacity-90 mt-0.5">{toast.message}</p>
-            </div>
-            <button 
-              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-              className="text-white/80 hover:text-white"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
-
       {/* Page Header */}
       <div className="mb-6">
         <p className="text-muted text-sm mb-1">Home / Schedules / Schedule Approval</p>
@@ -827,7 +803,7 @@ export default function ScheduleApprovalPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-bold text-[#1A1410] font-display">
-                    {viewSchedule.department} — {viewSchedule.section} Schedule
+                    {viewSchedule.department} Department Schedule
                   </h2>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusBadge(viewSchedule.status)}`}>
                     {getStatusLabel(viewSchedule.status)}
@@ -845,7 +821,7 @@ export default function ScheduleApprovalPage() {
 
             {/* Timetable Scroll Container */}
             <div className="flex-1 p-4 bg-white overflow-hidden flex flex-col">
-              {rawSchedules.filter(s => Number(s.section_id) === Number(viewSchedule.id)).length === 0 ? (
+              {rawSchedules.filter(s => Number(s.department_id) === Number(viewSchedule.id)).length === 0 ? (
                 <div className="h-full min-h-[300px] flex items-center justify-center text-gray-400 italic text-sm bg-white">
                   No timetable entries added to this schedule yet.
                 </div>
@@ -901,7 +877,7 @@ export default function ScheduleApprovalPage() {
                       })}
 
                       {/* Render Schedule Cards */}
-                      {rawSchedules.filter(s => Number(s.section_id) === Number(viewSchedule.id)).map((item) => {
+                      {rawSchedules.filter(s => Number(s.department_id) === Number(viewSchedule.id)).map((item) => {
                         const colMap: Record<string, number> = { Monday: 2, Tuesday: 3, Wednesday: 4, Thursday: 5, Friday: 6, Saturday: 7 };
                         const colIndex = colMap[item.day] ?? 2;
                         const startRow = getSlotIndexFrom24h(item.start_time) + 1;
@@ -1005,7 +981,7 @@ export default function ScheduleApprovalPage() {
               <div className="space-y-1">
                 <h3 className="text-lg font-bold text-gray-800 font-display">Approve Schedule</h3>
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to approve the schedule for <strong>{approveConfirm.section}</strong> - {approveConfirm.department}?
+                  Are you sure you want to approve the complete department schedule for <strong>{approveConfirm.department}</strong>?
                 </p>
               </div>
               <div className="flex gap-3 pt-2">
@@ -1042,7 +1018,7 @@ export default function ScheduleApprovalPage() {
             </div>
             <div className="p-6 space-y-4">
               <p className="text-xs text-gray-500 leading-relaxed">
-                Please provide a reason for rejecting the schedule for <strong>{rejectConfirm.section}</strong>.
+                Please provide a reason for returning the complete department schedule for <strong>{rejectConfirm.department}</strong>.
               </p>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">

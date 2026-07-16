@@ -16,6 +16,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Term {
   id: number;
@@ -43,6 +44,10 @@ interface ActivationHistoryEntry {
   activatedAt: string;
 }
 
+interface SettingsPageData {
+  terms: Term[];
+}
+
 const mapApiTerm = (t: ApiTerm): Term => ({
   id: t.id,
   academic_year: t.academic_year,
@@ -53,13 +58,16 @@ const mapApiTerm = (t: ApiTerm): Term => ({
 
 export default function Settings() {
   const { toast } = useToast();
-  const [terms, setTerms] = useState<Term[]>([
+  const defaultTerms: Term[] = [
     { id: 1, academic_year: '2026-2027', semester: '1st', is_active: true, is_enabled: true },
     { id: 2, academic_year: '2026-2027', semester: '2nd', is_active: false, is_enabled: true },
     { id: 3, academic_year: '2026-2027', semester: 'summer', is_active: false, is_enabled: false }
-  ]);
+  ];
+  const settingsCacheKey = 'page:settings';
+  const cachedSettingsData = getCachedData<SettingsPageData>(settingsCacheKey);
+  const [terms, setTerms] = useState<Term[]>(cachedSettingsData?.terms ?? defaultTerms);
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(settingsCacheKey));
 
   // Table States
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -76,13 +84,16 @@ export default function Settings() {
     fetchTerms();
   }, []);
 
-  const fetchTerms = async () => {
-    setIsLoading(true);
+  const fetchTerms = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(settingsCacheKey));
     try {
-      const res = await api.get<ApiTerm[]>('/terms');
-      if (res.data && res.data.length > 0) {
-        setTerms(res.data.map(mapApiTerm));
-      }
+      const data = await loadCachedData<SettingsPageData>(settingsCacheKey, async () => {
+        const res = await api.get<ApiTerm[]>('/terms');
+        return {
+          terms: res.data && res.data.length > 0 ? res.data.map(mapApiTerm) : defaultTerms,
+        };
+      }, forceRefresh);
+      setTerms(data.terms);
     } catch {
       toast.error('Error', 'Failed to load academic terms.');
     } finally {
@@ -98,11 +109,15 @@ export default function Settings() {
   useEffect(() => {
     if (activeSemester === '1st') {
       setTerms(prev =>
-        prev.map(t =>
+        {
+          const nextTerms = prev.map(t =>
           t.semester === 'summer' && t.is_enabled
             ? { ...t, is_enabled: false }
             : t
-        )
+          );
+          setCachedData<SettingsPageData>(settingsCacheKey, { terms: nextTerms });
+          return nextTerms;
+        }
       );
     }
   }, [activeSemester]);
@@ -120,10 +135,14 @@ export default function Settings() {
         await api.patch<{ term: ApiTerm }>(`/terms/${idToActivate}/activate`);
         
         // Map updated term and deactivate all other terms in local state
-        setTerms(prev => prev.map(t => ({
-          ...t,
-          is_active: t.id === idToActivate ? true : false
-        })));
+        setTerms(prev => {
+          const nextTerms = prev.map(t => ({
+            ...t,
+            is_active: t.id === idToActivate ? true : false
+          }));
+          setCachedData<SettingsPageData>(settingsCacheKey, { terms: nextTerms });
+          return nextTerms;
+        });
 
         // Find the active term to add to history
         const termToActivate = terms.find(t => t.id === idToActivate);
@@ -152,11 +171,19 @@ export default function Settings() {
   };
 
   const handleYearChange = (id: number, val: string) => {
-    setTerms(prev => prev.map(t => t.id === id ? { ...t, academic_year: val } : t));
+    setTerms(prev => {
+      const nextTerms = prev.map(t => t.id === id ? { ...t, academic_year: val } : t);
+      setCachedData<SettingsPageData>(settingsCacheKey, { terms: nextTerms });
+      return nextTerms;
+    });
   };
 
   const handleToggleEnabled = (id: number, enabled: boolean) => {
-    setTerms(prev => prev.map(t => t.id === id ? { ...t, is_enabled: enabled } : t));
+    setTerms(prev => {
+      const nextTerms = prev.map(t => t.id === id ? { ...t, is_enabled: enabled } : t);
+      setCachedData<SettingsPageData>(settingsCacheKey, { terms: nextTerms });
+      return nextTerms;
+    });
   };
 
   const isValidYearFormat = (year: string) => {

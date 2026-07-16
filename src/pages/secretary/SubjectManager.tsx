@@ -22,6 +22,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -64,6 +65,11 @@ interface ApiSubject {
   updated_at: string;
 }
 
+interface SubjectsPageData {
+  subjects: Subject[];
+  departments: Department[];
+}
+
 const mapApiSubject = (s: ApiSubject): Subject => ({
   id: s.id,
   subject_code: s.subject_code,
@@ -83,12 +89,14 @@ const mapApiSubject = (s: ApiSubject): Subject => ({
 
 export default function SubjectManager() {
   const { toast } = useToast();
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
+  const subjectsCacheKey = `page:subjects:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const cachedSubjectsData = getCachedData<SubjectsPageData>(subjectsCacheKey);
+  const [subjects, setSubjects] = useState<Subject[]>(cachedSubjectsData?.subjects ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedSubjectsData?.departments ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(subjectsCacheKey));
+
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
@@ -132,16 +140,22 @@ export default function SubjectManager() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(subjectsCacheKey));
     try {
-      const url = user?.department_id ? `/subjects?department_id=${user.department_id}` : '/subjects';
-      const [subjectsRes, deptsRes] = await Promise.all([
-        api.get<ApiSubject[]>(url),
-        api.get<Department[]>('/departments')
-      ]);
-      setSubjects(subjectsRes.data.map(mapApiSubject));
-      setDepartments(deptsRes.data);
+      const data = await loadCachedData<SubjectsPageData>(subjectsCacheKey, async () => {
+        const url = user?.department_id ? `/subjects?department_id=${user.department_id}` : '/subjects';
+        const [subjectsRes, deptsRes] = await Promise.all([
+          api.get<ApiSubject[]>(url),
+          api.get<Department[]>('/departments')
+        ]);
+        return {
+          subjects: subjectsRes.data.map(mapApiSubject),
+          departments: deptsRes.data,
+        };
+      }, forceRefresh);
+      setSubjects(data.subjects);
+      setDepartments(data.departments);
     } catch {
       toast.error('Error', 'Failed to load subjects and departments data.');
     } finally {
@@ -204,11 +218,21 @@ export default function SubjectManager() {
 
       if (isEditMode && editingId !== null) {
         const res = await api.put<ApiSubject>(`/subjects/${editingId}`, payload);
-        setSubjects(prev => prev.map(s => s.id === editingId ? mapApiSubject(res.data) : s));
+        const updatedSubject = mapApiSubject(res.data);
+        setSubjects(prev => {
+          const nextSubjects = prev.map(s => s.id === editingId ? updatedSubject : s);
+          setCachedData<SubjectsPageData>(subjectsCacheKey, { subjects: nextSubjects, departments });
+          return nextSubjects;
+        });
         toast.success('Success', 'Subject updated successfully');
       } else {
         const res = await api.post<ApiSubject>('/subjects', payload);
-        setSubjects(prev => [mapApiSubject(res.data), ...prev]);
+        const createdSubject = mapApiSubject(res.data);
+        setSubjects(prev => {
+          const nextSubjects = [createdSubject, ...prev];
+          setCachedData<SubjectsPageData>(subjectsCacheKey, { subjects: nextSubjects, departments });
+          return nextSubjects;
+        });
         toast.success('Success', 'Subject created successfully');
       }
 
@@ -276,7 +300,11 @@ export default function SubjectManager() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/subjects/${idToDelete}`);
-        setSubjects(prev => prev.filter(s => s.id !== idToDelete));
+        setSubjects(prev => {
+          const nextSubjects = prev.filter(s => s.id !== idToDelete);
+          setCachedData<SubjectsPageData>(subjectsCacheKey, { subjects: nextSubjects, departments });
+          return nextSubjects;
+        });
         toast.success('Deleted', 'Subject removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete subject');

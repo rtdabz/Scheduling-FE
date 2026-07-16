@@ -5,6 +5,7 @@ import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
 import type { ScheduleItem, Subject, Faculty, Section } from "./types";
+import { useToast } from "../../../context/ToastContext";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -54,6 +55,7 @@ export default function TeachingLoad({
   departments,
   selectedSectionId,
 }: TeachingLoadProps) {
+  const { toast } = useToast();
 
   useEffect(() => {
     if (isTeachingLoadOpen) {
@@ -146,7 +148,7 @@ export default function TeachingLoad({
     });
 
     if (targetFaculties.length === 0) {
-      alert("No faculty members with assigned schedules found in this department.");
+      toast.warning("No Teaching Load Available", "No faculty members with assigned schedules were found in this department.");
       return;
     }
 

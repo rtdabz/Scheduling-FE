@@ -22,6 +22,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -52,6 +53,11 @@ interface ApiRoom {
   updated_at: string;
 }
 
+interface RoomsPageData {
+  rooms: Room[];
+  departments: Department[];
+}
+
 const mapApiRoom = (r: ApiRoom): Room => ({
   id: r.id,
   room_code: r.room_code,
@@ -65,12 +71,14 @@ const mapApiRoom = (r: ApiRoom): Room => ({
 
 export default function Rooms() {
   const { toast } = useToast();
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
+  const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
+  const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
+
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';
   const canManageRooms = isVpaa || isDean;
@@ -112,15 +120,21 @@ export default function Rooms() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
     try {
-      const [roomsRes, deptsRes] = await Promise.all([
-        api.get<ApiRoom[]>('/rooms'),
-        api.get<Department[]>('/departments')
-      ]);
-      setRooms(roomsRes.data.map(mapApiRoom));
-      setDepartments(deptsRes.data);
+      const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
+        const [roomsRes, deptsRes] = await Promise.all([
+          api.get<ApiRoom[]>('/rooms'),
+          api.get<Department[]>('/departments')
+        ]);
+        return {
+          rooms: roomsRes.data.map(mapApiRoom),
+          departments: deptsRes.data,
+        };
+      }, forceRefresh);
+      setRooms(data.rooms);
+      setDepartments(data.departments);
     } catch {
       toast.error('Error', 'Failed to load rooms and departments data.');
     } finally {
@@ -167,11 +181,21 @@ export default function Rooms() {
 
       if (isEditMode && editingId !== null) {
         const res = await api.put<{ room: ApiRoom }>(`/rooms/${editingId}`, payload);
-        setRooms(prev => prev.map(r => r.id === editingId ? mapApiRoom(res.data.room) : r));
+        const updatedRoom = mapApiRoom(res.data.room);
+        setRooms(prev => {
+          const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
+          return nextRooms;
+        });
         toast.success('Success', 'Room updated successfully');
       } else {
         const res = await api.post<{ room: ApiRoom }>('/rooms', payload);
-        setRooms(prev => [mapApiRoom(res.data.room), ...prev]);
+        const createdRoom = mapApiRoom(res.data.room);
+        setRooms(prev => {
+          const nextRooms = [createdRoom, ...prev];
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
+          return nextRooms;
+        });
         toast.success('Success', 'Room created successfully');
       }
 
@@ -214,7 +238,11 @@ export default function Rooms() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/rooms/${idToDelete}`);
-        setRooms(prev => prev.filter(r => r.id !== idToDelete));
+        setRooms(prev => {
+          const nextRooms = prev.filter(r => r.id !== idToDelete);
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
+          return nextRooms;
+        });
         toast.success('Deleted', 'Room removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete room');

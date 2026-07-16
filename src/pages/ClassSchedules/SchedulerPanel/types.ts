@@ -53,6 +53,7 @@ export interface ScheduleItem {
   facultyId: string | null;
   status:
     | "draft"
+    | "completed"
     | "submitted"
     | "approved_by_dean"
     | "rejected_by_dean"
@@ -66,7 +67,18 @@ export interface ScheduleItem {
   sectionId: string;
   roomId: string;
   isHybrid?: boolean;
-  preferredPattern?: "MW" | "TTh" | null;
+  preferredPattern?: string | null;
+}
+
+export interface DepartmentSectionProgress {
+  sectionId: string;
+  sectionName: string;
+  yearLevel: number;
+  requiredSubjects: number;
+  plottedSubjects: number;
+  status: ScheduleItem["status"];
+  isDone: boolean;
+  isSelected: boolean;
 }
 
 export interface DropContext {

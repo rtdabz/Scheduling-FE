@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import api from '../lib/api';
+import { clearDataCache } from '../lib/dataCache';
 
 const TIMEOUT_MS = 120 * 60 * 1000; // 120 minutes
 const CHECK_INTERVAL_MS = 10000; // 10 seconds
@@ -35,6 +36,7 @@ export function useSessionTimeout() {
       const now = Date.now();
 
       if (now - lastActivity > TIMEOUT_MS) {
+        clearDataCache();
         // Clear frontend storage
         localStorage.removeItem('token');
         localStorage.removeItem('user');

@@ -1,5 +1,16 @@
 import type { ScheduleItem, Subject, Faculty } from "../types";
 
+const getPreferredPatternDayIndexes = (preferredPattern?: string | null): number[] | null => {
+  if (!preferredPattern) return null;
+  if (preferredPattern === "MW") return [0, 2];
+  if (preferredPattern === "TTh") return [1, 3];
+
+  const customMatch = preferredPattern.match(/^days:([0-5])-([0-5])$/);
+  if (!customMatch) return null;
+
+  return [Number(customMatch[1]), Number(customMatch[2])];
+};
+
 interface UseConflictParams {
   schedules: ScheduleItem[];
   selectedSectionId: string;
@@ -30,23 +41,14 @@ export const useConflict = ({
     startSlot: number,
     durationSlots: number,
     excludeScheduleId?: string | string[],
-    preferredPattern?: "MW" | "TTh" | null
+    preferredPattern?: string | null
   ): ConflictResult => {
-    // Validate Preferred Meeting Pattern
-    if (preferredPattern === "MW") {
-      if (dayIndex !== 0 && dayIndex !== 2) {
-        return {
-          conflictType: "section",
-          message: "Preferred pattern conflict: MW subjects can only be scheduled on Monday or Wednesday."
-        };
-      }
-    } else if (preferredPattern === "TTh") {
-      if (dayIndex !== 1 && dayIndex !== 3) {
-        return {
-          conflictType: "section",
-          message: "Preferred pattern conflict: TTh subjects can only be scheduled on Tuesday or Thursday."
-        };
-      }
+    const allowedDays = getPreferredPatternDayIndexes(preferredPattern);
+    if (allowedDays && !allowedDays.includes(dayIndex)) {
+      return {
+        conflictType: "section",
+        message: "Meeting pattern conflict: This class can only be scheduled on the selected meeting days."
+      };
     }
 
     const endSlot = startSlot + durationSlots;
@@ -123,7 +125,7 @@ export const useConflict = ({
     let dur = 6;
     let subjectId = "";
     let excludeId: string | undefined;
-    let prefPattern: "MW" | "TTh" | null = null;
+    let prefPattern: string | null = null;
 
     if (draggedScheduleId) {
       const sched = schedules.find((s) => s.id === draggedScheduleId);

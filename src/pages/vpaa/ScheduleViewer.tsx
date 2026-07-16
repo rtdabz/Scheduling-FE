@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
+import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
 
 // TypeScript Interfaces
 export interface Department {
@@ -51,6 +52,15 @@ export interface Schedule {
   startTime: string; // e.g. "09:00 AM"
   endTime: string; // e.g. "10:30 AM"
   mode: 'on-site' | 'online' | 'field';
+}
+
+interface ScheduleViewerData {
+  departments: Department[];
+  sections: Section[];
+  faculties: Faculty[];
+  rooms: Room[];
+  schedules: Schedule[];
+  activeTerm: any;
 }
 
 const dayMapToIndex: Record<string, number> = {
@@ -257,13 +267,15 @@ const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
 };
 
 export default function ScheduleViewer() {
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [activeTerm, setActiveTerm] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const scheduleViewerCacheKey = 'page:schedule-viewer';
+  const cachedScheduleViewerData = getCachedData<ScheduleViewerData>(scheduleViewerCacheKey);
+  const [departments, setDepartments] = useState<Department[]>(cachedScheduleViewerData?.departments ?? []);
+  const [sections, setSections] = useState<Section[]>(cachedScheduleViewerData?.sections ?? []);
+  const [faculties, setFaculties] = useState<Faculty[]>(cachedScheduleViewerData?.faculties ?? []);
+  const [rooms, setRooms] = useState<Room[]>(cachedScheduleViewerData?.rooms ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedScheduleViewerData?.schedules ?? []);
+  const [activeTerm, setActiveTerm] = useState<any>(cachedScheduleViewerData?.activeTerm ?? null);
+  const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(scheduleViewerCacheKey));
 
   // Filters State
   const [selectedDeptId, setSelectedDeptId] = useState<string>("All");
@@ -276,6 +288,11 @@ export default function ScheduleViewer() {
   const [hoveredScheduleId, setHoveredScheduleId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (hasCachedData(scheduleViewerCacheKey)) {
+      setIsLoading(false);
+      return;
+    }
+
     const loadData = async () => {
       try {
         setIsLoading(true);
@@ -364,6 +381,14 @@ export default function ScheduleViewer() {
           };
         });
         setSchedules(mappedSchedules);
+        setCachedData<ScheduleViewerData>(scheduleViewerCacheKey, {
+          departments: mappedDepts,
+          sections: mappedSections,
+          faculties: mappedFaculties,
+          rooms: mappedRooms,
+          schedules: mappedSchedules,
+          activeTerm: term,
+        });
 
       } catch (err) {
         console.error("Failed to load VPAA schedule viewer data", err);
@@ -373,7 +398,7 @@ export default function ScheduleViewer() {
     };
 
     loadData();
-  }, []);
+  }, [scheduleViewerCacheKey]);
 
   // Dynamic Options filtering based on department selection
   const filteredSections = sections.filter((sec) => {

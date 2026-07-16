@@ -3,6 +3,7 @@ import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import {
@@ -90,23 +91,41 @@ interface QueueItem {
   status: string;
 }
 
+interface StoredUser {
+  id?: number;
+  name?: string;
+  department_id?: number;
+  role?: string;
+}
+
+interface DashboardData {
+  faculties: Faculty[];
+  rooms: Room[];
+  sections: Section[];
+  subjects: Subject[];
+  schedules: Schedule[];
+  activeTerm: Term | null;
+}
+
 export default function DeanDashboardPage() {
   useTour();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
 
   // User info
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  const dashboardCacheKey = `dashboard:${user?.role ?? 'dean'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const cachedDashboardData = getCachedData<DashboardData>(dashboardCacheKey);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(dashboardCacheKey));
 
   // States
-  const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(null);
+  const [faculties, setFaculties] = useState<Faculty[]>(cachedDashboardData?.faculties ?? []);
+  const [rooms, setRooms] = useState<Room[]>(cachedDashboardData?.rooms ?? []);
+  const [sections, setSections] = useState<Section[]>(cachedDashboardData?.sections ?? []);
+  const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedDashboardData?.schedules ?? []);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
 
   // Hook for department schedules stage counts
   const {
@@ -115,39 +134,61 @@ export default function DeanDashboardPage() {
   } = useDepartmentScheduleStatus(user?.department_id);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        const [
-          facultiesRes,
-          roomsRes,
-          sectionsRes,
-          subjectsRes,
-          schedulesRes,
-          activeTermRes
-        ] = await Promise.all([
-          api.get<Faculty[]>('/faculties').catch(() => null),
-          api.get<Room[]>('/rooms').catch(() => null),
-          api.get<Section[]>('/sections').catch(() => null),
-          api.get<Subject[]>('/subjects').catch(() => null),
-          api.get<Schedule[]>('/schedules').catch(() => null),
-          api.get<Term>('/terms/active').catch(() => null)
-        ]);
+    let active = true;
 
-        setFaculties(facultiesRes?.data || []);
-        setRooms(roomsRes?.data || []);
-        setSections(sectionsRes?.data || []);
-        setSubjects(subjectsRes?.data || []);
-        setSchedules(schedulesRes?.data || []);
-        setActiveTerm(activeTermRes?.data || null);
+    const loadData = async () => {
+      const shouldShowSkeleton = !hasCachedData(dashboardCacheKey);
+      try {
+        setIsLoading(shouldShowSkeleton);
+        const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
+          const [
+            facultiesRes,
+            roomsRes,
+            sectionsRes,
+            subjectsRes,
+            schedulesRes,
+            activeTermRes
+          ] = await Promise.all([
+            api.get<Faculty[]>('/faculties').catch(() => null),
+            api.get<Room[]>('/rooms').catch(() => null),
+            api.get<Section[]>('/sections').catch(() => null),
+            api.get<Subject[]>('/subjects').catch(() => null),
+            api.get<Schedule[]>('/schedules').catch(() => null),
+            api.get<Term>('/terms/active').catch(() => null)
+          ]);
+
+          return {
+            faculties: facultiesRes?.data || [],
+            rooms: roomsRes?.data || [],
+            sections: sectionsRes?.data || [],
+            subjects: subjectsRes?.data || [],
+            schedules: schedulesRes?.data || [],
+            activeTerm: activeTermRes?.data || null,
+          };
+        });
+
+        if (!active) return;
+        setFaculties(data.faculties);
+        setRooms(data.rooms);
+        setSections(data.sections);
+        setSubjects(data.subjects);
+        setSchedules(data.schedules);
+        setActiveTerm(data.activeTerm);
       } catch {
         toast.error('Error', 'Failed to load dashboard data.');
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
+
     loadData();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [dashboardCacheKey, toast]);
 
   // ── 1. Department Filtered Data ──
   const deptFaculties = useMemo(() => {

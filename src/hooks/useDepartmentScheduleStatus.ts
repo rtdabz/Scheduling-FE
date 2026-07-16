@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../lib/api';
+import { getCachedData, hasCachedData, loadCachedData } from '../lib/dataCache';
 
-export type SectionScheduleStatus = 'draft' | 'submitted' | 'approved_by_dean' | 'approved';
+export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'approved';
 
 export interface SectionStatusItem {
   id: number;
@@ -26,6 +27,7 @@ export interface DepartmentScheduleStatusData {
 
 interface StageCounts {
   draft: number;
+  completed: number;
   submitted: number;
   approved_by_dean: number;
   approved: number;
@@ -55,9 +57,11 @@ const YEAR_LABELS: Record<number, string> = {
 export function useDepartmentScheduleStatus(
   departmentId: number | null | undefined
 ): UseDepartmentScheduleStatusReturn {
-  const [sections, setSections] = useState<SectionStatusItem[]>([]);
-  const [departmentName, setDepartmentName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const statusCacheKey = departmentId ? `department-schedule-status:${departmentId}` : '';
+  const cachedStatus = statusCacheKey ? getCachedData<DepartmentScheduleStatusData>(statusCacheKey) : undefined;
+  const [sections, setSections] = useState<SectionStatusItem[]>(cachedStatus?.sections ?? []);
+  const [departmentName, setDepartmentName] = useState(cachedStatus?.department_name ?? '');
+  const [loading, setLoading] = useState(!!departmentId && !hasCachedData(statusCacheKey));
   const [error, setError] = useState<string | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
 
@@ -69,15 +73,22 @@ export function useDepartmentScheduleStatus(
     let cancelled = false;
 
     const fetchStatus = async () => {
-      setLoading(true);
+      setLoading(!hasCachedData(statusCacheKey));
       setError(null);
       try {
-        const res = await api.get<DepartmentScheduleStatusData>(
-          `/departments/${departmentId}/schedule-status`
+        const data = await loadCachedData<DepartmentScheduleStatusData>(
+          statusCacheKey,
+          async () => {
+            const res = await api.get<DepartmentScheduleStatusData>(
+              `/departments/${departmentId}/schedule-status`
+            );
+            return res.data;
+          },
+          fetchKey > 0
         );
         if (!cancelled) {
-          setSections(res.data.sections);
-          setDepartmentName(res.data.department_name);
+          setSections(data.sections);
+          setDepartmentName(data.department_name);
         }
       } catch {
         if (!cancelled) {
@@ -94,12 +105,13 @@ export function useDepartmentScheduleStatus(
     return () => {
       cancelled = true;
     };
-  }, [departmentId, fetchKey]);
+  }, [departmentId, fetchKey, statusCacheKey]);
 
   // ── Derived values ──
 
   const stageCounts: StageCounts = {
     draft: sections.filter(s => s.status === 'draft').length,
+    completed: sections.filter(s => s.status === 'completed').length,
     submitted: sections.filter(s => s.status === 'submitted').length,
     approved_by_dean: sections.filter(s => s.status === 'approved_by_dean').length,
     approved: sections.filter(s => s.status === 'approved').length,

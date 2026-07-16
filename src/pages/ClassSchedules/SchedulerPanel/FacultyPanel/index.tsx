@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Users, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Users, X } from "lucide-react";
 import type { ScheduleItem, Subject, Faculty } from "../types";
 import Skeleton from "../../../../components/ui/Skeleton";
+import SearchField from "../components/SearchField";
 
 interface FacultyPanelProps {
   isPhase2Active: boolean;
@@ -12,6 +13,7 @@ interface FacultyPanelProps {
   unassignedSlotsCount: number;
   isAssignedListCollapsed: boolean;
   setIsAssignedListCollapsed: (value: boolean) => void;
+  facultyActionSlotId: string | null;
   handleInlineFacultyAssign: (slotId: string, facId: string) => void;
   handleRemoveInlineFaculty: (slotId: string) => void;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
@@ -29,6 +31,7 @@ export default function FacultyPanel({
   unassignedSlotsCount,
   isAssignedListCollapsed,
   setIsAssignedListCollapsed,
+  facultyActionSlotId,
   handleInlineFacultyAssign,
   handleRemoveInlineFaculty,
   checkFacultyConflict,
@@ -39,12 +42,15 @@ export default function FacultyPanel({
   const [openDropdownSlotId, setOpenDropdownSlotId] = useState<string | null>(null);
   const [selectedFacultyBySlot, setSelectedFacultyBySlot] = useState<Record<string, string>>({});
   const [conflictWarningBySlot, setConflictWarningBySlot] = useState<Record<string, string>>({});
+  const [facultySearchBySlot, setFacultySearchBySlot] = useState<Record<string, string>>({});
 
   if (!isPhase2Active || currentStatus === "approved") return null;
 
   const handleFacultySelect = (slotId: string, facultyId: string) => {
     setOpenDropdownSlotId(null);
+    if (facultyActionSlotId === slotId) return;
     setSelectedFacultyBySlot((prev) => ({ ...prev, [slotId]: facultyId }));
+    setFacultySearchBySlot((prev) => ({ ...prev, [slotId]: "" }));
 
     if (!facultyId) {
       setConflictWarningBySlot((prev) => ({ ...prev, [slotId]: "" }));
@@ -64,6 +70,7 @@ export default function FacultyPanel({
   const handleAssignWithWarning = (slotId: string) => {
     const facultyId = selectedFacultyBySlot[slotId];
     if (!facultyId) return;
+    if (facultyActionSlotId === slotId) return;
     handleInlineFacultyAssign(slotId, facultyId);
   };
 
@@ -139,6 +146,11 @@ export default function FacultyPanel({
                     const selectedFacultyId = selectedFacultyBySlot[slot.id] ?? "";
                     const selectedFaculty = faculties.find((f) => f.id === selectedFacultyId);
                     const conflictWarning = conflictWarningBySlot[slot.id] ?? "";
+                    const facultySearch = facultySearchBySlot[slot.id] ?? "";
+                    const isSavingSlot = facultyActionSlotId === slot.id;
+                    const filteredFaculties = faculties.filter((faculty) =>
+                      faculty.name.toLowerCase().includes(facultySearch.trim().toLowerCase())
+                    );
 
                     return (
                       <div key={slot.id} className="border border-slate-200 rounded-xl p-3 bg-white hover:border-[#4e0a10]/30 transition-all shadow-sm mb-2">
@@ -155,32 +167,62 @@ export default function FacultyPanel({
                         <div className="relative mt-2">
                           <button
                             type="button"
+                            disabled={isSavingSlot}
                             onClick={() => setOpenDropdownSlotId(openDropdownSlotId === slot.id ? null : slot.id)}
-                            className="w-full flex items-center justify-between border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 focus:border-[#4e0a10] outline-none"
+                            aria-haspopup="listbox"
+                            aria-expanded={openDropdownSlotId === slot.id}
+                            className={`w-full flex items-center justify-between border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 focus:border-[#4e0a10] outline-none ${
+                              isSavingSlot ? "cursor-not-allowed opacity-70" : ""
+                            }`}
                           >
                             <span className="truncate">{selectedFaculty?.name ?? "-- Assign Faculty --"}</span>
-                            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${openDropdownSlotId === slot.id ? "rotate-180" : ""}`} />
+                            {isSavingSlot ? (
+                              <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin" />
+                            ) : (
+                              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${openDropdownSlotId === slot.id ? "rotate-180" : ""}`} />
+                            )}
                           </button>
 
                           {openDropdownSlotId === slot.id && (
-                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1 max-h-40 overflow-y-auto">
-                              <button
-                                type="button"
-                                onClick={() => handleFacultySelect(slot.id, "")}
-                                className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
-                              >
-                                -- Assign Faculty --
-                              </button>
-                              {faculties.map((faculty) => (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 overflow-hidden">
+                              <div className="p-2 border-b border-slate-100">
+                                <SearchField
+                                  value={facultySearch}
+                                  onChange={(value) => setFacultySearchBySlot((prev) => ({ ...prev, [slot.id]: value }))}
+                                  placeholder="Search faculty..."
+                                  clearLabel="Clear faculty search"
+                                  inputClassName="py-1.5 rounded-md font-semibold text-slate-600 focus:border-[#4e0a10] focus:ring-[#4e0a10]/10"
+                                />
+                              </div>
+                              <div role="listbox" aria-label="Available faculty" className="py-1 max-h-44 overflow-y-auto">
                                 <button
-                                  key={faculty.id}
                                   type="button"
-                                  onClick={() => handleFacultySelect(slot.id, faculty.id)}
-                                  className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                  onClick={() => handleFacultySelect(slot.id, "")}
+                                  role="option"
+                                  aria-selected={!selectedFacultyId}
+                                  className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
                                 >
-                                  {faculty.name}
+                                  -- Assign Faculty --
                                 </button>
-                              ))}
+                                {filteredFaculties.length === 0 ? (
+                                  <p className="px-2.5 py-2 text-xs font-semibold text-slate-400">
+                                    No faculty found.
+                                  </p>
+                                ) : (
+                                  filteredFaculties.map((faculty) => (
+                                    <button
+                                      key={faculty.id}
+                                      type="button"
+                                      onClick={() => handleFacultySelect(slot.id, faculty.id)}
+                                      role="option"
+                                      aria-selected={selectedFacultyId === faculty.id}
+                                      className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                    >
+                                      {faculty.name}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -195,10 +237,20 @@ export default function FacultyPanel({
                         {selectedFacultyId && conflictWarning && (
                           <button
                             type="button"
+                            disabled={isSavingSlot}
                             onClick={() => handleAssignWithWarning(slot.id)}
-                            className="bg-[#4e0a10] text-white rounded-lg px-3 py-1.5 text-xs font-bold w-full mt-2 hover:bg-[#3a0809]"
+                            className={`bg-[#4e0a10] text-white rounded-lg px-3 py-1.5 text-xs font-bold w-full mt-2 hover:bg-[#3a0809] flex items-center justify-center gap-2 ${
+                              isSavingSlot ? "cursor-not-allowed opacity-75" : ""
+                            }`}
                           >
-                            Assign
+                            {isSavingSlot ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              "Assign"
+                            )}
                           </button>
                         )}
                       </div>
@@ -228,6 +280,7 @@ export default function FacultyPanel({
                   ) : (
                     sectionSchedules.filter((s) => s.facultyId).map((slot) => {
                       const sub = subjects.find((s) => s.id === slot.subjectId);
+                      const isSavingSlot = facultyActionSlotId === slot.id;
                       return (
                         <div key={slot.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 shadow-sm mb-2 flex justify-between items-center">
                           <div className="min-w-0">
@@ -239,11 +292,19 @@ export default function FacultyPanel({
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
                             <button
                               type="button"
+                              disabled={isSavingSlot}
                               onClick={() => handleRemoveInlineFaculty(slot.id)}
-                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              aria-label={`Remove faculty assignment from ${sub?.code ?? "slot"}`}
+                              className={`text-slate-400 hover:text-rose-600 transition-colors ${
+                                isSavingSlot ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                              }`}
                               title="Remove Assignment"
                             >
-                              <X className="w-3.5 h-3.5" />
+                              {isSavingSlot ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <X className="w-3.5 h-3.5" />
+                              )}
                             </button>
                           </div>
                         </div>

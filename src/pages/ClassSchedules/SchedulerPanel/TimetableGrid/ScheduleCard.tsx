@@ -2,8 +2,7 @@ import React, { memo } from "react";
 import { CheckCircle2, Clock, MapPin, User, UserPlus, X } from "lucide-react";
 import {
   getGridCardStyles,
-  getGridModeBadgeClass,
-  SLOT_HEIGHT_PX
+  getGridModeBadgeClass
 } from "../constants";
 import type { ScheduleItem, Subject, Room } from "../types";
 
@@ -22,6 +21,7 @@ interface ScheduleCardProps {
   onDragEnd: () => void;
   onDelete: (id: string) => void;
   onCardClick: (id: string) => void;
+  slotHeight: number;
 }
 
 const ScheduleCard = memo(function ScheduleCard({
@@ -38,14 +38,20 @@ const ScheduleCard = memo(function ScheduleCard({
   onDragStart,
   onDragEnd,
   onDelete,
-  onCardClick
+  onCardClick,
+  slotHeight
 }: ScheduleCardProps) {
   const room = rooms.find((r) => r.id === schedule.roomId);
   const gridStyles = getGridCardStyles(subject.category);
   const modeBadgeClass = getGridModeBadgeClass(schedule.mode);
+  const modeLabel = schedule.mode === "on-site"
+    ? "On-Site"
+    : schedule.mode === "online"
+    ? "Online"
+    : "Field";
   const isDraggingThis = draggedScheduleId === schedule.id;
   const hasFaculty = !!schedule.facultyId;
-  const cardHeight = schedule.durationSlots * SLOT_HEIGHT_PX;
+  const cardHeight = schedule.durationSlots * slotHeight;
   const showBottomRow = cardHeight > 80;
   const canAssignFaculty = isPhase2Active && currentStatus !== "finalized";
   const isAwaitingFaculty = canAssignFaculty && !hasFaculty;
@@ -131,9 +137,20 @@ const ScheduleCard = memo(function ScheduleCard({
               <span className={`text-[10px] bg-white/70 rounded-full px-1.5 py-0.5 font-bold ${gridStyles.badgeText}`}>
                 {subject.units}u
               </span>
-              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-bold ${modeBadgeClass}`}>
-                {schedule.mode === "on-site" ? "On-Site" : schedule.mode === "online" ? "Online" : "Field"}
-              </span>
+              {schedule.isHybrid ? (
+                <>
+                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-bold bg-blue-100 text-blue-700">
+                    On-Site
+                  </span>
+                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-bold bg-green-100 text-green-700">
+                    Online
+                  </span>
+                </>
+              ) : (
+                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-bold ${modeBadgeClass}`}>
+                  {modeLabel}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-[11px] font-medium text-gray-700 mt-0.5 truncate" title={subject.name}>

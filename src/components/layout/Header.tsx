@@ -4,6 +4,7 @@ import { Menu, Bell, User, Settings, LogOut, MessageSquare, Check, RefreshCw } f
 import logo from '../../assets/logo.jpg';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
+import { clearDataCache } from '../../lib/dataCache';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -205,6 +206,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                       try {
                         await api.post('/logout');
                       } finally {
+                        clearDataCache();
                         localStorage.removeItem('token');
                         localStorage.removeItem('user');
                         sessionStorage.removeItem('token');

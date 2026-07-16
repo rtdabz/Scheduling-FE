@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearDataCache } from './dataCache';
 
 const api = axios.create({
     baseURL: 'http://localhost:8000/api',
@@ -28,6 +29,7 @@ api.interceptors.response.use(
     },
     (error) => {
         if (error.response?.status === 401) {
+            clearDataCache();
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             sessionStorage.removeItem('token');

@@ -5,6 +5,7 @@ import TimetableGrid from "./TimetableGrid";
 import DropModal from "./Modals/DropModal";
 import FacultyModal from "./Modals/FacultyModal";
 import ClearAllModal from "./Modals/ClearAllModal";
+import SubmitApprovalModal from "./Modals/SubmitApprovalModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
 import TeachingLoad from "./TeachingLoad";
@@ -21,7 +22,7 @@ export default function SchedulerPanel() {
         onTeachingLoad={() => scheduler.setIsTeachingLoadOpen(true)}
       />
 
-      <div className="flex flex-col lg:flex-row gap-6 w-full h-[700px] min-h-[600px] overflow-hidden">
+      <div className="flex flex-col lg:flex-row gap-6 w-full min-h-[640px] lg:h-[calc(100vh-220px)] lg:min-h-[650px] overflow-hidden">
         <FacultyPanel {...scheduler} />
         <SubjectBank {...scheduler} />
         <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
@@ -30,6 +31,7 @@ export default function SchedulerPanel() {
       <DropModal {...scheduler} />
       <FacultyModal {...scheduler} />
       <ClearAllModal {...scheduler} />
+      <SubmitApprovalModal {...scheduler} />
       <RoomViewModal {...scheduler} />
       <PrintSchedule
         sections={scheduler.sections}

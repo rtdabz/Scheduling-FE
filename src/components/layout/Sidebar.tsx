@@ -4,6 +4,7 @@ import type { NavSection, NavItem } from '../../navigation/types';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
 import { Menu, ChevronDown, ChevronUp } from 'lucide-react';
+import { hasCachedData, setCachedData } from '../../lib/dataCache';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,13 +15,22 @@ interface SidebarProps {
 export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
-  const [isCountLoading, setIsCountLoading] = useState(true);
+  const sidebarCountCacheKey = 'layout:sidebar-count';
+  const [isCountLoading, setIsCountLoading] = useState(!hasCachedData(sidebarCountCacheKey));
   const pendingCount = 3;
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsCountLoading(false), 800);
+    if (hasCachedData(sidebarCountCacheKey)) {
+      setIsCountLoading(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCachedData(sidebarCountCacheKey, true);
+      setIsCountLoading(false);
+    }, 800);
     return () => clearTimeout(timer);
-  }, []);
+  }, [sidebarCountCacheKey]);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({

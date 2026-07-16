@@ -1,10 +1,12 @@
 import type React from "react";
-import { AlertTriangle, User, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { AlertTriangle, Loader2, User, X } from "lucide-react";
 import { getCategoryStyles } from "../constants";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
   facultyAssignmentPopup: FacultyAssignmentPopupState | null;
+  facultyActionSlotId: string | null;
   schedules: ScheduleItem[];
   popupConflictWarning: string;
   popupValidationError: string;
@@ -18,6 +20,7 @@ interface FacultyModalProps {
 
 export default function FacultyModal({
   facultyAssignmentPopup,
+  facultyActionSlotId,
   schedules,
   popupConflictWarning,
   popupValidationError,
@@ -28,23 +31,51 @@ export default function FacultyModal({
   subjects,
   faculties
 }: FacultyModalProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!facultyAssignmentPopup) return;
+
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFacultyAssignmentPopup(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [facultyAssignmentPopup, setFacultyAssignmentPopup]);
+
   if (!facultyAssignmentPopup) return null;
   const schedule = schedules.find((s) => s.id === facultyAssignmentPopup.scheduleId);
   if (!schedule) return null;
   const subject = subjects.find((s) => s.id === schedule.subjectId);
   const subStyles = subject ? getCategoryStyles(subject.category) : null;
+  const isSavingFaculty = facultyActionSlotId === schedule.id;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl p-6 w-[400px] max-w-[95vw] flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+    <div
+      className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50"
+      onClick={(event) => { if (event.target === event.currentTarget) setFacultyAssignmentPopup(null); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="faculty-modal-title"
+        aria-describedby="faculty-modal-desc"
+        className="bg-white rounded-2xl border border-slate-100 shadow-2xl p-6 w-[400px] max-w-[95vw] flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+      >
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Assign Instructor</h3>
-            <p className="text-[10px] text-slate-500 mt-0.5">Assign a faculty member to this scheduled subject slot</p>
+            <h3 id="faculty-modal-title" className="text-sm font-bold text-slate-900">Assign Instructor</h3>
+            <p id="faculty-modal-desc" className="text-[10px] text-slate-500 mt-0.5">Assign a faculty member to this scheduled subject slot</p>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={() => setFacultyAssignmentPopup(null)}
+            aria-label="Close instructor assignment dialog"
             className="text-slate-400 hover:text-slate-600 rounded-full p-1 bg-slate-50 border border-slate-100 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
@@ -74,8 +105,11 @@ export default function FacultyModal({
             </label>
             <select
               value={facultyAssignmentPopup.facultyId}
+              disabled={isSavingFaculty}
               onChange={(e) => handlePopupFacultyChange(e.target.value)}
-              className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-[#4e0a10] font-semibold transition-colors"
+              className={`w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-[#4e0a10] font-semibold transition-colors ${
+                isSavingFaculty ? "cursor-not-allowed opacity-70" : ""
+              }`}
             >
               <option value="">-- Choose Faculty --</option>
               {faculties.map((f) => (
@@ -104,17 +138,30 @@ export default function FacultyModal({
           <div className="flex gap-2 pt-1">
             <button
               type="submit"
-              className="flex-1 px-4 py-2.5 bg-[#4e0a10] hover:bg-[#3a0809] text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+              disabled={isSavingFaculty}
+              className={`flex-1 px-4 py-2.5 bg-[#4e0a10] hover:bg-[#3a0809] text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-2 ${
+                isSavingFaculty ? "cursor-not-allowed opacity-75" : ""
+              }`}
             >
-              {popupConflictWarning ? "Assign Anyway" : "Assign Faculty"}
+              {isSavingFaculty ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                popupConflictWarning ? "Assign Anyway" : "Assign Faculty"
+              )}
             </button>
             {schedule.facultyId && (
               <button
                 type="button"
                 onClick={handleRemoveFaculty}
-                className="px-4 py-2.5 border border-rose-200 hover:bg-rose-50 text-rose-600 rounded-xl text-xs font-bold transition-colors"
+                disabled={isSavingFaculty}
+                className={`px-4 py-2.5 border border-rose-200 hover:bg-rose-50 text-rose-600 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 ${
+                  isSavingFaculty ? "cursor-not-allowed opacity-70" : ""
+                }`}
               >
-                Remove
+                {isSavingFaculty ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Remove"}
               </button>
             )}
           </div>

@@ -1,9 +1,10 @@
 import type React from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, Search, X } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, Search } from "lucide-react";
 import type { Subject, Section } from "../types";
 import type { SubjectClassification } from "../constants";
 import CategorySection from "./CategorySection";
 import Skeleton from "../../../../components/ui/Skeleton";
+import SearchField from "../components/SearchField";
 
 interface SubjectBankProps {
   sections: Section[];
@@ -88,25 +89,12 @@ export default function SubjectBank({
       </div>
 
       <div className="px-4 py-3 border-b border-gray-100 shrink-0">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search subjects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400 transition-all font-medium text-gray-700 placeholder:text-gray-400"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+        <SearchField
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search subjects..."
+          clearLabel="Clear subject search"
+        />
 
         <div className="flex items-center gap-1 mt-2.5 bg-gray-100 rounded-lg p-0.5" role="group" aria-label="Filter subjects by type">
           {classFilters.map(({ value, label }) => (

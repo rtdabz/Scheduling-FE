@@ -22,6 +22,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface User {
   id: number;
@@ -56,6 +57,11 @@ interface ApiUser {
   created_at: string;
 }
 
+interface UsersPageData {
+  users: User[];
+  departments: Department[];
+}
+
 const DISPLAY_ROLE_MAP: Record<string, string> = {
   'dean': 'Dean',
   'program_head': 'Program Head',
@@ -81,9 +87,11 @@ const mapApiUser = (u: ApiUser): User => ({
 
 export default function Users() {
   const { toast } = useToast();
-  const [users, setUsers] = useState<User[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const usersCacheKey = 'page:users';
+  const cachedUsersData = getCachedData<UsersPageData>(usersCacheKey);
+  const [users, setUsers] = useState<User[]>(cachedUsersData?.users ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedUsersData?.departments ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(usersCacheKey));
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -131,15 +139,21 @@ export default function Users() {
     }
   }, [formData.role, formData.department_id, departments, isEditMode]);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(usersCacheKey));
     try {
-      const [usersRes, deptsRes] = await Promise.all([
-        api.get<ApiUser[]>('/user'),
-        api.get<ApiDepartment[]>('/departments'),
-      ]);
-      setUsers(usersRes.data.map(mapApiUser));
-      setDepartments(deptsRes.data);
+      const data = await loadCachedData<UsersPageData>(usersCacheKey, async () => {
+        const [usersRes, deptsRes] = await Promise.all([
+          api.get<ApiUser[]>('/user'),
+          api.get<ApiDepartment[]>('/departments'),
+        ]);
+        return {
+          users: usersRes.data.map(mapApiUser),
+          departments: deptsRes.data,
+        };
+      }, forceRefresh);
+      setUsers(data.users);
+      setDepartments(data.departments);
     } catch {
       toast.error('Error', 'Failed to load user data.');
     } finally {
@@ -181,7 +195,12 @@ export default function Users() {
           role: apiRole,
           department_id: parseInt(formData.department_id),
         });
-        setUsers(prev => prev.map(u => u.id === editingId ? mapApiUser(res.data.data) : u));
+        const updatedUser = mapApiUser(res.data.data);
+        setUsers(prev => {
+          const nextUsers = prev.map(u => u.id === editingId ? updatedUser : u);
+          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments });
+          return nextUsers;
+        });
         toast.success('Success', 'User account updated successfully');
       } else {
         const res = await api.post<{ data: ApiUser }>('/user', {
@@ -191,7 +210,12 @@ export default function Users() {
           role: apiRole,
           department_id: parseInt(formData.department_id),
         });
-        setUsers(prev => [mapApiUser(res.data.data), ...prev]);
+        const createdUser = mapApiUser(res.data.data);
+        setUsers(prev => {
+          const nextUsers = [createdUser, ...prev];
+          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments });
+          return nextUsers;
+        });
         toast.success('Success', 'User account created successfully');
       }
 
@@ -233,7 +257,11 @@ export default function Users() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/user/${idToDelete}`);
-        setUsers(prev => prev.filter(user => user.id !== idToDelete));
+        setUsers(prev => {
+          const nextUsers = prev.filter(user => user.id !== idToDelete);
+          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments });
+          return nextUsers;
+        });
         toast.success('Deleted', 'User removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete user');

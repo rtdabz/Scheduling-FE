@@ -23,6 +23,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -64,6 +65,12 @@ interface ApiSection {
   updated_at: string;
 }
 
+interface SectionsPageData {
+  sections: Section[];
+  departments: Department[];
+  terms: Term[];
+}
+
 const mapApiSection = (s: ApiSection): Section => ({
   id: s.id,
   section_name: s.section_name,
@@ -79,13 +86,15 @@ const mapApiSection = (s: ApiSection): Section => ({
 
 export default function Sections() {
   const { toast } = useToast();
-  const [sections, setSections] = useState<Section[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [terms, setTerms] = useState<Term[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
+  const sectionsCacheKey = `page:sections:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const cachedSectionsData = getCachedData<SectionsPageData>(sectionsCacheKey);
+  const [sections, setSections] = useState<Section[]>(cachedSectionsData?.sections ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedSectionsData?.departments ?? []);
+  const [terms, setTerms] = useState<Term[]>(cachedSectionsData?.terms ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
+
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
@@ -131,17 +140,24 @@ export default function Sections() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(sectionsCacheKey));
     try {
-      const [sectionsRes, deptsRes, termsRes] = await Promise.all([
-        api.get<ApiSection[]>('/sections'),
-        api.get<Department[]>('/departments'),
-        api.get<Term[]>('/terms')
-      ]);
-      setSections(sectionsRes.data.map(mapApiSection));
-      setDepartments(deptsRes.data);
-      setTerms(termsRes.data);
+      const data = await loadCachedData<SectionsPageData>(sectionsCacheKey, async () => {
+        const [sectionsRes, deptsRes, termsRes] = await Promise.all([
+          api.get<ApiSection[]>('/sections'),
+          api.get<Department[]>('/departments'),
+          api.get<Term[]>('/terms')
+        ]);
+        return {
+          sections: sectionsRes.data.map(mapApiSection),
+          departments: deptsRes.data,
+          terms: termsRes.data,
+        };
+      }, forceRefresh);
+      setSections(data.sections);
+      setDepartments(data.departments);
+      setTerms(data.terms);
     } catch {
       toast.error('Error', 'Failed to load sections, departments, and terms data.');
     } finally {
@@ -173,7 +189,11 @@ export default function Sections() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/sections/${idToDelete}`);
-        setSections(prev => prev.filter(s => s.id !== idToDelete));
+        setSections(prev => {
+          const nextSections = prev.filter(s => s.id !== idToDelete);
+          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+          return nextSections;
+        });
         toast.success('Deleted', 'Section removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete section');
@@ -230,11 +250,21 @@ export default function Sections() {
     try {
       if (isEditMode && editingId !== null) {
         const res = await api.put<ApiSection>(`/sections/${editingId}`, payload);
-        setSections(prev => prev.map(s => s.id === editingId ? mapApiSection(res.data) : s));
+        const updatedSection = mapApiSection(res.data);
+        setSections(prev => {
+          const nextSections = prev.map(s => s.id === editingId ? updatedSection : s);
+          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+          return nextSections;
+        });
         toast.success('Updated', 'Section updated successfully');
       } else {
         const res = await api.post<ApiSection>('/sections', payload);
-        setSections(prev => [mapApiSection(res.data), ...prev]);
+        const createdSection = mapApiSection(res.data);
+        setSections(prev => {
+          const nextSections = [createdSection, ...prev];
+          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+          return nextSections;
+        });
         toast.success('Created', 'Section created successfully');
       }
       setIsModalOpen(false);

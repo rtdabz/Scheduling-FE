@@ -20,6 +20,7 @@ import {
   Info
 } from 'lucide-react';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -77,6 +78,11 @@ interface ApiFacultyMember {
   updated_at: string;
 }
 
+interface FacultyPageData {
+  faculties: FacultyMember[];
+  departments: Department[];
+}
+
 const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   id: f.id,
   first_name: f.first_name,
@@ -128,9 +134,13 @@ const getWorkloadStatus = (f: FacultyMember) => {
 
 export default function Faculty() {
   const { toast } = useToast();
-  const [faculties, setFaculties] = useState<FacultyMember[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+  const facultyCacheKey = `page:faculty:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const cachedFacultyData = getCachedData<FacultyPageData>(facultyCacheKey);
+  const [faculties, setFaculties] = useState<FacultyMember[]>(cachedFacultyData?.faculties ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedFacultyData?.departments ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(facultyCacheKey));
 
   // Filters & Sorting states
   const [searchQuery, setSearchQuery] = useState('');
@@ -138,8 +148,6 @@ export default function Faculty() {
   const [employmentFilter, setEmploymentFilter] = useState('');
   const [sortBy, setSortBy] = useState('name');
 
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
@@ -181,15 +189,21 @@ export default function Faculty() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(facultyCacheKey));
     try {
-      const [facultiesRes, deptsRes] = await Promise.all([
-        api.get<ApiFacultyMember[]>('/faculties'),
-        api.get<Department[]>('/departments')
-      ]);
-      setFaculties(facultiesRes.data.map(mapApiFaculty));
-      setDepartments(deptsRes.data);
+      const data = await loadCachedData<FacultyPageData>(facultyCacheKey, async () => {
+        const [facultiesRes, deptsRes] = await Promise.all([
+          api.get<ApiFacultyMember[]>('/faculties'),
+          api.get<Department[]>('/departments')
+        ]);
+        return {
+          faculties: facultiesRes.data.map(mapApiFaculty),
+          departments: deptsRes.data,
+        };
+      }, forceRefresh);
+      setFaculties(data.faculties);
+      setDepartments(data.departments);
     } catch {
       toast.error('Error', 'Failed to load faculties and departments.');
     } finally {
@@ -228,7 +242,11 @@ export default function Faculty() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/faculties/${idToDelete}`);
-        setFaculties(prev => prev.filter(f => f.id !== idToDelete));
+        setFaculties(prev => {
+          const nextFaculties = prev.filter(f => f.id !== idToDelete);
+          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments });
+          return nextFaculties;
+        });
         toast.success('Deleted', 'Instructor removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete instructor');
@@ -300,11 +318,21 @@ export default function Faculty() {
     try {
       if (isEditMode && editingId !== null) {
         const res = await api.put<ApiFacultyMember>(`/faculties/${editingId}`, payload);
-        setFaculties(prev => prev.map(f => f.id === editingId ? mapApiFaculty(res.data) : f));
+        const updatedFaculty = mapApiFaculty(res.data);
+        setFaculties(prev => {
+          const nextFaculties = prev.map(f => f.id === editingId ? updatedFaculty : f);
+          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments });
+          return nextFaculties;
+        });
         toast.success('Updated', 'Instructor updated successfully');
       } else {
         const res = await api.post<ApiFacultyMember>('/faculties', payload);
-        setFaculties(prev => [mapApiFaculty(res.data), ...prev]);
+        const createdFaculty = mapApiFaculty(res.data);
+        setFaculties(prev => {
+          const nextFaculties = [createdFaculty, ...prev];
+          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments });
+          return nextFaculties;
+        });
         toast.success('Created', 'Instructor created successfully');
       }
       setIsModalOpen(false);

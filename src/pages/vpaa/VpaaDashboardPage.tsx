@@ -3,6 +3,7 @@ import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2,
@@ -104,62 +105,103 @@ interface ApprovalItem {
   submission_date: string;
 }
 
+interface StoredUser {
+  id?: number;
+  name?: string;
+  role?: string;
+}
+
+interface DashboardData {
+  schedules: Schedule[];
+  rooms: Room[];
+  sections: Section[];
+  faculties: Faculty[];
+  departments: Department[];
+  subjects: Subject[];
+  activeTerm: Term | null;
+}
+
 export default function VpaaDashboardPage() {
   useTour();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
 
   // User
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  const dashboardCacheKey = `dashboard:${user?.role ?? 'vpaa'}:${user?.id ?? 'current'}`;
+  const cachedDashboardData = getCachedData<DashboardData>(dashboardCacheKey);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(dashboardCacheKey));
 
   // States
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(null);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedDashboardData?.schedules ?? []);
+  const [rooms, setRooms] = useState<Room[]>(cachedDashboardData?.rooms ?? []);
+  const [sections, setSections] = useState<Section[]>(cachedDashboardData?.sections ?? []);
+  const [faculties, setFaculties] = useState<Faculty[]>(cachedDashboardData?.faculties ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedDashboardData?.departments ?? []);
+  const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        const [
-          schedulesRes,
-          roomsRes,
-          sectionsRes,
-          facultiesRes,
-          departmentsRes,
-          subjectsRes,
-          activeTermRes
-        ] = await Promise.all([
-          api.get<Schedule[]>('/schedules').catch(() => null),
-          api.get<Room[]>('/rooms').catch(() => null),
-          api.get<Section[]>('/sections').catch(() => null),
-          api.get<Faculty[]>('/faculties').catch(() => null),
-          api.get<Department[]>('/departments').catch(() => null),
-          api.get<Subject[]>('/subjects').catch(() => null),
-          api.get<Term>('/terms/active').catch(() => null)
-        ]);
+    let active = true;
 
-        setSchedules(schedulesRes?.data || []);
-        setRooms(roomsRes?.data || []);
-        setSections(sectionsRes?.data || []);
-        setFaculties(facultiesRes?.data || []);
-        setDepartments(departmentsRes?.data || []);
-        setSubjects(subjectsRes?.data || []);
-        setActiveTerm(activeTermRes?.data || null);
+    const loadData = async () => {
+      const shouldShowSkeleton = !hasCachedData(dashboardCacheKey);
+      try {
+        setIsLoading(shouldShowSkeleton);
+        const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
+          const [
+            schedulesRes,
+            roomsRes,
+            sectionsRes,
+            facultiesRes,
+            departmentsRes,
+            subjectsRes,
+            activeTermRes
+          ] = await Promise.all([
+            api.get<Schedule[]>('/schedules').catch(() => null),
+            api.get<Room[]>('/rooms').catch(() => null),
+            api.get<Section[]>('/sections').catch(() => null),
+            api.get<Faculty[]>('/faculties').catch(() => null),
+            api.get<Department[]>('/departments').catch(() => null),
+            api.get<Subject[]>('/subjects').catch(() => null),
+            api.get<Term>('/terms/active').catch(() => null)
+          ]);
+
+          return {
+            schedules: schedulesRes?.data || [],
+            rooms: roomsRes?.data || [],
+            sections: sectionsRes?.data || [],
+            faculties: facultiesRes?.data || [],
+            departments: departmentsRes?.data || [],
+            subjects: subjectsRes?.data || [],
+            activeTerm: activeTermRes?.data || null,
+          };
+        });
+
+        if (!active) return;
+        setSchedules(data.schedules);
+        setRooms(data.rooms);
+        setSections(data.sections);
+        setFaculties(data.faculties);
+        setDepartments(data.departments);
+        setSubjects(data.subjects);
+        setActiveTerm(data.activeTerm);
       } catch {
         toast.error('Error', 'Failed to load dashboard data.');
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
+
     loadData();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [dashboardCacheKey, toast]);
 
   // ── 1. Grouped Schedule Status Map ──
   const scheduleStatusMap = useMemo(() => {

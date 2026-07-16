@@ -5,12 +5,13 @@ import {
   getSubjectClassification,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room, Section, Faculty } from "../types";
+import type { ConflictInfo, DepartmentSectionProgress, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room, Section, Faculty } from "../types";
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
+import { getCachedData, loadCachedData, setCachedData } from "../../../../lib/dataCache";
 
 const dayMapToIndex: Record<string, number> = {
   "Monday": 0,
@@ -40,26 +41,175 @@ const slotToTime24h = (slotIndex: number): string => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
+const getSplitDayOneDuration = (totalSlots: number): number => Math.ceil(totalSlots / 2);
+
+const buildPreferredPattern = (day1Index: number, day2Index: number): string => `days:${day1Index}-${day2Index}`;
+
+const getPreferredPatternDayIndexes = (preferredPattern?: string | null): [number, number] | null => {
+  if (!preferredPattern) return null;
+  if (preferredPattern === "MW") return [0, 2];
+  if (preferredPattern === "TTh") return [1, 3];
+
+  const customMatch = preferredPattern.match(/^days:([0-5])-([0-5])$/);
+  if (!customMatch) return null;
+
+  return [Number(customMatch[1]), Number(customMatch[2])];
+};
+
+const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DAYS.length;
+
+const departmentReadyStatuses: ScheduleItem["status"][] = [
+  "completed",
+  "submitted",
+  "approved_by_dean",
+  "approved",
+  "faculty_assignment",
+  "finalized"
+];
+
+const departmentSubmittedStatuses: ScheduleItem["status"][] = [
+  "submitted",
+  "approved_by_dean",
+  "approved",
+  "faculty_assignment",
+  "finalized"
+];
+
+interface StoredUser {
+  id?: number;
+  department_id?: number;
+  role?: string;
+}
+
+interface SchedulerCacheData {
+  rooms: Room[];
+  sections: Section[];
+  subjects: Subject[];
+  faculties: Faculty[];
+  activeTerm: any;
+  departments: any[];
+  users: any[];
+  schedules: ScheduleItem[];
+}
+
+interface ApiScheduleRecord {
+  id: number | string;
+  subject_id: number | string;
+  section_id: number | string;
+  room_id: number | string;
+  faculty_id?: number | string | null;
+  day: string;
+  start_time: string;
+  end_time: string;
+  mode?: "on-site" | "online" | "field";
+  status: ScheduleItem["status"];
+  is_hybrid?: boolean | number;
+  preferred_pattern?: string | null;
+  subject?: {
+    subject_code?: string;
+    subject_name?: string;
+    subject_category?: ScheduleItem["subjectType"];
+  } | null;
+  section?: {
+    section_name?: string;
+  } | null;
+  faculty?: {
+    first_name?: string;
+    last_name?: string;
+  } | null;
+  room?: {
+    room_code?: string;
+    room_name?: string | null;
+  } | null;
+}
+
+const hasUsableSchedulerCache = (data: SchedulerCacheData | undefined): data is SchedulerCacheData => {
+  return Boolean(data?.activeTerm && data.sections.length > 0);
+};
+
+const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
+  const dayIndex = dayMapToIndex[item.day] ?? 0;
+  const startSlot = timeStrToSlot(item.start_time);
+  const endSlot = timeStrToSlot(item.end_time);
+  const durationSlots = endSlot - startSlot;
+
+  let roomName = "";
+  if (item.room) {
+    if (item.room.room_code === "ONLINE") roomName = "Online";
+    else if (item.room.room_code === "FIELD") roomName = "Field";
+    else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : "");
+  }
+
+  let roomIdStr = item.room_id.toString();
+  if (item.room?.room_code === "ONLINE") roomIdStr = "online";
+  else if (item.room?.room_code === "FIELD") roomIdStr = "field";
+
+  return {
+    id: item.id.toString(),
+    subjectId: item.subject_id.toString(),
+    subjectCode: item.subject?.subject_code ?? "",
+    subjectName: item.subject?.subject_name ?? "",
+    subjectType: item.subject?.subject_category ?? "major",
+    sectionName: item.section?.section_name ?? "",
+    roomName,
+    day: DAYS[dayIndex] || "Mon",
+    startTime: slotToTimeStr(startSlot),
+    endTime: slotToTimeStr(endSlot),
+    mode: item.mode ?? "on-site",
+    facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
+    facultyId: item.faculty_id ? item.faculty_id.toString() : null,
+    status: item.status,
+    dayIndex,
+    startSlot,
+    durationSlots,
+    sectionId: item.section_id.toString(),
+    roomId: roomIdStr,
+    isHybrid: !!item.is_hybrid,
+    preferredPattern: item.preferred_pattern ?? null
+  };
+};
+
 export const useScheduler = () => {
   const { toast } = useToast();
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [activeTerm, setActiveTerm] = useState<any>(null);
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+  const schedulerCacheKey = `scheduler:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
+  const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
+  const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
+  const [sections, setSections] = useState<Section[]>(canUseInitialCache ? cachedSchedulerData.sections : []);
+  const [subjects, setSubjects] = useState<Subject[]>(canUseInitialCache ? cachedSchedulerData.subjects : []);
+  const [faculties, setFaculties] = useState<Faculty[]>(canUseInitialCache ? cachedSchedulerData.faculties : []);
+  const [activeTerm, setActiveTerm] = useState<any>(canUseInitialCache ? cachedSchedulerData.activeTerm : null);
+  const [departments, setDepartments] = useState<any[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
+  const [users, setUsers] = useState<any[]>(canUseInitialCache ? cachedSchedulerData.users : []);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
+  const [isLoading, setIsLoading] = useState(!canUseInitialCache);
 
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
     const signal = controller.signal;
+    const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
+    const canUseCachedData = hasUsableSchedulerCache(cachedData);
 
-    const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-    const user = userJson ? JSON.parse(userJson) : null;
-    const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+    if (canUseCachedData) {
+      setRooms(cachedData.rooms);
+      setSubjects(cachedData.subjects);
+      setFaculties(cachedData.faculties);
+      setActiveTerm(cachedData.activeTerm);
+      setDepartments(cachedData.departments);
+      setUsers(cachedData.users);
+      setSections(cachedData.sections);
+      setSchedules(cachedData.schedules);
+      setIsLoading(false);
+      return () => {
+        active = false;
+        controller.abort();
+      };
+    }
 
     const fetchRooms = api.get<any[]>('/rooms', { signal }).then(res => {
       let apiRooms = res.data;
@@ -119,74 +269,89 @@ export const useScheduler = () => {
     const fetchDepartments = api.get<any[]>('/departments', { signal }).then(res => res.data);
     const fetchUsers = api.get<any[]>('/user', { signal }).then(res => res.data);
 
-    Promise.all([fetchRooms, fetchSubjects, fetchFaculties, fetchTerm, fetchSections, fetchSchedules, fetchDepartments, fetchUsers])
-      .then(([mappedRooms, mappedSubjects, mappedFaculties, term, rawSections, rawSchedules, rawDepartments, rawUsers]) => {
+    setIsLoading(true);
+
+    loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
+      const [mappedRooms, mappedSubjects, mappedFaculties, term, rawSections, rawSchedules, rawDepartments, rawUsers] = await Promise.all([fetchRooms, fetchSubjects, fetchFaculties, fetchTerm, fetchSections, fetchSchedules, fetchDepartments, fetchUsers]);
+
+      // Filter sections by term_id immediately once loaded
+      const filteredSections = rawSections
+        .filter((s: any) => Number(s.term_id) === Number(term.id))
+        .map((s: any) => ({
+          id: s.id.toString(),
+          name: s.section_name,
+          yearLevel: Number(s.year_level),
+          departmentId: s.department_id,
+          numberOfStudents: Number(s.number_of_students)
+        }));
+
+      // Filter and map schedules by term_id immediately once loaded
+      const filteredSchedules = rawSchedules
+        .filter((item: any) => Number(item.term_id) === Number(term.id))
+        .map((item: any) => {
+          const dayIndex = dayMapToIndex[item.day] ?? 0;
+          const startSlot = timeStrToSlot(item.start_time);
+          const endSlot = timeStrToSlot(item.end_time);
+          const durationSlots = endSlot - startSlot;
+
+          let roomName = "";
+          if (item.room) {
+            if (item.room.room_code === "ONLINE") roomName = "Online";
+            else if (item.room.room_code === "FIELD") roomName = "Field";
+            else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+          }
+
+          let roomIdStr = item.room_id.toString();
+          if (item.room?.room_code === "ONLINE") roomIdStr = "online";
+          else if (item.room?.room_code === "FIELD") roomIdStr = "field";
+
+          return {
+            id: item.id.toString(),
+            subjectId: item.subject_id.toString(),
+            subjectCode: item.subject?.subject_code ?? "",
+            subjectName: item.subject?.subject_name ?? "",
+            subjectType: item.subject?.subject_category as any,
+            sectionName: item.section?.section_name ?? "",
+            roomName,
+            day: DAYS[dayIndex] || "Mon",
+            startTime: slotToTimeStr(startSlot),
+            endTime: slotToTimeStr(endSlot),
+            mode: item.mode ?? "on-site",
+            facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
+            facultyId: item.faculty_id ? item.faculty_id.toString() : null,
+            status: item.status,
+            dayIndex,
+            startSlot,
+            durationSlots,
+            sectionId: item.section_id.toString(),
+            roomId: roomIdStr,
+            isHybrid: !!item.is_hybrid,
+            preferredPattern: item.preferred_pattern
+          };
+        });
+
+      return {
+        rooms: mappedRooms,
+        subjects: mappedSubjects,
+        faculties: mappedFaculties,
+        activeTerm: term,
+        departments: rawDepartments,
+        users: rawUsers,
+        sections: filteredSections,
+        schedules: filteredSchedules,
+      };
+    }, !canUseCachedData)
+      .then((data) => {
         if (!active) return;
 
-        setRooms(mappedRooms);
-        setSubjects(mappedSubjects);
-        setFaculties(mappedFaculties);
-        setActiveTerm(term);
-        setDepartments(rawDepartments);
-        setUsers(rawUsers);
-
-        // Filter sections by term_id immediately once loaded
-        const filteredSections = rawSections
-          .filter((s: any) => Number(s.term_id) === Number(term.id))
-          .map((s: any) => ({
-            id: s.id.toString(),
-            name: s.section_name,
-            yearLevel: Number(s.year_level),
-            departmentId: s.department_id,
-            numberOfStudents: Number(s.number_of_students)
-          }));
-        setSections(filteredSections);
-
-        // Filter and map schedules by term_id immediately once loaded
-        const filteredSchedules = rawSchedules
-          .filter((item: any) => Number(item.term_id) === Number(term.id))
-          .map((item: any) => {
-            const dayIndex = dayMapToIndex[item.day] ?? 0;
-            const startSlot = timeStrToSlot(item.start_time);
-            const endSlot = timeStrToSlot(item.end_time);
-            const durationSlots = endSlot - startSlot;
-
-            let roomName = "";
-            if (item.room) {
-              if (item.room.room_code === "ONLINE") roomName = "Online";
-              else if (item.room.room_code === "FIELD") roomName = "Field";
-              else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
-            }
-
-            let roomIdStr = item.room_id.toString();
-            if (item.room?.room_code === "ONLINE") roomIdStr = "online";
-            else if (item.room?.room_code === "FIELD") roomIdStr = "field";
-
-            return {
-              id: item.id.toString(),
-              subjectId: item.subject_id.toString(),
-              subjectCode: item.subject?.subject_code ?? "",
-              subjectName: item.subject?.subject_name ?? "",
-              subjectType: item.subject?.subject_category as any,
-              sectionName: item.section?.section_name ?? "",
-              roomName,
-              day: DAYS[dayIndex] || "Mon",
-              startTime: slotToTimeStr(startSlot),
-              endTime: slotToTimeStr(endSlot),
-              mode: item.mode ?? "on-site",
-              facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
-              facultyId: item.faculty_id ? item.faculty_id.toString() : null,
-              status: item.status,
-              dayIndex,
-              startSlot,
-              durationSlots,
-              sectionId: item.section_id.toString(),
-              roomId: roomIdStr,
-              isHybrid: !!item.is_hybrid,
-              preferredPattern: item.preferred_pattern
-            };
-          });
-        setSchedules(filteredSchedules);
+        setRooms(data.rooms);
+        setSubjects(data.subjects);
+        setFaculties(data.faculties);
+        setActiveTerm(data.activeTerm);
+        setDepartments(data.departments);
+        setUsers(data.users);
+        setSections(data.sections);
+        setSchedules(data.schedules);
       })
       .catch(() => {
         // Safe no-op on abort or fetch error to preserve previous/alternate state instances
@@ -199,7 +364,7 @@ export const useScheduler = () => {
       active = false;
       controller.abort();
     };
-  }, []);
+  }, [isVpaa, schedulerCacheKey, user?.department_id]);
 
 
 
@@ -216,7 +381,6 @@ export const useScheduler = () => {
   const [placementSubjectId, setPlacementSubjectId] = useState<string | null>(null);
   const [movingScheduleId, setMovingScheduleId] = useState<string | null>(null);
 
-  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
 
 
@@ -269,11 +433,18 @@ export const useScheduler = () => {
         };
       });
       setSchedules(mapped);
+      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
+      if (cachedData) {
+        setCachedData<SchedulerCacheData>(schedulerCacheKey, {
+          ...cachedData,
+          schedules: mapped,
+        });
+      }
     } catch {
       // silently fail
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTerm]);
+  }, [activeTerm, schedulerCacheKey]);
 
   const isInitialLoadedRef = useRef(false);
 
@@ -291,7 +462,9 @@ export const useScheduler = () => {
   const [modalRoomId, setModalRoomId] = useState<string>("");
   const [modalClassMode, setModalClassMode] = useState<"on-site" | "online" | "field">("on-site");
   const [modalIsHybrid, setModalIsHybrid] = useState<boolean>(false);
-  const [modalPreferredPattern, setModalPreferredPattern] = useState<"MW" | "TTh" | null>(null);
+  const [modalPreferredPattern, setModalPreferredPattern] = useState<string | null>(null);
+  const [modalDay1Index, setModalDay1Index] = useState<number>(0);
+  const [modalDay2Index, setModalDay2Index] = useState<number>(2);
   const [modalDay1StartSlot, setModalDay1StartSlot] = useState<number>(0);
   const [modalDay1Duration, setModalDay1Duration] = useState<number>(0);
   const [modalDay2StartSlot, setModalDay2StartSlot] = useState<number>(0);
@@ -300,11 +473,13 @@ export const useScheduler = () => {
   const [modalConflict, setModalConflict] = useState<string | null>(null);
 
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
+  const [facultyActionSlotId, setFacultyActionSlotId] = useState<string | null>(null);
   const [popupValidationError, setPopupValidationError] = useState<string>("");
   const [popupConflictWarning, setPopupConflictWarning] = useState<string>("");
 
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isSubmitApprovalModalOpen, setIsSubmitApprovalModalOpen] = useState(false);
   const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isTeachingLoadOpen, setIsTeachingLoadOpen] = useState(false);
@@ -332,7 +507,7 @@ export const useScheduler = () => {
 
   const isPhase2Active = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isEditable = currentStatus === "draft";
-  const isPhase1Completed = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
+  const isPhase1Completed = ["completed", "approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
 
   const scheduledSubjectIds = useMemo(
@@ -383,6 +558,58 @@ export const useScheduler = () => {
     [sectionSchedules]
   );
   const unassignedSlotsCount = totalSlotsCount - assignedSlotsCount;
+  const selectedDepartmentId = selectedSection?.departmentId ?? user?.department_id ?? null;
+
+  const departmentSectionProgress = useMemo<DepartmentSectionProgress[]>(() => {
+    if (!selectedDepartmentId) return [];
+
+    const schedulesBySection = new Map<string, ScheduleItem[]>();
+    schedules.forEach((schedule) => {
+      const sectionItems = schedulesBySection.get(schedule.sectionId) ?? [];
+      sectionItems.push(schedule);
+      schedulesBySection.set(schedule.sectionId, sectionItems);
+    });
+
+    const subjectCountByYear = new Map<number, number>();
+    semesterSubjects.forEach((subject) => {
+      if (!subject.yearLevel) return;
+      subjectCountByYear.set(subject.yearLevel, (subjectCountByYear.get(subject.yearLevel) ?? 0) + 1);
+    });
+
+    return sections
+      .filter((section) => Number(section.departmentId) === Number(selectedDepartmentId))
+      .sort((a, b) => a.yearLevel - b.yearLevel || a.name.localeCompare(b.name))
+      .map((section) => {
+        const sectionScheduleItems = schedulesBySection.get(section.id) ?? [];
+        const requiredSubjects = subjectCountByYear.get(section.yearLevel) ?? 0;
+        const plottedSubjects = new Set(sectionScheduleItems.map((schedule) => schedule.subjectId)).size;
+        const status = sectionScheduleItems.length > 0 ? sectionScheduleItems[0].status : "draft";
+        const isFullyPlotted = requiredSubjects === 0 || plottedSubjects >= requiredSubjects;
+
+        return {
+          sectionId: section.id,
+          sectionName: section.name,
+          yearLevel: section.yearLevel,
+          requiredSubjects,
+          plottedSubjects,
+          status,
+          isDone: isFullyPlotted && departmentReadyStatuses.includes(status),
+          isSelected: section.id === selectedSectionId
+        };
+      });
+  }, [schedules, sections, selectedDepartmentId, selectedSectionId, semesterSubjects]);
+
+  const departmentTotalSections = departmentSectionProgress.length;
+  const departmentDoneSections = departmentSectionProgress.filter((section) => section.isDone).length;
+  const departmentRemainingSections = Math.max(0, departmentTotalSections - departmentDoneSections);
+  const departmentHasSubmittedSchedule = departmentSectionProgress.some((section) =>
+    departmentSubmittedStatuses.includes(section.status)
+  );
+  const departmentReadyToSubmit =
+    departmentTotalSections > 0 &&
+    departmentRemainingSections === 0 &&
+    !departmentHasSubmittedSchedule &&
+    departmentSectionProgress.every((section) => section.status === "completed");
 
   const dropSubject = dropContext
     ? subjects.find((s) => s.id === dropContext.subjectId) ?? null
@@ -438,13 +665,14 @@ export const useScheduler = () => {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
       const isFieldSubject = subject?.category === "pathfit" || subject?.category === "nstp";
       const totalSlots = subject ? subject.units * 2 : 0;
-      const defaultDuration = Math.floor(totalSlots / 2);
 
       if (isFieldSubject) {
         setModalClassMode("field");
         setModalRoomId("");
         setModalIsHybrid(false);
         setModalPreferredPattern(null);
+        setModalDay1Index(dropContext.dayIndex);
+        setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
         setModalDay1StartSlot(dropContext.startSlot);
         setModalDay1Duration(totalSlots);
         setModalDay2StartSlot(dropContext.startSlot);
@@ -456,6 +684,7 @@ export const useScheduler = () => {
           setModalClassMode(targetSched.mode ?? "on-site");
           setModalIsHybrid(targetSched.isHybrid ?? false);
           setModalPreferredPattern(targetSched.preferredPattern ?? null);
+          const patternDays = getPreferredPatternDayIndexes(targetSched.preferredPattern);
 
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
@@ -463,16 +692,23 @@ export const useScheduler = () => {
           const sorted = [...existing].sort((a, b) => a.dayIndex - b.dayIndex);
 
           if (sorted.length >= 2) {
+            setModalDay1Index(patternDays?.[0] ?? sorted[0].dayIndex);
+            setModalDay2Index(patternDays?.[1] ?? sorted[1].dayIndex);
+            setModalPreferredPattern(targetSched.preferredPattern ?? buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex));
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[1].startSlot);
             setIsDay2ModifiedByUser(true);
           } else if (sorted.length === 1) {
+            setModalDay1Index(patternDays?.[0] ?? sorted[0].dayIndex);
+            setModalDay2Index(patternDays?.[1] ?? getNextMeetingDayIndex(sorted[0].dayIndex));
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[0].startSlot);
             setIsDay2ModifiedByUser(false);
           } else {
+            setModalDay1Index(dropContext.dayIndex);
+            setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
             setModalDay1StartSlot(dropContext.startSlot);
             setModalDay1Duration(totalSlots);
             setModalDay2StartSlot(dropContext.startSlot);
@@ -493,7 +729,7 @@ export const useScheduler = () => {
               r.id,
               dropContext.dayIndex,
               dropContext.startSlot,
-              defaultDuration,
+              totalSlots,
               undefined,
               null
             );
@@ -506,8 +742,10 @@ export const useScheduler = () => {
         setModalClassMode("on-site");
         setModalIsHybrid(false);
         setModalPreferredPattern(null);
+        setModalDay1Index(dropContext.dayIndex);
+        setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
         setModalDay1StartSlot(dropContext.startSlot);
-        setModalDay1Duration(defaultDuration);
+        setModalDay1Duration(totalSlots);
         setModalDay2StartSlot(dropContext.startSlot);
         setIsDay2ModifiedByUser(false);
       }
@@ -516,6 +754,8 @@ export const useScheduler = () => {
       setModalClassMode("on-site");
       setModalIsHybrid(false);
       setModalPreferredPattern(null);
+      setModalDay1Index(0);
+      setModalDay2Index(2);
       setModalDay1StartSlot(0);
       setModalDay1Duration(0);
       setModalDay2StartSlot(0);
@@ -526,22 +766,33 @@ export const useScheduler = () => {
   }, [dropContext, schedules, selectedSectionId]);
 
   useEffect(() => {
+    if (!dropContext || !modalPreferredPattern) return;
+
+    const subject = subjects.find((s) => s.id === dropContext.subjectId);
+    const totalSlots = subject ? subject.units * 2 : 0;
+    const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
+
+    if (patternDays) {
+      setModalDay1Index(patternDays[0]);
+      setModalDay2Index(patternDays[1]);
+    }
+    setModalDay1Duration(getSplitDayOneDuration(totalSlots));
+    setIsDay2ModifiedByUser(false);
+    setModalDay2StartSlot(modalDay1StartSlot);
+  }, [dropContext, modalPreferredPattern, modalDay1StartSlot, subjects]);
+
+  useEffect(() => {
     if (!isDay2ModifiedByUser) {
       setModalDay2StartSlot(modalDay1StartSlot);
     }
   }, [modalDay1StartSlot, isDay2ModifiedByUser]);
 
   useEffect(() => {
-    if (modalPreferredPattern) {
-      setIsDay2ModifiedByUser(false);
-      setModalDay2StartSlot(modalDay1StartSlot);
-    }
-  }, [modalPreferredPattern, modalDay1StartSlot]);
-
-  useEffect(() => {
     if (modalClassMode === "online") {
+      setModalIsHybrid(false);
       setModalRoomId("online");
     } else if (modalClassMode === "field") {
+      setModalIsHybrid(false);
       setModalRoomId("field");
     } else if (modalClassMode === "on-site" && (modalRoomId === "online" || modalRoomId === "field")) {
       // Re-assign first available room if none is set
@@ -567,33 +818,21 @@ export const useScheduler = () => {
         const totalSlots = subject.units * 2;
         const d1 = modalDay1Duration;
         const d2 = totalSlots - d1;
+        const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
 
         let conflict: { message: string } | null = null;
 
-        if (modalPreferredPattern === "MW") {
+        if (patternDays) {
           if (d1 > 0) {
             conflict = checkConflict(
               dropContext.subjectId, selectedSectionId, null, modalRoomId,
-              0, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
+              patternDays[0], modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
             );
           }
           if (!conflict && d2 > 0) {
             conflict = checkConflict(
               dropContext.subjectId, selectedSectionId, null, modalRoomId,
-              2, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
-            );
-          }
-        } else if (modalPreferredPattern === "TTh") {
-          if (d1 > 0) {
-            conflict = checkConflict(
-              dropContext.subjectId, selectedSectionId, null, modalRoomId,
-              1, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
-            );
-          }
-          if (!conflict && d2 > 0) {
-            conflict = checkConflict(
-              dropContext.subjectId, selectedSectionId, null, modalRoomId,
-              3, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
+              patternDays[1], modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
             );
           }
         } else {
@@ -612,6 +851,8 @@ export const useScheduler = () => {
     modalRoomId,
     dropContext,
     modalPreferredPattern,
+    modalDay1Index,
+    modalDay2Index,
     modalDay1StartSlot,
     modalDay1Duration,
     modalDay2StartSlot
@@ -625,11 +866,17 @@ export const useScheduler = () => {
     const endTime24h = slotToTime24h(startSlot + sched.durationSlots);
 
     try {
-      await api.put(`/schedules/${scheduleId}`, {
+      const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, {
         day: dayName,
         start_time: startTime24h,
         end_time: endTime24h
       });
+      const updatedSchedule = mapApiScheduleToItem(response.data);
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
+        )
+      );
       toast.success("Schedule Relocated", "Class schedule successfully updated.");
       await refreshSchedules();
     } catch (err) {
@@ -669,6 +916,7 @@ export const useScheduler = () => {
     const totalSlots = subject.units * 2;
     const d1 = modalDay1Duration;
     const d2 = totalSlots - d1;
+    const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
 
     // Exclude current slots from conflict checking when rescheduling
     const excludeIds = dropContext.isRescheduling
@@ -680,14 +928,10 @@ export const useScheduler = () => {
 
     // Check if the current user-specified slots have no conflicts
     let currentHasConflict = false;
-    if (modalPreferredPattern === "MW") {
-      const conflictMon = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 0, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
-      const conflictWed = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 2, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
-      if (conflictMon || conflictWed) currentHasConflict = true;
-    } else if (modalPreferredPattern === "TTh") {
-      const conflictTue = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 1, modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
-      const conflictThu = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 3, modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
-      if (conflictTue || conflictThu) currentHasConflict = true;
+    if (patternDays) {
+      const conflictDay1 = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
+      const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[1], modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
+      if (conflictDay1 || conflictDay2) currentHasConflict = true;
     } else {
       const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, dropContext.dayIndex, dropContext.startSlot, totalSlots, excludeIds, modalPreferredPattern);
       if (conflict) currentHasConflict = true;
@@ -706,14 +950,10 @@ export const useScheduler = () => {
         if (s + maxDuration > maxSlots) continue;
 
         let hasConflict = false;
-        if (modalPreferredPattern === "MW") {
-          const conflictMon = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 0, s, d1, excludeIds, modalPreferredPattern) : null;
-          const conflictWed = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 2, s, d2, excludeIds, modalPreferredPattern) : null;
-          if (conflictMon || conflictWed) hasConflict = true;
-        } else if (modalPreferredPattern === "TTh") {
-          const conflictTue = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 1, s, d1, excludeIds, modalPreferredPattern) : null;
-          const conflictThu = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, 3, s, d2, excludeIds, modalPreferredPattern) : null;
-          if (conflictTue || conflictThu) hasConflict = true;
+        if (patternDays) {
+          const conflictDay1 = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], s, d1, excludeIds, modalPreferredPattern) : null;
+          const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[1], s, d2, excludeIds, modalPreferredPattern) : null;
+          if (conflictDay1 || conflictDay2) hasConflict = true;
         } else {
           const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, dropContext.dayIndex, s, totalSlots, excludeIds, modalPreferredPattern);
           if (conflict) hasConflict = true;
@@ -745,18 +985,21 @@ export const useScheduler = () => {
     }
 
     const targetDays = [];
-    if (modalPreferredPattern === "MW") {
-      if (d1 > 0) targetDays.push({ day: "Monday", startSlot: resolvedDay1StartSlot, duration: d1 });
-      if (d2 > 0) targetDays.push({ day: "Wednesday", startSlot: resolvedDay2StartSlot, duration: d2 });
-    } else if (modalPreferredPattern === "TTh") {
-      if (d1 > 0) targetDays.push({ day: "Tuesday", startSlot: resolvedDay1StartSlot, duration: d1 });
-      if (d2 > 0) targetDays.push({ day: "Thursday", startSlot: resolvedDay2StartSlot, duration: d2 });
+    if (patternDays) {
+      if (d1 > 0) targetDays.push({ day: fullDayNames[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
+      if (d2 > 0) targetDays.push({ day: fullDayNames[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
     } else {
       targetDays.push({ day: fullDayNames[dropContext.dayIndex], startSlot: resolvedDay1StartSlot, duration: totalSlots });
     }
 
     setIsModalLoading(true);
     try {
+      const savedScheduleItems: ScheduleItem[] = [];
+      const deletedScheduleIds = new Set<string>();
+      const rememberSavedSchedule = (item: ApiScheduleRecord) => {
+        savedScheduleItems.push(mapApiScheduleToItem(item));
+      };
+
       if (dropContext.isRescheduling) {
         const existingRecords = schedules.filter(
           s => s.subjectId === subject.id && s.sectionId === selectedSectionId
@@ -764,7 +1007,7 @@ export const useScheduler = () => {
 
         if (targetDays.length === 2) {
           if (existingRecords.length === 2) {
-            await api.put(`/schedules/${existingRecords[0].id}`, {
+            const dayOneResponse = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
               room_id: Number(resolvedRoomId),
               day: targetDays[0].day,
               start_time: slotToTime24h(targetDays[0].startSlot),
@@ -773,7 +1016,8 @@ export const useScheduler = () => {
               is_hybrid: modalIsHybrid,
               preferred_pattern: modalPreferredPattern
             });
-            await api.put(`/schedules/${existingRecords[1].id}`, {
+            rememberSavedSchedule(dayOneResponse.data);
+            const dayTwoResponse = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[1].id}`, {
               room_id: Number(resolvedRoomId),
               day: targetDays[1].day,
               start_time: slotToTime24h(targetDays[1].startSlot),
@@ -782,8 +1026,9 @@ export const useScheduler = () => {
               is_hybrid: modalIsHybrid,
               preferred_pattern: modalPreferredPattern
             });
+            rememberSavedSchedule(dayTwoResponse.data);
           } else if (existingRecords.length === 1) {
-            await api.put(`/schedules/${existingRecords[0].id}`, {
+            const dayOneResponse = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
               room_id: Number(resolvedRoomId),
               day: targetDays[0].day,
               start_time: slotToTime24h(targetDays[0].startSlot),
@@ -792,7 +1037,8 @@ export const useScheduler = () => {
               is_hybrid: modalIsHybrid,
               preferred_pattern: modalPreferredPattern
             });
-            await api.post('/schedules', {
+            rememberSavedSchedule(dayOneResponse.data);
+            const dayTwoResponse = await api.post<ApiScheduleRecord>('/schedules', {
               term_id: activeTerm.id,
               section_id: Number(selectedSectionId),
               subject_id: Number(subject.id),
@@ -807,9 +1053,10 @@ export const useScheduler = () => {
               preferred_pattern: modalPreferredPattern,
               status: "draft"
             });
+            rememberSavedSchedule(dayTwoResponse.data);
           } else {
             for (const t of targetDays) {
-              await api.post('/schedules', {
+              const response = await api.post<ApiScheduleRecord>('/schedules', {
                 term_id: activeTerm.id,
                 section_id: Number(selectedSectionId),
                 subject_id: Number(subject.id),
@@ -824,12 +1071,13 @@ export const useScheduler = () => {
                 preferred_pattern: modalPreferredPattern,
                 status: "draft"
               });
+              rememberSavedSchedule(response.data);
             }
           }
         } else {
           // targetDays.length === 1
           if (existingRecords.length === 2) {
-            await api.put(`/schedules/${existingRecords[0].id}`, {
+            const response = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
               room_id: Number(resolvedRoomId),
               day: targetDays[0].day,
               start_time: slotToTime24h(targetDays[0].startSlot),
@@ -838,9 +1086,11 @@ export const useScheduler = () => {
               is_hybrid: modalIsHybrid,
               preferred_pattern: modalPreferredPattern
             });
+            rememberSavedSchedule(response.data);
             await api.delete(`/schedules/${existingRecords[1].id}`);
+            deletedScheduleIds.add(existingRecords[1].id);
           } else if (existingRecords.length === 1) {
-            await api.put(`/schedules/${existingRecords[0].id}`, {
+            const response = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
               room_id: Number(resolvedRoomId),
               day: targetDays[0].day,
               start_time: slotToTime24h(targetDays[0].startSlot),
@@ -849,6 +1099,7 @@ export const useScheduler = () => {
               is_hybrid: modalIsHybrid,
               preferred_pattern: modalPreferredPattern
             });
+            rememberSavedSchedule(response.data);
           }
         }
 
@@ -859,7 +1110,7 @@ export const useScheduler = () => {
         }
       } else {
         for (const t of targetDays) {
-          await api.post('/schedules', {
+          const response = await api.post<ApiScheduleRecord>('/schedules', {
             term_id: activeTerm.id,
             section_id: Number(selectedSectionId),
             subject_id: Number(subject.id),
@@ -874,6 +1125,7 @@ export const useScheduler = () => {
             preferred_pattern: modalPreferredPattern,
             status: "draft"
           });
+          rememberSavedSchedule(response.data);
         }
 
         if (resolvedDay1StartSlot !== modalDay1StartSlot) {
@@ -882,6 +1134,18 @@ export const useScheduler = () => {
           toast.success("Schedule Created", "Class schedule successfully plotted.");
         }
       }
+      if (savedScheduleItems.length > 0 || deletedScheduleIds.size > 0) {
+        setSchedules((previousSchedules) => {
+          const savedScheduleIds = new Set(savedScheduleItems.map((item) => item.id));
+          return [
+            ...previousSchedules.filter((item) => !savedScheduleIds.has(item.id) && !deletedScheduleIds.has(item.id)),
+            ...savedScheduleItems
+          ];
+        });
+      }
+      setIsModalLoading(false);
+      setDropContext(null);
+      setConflictInfo(null);
       await refreshSchedules();
     } catch (err: any) {
       console.error(err);
@@ -967,17 +1231,81 @@ export const useScheduler = () => {
 
   const handleSubmitForApproval = async () => {
     if (!selectedSectionId) return;
+    setIsSubmitApprovalModalOpen(true);
+  };
+
+  const confirmSubmitForApproval = async () => {
+    if (!selectedSectionId) return;
+    const section = sections.find((s) => s.id === selectedSectionId);
+    if (!section?.departmentId) {
+      toast.error("Unable to Submit", "The selected section is not linked to a department.");
+      setIsSubmitApprovalModalOpen(false);
+      return;
+    }
+
+    try {
+      await api.post(`/departments/${section.departmentId}/submit-schedules`);
+      toast.success("Submitted for Approval", "Department schedule submitted successfully.");
+      await refreshSchedules();
+    } catch (err: unknown) {
+      const apiError = err as { response?: { data?: { message?: string } } };
+      toast.error("Failed to submit", apiError.response?.data?.message || "An error occurred.");
+    } finally {
+      setIsSubmitApprovalModalOpen(false);
+    }
+  };
+
+  const cancelSubmitForApproval = () => setIsSubmitApprovalModalOpen(false);
+
+  const handleMarkSectionDone = async () => {
+    if (!selectedSectionId) return;
+    if (sectionSchedules.length === 0) {
+      toast.error("Nothing to Mark Done", "Plot at least one subject before marking this section done.");
+      return;
+    }
+
     try {
       await Promise.all(
         sectionSchedules.map((s) =>
-          api.put(`/schedules/${s.id}`, { status: "submitted" })
+          api.put(`/schedules/${s.id}`, { status: "completed" })
         )
       );
-      toast.success("Submitted for Approval", "Schedule submitted successfully.");
+      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          sectionScheduleIds.has(schedule.id)
+            ? { ...schedule, status: "completed" }
+            : schedule
+        )
+      );
+      toast.success("Section Done", "This section is now locked for plotting.");
       await refreshSchedules();
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to submit", "An error occurred.");
+    } catch {
+      toast.error("Failed to mark section done", "An error occurred.");
+    }
+  };
+
+  const handleEditSection = async () => {
+    if (!selectedSectionId) return;
+
+    try {
+      await Promise.all(
+        sectionSchedules.map((s) =>
+          api.put(`/schedules/${s.id}`, { status: "draft" })
+        )
+      );
+      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          sectionScheduleIds.has(schedule.id)
+            ? { ...schedule, status: "draft" }
+            : schedule
+        )
+      );
+      toast.success("Section Editable", "You can plot and edit this section again.");
+      await refreshSchedules();
+    } catch {
+      toast.error("Failed to unlock section", "An error occurred.");
     }
   };
 
@@ -1049,15 +1377,25 @@ export const useScheduler = () => {
       setPopupValidationError("Please select a faculty member first.");
       return;
     }
+    if (facultyActionSlotId === scheduleId) return;
     const fac = faculties.find((f) => f.id === facultyId);
     if (!fac) return;
+    setFacultyActionSlotId(scheduleId);
     try {
-      await api.put(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
+      const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
+      const updatedSchedule = mapApiScheduleToItem(response.data);
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
+        )
+      );
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
       await refreshSchedules();
     } catch (err) {
       console.error(err);
       toast.error("Failed to assign faculty", "An error occurred.");
+    } finally {
+      setFacultyActionSlotId(null);
     }
     setFacultyAssignmentPopup(null);
   };
@@ -1065,50 +1403,69 @@ export const useScheduler = () => {
   const handleRemoveFaculty = async () => {
     if (!facultyAssignmentPopup) return;
     const { scheduleId } = facultyAssignmentPopup;
+    if (facultyActionSlotId === scheduleId) return;
+    setFacultyActionSlotId(scheduleId);
     try {
-      await api.put(`/schedules/${scheduleId}`, { faculty_id: null });
+      const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, { faculty_id: null });
+      const updatedSchedule = mapApiScheduleToItem(response.data);
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
+        )
+      );
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
       await refreshSchedules();
     } catch (err) {
       console.error(err);
       toast.error("Failed to remove faculty", "An error occurred.");
+    } finally {
+      setFacultyActionSlotId(null);
     }
     setFacultyAssignmentPopup(null);
   };
 
   const handleInlineFacultyAssign = async (slotId: string, facId: string) => {
     if (!facId) return;
+    if (facultyActionSlotId === slotId) return;
     const fac = faculties.find((f) => f.id === facId);
     if (!fac) return;
-    const conflict = checkFacultyConflict(facId, slotId);
-    if (conflict) {
-      if (confirm(`${conflict}\n\nAssign anyway?`)) {
-        try {
-          await api.put(`/schedules/${slotId}`, { faculty_id: Number(facId) });
-          await refreshSchedules();
-        } catch (err) {
-          console.error(err);
-          toast.error("Failed to assign faculty", "An error occurred.");
-        }
-      }
-    } else {
-      try {
-        await api.put(`/schedules/${slotId}`, { faculty_id: Number(facId) });
-        await refreshSchedules();
-      } catch (err) {
-        console.error(err);
-        toast.error("Failed to assign faculty", "An error occurred.");
-      }
+    setFacultyActionSlotId(slotId);
+    try {
+      const response = await api.put<ApiScheduleRecord>(`/schedules/${slotId}`, { faculty_id: Number(facId) });
+      const updatedSchedule = mapApiScheduleToItem(response.data);
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
+        )
+      );
+      toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
+      await refreshSchedules();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to assign faculty", "An error occurred.");
+    } finally {
+      setFacultyActionSlotId(null);
     }
   };
 
   const handleRemoveInlineFaculty = async (slotId: string) => {
+    if (facultyActionSlotId === slotId) return;
+    setFacultyActionSlotId(slotId);
     try {
-      await api.put(`/schedules/${slotId}`, { faculty_id: null });
+      const response = await api.put<ApiScheduleRecord>(`/schedules/${slotId}`, { faculty_id: null });
+      const updatedSchedule = mapApiScheduleToItem(response.data);
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
+        )
+      );
+      toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
       await refreshSchedules();
     } catch (err) {
       console.error(err);
       toast.error("Failed to remove faculty", "An error occurred.");
+    } finally {
+      setFacultyActionSlotId(null);
     }
   };
 
@@ -1222,11 +1579,17 @@ export const useScheduler = () => {
       const startTime24h = slotToTime24h(timeIndex);
       const endTime24h = slotToTime24h(timeIndex + sched.durationSlots);
 
-      api.put(`/schedules/${sched.id}`, {
+      api.put<ApiScheduleRecord>(`/schedules/${sched.id}`, {
         day: dayName,
         start_time: startTime24h,
         end_time: endTime24h
-      }).then(() => {
+      }).then((response) => {
+        const updatedSchedule = mapApiScheduleToItem(response.data);
+        setSchedules((previousSchedules) =>
+          previousSchedules.map((schedule) =>
+            schedule.id === updatedSchedule.id ? updatedSchedule : schedule
+          )
+        );
         refreshSchedules();
         toast.success("Schedule Relocated", "Class schedule successfully relocated.");
       }).catch(err => {
@@ -1241,6 +1604,7 @@ export const useScheduler = () => {
   const renderStatusBadge = (status: ScheduleItem["status"]) => {
     const configs: Record<string, { cls: string; label: string }> = {
       draft: { cls: "bg-slate-500 text-white", label: "Draft" },
+      completed: { cls: "bg-[#4e0a10] text-white", label: "Done" },
       submitted: { cls: "bg-yellow-500 text-white", label: "Pending Dean Approval" },
       approved_by_dean: { cls: "bg-blue-600 text-white", label: "Pending VPAA Approval" },
       rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
@@ -1261,8 +1625,26 @@ export const useScheduler = () => {
   const renderActionButton = () => {
     if (!selectedSectionId) return null;
     switch (currentStatus) {
-      case "draft":
-        return <button onClick={handleSubmitForApproval} className="px-4 py-2 bg-[#4e0a10] hover:bg-[#3a0809] text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Submit for Approval</button>;
+      case "draft": {
+        const remaining = Math.max(0, totalSubjects - totalScheduled);
+        const canMarkDone = totalSubjects > 0 && remaining === 0;
+        return (
+          <button
+            onClick={handleMarkSectionDone}
+            disabled={!canMarkDone}
+            title={!canMarkDone ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement` : "Mark this section as done"}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+              canMarkDone
+                ? "bg-[#4e0a10] hover:bg-[#3a0809] text-white cursor-pointer"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            {canMarkDone ? "Done" : `${remaining} unplaced`}
+          </button>
+        );
+      }
+      case "completed":
+        return <button onClick={handleEditSection} className="px-4 py-2 bg-[#C9952A] hover:bg-[#b8841f] text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Edit</button>;
       case "submitted":
         return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
       case "approved_by_dean":
@@ -1355,6 +1737,10 @@ export const useScheduler = () => {
     setModalIsHybrid,
     modalPreferredPattern,
     setModalPreferredPattern,
+    modalDay1Index,
+    setModalDay1Index,
+    modalDay2Index,
+    setModalDay2Index,
     modalDay1StartSlot,
     setModalDay1StartSlot,
     modalDay1Duration,
@@ -1368,12 +1754,16 @@ export const useScheduler = () => {
     modalConflict,
     handleEditMovingSchedule,
     facultyAssignmentPopup,
+    facultyActionSlotId,
     setFacultyAssignmentPopup,
     popupValidationError,
     popupConflictWarning,
     isSectionDropdownOpen,
     setIsSectionDropdownOpen,
     isClearAllModalOpen,
+    isSubmitApprovalModalOpen,
+    confirmSubmitForApproval,
+    cancelSubmitForApproval,
     confirmClearAll,
     cancelClearAll,
     isRoomViewOpen,
@@ -1404,6 +1794,12 @@ export const useScheduler = () => {
     totalSlotsCount,
     assignedSlotsCount,
     unassignedSlotsCount,
+    departmentSectionProgress,
+    departmentTotalSections,
+    departmentDoneSections,
+    departmentRemainingSections,
+    departmentReadyToSubmit,
+    departmentHasSubmittedSchedule,
     dropSubject,
     dropSubjectIsField,
     listCategories,

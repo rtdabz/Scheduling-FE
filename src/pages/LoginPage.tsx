@@ -4,6 +4,7 @@ import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import { useToast } from '../context/ToastContext';
 import api from '../lib/api';
+import { clearDataCache } from '../lib/dataCache';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -28,6 +29,7 @@ const handleSubmit = async (e: React.FormEvent) => {
     setIsLoading(true);
     try {
         const res = await api.post('/login', { username, password });
+        clearDataCache();
         const storage = rememberMe ? localStorage : sessionStorage;
         storage.setItem('token', res.data.token);
         storage.setItem('user', JSON.stringify(res.data.user));

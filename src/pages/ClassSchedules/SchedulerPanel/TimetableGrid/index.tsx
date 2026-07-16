@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { AlertTriangle, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
@@ -86,6 +86,8 @@ export default function TimetableGrid({
   handleEditMovingSchedule,
   isLoading = false
 }: TimetableGridProps) {
+  const [isComfortView, setIsComfortView] = useState(false);
+  const slotHeight = isComfortView ? 32 : SLOT_HEIGHT_PX;
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const placementLabel = placementSubjectId
     ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
@@ -110,7 +112,7 @@ export default function TimetableGrid({
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-3.5">
+        <div className="flex flex-wrap items-center gap-3.5">
           <div className="flex items-center gap-2 text-[11px] font-bold select-none text-slate-500">
             <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg">
               {totalScheduled} Subjects Placed
@@ -119,6 +121,14 @@ export default function TimetableGrid({
               {Math.max(0, totalSubjects - totalScheduled)} Unplaced
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsComfortView(!isComfortView)}
+            aria-pressed={isComfortView}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
+          >
+            {isComfortView ? "Compact View" : "Comfort View"}
+          </button>
           <button
             type="button"
             onClick={() => setIsRoomViewOpen(true)}
@@ -188,7 +198,7 @@ export default function TimetableGrid({
               style={{
                 display: "grid",
                 gridTemplateColumns: "80px repeat(6, minmax(0, 1fr))",
-                gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(28, ${SLOT_HEIGHT_PX}px)`
+                gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(28, ${slotHeight}px)`
               }}
             >
               <div
@@ -216,8 +226,8 @@ export default function TimetableGrid({
                 <React.Fragment key={`row-${t}`}>
                   {t % 2 === 0 && (
                     <div
-                      className="h-[48px] bg-slate-50/90 border-r border-b border-slate-200 text-[9px] font-bold text-slate-500 flex flex-col justify-center items-center select-none sticky left-0 z-10 px-1"
-                      style={{ gridColumn: 1, gridRow: `${t + 2} / span 2` }}
+                      className="bg-slate-50/90 border-r border-b border-slate-200 text-[9px] font-bold text-slate-500 flex flex-col justify-center items-center select-none sticky left-0 z-10 px-1"
+                      style={{ gridColumn: 1, gridRow: `${t + 2} / span 2`, height: `${slotHeight * 2}px` }}
                     >
                       <span className="font-extrabold text-slate-600 whitespace-nowrap">
                         {slotToTimeStr(t)}
@@ -252,9 +262,9 @@ export default function TimetableGrid({
 
               {isLoading ? (
                 [
-                  { id: 'sk-grid-1', dayIndex: 0, startSlot: 2, durationSlots: 4, height: 4 * SLOT_HEIGHT_PX },
-                  { id: 'sk-grid-2', dayIndex: 2, startSlot: 6, durationSlots: 3, height: 3 * SLOT_HEIGHT_PX },
-                  { id: 'sk-grid-3', dayIndex: 4, startSlot: 10, durationSlots: 4, height: 4 * SLOT_HEIGHT_PX }
+                  { id: 'sk-grid-1', dayIndex: 0, startSlot: 2, durationSlots: 4, height: 4 * slotHeight },
+                  { id: 'sk-grid-2', dayIndex: 2, startSlot: 6, durationSlots: 3, height: 3 * slotHeight },
+                  { id: 'sk-grid-3', dayIndex: 4, startSlot: 10, durationSlots: 4, height: 4 * slotHeight }
                 ].map((sk) => (
                   <div
                     key={sk.id}
@@ -299,6 +309,7 @@ export default function TimetableGrid({
                       onDragEnd={handleDragEnd}
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
+                      slotHeight={slotHeight}
                     />
                   );
                 })
