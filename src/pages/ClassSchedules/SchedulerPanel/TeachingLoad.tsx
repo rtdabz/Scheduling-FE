@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ScheduleItem, Subject, Faculty, Section } from "./types";
+import type { Department, Faculty, ScheduleItem, Section, Subject, Term, UserSummary } from "./types";
 import { useToast } from "../../../context/ToastContext";
 
 interface TeachingLoadProps {
@@ -14,9 +14,9 @@ interface TeachingLoadProps {
   isTeachingLoadOpen: boolean;
   setIsTeachingLoadOpen: (value: boolean) => void;
   sections: Section[];
-  activeTerm: any;
-  users: any[];
-  departments: any[];
+  activeTerm: Term | null;
+  users: UserSummary[];
+  departments: Department[];
   selectedSectionId: string;
 }
 
@@ -326,16 +326,13 @@ export default function TeachingLoad({
           const lab = sub ? sub.labHours : 0;
           const totalU = sub ? sub.units : 3;
 
-          const section = sections.find((sec) => sec.id === s.sectionId);
-          const studentsCount = section?.numberOfStudents ?? 0;
-
           return {
             code: s.subjectCode,
             title: s.subjectName,
             day: s.day.substring(0, 3),
             time: `${s.startTime} - ${s.endTime}`,
             section: s.sectionName,
-            students: studentsCount > 0 ? studentsCount.toString() : "0",
+            students: "0",
             lec: lec.toString(),
             lab: lab.toString(),
             totalUnits: totalU.toString(),

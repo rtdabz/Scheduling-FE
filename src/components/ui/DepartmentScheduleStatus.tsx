@@ -251,7 +251,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
           {isSubmitting ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              Submitting…
+              Submit for dean approval
             </>
           ) : (
             <>

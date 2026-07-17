@@ -3,11 +3,8 @@ import {
   LayoutDashboard, 
   Calendar,
   Users,
-  Building2,
   MapPin,
   FileText,
-  Activity,
-  UserCog,
   Settings
 } from 'lucide-react';
 

@@ -22,6 +22,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import api from '../../lib/api';
 
 interface Department {
   id: number;
@@ -33,15 +34,17 @@ interface Department {
   createdAt: string;     // ISO date string
 }
 
-const MOCK_DEPARTMENTS: Department[] = [
-  { id: 1, code: 'CAS', name: 'College of Arts and Sciences', dean: 'Dr. Juan dela Cruz', facultyCount: 15, sectionsCount: 8, createdAt: '2025-01-15T08:00:00Z' },
-  { id: 2, code: 'CIT', name: 'College of Information Technology', dean: 'Engr. Maria Santos', facultyCount: 18, sectionsCount: 10, createdAt: '2025-01-20T09:30:00Z' },
-  { id: 3, code: 'CED', name: 'College of Education', dean: 'Dr. Emily Watson', facultyCount: 22, sectionsCount: 12, createdAt: '2025-02-10T14:15:00Z' },
-  { id: 4, code: 'CBA', name: 'College of Business Administration', dean: null, facultyCount: 25, sectionsCount: 15, createdAt: '2025-02-18T10:00:00Z' },
-  { id: 5, code: 'CHM', name: 'College of Hospitality Management', dean: 'Chef Robert Davis', facultyCount: 8, sectionsCount: 4, createdAt: '2025-02-02T11:00:00Z' },
-  { id: 6, code: 'CLIS', name: 'College of Library and Information Science', dean: null, facultyCount: 5, sectionsCount: 2, createdAt: '2025-02-20T09:00:00Z' },
-  { id: 7, code: 'CCJPS', name: 'College of Criminal Justice and Public Safety', dean: 'Dr. Alan Walker', facultyCount: 12, sectionsCount: 6, createdAt: '2025-02-25T14:00:00Z' }
-];
+interface ApiDepartment {
+  id: number;
+  department_code: string;
+  department_name: string;
+  created_at: string;
+  faculties_count?: number;
+  sections_count?: number;
+  users?: Array<{
+    name?: string;
+  }>;
+}
 
 interface DepartmentsPageData {
   departments: Department[];
@@ -51,7 +54,7 @@ export default function Departments() {
   const { toast } = useToast();
   const departmentsCacheKey = 'page:departments';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
-  const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? MOCK_DEPARTMENTS);
+  const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
   
   // Table States
@@ -80,17 +83,36 @@ export default function Departments() {
     fetchDepartments();
   }, []);
 
-  const fetchDepartments = async () => {
-    if (hasCachedData(departmentsCacheKey)) {
+  const mapDepartment = (department: ApiDepartment): Department => ({
+    id: department.id,
+    code: department.department_code,
+    name: department.department_name,
+    dean: department.users?.[0]?.name ?? null,
+    facultyCount: department.faculties_count ?? 0,
+    sectionsCount: department.sections_count ?? 0,
+    createdAt: department.created_at,
+  });
+
+  const fetchDepartments = async (forceRefresh = false) => {
+    const cachedData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
+
+    if (!forceRefresh && cachedData && cachedData.departments.length > 0) {
+      setDepartments(cachedData.departments);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: MOCK_DEPARTMENTS });
+    try {
+      const response = await api.get<ApiDepartment[]>('/departments');
+      const mappedDepartments = response.data.map(mapDepartment);
+      setDepartments(mappedDepartments);
+      setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: mappedDepartments });
+    } catch {
+      toast.error('Load Failed', 'Could not load departments from the database.');
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -124,51 +146,45 @@ export default function Departments() {
     if (hasError) return;
 
     setIsSubmitting(true);
-    
-    setTimeout(() => {
-      try {
-        if (isEditMode && editingId !== null) {
-          setDepartments(prev => {
-            const nextDepartments = prev.map(dept => 
-              dept.id === editingId 
-                ? { ...dept, name: trimmedName, code: trimmedCode }
-                : dept
-            );
-            setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
-            return nextDepartments;
-          });
-          toast.success('Success', 'Department updated successfully');
-        } else {
-          const newDept: Department = {
-            id: Date.now(),
-            name: trimmedName,
-            code: trimmedCode,
-            dean: null,
-            facultyCount: 0,
-            sectionsCount: 0,
-            createdAt: new Date().toISOString()
-          };
-          setDepartments(prev => {
-            const nextDepartments = [newDept, ...prev];
-            setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
-            return nextDepartments;
-          });
-          toast.success('Success', 'Department created successfully');
-        }
-        
-        setName('');
-        setCode('');
-        setCodeError('');
-        setNameError('');
-        setIsModalOpen(false);
-        setIsEditMode(false);
-        setEditingId(null);
-      } catch (error: any) {
-        toast.error('Error', 'Failed to save department');
-      } finally {
-        setIsSubmitting(false);
+
+    try {
+      const payload = {
+        department_name: trimmedName,
+        department_code: trimmedCode,
+      };
+
+      if (isEditMode && editingId !== null) {
+        const response = await api.patch<ApiDepartment>(`/departments/${editingId}`, payload);
+        setDepartments(prev => {
+          const nextDepartments = prev.map(dept =>
+            dept.id === editingId ? mapDepartment(response.data) : dept
+          );
+          setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+          return nextDepartments;
+        });
+        toast.success('Success', 'Department updated successfully');
+      } else {
+        const response = await api.post<ApiDepartment>('/departments', payload);
+        setDepartments(prev => {
+          const nextDepartments = [mapDepartment(response.data), ...prev];
+          setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+          return nextDepartments;
+        });
+        toast.success('Success', 'Department created successfully');
       }
-    }, 1000);
+
+      setName('');
+      setCode('');
+      setCodeError('');
+      setNameError('');
+      setIsModalOpen(false);
+      setIsEditMode(false);
+      setEditingId(null);
+    } catch {
+      toast.error('Error', 'Failed to save department.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleEditClick = (dept: Department) => {
@@ -186,16 +202,21 @@ export default function Departments() {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDeleteDepartment = () => {
+  const confirmDeleteDepartment = async () => {
     if (idToDelete !== null) {
-      setDepartments(prev => {
-        const nextDepartments = prev.filter(dept => dept.id !== idToDelete);
-        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
-        return nextDepartments;
-      });
-      toast.success('Deleted', 'Department removed');
-      setIsDeleteModalOpen(false);
-      setIdToDelete(null);
+      try {
+        await api.delete(`/departments/${idToDelete}`);
+        setDepartments(prev => {
+          const nextDepartments = prev.filter(dept => dept.id !== idToDelete);
+          setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+          return nextDepartments;
+        });
+        toast.success('Deleted', 'Department removed');
+        setIsDeleteModalOpen(false);
+        setIdToDelete(null);
+      } catch {
+        toast.error('Delete Failed', 'Could not delete the department.');
+      }
     }
   };
 

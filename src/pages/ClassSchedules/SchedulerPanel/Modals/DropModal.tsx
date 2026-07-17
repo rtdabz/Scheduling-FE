@@ -1,10 +1,38 @@
-import React, { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Building2, CalendarDays, CalendarPlus, ChevronDown, ChevronRight, Clock, Loader2, MapPin, Monitor, TreePine, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, ChevronRight, Clock, Lightbulb, Loader2, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
-import type { DropContext, Subject, Room } from "../types";
+import api from "../../../../lib/api";
+import type { DeliveryMode, DropContext, Subject, Room, ScheduleStatus } from "../types";
+
+interface DropRecommendationRow {
+  term_id: number;
+  section_id: number;
+  subject_id: number;
+  faculty_id: number | null;
+  room_id: number;
+  department_id: number;
+  day: string;
+  start_time: string;
+  end_time: string;
+  mode: DeliveryMode;
+  is_hybrid: boolean;
+  preferred_pattern: string | null;
+  status: ScheduleStatus;
+}
+
+interface DropRecommendation {
+  rank: number;
+  score: number;
+  schedules: DropRecommendationRow[];
+}
+
+interface DropRecommendationResponse {
+  recommendations: DropRecommendation[];
+}
 
 interface DropModalProps {
   rooms: Room[];
+  selectedSectionId: string;
   dropContext: DropContext | null;
   dropSubject: Subject | null;
   dropSubjectIsField: boolean;
@@ -36,8 +64,61 @@ interface DropModalProps {
   handleModalConfirm: (e: React.FormEvent) => void;
 }
 
+const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const getStoredRole = (): string => {
+  const userJson = localStorage.getItem("user") || sessionStorage.getItem("user");
+  if (!userJson) return "";
+
+  try {
+    const user = JSON.parse(userJson) as { role?: string };
+    return user.role?.toLowerCase() ?? "";
+  } catch {
+    return "";
+  }
+};
+
+const timeToSlot = (time: string): number => {
+  const [hourRaw, minuteRaw] = time.split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return 0;
+  return Math.max(0, (hour - 7) * 2 + Math.floor(minute / 30));
+};
+
+const getDayIndex = (day: string): number => {
+  const fullIndex = fullDayNames.findIndex((item) => item.toLowerCase() === day.toLowerCase());
+  if (fullIndex >= 0) return fullIndex;
+  return DAYS.findIndex((item) => item.toLowerCase() === day.toLowerCase());
+};
+
+const normalizePatternLabel = (rows: DropRecommendationRow[]): string => {
+  if (rows.length <= 1) return "Single meeting";
+  return rows.map((row) => row.day.slice(0, 3)).join(" + ");
+};
+
+const getRecommendationReason = (
+  recommendation: DropRecommendation,
+  subject: Subject,
+  rooms: Room[],
+  modalConflict: string | null
+): string => {
+  const firstRow = recommendation.schedules[0];
+  const room = firstRow ? rooms.find((item) => Number(item.id) === firstRow.room_id) : undefined;
+  const reasons = [
+    modalConflict ? "avoids the current conflict" : null,
+    room && room.roomType === subject.roomTypeRequired ? "matches the required room type" : null,
+    recommendation.schedules.length > 1 ? "balances contact hours across two meetings" : null,
+    firstRow?.mode !== "on-site" ? `supports ${firstRow?.mode} delivery` : null,
+    `CSP score ${recommendation.score}`
+  ].filter(Boolean);
+
+  return reasons.join(", ");
+};
+
 export default function DropModal({
   rooms,
+  selectedSectionId,
   dropContext,
   dropSubject,
   dropSubjectIsField,
@@ -69,12 +150,23 @@ export default function DropModal({
   handleModalConfirm
 }: DropModalProps) {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
+  const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const canUseRecommendations = useMemo(() => {
+    const role = getStoredRole();
+    return role === "secretary" || role === "program_head";
+  }, []);
 
   useEffect(() => {
     if (!dropContext || !dropSubject) return;
 
     setIsAdvancedOpen(false);
+    setRecommendations([]);
+    setRecommendationError(null);
+    setAppliedRecommendationRank(null);
     closeButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -85,6 +177,58 @@ export default function DropModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [dropContext, dropSubject, setDropContext]);
+
+  useEffect(() => {
+    if (!dropContext || !dropSubject || !selectedSectionId || !canUseRecommendations) return;
+
+    const controller = new AbortController();
+
+    const loadRecommendations = async () => {
+      setIsRecommendationLoading(true);
+      setRecommendationError(null);
+
+      try {
+        const response = await api.post<DropRecommendationResponse>(
+          "/schedule-recommendations/preview",
+          {
+            section_id: Number(selectedSectionId),
+            subject_ids: [Number(dropSubject.id)],
+            mode: dropSubjectIsField ? "field" : modalClassMode,
+            is_hybrid: modalIsHybrid,
+            preferred_patterns: modalPreferredPattern
+              ? { [dropSubject.id]: modalPreferredPattern }
+              : {},
+            max_solutions: 3,
+            timeout_seconds: 2
+          },
+          { signal: controller.signal }
+        );
+        setRecommendations(response.data.recommendations);
+      } catch {
+        if (!controller.signal.aborted) {
+          setRecommendationError("Recommendations are unavailable right now.");
+          setRecommendations([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsRecommendationLoading(false);
+        }
+      }
+    };
+
+    loadRecommendations();
+
+    return () => controller.abort();
+  }, [
+    canUseRecommendations,
+    dropContext,
+    dropSubject,
+    dropSubjectIsField,
+    modalClassMode,
+    modalIsHybrid,
+    modalPreferredPattern,
+    selectedSectionId
+  ]);
 
   if (!dropContext || !dropSubject) return null;
 
@@ -125,6 +269,51 @@ export default function DropModal({
     ? "Online"
     : "Field";
   const deliveryModeLabel = modalIsHybrid ? "On-Site + Online" : modalClassMode.replace("-", " ");
+
+  const applyRecommendation = (recommendation: DropRecommendation) => {
+    const sortedRows = [...recommendation.schedules].sort((left, right) => (
+      getDayIndex(left.day) - getDayIndex(right.day)
+      || timeToSlot(left.start_time) - timeToSlot(right.start_time)
+    ));
+    const firstRow = sortedRows[0];
+    if (!firstRow || !dropContext) return;
+
+    const firstDayIndex = getDayIndex(firstRow.day);
+    const firstStartSlot = timeToSlot(firstRow.start_time);
+    const firstEndSlot = timeToSlot(firstRow.end_time);
+
+    setModalRoomId(String(firstRow.room_id));
+    setModalClassMode(firstRow.mode);
+    setModalIsHybrid(firstRow.is_hybrid);
+
+    if (sortedRows.length > 1) {
+      const secondRow = sortedRows[1];
+      const secondDayIndex = getDayIndex(secondRow.day);
+      setModalPreferredPattern(firstRow.preferred_pattern ?? `days:${firstDayIndex}-${secondDayIndex}`);
+      setModalDay1Index(firstDayIndex);
+      setModalDay2Index(secondDayIndex);
+      setModalDay1StartSlot(firstStartSlot);
+      setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
+      setModalDay2StartSlot(timeToSlot(secondRow.start_time));
+      setIsDay2ModifiedByUser(true);
+    } else {
+      setModalPreferredPattern(null);
+      setModalDay1Index(firstDayIndex);
+      setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
+      setModalDay1StartSlot(firstStartSlot);
+      setModalDay1Duration(dropSubject.units * 2);
+      setModalDay2StartSlot(firstStartSlot);
+      setIsDay2ModifiedByUser(false);
+      setDropContext({
+        ...dropContext,
+        dayIndex: firstDayIndex,
+        startSlot: firstStartSlot
+      });
+    }
+
+    setModalValidationError("");
+    setAppliedRecommendationRank(recommendation.rank);
+  };
 
   return (
     <div
@@ -204,6 +393,73 @@ export default function DropModal({
               </button>
             </div>
           </div>
+
+          {canUseRecommendations && (
+            <div className="rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/10 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Lightbulb className="w-4 h-4 text-[#7a4c08]" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#7a4c08]">Recommendations</p>
+                  <p className="text-xs text-gray-500">CSP and Rule Engine alternatives for this placement.</p>
+                </div>
+              </div>
+
+              {isRecommendationLoading ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={`recommendation-skeleton-${index}`} className="rounded-lg border border-white/70 bg-white p-3 shadow-sm animate-pulse">
+                      <div className="h-3 w-16 rounded bg-[#C9952A]/30" />
+                      <div className="mt-3 h-3 w-28 rounded bg-gray-200" />
+                      <div className="mt-2 h-3 w-20 rounded bg-gray-200" />
+                      <div className="mt-3 h-8 w-full rounded-lg bg-gray-200" />
+                    </div>
+                  ))}
+                </div>
+              ) : recommendationError ? (
+                <p className="text-xs text-red-600">{recommendationError}</p>
+              ) : recommendations.length === 0 ? (
+                <div className="flex items-center gap-2 text-xs text-gray-600">
+                  <Sparkles className="w-4 h-4 text-[#C9952A]" />
+                  No better alternatives were found for this subject.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                  {recommendations.map((recommendation) => {
+                    const firstRow = recommendation.schedules[0];
+                    const room = firstRow ? rooms.find((item) => Number(item.id) === firstRow.room_id) : undefined;
+                    const timeLabel = recommendation.schedules
+                      .map((row) => `${row.day}, ${slotToTimeStr(timeToSlot(row.start_time))}-${slotToTimeStr(timeToSlot(row.end_time))}`)
+                      .join(" / ");
+                    const isApplied = appliedRecommendationRank === recommendation.rank;
+
+                    return (
+                      <div key={recommendation.rank} className="rounded-lg border border-white/70 bg-white p-3 shadow-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-extrabold text-[#4e0a10]">Option {recommendation.rank}</p>
+                          {isApplied && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                        </div>
+                        <p className="mt-2 text-xs font-semibold text-gray-800">{room?.name ?? firstRow?.mode ?? "Recommended slot"}</p>
+                        <p className="mt-1 text-[11px] text-gray-500">{timeLabel}</p>
+                        <p className="mt-1 text-[11px] text-gray-500 capitalize">
+                          {normalizePatternLabel(recommendation.schedules)} - {firstRow?.mode ?? "on-site"}
+                        </p>
+                        <p className="mt-2 text-[11px] text-gray-600">
+                          {getRecommendationReason(recommendation, dropSubject, rooms, modalConflict)}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => applyRecommendation(recommendation)}
+                          className="mt-3 w-full rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3a080c]"
+                        >
+                          {isApplied ? "Applied" : "Apply Recommendation"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             <div className="space-y-4">
@@ -678,7 +934,7 @@ export default function DropModal({
             }`}
           >
             {isModalLoading ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Placing...</>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Place Subject</>
             ) : hasConflict ? (
               "Resolve Conflict First"
             ) : (

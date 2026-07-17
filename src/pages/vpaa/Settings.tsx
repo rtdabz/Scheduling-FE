@@ -442,11 +442,14 @@ export default function Settings() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-gray-500 italic">
-                      Loading academic terms...
-                    </td>
-                  </tr>
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <tr key={`term-skeleton-${index}`} className="animate-pulse">
+                      <td className="px-6 py-4"><div className="h-4 w-28 rounded bg-gray-200" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-gray-200" /></td>
+                      <td className="px-6 py-4"><div className="h-6 w-20 rounded-full bg-gray-200" /></td>
+                      <td className="px-6 py-4"><div className="ml-auto h-8 w-24 rounded-lg bg-gray-200" /></td>
+                    </tr>
+                  ))
                 ) : table.getRowModel().rows.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-16 text-center text-gray-400 font-medium font-sans">

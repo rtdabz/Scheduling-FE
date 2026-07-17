@@ -4,7 +4,7 @@ import type { NavSection, NavItem } from '../../navigation/types';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
 import { Menu, ChevronDown, ChevronUp } from 'lucide-react';
-import { hasCachedData, setCachedData } from '../../lib/dataCache';
+import api from '../../lib/api';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,25 +12,68 @@ interface SidebarProps {
   navItems: NavSection[];
 }
 
+interface StoredUser {
+  role?: string;
+}
+
+interface ScheduleRecord {
+  department_id: number | string;
+  status: string;
+}
+
+const getStoredRole = (): string => {
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+  if (!userJson) return '';
+
+  try {
+    const user = JSON.parse(userJson) as StoredUser;
+    return user.role?.toLowerCase() ?? '';
+  } catch {
+    return '';
+  }
+};
+
 export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
-  const sidebarCountCacheKey = 'layout:sidebar-count';
-  const [isCountLoading, setIsCountLoading] = useState(!hasCachedData(sidebarCountCacheKey));
-  const pendingCount = 3;
+  const [isCountLoading, setIsCountLoading] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    if (hasCachedData(sidebarCountCacheKey)) {
-      setIsCountLoading(false);
+    const role = getStoredRole();
+    if (role !== 'dean' && role !== 'vpaa') {
+      setPendingCount(0);
       return;
     }
 
-    const timer = setTimeout(() => {
-      setCachedData(sidebarCountCacheKey, true);
-      setIsCountLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [sidebarCountCacheKey]);
+    const controller = new AbortController();
+
+    const loadPendingCount = async () => {
+      setIsCountLoading(true);
+      try {
+        const response = await api.get<ScheduleRecord[]>('/schedules', { signal: controller.signal });
+        const targetStatus = role === 'vpaa' ? 'approved_by_dean' : 'submitted';
+        const pendingDepartments = new Set(
+          response.data
+            .filter((schedule) => schedule.status === targetStatus)
+            .map((schedule) => String(schedule.department_id))
+        );
+        setPendingCount(pendingDepartments.size);
+      } catch {
+        if (!controller.signal.aborted) {
+          setPendingCount(0);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsCountLoading(false);
+        }
+      }
+    };
+
+    loadPendingCount();
+
+    return () => controller.abort();
+  }, [location.pathname]);
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({

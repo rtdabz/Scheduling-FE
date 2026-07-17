@@ -5,6 +5,18 @@ import logo from '../assets/logo.jpg';
 import { useToast } from '../context/ToastContext';
 import api from '../lib/api';
 import { clearDataCache } from '../lib/dataCache';
+import { AxiosError } from 'axios';
+
+interface LoginResponse {
+  token: string;
+  user: {
+    role: string;
+  };
+}
+
+interface ApiErrorResponse {
+  message?: string;
+}
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -28,8 +40,12 @@ const handleSubmit = async (e: React.FormEvent) => {
     if (isLoading) return;
     setIsLoading(true);
     try {
-        const res = await api.post('/login', { username, password });
+        const res = await api.post<LoginResponse>('/login', { username: username.trim(), password });
         clearDataCache();
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         const storage = rememberMe ? localStorage : sessionStorage;
         storage.setItem('token', res.data.token);
         storage.setItem('user', JSON.stringify(res.data.user));
@@ -55,8 +71,11 @@ const handleSubmit = async (e: React.FormEvent) => {
         } else {
           navigate('/dashboard');
         }
-    } catch {
-        toast.error('Login Failed', 'Invalid username or password.');
+    } catch (error) {
+        const axiosError = error as AxiosError<ApiErrorResponse>;
+        const message = axiosError.response?.data?.message
+          || (axiosError.request ? 'Unable to reach the server. Please check that the backend is running.' : 'Unable to sign in.');
+        toast.error('Login Failed', message);
     } finally {
         setIsLoading(false);
     }
@@ -129,7 +148,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="block w-full h-12 pl-11 pr-4 bg-transparent border border-border rounded-xl text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all duration-300 outline-none"
-                  placeholder="admin"
+                  placeholder="vpaa"
                 />
               </div>
             </div>
@@ -185,7 +204,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   {isLoading ? (
                     <>
                       <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Signing in...
+                      Sign In
                     </>
                   ) : (
                     'Sign In'

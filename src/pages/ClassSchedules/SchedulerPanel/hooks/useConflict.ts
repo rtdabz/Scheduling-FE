@@ -1,4 +1,4 @@
-import type { ScheduleItem, Subject, Faculty } from "../types";
+import type { Faculty, Room, ScheduleItem, Subject } from "../types";
 
 const getPreferredPatternDayIndexes = (preferredPattern?: string | null): number[] | null => {
   if (!preferredPattern) return null;
@@ -16,7 +16,7 @@ interface UseConflictParams {
   selectedSectionId: string;
   dragSubjectId: string | null;
   draggedScheduleId: string | null;
-  rooms: { id: string; name: string; roomType?: string }[];
+  rooms: Room[];
   subjects: Subject[];
   faculties: Faculty[];
 }

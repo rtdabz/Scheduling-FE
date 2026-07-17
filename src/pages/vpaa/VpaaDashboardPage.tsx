@@ -159,23 +159,23 @@ export default function VpaaDashboardPage() {
             subjectsRes,
             activeTermRes
           ] = await Promise.all([
-            api.get<Schedule[]>('/schedules').catch(() => null),
-            api.get<Room[]>('/rooms').catch(() => null),
-            api.get<Section[]>('/sections').catch(() => null),
-            api.get<Faculty[]>('/faculties').catch(() => null),
-            api.get<Department[]>('/departments').catch(() => null),
-            api.get<Subject[]>('/subjects').catch(() => null),
-            api.get<Term>('/terms/active').catch(() => null)
+            api.get<Schedule[]>('/schedules'),
+            api.get<Room[]>('/rooms'),
+            api.get<Section[]>('/sections'),
+            api.get<Faculty[]>('/faculties'),
+            api.get<Department[]>('/departments'),
+            api.get<Subject[]>('/subjects'),
+            api.get<Term>('/terms/active')
           ]);
 
           return {
-            schedules: schedulesRes?.data || [],
-            rooms: roomsRes?.data || [],
-            sections: sectionsRes?.data || [],
-            faculties: facultiesRes?.data || [],
-            departments: departmentsRes?.data || [],
-            subjects: subjectsRes?.data || [],
-            activeTerm: activeTermRes?.data || null,
+            schedules: schedulesRes.data,
+            rooms: roomsRes.data,
+            sections: sectionsRes.data,
+            faculties: facultiesRes.data,
+            departments: departmentsRes.data,
+            subjects: subjectsRes.data,
+            activeTerm: activeTermRes.data,
           };
         });
 

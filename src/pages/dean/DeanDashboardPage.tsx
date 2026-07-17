@@ -149,21 +149,21 @@ export default function DeanDashboardPage() {
             schedulesRes,
             activeTermRes
           ] = await Promise.all([
-            api.get<Faculty[]>('/faculties').catch(() => null),
-            api.get<Room[]>('/rooms').catch(() => null),
-            api.get<Section[]>('/sections').catch(() => null),
-            api.get<Subject[]>('/subjects').catch(() => null),
-            api.get<Schedule[]>('/schedules').catch(() => null),
-            api.get<Term>('/terms/active').catch(() => null)
+            api.get<Faculty[]>('/faculties'),
+            api.get<Room[]>('/rooms'),
+            api.get<Section[]>('/sections'),
+            api.get<Subject[]>('/subjects'),
+            api.get<Schedule[]>('/schedules'),
+            api.get<Term>('/terms/active')
           ]);
 
           return {
-            faculties: facultiesRes?.data || [],
-            rooms: roomsRes?.data || [],
-            sections: sectionsRes?.data || [],
-            subjects: subjectsRes?.data || [],
-            schedules: schedulesRes?.data || [],
-            activeTerm: activeTermRes?.data || null,
+            faculties: facultiesRes.data,
+            rooms: roomsRes.data,
+            sections: sectionsRes.data,
+            subjects: subjectsRes.data,
+            schedules: schedulesRes.data,
+            activeTerm: activeTermRes.data,
           };
         });
 

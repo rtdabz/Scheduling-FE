@@ -5,7 +5,29 @@ import {
   getSubjectClassification,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, DepartmentSectionProgress, DropContext, FacultyAssignmentPopupState, ScheduleItem, Subject, Room, Section, Faculty } from "../types";
+import type {
+  ApiDepartmentRecord,
+  ApiFacultyRecord,
+  ApiRoomRecord,
+  ApiScheduleRecord,
+  ApiSectionRecord,
+  ApiSubjectRecord,
+  ApiTermRecord,
+  ApiViolation,
+  ConflictInfo,
+  DeliveryMode,
+  Department,
+  DepartmentSectionProgress,
+  DropContext,
+  Faculty,
+  FacultyAssignmentPopupState,
+  Room,
+  ScheduleItem,
+  Section,
+  Subject,
+  Term,
+  UserSummary
+} from "../types";
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
@@ -81,46 +103,31 @@ interface StoredUser {
   role?: string;
 }
 
+const normalizeYearLevel = (yearLevel: string | number): Section["yearLevel"] => {
+  const year = Number(yearLevel);
+  return year === 1 || year === 2 || year === 3 || year === 4 ? year : 1;
+};
+
 interface SchedulerCacheData {
   rooms: Room[];
   sections: Section[];
   subjects: Subject[];
   faculties: Faculty[];
-  activeTerm: any;
-  departments: any[];
-  users: any[];
+  activeTerm: Term | null;
+  departments: Department[];
+  users: UserSummary[];
   schedules: ScheduleItem[];
 }
 
-interface ApiScheduleRecord {
-  id: number | string;
-  subject_id: number | string;
-  section_id: number | string;
-  room_id: number | string;
-  faculty_id?: number | string | null;
+interface AtomicScheduleResponse {
+  schedules: ApiScheduleRecord[];
+  deleted_schedule_ids: number[];
+}
+
+interface TargetScheduleDay {
   day: string;
-  start_time: string;
-  end_time: string;
-  mode?: "on-site" | "online" | "field";
-  status: ScheduleItem["status"];
-  is_hybrid?: boolean | number;
-  preferred_pattern?: string | null;
-  subject?: {
-    subject_code?: string;
-    subject_name?: string;
-    subject_category?: ScheduleItem["subjectType"];
-  } | null;
-  section?: {
-    section_name?: string;
-  } | null;
-  faculty?: {
-    first_name?: string;
-    last_name?: string;
-  } | null;
-  room?: {
-    room_code?: string;
-    room_name?: string | null;
-  } | null;
+  startSlot: number;
+  duration: number;
 }
 
 const hasUsableSchedulerCache = (data: SchedulerCacheData | undefined): data is SchedulerCacheData => {
@@ -146,6 +153,8 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
 
   return {
     id: item.id.toString(),
+    termId: Number(item.term_id),
+    departmentId: Number(item.department_id),
     subjectId: item.subject_id.toString(),
     subjectCode: item.subject?.subject_code ?? "",
     subjectName: item.subject?.subject_name ?? "",
@@ -169,6 +178,23 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   };
 };
 
+const getApiViolations = (error: unknown): ApiViolation[] => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error
+  ) {
+    const response = (error as { response?: { data?: { violations?: unknown } } }).response;
+    return Array.isArray(response?.data?.violations)
+      ? response.data.violations.filter((violation): violation is ApiViolation => (
+          typeof violation === "object" && violation !== null
+        ))
+      : [];
+  }
+
+  return [];
+};
+
 export const useScheduler = () => {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -181,9 +207,9 @@ export const useScheduler = () => {
   const [sections, setSections] = useState<Section[]>(canUseInitialCache ? cachedSchedulerData.sections : []);
   const [subjects, setSubjects] = useState<Subject[]>(canUseInitialCache ? cachedSchedulerData.subjects : []);
   const [faculties, setFaculties] = useState<Faculty[]>(canUseInitialCache ? cachedSchedulerData.faculties : []);
-  const [activeTerm, setActiveTerm] = useState<any>(canUseInitialCache ? cachedSchedulerData.activeTerm : null);
-  const [departments, setDepartments] = useState<any[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
-  const [users, setUsers] = useState<any[]>(canUseInitialCache ? cachedSchedulerData.users : []);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(canUseInitialCache ? cachedSchedulerData.activeTerm : null);
+  const [departments, setDepartments] = useState<Department[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
+  const [users, setUsers] = useState<UserSummary[]>(canUseInitialCache ? cachedSchedulerData.users : []);
   const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
 
@@ -211,16 +237,17 @@ export const useScheduler = () => {
       };
     }
 
-    const fetchRooms = api.get<any[]>('/rooms', { signal }).then(res => {
+    const fetchRooms = api.get<ApiRoomRecord[]>('/rooms', { signal }).then(res => {
       let apiRooms = res.data;
       if (!isVpaa && user?.department_id) {
-        apiRooms = apiRooms.filter((r: any) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
+        apiRooms = apiRooms.filter((r) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
       }
-      return apiRooms.map((r: any) => ({
+      return apiRooms.map((r): Room => ({
         id: r.id.toString(),
         name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
         departmentId: r.department_id,
-        roomType: r.room_type
+        roomType: r.room_type,
+        status: r.status
       }));
     });
 
@@ -229,45 +256,49 @@ export const useScheduler = () => {
       ? `/subjects?department_id=${user.department_id}`
       : '/subjects';
 
-    const fetchSubjects = api.get<any[]>(subjectsUrl, { signal }).then(res => {
+    const fetchSubjects = api.get<ApiSubjectRecord[]>(subjectsUrl, { signal }).then(res => {
       const apiSubjects = res.data;
-      return apiSubjects.map((s: any) => ({
+      return apiSubjects.map((s): Subject => ({
         id: s.id.toString(),
         code: s.subject_code,
         name: s.subject_name,
         units: s.units,
         lectureHours: s.lecture_hours ?? 0,
         labHours: s.lab_hours ?? 0,
-        category: s.subject_category as Subject['category'],
-        semester: s.semester as Subject['semester'],
+        category: s.subject_category,
+        semester: s.semester,
         departmentId: s.department_id ?? null,
-        yearLevel: Number(s.year_level),
-        roomTypeRequired: s.room_type_required
+        yearLevel: normalizeYearLevel(s.year_level),
+        roomTypeRequired: s.room_type_required,
+        status: s.status ?? "active"
       }));
     });
 
-    const fetchFaculties = api.get<any[]>('/faculties', { signal }).then(res =>
-      res.data.map((f: any) => ({
+    const fetchFaculties = api.get<ApiFacultyRecord[]>('/faculties', { signal }).then(res =>
+      res.data.map((f): Faculty => ({
         id: f.id.toString(),
         name: `${f.first_name} ${f.last_name}`,
         employmentType: f.employment_type,
         departmentId: f.department_id,
         departmentCode: f.department?.department_code,
         departmentName: f.department?.department_name,
-        maxUnits: f.max_units ? Number(f.max_units) : undefined
+        maxUnits: f.max_units ? Number(f.max_units) : undefined,
+        status: f.status
       }))
     );
 
-    const fetchTerm = api.get<any>('/terms/active', { signal }).then(res => res.data);
+    const fetchTerm = api.get<ApiTermRecord>('/terms/active', { signal }).then(res => res.data);
 
     // Parallel fetch sections and schedules
     const sectionsUrl = !isVpaa && user?.department_id
       ? `/sections/department/${user.department_id}`
       : '/sections';
-    const fetchSections = api.get<any[]>(sectionsUrl, { signal }).then(res => res.data);
-    const fetchSchedules = api.get<any[]>('/schedules', { signal }).then(res => res.data);
-    const fetchDepartments = api.get<any[]>('/departments', { signal }).then(res => res.data);
-    const fetchUsers = api.get<any[]>('/user', { signal }).then(res => res.data);
+    const fetchSections = api.get<ApiSectionRecord[]>(sectionsUrl, { signal }).then(res => res.data);
+    const fetchSchedules = api.get<ApiScheduleRecord[]>('/schedules', { signal }).then(res => res.data);
+    const fetchDepartments = api.get<ApiDepartmentRecord[]>('/departments', { signal }).then(res => res.data);
+    const fetchUsers = api.get<UserSummary[]>('/user', { signal })
+      .then(res => res.data)
+      .catch((): UserSummary[] => []);
 
     setIsLoading(true);
 
@@ -276,59 +307,21 @@ export const useScheduler = () => {
 
       // Filter sections by term_id immediately once loaded
       const filteredSections = rawSections
-        .filter((s: any) => Number(s.term_id) === Number(term.id))
-        .map((s: any) => ({
+        .filter((s) => Number(s.term_id) === Number(term.id))
+        .map((s): Section => ({
           id: s.id.toString(),
           name: s.section_name,
-          yearLevel: Number(s.year_level),
+          yearLevel: normalizeYearLevel(s.year_level),
+          semester: s.semester,
           departmentId: s.department_id,
-          numberOfStudents: Number(s.number_of_students)
+          termId: Number(s.term_id),
+          status: s.status ?? "active"
         }));
 
       // Filter and map schedules by term_id immediately once loaded
       const filteredSchedules = rawSchedules
-        .filter((item: any) => Number(item.term_id) === Number(term.id))
-        .map((item: any) => {
-          const dayIndex = dayMapToIndex[item.day] ?? 0;
-          const startSlot = timeStrToSlot(item.start_time);
-          const endSlot = timeStrToSlot(item.end_time);
-          const durationSlots = endSlot - startSlot;
-
-          let roomName = "";
-          if (item.room) {
-            if (item.room.room_code === "ONLINE") roomName = "Online";
-            else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
-          }
-
-          let roomIdStr = item.room_id.toString();
-          if (item.room?.room_code === "ONLINE") roomIdStr = "online";
-          else if (item.room?.room_code === "FIELD") roomIdStr = "field";
-
-          return {
-            id: item.id.toString(),
-            subjectId: item.subject_id.toString(),
-            subjectCode: item.subject?.subject_code ?? "",
-            subjectName: item.subject?.subject_name ?? "",
-            subjectType: item.subject?.subject_category as any,
-            sectionName: item.section?.section_name ?? "",
-            roomName,
-            day: DAYS[dayIndex] || "Mon",
-            startTime: slotToTimeStr(startSlot),
-            endTime: slotToTimeStr(endSlot),
-            mode: item.mode ?? "on-site",
-            facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
-            facultyId: item.faculty_id ? item.faculty_id.toString() : null,
-            status: item.status,
-            dayIndex,
-            startSlot,
-            durationSlots,
-            sectionId: item.section_id.toString(),
-            roomId: roomIdStr,
-            isHybrid: !!item.is_hybrid,
-            preferredPattern: item.preferred_pattern
-          };
-        });
+        .filter((item) => Number(item.term_id) === Number(term.id))
+        .map(mapApiScheduleToItem);
 
       return {
         rooms: mappedRooms,
@@ -354,7 +347,9 @@ export const useScheduler = () => {
         setSchedules(data.schedules);
       })
       .catch(() => {
-        // Safe no-op on abort or fetch error to preserve previous/alternate state instances
+        if (active && !signal.aborted) {
+          toast.error("Load Failed", "Could not load scheduler data from the database.");
+        }
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -383,55 +378,22 @@ export const useScheduler = () => {
 
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
 
+  useEffect(() => {
+    if (sections.length === 0) return;
+    if (!selectedSectionId || !sections.some((section) => section.id === selectedSectionId)) {
+      setSelectedSectionId(sections[0].id);
+    }
+  }, [sections, selectedSectionId]);
+
 
   const refreshSchedules = useCallback(async () => {
     try {
-      const res = await api.get<any[]>('/schedules');
+      const res = await api.get<ApiScheduleRecord[]>('/schedules');
       let apiData = res.data;
       if (activeTerm) {
-        apiData = apiData.filter((item: any) => Number(item.term_id) === Number(activeTerm.id));
+        apiData = apiData.filter((item) => Number(item.term_id) === Number(activeTerm.id));
       }
-      const mapped = apiData.map((item: any) => {
-        const dayIndex = dayMapToIndex[item.day] ?? 0;
-        const startSlot = timeStrToSlot(item.start_time);
-        const endSlot = timeStrToSlot(item.end_time);
-        const durationSlots = endSlot - startSlot;
-
-        let roomName = "";
-        if (item.room) {
-          if (item.room.room_code === "ONLINE") roomName = "Online";
-          else if (item.room.room_code === "FIELD") roomName = "Field";
-          else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
-        }
-
-        let roomIdStr = item.room_id.toString();
-        if (item.room?.room_code === "ONLINE") roomIdStr = "online";
-        else if (item.room?.room_code === "FIELD") roomIdStr = "field";
-
-        return {
-          id: item.id.toString(),
-          subjectId: item.subject_id.toString(),
-          subjectCode: item.subject?.subject_code ?? "",
-          subjectName: item.subject?.subject_name ?? "",
-          subjectType: item.subject?.subject_category as any,
-          sectionName: item.section?.section_name ?? "",
-          roomName,
-          day: DAYS[dayIndex] || "Mon",
-          startTime: slotToTimeStr(startSlot),
-          endTime: slotToTimeStr(endSlot),
-          mode: item.mode ?? "on-site",
-          facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : null,
-          facultyId: item.faculty_id ? item.faculty_id.toString() : null,
-          status: item.status,
-          dayIndex,
-          startSlot,
-          durationSlots,
-          sectionId: item.section_id.toString(),
-          roomId: roomIdStr,
-          isHybrid: !!item.is_hybrid,
-          preferredPattern: item.preferred_pattern
-        };
-      });
+      const mapped = apiData.map(mapApiScheduleToItem);
       setSchedules(mapped);
       const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
       if (cachedData) {
@@ -460,7 +422,7 @@ export const useScheduler = () => {
 
   const [dropContext, setDropContext] = useState<DropContext | null>(null);
   const [modalRoomId, setModalRoomId] = useState<string>("");
-  const [modalClassMode, setModalClassMode] = useState<"on-site" | "online" | "field">("on-site");
+  const [modalClassMode, setModalClassMode] = useState<DeliveryMode>("on-site");
   const [modalIsHybrid, setModalIsHybrid] = useState<boolean>(false);
   const [modalPreferredPattern, setModalPreferredPattern] = useState<string | null>(null);
   const [modalDay1Index, setModalDay1Index] = useState<number>(0);
@@ -984,7 +946,7 @@ export const useScheduler = () => {
       if (fieldRoom) resolvedRoomId = fieldRoom.id;
     }
 
-    const targetDays = [];
+    const targetDays: TargetScheduleDay[] = [];
     if (patternDays) {
       if (d1 > 0) targetDays.push({ day: fullDayNames[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
       if (d2 > 0) targetDays.push({ day: fullDayNames[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
@@ -994,164 +956,69 @@ export const useScheduler = () => {
 
     setIsModalLoading(true);
     try {
-      const savedScheduleItems: ScheduleItem[] = [];
-      const deletedScheduleIds = new Set<string>();
-      const rememberSavedSchedule = (item: ApiScheduleRecord) => {
-        savedScheduleItems.push(mapApiScheduleToItem(item));
-      };
+      const existingRecords = dropContext.isRescheduling
+        ? schedules.filter((s) => s.subjectId === subject.id && s.sectionId === selectedSectionId)
+        : [];
+
+      const operations = targetDays.map((targetDay, index) => ({
+        ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
+        term_id: activeTerm.id,
+        section_id: Number(selectedSectionId),
+        subject_id: Number(subject.id),
+        faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
+        room_id: Number(resolvedRoomId),
+        department_id: section.departmentId,
+        day: targetDay.day,
+        start_time: slotToTime24h(targetDay.startSlot),
+        end_time: slotToTime24h(targetDay.startSlot + targetDay.duration),
+        mode: modalClassMode,
+        is_hybrid: modalIsHybrid,
+        preferred_pattern: modalPreferredPattern,
+        status: existingRecords[index]?.status ?? "draft"
+      }));
+
+      const deleteIds = existingRecords
+        .slice(targetDays.length)
+        .map((schedule) => Number(schedule.id));
+
+      const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
+        operations,
+        delete_ids: deleteIds
+      });
+
+      const savedScheduleItems = response.data.schedules.map(mapApiScheduleToItem);
+      const deletedScheduleIds = new Set(response.data.deleted_schedule_ids.map(String));
 
       if (dropContext.isRescheduling) {
-        const existingRecords = schedules.filter(
-          s => s.subjectId === subject.id && s.sectionId === selectedSectionId
-        );
-
-        if (targetDays.length === 2) {
-          if (existingRecords.length === 2) {
-            const dayOneResponse = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
-              room_id: Number(resolvedRoomId),
-              day: targetDays[0].day,
-              start_time: slotToTime24h(targetDays[0].startSlot),
-              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
-              mode: modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_pattern: modalPreferredPattern
-            });
-            rememberSavedSchedule(dayOneResponse.data);
-            const dayTwoResponse = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[1].id}`, {
-              room_id: Number(resolvedRoomId),
-              day: targetDays[1].day,
-              start_time: slotToTime24h(targetDays[1].startSlot),
-              end_time: slotToTime24h(targetDays[1].startSlot + targetDays[1].duration),
-              mode: modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_pattern: modalPreferredPattern
-            });
-            rememberSavedSchedule(dayTwoResponse.data);
-          } else if (existingRecords.length === 1) {
-            const dayOneResponse = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
-              room_id: Number(resolvedRoomId),
-              day: targetDays[0].day,
-              start_time: slotToTime24h(targetDays[0].startSlot),
-              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
-              mode: modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_pattern: modalPreferredPattern
-            });
-            rememberSavedSchedule(dayOneResponse.data);
-            const dayTwoResponse = await api.post<ApiScheduleRecord>('/schedules', {
-              term_id: activeTerm.id,
-              section_id: Number(selectedSectionId),
-              subject_id: Number(subject.id),
-              faculty_id: null,
-              room_id: Number(resolvedRoomId),
-              department_id: section.departmentId,
-              day: targetDays[1].day,
-              start_time: slotToTime24h(targetDays[1].startSlot),
-              end_time: slotToTime24h(targetDays[1].startSlot + targetDays[1].duration),
-              mode: modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_pattern: modalPreferredPattern,
-              status: "draft"
-            });
-            rememberSavedSchedule(dayTwoResponse.data);
-          } else {
-            for (const t of targetDays) {
-              const response = await api.post<ApiScheduleRecord>('/schedules', {
-                term_id: activeTerm.id,
-                section_id: Number(selectedSectionId),
-                subject_id: Number(subject.id),
-                faculty_id: null,
-                room_id: Number(resolvedRoomId),
-                department_id: section.departmentId,
-                day: t.day,
-                start_time: slotToTime24h(t.startSlot),
-                end_time: slotToTime24h(t.startSlot + t.duration),
-                mode: modalClassMode,
-                is_hybrid: modalIsHybrid,
-                preferred_pattern: modalPreferredPattern,
-                status: "draft"
-              });
-              rememberSavedSchedule(response.data);
-            }
-          }
-        } else {
-          // targetDays.length === 1
-          if (existingRecords.length === 2) {
-            const response = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
-              room_id: Number(resolvedRoomId),
-              day: targetDays[0].day,
-              start_time: slotToTime24h(targetDays[0].startSlot),
-              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
-              mode: modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_pattern: modalPreferredPattern
-            });
-            rememberSavedSchedule(response.data);
-            await api.delete(`/schedules/${existingRecords[1].id}`);
-            deletedScheduleIds.add(existingRecords[1].id);
-          } else if (existingRecords.length === 1) {
-            const response = await api.put<ApiScheduleRecord>(`/schedules/${existingRecords[0].id}`, {
-              room_id: Number(resolvedRoomId),
-              day: targetDays[0].day,
-              start_time: slotToTime24h(targetDays[0].startSlot),
-              end_time: slotToTime24h(targetDays[0].startSlot + targetDays[0].duration),
-              mode: modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_pattern: modalPreferredPattern
-            });
-            rememberSavedSchedule(response.data);
-          }
-        }
-
         if (resolvedDay1StartSlot !== modalDay1StartSlot) {
           toast.success("Schedule Updated at Alternative Time", `Preferred time was occupied. Relocated to ${slotToTimeStr(resolvedDay1StartSlot)}.`);
         } else {
           toast.success("Schedule Updated", "Class schedule successfully updated.");
         }
       } else {
-        for (const t of targetDays) {
-          const response = await api.post<ApiScheduleRecord>('/schedules', {
-            term_id: activeTerm.id,
-            section_id: Number(selectedSectionId),
-            subject_id: Number(subject.id),
-            faculty_id: null,
-            room_id: Number(resolvedRoomId),
-            department_id: section.departmentId,
-            day: t.day,
-            start_time: slotToTime24h(t.startSlot),
-            end_time: slotToTime24h(t.startSlot + t.duration),
-            mode: modalClassMode,
-            is_hybrid: modalIsHybrid,
-            preferred_pattern: modalPreferredPattern,
-            status: "draft"
-          });
-          rememberSavedSchedule(response.data);
-        }
-
         if (resolvedDay1StartSlot !== modalDay1StartSlot) {
           toast.success("Schedule Created at Alternative Time", `Preferred time was occupied. Plotted to ${slotToTimeStr(resolvedDay1StartSlot)}.`);
         } else {
           toast.success("Schedule Created", "Class schedule successfully plotted.");
         }
       }
-      if (savedScheduleItems.length > 0 || deletedScheduleIds.size > 0) {
-        setSchedules((previousSchedules) => {
-          const savedScheduleIds = new Set(savedScheduleItems.map((item) => item.id));
-          return [
-            ...previousSchedules.filter((item) => !savedScheduleIds.has(item.id) && !deletedScheduleIds.has(item.id)),
-            ...savedScheduleItems
-          ];
-        });
-      }
+
+      setSchedules((previousSchedules) => {
+        const savedScheduleIds = new Set(savedScheduleItems.map((item) => item.id));
+        return [
+          ...previousSchedules.filter((item) => !savedScheduleIds.has(item.id) && !deletedScheduleIds.has(item.id)),
+          ...savedScheduleItems
+        ];
+      });
       setIsModalLoading(false);
       setDropContext(null);
       setConflictInfo(null);
       await refreshSchedules();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      const violations = err?.response?.data?.violations;
-      if (Array.isArray(violations) && violations.length > 0) {
-        const messages = violations.map((v: any) => v.message).join(" ");
+      const violations = getApiViolations(err);
+      if (violations.length > 0) {
+        const messages = violations.map((v) => v.message).join(" ");
         toast.error("Schedule Conflict", messages);
       } else {
         toast.error("Operation Failed", "Could not save the schedule to the database.");
@@ -1820,6 +1687,7 @@ export const useScheduler = () => {
     handleRemoveFaculty,
     handleInlineFacultyAssign,
     handleRemoveInlineFaculty,
+    refreshSchedules,
     getClassesCountForDay,
     toggleCategory,
     handleSectionSelect,

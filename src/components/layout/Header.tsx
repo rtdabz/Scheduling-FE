@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, Bell, User, Settings, LogOut, MessageSquare, Check, RefreshCw } from 'lucide-react';
+import { Menu, Bell, User, Settings, LogOut, CalendarDays, Check, RefreshCw } from 'lucide-react';
 import logo from '../../assets/logo.jpg';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
@@ -11,19 +12,64 @@ interface HeaderProps {
   sidebarOpen: boolean;
 }
 
+interface StoredUser {
+  name?: string;
+  username?: string;
+  role?: string;
+}
+
+interface ScheduleRecord {
+  id: number | string;
+  department_id: number | string;
+  status: string;
+  updated_at?: string;
+  department?: {
+    department_name?: string;
+  } | null;
+  section?: {
+    section_name?: string;
+  } | null;
+}
+
+interface NotificationItem {
+  title: string;
+  desc: string;
+  time: string;
+  icon: ReactNode;
+  color?: string;
+}
+
+const formatRelativeTime = (value?: string): string => {
+  if (!value) return 'Recently';
+
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return 'Recently';
+
+  const diffMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+};
+
 export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
   // Get user data from localStorage or sessionStorage
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
 
   // Format initials
   const getInitials = (name: string) => {
@@ -31,14 +77,15 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
   };
 
   // Format role for display
-  const formatRole = (role: string) => {
+  const formatRole = (role?: string) => {
     const roles: Record<string, string> = {
       'vpaa': 'VPAA',
       'dean': 'Dean',
       'secretary': 'Secretary',
       'program_head': 'Program Head'
     };
-    return roles[role?.toLowerCase()] || role || 'User';
+    const normalizedRole = role?.toLowerCase() ?? '';
+    return roles[normalizedRole] || role || 'User';
   };
 
   // Close dropdowns when clicking outside
@@ -53,6 +100,66 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadNotifications = async () => {
+      try {
+        const response = await api.get<ScheduleRecord[]>('/schedules', { signal: controller.signal });
+        const relevantStatuses = new Set(['submitted', 'approved_by_dean', 'approved', 'rejected_by_dean', 'rejected']);
+        const items = response.data
+          .filter((schedule) => relevantStatuses.has(schedule.status))
+          .sort((left, right) => {
+            const leftTime = new Date(left.updated_at ?? '').getTime() || 0;
+            const rightTime = new Date(right.updated_at ?? '').getTime() || 0;
+            return rightTime - leftTime;
+          })
+          .slice(0, 5)
+          .map((schedule): NotificationItem => {
+            const departmentName = schedule.department?.department_name ?? `Department #${schedule.department_id}`;
+            const sectionName = schedule.section?.section_name ?? 'A section schedule';
+
+            if (schedule.status === 'approved' || schedule.status === 'approved_by_dean') {
+              return {
+                title: 'Schedule Approved',
+                desc: `${sectionName} from ${departmentName} moved forward in the approval workflow.`,
+                time: formatRelativeTime(schedule.updated_at),
+                icon: <Check size={16} />,
+                color: 'text-green-600 bg-green-50'
+              };
+            }
+
+            if (schedule.status === 'rejected' || schedule.status === 'rejected_by_dean') {
+              return {
+                title: 'Schedule Returned',
+                desc: `${sectionName} from ${departmentName} requires revision.`,
+                time: formatRelativeTime(schedule.updated_at),
+                icon: <CalendarDays size={16} />,
+                color: 'text-red-600 bg-red-50'
+              };
+            }
+
+            return {
+              title: 'Schedule Submitted',
+              desc: `${sectionName} from ${departmentName} is ready for review.`,
+              time: formatRelativeTime(schedule.updated_at),
+              icon: <CalendarDays size={16} />
+            };
+          });
+
+        setNotifications(items);
+      } catch {
+        if (!controller.signal.aborted) {
+          setNotifications([]);
+        }
+      }
+    };
+
+    loadNotifications();
+
+    return () => controller.abort();
   }, []);
 
   return (
@@ -107,7 +214,9 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
               }`}
             >
               <Bell size={20} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#C9952A] rounded-full border border-[#4e0a10] animate-pulse" />
+              {notifications.length > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#C9952A] rounded-full border border-[#4e0a10] animate-pulse" />
+              )}
             </button>
 
             {/* Notifications Dropdown */}
@@ -115,14 +224,13 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
               <div className="absolute right-0 mt-12 w-96 bg-[#F7F4F0] border border-slate-200/80 rounded-2xl shadow-2xl overflow-hidden z-50 animate-slide-in origin-top-right">
                 <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                   <h3 className="text-gray-800 font-bold tracking-tight">Notifications</h3>
-                  <button className="text-xs font-semibold text-[#C9952A] hover:text-[#a0741c] hover:underline transition-colors">Mark all as read</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
-                  {[
-                    { title: 'New Schedule Request', desc: 'BSIT 3A requested a room change.', time: '5m ago', icon: <MessageSquare size={16} /> },
-                    { title: 'System Update', desc: 'WICARS v1.0.2 is now live.', time: '1h ago', icon: <Settings size={16} /> },
-                    { title: 'Success', desc: 'Conflict check completed successfully.', time: '2h ago', icon: <Check size={16} />, color: 'text-green-600 bg-green-50' },
-                  ].map((notif, i) => (
+                  {notifications.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-gray-500">
+                      No schedule notifications.
+                    </div>
+                  ) : notifications.map((notif, i) => (
                     <div key={i} className="p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer group">
                       <div className="flex gap-3">
                         <div className={`mt-0.5 p-2 rounded-xl border border-gray-200/50 shadow-sm transition-all duration-300 flex-shrink-0 h-fit ${notif.color || 'text-[#C9952A] bg-gray-50'}`}>
@@ -136,9 +244,6 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                       </div>
                     </div>
                   ))}
-                </div>
-                <div className="p-3.5 text-center border-t border-gray-100 bg-gray-50/50">
-                  <button className="text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors w-full">View all notifications</button>
                 </div>
               </div>
             )}
@@ -157,7 +262,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
             >
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ring-white/10">
                 <span className="text-white text-sm font-bold font-display">
-                  {user ? getInitials(user.name) : 'AD'}
+                  {user ? getInitials(user.name ?? '') : 'AD'}
                 </span>
               </div>
               

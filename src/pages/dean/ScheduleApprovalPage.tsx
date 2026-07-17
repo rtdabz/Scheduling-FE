@@ -237,8 +237,8 @@ export default function ScheduleApprovalPage() {
 
         setRawSchedules(data.rawSchedules);
         setSchedules(data.schedules);
-      } catch (err) {
-        // Safe empty catch block to align with rule: "Remove all console.log statements"
+      } catch {
+        toast.error('Load Failed', 'Could not load schedules for approval.');
       } finally {
         setIsLoading(false);
       }
