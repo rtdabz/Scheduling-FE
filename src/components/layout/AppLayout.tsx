@@ -7,9 +7,16 @@ import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
 import { useSessionTimeout } from '../../hooks/useSessionTimeout'
+import { AlertTriangle, Clock } from 'lucide-react'
 
 export default function AppLayout() {
-  useSessionTimeout()
+  const {
+    isWarningOpen,
+    isExpiredOpen,
+    remainingSeconds,
+    staySignedIn,
+    signInAgain,
+  } = useSessionTimeout()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const location = useLocation()
 
@@ -70,6 +77,59 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {(isWarningOpen || isExpiredOpen) && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-100 bg-[#F7F4F0] p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#C9952A]/30 bg-[#C9952A]/15 text-[#4e0a10]">
+                  {isExpiredOpen ? <AlertTriangle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-[#4e0a10]">
+                    {isExpiredOpen ? 'Session Expired' : 'Session Timeout'}
+                  </h2>
+                  <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                    {isExpiredOpen
+                      ? 'Your session has expired for security. Please sign in again to continue.'
+                      : `You will be signed out in ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} due to inactivity.`}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5">
+              {isExpiredOpen ? (
+                <button
+                  type="button"
+                  onClick={signInAgain}
+                  className="h-11 w-full rounded-xl bg-[#4e0a10] px-4 text-sm font-bold text-[#E8D5C4] transition-colors hover:bg-[#C9952A]"
+                >
+                  Sign In Again
+                </button>
+              ) : (
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={signInAgain}
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    Sign Out
+                  </button>
+                  <button
+                    type="button"
+                    onClick={staySignedIn}
+                    className="h-11 rounded-xl bg-[#4e0a10] px-4 text-sm font-bold text-[#E8D5C4] transition-colors hover:bg-[#C9952A]"
+                  >
+                    Stay Signed In
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import SchedulerPanel from "./SchedulerPanel";
 
-export default function Schedules() {
+export default function SecretarySchedules() {
   return (
     <div>
       <div className="mb-6">

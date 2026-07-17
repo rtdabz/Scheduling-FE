@@ -339,7 +339,7 @@ export default function TimetableGrid({
         </span>
         {[
           { label: "Major", color: "bg-blue-50 border-blue-400" },
-          { label: "GEC", color: "bg-emerald-50 border-emerald-400" },
+          { label: "GEC", color: "bg-red-50 border-red-400" },
           { label: "GEE", color: "bg-purple-50 border-purple-400" },
           { label: "PATHFIT", color: "bg-orange-50 border-orange-400" },
           { label: "NSTP", color: "bg-yellow-50 border-yellow-400" }

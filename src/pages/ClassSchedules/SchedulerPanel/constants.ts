@@ -35,7 +35,7 @@ export const slotToTimeStr = (slotIndex: number): string => {
 export const getCategoryStyles = (category: Subject["category"]) => {
   switch (category) {
     case "major": return { bg: "bg-blue-50/90", text: "text-blue-800", border: "border-blue-300", badge: "bg-blue-100 text-blue-800 border-blue-200", typeBadge: "bg-blue-100 text-blue-800 border-blue-200", label: "MAJOR" };
-    case "gec": return { bg: "bg-emerald-50/90", text: "text-emerald-800", border: "border-emerald-300", badge: "bg-emerald-100 text-emerald-800 border-emerald-200", typeBadge: "bg-emerald-100 text-emerald-800 border-emerald-200", label: "GEC" };
+    case "gec": return { bg: "bg-red-50/90", text: "text-red-800", border: "border-red-300", badge: "bg-red-100 text-red-800 border-red-200", typeBadge: "bg-red-100 text-red-800 border-red-200", label: "GEC" };
     case "gee": return { bg: "bg-purple-50/90", text: "text-purple-800", border: "border-purple-300", badge: "bg-purple-100 text-purple-800 border-purple-200", typeBadge: "bg-purple-100 text-purple-800 border-purple-200", label: "GEE" };
     case "pathfit": return { bg: "bg-orange-50/90", text: "text-orange-800", border: "border-orange-300", badge: "bg-orange-100 text-orange-800 border-orange-200", typeBadge: "bg-orange-100 text-orange-800 border-orange-200", label: "PATHFIT" };
     case "nstp": return { bg: "bg-yellow-50/90", text: "text-yellow-800", border: "border-yellow-300", badge: "bg-yellow-100 text-yellow-800 border-yellow-200", typeBadge: "bg-yellow-100 text-yellow-800 border-yellow-200", label: "NSTP" };
@@ -46,7 +46,7 @@ export const getCategoryStyles = (category: Subject["category"]) => {
 export const getLeftAccentBorder = (category: Subject["category"]) => {
   switch (category) {
     case "major": return "border-l-4 border-blue-500";
-    case "gec": return "border-l-4 border-emerald-500";
+    case "gec": return "border-l-4 border-red-500";
     case "gee": return "border-l-4 border-purple-500";
     case "pathfit": return "border-l-4 border-orange-500";
     case "nstp": return "border-l-4 border-yellow-500";
@@ -57,7 +57,7 @@ export const getLeftAccentBorder = (category: Subject["category"]) => {
 export const getGridCardStyles = (category: Subject["category"]) => {
   switch (category) {
     case "major": return { container: "border-blue-400 border-l-blue-600 bg-blue-50", text: "text-blue-700", badgeText: "text-blue-700" };
-    case "gec": return { container: "border-green-400 border-l-green-600 bg-green-50", text: "text-green-700", badgeText: "text-green-700" };
+    case "gec": return { container: "border-red-400 border-l-red-600 bg-red-50", text: "text-red-700", badgeText: "text-red-700" };
     case "gee": return { container: "border-purple-400 border-l-purple-600 bg-purple-50", text: "text-purple-700", badgeText: "text-purple-700" };
     case "pathfit": return { container: "border-orange-400 border-l-orange-600 bg-orange-50", text: "text-orange-700", badgeText: "text-orange-700" };
     case "nstp": return { container: "border-yellow-400 border-l-yellow-600 bg-yellow-50", text: "text-yellow-700", badgeText: "text-yellow-700" };

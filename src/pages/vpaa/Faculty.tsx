@@ -132,7 +132,7 @@ const getWorkloadStatus = (f: FacultyMember) => {
   };
 };
 
-export default function Faculty() {
+export default function VpaaFaculty() {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;

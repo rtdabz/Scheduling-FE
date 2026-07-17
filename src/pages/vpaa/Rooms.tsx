@@ -69,7 +69,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
   createdAt: r.created_at
 });
 
-export default function Rooms() {
+export default function VpaaRooms() {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;

@@ -84,7 +84,7 @@ const mapApiSection = (s: ApiSection): Section => ({
   createdAt: s.created_at
 });
 
-export default function Sections() {
+export default function SecretarySections() {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;

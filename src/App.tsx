@@ -4,28 +4,43 @@ import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
 import api from './lib/api';
+import { clearDataCache } from './lib/dataCache';
 
 // VPAA Pages
 import Dashboard from './pages/Dashboard';
-const Schedules = lazy(() => import('./pages/vpaa/Schedules'));
-const ScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
-const Faculty = lazy(() => import('./pages/vpaa/Faculty'));
-const Rooms = lazy(() => import('./pages/vpaa/Rooms'));
-const Users = lazy(() => import('./pages/vpaa/Users'));
+const VpaaSchedules = lazy(() => import('./pages/vpaa/Schedules'));
+const VpaaScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
+const VpaaFaculty = lazy(() => import('./pages/vpaa/Faculty'));
+const VpaaRooms = lazy(() => import('./pages/vpaa/Rooms'));
+const VpaaUsers = lazy(() => import('./pages/vpaa/Users'));
 const Departments = lazy(() => import('./pages/vpaa/Departments'));
-const Reports = lazy(() => import('./pages/vpaa/Reports'));
+const VpaaReports = lazy(() => import('./pages/vpaa/Reports'));
 const Settings = lazy(() => import('./pages/vpaa/Settings'));
 
 // Other Role Pages
 const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
 const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprovalPage'));
-const SecPHSchedules = lazy(() => import('./pages/secretary/Schedules'));
+const DeanFaculty = lazy(() => import('./pages/dean/Faculty'));
+const DeanRooms = lazy(() => import('./pages/dean/Rooms'));
+const DeanReports = lazy(() => import('./pages/dean/Reports'));
+const DeanUsers = lazy(() => import('./pages/dean/Users'));
+const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
+const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
+const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
+const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
+const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
 const SecretarySubjects = lazy(() => import('./pages/secretary/Subjects'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
 
 interface StoredUser {
   role?: string;
+}
+
+interface ApiErrorLike {
+  response?: {
+    status?: number;
+  };
 }
 
 const getStoredRole = (): string => {
@@ -91,9 +106,13 @@ export default function App() {
         const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
         storage.setItem('user', JSON.stringify(res.data));
       })
-      .catch(() => {
+      .catch((error: ApiErrorLike) => {
+        if (error.response?.status !== 401) return;
+
+        clearDataCache();
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        localStorage.removeItem('lastActivity');
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
         window.location.href = '/';
@@ -114,37 +133,37 @@ export default function App() {
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             {/* VPAA Routes */}
             <Route path="/dashboard" element={<DashboardRoute />} />
-            <Route path="/schedules" element={<Schedules />} />
-            <Route path="/schedules/approval" element={<ScheduleApprovalPage />} />
-            <Route path="/faculty" element={<Faculty />} />
-            <Route path="/rooms" element={<Rooms />} />
-            <Route path="/users" element={<Users />} />
+            <Route path="/schedules" element={<VpaaSchedules />} />
+            <Route path="/schedules/approval" element={<VpaaScheduleApprovalPage />} />
+            <Route path="/faculty" element={<VpaaFaculty />} />
+            <Route path="/rooms" element={<VpaaRooms />} />
+            <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
-            <Route path="/reports" element={<Reports />} />
+            <Route path="/reports" element={<VpaaReports />} />
             <Route path="/settings" element={<Settings />} />
 
             {/* Dean Routes */}
             <Route path="/dean/dashboard" element={<DashboardRoute />} />
             <Route path="/dean/schedules" element={<DeanSchedules />} />
             <Route path="/dean/schedules/approval" element={<DeanScheduleApprovalPage />} />
-            <Route path="/dean/faculty" element={<Faculty />} />
-            <Route path="/dean/rooms" element={<Rooms />} />
-            <Route path="/dean/reports" element={<Reports />} />
-            <Route path="/dean/users" element={<Users />} />
+            <Route path="/dean/faculty" element={<DeanFaculty />} />
+            <Route path="/dean/rooms" element={<DeanRooms />} />
+            <Route path="/dean/reports" element={<DeanReports />} />
+            <Route path="/dean/users" element={<DeanUsers />} />
 
             {/* Secretary Routes */}
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
-            <Route path="/secretary/schedules" element={<SecPHSchedules />} />
-            <Route path="/secretary/rooms" element={<Rooms />} />
+            <Route path="/secretary/schedules" element={<SecretarySchedules />} />
+            <Route path="/secretary/rooms" element={<SecretaryRooms />} />
             <Route path="/secretary/subjects" element={<SecretarySubjects />} />
             <Route path="/secretary/sections" element={<SecretarySections />} />
-            <Route path="/secretary/instructors" element={<Faculty />} />
+            <Route path="/secretary/instructors" element={<SecretaryFaculty />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
             <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
-            <Route path="/program_head/faculty" element={<Faculty />} />
-            <Route path="/program_head/rooms" element={<Rooms />} />
+            <Route path="/program_head/faculty" element={<ProgramHeadFaculty />} />
+            <Route path="/program_head/rooms" element={<ProgramHeadRooms />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

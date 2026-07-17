@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Filter,
   RefreshCw,
@@ -7,7 +7,17 @@ import {
   User,
   Layers,
   Info,
-  Calendar
+  Calendar,
+  LayoutDashboard,
+  List,
+  CalendarDays,
+  Search,
+  Building2,
+  Users,
+  DoorOpen,
+  AlertTriangle,
+  BookOpen,
+  X
 } from "lucide-react";
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
@@ -37,6 +47,12 @@ export interface Room {
   name: string;
 }
 
+export interface Term {
+  id: number | string;
+  academic_year?: string;
+  semester?: string;
+}
+
 export interface Schedule {
   id: string;
   sectionId: string;
@@ -46,12 +62,58 @@ export interface Schedule {
   departmentCode: string;
   subjectCode: string;
   subjectName: string;
+  facultyId: string;
   facultyName: string;
+  roomId: string;
   roomName: string;
   day: string; // "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
   startTime: string; // e.g. "09:00 AM"
   endTime: string; // e.g. "10:30 AM"
   mode: 'on-site' | 'online' | 'field';
+}
+
+interface RawDepartment {
+  id: number | string;
+  department_name: string;
+  department_code: string;
+}
+
+interface RawSection {
+  id: number | string;
+  section_name: string;
+  department_id?: number | string | null;
+  term_id?: number | string | null;
+}
+
+interface RawFaculty {
+  id: number | string;
+  first_name?: string;
+  last_name?: string;
+  department_id?: number | string | null;
+}
+
+interface RawRoom {
+  id: number | string;
+  room_code: string;
+  room_name?: string | null;
+}
+
+interface RawSchedule {
+  id: number | string;
+  section_id?: number | string | null;
+  department_id?: number | string | null;
+  faculty_id?: number | string | null;
+  room_id?: number | string | null;
+  term_id?: number | string | null;
+  day: string;
+  start_time: string;
+  end_time: string;
+  mode?: Schedule["mode"];
+  section?: { section_name?: string } | null;
+  department?: { department_name?: string; department_code?: string } | null;
+  subject?: { subject_code?: string; subject_name?: string } | null;
+  faculty?: { first_name?: string; last_name?: string } | null;
+  room?: { room_code?: string; room_name?: string | null } | null;
 }
 
 interface ScheduleViewerData {
@@ -60,7 +122,30 @@ interface ScheduleViewerData {
   faculties: Faculty[];
   rooms: Room[];
   schedules: Schedule[];
-  activeTerm: any;
+  activeTerm: Term | null;
+}
+
+type ViewMode = "overview" | "list" | "grid";
+type SortKey = "department" | "section" | "subject" | "day" | "startTime" | "faculty" | "room";
+type SortDirection = "asc" | "desc";
+type GroupKey = "department" | "section" | "day" | "faculty" | "room";
+type ConflictStatus = "All" | "Conflict" | "No Conflict";
+type AssignmentStatus = "All" | "Complete" | "Missing Faculty" | "Missing Room" | "Missing Assignment";
+
+interface ScheduleConflictInfo {
+  faculty: boolean;
+  room: boolean;
+  section: boolean;
+}
+
+interface DepartmentSummary {
+  department: Department;
+  schedules: number;
+  sections: number;
+  faculty: number;
+  rooms: number;
+  conflicts: number;
+  missingAssignments: number;
 }
 
 const dayMapToIndex: Record<string, number> = {
@@ -100,40 +185,133 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Grid configuration
 const START_HOUR = 7; // 7:00 AM
 const END_HOUR = 21; // 9:00 PM
+const VIEWER_SLOT_HEIGHT_PX = 24;
+
+const normalizeDepartmentKey = (code: string, name = "") => {
+  const normalizedCode = code.trim().toUpperCase();
+  const value = name.toLowerCase();
+  if (["IT", "CIT"].includes(normalizedCode) || value.includes("information technology")) return "IT";
+  if (["AS", "CAS"].includes(normalizedCode) || value.includes("arts and sciences")) return "AS";
+  if (["EDUC", "CED"].includes(normalizedCode) || value.includes("education")) return "EDUC";
+  if (["BA", "CBA"].includes(normalizedCode) || value.includes("business")) return "BA";
+  if (["HM", "CHM"].includes(normalizedCode) || value.includes("hospitality")) return "HM";
+  if (["CM", "MID"].includes(normalizedCode) || value.includes("midwifery")) return "MID";
+  if (["CRIM", "CCJ", "CCJPS"].includes(normalizedCode) || value.includes("criminal")) return "CRIM";
+  if (["LIS", "CLIS"].includes(normalizedCode) || value.includes("library")) return "LIS";
+  return "";
+};
 
 // Department styling mapping
 const getDeptStyles = (code: string) => {
-  switch (code) {
-    case "CAS":
-      return "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100/60";
-    case "CIT":
-      return "bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100/60";
-    case "CED":
-      return "bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100/60";
-    case "CBA":
-      return "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100/60";
-    case "CHM":
-      return "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100/60";
-    case "CLIS":
-      return "bg-sky-50 text-sky-800 border-sky-300 hover:bg-sky-100/60";
-    case "CCJPS":
-      return "bg-red-50 text-red-800 border-red-300 hover:bg-red-100/60";
+  switch (normalizeDepartmentKey(code)) {
+    case "IT":
+      return "bg-blue-50 text-blue-800 border-blue-400 border-l-blue-700 hover:bg-blue-100/60";
+    case "AS":
+      return "bg-red-50 text-red-800 border-red-400 border-l-red-600 hover:bg-red-100/60";
+    case "EDUC":
+      return "bg-orange-50 text-orange-800 border-orange-400 border-l-orange-600 hover:bg-orange-100/60";
+    case "BA":
+      return "bg-yellow-50 text-yellow-800 border-yellow-400 border-l-yellow-600 hover:bg-yellow-100/60";
+    case "HM":
+      return "bg-lime-50 text-lime-800 border-lime-400 border-l-lime-600 hover:bg-lime-100/60";
+    case "MID":
+      return "bg-green-50 text-green-800 border-green-400 border-l-green-600 hover:bg-green-100/60";
+    case "CRIM":
+      return "bg-[#4e0a10]/10 text-[#4e0a10] border-[#6b0f1a] border-l-[#4e0a10] hover:bg-[#4e0a10]/15";
+    case "LIS":
+      return "bg-pink-50 text-pink-800 border-pink-400 border-l-pink-600 hover:bg-pink-100/60";
     default:
-      return "bg-slate-50 text-slate-800 border-slate-300 hover:bg-slate-100/60";
+      return "bg-purple-50 text-purple-800 border-purple-400 border-l-purple-600 hover:bg-purple-100/60";
   }
 };
 
 const getDeptBadgeStyles = (code: string) => {
-  switch (code) {
-    case "CAS": return "bg-amber-100 text-amber-800 border-amber-200";
-    case "CIT": return "bg-blue-100 text-blue-800 border-blue-200";
-    case "CED": return "bg-purple-100 text-purple-800 border-purple-200";
-    case "CBA": return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "CHM": return "bg-rose-100 text-rose-800 border-rose-200";
-    case "CLIS": return "bg-sky-100 text-sky-800 border-sky-200";
-    case "CCJPS": return "bg-red-100 text-red-800 border-red-200";
-    default: return "bg-slate-100 text-slate-800 border-slate-200";
+  switch (normalizeDepartmentKey(code)) {
+    case "IT": return "bg-blue-100 text-blue-800 border-blue-200";
+    case "AS": return "bg-red-100 text-red-800 border-red-200";
+    case "EDUC": return "bg-orange-100 text-orange-800 border-orange-200";
+    case "BA": return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    case "HM": return "bg-lime-100 text-lime-800 border-lime-200";
+    case "MID": return "bg-green-100 text-green-800 border-green-200";
+    case "CRIM": return "bg-[#4e0a10]/10 text-[#4e0a10] border-[#6b0f1a]/30";
+    case "LIS": return "bg-pink-100 text-pink-800 border-pink-200";
+    default: return "bg-purple-100 text-purple-800 border-purple-200";
   }
+};
+
+const getModeLabel = (mode: Schedule["mode"]) => {
+  if (mode === "on-site") return "On-Site";
+  if (mode === "online") return "Online";
+  return "Field";
+};
+
+const getDayOrder = (day: string) => DAYS_MAP.indexOf(day);
+
+const isUnassignedFaculty = (schedule: Schedule) => (
+  !schedule.facultyName.trim() || schedule.facultyName.trim().toLowerCase() === "unassigned"
+);
+
+const isUnassignedRoom = (schedule: Schedule) => (
+  !schedule.roomName.trim() || schedule.roomName.trim().toLowerCase() === "unassigned"
+);
+
+const schedulesOverlap = (left: Schedule, right: Schedule) => {
+  if (left.day !== right.day) return false;
+  const leftStart = parseTimeToSlotIndex(left.startTime);
+  const leftEnd = parseTimeToSlotIndex(left.endTime);
+  const rightStart = parseTimeToSlotIndex(right.startTime);
+  const rightEnd = parseTimeToSlotIndex(right.endTime);
+  return Math.max(leftStart, rightStart) < Math.min(leftEnd, rightEnd);
+};
+
+const buildConflictMap = (items: Schedule[]) => {
+  const map = new Map<string, ScheduleConflictInfo>();
+  let conflictPairs = 0;
+
+  items.forEach((item) => {
+    map.set(item.id, { faculty: false, room: false, section: false });
+  });
+
+  for (let index = 0; index < items.length; index += 1) {
+    for (let compareIndex = index + 1; compareIndex < items.length; compareIndex += 1) {
+      const left = items[index];
+      const right = items[compareIndex];
+      if (!schedulesOverlap(left, right)) continue;
+
+      const leftInfo = map.get(left.id);
+      const rightInfo = map.get(right.id);
+      if (!leftInfo || !rightInfo) continue;
+
+      let hasPairConflict = false;
+      if (left.sectionId && left.sectionId === right.sectionId) {
+        leftInfo.section = true;
+        rightInfo.section = true;
+        hasPairConflict = true;
+      }
+      if (!isUnassignedFaculty(left) && left.facultyId === right.facultyId) {
+        leftInfo.faculty = true;
+        rightInfo.faculty = true;
+        hasPairConflict = true;
+      }
+      if (!isUnassignedRoom(left) && left.roomId === right.roomId && left.roomName !== "Online" && left.roomName !== "Field") {
+        leftInfo.room = true;
+        rightInfo.room = true;
+        hasPairConflict = true;
+      }
+      if (hasPairConflict) conflictPairs += 1;
+    }
+  }
+
+  return { map, conflictPairs };
+};
+
+const getConflictLabels = (info?: ScheduleConflictInfo) => {
+  if (!info) return [];
+  return [
+    info.faculty ? "Faculty Conflict" : "",
+    info.room ? "Room Conflict" : "",
+    info.section ? "Section Conflict" : "",
+  ].filter(Boolean);
 };
 
 // Parse time string e.g. "09:30 AM" to half-hour slot index starting from 7:00 AM
@@ -160,26 +338,13 @@ const parseTimeToSlotIndex = (timeStr: string): number => {
 };
 
 // Generates time slot structures for grid row labeling
-const generateTimeSlots = () => {
+const generateTimeSlots = (startSlot = 0, endSlot = (END_HOUR - START_HOUR) * 2) => {
   const slots = [];
-  for (let hour = START_HOUR; hour < END_HOUR; hour++) {
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const h12 = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-
+  for (let slot = startSlot; slot < endSlot; slot += 1) {
     slots.push({
-      start: `${h12}:00 ${ampm}`,
-      end: `${h12}:30 ${ampm}`,
-      label: `${h12}:00 ${ampm}`
-    });
-
-    const endH = hour + 1;
-    const endAmpm = endH >= 12 ? "PM" : "AM";
-    const endH12 = endH > 12 ? endH - 12 : endH === 0 ? 12 : endH;
-
-    slots.push({
-      start: `${h12}:30 ${ampm}`,
-      end: `${endH12}:00 ${endAmpm}`,
-      label: `${h12}:30 ${ampm}`
+      start: slotToTimeStr12h(slot),
+      end: slotToTimeStr12h(slot + 1),
+      label: slotToTimeStr12h(slot)
     });
   }
   return slots;
@@ -266,16 +431,17 @@ const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
   return layouts;
 };
 
-export default function ScheduleViewer() {
-  const scheduleViewerCacheKey = 'page:schedule-viewer';
+export default function VpaaScheduleViewer() {
+  const scheduleViewerCacheKey = 'page:schedule-viewer:v2';
   const cachedScheduleViewerData = getCachedData<ScheduleViewerData>(scheduleViewerCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedScheduleViewerData?.departments ?? []);
   const [sections, setSections] = useState<Section[]>(cachedScheduleViewerData?.sections ?? []);
   const [faculties, setFaculties] = useState<Faculty[]>(cachedScheduleViewerData?.faculties ?? []);
   const [rooms, setRooms] = useState<Room[]>(cachedScheduleViewerData?.rooms ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedScheduleViewerData?.schedules ?? []);
-  const [activeTerm, setActiveTerm] = useState<any>(cachedScheduleViewerData?.activeTerm ?? null);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedScheduleViewerData?.activeTerm ?? null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(scheduleViewerCacheKey));
+  const [viewMode, setViewMode] = useState<ViewMode>("overview");
 
   // Filters State
   const [selectedDeptId, setSelectedDeptId] = useState<string>("All");
@@ -283,35 +449,40 @@ export default function ScheduleViewer() {
   const [selectedFacultyId, setSelectedFacultyId] = useState<string>("All");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("All");
   const [selectedMode, setSelectedMode] = useState<string>("All");
+  const [selectedDay, setSelectedDay] = useState<string>("All");
+  const [selectedConflictStatus, setSelectedConflictStatus] = useState<ConflictStatus>("All");
+  const [selectedAssignmentStatus, setSelectedAssignmentStatus] = useState<AssignmentStatus>("All");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("department");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [groupKey, setGroupKey] = useState<GroupKey>("department");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   
-  // Hover State for tooltips
-  const [hoveredScheduleId, setHoveredScheduleId] = useState<string | null>(null);
+  // Detail State
+  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
 
   useEffect(() => {
-    if (hasCachedData(scheduleViewerCacheKey)) {
-      setIsLoading(false);
-      return;
-    }
-
     const loadData = async () => {
+      const hasCache = hasCachedData(scheduleViewerCacheKey);
       try {
-        setIsLoading(true);
+        setIsLoading(!hasCache);
         // Fetch active term first
-        const termRes = await api.get<any>('/terms/active');
+        const termRes = await api.get<Term | null>('/terms/active');
         const term = termRes.data;
         setActiveTerm(term);
 
         // Fetch all other data in parallel
         const [deptsRes, sectionsRes, facultiesRes, roomsRes, schedulesRes] = await Promise.all([
-          api.get<any[]>('/departments'),
-          api.get<any[]>('/sections'),
-          api.get<any[]>('/faculties'),
-          api.get<any[]>('/rooms'),
-          api.get<any[]>('/schedules')
+          api.get<RawDepartment[]>('/departments'),
+          api.get<RawSection[]>('/sections'),
+          api.get<RawFaculty[]>('/faculties'),
+          api.get<RawRoom[]>('/rooms'),
+          api.get<RawSchedule[]>('/schedules')
         ]);
 
         // Map departments
-        const mappedDepts = deptsRes.data.map((d: any) => ({
+        const mappedDepts = deptsRes.data.map((d) => ({
           id: d.id.toString(),
           name: d.department_name,
           code: d.department_code
@@ -321,25 +492,26 @@ export default function ScheduleViewer() {
         // Map sections (filtered by active term)
         let rawSections = sectionsRes.data;
         if (term) {
-          rawSections = rawSections.filter((s: any) => Number(s.term_id) === Number(term.id));
+          rawSections = rawSections.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
         }
-        const mappedSections = rawSections.map((s: any) => ({
+        const mappedSections = rawSections.map((s) => ({
           id: s.id.toString(),
           name: s.section_name,
           departmentId: s.department_id ? s.department_id.toString() : ""
         }));
+        const sectionDepartmentById = new Map(mappedSections.map((section) => [section.id, section.departmentId]));
         setSections(mappedSections);
 
         // Map faculties
-        const mappedFaculties = facultiesRes.data.map((f: any) => ({
+        const mappedFaculties = facultiesRes.data.map((f) => ({
           id: f.id.toString(),
-          name: `${f.first_name} ${f.last_name}`,
+          name: `${f.first_name ?? ""} ${f.last_name ?? ""}`.trim(),
           departmentId: f.department_id ? f.department_id.toString() : ""
         }));
         setFaculties(mappedFaculties);
 
         // Map rooms
-        const mappedRooms = roomsRes.data.map((r: any) => ({
+        const mappedRooms = roomsRes.data.map((r) => ({
           id: r.id.toString(),
           name: r.room_code + (r.room_name ? ` - ${r.room_name}` : '')
         }));
@@ -348,10 +520,13 @@ export default function ScheduleViewer() {
         // Map schedules (filtered by active term)
         let rawSchedules = schedulesRes.data;
         if (term) {
-          rawSchedules = rawSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
+          rawSchedules = rawSchedules.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
         }
 
-        const mappedSchedules: Schedule[] = rawSchedules.map((item: any) => {
+        const mappedSchedules: Schedule[] = rawSchedules.map((item) => {
+          const sectionId = item.section_id ? item.section_id.toString() : "";
+          const departmentId = item.department_id ? item.department_id.toString() : sectionDepartmentById.get(sectionId) ?? "";
+          const department = mappedDepts.find((dept) => dept.id === departmentId);
           let roomName = "";
           if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
@@ -365,14 +540,16 @@ export default function ScheduleViewer() {
 
           return {
             id: item.id.toString(),
-            sectionId: item.section_id.toString(),
+            sectionId,
             sectionName: item.section?.section_name ?? "",
-            departmentId: item.department_id ? item.department_id.toString() : "",
-            departmentName: item.department?.department_name ?? "",
-            departmentCode: item.department?.department_code ?? "",
+            departmentId,
+            departmentName: item.department?.department_name ?? department?.name ?? "",
+            departmentCode: item.department?.department_code ?? department?.code ?? "",
             subjectCode: item.subject?.subject_code ?? "",
             subjectName: item.subject?.subject_name ?? "",
-            facultyName: item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : "Unassigned",
+            facultyId: item.faculty_id ? item.faculty_id.toString() : "",
+            facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : "Unassigned",
+            roomId: item.room_id ? item.room_id.toString() : "",
             roomName,
             day: DAYS_MAP[dayIndex] || "Mon",
             startTime: slotToTimeStr12h(startSlot),
@@ -390,8 +567,7 @@ export default function ScheduleViewer() {
           activeTerm: term,
         });
 
-      } catch (err) {
-        console.error("Failed to load VPAA schedule viewer data", err);
+      } catch {
       } finally {
         setIsLoading(false);
       }
@@ -415,6 +591,8 @@ export default function ScheduleViewer() {
   const handleDepartmentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const deptId = e.target.value;
     setSelectedDeptId(deptId);
+    setCurrentPage(1);
+    setViewMode(deptId === "All" ? "overview" : "list");
 
     // Reset section filter if the currently selected section does not belong to the new department
     if (deptId !== "All") {
@@ -437,10 +615,31 @@ export default function ScheduleViewer() {
     setSelectedFacultyId("All");
     setSelectedRoomId("All");
     setSelectedMode("All");
+    setSelectedDay("All");
+    setSelectedConflictStatus("All");
+    setSelectedAssignmentStatus("All");
+    setSearchTerm("");
+    setCurrentPage(1);
+    setIsMoreFiltersOpen(false);
+    setViewMode("overview");
   };
 
-  // Real-time schedules filtering (AND logic)
-  const filteredSchedules = schedules.filter((s) => {
+  const { map: conflictMap, conflictPairs } = useMemo(() => buildConflictMap(schedules), [schedules]);
+
+  const hasDepartmentOnlyScope = selectedDeptId !== "All" && selectedSectionId === "All" && selectedFacultyId === "All" && selectedRoomId === "All";
+  const hasGridScope = selectedSectionId !== "All" || selectedFacultyId !== "All" || selectedRoomId !== "All";
+
+  useEffect(() => {
+    if (viewMode === "grid" && !hasGridScope) {
+      setViewMode(selectedDeptId !== "All" ? "list" : "overview");
+    }
+  }, [hasGridScope, selectedDeptId, viewMode]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDeptId, selectedSectionId, selectedFacultyId, selectedRoomId, selectedMode, selectedDay, selectedConflictStatus, selectedAssignmentStatus, searchTerm, sortKey, sortDirection, groupKey]);
+
+  const filteredSchedules = useMemo(() => schedules.filter((s) => {
     if (selectedDeptId !== "All" && s.departmentId !== selectedDeptId) {
       return false;
     }
@@ -458,358 +657,494 @@ export default function ScheduleViewer() {
     if (selectedMode !== "All" && s.mode !== selectedMode) {
       return false;
     }
+    if (selectedDay !== "All" && s.day !== selectedDay) {
+      return false;
+    }
+    const conflictLabels = getConflictLabels(conflictMap.get(s.id));
+    if (selectedConflictStatus === "Conflict" && conflictLabels.length === 0) {
+      return false;
+    }
+    if (selectedConflictStatus === "No Conflict" && conflictLabels.length > 0) {
+      return false;
+    }
+    const missingFaculty = isUnassignedFaculty(s);
+    const missingRoom = isUnassignedRoom(s);
+    if (selectedAssignmentStatus === "Complete" && (missingFaculty || missingRoom)) {
+      return false;
+    }
+    if (selectedAssignmentStatus === "Missing Faculty" && !missingFaculty) {
+      return false;
+    }
+    if (selectedAssignmentStatus === "Missing Room" && !missingRoom) {
+      return false;
+    }
+    if (selectedAssignmentStatus === "Missing Assignment" && !missingFaculty && !missingRoom) {
+      return false;
+    }
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    if (normalizedSearch) {
+      const haystack = [
+        s.subjectCode,
+        s.subjectName,
+        s.departmentName,
+        s.departmentCode,
+        s.sectionName,
+        s.facultyName,
+        s.roomName,
+        s.day,
+        s.startTime,
+        s.endTime,
+        getModeLabel(s.mode)
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(normalizedSearch)) return false;
+    }
     return true;
-  });
+  }), [
+    schedules,
+    selectedDeptId,
+    selectedSectionId,
+    selectedFacultyId,
+    selectedRoomId,
+    selectedMode,
+    selectedDay,
+    selectedConflictStatus,
+    selectedAssignmentStatus,
+    searchTerm,
+    faculties,
+    rooms,
+    conflictMap
+  ]);
 
-  const timeSlots = generateTimeSlots();
+  const overviewStats = useMemo(() => ({
+    schedules: schedules.length,
+    departments: departments.length,
+    sections: sections.length,
+    faculty: faculties.length,
+    rooms: rooms.length,
+    unassignedFaculty: schedules.filter(isUnassignedFaculty).length,
+    unassignedRooms: schedules.filter(isUnassignedRoom).length,
+    conflicts: conflictPairs
+  }), [schedules, departments, sections, faculties, rooms, conflictPairs]);
+
+  const departmentSummaries = useMemo<DepartmentSummary[]>(() => departments.map((department) => {
+    const departmentSchedules = schedules.filter((schedule) => schedule.departmentId === department.id);
+    const departmentSections = new Set(departmentSchedules.map((schedule) => schedule.sectionId).filter(Boolean)).size;
+    const departmentFaculty = new Set(departmentSchedules.map((schedule) => schedule.facultyId).filter(Boolean)).size;
+    const departmentRooms = new Set(departmentSchedules.map((schedule) => schedule.roomId).filter(Boolean)).size;
+    const departmentConflicts = departmentSchedules.filter((schedule) => getConflictLabels(conflictMap.get(schedule.id)).length > 0).length;
+    const missingAssignments = departmentSchedules.filter((schedule) => isUnassignedFaculty(schedule) || isUnassignedRoom(schedule)).length;
+
+    return {
+      department,
+      schedules: departmentSchedules.length,
+      sections: departmentSections,
+      faculty: departmentFaculty,
+      rooms: departmentRooms,
+      conflicts: departmentConflicts,
+      missingAssignments
+    };
+  }).sort((left, right) => right.schedules - left.schedules), [departments, schedules, conflictMap]);
+
+  const sortedSchedules = useMemo(() => {
+    const sorted = [...filteredSchedules].sort((left, right) => {
+      const getValue = (schedule: Schedule) => {
+        switch (sortKey) {
+          case "department": return schedule.departmentCode || schedule.departmentName;
+          case "section": return schedule.sectionName;
+          case "subject": return `${schedule.subjectCode} ${schedule.subjectName}`;
+          case "day": return `${getDayOrder(schedule.day)} ${schedule.startTime}`;
+          case "startTime": return `${getDayOrder(schedule.day)} ${parseTimeToSlotIndex(schedule.startTime)}`;
+          case "faculty": return schedule.facultyName;
+          case "room": return schedule.roomName;
+          default: return schedule.departmentName;
+        }
+      };
+      const leftValue = getValue(left);
+      const rightValue = getValue(right);
+      return sortDirection === "asc"
+        ? leftValue.localeCompare(rightValue)
+        : rightValue.localeCompare(leftValue);
+    });
+    return sorted;
+  }, [filteredSchedules, sortKey, sortDirection]);
+
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(sortedSchedules.length / pageSize));
+  const paginatedSchedules = sortedSchedules.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const groupedSchedules = useMemo(() => {
+    const groups = new Map<string, Schedule[]>();
+    paginatedSchedules.forEach((schedule) => {
+      const label = groupKey === "department"
+        ? `${schedule.departmentCode || "Department"} - ${schedule.departmentName || "Unassigned Department"}`
+        : groupKey === "section"
+        ? schedule.sectionName || "Unassigned Section"
+        : groupKey === "day"
+        ? schedule.day
+        : groupKey === "faculty"
+        ? schedule.facultyName
+        : schedule.roomName || "Unassigned Room";
+      groups.set(label, [...(groups.get(label) ?? []), schedule]);
+    });
+    return Array.from(groups.entries());
+  }, [paginatedSchedules, groupKey]);
+
+  const sectionSummaries = useMemo(() => {
+    if (selectedDeptId === "All") return [];
+    return filteredSections.map((section) => {
+      const sectionSchedules = schedules.filter((schedule) => schedule.sectionId === section.id);
+      const conflictCount = sectionSchedules.filter((schedule) => getConflictLabels(conflictMap.get(schedule.id)).length > 0).length;
+      const missingAssignments = sectionSchedules.filter((schedule) => isUnassignedFaculty(schedule) || isUnassignedRoom(schedule)).length;
+      const status = sectionSchedules.length === 0
+        ? "No classes scheduled"
+        : conflictCount > 0
+        ? `${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`
+        : missingAssignments > 0
+        ? `${missingAssignments} class${missingAssignments === 1 ? "" : "es"} missing assignment`
+        : "Fully assigned";
+
+      return {
+        section,
+        schedules: sectionSchedules.length,
+        conflictCount,
+        missingAssignments,
+        status
+      };
+    });
+  }, [filteredSections, schedules, selectedDeptId, conflictMap, searchTerm]);
+
+  const activeFilterChips = [
+    selectedDeptId !== "All" ? departments.find((dept) => dept.id === selectedDeptId)?.code ?? "Department" : "",
+    selectedSectionId !== "All" ? sections.find((section) => section.id === selectedSectionId)?.name ?? "Section" : "",
+    selectedFacultyId !== "All" ? faculties.find((faculty) => faculty.id === selectedFacultyId)?.name ?? "Faculty" : "",
+    selectedRoomId !== "All" ? rooms.find((room) => room.id === selectedRoomId)?.name ?? "Room" : "",
+    selectedMode !== "All" ? getModeLabel(selectedMode as Schedule["mode"]) : "",
+    selectedDay !== "All" ? selectedDay : "",
+    selectedConflictStatus !== "All" ? selectedConflictStatus : "",
+    selectedAssignmentStatus !== "All" ? selectedAssignmentStatus : "",
+    searchTerm.trim() ? `Search: ${searchTerm.trim()}` : "",
+  ].filter(Boolean);
+
+  const gridRange = useMemo(() => {
+    if (filteredSchedules.length === 0) return { start: 0, end: 8 };
+    const starts = filteredSchedules.map((schedule) => parseTimeToSlotIndex(schedule.startTime));
+    const ends = filteredSchedules.map((schedule) => parseTimeToSlotIndex(schedule.endTime));
+    const start = Math.max(0, Math.min(...starts) - 1);
+    const end = Math.min((END_HOUR - START_HOUR) * 2, Math.max(...ends) + 1);
+    return { start, end: Math.max(end, start + 4) };
+  }, [filteredSchedules]);
+
+  const timeSlots = useMemo(() => generateTimeSlots(gridRange.start, gridRange.end), [gridRange]);
 
 
 
   return (
-    <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-800 font-sans min-w-[1200px]">
-      {/* ================= FILTER BAR ================= */}
-      <div className="bg-slate-50/70 border-b border-slate-200 p-4 flex flex-row items-center justify-between gap-4 select-none">
-        <div className="flex flex-row items-center gap-3 flex-1">
-          <div className="flex items-center gap-1.5 text-slate-500 font-bold text-xs uppercase tracking-wider pr-2">
-            <Filter className="w-4 h-4 text-indigo-600" />
-            Filters
+    <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-800 font-sans">
+      <div className="bg-slate-50/70 border-b border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-[#4e0a10] font-display">All Schedules</h2>
+            <p className="text-xs text-slate-500 font-medium">
+              {activeTerm ? `${activeTerm.academic_year ?? "Active Term"} ${activeTerm.semester ?? ""}` : "Institution-wide schedule monitoring"}
+            </p>
           </div>
 
-          {/* Department Filter */}
-          <div className="flex-1 max-w-[240px]">
-            <select
-              value={selectedDeptId}
-              onChange={handleDepartmentChange}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none transition-all cursor-pointer"
-            >
-              <option value="All">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept.id} value={dept.id}>
-                  {dept.code} - {dept.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Section Filter */}
-          <div className="flex-1 max-w-[200px]">
-            <select
-              value={selectedSectionId}
-              onChange={(e) => setSelectedSectionId(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none transition-all cursor-pointer"
-            >
-              <option value="All">All Sections</option>
-              {filteredSections.map((sec) => (
-                <option key={sec.id} value={sec.id}>
-                  {sec.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Faculty Filter */}
-          <div className="flex-1 max-w-[220px]">
-            <select
-              value={selectedFacultyId}
-              onChange={(e) => setSelectedFacultyId(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none transition-all cursor-pointer"
-            >
-              <option value="All">All Faculty</option>
-              {filteredFaculty.map((fac) => (
-                <option key={fac.id} value={fac.id}>
-                  {fac.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Room Filter */}
-          <div className="flex-1 max-w-[180px]">
-            <select
-              value={selectedRoomId}
-              onChange={(e) => setSelectedRoomId(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none transition-all cursor-pointer"
-            >
-              <option value="All">All Rooms</option>
-              {rooms.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Mode Filter */}
-          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0">
-            {(['All', 'on-site', 'online', 'field'] as const).map((m) => {
-              const isSelected = selectedMode === m;
+          <div className="flex flex-wrap items-center gap-2">
+            {(["overview", "list", "grid"] as ViewMode[]).map((mode) => {
+              const isDisabled = mode === "grid" && !hasGridScope;
+              const Icon = mode === "overview" ? LayoutDashboard : mode === "list" ? List : CalendarDays;
+              const label = mode === "overview" ? "Overview" : mode === "list" ? "Schedule List" : "Weekly Grid";
               return (
                 <button
-                  key={m}
+                  key={mode}
                   type="button"
-                  onClick={() => setSelectedMode(m)}
-                  className={`px-3.5 h-8 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#4e0a10] text-[#E8D5C4] shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-50'
+                  disabled={isDisabled}
+                  onClick={() => !isDisabled && setViewMode(mode)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 h-9 text-xs font-bold transition-all ${
+                    viewMode === mode
+                      ? "bg-[#4e0a10] text-[#E8D5C4] shadow-sm"
+                      : isDisabled
+                      ? "bg-slate-100 text-slate-300 cursor-not-allowed"
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  {m === 'All' ? 'All Modes' : m === 'on-site' ? 'On-Site' : m === 'online' ? 'Online' : 'Field'}
+                  <Icon className="w-3.5 h-3.5" />
+                  {label}
                 </button>
               );
             })}
           </div>
         </div>
 
-        <button
-          onClick={handleResetFilters}
-          className="flex items-center gap-1.5 px-4 h-9 bg-white border border-slate-200 hover:bg-slate-50 active:scale-[0.98] text-slate-600 rounded-xl text-xs font-semibold transition-all duration-150 shadow-sm shrink-0"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Reset Filters
-        </button>
-      </div>
-
-      {/* ================= MAIN WEEKLY TIMETABLE GRID ================= */}
-      <div className="overflow-x-auto bg-slate-50/20 p-4">
-        <div className="min-w-[1120px] bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm relative flex flex-row">
-          
-          {/* Time Column (Sticky labels) */}
-          <div className="w-24 shrink-0 border-r border-slate-200 bg-slate-50/70 select-none">
-            {/* Corner header */}
-            <div className="h-12 border-b border-slate-200 bg-slate-50/80 flex items-center justify-center font-bold text-[10px] uppercase text-slate-400">
-              Time
-            </div>
-            {timeSlots.map((slot, index) => {
-              // Display labels on full hours, show subtle bullet on half hours
-              const isFullHour = slot.label.includes(":00");
-              return (
-                <div
-                  key={index}
-                  className="h-10 border-b border-slate-100 last:border-b-0 flex items-center justify-center text-[10px] font-semibold text-slate-400"
-                >
-                  {isFullHour ? (
-                    <span className="font-bold text-slate-500">{slot.label}</span>
-                  ) : (
-                    <span className="opacity-30">•</span>
-                  )}
-                </div>
-              );
-            })}
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr_auto] gap-3 select-none">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search subject, section, faculty, room..." className="w-full h-11 pl-10 pr-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] focus:ring-1 focus:ring-[#C9952A]/30" />
           </div>
 
-          {/* Days Columns */}
-          <div className="flex-1 flex flex-row relative">
-            {DAYS.map((day) => {
-              const daySchedules = filteredSchedules.filter((s) => s.day === day);
-              const layouts = getDayLayouts(daySchedules);
+          <select value={selectedDeptId} onChange={handleDepartmentChange} className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+            <option value="All">All Departments</option>
+            {departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.code} - {dept.name}</option>)}
+          </select>
 
-              return (
-                <div
-                  key={day}
-                  className="flex-1 border-r border-slate-200 last:border-r-0 relative min-w-[150px]"
-                >
-                  {/* Day Header */}
-                  <div className="h-12 border-b border-slate-200 bg-slate-50/80 flex flex-col items-center justify-center select-none">
-                    <span className="font-bold text-xs text-slate-700 uppercase tracking-wide">
-                      {day}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400">
-                      {daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}
-                    </span>
-                  </div>
+          <select value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setViewMode(event.target.value === "All" ? (selectedDeptId === "All" ? "overview" : "list") : "grid"); }} className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+            <option value="All">All Sections</option>
+            {filteredSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+          </select>
 
-                  {/* Empty cell guidelines */}
-                  <div className="relative">
-                    {timeSlots.map((_, index) => (
-                      <div
-                        key={index}
-                        className="h-10 border-b border-slate-100 last:border-b-0"
-                      />
-                    ))}
+          <button type="button" onClick={() => setIsMoreFiltersOpen((value) => !value)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 hover:bg-slate-50">
+            <Filter className="w-4 h-4 text-[#C9952A]" />
+            More Filters
+          </button>
+        </div>
 
-                    {isLoading ? (
-                      (
-                        {
-                          'Monday': [{ startIdx: 2, endIdx: 6 }],
-                          'Wednesday': [{ startIdx: 4, endIdx: 8 }],
-                          'Friday': [{ startIdx: 10, endIdx: 14 }]
-                        } as Record<string, { startIdx: number; endIdx: number }[]>
-                      )[day]?.map((sk, idx) => {
-                        const top = sk.startIdx * 40;
-                        const height = (sk.endIdx - sk.startIdx) * 40;
-                        return (
-                          <div
-                            key={`sk-card-${idx}`}
-                            className="absolute border border-[#E2D9D0] bg-[#F7F4F0]/85 p-2 flex flex-col justify-between select-none rounded-xl shadow-sm animate-pulse"
-                            style={{
-                              top: `${top + 2}px`,
-                              height: `${height - 4}px`,
-                              left: '2px',
-                              width: 'calc(100% - 4px)',
-                              zIndex: 10
-                            }}
-                          >
-                            <div className="flex flex-col h-full justify-between overflow-hidden">
-                              <div>
-                                <Skeleton className="h-3 w-16 mb-1.5" />
-                                <Skeleton className="h-2.5 w-full mb-1" />
-                                <Skeleton className="h-2 w-12" />
-                              </div>
-                              <div className="flex items-center gap-1 mt-1">
-                                <Skeleton className="h-3.5 w-10 rounded-full" />
-                                <Skeleton className="h-3.5 w-10 rounded-full" />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : daySchedules.map((s) => {
-                      const startIdx = parseTimeToSlotIndex(s.startTime);
-                      const endIdx = parseTimeToSlotIndex(s.endTime);
-                      
-                      const top = startIdx * 40; // 40px per h-10 row slot
-                      const height = (endIdx - startIdx) * 40;
-                      
-                      const layout = layouts.find((l) => l.schedule.id === s.id);
-                      const left = layout ? `${layout.leftPct}%` : "0%";
-                      const width = layout ? `${layout.widthPct}%` : "100%";
-
-                      const styleClasses = getDeptStyles(s.departmentCode);
-                      const badgeClasses = getDeptBadgeStyles(s.departmentCode);
-
-                      const isHovered = hoveredScheduleId === s.id;
-
-                      return (
-                        <div
-                          key={s.id}
-                          className={`absolute border p-2 flex flex-col justify-between transition-all duration-200 select-none group rounded-xl shadow-sm hover:shadow-md cursor-default ${styleClasses}`}
-                          onMouseEnter={() => setHoveredScheduleId(s.id)}
-                          onMouseLeave={() => setHoveredScheduleId(null)}
-                          style={{
-                            top: `${top + 2}px`,
-                            height: `${height - 4}px`,
-                            left: `calc(${left} + 2px)`,
-                            width: `calc(${width} - 4px)`,
-                            zIndex: isHovered ? 50 : 10
-                          }}
-                        >
-                          <div className="flex flex-col h-full justify-between overflow-hidden">
-                            <div>
-                              <div className="flex justify-between items-start gap-1">
-                                <span className="font-extrabold text-[10px] tracking-wide leading-none truncate">
-                                  {s.subjectCode}
-                                </span>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span className={`text-[8px] px-1 rounded font-extrabold border ${badgeClasses}`}>
-                                    {s.sectionName}
-                                  </span>
-                                  <span className={`text-[8px] px-1 rounded font-bold border uppercase ${
-                                    s.mode === 'on-site'
-                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                      : s.mode === 'online'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : 'bg-amber-50 text-amber-705 border-amber-200'
-                                  }`}>
-                                    {s.mode === 'on-site' ? 'On-Site' : s.mode === 'online' ? 'Online' : 'Field'}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="text-[9px] font-medium leading-tight mt-0.5 truncate opacity-90">
-                                {s.subjectName}
-                              </div>
-                            </div>
-
-                            <div className="mt-0.5 space-y-0.5">
-                              <div className="text-[8px] font-bold opacity-75 flex items-center gap-0.5 truncate">
-                                <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
-                                <span>{s.roomName}</span>
-                              </div>
-                              <div className="text-[8px] font-bold opacity-75 flex items-center gap-0.5 truncate">
-                                <User className="w-2.5 h-2.5 flex-shrink-0" />
-                                <span>{s.facultyName}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* ================= HOVER TOOLTIP CARD ================= */}
-                          {isHovered && (
-                            <div className="absolute left-full top-0 ml-2 w-64 bg-white/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-slate-200 text-slate-800 z-50 animate-fadeInUp pointer-events-none">
-                              <div className="flex flex-col gap-2">
-                                <div className="flex justify-between items-start">
-                                  <span className="font-extrabold text-xs text-slate-900 tracking-wider">
-                                    {s.subjectCode}
-                                  </span>
-                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${badgeClasses}`}>
-                                    {s.departmentName.split(" ").slice(2).join(" ") || s.departmentName}
-                                  </span>
-                                </div>
-                                
-                                <h3 className="font-bold text-sm text-slate-900 leading-tight">
-                                  {s.subjectName}
-                                </h3>
-
-                                <hr className="border-slate-100 my-0.5" />
-
-                                <div className="space-y-1.5 text-xs">
-                                  <div className="flex items-center gap-2 text-slate-600">
-                                    <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                    <span className="font-semibold">Section: </span>
-                                    <span className="font-medium text-slate-800">{s.sectionName}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-slate-600">
-                                    <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                    <span className="font-semibold">Faculty: </span>
-                                    <span className="font-medium text-slate-800">{s.facultyName}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-slate-600">
-                                    <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                    <span className="font-semibold">Room: </span>
-                                    <span className="font-medium text-slate-800">{s.roomName}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-slate-600">
-                                    <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                    <span className="font-semibold">Day: </span>
-                                    <span className="font-medium text-slate-800">{s.day}day</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-slate-600">
-                                    <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                    <span className="font-semibold">Time: </span>
-                                    <span className="font-medium text-slate-800">
-                                      {s.startTime} - {s.endTime}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                  </div>
-                </div>
-              );
-            })}
+        {isMoreFiltersOpen && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-xl border border-slate-200 bg-white p-3">
+            <select value={selectedFacultyId} onChange={(event) => { setSelectedFacultyId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+              <option value="All">All Faculty</option>
+              {filteredFaculty.map((faculty) => <option key={faculty.id} value={faculty.id}>{faculty.name}</option>)}
+            </select>
+            <select value={selectedRoomId} onChange={(event) => { setSelectedRoomId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+              <option value="All">All Rooms</option>
+              {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+            </select>
+            <select value={selectedDay} onChange={(event) => setSelectedDay(event.target.value)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+              <option value="All">All Days</option>
+              {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
+            </select>
+            <select value={selectedConflictStatus} onChange={(event) => setSelectedConflictStatus(event.target.value as ConflictStatus)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+              <option value="All">All Conflicts</option>
+              <option value="Conflict">With Conflict</option>
+              <option value="No Conflict">No Conflict</option>
+            </select>
+            <select value={selectedAssignmentStatus} onChange={(event) => setSelectedAssignmentStatus(event.target.value as AssignmentStatus)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+              <option value="All">All Assignments</option>
+              <option value="Complete">Complete</option>
+              <option value="Missing Faculty">Missing Faculty</option>
+              <option value="Missing Room">Missing Room</option>
+              <option value="Missing Assignment">Missing Assignment</option>
+            </select>
+            <button onClick={handleResetFilters} className="inline-flex items-center justify-center gap-2 px-4 h-10 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-sm font-semibold transition-all shadow-sm">
+              <RefreshCw className="w-4 h-4" />
+              Reset
+            </button>
           </div>
-
+        )}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500"><Filter className="w-3.5 h-3.5 text-[#C9952A]" />{filteredSchedules.length} result{filteredSchedules.length === 1 ? "" : "s"}</span>
+            {activeFilterChips.map((chip) => <span key={chip} className="rounded-full bg-[#4e0a10]/10 border border-[#4e0a10]/15 px-2 py-1 text-[10px] font-bold text-[#4e0a10]">{chip}</span>)}
+          </div>
+          <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 w-fit">
+            {(["All", "on-site", "online", "field"] as const).map((mode) => (
+              <button key={mode} type="button" onClick={() => setSelectedMode(mode)} className={`px-3 h-8 rounded-lg text-[10px] font-bold transition-all ${selectedMode === mode ? "bg-[#4e0a10] text-[#E8D5C4] shadow-sm" : "text-slate-600 hover:bg-slate-50"}`}>
+                {mode === "All" ? "All Modes" : getModeLabel(mode)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* ================= COLOR LEGEND ================= */}
-      <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500 select-none">
-        <span className="flex items-center gap-1.5 mr-2">
-          <Info className="w-4 h-4 text-slate-400 animate-pulse" />
-          Department Color Legend:
-        </span>
-        {departments.map((dept) => (
-          <span key={dept.id} className="flex items-center gap-1.5">
-            <span className={`w-3.5 h-3.5 rounded-lg border border-slate-300 shrink-0 ${getDeptBadgeStyles(dept.code)}`} />
-            {dept.code}
-          </span>
-        ))}
-      </div>
+      {viewMode === "overview" && (
+        <div className="p-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+            {[
+              { icon: Calendar, label: "Schedules", value: overviewStats.schedules },
+              { icon: Building2, label: "Departments", value: overviewStats.departments },
+              { icon: Layers, label: "Sections", value: overviewStats.sections },
+              { icon: Users, label: "Faculty", value: overviewStats.faculty },
+              { icon: DoorOpen, label: "Rooms", value: overviewStats.rooms },
+              { icon: User, label: "No Faculty", value: overviewStats.unassignedFaculty },
+              { icon: MapPin, label: "No Room", value: overviewStats.unassignedRooms },
+              { icon: AlertTriangle, label: "Conflicts", value: overviewStats.conflicts },
+            ].map(({ icon: Icon, label, value }) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><Icon className="w-4 h-4 text-[#C9952A]" /></div>
+                <p className="text-2xl font-black text-[#4e0a10] leading-tight mt-1">{value}</p>
+              </div>
+            ))}
+          </div>
 
+          <div className="rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between"><h3 className="text-sm font-black text-slate-800">Department Summaries</h3><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Monitoring Overview</span></div>
+            {isLoading ? <div className="p-4 space-y-2">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}</div> : departmentSummaries.length === 0 ? <div className="p-8 text-center text-sm text-slate-400 italic">No department schedules found.</div> : (
+              <div className="divide-y divide-slate-100">
+                {departmentSummaries.map((summary) => (
+                  <div key={summary.department.id} className="grid grid-cols-1 md:grid-cols-[1.5fr_repeat(6,minmax(0,1fr))] gap-2 px-4 py-3 text-xs items-center">
+                    <div className="min-w-0"><p className="font-black text-[#4e0a10] truncate">{summary.department.code} - {summary.department.name}</p><p className="text-slate-400 font-semibold">{summary.schedules} schedule entries</p></div>
+                    <p><span className="font-black text-slate-800">{summary.sections}</span> sections</p>
+                    <p><span className="font-black text-slate-800">{summary.faculty}</span> faculty</p>
+                    <p><span className="font-black text-slate-800">{summary.rooms}</span> rooms</p>
+                    <p className={summary.conflicts > 0 ? "font-bold text-red-600" : "text-slate-500"}>{summary.conflicts} conflicts</p>
+                    <p className={summary.missingAssignments > 0 ? "font-bold text-amber-700" : "text-slate-500"}>{summary.missingAssignments} missing</p>
+                    <button type="button" onClick={() => { setSelectedDeptId(summary.department.id); setViewMode("list"); }} className="text-left md:text-center rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-bold text-[#4e0a10] hover:bg-[#4e0a10]/5">Review</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {viewMode === "list" && (
+        <div className="p-4 space-y-3">
+          {hasDepartmentOnlyScope ? (
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-black text-[#4e0a10]">Section Summary</h3>
+                  <p className="text-sm font-semibold text-slate-500">Choose a section before opening a detailed timetable.</p>
+                </div>
+                <span className="text-sm font-bold text-slate-500">{sectionSummaries.length} section{sectionSummaries.length === 1 ? "" : "s"}</span>
+              </div>
+              {isLoading ? (
+                <div className="p-4 space-y-2">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div>
+              ) : sectionSummaries.length === 0 ? (
+                <div className="p-10 text-center text-sm text-slate-400 italic">This department has no section schedules.</div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {sectionSummaries.map((summary) => (
+                    <div key={summary.section.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_1fr_auto] gap-3 px-4 py-4 text-sm items-center">
+                      <p className="font-black text-slate-800">{summary.section.name}</p>
+                      <p className="font-semibold text-slate-600">{summary.schedules} class{summary.schedules === 1 ? "" : "es"}</p>
+                    <p className={summary.schedules === 0 ? "font-bold text-slate-400" : summary.conflictCount > 0 ? "font-bold text-red-600" : summary.missingAssignments > 0 ? "font-bold text-amber-700" : "font-bold text-emerald-700"}>{summary.status}</p>
+                    <button type="button" disabled={summary.schedules === 0} onClick={() => { setSelectedSectionId(summary.section.id); setViewMode("grid"); }} className="h-10 rounded-xl bg-[#4e0a10] px-4 text-sm font-bold text-[#E8D5C4] hover:bg-[#C9952A] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors">
+                      View timetable
+                    </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={groupKey} onChange={(event) => setGroupKey(event.target.value as GroupKey)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]"><option value="department">Group by Department</option><option value="section">Group by Section</option><option value="day">Group by Day</option><option value="faculty">Group by Faculty</option><option value="room">Group by Room</option></select>
+                    <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]"><option value="department">Sort Department</option><option value="section">Sort Section</option><option value="subject">Sort Subject</option><option value="day">Sort Day</option><option value="startTime">Sort Start Time</option><option value="faculty">Sort Faculty</option><option value="room">Sort Room</option></select>
+                    <button type="button" onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50">{sortDirection === "asc" ? "Ascending" : "Descending"}</button>
+                  </div>
+                  <p className="text-sm font-bold text-slate-400">Page {currentPage} of {pageCount}</p>
+                </div>
+                {groupKey === "section" && (
+                  <div className="rounded-xl border border-[#C9952A]/20 bg-[#F7F4F0] px-4 py-2 text-xs font-semibold text-slate-600">
+                    Each section group contains the different subjects scheduled for that same section.
+                  </div>
+                )}
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  {isLoading ? <div className="p-4 space-y-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div> : groupedSchedules.length === 0 ? <div className="p-10 text-center text-sm text-slate-400 italic">No schedules match the selected filters.</div> : (
+                    <div className="divide-y divide-slate-100">
+                      {groupedSchedules.map(([group, groupSchedules]) => (
+                        <div key={group}><div className="bg-slate-50 px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3"><div><p className="text-sm font-black text-[#4e0a10]">{group}</p>{groupKey === "section" && <p className="text-[11px] font-semibold text-slate-500">Subjects scheduled for this section</p>}</div><p className="text-xs font-bold text-slate-400">{groupSchedules.length} class{groupSchedules.length === 1 ? "" : "es"}</p></div><div className="divide-y divide-slate-100">
+                          {groupSchedules.map((schedule) => {
+                            const conflicts = getConflictLabels(conflictMap.get(schedule.id));
+                            return <button key={schedule.id} type="button" onClick={() => setSelectedSchedule(schedule)} className={`w-full text-left grid grid-cols-1 ${groupKey === "section" ? "md:grid-cols-[1.2fr_1.1fr_1fr_1fr_0.7fr]" : "md:grid-cols-[1.2fr_1.1fr_0.8fr_1fr_1fr_0.7fr]"} gap-2 px-4 py-3 text-sm hover:bg-slate-50 transition-colors`}><div className="min-w-0"><p className="font-black text-slate-800 truncate">{schedule.subjectCode || "Subject"}</p><p className="text-slate-500 truncate">{schedule.subjectName || "Untitled subject"}</p></div><p className="font-semibold text-slate-700">{schedule.day}, {schedule.startTime} - {schedule.endTime}</p>{groupKey !== "section" && <p className="text-slate-600 truncate">{schedule.sectionName || "Unassigned Section"}</p>}<p className={isUnassignedFaculty(schedule) ? "font-bold text-slate-500 truncate" : "text-slate-600 truncate"}>{schedule.facultyName}</p><p className={isUnassignedRoom(schedule) ? "font-bold text-slate-500 truncate" : "text-slate-600 truncate"}>{schedule.roomName || "Unassigned Room"}</p><div className="flex flex-wrap gap-1"><span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${getDeptBadgeStyles(schedule.departmentCode)}`}>{schedule.departmentCode || "TCC"}</span>{conflicts.length > 0 && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600">{conflicts.join(", ")}</span>}</div></button>;
+                          })}
+                        </div></div>
+                      ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between"><button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className="px-4 h-10 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 disabled:opacity-40">Previous</button><button type="button" disabled={currentPage === pageCount} onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))} className="px-4 h-10 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 disabled:opacity-40">Next</button></div>
+            </>
+          )}
+        </div>
+      )}
+      {viewMode === "grid" && (
+        <div className="bg-slate-50/20 p-4 space-y-3">
+          <div className="rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/10 px-4 py-3 text-sm font-semibold text-[#4e0a10]">
+            Simultaneous classes are not necessarily conflicts. Only Faculty Conflict, Room Conflict, or Section Conflict items are marked in red.
+          </div>
+
+          {!hasGridScope ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
+              Select a section, faculty member, or room before opening the Weekly Grid.
+            </div>
+          ) : filteredSchedules.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
+              No schedules match this grid scope.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <div className="min-w-[1120px] bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm relative flex flex-row">
+                <div className="w-24 shrink-0 border-r border-slate-200 bg-slate-50/70 select-none">
+                  <div className="h-12 border-b border-slate-200 bg-slate-50/80 flex items-center justify-center font-bold text-xs uppercase text-slate-500">Time</div>
+                  {timeSlots.map((slot, index) => (
+                    <div key={index} className="h-6 border-b border-slate-100 last:border-b-0 flex items-center justify-center text-[10px] font-semibold text-slate-400">
+                      {slot.label.includes(":00") ? <span className="font-bold text-slate-600">{slot.label}</span> : <span className="opacity-30">.</span>}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex-1 flex flex-row relative">
+                  {DAYS.map((day) => {
+                    const daySchedules = filteredSchedules.filter((schedule) => schedule.day === day);
+                    const layouts = getDayLayouts(daySchedules);
+                    return (
+                      <div key={day} className="flex-1 border-r border-slate-200 last:border-r-0 relative min-w-[150px]">
+                        <div className="h-12 border-b border-slate-200 bg-slate-50/80 flex flex-col items-center justify-center select-none">
+                          <span className="font-bold text-sm text-slate-700 uppercase tracking-wide">{day}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}</span>
+                        </div>
+
+                        <div className="relative">
+                          {timeSlots.map((_, index) => <div key={index} className="h-6 border-b border-slate-100 last:border-b-0" />)}
+                          {daySchedules.map((schedule) => {
+                            const startIdx = parseTimeToSlotIndex(schedule.startTime);
+                            const endIdx = parseTimeToSlotIndex(schedule.endTime);
+                            const top = (startIdx - gridRange.start) * VIEWER_SLOT_HEIGHT_PX;
+                            const height = (endIdx - startIdx) * VIEWER_SLOT_HEIGHT_PX;
+                            const layout = layouts.find((item) => item.schedule.id === schedule.id);
+                            const left = layout ? `${layout.leftPct}%` : "0%";
+                            const width = layout ? `${layout.widthPct}%` : "100%";
+                            const conflicts = getConflictLabels(conflictMap.get(schedule.id));
+                            const showBottomRow = height > 80;
+                            return (
+                              <button
+                                key={schedule.id}
+                                type="button"
+                                onClick={() => setSelectedSchedule(schedule)}
+                                className={`absolute border-2 border-l-4 p-2 flex flex-col justify-between text-left select-none rounded-xl shadow-sm hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden box-border leading-snug ${conflicts.length > 0 ? "border-red-300 border-l-red-600 bg-red-50 text-red-800 ring-2 ring-red-200" : getDeptStyles(schedule.departmentCode)}`}
+                                style={{ top: `${top + 2}px`, height: `${height - 4}px`, left: `calc(${left} + 2px)`, width: `calc(${width} - 4px)`, zIndex: 10 }}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-extrabold text-xs tracking-wide leading-none truncate">{schedule.subjectCode || "Subject"}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold border shrink-0 ${conflicts.length > 0 ? "bg-red-100 text-red-700 border-red-200" : getDeptBadgeStyles(schedule.departmentCode)}`}>{schedule.sectionName || "Section"}</span>
+                                  </div>
+                                  <p className="text-[11px] font-medium leading-tight mt-1 truncate opacity-90">{schedule.subjectName || "Untitled subject"}</p>
+                                  {conflicts.length > 0 && <p className="mt-1 text-[10px] font-black text-red-700 truncate">{conflicts.join(", ")}</p>}
+                                </div>
+                                {showBottomRow && (
+                                  <div className="mt-1 space-y-0.5 border-t border-white/50 pt-1">
+                                    <p className="text-[10px] font-bold opacity-75 truncate">{schedule.roomName || "Unassigned Room"}</p>
+                                    <p className="text-[10px] font-bold opacity-75 truncate">{schedule.facultyName}</p>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500 select-none"><span className="flex items-center gap-1.5 mr-2"><Info className="w-4 h-4 text-slate-400" />Department Color Legend:</span>{departments.map((dept) => <span key={dept.id} className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 rounded-lg border border-slate-300 shrink-0 ${getDeptBadgeStyles(dept.code)}`} />{dept.code}</span>)}</div>
+
+      {selectedSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"><div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden"><div className="p-4 border-b border-slate-100 flex items-start justify-between gap-3"><div><p className="text-xs font-black text-[#C9952A] uppercase tracking-wider">{selectedSchedule.subjectCode}</p><h3 className="text-lg font-black text-[#4e0a10] leading-tight">{selectedSchedule.subjectName || "Untitled subject"}</h3></div><button type="button" onClick={() => setSelectedSchedule(null)} className="rounded-lg p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-50"><X className="w-5 h-5" /></button></div><div className="p-4 space-y-3 text-sm">{[{ icon: Building2, label: "Department", value: `${selectedSchedule.departmentCode} - ${selectedSchedule.departmentName}` }, { icon: Layers, label: "Section", value: selectedSchedule.sectionName || "Unassigned Section" }, { icon: User, label: "Faculty", value: selectedSchedule.facultyName }, { icon: MapPin, label: "Room", value: selectedSchedule.roomName || "Unassigned Room" }, { icon: Calendar, label: "Schedule", value: `${selectedSchedule.day}, ${selectedSchedule.startTime} - ${selectedSchedule.endTime}` }, { icon: BookOpen, label: "Class Mode", value: getModeLabel(selectedSchedule.mode) }].map(({ icon: Icon, label, value }) => <div key={label} className="flex items-start gap-3"><Icon className="w-4 h-4 text-[#C9952A] mt-0.5 shrink-0" /><div><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="font-semibold text-slate-700">{value}</p></div></div>)}{getConflictLabels(conflictMap.get(selectedSchedule.id)).length > 0 && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-600">Conflict detected: {getConflictLabels(conflictMap.get(selectedSchedule.id)).join(", ")}</div>}</div></div></div>
+      )}
     </div>
   );
 }
+
+
+
+
+
+

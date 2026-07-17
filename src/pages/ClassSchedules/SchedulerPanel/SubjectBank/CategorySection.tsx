@@ -20,7 +20,7 @@ interface CategorySectionProps {
 
 const categoryDotColor: Record<Subject["category"], string> = {
   major: "bg-blue-500",
-  gec: "bg-green-500",
+  gec: "bg-red-500",
   gee: "bg-purple-500",
   pathfit: "bg-orange-500",
   nstp: "bg-yellow-500"

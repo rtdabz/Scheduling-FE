@@ -1,5 +1,5 @@
 
-export default function Reports() {
+export default function VpaaReports() {
   return (
     <div>
       <div className="mb-6">

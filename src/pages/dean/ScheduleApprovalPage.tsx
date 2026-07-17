@@ -6,7 +6,9 @@ import {
   ArrowUpDown, 
   ArrowUp, 
   ArrowDown,
-  RefreshCw
+  RefreshCw,
+  List,
+  CalendarDays
 } from 'lucide-react';
 import {
   useReactTable,
@@ -34,7 +36,77 @@ interface ScheduleApproval {
   mode: 'on-site' | 'online' | 'field';
 }
 
-const getDepartmentApprovalStatus = (items: any[]): ScheduleApproval['status'] => {
+interface StoredUser {
+  id?: number;
+  department_id?: number;
+  department?: {
+    department_name?: string;
+  };
+}
+
+interface RawSection {
+  id: number | string;
+  section_name: string;
+  department_id: number | string;
+  term_id: number | string;
+}
+
+interface RawSchedule {
+  id: number | string;
+  department_id: number | string;
+  section_id: number | string;
+  subject_id: number | string;
+  faculty_id?: number | string | null;
+  term_id: number | string;
+  day: string;
+  start_time: string;
+  end_time: string;
+  mode: 'on-site' | 'online' | 'field';
+  status: ScheduleApproval['status'];
+  created_at?: string;
+  reviewed_at_dean?: string | null;
+  rejection_reason?: string | null;
+  reviewed_by_dean?: number | string | null;
+  department?: {
+    department_name?: string;
+  } | null;
+  section?: {
+    section_name?: string;
+  } | null;
+  subject?: {
+    subject_code?: string;
+    subject_name?: string;
+  } | null;
+  faculty?: {
+    first_name?: string;
+    last_name?: string;
+  } | null;
+  room?: {
+    room_code?: string;
+    room_name?: string | null;
+  } | null;
+}
+
+interface ScheduleSectionOption {
+  id: string;
+  name: string;
+}
+
+type ModalViewMode = 'list' | 'grid';
+
+const dayOrder: Record<string, number> = {
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6,
+  Sunday: 7,
+};
+
+const APPROVAL_SLOT_HEIGHT_PX = 24;
+
+const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['status'] => {
   const statuses = items.map((item) => item.status);
   if (statuses.includes('submitted')) return 'submitted';
   if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
@@ -45,66 +117,87 @@ const getDepartmentApprovalStatus = (items: any[]): ScheduleApproval['status'] =
 
 interface ScheduleApprovalPageData {
   schedules: ScheduleApproval[];
-  rawSchedules: any[];
+  rawSchedules: RawSchedule[];
+  rawSections: RawSection[];
 }
 
+const normalizeDepartmentKey = (dept: string) => {
+  const value = dept.toLowerCase();
+  if (value.includes('information technology')) return 'IT';
+  if (value.includes('arts and sciences')) return 'AS';
+  if (value.includes('education')) return 'EDUC';
+  if (value.includes('business')) return 'BA';
+  if (value.includes('hospitality')) return 'HM';
+  if (value === 'cm' || value.includes('midwifery')) return 'MID';
+  if (value.includes('criminal')) return 'CRIM';
+  if (value.includes('library')) return 'LIS';
+  return '';
+};
+
 const getDeptColorClasses = (dept: string) => {
-  switch (dept) {
-    case 'College of Arts and Sciences':
+  switch (normalizeDepartmentKey(dept)) {
+    case 'AS':
       return {
-        bg: 'bg-purple-50',
-        border: 'border-purple-200',
-        text: 'text-purple-900',
-        accent: 'border-l-purple-500'
+        bg: 'bg-red-50',
+        border: 'border-red-400',
+        text: 'text-red-900',
+        accent: 'border-l-red-600'
       };
-    case 'College of Information Technology':
+    case 'IT':
       return {
-        bg: 'bg-sky-50',
-        border: 'border-sky-200',
-        text: 'text-sky-900',
-        accent: 'border-l-sky-500'
+        bg: 'bg-blue-50',
+        border: 'border-blue-400',
+        text: 'text-blue-900',
+        accent: 'border-l-blue-700'
       };
-    case 'College of Education':
+    case 'EDUC':
       return {
-        bg: 'bg-emerald-50',
-        border: 'border-emerald-200',
-        text: 'text-emerald-900',
-        accent: 'border-l-emerald-500'
+        bg: 'bg-orange-50',
+        border: 'border-orange-400',
+        text: 'text-orange-900',
+        accent: 'border-l-orange-600'
       };
-    case 'College of Business Administration':
+    case 'BA':
       return {
-        bg: 'bg-amber-50',
-        border: 'border-amber-200',
-        text: 'text-amber-900',
-        accent: 'border-l-amber-500'
+        bg: 'bg-yellow-50',
+        border: 'border-yellow-400',
+        text: 'text-yellow-900',
+        accent: 'border-l-yellow-600'
       };
-    case 'College of Hospitality Management':
+    case 'HM':
       return {
-        bg: 'bg-rose-50',
-        border: 'border-rose-200',
-        text: 'text-rose-900',
-        accent: 'border-l-rose-500'
+        bg: 'bg-lime-50',
+        border: 'border-lime-400',
+        text: 'text-lime-900',
+        accent: 'border-l-lime-600'
       };
-    case 'College of Library and Information Science':
+    case 'MID':
       return {
-        bg: 'bg-indigo-50',
-        border: 'border-indigo-200',
-        text: 'text-indigo-900',
-        accent: 'border-l-indigo-500'
+        bg: 'bg-green-50',
+        border: 'border-green-400',
+        text: 'text-green-900',
+        accent: 'border-l-green-600'
       };
-    case 'College of Criminal Justice and Public Safety':
+    case 'CRIM':
       return {
-        bg: 'bg-teal-50',
-        border: 'border-teal-200',
-        text: 'text-teal-900',
-        accent: 'border-l-teal-500'
+        bg: 'bg-[#4e0a10]/10',
+        border: 'border-[#6b0f1a]',
+        text: 'text-[#4e0a10]',
+        accent: 'border-l-[#4e0a10]'
+      };
+    case 'LIS':
+      return {
+        bg: 'bg-pink-50',
+        border: 'border-pink-400',
+        text: 'text-pink-900',
+        accent: 'border-l-pink-600'
       };
     default:
       return {
-        bg: 'bg-gray-50',
-        border: 'border-gray-200',
-        text: 'text-gray-900',
-        accent: 'border-l-gray-500'
+        bg: 'bg-purple-50',
+        border: 'border-purple-400',
+        text: 'text-purple-900',
+        accent: 'border-l-purple-600'
       };
   }
 };
@@ -129,17 +222,18 @@ const formatTime24hTo12h = (timeStr: string): string => {
   return `${hours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
 };
 
-export default function ScheduleApprovalPage() {
+export default function DeanScheduleApprovalPage() {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name;
   const userId = user?.id;
   const approvalCacheKey = `page:dean-schedule-approval:${userDeptId ?? 'all'}`;
   const cachedApprovalData = getCachedData<ScheduleApprovalPageData>(approvalCacheKey);
   const [schedules, setSchedules] = useState<ScheduleApproval[]>(cachedApprovalData?.schedules ?? []);
-  const [rawSchedules, setRawSchedules] = useState<any[]>(cachedApprovalData?.rawSchedules ?? []);
+  const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>(cachedApprovalData?.rawSchedules ?? []);
+  const [rawSections, setRawSections] = useState<RawSection[]>(cachedApprovalData?.rawSections ?? []);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(approvalCacheKey));
   
   // Filters
@@ -157,32 +251,34 @@ export default function ScheduleApprovalPage() {
   const [rejectConfirm, setRejectConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
+  const [modalViewMode, setModalViewMode] = useState<ModalViewMode>('list');
+  const [selectedModalSectionId, setSelectedModalSectionId] = useState('');
 
   useEffect(() => {
     const loadData = async () => {
       try {
         setIsLoading(!hasCachedData(approvalCacheKey));
         const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
-          const termRes = await api.get<any>('/terms/active');
+          const termRes = await api.get<{ id: number | string }>('/terms/active');
           const term = termRes.data;
 
           const [sectionsRes, schedulesRes] = await Promise.all([
-            api.get<any[]>('/sections'),
-            api.get<any[]>('/schedules')
+            api.get<RawSection[]>('/sections'),
+            api.get<RawSchedule[]>('/schedules')
           ]);
 
           let filteredSections = sectionsRes.data;
           if (term) {
-            filteredSections = filteredSections.filter((s: any) => Number(s.term_id) === Number(term.id));
+            filteredSections = filteredSections.filter((s) => Number(s.term_id) === Number(term.id));
           }
 
           let dbSchedules = schedulesRes.data;
           if (term) {
-            dbSchedules = dbSchedules.filter((s: any) => Number(s.term_id) === Number(term.id));
+            dbSchedules = dbSchedules.filter((s) => Number(s.term_id) === Number(term.id));
           }
 
-          const sectionsByDepartment: Record<string, any[]> = {};
-          filteredSections.forEach((section: any) => {
+          const sectionsByDepartment: Record<string, RawSection[]> = {};
+          filteredSections.forEach((section) => {
             if (userDeptId && Number(section.department_id) !== Number(userDeptId)) {
               return;
             }
@@ -197,8 +293,8 @@ export default function ScheduleApprovalPage() {
           });
 
           // Group schedules by department ID
-          const schedulesByDepartment: Record<string, any[]> = {};
-          dbSchedules.forEach((s: any) => {
+          const schedulesByDepartment: Record<string, RawSchedule[]> = {};
+          dbSchedules.forEach((s) => {
             const departmentId = s.department_id?.toString();
             if (!departmentId || !sectionsByDepartment[departmentId]) return;
 
@@ -232,10 +328,12 @@ export default function ScheduleApprovalPage() {
           return {
             schedules: mappedApprovals,
             rawSchedules: dbSchedules,
+            rawSections: filteredSections,
           };
         });
 
         setRawSchedules(data.rawSchedules);
+        setRawSections(data.rawSections);
         setSchedules(data.schedules);
       } catch {
         toast.error('Load Failed', 'Could not load schedules for approval.');
@@ -397,6 +495,30 @@ export default function ScheduleApprovalPage() {
     }
   };
 
+  const getSectionName = (item: RawSchedule) => {
+    return item.section?.section_name
+      ?? rawSections.find((section) => String(section.id) === String(item.section_id))?.section_name
+      ?? `Section ${item.section_id}`;
+  };
+
+  const getRoomName = (item: RawSchedule) => {
+    if (!item.room) return 'Unassigned';
+    if (item.room.room_code === 'ONLINE') return 'Online';
+    if (item.room.room_code === 'FIELD') return 'Field';
+    return item.room.room_name ? `${item.room.room_code} - ${item.room.room_name}` : item.room.room_code;
+  };
+
+  const getInstructorName = (item: RawSchedule) => {
+    if (!item.faculty) return 'Unassigned';
+    return `${item.faculty.first_name ?? ''} ${item.faculty.last_name ?? ''}`.trim() || 'Unassigned';
+  };
+
+  const getModeLabel = (mode: RawSchedule['mode']) => {
+    if (mode === 'on-site') return 'On-Site';
+    if (mode === 'online') return 'Online';
+    return 'Field';
+  };
+
   // Timetable Grid Slot Generator (7:00 AM to 9:00 PM)
   const timeSlots = useMemo(() => {
     const slots = [];
@@ -416,14 +538,70 @@ export default function ScheduleApprovalPage() {
     return slots;
   }, []);
 
-  const getSlotIndex = (timeStr: string) => {
-    const [time, ampm] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (ampm === 'PM' && hours !== 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-    const totalMinutes = (hours * 60 + minutes) - (7 * 60);
-    return Math.floor(totalMinutes / 30);
-  };
+  const modalSchedules = useMemo(() => {
+    if (!viewSchedule) return [];
+    return rawSchedules
+      .filter((schedule) => Number(schedule.department_id) === Number(viewSchedule.id))
+      .sort((left, right) => (
+        getSectionName(left).localeCompare(getSectionName(right))
+        || (dayOrder[left.day] ?? 99) - (dayOrder[right.day] ?? 99)
+        || left.start_time.localeCompare(right.start_time)
+      ));
+  }, [rawSchedules, rawSections, viewSchedule]);
+
+  const modalSections = useMemo<ScheduleSectionOption[]>(() => {
+    if (!viewSchedule) return [];
+    const sectionMap = new Map<string, string>();
+
+    rawSections
+      .filter((section) => Number(section.department_id) === Number(viewSchedule.id))
+      .forEach((section) => sectionMap.set(String(section.id), section.section_name));
+
+    modalSchedules.forEach((schedule) => {
+      sectionMap.set(String(schedule.section_id), getSectionName(schedule));
+    });
+
+    return Array.from(sectionMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [modalSchedules, rawSections, viewSchedule]);
+
+  useEffect(() => {
+    if (!viewSchedule) {
+      setModalViewMode('list');
+      setSelectedModalSectionId('');
+      return;
+    }
+
+    setModalViewMode('list');
+  }, [viewSchedule]);
+
+  useEffect(() => {
+    if (!viewSchedule || modalSections.length === 0) return;
+    if (!selectedModalSectionId || !modalSections.some((section) => section.id === selectedModalSectionId)) {
+      setSelectedModalSectionId(modalSections[0].id);
+    }
+  }, [modalSections, selectedModalSectionId, viewSchedule]);
+
+  const selectedSectionSchedules = useMemo(() => {
+    return modalSchedules.filter((schedule) => String(schedule.section_id) === selectedModalSectionId);
+  }, [modalSchedules, selectedModalSectionId]);
+
+  const groupedModalSchedules = useMemo(() => {
+    const groups = new Map<string, RawSchedule[]>();
+    modalSchedules.forEach((schedule) => {
+      const sectionName = getSectionName(schedule);
+      groups.set(sectionName, [...(groups.get(sectionName) ?? []), schedule]);
+    });
+    return Array.from(groups.entries());
+  }, [modalSchedules, rawSections]);
+
+  const modalSummary = useMemo(() => ({
+    totalSections: modalSections.length,
+    totalScheduledSubjects: new Set(modalSchedules.map((schedule) => String(schedule.subject_id))).size,
+    unassignedInstructors: modalSchedules.filter((schedule) => !schedule.faculty_id).length,
+    totalScheduleEntries: modalSchedules.length,
+  }), [modalSchedules, modalSections]);
 
   const columns = useMemo<ColumnDef<ScheduleApproval>[]>(
     () => [
@@ -809,7 +987,7 @@ export default function ScheduleApprovalPage() {
                     {getStatusLabel(viewSchedule.status)}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500 font-medium mt-1">View Only • No edits allowed</p>
+                <p className="text-xs text-gray-500 font-medium mt-1">View Only - No edits allowed</p>
               </div>
               <button 
                 onClick={() => setViewSchedule(null)} 
@@ -819,15 +997,82 @@ export default function ScheduleApprovalPage() {
               </button>
             </div>
 
-            {/* Timetable Scroll Container */}
-            <div className="flex-1 p-4 bg-white overflow-hidden flex flex-col">
-              {rawSchedules.filter(s => Number(s.department_id) === Number(viewSchedule.id)).length === 0 ? (
-                <div className="h-full min-h-[300px] flex items-center justify-center text-gray-400 italic text-sm bg-white">
-                  No timetable entries added to this schedule yet.
+            <div className="flex-1 p-4 bg-white overflow-hidden flex flex-col gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {[
+                  ['Total sections', modalSummary.totalSections],
+                  ['Scheduled subjects', modalSummary.totalScheduledSubjects],
+                  ['Unassigned instructors', modalSummary.unassignedInstructors],
+                  ['Schedule entries', modalSummary.totalScheduleEntries],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</p>
+                    <p className="text-lg font-black text-[#4e0a10] leading-tight">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 w-fit">
+                  <button type="button" onClick={() => setModalViewMode('list')} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${modalViewMode === 'list' ? 'bg-[#4e0a10] text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
+                    <List size={14} />
+                    List View
+                  </button>
+                  <button type="button" onClick={() => setModalViewMode('grid')} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${modalViewMode === 'grid' ? 'bg-[#4e0a10] text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
+                    <CalendarDays size={14} />
+                    Weekly Grid
+                  </button>
+                </div>
+
+                {modalViewMode === 'grid' && (
+                  <select value={selectedModalSectionId} onChange={(event) => setSelectedModalSectionId(event.target.value)} className="w-full md:w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#C9952A]">
+                    {modalSections.map((section) => (
+                      <option key={section.id} value={section.id}>{section.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {modalSchedules.length === 0 ? (
+                <div className="flex-1 min-h-[260px] flex items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400 italic">
+                  This department has no schedule entries.
+                </div>
+              ) : modalViewMode === 'list' ? (
+                <div className="flex-1 overflow-y-auto rounded-xl border border-gray-200 bg-white">
+                  <div className="divide-y divide-gray-100">
+                    {groupedModalSchedules.map(([sectionName, sectionSchedules]) => (
+                      <div key={sectionName}>
+                        <div className="sticky top-0 z-10 bg-gray-50 px-3 py-2 border-b border-gray-100">
+                          <p className="text-xs font-black text-[#4e0a10]">{sectionName}</p>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {sectionSchedules.map((item) => (
+                            <div key={item.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_0.8fr_1fr_0.7fr] gap-2 px-3 py-2.5 text-xs">
+                              <div className="min-w-0">
+                                <p className="font-black text-gray-800 truncate">{item.subject?.subject_code ?? 'Subject'}</p>
+                                <p className="text-gray-500 truncate">{item.subject?.subject_name ?? 'Untitled subject'}</p>
+                              </div>
+                              <div className="font-semibold text-gray-700">{item.day}, {formatTime24hTo12h(item.start_time)} - {formatTime24hTo12h(item.end_time)}</div>
+                              <div className="text-gray-600 truncate">{getRoomName(item)}</div>
+                              <div className={`truncate ${item.faculty_id ? 'text-gray-600' : 'text-red-500 font-semibold'}`}>{getInstructorName(item)}</div>
+                              <div>
+                                <span className="inline-flex rounded-full border border-[#C9952A]/30 bg-[#C9952A]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#4e0a10]">
+                                  {getModeLabel(item.mode)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : selectedSectionSchedules.length === 0 ? (
+                <div className="flex-1 min-h-[260px] flex items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400 italic">
+                  The selected section has no schedule entries.
                 </div>
               ) : (
-                <div className="flex flex-col border border-gray-200 rounded-xl overflow-hidden w-full overflow-x-auto">
-                  {/* 1. STICKY HEADER — never scrolls vertically */}
+                <div className="flex-1 min-h-0 flex flex-col border border-gray-200 rounded-xl overflow-hidden w-full overflow-x-auto overscroll-contain">
                   <div className="grid grid-cols-[80px_repeat(6,1fr)] bg-gray-50 border-b border-gray-200 text-xs text-center font-bold text-gray-500 min-w-[750px] shrink-0">
                     <div className="bg-gray-50 border-r border-gray-200 p-2.5 sticky left-0 z-20 text-right pr-3">Time</div>
                     <div className="border-r border-gray-200 p-2.5">Mon</div>
@@ -837,94 +1082,47 @@ export default function ScheduleApprovalPage() {
                     <div className="border-r border-gray-200 p-2.5">Fri</div>
                     <div className="p-2.5">Sat</div>
                   </div>
-
-                  {/* 2. SCROLLABLE BODY — only this scrolls vertically */}
-                  <div className="overflow-y-auto max-h-[550px] bg-white will-change-transform min-w-[750px] relative">
-                    <div 
-                      className="grid grid-cols-[80px_repeat(6,1fr)] text-xs relative"
-                      style={{ gridTemplateRows: `repeat(${timeSlots.length}, 48px)` }}
-                    >
-                      {/* Empty cells background grid and Time labels */}
+                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-white min-w-[750px] relative">
+                    <div className="grid grid-cols-[80px_repeat(6,1fr)] text-xs relative" style={{ gridTemplateRows: `repeat(${timeSlots.length}, ${APPROVAL_SLOT_HEIGHT_PX}px)` }}>
                       {timeSlots.map((slot, rowIndex) => {
                         const gridRow = rowIndex + 1;
                         return (
                           <React.Fragment key={rowIndex}>
-                            {/* Time slot column cell - sticky left-0 */}
-                            <div 
-                              className="bg-gray-50 border-b border-r border-gray-200 p-1.5 text-[10px] font-bold text-gray-400 text-right sticky left-0 z-10 h-12 flex items-center justify-end pr-3"
-                              style={{
-                                gridColumn: 1,
-                                gridRowStart: gridRow,
-                                gridRowEnd: gridRow + 1,
-                              }}
-                            >
-                              {slot.endsWith(':00 AM') || slot.endsWith(':00 PM') ? slot : ''}
-                            </div>
-                            {/* Mon-Sat grid background cells */}
+                            {rowIndex % 2 === 0 && (
+                              <div className="bg-gray-50 border-b border-r border-gray-200 p-1.5 text-[10px] font-bold text-gray-400 text-right sticky left-0 z-10 flex items-center justify-end pr-3" style={{ gridColumn: 1, gridRow: `${gridRow} / span 2`, height: `${APPROVAL_SLOT_HEIGHT_PX * 2}px` }}>
+                                {slot}
+                              </div>
+                            )}
                             {Array.from({ length: 6 }).map((_, colIndex) => (
-                              <div 
-                                key={colIndex} 
-                                className="border-b border-r border-gray-200 bg-white h-12"
-                                style={{
-                                  gridColumn: colIndex + 2,
-                                  gridRowStart: gridRow,
-                                  gridRowEnd: gridRow + 1,
-                                }}
-                              />
+                              <div key={colIndex} className="border-b border-r border-gray-200 bg-white h-6" style={{ gridColumn: colIndex + 2, gridRowStart: gridRow, gridRowEnd: gridRow + 1 }} />
                             ))}
                           </React.Fragment>
                         );
                       })}
-
-                      {/* Render Schedule Cards */}
-                      {rawSchedules.filter(s => Number(s.department_id) === Number(viewSchedule.id)).map((item) => {
+                      {selectedSectionSchedules.map((item) => {
                         const colMap: Record<string, number> = { Monday: 2, Tuesday: 3, Wednesday: 4, Thursday: 5, Friday: 6, Saturday: 7 };
                         const colIndex = colMap[item.day] ?? 2;
                         const startRow = getSlotIndexFrom24h(item.start_time) + 1;
                         const endRow = getSlotIndexFrom24h(item.end_time) + 1;
-                        
+                        const cardHeight = (endRow - startRow) * APPROVAL_SLOT_HEIGHT_PX;
+                        const showBottomRow = cardHeight > 80;
                         const colors = getDeptColorClasses(viewSchedule.department);
-                        const subCode = item.subject?.subject_code ?? '';
-                        const subName = item.subject?.subject_name ?? '';
-                        const facName = item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}` : 'Unassigned';
-                        let roomName = '';
-                        if (item.room) {
-                          if (item.room.room_code === "ONLINE") roomName = "Online";
-                          else if (item.room.room_code === "FIELD") roomName = "Field";
-                          else roomName = item.room.room_code;
-                        }
-
                         return (
-                          <div 
-                            key={item.id}
-                            className={`${colors.bg} ${colors.border} ${colors.text} border-l-[4px] ${colors.accent} border p-2 m-0.5 rounded-lg shadow-sm overflow-hidden flex flex-col justify-between leading-snug`}
-                            style={{
-                              gridColumn: colIndex,
-                              gridRowStart: startRow,
-                              gridRowEnd: endRow,
-                              zIndex: 5
-                            }}
-                          >
-                            <div className="space-y-0.5">
+                          <div key={item.id} className={`${colors.bg} ${colors.border} ${colors.text} border-2 border-l-[4px] ${colors.accent} p-2 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between leading-snug box-border`} style={{ gridColumn: colIndex, gridRowStart: startRow, gridRowEnd: endRow, height: `${cardHeight}px`, zIndex: 5 }}>
+                            <div className="min-w-0">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-[10px] uppercase tracking-wide">{subCode}</span>
-                                <span className={`px-1 rounded-[3px] text-[8px] font-bold border uppercase tracking-wide shrink-0 ${
-                                  item.mode === 'on-site'
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                    : item.mode === 'online'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'bg-amber-50 text-amber-705 border-amber-200'
-                                }`}>
-                                  {item.mode === 'on-site' ? 'On-Site' : item.mode === 'online' ? 'Online' : 'Field'}
-                                </span>
+                                <span className="font-bold text-[10px] uppercase tracking-wide">{item.subject?.subject_code ?? 'Subject'}</span>
+                                <span className="px-1 rounded-[3px] text-[8px] font-bold border uppercase tracking-wide shrink-0 bg-white/70 border-current">{getModeLabel(item.mode)}</span>
                               </div>
-                              <p className="font-semibold text-[9px] truncate opacity-90">{subName}</p>
-                              <p className="text-[9px] opacity-80 truncate">{facName}</p>
+                              <p className="font-semibold text-[9px] truncate opacity-90">{item.subject?.subject_name ?? 'Untitled subject'}</p>
+                              <p className="text-[9px] opacity-80 truncate">{getInstructorName(item)}</p>
                             </div>
-                            <div className="flex justify-between items-center text-[9px] opacity-80 mt-1 font-semibold border-t border-black/5 pt-0.5">
-                              <span>{roomName}</span>
-                              <span>{formatTime24hTo12h(item.start_time)} - {formatTime24hTo12h(item.end_time)}</span>
-                            </div>
+                            {showBottomRow && (
+                              <div className="flex justify-between items-center text-[9px] opacity-80 mt-1 font-semibold border-t border-black/5 pt-0.5">
+                                <span className="truncate">{getRoomName(item)}</span>
+                                <span className="shrink-0">{formatTime24hTo12h(item.start_time)} - {formatTime24hTo12h(item.end_time)}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1061,3 +1259,4 @@ export default function ScheduleApprovalPage() {
     </div>
   );
 }
+

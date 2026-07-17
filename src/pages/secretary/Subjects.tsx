@@ -1,6 +1,6 @@
 import SubjectManager from "./SubjectManager";
 
-export default function Subjects() {
+export default function SecretarySubjects() {
   return (
     <div>
       <div className="mb-6">
