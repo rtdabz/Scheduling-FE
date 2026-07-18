@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { CalendarClock, ChevronDown, DoorOpen, MapPin, X } from "lucide-react";
 import {
   DAYS,
@@ -38,21 +38,33 @@ export default function RoomViewModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isRoomViewOpen, setIsRoomViewOpen]);
 
-  if (!isRoomViewOpen) return null;
+  const room = useMemo(
+    () => rooms.find((r) => r.id === roomViewRoomId),
+    [rooms, roomViewRoomId]
+  );
 
-  const room = rooms.find((r) => r.id === roomViewRoomId);
-  const roomClasses = schedules.filter((s) => s.roomId === roomViewRoomId);
+  const roomClasses = useMemo(
+    () => schedules.filter((s) => s.roomId === roomViewRoomId),
+    [schedules, roomViewRoomId]
+  );
+
+  const slotIndexes = useMemo(
+    () => Array.from({ length: SLOT_COUNT }, (_, index) => index),
+    []
+  );
+
+  if (!isRoomViewOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setIsRoomViewOpen(false); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="room-view-title"
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
       >
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
@@ -106,10 +118,10 @@ export default function RoomViewModal({
         </div>
 
         {/* Grid */}
-        <div className="flex-1 overflow-auto p-4 bg-slate-50/30">
+        <div className="flex-1 overflow-auto overscroll-contain p-4 bg-slate-50/30 [contain:layout_paint]">
           {roomClasses.length === 0 && (
             <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">
-              This room is fully available — no classes are booked this week.
+              This room is fully available - no classes are booked this week.
             </div>
           )}
           <div
@@ -140,7 +152,7 @@ export default function RoomViewModal({
             ))}
 
             {/* Time labels + empty cells */}
-            {Array.from({ length: SLOT_COUNT }).map((_, t) => (
+            {slotIndexes.map((t) => (
               <div key={`row-${t}`} style={{ display: "contents" }}>
                 {t % 2 === 0 && (
                   <div
@@ -166,12 +178,12 @@ export default function RoomViewModal({
               return (
                 <div
                   key={sched.id}
-                  className={`m-0.5 rounded-lg border-2 border-l-4 p-1.5 overflow-hidden shadow-sm ${styles.container}`}
+                  className={`m-0.5 rounded-lg border-2 border-l-4 p-1.5 overflow-hidden shadow-sm transform-gpu ${styles.container}`}
                   style={{
                     gridColumn: sched.dayIndex + 2,
                     gridRow: `${sched.startSlot + 2} / span ${sched.durationSlots}`
                   }}
-                  title={`${sched.subjectCode} · ${sched.sectionName} · ${sched.startTime}–${sched.endTime}`}
+                  title={`${sched.subjectCode} - ${sched.sectionName} - ${sched.startTime}-${sched.endTime}`}
                 >
                   <div className={`text-[11px] font-bold uppercase truncate ${styles.text}`}>
                     {sched.subjectCode}
@@ -181,7 +193,7 @@ export default function RoomViewModal({
                   </div>
                   {sched.durationSlots > 3 && (
                     <div className="text-[9px] text-slate-400 truncate mt-0.5">
-                      {sched.startTime}–{sched.endTime}
+                      {sched.startTime}-{sched.endTime}
                     </div>
                   )}
                 </div>

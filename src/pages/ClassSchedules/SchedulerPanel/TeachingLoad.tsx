@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
@@ -18,6 +18,30 @@ interface TeachingLoadProps {
   users: UserSummary[];
   departments: Department[];
   selectedSectionId: string;
+}
+
+interface StoredUser {
+  role?: string;
+  department_id?: number | string | null;
+}
+
+interface TeachingLoadRow {
+  code: string;
+  title: string;
+  day: string;
+  time: string;
+  section: string;
+  students: string;
+  lec: string;
+  lab: string;
+  totalUnits: string;
+  totalHours: string;
+}
+
+interface AutoTableDocument extends jsPDF {
+  lastAutoTable: {
+    finalY: number;
+  };
 }
 
 const parseFacultyName = (name: string) => {
@@ -56,13 +80,6 @@ export default function TeachingLoad({
   selectedSectionId,
 }: TeachingLoadProps) {
   const { toast } = useToast();
-
-  useEffect(() => {
-    if (isTeachingLoadOpen) {
-      handlePrint();
-      setIsTeachingLoadOpen(false);
-    }
-  }, [isTeachingLoadOpen]);
 
   let logoUrl = tccLogo;
   if (!tccLogo.startsWith("data:") && !tccLogo.startsWith("http:") && !tccLogo.startsWith("https:")) {
@@ -127,7 +144,14 @@ export default function TeachingLoad({
 
   const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null) => {
     const userJson = localStorage.getItem("user") || sessionStorage.getItem("user");
-    const user = userJson ? JSON.parse(userJson) : null;
+    let user: StoredUser | null = null;
+    if (userJson) {
+      try {
+        user = JSON.parse(userJson) as StoredUser;
+      } catch {
+        user = null;
+      }
+    }
     const isVpaa = user?.role?.toLowerCase() === "vpaa";
     const userDeptId = user?.department_id;
 
@@ -152,7 +176,7 @@ export default function TeachingLoad({
       return;
     }
 
-    const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "legal" });
 
     targetFaculties.forEach((faculty, idx) => {
       if (idx > 0) {
@@ -310,7 +334,7 @@ export default function TeachingLoad({
 
       const facultySchedules = allSchedules.filter((s) => s.facultyId === faculty.id);
 
-      const getTableData = (type: "Basic" | "Overload") => {
+      const getTableData = (type: "Basic" | "Overload", targetRows: number): TeachingLoadRow[] => {
         const filtered = facultySchedules.filter((s) => {
           const isPt = faculty.employmentType === "part-time";
           if (isPt) {
@@ -332,7 +356,7 @@ export default function TeachingLoad({
             day: s.day.substring(0, 3),
             time: `${s.startTime} - ${s.endTime}`,
             section: s.sectionName,
-            students: "0",
+            students: "",
             lec: lec.toString(),
             lab: lab.toString(),
             totalUnits: totalU.toString(),
@@ -340,7 +364,6 @@ export default function TeachingLoad({
           };
         });
 
-        const targetRows = 5;
         while (rows.length < targetRows) {
           rows.push({
             code: "",
@@ -410,7 +433,7 @@ export default function TeachingLoad({
       doc.setFontSize(9);
       doc.text("A. Basic Load/Built-In", leftMargin, currentY + 7.5);
 
-      const tableABody = getTableData("Basic").map((r) => [
+      const tableABody = getTableData("Basic", 7).map((r) => [
         r.code, r.title, r.day, r.time, r.section, r.students, r.lec, r.lab, r.totalUnits, r.totalHours
       ]);
 
@@ -450,7 +473,7 @@ export default function TeachingLoad({
         }
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 1;
+      currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 1;
 
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(8.5);
@@ -465,7 +488,7 @@ export default function TeachingLoad({
       doc.setFontSize(9);
       doc.text("B. Overload/Part Time Load", leftMargin, currentY);
 
-      const tableBBody = getTableData("Overload").map((r) => [
+      const tableBBody = getTableData("Overload", 6).map((r) => [
         r.code, r.title, r.day, r.time, r.section, r.students, r.lec, r.lab, r.totalUnits, r.totalHours
       ]);
 
@@ -505,7 +528,7 @@ export default function TeachingLoad({
         }
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 1.5;
+      currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 1.5;
 
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(8);
@@ -558,7 +581,6 @@ export default function TeachingLoad({
         approvedTitle: "OIC - College President",
       };
 
-      doc.rect(leftMargin, currentY, 190, 18.5);
       doc.line(centerMargin, currentY, centerMargin, currentY + 18.5);
 
       doc.setFont("Helvetica", "bold");
@@ -579,7 +601,6 @@ export default function TeachingLoad({
 
       currentY += 21;
 
-      doc.rect(leftMargin, currentY, 190, 18.5);
       doc.line(centerMargin, currentY, centerMargin, currentY + 18.5);
 
       doc.setFont("Helvetica", "bold");
@@ -600,36 +621,43 @@ export default function TeachingLoad({
 
       currentY += 21;
 
-      doc.rect(leftMargin, currentY, 95, 14.5);
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(8.5);
       doc.text("Received :", leftMargin + 2, currentY + 3.5);
 
       doc.setFont("Helvetica", "normal");
       doc.setFontSize(7.5);
-      doc.text("Instructors Name (Signature over Printed Name)", leftMargin + 47.5, currentY + 9, { align: "center" });
+      doc.text("Instructor's Name (Signature over Printed Name)", leftMargin + 47.5, currentY + 9, { align: "center" });
       doc.text("Date Signed: _____________________", leftMargin + 2, currentY + 12.5);
 
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(7.5);
-      doc.text("Reminder:", leftMargin, 281.5);
+      doc.text("Reminder:", leftMargin, 338);
       doc.setFont("Helvetica", "italic");
-      doc.text("Submit corrected teaching load when there is/are changes.", leftMargin + 14, 281.5);
+      doc.text("Submit corrected teaching load when there is/ are changes.", leftMargin + 14, 338);
 
       doc.setFillColor(123, 12, 23);
-      doc.rect(leftMargin, 283.5, 190, 1, "F");
+      doc.rect(leftMargin, 340, 190, 1, "F");
 
       doc.setFont("Helvetica", "normal");
       doc.setFontSize(6.5);
       doc.setTextColor(85, 85, 85);
-      doc.text("Document No.\nTCC-VPAA-001", leftMargin, 289);
-      doc.text("Revision No.\n001", leftMargin + 22, 289);
+      doc.text("Document No.\nTCC-VPAA-001", leftMargin, 346);
+      doc.text("Revision No.\n001", leftMargin + 22, 346);
     });
 
     const blob = doc.output("blob");
     const blobUrl = URL.createObjectURL(blob);
     window.open(blobUrl, "_blank");
   };
+
+  useEffect(() => {
+    if (isTeachingLoadOpen) {
+      handlePrint();
+      setIsTeachingLoadOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeachingLoadOpen, setIsTeachingLoadOpen]);
 
   return null;
 }

@@ -167,12 +167,12 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
       
       {/* SECTION 1 — width matches sidebar */}
       <div className={`
-        flex-shrink-0 flex items-center h-full
+        hidden md:flex flex-shrink-0 items-center h-full
         border-r border-white/10
         transition-all duration-300 ease-in-out
         overflow-hidden
         bg-black/10
-        ${sidebarOpen ? 'w-64 px-4' : 'w-0 md:w-16 justify-center px-0'}
+        ${sidebarOpen ? 'w-64 px-4' : 'w-16 justify-center px-0'}
       `}>
         <div className="relative group flex items-center">
           <img 
@@ -190,13 +190,15 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
       </div>
 
       {/* SECTION 2 — flexible, takes remaining space */}
-      <div className="flex flex-1 items-center justify-between px-5 h-full">
+      <div className="flex h-full min-w-0 flex-1 items-center justify-between px-3 sm:px-5">
         
         {/* Left of section 2: Hamburger button */}
         <button
           onClick={onToggleSidebar}
           className="p-2 rounded-xl hover:bg-white/10 text-white cursor-pointer active:scale-95 border border-transparent hover:border-white/5 shadow-sm transition-all duration-300"
-          aria-label="Toggle Menu"
+          aria-label={sidebarOpen ? 'Collapse navigation menu' : 'Open navigation menu'}
+          aria-expanded={sidebarOpen}
+          aria-controls="primary-navigation"
         >
           <div className={`transition-transform duration-500 ${sidebarOpen ? 'rotate-180' : 'rotate-0'}`}>
             <Menu size={20} />
@@ -204,14 +206,20 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
         </button>
 
         {/* Right of section 2: Notifications, divider, avatar */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {/* Notifications */}
           <div className="relative flex" ref={notifRef}>
             <button 
-              onClick={() => setShowNotifications(!showNotifications)}
+              type="button"
+              onClick={() => {
+                setShowNotifications((current) => !current);
+                setShowProfile(false);
+              }}
               className={`relative p-2 text-[#E8D5C4] hover:text-white transition-all duration-300 rounded-xl hover:bg-white/10 border border-transparent hover:border-white/5 cursor-pointer ${
                 showNotifications ? 'bg-white/10 border-white/10 text-white' : ''
               }`}
+              aria-label="Open notifications"
+              aria-expanded={showNotifications}
             >
               <Bell size={20} />
               {notifications.length > 0 && (
@@ -221,7 +229,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-12 w-96 bg-[#F7F4F0] border border-slate-200/80 rounded-2xl shadow-2xl overflow-hidden z-50 animate-slide-in origin-top-right">
+              <div className="absolute right-0 mt-12 w-[min(24rem,calc(100vw-1.5rem))] bg-[#F7F4F0] border border-slate-200/80 rounded-2xl shadow-2xl overflow-hidden z-50 animate-slide-in origin-top-right">
                 <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                   <h3 className="text-gray-800 font-bold tracking-tight">Notifications</h3>
                 </div>
@@ -250,15 +258,21 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
           </div>
 
           {/* Divider */}
-          <div className="w-px h-6 bg-white/20"></div>
+          <div className="hidden h-6 w-px bg-white/20 sm:block" />
 
           {/* User profile */}
           <div className="relative flex" ref={profileRef} id="sidebar-profile">
-            <div 
-              onClick={() => setShowProfile(!showProfile)}
+            <button
+              type="button"
+              onClick={() => {
+                setShowProfile((current) => !current);
+                setShowNotifications(false);
+              }}
               className={`flex items-center gap-3 cursor-pointer p-1 rounded-xl hover:bg-white/10 pr-3 border border-transparent hover:border-white/5 transition-all duration-300 ${
                 showProfile ? 'bg-white/10 border-white/10' : ''
               }`}
+              aria-label="Open user menu"
+              aria-expanded={showProfile}
             >
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ring-white/10">
                 <span className="text-white text-sm font-bold font-display">
@@ -274,7 +288,7 @@ export default function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
                   {formatRole(user?.role)}
                 </span>
               </div>
-            </div>
+            </button>
 
             {/* Profile Dropdown */}
             {showProfile && (

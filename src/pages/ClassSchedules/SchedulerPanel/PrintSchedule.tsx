@@ -14,6 +14,18 @@ interface PrintScheduleProps {
   selectedSectionId: string;
 }
 
+interface AutoTableDocument extends jsPDF {
+  lastAutoTable: {
+    finalY: number;
+  };
+}
+
+interface JsPdfDocumentWithPageInfo extends jsPDF {
+  internal: jsPDF["internal"] & {
+    getNumberOfPages: () => number;
+  };
+}
+
 const ACADEMIC_YEAR = "2025-2026";
 const TERM = "2nd";
 const COLLEGE_OF = "INFORMATION TECHNOLOGY";
@@ -32,13 +44,6 @@ export default function PrintSchedule({
   allSchedules,
   selectedSectionId,
 }: PrintScheduleProps) {
-
-  useEffect(() => {
-    if (isPrintModalOpen) {
-      handlePrint();
-      setIsPrintModalOpen(false);
-    }
-  }, [isPrintModalOpen]);
 
   let logoUrl = tccLogo;
   if (!tccLogo.startsWith("data:") && !tccLogo.startsWith("http:") && !tccLogo.startsWith("https:")) {
@@ -185,7 +190,7 @@ export default function PrintSchedule({
     doc.setTextColor(255, 255, 255);
     doc.setDrawColor(201, 149, 42);
     doc.setLineWidth(0.15);
-    doc.text(`COLLEGE OF ${COLLEGE_OF}`, 148.5, currentY + 5, { align: "center", renderingMode: "fillThenStroke" } as any);
+    doc.text(`COLLEGE OF ${COLLEGE_OF}`, 148.5, currentY + 5, { align: "center" });
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.4);
 
@@ -246,9 +251,9 @@ export default function PrintSchedule({
       const body = filledRows.map((item) => [
         item.subjectCode,
         item.subjectName,
-        "3",
-        "0",
-        "3",
+        item.lectureUnits.toString(),
+        item.laboratoryUnits.toString(),
+        item.totalUnits.toString(),
         item.day,
         `${item.startTime} – ${item.endTime}`,
         item.roomName
@@ -306,7 +311,7 @@ export default function PrintSchedule({
         }
       });
 
-      currentY = (doc as any).lastAutoTable.finalY + 4;
+      currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 4;
     });
 
     // ── 4. Signature Block ──
@@ -348,7 +353,7 @@ export default function PrintSchedule({
     });
 
     // ── 5. Page-Anchored Document Footer ──
-    const pageCount = (doc as any).internal.getNumberOfPages();
+    const pageCount = (doc as JsPdfDocumentWithPageInfo).internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
       
@@ -385,6 +390,14 @@ export default function PrintSchedule({
     const blobUrl = URL.createObjectURL(blob);
     window.open(blobUrl, "_blank");
   };
+
+  useEffect(() => {
+    if (isPrintModalOpen) {
+      handlePrint();
+      setIsPrintModalOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPrintModalOpen, setIsPrintModalOpen]);
 
   return null;
 }

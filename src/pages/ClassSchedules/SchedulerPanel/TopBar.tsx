@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, FileText, GraduationCap, LayoutGrid, Printer, Send, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, FileText, GraduationCap, LayoutGrid, Printer, Send, Upload, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, Section } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -38,6 +38,7 @@ interface TopBarProps {
   handleSubmitForApproval: () => void;
   onPrint: () => void;
   onTeachingLoad: () => void;
+  onImport: () => void;
   isLoading?: boolean;
 }
 
@@ -68,11 +69,14 @@ export default function TopBar({
   handleSubmitForApproval,
   onPrint,
   onTeachingLoad,
+  onImport,
   isLoading = false
 }: TopBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const printDropdownRef = useRef<HTMLDivElement>(null);
   const [sectionSearch, setSectionSearch] = useState("");
   const [isReadinessOpen, setIsReadinessOpen] = useState(false);
+  const [isPrintDropdownOpen, setIsPrintDropdownOpen] = useState(false);
   const selectedSection = sections.find((s) => s.id === selectedSectionId);
   const remainingSubjects = Math.max(0, totalSubjects - totalScheduled);
 
@@ -183,11 +187,15 @@ export default function TopBar({
       if (!dropdownRef.current?.contains(event.target as Node)) {
         setIsSectionDropdownOpen(false);
       }
+      if (!printDropdownRef.current?.contains(event.target as Node)) {
+        setIsPrintDropdownOpen(false);
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsSectionDropdownOpen(false);
+        setIsPrintDropdownOpen(false);
       }
     };
 
@@ -249,9 +257,9 @@ export default function TopBar({
   );
 
   return (
-    <div className="flex flex-col gap-4 bg-white px-6 py-4 border-b border-gray-200 rounded-t-2xl shadow-sm">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3.5 border-b border-gray-100">
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col gap-3 bg-white px-5 py-4 border-b border-gray-200 rounded-t-2xl shadow-sm">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500 font-medium whitespace-nowrap">Section:</span>
             <div className="relative" ref={dropdownRef}>
@@ -331,38 +339,68 @@ export default function TopBar({
               </span>
             </div>
           )}
+        </div>
+
+        <div className="xl:flex-1 xl:flex xl:justify-center min-w-0 overflow-x-auto">
           {phasePipeline}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <button
             type="button"
-            onClick={onPrint}
-            title="Print Schedule"
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+            onClick={onImport}
+            title="Import Schedule"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#4e0a10]/30 text-[#4e0a10] hover:bg-[#4e0a10]/5 hover:border-[#4e0a10] text-sm font-semibold rounded-lg transition-colors cursor-pointer"
           >
-            <Printer className="w-4 h-4" />
-            <span>Print Schedule</span>
+            <Upload className="w-4 h-4" />
+            <span>Import Schedule</span>
           </button>
-          <button
-            type="button"
-            onClick={onTeachingLoad}
-            title="Print Teaching Load"
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-sm font-medium rounded-lg transition-colors cursor-pointer shadow-sm border border-transparent"
-          >
-            <FileText className="w-4 h-4" />
-            <span>Print Teaching Load</span>
-          </button>
+          <div className="relative" ref={printDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsPrintDropdownOpen(!isPrintDropdownOpen)}
+              aria-haspopup="menu"
+              aria-expanded={isPrintDropdownOpen}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 text-sm font-semibold rounded-lg transition-colors"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Print</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isPrintDropdownOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isPrintDropdownOpen && (
+              <div role="menu" className="absolute right-0 z-50 mt-1.5 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setIsPrintDropdownOpen(false); onPrint(); }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Printer className="w-4 h-4 text-[#4e0a10]" />
+                  Print Schedule
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setIsPrintDropdownOpen(false); onTeachingLoad(); }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <FileText className="w-4 h-4 text-[#4e0a10]" />
+                  Print Teaching Load
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-3 pt-1">
-        <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-2.5">
-            <div className="grid grid-cols-1 2xl:grid-cols-[minmax(300px,0.95fr)_minmax(460px,1.05fr)] gap-3 items-center">
+      <div className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,0.9fr)_minmax(440px,1.1fr)_auto] gap-3 items-center">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                 <div className="min-w-0">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p>
+                    {!isLoading && renderStatusBadge(currentStatus)}
+                  </div>
                   <p className="text-sm font-bold text-gray-800 mt-0.5">{nextStep.title}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{nextStep.description}</p>
                 </div>
@@ -381,7 +419,7 @@ export default function TopBar({
               </div>
 
               {selectedSectionId && departmentTotalSections > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="min-w-0 mr-auto">
                       <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Department readiness</p>
@@ -394,12 +432,20 @@ export default function TopBar({
                             ? "bg-emerald-50 text-emerald-700"
                             : "bg-amber-50 text-amber-700"
                         }`}>
-                          {departmentReadyToSubmit ? "Ready to submit" : `${departmentRemainingSections} remaining`}
+                          {departmentReadyToSubmit ? "All sections complete" : `${departmentRemainingSections} remaining`}
                         </span>
+                      </div>
+                      <div className="mt-2 flex h-1.5 w-full max-w-xs gap-0.5 overflow-hidden rounded-full" aria-label={`${departmentDoneSections} of ${departmentTotalSections} sections complete`}>
+                        {departmentSectionProgress.map((section) => (
+                          <span
+                            key={section.sectionId}
+                            className={`h-full flex-1 first:rounded-l-full last:rounded-r-full ${section.isDone ? "bg-emerald-500" : "bg-gray-200"}`}
+                          />
+                        ))}
                       </div>
                     </div>
 
-                    <button
+                    {!departmentHasSubmittedSchedule ? <button
                       type="button"
                       onClick={() => setIsReadinessOpen(!isReadinessOpen)}
                       aria-expanded={isReadinessOpen}
@@ -407,7 +453,12 @@ export default function TopBar({
                     >
                       View sections
                       <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isReadinessOpen ? "rotate-180" : ""}`} />
-                    </button>
+                    </button> : (
+                      <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Submitted
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={handleSubmitForApproval}
@@ -460,23 +511,13 @@ export default function TopBar({
                   )}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center justify-start xl:justify-end gap-3">
+        <div className="flex flex-wrap items-center justify-start xl:justify-end gap-2">
           {isLoading ? (
-            <>
-              <Skeleton className="h-6 w-20 rounded-full" />
-              <Skeleton className="h-9 w-28 rounded-lg" />
-            </>
-          ) : (
-            <>
-              {renderStatusBadge(currentStatus)}
-              {renderActionButton()}
-            </>
-          )}
+            <Skeleton className="h-9 w-28 rounded-lg" />
+          ) : currentStatus !== "finalized" ? renderActionButton() : null}
         </div>
+      </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Loader2, MapPin, UserMinus, Users } from "lucide-react";
 import type { ScheduleItem, Subject, Faculty } from "../types";
 import Skeleton from "../../../../components/ui/Skeleton";
 import SearchField from "../components/SearchField";
@@ -75,7 +75,7 @@ export default function FacultyPanel({
   };
 
   return (
-    <div className="w-full lg:w-1/4 min-w-[280px] shrink-0 bg-white border-r border-gray-200 flex flex-col h-full">
+    <div className="w-full lg:w-1/4 min-w-[280px] shrink-0 bg-white border-r border-gray-200 flex flex-col h-full font-sans">
       <div className="px-4 pt-4 pb-3 border-b border-slate-100 bg-slate-50/50 shrink-0">
         <div className="flex items-center gap-1.5">
           <Users className="w-4 h-4 text-[#4e0a10]" />
@@ -89,13 +89,15 @@ export default function FacultyPanel({
       <div className="p-4 border-b border-slate-100 bg-[#4e0a10]/5 shrink-0">
         <div className="flex justify-between items-center">
           <span className="text-xs font-bold text-[#4e0a10]">Assignment Progress</span>
-          <span className="text-xs font-bold text-slate-600">{assignedSlotsCount} / {totalSlotsCount} Slots</span>
+          <span className="text-xs font-bold text-slate-600">{assignedSlotsCount} of {totalSlotsCount} slots</span>
         </div>
-        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-1.5">
-          <div
-            className="bg-emerald-600 h-full transition-all duration-300"
-            style={{ width: `${totalSlotsCount ? (assignedSlotsCount / totalSlotsCount) * 100 : 0}%` }}
-          />
+        <div className="flex w-full gap-0.5 h-2 rounded-full overflow-hidden mt-1.5" aria-label={`${assignedSlotsCount} of ${totalSlotsCount} slots assigned`}>
+          {Array.from({ length: totalSlotsCount }).map((_, index) => (
+            <span
+              key={`assignment-progress-${index}`}
+              className={`h-full flex-1 first:rounded-l-full last:rounded-r-full ${index < assignedSlotsCount ? "bg-emerald-600" : "bg-slate-200"}`}
+            />
+          ))}
         </div>
         <div className="flex items-center gap-2 mt-2">
           <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -129,18 +131,19 @@ export default function FacultyPanel({
         ) : (
           <>
             <div>
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                Unassigned Slots ({unassignedSlotsCount})
-              </h3>
               {sectionSchedules.filter((s) => !s.facultyId).length === 0 ? (
-                <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl py-4 text-center">
-                  <CheckCircle2 className="text-emerald-500 w-6 h-6 mx-auto mb-1" />
-                  <div className="text-[11px] font-bold text-emerald-800">
-                    All instructors assigned!
+                <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+                  <CheckCircle2 className="text-emerald-600 w-5 h-5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-emerald-800">All subject slots are assigned</p>
+                    <p className="text-[10px] text-emerald-700 mt-0.5">Faculty assignment is complete for this section.</p>
                   </div>
                 </div>
               ) : (
                 <div>
+                  <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    Needs Faculty ({unassignedSlotsCount})
+                  </h3>
                   {sectionSchedules.filter((s) => !s.facultyId).map((slot) => {
                     const sub = subjects.find((s) => s.id === slot.subjectId);
                     const selectedFacultyId = selectedFacultyBySlot[slot.id] ?? "";
@@ -260,13 +263,13 @@ export default function FacultyPanel({
               )}
             </div>
 
-            <div className="border-t border-slate-100 pt-3 mt-2">
+            <div className="border-t border-slate-100 pt-3 mt-3">
               <button
                 type="button"
                 onClick={() => setIsAssignedListCollapsed(!isAssignedListCollapsed)}
                 className="w-full flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-slate-700"
               >
-                <span>Assigned Slots ({assignedSlotsCount})</span>
+                <span>Assigned Faculty ({assignedSlotsCount})</span>
                 {isAssignedListCollapsed
                   ? <ChevronRight className="w-3.5 h-3.5 text-slate-400 transition-transform duration-200" />
                   : <ChevronDown className="w-3.5 h-3.5 text-slate-400 transition-transform duration-200" />
@@ -282,28 +285,39 @@ export default function FacultyPanel({
                       const sub = subjects.find((s) => s.id === slot.subjectId);
                       const isSavingSlot = facultyActionSlotId === slot.id;
                       return (
-                        <div key={slot.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 shadow-sm mb-2 flex justify-between items-center">
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold text-slate-800 uppercase truncate">{sub?.code}</div>
-                            <div className="text-[10px] text-slate-500 font-semibold truncate">{slot.facultyName}</div>
-                            <div className="text-[10px] text-slate-400 truncate">{slot.day} {slot.startTime}</div>
+                        <div key={slot.id} className="group border border-slate-200 rounded-xl px-3 py-2.5 bg-white shadow-sm mb-2 flex justify-between items-center gap-3 hover:border-[#4e0a10]/25 hover:shadow transition-all">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-1.5 min-w-0">
+                              <div className="text-xs font-bold text-slate-900 uppercase shrink-0">{sub?.code}</div>
+                              <div className="text-[10px] text-slate-400 truncate">{sub?.name}</div>
+                            </div>
+                            <div className="text-[11px] text-[#4e0a10] font-semibold truncate mt-0.5">{slot.facultyName}</div>
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[10px] text-slate-500">
+                              <span className="flex items-center gap-1">
+                                <CalendarClock className="w-3 h-3 text-slate-400" />
+                                {slot.day} · {slot.startTime}–{slot.endTime}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-slate-400" />
+                                {slot.roomName}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                          <div className="flex items-center">
                             <button
                               type="button"
                               disabled={isSavingSlot}
                               onClick={() => handleRemoveInlineFaculty(slot.id)}
                               aria-label={`Remove faculty assignment from ${sub?.code ?? "slot"}`}
-                              className={`text-slate-400 hover:text-rose-600 transition-colors ${
+                              className={`rounded-lg p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ${
                                 isSavingSlot ? "cursor-not-allowed opacity-60" : "cursor-pointer"
                               }`}
-                              title="Remove Assignment"
+                              title="Unassign faculty"
                             >
                               {isSavingSlot ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
-                                <X className="w-3.5 h-3.5" />
+                                <UserMinus className="w-4 h-4" />
                               )}
                             </button>
                           </div>

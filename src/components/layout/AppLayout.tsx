@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Header from './Header'
 import Sidebar from './Sidebar'
@@ -17,7 +17,7 @@ export default function AppLayout() {
     staySignedIn,
     signInAgain,
   } = useSessionTimeout()
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
   const location = useLocation()
 
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -39,14 +39,38 @@ export default function AppLayout() {
 
   const navItems = getNavItems()
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [sidebarOpen])
+
+  useEffect(() => {
+    const isMobile = window.matchMedia('(max-width: 767px)').matches
+    if (!isMobile || !sidebarOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [sidebarOpen])
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#F7F4F0]">
 
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
+          className="fixed inset-0 top-16 z-30 bg-black/50 md:hidden"
           onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
         />
       )}
 
@@ -73,7 +97,7 @@ export default function AppLayout() {
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen(prev => !prev)}
         />
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 mt-16">
+        <main className="mt-16 flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
           <Outlet />
         </main>
       </div>

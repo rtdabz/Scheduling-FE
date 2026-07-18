@@ -3,7 +3,7 @@ import Skeleton from '../ui/Skeleton';
 import type { NavSection, NavItem } from '../../navigation/types';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
-import { Menu, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../../lib/api';
 
 interface SidebarProps {
@@ -42,7 +42,6 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   useEffect(() => {
     const role = getStoredRole();
     if (role !== 'dean' && role !== 'vpaa') {
-      setPendingCount(0);
       return;
     }
 
@@ -97,34 +96,30 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   return (
     <div 
       className={`
-        fixed top-0 left-0 z-30 h-screen
+        fixed left-0 top-16 z-40 h-[calc(100vh-4rem)]
         bg-[#4e0a10] border-r border-white/5
         flex flex-col
         transition-all duration-300 ease-in-out
         ${isOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
       `}
     >
-      {/* Sidebar Header */}
-      <div className={`h-16 flex items-center border-b border-white/10 flex-shrink-0 overflow-hidden ${isOpen ? 'px-4 justify-between' : 'justify-center'}`}>
-        
-        {/* Left: simple system label */}
-        <div className="flex items-center gap-2">
-          <img src={logo} alt="Logo" className="w-8 h-8 object-contain rounded-full flex-shrink-0" />
+      <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-white/10 px-4 md:hidden">
+        <div className="flex items-center gap-2.5">
+          <img src={logo} alt="TCC Logo" className="h-8 w-8 flex-shrink-0 rounded-full object-contain" />
+          <span className="text-sm font-bold tracking-wide text-white">Navigation</span>
         </div>
- 
-        {/* Right: close button — MOBILE ONLY */}
-        {isOpen && (
-          <button
-            onClick={onClose}
-            className="md:hidden p-1.5 rounded-lg hover:bg-white/10 transition-all text-[#E8D5C4]"
-          >
-            <Menu size={18} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-2 text-[#E8D5C4] transition-colors hover:bg-white/10 hover:text-white"
+          aria-label="Close navigation menu"
+        >
+          <X size={18} />
+        </button>
       </div>
  
       {/* Navigation - takes up remaining space */}
-      <nav className="flex-1 overflow-y-auto px-3 py-6 text-[#E8D5C4]">
+      <nav id="primary-navigation" aria-label="Primary navigation" className="flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-[#E8D5C4]">
         {navItems.map((section) => (
           <div key={section.section} className="mb-6 last:mb-0">
             {/* Section label — hide when collapsed */}
@@ -145,6 +140,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                   return (
                     <div key={item.label} className="flex flex-col gap-1">
                       <button
+                        type="button"
                         onClick={() => toggleExpand(item.label)}
                         id={item.id}
                         className={`
@@ -156,9 +152,10 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                             : 'sidebar-item-hover text-[#E8D5C4]'
                           }
                         `}
+                        aria-expanded={expanded}
                       >
                         <div className="flex items-center gap-3">
-                          {item.icon && <item.icon size={18} className="flex-shrink-0" />}
+                          {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
                           {isOpen && (
                             <span className="text-sm font-medium whitespace-nowrap">
                               {item.label}
@@ -193,7 +190,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                   }
                                 }}
                               >
-                                {child.icon && <child.icon size={16} className="flex-shrink-0" />}
+                                {child.icon && <child.icon size={16} className="flex-shrink-0" aria-hidden="true" />}
                                 <span className="text-xs font-medium whitespace-nowrap">
                                   {child.label}
                                 </span>
@@ -235,7 +232,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                       }
                     }}
                   >
-                    {item.icon && <item.icon size={18} className="flex-shrink-0" />}
+                    {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
                     {isOpen && (
                       <span className="text-sm font-medium whitespace-nowrap">
                         {item.label}

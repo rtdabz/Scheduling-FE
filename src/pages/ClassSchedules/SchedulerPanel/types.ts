@@ -90,6 +90,9 @@ export interface ScheduleItem {
   subjectCode: string;
   subjectName: string;
   subjectType: SubjectCategory;
+  lectureUnits: number;
+  laboratoryUnits: number;
+  totalUnits: number;
   sectionName: string;
   roomName: string;
   day: string;
@@ -220,6 +223,9 @@ export interface ApiScheduleRecord {
     subject_code?: string;
     subject_name?: string;
     subject_category?: SubjectCategory;
+    lecture_hours?: number | string | null;
+    lab_hours?: number | string | null;
+    units?: number | string | null;
   } | null;
   section?: {
     section_name?: string;

@@ -9,10 +9,13 @@ import SubmitApprovalModal from "./Modals/SubmitApprovalModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
 import TeachingLoad from "./TeachingLoad";
+import ScheduleImportModal from "./Modals/ScheduleImportModal";
+import { useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
 
 export default function SchedulerPanel() {
   const scheduler = useScheduler();
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-6 w-full text-slate-800 antialiased">
@@ -20,6 +23,7 @@ export default function SchedulerPanel() {
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
         onTeachingLoad={() => scheduler.setIsTeachingLoadOpen(true)}
+        onImport={() => setIsImportModalOpen(true)}
       />
 
       <div className="flex flex-col lg:flex-row gap-6 w-full min-h-[640px] lg:h-[calc(100vh-220px)] lg:min-h-[650px] overflow-hidden">
@@ -33,6 +37,13 @@ export default function SchedulerPanel() {
       <ClearAllModal {...scheduler} />
       <SubmitApprovalModal {...scheduler} />
       <RoomViewModal {...scheduler} />
+      <ScheduleImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        activeTerm={scheduler.activeTerm}
+        selectedSection={scheduler.sections.find((section) => section.id === scheduler.selectedSectionId)}
+        departments={scheduler.departments}
+      />
       <PrintSchedule
         sections={scheduler.sections}
         isPrintModalOpen={scheduler.isPrintModalOpen}

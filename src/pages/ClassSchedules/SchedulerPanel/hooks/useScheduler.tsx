@@ -108,6 +108,11 @@ const normalizeYearLevel = (yearLevel: string | number): Section["yearLevel"] =>
   return year === 1 || year === 2 || year === 3 || year === 4 ? year : 1;
 };
 
+const toNumber = (value: number | string | null | undefined): number => {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+};
+
 interface SchedulerCacheData {
   rooms: Room[];
   sections: Section[];
@@ -159,6 +164,9 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     subjectCode: item.subject?.subject_code ?? "",
     subjectName: item.subject?.subject_name ?? "",
     subjectType: item.subject?.subject_category ?? "major",
+    lectureUnits: toNumber(item.subject?.lecture_hours),
+    laboratoryUnits: toNumber(item.subject?.lab_hours),
+    totalUnits: toNumber(item.subject?.units),
     sectionName: item.section?.section_name ?? "",
     roomName,
     day: DAYS[dayIndex] || "Mon",
@@ -200,7 +208,7 @@ export const useScheduler = () => {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const schedulerCacheKey = `scheduler:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v2:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
