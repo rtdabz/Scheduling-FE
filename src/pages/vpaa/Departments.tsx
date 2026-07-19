@@ -326,11 +326,6 @@ export default function Departments() {
 
   return (
     <div>
-      {/* Page Header */}
-      <div className="mb-6">
-        <p className="text-muted text-sm mb-1">Home / Departments</p>
-      </div>
-
       {/* Top Bar Section */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
         <div className="relative flex-1 sm:max-w-md">

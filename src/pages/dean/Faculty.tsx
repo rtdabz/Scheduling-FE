@@ -427,11 +427,6 @@ export default function DeanFaculty() {
 
   return (
     <div className="space-y-6 font-sans pb-12">
-      {/* Page Header */}
-      <div className="mb-6">
-        <p className="text-muted text-sm mb-1">Home / {title}</p>
-      </div>
-
       {/* Summary Statistics Dashboard Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
         <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200">

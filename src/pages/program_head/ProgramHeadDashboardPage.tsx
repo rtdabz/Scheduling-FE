@@ -17,6 +17,7 @@ import {
   GraduationCap,
   ClipboardList,
   AlertTriangle,
+  Bell,
   FileBarChart,
   CheckSquare
 } from 'lucide-react';
@@ -178,12 +179,13 @@ export default function ProgramHeadDashboardPage() {
   const scheduleStatusMap = useMemo(() => {
     const map = new Map<number, { status: string; updated_at?: string }>();
     schedules.forEach(s => {
-      if (!map.has(s.section_id)) {
+      const matchesActiveTerm = !activeTerm?.id || Number(s.term_id) === Number(activeTerm.id);
+      if (matchesActiveTerm && !map.has(s.section_id)) {
         map.set(s.section_id, { status: s.status, updated_at: s.updated_at });
       }
     });
     return map;
-  }, [schedules]);
+  }, [activeTerm?.id, schedules]);
 
   // ── 2. Filtered Program Head Data ──
   const deptFaculties = useMemo(() => {
@@ -205,9 +207,11 @@ export default function ProgramHeadDashboardPage() {
     if (!user?.department_id) return 0;
     return schedules.filter(s => {
       const sec = sections.find(x => x.id === s.section_id);
-      return sec && Number(sec.department_id) === Number(user.department_id);
+      const matchesDepartment = sec && Number(sec.department_id) === Number(user.department_id);
+      const matchesActiveTerm = !activeTerm?.id || Number(s.term_id) === Number(activeTerm.id);
+      return matchesDepartment && matchesActiveTerm;
     }).length;
-  }, [schedules, sections, user?.department_id]);
+  }, [activeTerm?.id, schedules, sections, user?.department_id]);
 
   // ── 3. Stage Specific Program Statistics ──
   const programStats = useMemo(() => {
@@ -266,11 +270,13 @@ export default function ProgramHeadDashboardPage() {
   }, [deptSections, scheduleStatusMap]);
 
   return (
-    <div className="space-y-6 pb-12 transition-all duration-200 font-sans bg-gray-50/20">
+    <div className="space-y-5 pb-8 transition-all duration-200 font-sans bg-gray-50/20">
       {/* Breadcrumb Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <p className="text-muted text-xs tracking-wider uppercase">Home / Dashboard</p>
+          <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-[#1f2937]">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">Program-level overview of sections, subjects, and scheduling progress.</p>
         </div>
         {activeTerm && (
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold shadow-sm">
@@ -280,8 +286,21 @@ export default function ProgramHeadDashboardPage() {
         )}
       </div>
 
+      <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
+        programStats.pending > 0
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      }`}>
+        <Bell className={`h-5 w-5 flex-shrink-0 ${programStats.pending > 0 ? 'text-amber-600' : 'text-emerald-500'}`} />
+        <span>
+          {programStats.pending > 0
+            ? `${programStats.pending} schedule${programStats.pending === 1 ? '' : 's'} currently require attention.`
+            : 'All clear — no action items require attention right now.'}
+        </span>
+      </div>
+
       {/* Greeting Banner */}
-      <div className="bg-[#5A1220] py-5 px-6 rounded-2xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
+      <div className="bg-[#5A1220] py-3 px-5 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
         <div>
           <h1 className="font-sans text-lg font-bold tracking-tight text-white">
             Welcome back, <span className="text-[#F5A623]">{user?.name || 'Program Head'}</span>

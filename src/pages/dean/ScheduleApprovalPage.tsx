@@ -743,14 +743,6 @@ export default function DeanScheduleApprovalPage() {
 
   return (
     <div className="p-6 relative">
-      {/* Page Header */}
-      <div className="mb-6">
-        <p className="text-muted text-sm mb-1">Home / Schedules / Schedule Approval</p>
-        <h1 className="font-display text-3xl font-bold text-[#1A1410]">Schedule Approval</h1>
-        <p className="text-muted text-sm mt-1">Review and approve schedules from your department</p>
-        <div className="w-12 h-0.5 bg-[#C9952A] mt-3"></div>
-      </div>
-
       {/* Filter Row */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-gray-150/70 mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">

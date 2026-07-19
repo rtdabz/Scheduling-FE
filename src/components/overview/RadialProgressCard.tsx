@@ -21,13 +21,13 @@ export default function RadialProgressCard({
   const strokeDashoffset = circumference - (value / 100) * circumference;
 
   return (
-    <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between flex-1">
+    <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between flex-1">
       <div>
-        <SectionHeader title={title} icon={icon} className="mb-6" />
+        <SectionHeader title={title} icon={icon} className="mb-4" />
 
-        <div className="flex flex-col items-center justify-center py-4 relative">
+        <div className="flex flex-col items-center justify-center py-2 relative">
           <div className="relative flex items-center justify-center">
-            <svg className="w-48 h-48 transform -rotate-90">
+            <svg className="w-40 h-40 transform -rotate-90" viewBox="0 0 192 192">
               <circle
                 cx="96"
                 cy="96"
@@ -47,14 +47,14 @@ export default function RadialProgressCard({
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-4xl font-extrabold text-gray-800">{value}%</span>
+              <span className="text-3xl font-extrabold text-gray-800">{value}%</span>
               <span className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">{label}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="border-t border-gray-100 pt-4 text-center mt-4">
+      <div className="border-t border-gray-100 pt-3 text-center mt-3">
         <p className="text-sm text-gray-600">{footer}</p>
       </div>
     </div>

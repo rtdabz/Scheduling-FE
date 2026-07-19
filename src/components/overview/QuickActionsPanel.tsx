@@ -20,13 +20,13 @@ export default function QuickActionsPanel({
   actions,
   layout = 'list',
 }: QuickActionsPanelProps) {
-  const actionContainerClassName = layout === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-3';
+  const actionContainerClassName = layout === 'grid' ? 'grid grid-cols-2 gap-2.5' : 'flex flex-col gap-2.5';
   const buttonClassName = layout === 'grid'
     ? 'p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center'
-    : 'w-full min-h-14 px-4 py-3 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group';
+    : 'w-full min-h-12 px-3.5 py-2.5 flex items-center gap-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] group';
 
   return (
-    <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col gap-4">
+    <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 flex flex-col gap-3">
       <SectionHeader title={title} />
       <div className={actionContainerClassName}>
         {actions.map((action) => {

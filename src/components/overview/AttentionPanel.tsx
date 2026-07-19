@@ -38,21 +38,21 @@ export default function AttentionPanel({
   onAction,
 }: AttentionPanelProps) {
   return (
-    <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200">
-      <SectionHeader title={title} icon={icon} subtitle={subtitle} className="mb-4" />
+    <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200">
+      <SectionHeader title={title} icon={icon} subtitle={subtitle} className="mb-3" />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
         {items.map((item) => (
           <div
             key={item.id}
-            className={`p-4 rounded-xl border flex flex-col justify-between gap-3 ${attentionToneClasses[item.tone]}`}
+            className={`p-3 rounded-xl border flex flex-col justify-between gap-2 ${attentionToneClasses[item.tone]}`}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-extrabold">{item.title}</p>
                 <p className="text-xs opacity-80 mt-1 leading-relaxed">{item.description}</p>
               </div>
-              <span className="text-2xl font-extrabold leading-none">
+              <span className="text-xl font-extrabold leading-none">
                 {item.showPercent ? `${item.count}%` : item.count}
               </span>
             </div>

@@ -27,11 +27,11 @@ export default function TeachingLoadCard({
   onAction,
 }: TeachingLoadCardProps) {
   return (
-    <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between min-h-[340px]">
+    <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 flex flex-col justify-between min-h-[280px]">
       <div>
-        <SectionHeader title={title} icon={icon} className="mb-5" />
+        <SectionHeader title={title} icon={icon} className="mb-4" />
 
-        <div className="space-y-4 font-sans">
+        <div className="space-y-3 font-sans">
           {items.length === 0 ? (
             <p className="text-center text-gray-400 text-xs py-4 font-sans">{emptyMessage}</p>
           ) : (

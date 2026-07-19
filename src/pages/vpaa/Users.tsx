@@ -413,10 +413,6 @@ export default function VpaaUsers() {
 
   return (
     <div>
-      <div className="mb-6">
-        <p className="text-muted text-sm mb-1">Home / User Management</p>
-      </div>
-
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
         <div className="relative flex-1 sm:max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />

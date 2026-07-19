@@ -3,13 +3,6 @@ import ScheduleViewer from './ScheduleViewer';
 export default function VpaaSchedules() {
   return (
     <div>
-      <div className="mb-6">
-        <p className="text-muted text-sm mb-1">Home / Schedules</p>
-        <h1 className="font-display text-3xl font-bold text-[#1A1410]">Schedules</h1>
-        <p className="text-muted text-sm mt-1">View and monitor academic schedules across all departments.</p>
-        <div className="w-12 h-0.5 bg-[#C9952A] mt-3"></div>
-      </div>
-
       <div className="mt-6 overflow-x-auto">
         <ScheduleViewer />
       </div>

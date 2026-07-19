@@ -30,6 +30,7 @@ const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
 const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
+const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
 const SecretarySubjects = lazy(() => import('./pages/secretary/Subjects'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
 
@@ -158,12 +159,14 @@ export default function App() {
             <Route path="/secretary/subjects" element={<SecretarySubjects />} />
             <Route path="/secretary/sections" element={<SecretarySections />} />
             <Route path="/secretary/instructors" element={<SecretaryFaculty />} />
+            <Route path="/secretary/instructor-assignment" element={<InstructorAssignment />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
             <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
             <Route path="/program_head/faculty" element={<ProgramHeadFaculty />} />
             <Route path="/program_head/rooms" element={<ProgramHeadRooms />} />
+            <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

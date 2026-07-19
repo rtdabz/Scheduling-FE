@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  Bell,
   BookOpen,
   CalendarDays,
   CalendarPlus,
@@ -45,6 +46,7 @@ interface Room {
   room_code: string;
   room_name?: string;
   room_type: string;
+  department_id?: number | null;
 }
 
 interface Section {
@@ -74,6 +76,7 @@ interface Subject {
   id: number;
   subject_code: string;
   subject_name: string;
+  department_id?: number | null;
 }
 
 interface Term {
@@ -183,15 +186,32 @@ export default function SecretarySchedulingOperationsPage() {
     };
   }, [overviewCacheKey]);
 
-  const totalSchedules = schedules.length;
-  const pendingApprovals = schedules.filter(schedule => schedule.status === 'submitted' || schedule.status === 'approved_by_dean').length;
-
   const visibleSections = useMemo(() => {
     if (!user?.department_id) return sections;
     return sections.filter(section => !section.department_id || Number(section.department_id) === Number(user.department_id));
   }, [sections, user?.department_id]);
 
-  const scheduledSectionIds = useMemo(() => new Set(schedules.map(schedule => schedule.section_id)), [schedules]);
+  const visibleRooms = useMemo(() => {
+    if (!user?.department_id) return rooms;
+    return rooms.filter(room => !room.department_id || Number(room.department_id) === Number(user.department_id));
+  }, [rooms, user?.department_id]);
+
+  const visibleSubjects = useMemo(() => {
+    if (!user?.department_id) return subjects;
+    return subjects.filter(subject => !subject.department_id || Number(subject.department_id) === Number(user.department_id));
+  }, [subjects, user?.department_id]);
+
+  const visibleSectionIds = useMemo(() => new Set(visibleSections.map(section => section.id)), [visibleSections]);
+
+  const visibleSchedules = useMemo(() => schedules.filter(schedule => {
+    const matchesActiveTerm = !activeTerm?.id || Number(schedule.term_id) === Number(activeTerm.id);
+    return matchesActiveTerm && visibleSectionIds.has(schedule.section_id);
+  }), [activeTerm?.id, schedules, visibleSectionIds]);
+
+  const totalSchedules = visibleSchedules.length;
+  const pendingApprovals = visibleSchedules.filter(schedule => schedule.status === 'submitted' || schedule.status === 'approved_by_dean').length;
+
+  const scheduledSectionIds = useMemo(() => new Set(visibleSchedules.map(schedule => schedule.section_id)), [visibleSchedules]);
   const unscheduledSectionsCount = visibleSections.filter(section => !scheduledSectionIds.has(section.id)).length;
 
   const draftCount = stageCounts?.draft ?? 0;
@@ -205,8 +225,8 @@ export default function SecretarySchedulingOperationsPage() {
   const deanApprovedPercent = totalDeptSchedules > 0 ? Math.round((deanApprovedCount / totalDeptSchedules) * 100) : 0;
   const approvedPercent = totalDeptSchedules > 0 ? Math.round((approvedCount / totalDeptSchedules) * 100) : 0;
 
-  const utilizedRoomIds = useMemo(() => new Set(schedules.filter(schedule => schedule.room_id).map(schedule => schedule.room_id)), [schedules]);
-  const utilizationRate = rooms.length > 0 ? Math.round((utilizedRoomIds.size / rooms.length) * 100) : 0;
+  const utilizedRoomIds = useMemo(() => new Set(visibleSchedules.filter(schedule => schedule.room_id).map(schedule => schedule.room_id)), [visibleSchedules]);
+  const utilizationRate = visibleRooms.length > 0 ? Math.round((utilizedRoomIds.size / visibleRooms.length) * 100) : 0;
 
   const processedFaculties = useMemo(() => {
     let list = [...faculties];
@@ -456,10 +476,12 @@ export default function SecretarySchedulingOperationsPage() {
   }, [yearLevels]);
 
   return (
-    <div className="space-y-8 pb-12 transition-opacity duration-200">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-5 pb-8 transition-opacity duration-200">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <p className="text-muted text-xs tracking-wider uppercase">Home / Scheduling Operations</p>
+          <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-[#1f2937]">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">Overview of scheduling activity and department progress.</p>
         </div>
         {activeTerm && (
           <div className="inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-150 text-xs font-semibold">
@@ -474,7 +496,20 @@ export default function SecretarySchedulingOperationsPage() {
         )}
       </div>
 
-      <div className="bg-[#5A1220] py-4 px-6 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
+        pendingApprovals > 0
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      }`}>
+        <Bell className={`h-5 w-5 flex-shrink-0 ${pendingApprovals > 0 ? 'text-amber-600' : 'text-emerald-500'}`} />
+        <span>
+          {pendingApprovals > 0
+            ? `${pendingApprovals} schedule${pendingApprovals === 1 ? '' : 's'} currently require attention.`
+            : 'All clear — no action items require attention right now.'}
+        </span>
+      </div>
+
+      <div className="bg-[#5A1220] py-3 px-5 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="font-sans text-base font-medium tracking-tight text-white">
           Welcome back, <span className="text-[#F5A623] font-medium">{user?.name || 'Secretary User'}</span>!
         </h1>
@@ -486,10 +521,10 @@ export default function SecretarySchedulingOperationsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-8">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 animate-pulse min-h-[98px] flex flex-col justify-between">
+              <div key={index} className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse min-h-[82px] flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <Skeleton className="h-3 w-14" />
                   <Skeleton className="h-6 w-6 rounded-lg" />
@@ -499,8 +534,8 @@ export default function SecretarySchedulingOperationsPage() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[340px]">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[280px]">
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <Skeleton className="h-5 w-40" />
@@ -516,7 +551,7 @@ export default function SecretarySchedulingOperationsPage() {
               <Skeleton className="h-10 w-full rounded-xl mt-4" />
             </div>
 
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col items-center justify-center gap-4 min-h-[340px]">
+            <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col items-center justify-center gap-4 min-h-[280px]">
               <div className="self-start">
                 <Skeleton className="h-5 w-36" />
               </div>
@@ -524,7 +559,7 @@ export default function SecretarySchedulingOperationsPage() {
               <Skeleton className="h-4 w-40" />
             </div>
 
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[340px]">
+            <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse flex flex-col justify-between min-h-[280px]">
               <div className="space-y-4">
                 <Skeleton className="h-5 w-32" />
                 <div className="space-y-3">
@@ -543,13 +578,13 @@ export default function SecretarySchedulingOperationsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-4">
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-28 w-full rounded-xl" />
               <Skeleton className="h-28 w-full rounded-xl" />
             </div>
-            <div className="lg:col-span-2 bg-white p-6 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-5 min-h-[280px]">
+            <div className="lg:col-span-2 bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse space-y-4 min-h-[220px]">
               <Skeleton className="h-5 w-36" />
               {Array.from({ length: 5 }).map((_, index) => (
                 <div key={index} className="flex gap-3 items-start">
@@ -564,14 +599,14 @@ export default function SecretarySchedulingOperationsPage() {
           </div>
         </div>
       ) : (
-        <div className="space-y-8">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <SummaryMetricCard label="Schedules" value={totalSchedules} icon={CalendarDays} />
             <SummaryMetricCard label="Pending" value={pendingApprovals} icon={Clock} iconClassName="text-[#F5A623]" iconWrapperClassName="bg-[#F5A623]/5" />
             <SummaryMetricCard label="Sections" value={visibleSections.length} icon={Layers} />
             <SummaryMetricCard label="Faculty" value={facultyStats.total} icon={Users} />
-            <SummaryMetricCard label="Rooms" value={rooms.length} icon={DoorOpen} />
-            <SummaryMetricCard label="Subjects" value={subjects.length} icon={BookOpen} />
+            <SummaryMetricCard label="Rooms" value={visibleRooms.length} icon={DoorOpen} />
+            <SummaryMetricCard label="Subjects" value={visibleSubjects.length} icon={BookOpen} />
           </div>
 
           <AttentionPanel
@@ -582,7 +617,7 @@ export default function SecretarySchedulingOperationsPage() {
             onAction={navigate}
           />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <ScheduleProgressCard
               title="Schedule Completion Status"
               icon={TrendingUp}
@@ -602,7 +637,7 @@ export default function SecretarySchedulingOperationsPage() {
               icon={DoorOpen}
               value={utilizationRate}
               label="Utilization"
-              footer={`${utilizedRoomIds.size} out of ${rooms.length} rooms scheduled.`}
+              footer={`${utilizedRoomIds.size} out of ${visibleRooms.length} rooms scheduled.`}
             />
 
             <TeachingLoadCard
@@ -615,7 +650,7 @@ export default function SecretarySchedulingOperationsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <QuickActionsPanel title="Quick Actions" actions={quickActions} />
             <ActivityFeed
               title="Current Activity Summary"

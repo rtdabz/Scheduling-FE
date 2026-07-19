@@ -63,8 +63,6 @@ const slotToTime24h = (slotIndex: number): string => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
-const getSplitDayOneDuration = (totalSlots: number): number => Math.ceil(totalSlots / 2);
-
 const buildPreferredPattern = (day1Index: number, day2Index: number): string => `days:${day1Index}-${day2Index}`;
 
 const getPreferredPatternDayIndexes = (preferredPattern?: string | null): [number, number] | null => {
@@ -438,6 +436,7 @@ export const useScheduler = () => {
   const [modalDay1StartSlot, setModalDay1StartSlot] = useState<number>(0);
   const [modalDay1Duration, setModalDay1Duration] = useState<number>(0);
   const [modalDay2StartSlot, setModalDay2StartSlot] = useState<number>(0);
+  const [modalDay2Duration, setModalDay2Duration] = useState<number>(0);
   const [isDay2ModifiedByUser, setIsDay2ModifiedByUser] = useState<boolean>(false);
   const [modalValidationError, setModalValidationError] = useState<string>("");
   const [modalConflict, setModalConflict] = useState<string | null>(null);
@@ -646,6 +645,7 @@ export const useScheduler = () => {
         setModalDay1StartSlot(dropContext.startSlot);
         setModalDay1Duration(totalSlots);
         setModalDay2StartSlot(dropContext.startSlot);
+        setModalDay2Duration(0);
         setIsDay2ModifiedByUser(false);
       } else if (dropContext.isRescheduling && dropContext.scheduleId) {
         const targetSched = schedules.find((s) => s.id === dropContext.scheduleId);
@@ -668,6 +668,7 @@ export const useScheduler = () => {
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[1].startSlot);
+            setModalDay2Duration(sorted[1].durationSlots);
             setIsDay2ModifiedByUser(true);
           } else if (sorted.length === 1) {
             setModalDay1Index(patternDays?.[0] ?? sorted[0].dayIndex);
@@ -675,6 +676,7 @@ export const useScheduler = () => {
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[0].startSlot);
+            setModalDay2Duration(Math.max(0, totalSlots - sorted[0].durationSlots));
             setIsDay2ModifiedByUser(false);
           } else {
             setModalDay1Index(dropContext.dayIndex);
@@ -682,6 +684,7 @@ export const useScheduler = () => {
             setModalDay1StartSlot(dropContext.startSlot);
             setModalDay1Duration(totalSlots);
             setModalDay2StartSlot(dropContext.startSlot);
+            setModalDay2Duration(0);
             setIsDay2ModifiedByUser(false);
           }
         }
@@ -717,6 +720,7 @@ export const useScheduler = () => {
         setModalDay1StartSlot(dropContext.startSlot);
         setModalDay1Duration(totalSlots);
         setModalDay2StartSlot(dropContext.startSlot);
+        setModalDay2Duration(0);
         setIsDay2ModifiedByUser(false);
       }
     } else {
@@ -729,6 +733,7 @@ export const useScheduler = () => {
       setModalDay1StartSlot(0);
       setModalDay1Duration(0);
       setModalDay2StartSlot(0);
+      setModalDay2Duration(0);
       setIsDay2ModifiedByUser(false);
     }
     setModalValidationError("");
@@ -738,18 +743,15 @@ export const useScheduler = () => {
   useEffect(() => {
     if (!dropContext || !modalPreferredPattern) return;
 
-    const subject = subjects.find((s) => s.id === dropContext.subjectId);
-    const totalSlots = subject ? subject.units * 2 : 0;
     const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
 
     if (patternDays) {
       setModalDay1Index(patternDays[0]);
       setModalDay2Index(patternDays[1]);
     }
-    setModalDay1Duration(getSplitDayOneDuration(totalSlots));
     setIsDay2ModifiedByUser(false);
     setModalDay2StartSlot(modalDay1StartSlot);
-  }, [dropContext, modalPreferredPattern, modalDay1StartSlot, subjects]);
+  }, [dropContext, modalPreferredPattern, modalDay1StartSlot]);
 
   useEffect(() => {
     if (!isDay2ModifiedByUser) {
@@ -787,7 +789,7 @@ export const useScheduler = () => {
 
         const totalSlots = subject.units * 2;
         const d1 = modalDay1Duration;
-        const d2 = totalSlots - d1;
+        const d2 = modalDay2Duration;
         const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
 
         let conflict: { message: string } | null = null;
@@ -825,7 +827,8 @@ export const useScheduler = () => {
     modalDay2Index,
     modalDay1StartSlot,
     modalDay1Duration,
-    modalDay2StartSlot
+    modalDay2StartSlot,
+    modalDay2Duration
   ]);
 
   const onScheduleRelocated = async (scheduleId: string, dayIndex: number, startSlot: number) => {
@@ -885,8 +888,19 @@ export const useScheduler = () => {
 
     const totalSlots = subject.units * 2;
     const d1 = modalDay1Duration;
-    const d2 = totalSlots - d1;
+    const d2 = modalPreferredPattern ? modalDay2Duration : 0;
     const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
+
+    if (patternDays && (d1 <= 0 || d2 <= 0)) {
+      setModalValidationError("Each meeting must have a duration greater than zero.");
+      return;
+    }
+
+    const usesFullDurationMeetings = patternDays && d1 === totalSlots && d2 === totalSlots;
+    if (patternDays && d1 + d2 !== totalSlots && !usesFullDurationMeetings) {
+      setModalValidationError(`Combined meeting durations must equal ${dropSubject?.units ?? subject.units} hours.`);
+      return;
+    }
 
     // Exclude current slots from conflict checking when rescheduling
     const excludeIds = dropContext.isRescheduling
@@ -913,25 +927,38 @@ export const useScheduler = () => {
     } else {
       // Slot search resolution: look circularly for a slot where both segments fit
       const maxSlots = 28;
-      const maxDuration = Math.max(d1, d2);
+      if (patternDays) {
+        let foundPatternSlots = false;
+        for (let day1Offset = 0; day1Offset < maxSlots; day1Offset++) {
+          const day1Slot = (modalDay1StartSlot + day1Offset) % (maxSlots - d1 + 1);
+          if (day1Slot + d1 > maxSlots) continue;
+          const conflictDay1 = checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], day1Slot, d1, excludeIds, modalPreferredPattern);
+          if (conflictDay1) continue;
 
-      for (let offset = 0; offset < maxSlots; offset++) {
-        const s = (modalDay1StartSlot + offset) % (maxSlots - maxDuration + 1);
-        if (s + maxDuration > maxSlots) continue;
+          for (let day2Offset = 0; day2Offset < maxSlots; day2Offset++) {
+            const day2Slot = (modalDay2StartSlot + day2Offset) % (maxSlots - d2 + 1);
+            if (day2Slot + d2 > maxSlots) continue;
+            const conflictDay2 = checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[1], day2Slot, d2, excludeIds, modalPreferredPattern);
+            if (conflictDay2) continue;
 
-        let hasConflict = false;
-        if (patternDays) {
-          const conflictDay1 = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], s, d1, excludeIds, modalPreferredPattern) : null;
-          const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[1], s, d2, excludeIds, modalPreferredPattern) : null;
-          if (conflictDay1 || conflictDay2) hasConflict = true;
-        } else {
-          const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, dropContext.dayIndex, s, totalSlots, excludeIds, modalPreferredPattern);
-          if (conflict) hasConflict = true;
+            resolvedDay1StartSlot = day1Slot;
+            resolvedDay2StartSlot = day2Slot;
+            foundPatternSlots = true;
+            break;
+          }
+
+          if (foundPatternSlots) break;
         }
+      } else {
+        const maxDuration = totalSlots;
+        for (let offset = 0; offset < maxSlots; offset++) {
+          const s = (dropContext.startSlot + offset) % (maxSlots - maxDuration + 1);
+          if (s + maxDuration > maxSlots) continue;
+          const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, dropContext.dayIndex, s, totalSlots, excludeIds, modalPreferredPattern);
+          if (conflict) continue;
 
-        if (!hasConflict) {
           resolvedDay1StartSlot = s;
-          resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? s : -1;
+          resolvedDay2StartSlot = -1;
           break;
         }
       }
@@ -947,11 +974,19 @@ export const useScheduler = () => {
 
     let resolvedRoomId = modalRoomId;
     if (modalRoomId === "online") {
-      const onlineRoom = rooms.find(r => r.name.toLowerCase().includes("online"));
-      if (onlineRoom) resolvedRoomId = onlineRoom.id;
+      const onlineRoom = rooms.find(r => r.roomType === "online");
+      if (!onlineRoom) {
+        setModalValidationError("No available online room assignment is configured.");
+        return;
+      }
+      resolvedRoomId = onlineRoom.id;
     } else if (modalRoomId === "field") {
-      const fieldRoom = rooms.find(r => r.name.toLowerCase().includes("field"));
-      if (fieldRoom) resolvedRoomId = fieldRoom.id;
+      const fieldRoom = rooms.find(r => r.roomType === "field");
+      if (!fieldRoom) {
+        setModalValidationError("No available field room assignment is configured.");
+        return;
+      }
+      resolvedRoomId = fieldRoom.id;
     }
 
     const targetDays: TargetScheduleDay[] = [];
@@ -1622,6 +1657,8 @@ export const useScheduler = () => {
     setModalDay1Duration,
     modalDay2StartSlot,
     setModalDay2StartSlot,
+    modalDay2Duration,
+    setModalDay2Duration,
     isDay2ModifiedByUser,
     setIsDay2ModifiedByUser,
     modalValidationError,

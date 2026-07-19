@@ -21,7 +21,8 @@ import {
   ArrowRight,
   Award,
   CheckSquare,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 
 interface Schedule {
@@ -207,14 +208,18 @@ export default function VpaaDashboardPage() {
   const scheduleStatusMap = useMemo(() => {
     const map = new Map<number, { status: string; updated_at?: string }>();
     schedules.forEach(s => {
-      if (!map.has(s.section_id)) {
+      const matchesActiveTerm = !activeTerm?.id || Number(s.term_id) === Number(activeTerm.id);
+      if (matchesActiveTerm && !map.has(s.section_id)) {
         map.set(s.section_id, { status: s.status, updated_at: s.updated_at });
       }
     });
     return map;
-  }, [schedules]);
+  }, [activeTerm?.id, schedules]);
 
-  const totalSchedules = schedules.length;
+  const totalSchedules = useMemo(() => {
+    if (!activeTerm?.id) return schedules.length;
+    return schedules.filter(schedule => Number(schedule.term_id) === Number(activeTerm.id)).length;
+  }, [activeTerm?.id, schedules]);
 
   // ── 2. Summary Metric Calculations ──
   const summaryMetrics = useMemo(() => {
@@ -384,11 +389,13 @@ export default function VpaaDashboardPage() {
   };
 
   return (
-    <div className="space-y-6 pb-12 transition-all duration-200 font-sans bg-gray-50/20">
+    <div className="space-y-5 pb-8 transition-all duration-200 font-sans bg-gray-50/20">
       {/* Breadcrumbs Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <p className="text-muted text-xs tracking-wider uppercase">Home / Dashboard</p>
+          <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-[#1f2937]">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">Institution-wide overview of scheduling activity and approval progress.</p>
         </div>
         {activeTerm && (
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold shadow-sm">
@@ -398,8 +405,21 @@ export default function VpaaDashboardPage() {
         )}
       </div>
 
+      <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
+        approvalQueue.length > 0
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      }`}>
+        <Bell className={`h-5 w-5 flex-shrink-0 ${approvalQueue.length > 0 ? 'text-amber-600' : 'text-emerald-500'}`} />
+        <span>
+          {approvalQueue.length > 0
+            ? `${approvalQueue.length} schedule${approvalQueue.length === 1 ? '' : 's'} awaiting VPAA attention.`
+            : 'All clear — no action items require attention right now.'}
+        </span>
+      </div>
+
       {/* Greeting Banner */}
-      <div className="bg-[#5A1220] py-5 px-6 rounded-2xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
+      <div className="bg-[#5A1220] py-3 px-5 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
         <div>
           <h1 className="font-sans text-lg font-bold tracking-tight text-white">
             Welcome back, <span className="text-[#F5A623]">{user?.name || 'VPAA Administrator'}</span>
@@ -414,9 +434,9 @@ export default function VpaaDashboardPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Skeleton Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3">
             {Array.from({ length: 9 }).map((_, i) => (
               <div key={i} className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
                 <Skeleton className="h-3 w-16" />
@@ -425,16 +445,16 @@ export default function VpaaDashboardPage() {
             ))}
           </div>
           {/* Skeleton Widgets */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Skeleton className="h-[340px] rounded-2xl" />
             <Skeleton className="h-[340px] rounded-2xl" />
             <Skeleton className="h-[340px] rounded-2xl" />
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Summary Metric Cards (9 Cards Grid) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3">
             {/* Total Departments */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Departments</span>
@@ -518,16 +538,16 @@ export default function VpaaDashboardPage() {
           </div>
 
           {/* Top Section Widgets Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Overall Scheduling Progress */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[340px]">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[280px]">
               <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
+                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-4">
                   <TrendingUp className="w-5 h-5 text-[#5A1220]" />
                   <span>Overall Scheduling Progress</span>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-4">
                   {/* Progress Indicator */}
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-xs">
@@ -543,7 +563,7 @@ export default function VpaaDashboardPage() {
                   </div>
 
                   {/* Summary Breakdown counts */}
-                  <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="grid grid-cols-2 gap-3 pt-1">
                     <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Completed</p>
                       <p className="text-xl font-extrabold text-gray-800 mt-1">{overallStats.approvedCount}</p>
@@ -571,9 +591,9 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Faculty Teaching Load Overview */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[340px]">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[280px]">
               <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-6">
+                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-4">
                   <GraduationCap className="w-5 h-5 text-[#5A1220]" />
                   <span>Faculty Teaching Load Overview</span>
                 </div>
@@ -661,9 +681,9 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Schedule Approval Queue */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[340px]">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[280px]">
               <div>
-                <div className="flex items-center justify-between gap-4 mb-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
                   <div className="flex items-center gap-2.5 text-gray-800 font-bold">
                     <CheckSquare className="w-5 h-5 text-[#5A1220]" />
                     <span>Schedule Approval Queue</span>
@@ -715,12 +735,12 @@ export default function VpaaDashboardPage() {
           </div>
 
           {/* Department Status Overview Section (Widget 1 & 5) */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <h2 className="text-gray-800 font-bold text-lg flex items-center gap-2">
               <Building2 className="w-5 h-5 text-[#5A1220]" />
               Department Status Overview
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {departmentStats.length === 0 ? (
                 <div className="col-span-full bg-white p-8 border border-gray-200 rounded-2xl text-center">
                   <p className="text-gray-400 text-sm">No department data has been registered.</p>
@@ -737,7 +757,7 @@ export default function VpaaDashboardPage() {
                   }
 
                   return (
-                    <div key={dept.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow space-y-4">
+                    <div key={dept.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow space-y-3">
                       <div className="flex justify-between items-start gap-2">
                         <div>
                           <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded border uppercase">
@@ -791,9 +811,9 @@ export default function VpaaDashboardPage() {
           </div>
 
           {/* Quick Actions & Shortcut Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Quick Actions Card */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-4">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3">
               <h2 className="text-gray-800 font-bold text-lg">Quick Actions</h2>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -842,7 +862,7 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Quick overview note/description text */}
-            <div className="lg:col-span-2 bg-[#5A1220]/5 border border-[#5A1220]/15 p-6 rounded-2xl flex flex-col justify-between">
+            <div className="lg:col-span-2 bg-[#5A1220]/5 border border-[#5A1220]/15 p-4 rounded-xl flex flex-col justify-between">
               <div className="space-y-3">
                 <h3 className="text-[#5A1220] font-extrabold text-sm flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-[#5A1220]" />

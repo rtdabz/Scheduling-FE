@@ -54,6 +54,8 @@ interface DropModalProps {
   setModalDay1Duration: (value: number) => void;
   modalDay2StartSlot: number;
   setModalDay2StartSlot: (value: number) => void;
+  modalDay2Duration: number;
+  setModalDay2Duration: (value: number) => void;
   isDay2ModifiedByUser: boolean;
   setIsDay2ModifiedByUser: (value: boolean) => void;
   modalValidationError: string;
@@ -140,6 +142,8 @@ export default function DropModal({
   setModalDay1Duration,
   modalDay2StartSlot,
   setModalDay2StartSlot,
+  modalDay2Duration,
+  setModalDay2Duration,
   setIsDay2ModifiedByUser,
   modalValidationError,
   setModalValidationError,
@@ -153,6 +157,7 @@ export default function DropModal({
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
+  const [useNinetyMinuteMeetings, setUseNinetyMinuteMeetings] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = useMemo(() => {
     const role = getStoredRole();
@@ -169,6 +174,7 @@ export default function DropModal({
       setRecommendations([]);
       setRecommendationError(null);
       setAppliedRecommendationRank(null);
+      setUseNinetyMinuteMeetings(false);
       closeButtonRef.current?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -244,8 +250,7 @@ export default function DropModal({
     Thu: "Thursday", Fri: "Friday", Sat: "Saturday"
   };
   const totalSlots = dropSubject ? dropSubject.units * 2 : 0;
-  const d2Slots = totalSlots - modalDay1Duration;
-  const splitDayOneDuration = Math.ceil(totalSlots / 2);
+  const d2Slots = modalDay2Duration;
   const isTwoMeetingPattern = !!modalPreferredPattern;
   const selectedDayIndexes = new Set([modalDay1Index, modalDay2Index]);
   const patternLabel = isTwoMeetingPattern
@@ -256,16 +261,39 @@ export default function DropModal({
     setModalPreferredPattern(`days:${day1Index}-${day2Index}`);
   };
 
-  const durationOptions = [];
-  const minDayOneDuration = modalPreferredPattern ? 1 : 0;
-  const maxDayOneDuration = modalPreferredPattern ? Math.max(1, totalSlots - 1) : totalSlots;
-  for (let s = minDayOneDuration; s <= maxDayOneDuration; s++) {
-    const hours = s * 0.5;
-    durationOptions.push({
-      slots: s,
-      label: s === 0 ? "No meeting" : `${hours} hour${hours !== 1 ? "s" : ""}`
-    });
-  }
+  const clampStartSlotForDuration = (startSlot: number, durationSlots: number): number => {
+    return Math.min(startSlot, Math.max(0, 28 - durationSlots));
+  };
+
+  const getFallbackMeetingDayIndex = (excludedDayIndex: number): number => {
+    const fallbackIndex = DAYS.findIndex((_, index) => index !== excludedDayIndex);
+    return fallbackIndex >= 0 ? fallbackIndex : excludedDayIndex;
+  };
+
+  const handleDay1Change = (nextDayIndex: number) => {
+    if (nextDayIndex === modalDay2Index) return;
+    setModalDay1Index(nextDayIndex);
+    updateTwoMeetingPattern(nextDayIndex, modalDay2Index);
+  };
+
+  const handleDay2Change = (nextDayIndex: number) => {
+    if (nextDayIndex === modalDay1Index) return;
+    setModalDay2Index(nextDayIndex);
+    updateTwoMeetingPattern(modalDay1Index, nextDayIndex);
+  };
+
+  const meetingPatternOptions = [
+    { value: "", label: "Single meeting" },
+    { value: "twice", label: "Twice a week" }
+  ];
+  const totalSelectedSlots = modalPreferredPattern
+    ? modalDay1Duration + modalDay2Duration
+    : totalSlots;
+  const usesFullDurationMeetings = modalPreferredPattern
+    ? modalDay1Duration === totalSlots && modalDay2Duration === totalSlots
+    : true;
+  const durationTotalMatches = totalSelectedSlots === totalSlots || usesFullDurationMeetings;
+  const canUseNinetyMinuteMeetings = totalSlots === 6;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
@@ -301,6 +329,7 @@ export default function DropModal({
       setModalDay1StartSlot(firstStartSlot);
       setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
       setModalDay2StartSlot(timeToSlot(secondRow.start_time));
+      setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
       setIsDay2ModifiedByUser(true);
     } else {
       setModalPreferredPattern(null);
@@ -309,6 +338,7 @@ export default function DropModal({
       setModalDay1StartSlot(firstStartSlot);
       setModalDay1Duration(dropSubject.units * 2);
       setModalDay2StartSlot(firstStartSlot);
+      setModalDay2Duration(0);
       setIsDay2ModifiedByUser(false);
       setDropContext({
         ...dropContext,
@@ -319,6 +349,7 @@ export default function DropModal({
 
     setModalValidationError("");
     setAppliedRecommendationRank(recommendation.rank);
+    setUseNinetyMinuteMeetings(false);
   };
 
   return (
@@ -326,7 +357,7 @@ export default function DropModal({
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
     >
-      <div className="flex h-[94vh] max-h-[54rem] w-full max-w-[92rem] flex-col gap-4 xl:flex-row xl:items-stretch">
+      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col gap-4 xl:flex-row xl:items-stretch">
       <div
         role="dialog"
         aria-modal="true"
@@ -334,7 +365,7 @@ export default function DropModal({
         aria-describedby="placement-modal-desc"
         className="bg-white rounded-2xl shadow-2xl min-h-0 flex-1 overflow-hidden flex flex-col transition-all duration-200 animate-in fade-in zoom-in-95"
       >
-        <div className="flex justify-between items-start px-5 pt-5 pb-3 border-b border-gray-100">
+        <div className="flex justify-between items-start px-5 pt-4 pb-3 border-b border-gray-100">
           <div className="flex items-start gap-3">
             <CalendarPlus className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
             <div>
@@ -355,7 +386,7 @@ export default function DropModal({
           </button>
         </div>
 
-        <form onSubmit={handleModalConfirm} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <form onSubmit={handleModalConfirm} className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
           <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
@@ -397,8 +428,8 @@ export default function DropModal({
             </div>
           </section>
 
-          <div className="grid grid-cols-1 gap-4 items-start">
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(17rem,0.9fr)_minmax(22rem,1.1fr)] gap-4 items-start">
+          <div className="grid grid-cols-1 gap-3 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(16rem,0.9fr)_minmax(20rem,1.1fr)] gap-3 items-start">
             <div className="space-y-3 rounded-xl border border-gray-100 bg-white p-3">
               <div>
                 <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
@@ -413,7 +444,10 @@ export default function DropModal({
                     const isHybridDeliveryMode = modalIsHybrid && (m === "on-site" || m === "online");
                     const isSelected = isHybridDeliveryMode || (!modalIsHybrid && modalClassMode === m);
                     const isReadOnlyHybridMode = modalIsHybrid;
-                    const isDisabledMode = (dropSubjectIsField && m !== "field") || (modalIsHybrid && m === "field");
+                    const isDisabledMode =
+                      (dropSubjectIsField && m !== "field")
+                      || (!dropSubjectIsField && m === "field")
+                      || (modalIsHybrid && m === "field");
                     return (
                       <button
                         key={m}
@@ -421,7 +455,7 @@ export default function DropModal({
                         disabled={isDisabledMode || isReadOnlyHybridMode}
                         aria-disabled={isDisabledMode || isReadOnlyHybridMode}
                         onClick={() => {
-                          if (isReadOnlyHybridMode) return;
+                          if (isDisabledMode || isReadOnlyHybridMode) return;
                           setModalClassMode(m);
                           if (m !== "on-site") {
                             setModalIsHybrid(false);
@@ -496,39 +530,45 @@ export default function DropModal({
                 <label className="block text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                   Meeting Pattern
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { value: null, label: "None" },
-                    { value: "MW" as const, label: "MW" },
-                    { value: "TTh" as const, label: "TTh" }
-                  ]).map(({ value: p, label }) => {
-                    const isSelected = modalPreferredPattern === p;
-                    return (
-                      <button
-                        key={String(p)}
-                        type="button"
-                        onClick={() => {
-                          setModalPreferredPattern(p);
-                          setIsDay2ModifiedByUser(false);
+                <div className="relative">
+                  <CalendarDays className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                  <select
+                    value={modalPreferredPattern ? "twice" : ""}
+                    onChange={(event) => {
+                      const nextPattern = event.target.value === "twice"
+                        ? `days:${modalDay1Index}-${modalDay2Index}`
+                        : null;
+                      setIsDay2ModifiedByUser(false);
 
-                          if (p) {
-                            setModalDay1Duration(splitDayOneDuration);
-                            setModalDay2StartSlot(modalDay1StartSlot);
-                          } else {
-                            setModalDay1Duration(totalSlots);
-                            setModalDay2StartSlot(modalDay1StartSlot);
-                          }
-                        }}
-                        className={`py-2.5 border rounded-lg text-sm font-semibold transition-all ${
-                          isSelected
-                            ? "bg-[#4e0a10] text-white border-[#4e0a10]"
-                            : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
+                      if (nextPattern) {
+                        const nextDay2Index = modalDay1Index === modalDay2Index
+                          ? getFallbackMeetingDayIndex(modalDay1Index)
+                          : modalDay2Index;
+                        const dayOneSlots = Math.ceil(totalSlots / 2);
+                        const dayTwoSlots = Math.max(1, totalSlots - dayOneSlots);
+                        setUseNinetyMinuteMeetings(false);
+                        setModalDay2Index(nextDay2Index);
+                        setModalPreferredPattern(`days:${modalDay1Index}-${nextDay2Index}`);
+                        setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayOneSlots));
+                        setModalDay1Duration(dayOneSlots);
+                        setModalDay2Duration(dayTwoSlots);
+                        setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
+                      } else {
+                        setUseNinetyMinuteMeetings(false);
+                        setModalPreferredPattern(null);
+                        setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                        setModalDay1Duration(totalSlots);
+                        setModalDay2Duration(0);
+                        setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                      }
+                    }}
+                    className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
+                  >
+                    {meetingPatternOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
@@ -536,40 +576,38 @@ export default function DropModal({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                      Day 1
+                      First meeting day
                     </label>
                     <select
                       value={modalDay1Index}
                       onChange={(event) => {
                         const nextDay = Number(event.target.value);
-                        setModalDay1Index(nextDay);
-                        updateTwoMeetingPattern(nextDay, modalDay2Index);
+                        handleDay1Change(nextDay);
                       }}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
                     >
                       {DAYS.map((day, index) => (
-                        <option key={day} value={index} disabled={selectedDayIndexes.has(index) && index !== modalDay1Index}>
-                          {day}
+                        <option key={day} value={index} disabled={index === modalDay2Index}>
+                          {index === modalDay2Index ? `${day} (Selected as second meeting)` : day}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                      Day 2
+                      Second meeting day
                     </label>
                     <select
                       value={modalDay2Index}
                       onChange={(event) => {
                         const nextDay = Number(event.target.value);
-                        setModalDay2Index(nextDay);
-                        updateTwoMeetingPattern(modalDay1Index, nextDay);
+                        handleDay2Change(nextDay);
                       }}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
                     >
                       {DAYS.map((day, index) => (
-                        <option key={day} value={index} disabled={selectedDayIndexes.has(index) && index !== modalDay2Index}>
-                          {day}
+                        <option key={day} value={index} disabled={index === modalDay1Index}>
+                          {index === modalDay1Index ? `${day} (Selected as first meeting)` : day}
                         </option>
                       ))}
                     </select>
@@ -676,13 +714,43 @@ export default function DropModal({
                   </div>
                 ) : (
                   <div className="space-y-3">
+                    <label className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs font-bold ${
+                      canUseNinetyMinuteMeetings
+                        ? "border-[#C9952A]/20 bg-[#C9952A]/10 text-[#4e0a10]"
+                        : "border-gray-200 bg-gray-50 text-gray-400"
+                    }`}>
+                      <span>Use 1.5 hours for each meeting</span>
+                      <input
+                        type="checkbox"
+                        checked={useNinetyMinuteMeetings}
+                        disabled={!canUseNinetyMinuteMeetings}
+                        onChange={(event) => {
+                          const isChecked = event.target.checked;
+                          setUseNinetyMinuteMeetings(isChecked);
+
+                          if (isChecked) {
+                            setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, 3));
+                            setModalDay2StartSlot(clampStartSlotForDuration(modalDay2StartSlot, 3));
+                            setModalDay1Duration(3);
+                            setModalDay2Duration(3);
+                          } else {
+                            setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                            setModalDay2StartSlot(clampStartSlotForDuration(modalDay2StartSlot, totalSlots));
+                            setModalDay1Duration(totalSlots);
+                            setModalDay2Duration(totalSlots);
+                          }
+                          setModalValidationError("");
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-[#4e0a10] focus:ring-[#4e0a10] disabled:cursor-not-allowed"
+                      />
+                    </label>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 space-y-3">
                         <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-[#4e0a10]" />
                           Day 1: {DAYS[modalDay1Index]}
                         </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
                               Start Time
@@ -697,26 +765,6 @@ export default function DropModal({
                                 {Array.from({ length: 29 - modalDay1Duration }, (_, i) => (
                                   <option key={i} value={i}>
                                     {slotToTimeStr(i)}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                              Duration
-                            </label>
-                            <div className="relative">
-                              <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                              <select
-                                value={modalDay1Duration}
-                                onChange={(e) => setModalDay1Duration(Number(e.target.value))}
-                                className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2.5 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
-                              >
-                                {durationOptions.map((opt) => (
-                                  <option key={opt.slots} value={opt.slots}>
-                                    {opt.label}
                                   </option>
                                 ))}
                               </select>
@@ -747,7 +795,7 @@ export default function DropModal({
                           <span className="w-1.5 h-1.5 rounded-full bg-[#4e0a10]" />
                           Day 2: {DAYS[modalDay2Index]}
                         </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
                               Start Time
@@ -756,16 +804,11 @@ export default function DropModal({
                               <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                               <select
                                 value={modalDay2StartSlot}
-                                disabled={d2Slots === 0}
                                 onChange={(e) => {
                                   setModalDay2StartSlot(Number(e.target.value));
                                   setIsDay2ModifiedByUser(true);
                                 }}
-                                className={`w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] ${
-                                  d2Slots === 0
-                                    ? "bg-gray-50 text-gray-400 cursor-not-allowed"
-                                    : "bg-white text-gray-700 cursor-pointer"
-                                }`}
+                                className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] bg-white text-gray-700 cursor-pointer"
                               >
                                 {Array.from({ length: 29 - d2Slots }, (_, i) => (
                                   <option key={i} value={i}>
@@ -774,20 +817,6 @@ export default function DropModal({
                                 ))}
                               </select>
                               <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                              Duration (Auto-split)
-                            </label>
-                            <div className="relative">
-                              <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                              <input
-                                type="text"
-                                readOnly
-                                value={d2Slots === 0 ? "No meeting" : `${d2Slots * 0.5} hour${d2Slots * 0.5 !== 1 ? "s" : ""}`}
-                                className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                              />
                             </div>
                           </div>
                           {d2Slots > 0 && (
@@ -810,10 +839,18 @@ export default function DropModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 bg-[#4e0a10]/5 rounded-xl p-3 border border-[#4e0a10]/10 text-[#4e0a10] text-xs font-bold tracking-wide uppercase select-none">
+                    <div className={`flex items-center gap-2 rounded-xl p-3 border text-xs font-bold tracking-wide uppercase select-none ${
+                      durationTotalMatches
+                        ? "bg-[#4e0a10]/5 border-[#4e0a10]/10 text-[#4e0a10]"
+                        : "bg-amber-50 border-amber-200 text-amber-800"
+                    }`}>
                       <span>Total Contact Hours: {dropSubject.units} hours ({totalSlots} slots)</span>
-                      <span className="ml-auto font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        Day 1: {modalDay1Duration * 0.5}h + Day 2: {d2Slots * 0.5}h
+                      <span className={`ml-auto font-black px-2 py-0.5 rounded-full border ${
+                        durationTotalMatches
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                          : "text-amber-800 bg-white border-amber-200"
+                      }`}>
+                        Auto duration: {dropSubject.units} hours
                       </span>
                     </div>
                   </div>
@@ -843,7 +880,7 @@ export default function DropModal({
           </div>
         </form>
 
-        <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4">
+        <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className={`flex items-center gap-2 text-sm font-semibold ${hasConflict ? "text-red-600" : "text-emerald-700"}`}>
               {hasConflict ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -883,7 +920,7 @@ export default function DropModal({
       </div>
 
       {shouldShowRecommendations && (
-        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-none xl:w-80">
+        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[88vh] xl:w-80">
           <div className="flex items-start gap-2 border-b border-[#C9952A]/20 pb-3">
             <div className="rounded-lg bg-white p-2 shadow-sm">
               <Lightbulb className="w-4 h-4 text-[#7a4c08]" />

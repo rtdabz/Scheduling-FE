@@ -5,7 +5,8 @@ import {
   Users,
   MapPin,
   FileText,
-  Settings
+  Settings,
+  UserRoundCheck
 } from 'lucide-react';
 
 export const programHeadNav: NavSection[] = [
@@ -21,8 +22,21 @@ export const programHeadNav: NavSection[] = [
       {
         id: 'sidebar-schedules',
         label: 'Class Schedules',
-        path: '/program_head/schedules',
-        icon: Calendar
+        icon: Calendar,
+        children: [
+          {
+            id: 'sidebar-schedule-builder',
+            label: 'Schedule Builder',
+            path: '/program_head/schedules',
+            icon: Calendar
+          },
+          {
+            id: 'sidebar-instructor-assignment',
+            label: 'Instructor Assignment',
+            path: '/program_head/instructor-assignment',
+            icon: UserRoundCheck
+          }
+        ]
       },
       {
         id: 'sidebar-faculty',
