@@ -18,6 +18,7 @@ import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import {
   ActivityFeed,
   AttentionPanel,
@@ -26,7 +27,6 @@ import {
   RadialProgressCard,
   SummaryMetricCard,
   TeachingLoadCard,
-  type ActivityFeedItem,
   type AttentionItem,
   type ProgressStage,
   type QuickAction,
@@ -124,6 +124,7 @@ export default function SecretarySchedulingOperationsPage() {
     yearLevels,
     stageCounts,
   } = useDepartmentScheduleStatus(user?.department_id);
+  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   useEffect(() => {
     let active = true;
@@ -337,52 +338,6 @@ export default function SecretarySchedulingOperationsPage() {
 
     return items.slice(0, 3);
   }, [draftingProgress, facultyStats.overloaded, pendingApprovals, unscheduledSectionsCount, utilizationRate]);
-
-  const activitySummary = useMemo<ActivityFeedItem[]>(() => {
-    const activities: ActivityFeedItem[] = [];
-
-    if (pendingApprovals > 0) {
-      activities.push({
-        id: 1,
-        action: `${pendingApprovals} schedule${pendingApprovals === 1 ? '' : 's'} currently pending review.`,
-        timestamp: lastUpdated ? `Updated ${lastUpdated}` : 'Current overview data',
-      });
-    }
-
-    if (draftCount > 0) {
-      activities.push({
-        id: 2,
-        action: `${draftCount} section${draftCount === 1 ? '' : 's'} remain in draft status.`,
-        timestamp: 'Schedule stage summary',
-      });
-    }
-
-    if (facultyStats.overloaded > 0) {
-      activities.push({
-        id: 3,
-        action: `${facultyStats.overloaded} faculty member${facultyStats.overloaded === 1 ? '' : 's'} may need load balancing.`,
-        timestamp: 'Faculty load overview',
-      });
-    }
-
-    if (unscheduledSectionsCount > 0) {
-      activities.push({
-        id: 4,
-        action: `${unscheduledSectionsCount} section${unscheduledSectionsCount === 1 ? '' : 's'} still need schedule entries.`,
-        timestamp: 'Section readiness check',
-      });
-    }
-
-    if (activities.length === 0) {
-      activities.push({
-        id: 5,
-        action: 'No urgent schedule, room, or faculty load alerts detected.',
-        timestamp: lastUpdated ? `Updated ${lastUpdated}` : 'Current overview data',
-      });
-    }
-
-    return activities.slice(0, 5);
-  }, [draftCount, facultyStats.overloaded, lastUpdated, pendingApprovals, unscheduledSectionsCount]);
 
   const progressStages = useMemo<ProgressStage[]>(() => [
     {
@@ -653,12 +608,20 @@ export default function SecretarySchedulingOperationsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <QuickActionsPanel title="Quick Actions" actions={quickActions} />
             <ActivityFeed
-              title="Current Activity Summary"
+              title="Notifications"
               icon={ClipboardList}
-              items={activitySummary}
-              emptyMessage="No current activity summary available."
-              actionLabel="Open scheduling workspace ->"
-              onAction={() => navigate('/secretary/schedules')}
+              items={notificationItems}
+              emptyMessage="No scheduling notifications yet."
+              actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open scheduling workspace ->'}
+              onAction={() => {
+                if (unreadCount > 0) {
+                  void markAllAsRead();
+                  return;
+                }
+
+                navigate('/secretary/schedules');
+              }}
+              unreadCount={unreadCount}
             />
           </div>
         </div>

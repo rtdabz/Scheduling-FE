@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
+import { useSystemNotifications } from '../../hooks/useSystemNotifications';
+import { ActivityFeed } from '../../components/overview';
 import {
   Building2,
   Users,
@@ -18,11 +20,10 @@ import {
   GraduationCap,
   FileBarChart,
   Download,
-  ArrowRight,
-  Award,
   CheckSquare,
   AlertCircle,
-  Bell
+  Bell,
+  ClipboardList
 } from 'lucide-react';
 
 interface Schedule {
@@ -68,6 +69,7 @@ interface Faculty {
   employment_type: 'full-time' | 'part-time';
   max_units: number;
   assigned_units?: number;
+  probono_units?: number | null;
   department_id: number;
   department?: {
     id: number;
@@ -142,6 +144,7 @@ export default function VpaaDashboardPage() {
   const [departments, setDepartments] = useState<Department[]>(cachedDashboardData?.departments ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
+  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   useEffect(() => {
     let active = true;
@@ -347,7 +350,7 @@ export default function VpaaDashboardPage() {
       }
       
       // Pro Bono tracking (custom workload indicators mapped previously)
-      const isProBono = (f as any).probono_units && Number((f as any).probono_units) > 0;
+      const isProBono = f.probono_units !== undefined && f.probono_units !== null && Number(f.probono_units) > 0;
       if (isProBono) {
         probono++;
       }
@@ -809,6 +812,23 @@ export default function VpaaDashboardPage() {
               )}
             </div>
           </div>
+
+          <ActivityFeed
+            title="Notifications"
+            icon={ClipboardList}
+            items={notificationItems}
+            emptyMessage="No scheduling notifications yet."
+            actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open approval queue ->'}
+            onAction={() => {
+              if (unreadCount > 0) {
+                void markAllAsRead();
+                return;
+              }
+
+              navigate('/schedules/approval');
+            }}
+            unreadCount={unreadCount}
+          />
 
           {/* Quick Actions & Shortcut Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

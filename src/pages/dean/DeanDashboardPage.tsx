@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -6,6 +6,8 @@ import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { useSystemNotifications } from '../../hooks/useSystemNotifications';
+import { ActivityFeed } from '../../components/overview';
 import {
   Users,
   Layers,
@@ -33,6 +35,7 @@ interface Faculty {
   employment_type: 'full-time' | 'part-time';
   max_units: number;
   assigned_units?: number;
+  probono_units?: number | null;
   department_id: number;
   department?: {
     id: number;
@@ -133,6 +136,7 @@ export default function DeanDashboardPage() {
     draftingProgress,
     stageCounts,
   } = useDepartmentScheduleStatus(user?.department_id);
+  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   useEffect(() => {
     let active = true;
@@ -537,7 +541,7 @@ export default function DeanDashboardPage() {
                       }
 
                       // Check Pro Bono mapping
-                      const isProBono = (f as any).probono_units && Number((f as any).probono_units) > 0;
+                      const isProBono = f.probono_units !== undefined && f.probono_units !== null && Number(f.probono_units) > 0;
                       if (isProBono) {
                         statusBadge = 'Pro Bono';
                         statusColor = 'text-purple-600 bg-purple-50 border-purple-200';
@@ -719,6 +723,23 @@ export default function DeanDashboardPage() {
               </div>
             </div>
           </div>
+
+          <ActivityFeed
+            title="Notifications"
+            icon={ClipboardList}
+            items={notificationItems}
+            emptyMessage="No scheduling notifications yet."
+            actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open approval queue ->'}
+            onAction={() => {
+              if (unreadCount > 0) {
+                void markAllAsRead();
+                return;
+              }
+
+              navigate('/dean/schedules/approval');
+            }}
+            unreadCount={unreadCount}
+          />
 
           {/* Quick Actions Panel */}
           <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col gap-4">

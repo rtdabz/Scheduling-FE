@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -6,10 +6,13 @@ import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { useSystemNotifications } from '../../hooks/useSystemNotifications';
+import { ActivityFeed } from '../../components/overview';
 import {
   Users,
   Layers,
   BookOpen,
+  Building2,
   CalendarDays,
   Clock,
   CheckCircle2,
@@ -30,6 +33,7 @@ interface Faculty {
   employment_type: 'full-time' | 'part-time';
   max_units: number;
   assigned_units?: number;
+  probono_units?: number | null;
   department_id: number;
   department?: {
     id: number;
@@ -121,6 +125,7 @@ export default function ProgramHeadDashboardPage() {
     draftingProgress,
     stageCounts,
   } = useDepartmentScheduleStatus(user?.department_id);
+  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   useEffect(() => {
     let active = true;
@@ -482,7 +487,7 @@ export default function ProgramHeadDashboardPage() {
                         statusColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
                       }
 
-                      const isProBono = (f as any).probono_units && Number((f as any).probono_units) > 0;
+                      const isProBono = f.probono_units !== undefined && f.probono_units !== null && Number(f.probono_units) > 0;
                       if (isProBono) {
                         statusBadge = 'Pro Bono';
                         statusColor = 'text-purple-600 bg-purple-50 border-purple-200';
@@ -572,7 +577,7 @@ export default function ProgramHeadDashboardPage() {
             <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm min-h-[340px] flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-5">
-                  <Building2Icon className="w-5 h-5 text-[#5A1220]" />
+                  <Building2 className="w-5 h-5 text-[#5A1220]" />
                   <span>Program Schedule Status</span>
                 </div>
 
@@ -656,34 +661,25 @@ export default function ProgramHeadDashboardPage() {
               </div>
             </div>
           </div>
+
+          <ActivityFeed
+            title="Notifications"
+            icon={ClipboardList}
+            items={notificationItems}
+            emptyMessage="No scheduling notifications yet."
+            actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open scheduler ->'}
+            onAction={() => {
+              if (unreadCount > 0) {
+                void markAllAsRead();
+                return;
+              }
+
+              navigate('/program_head/schedules');
+            }}
+            unreadCount={unreadCount}
+          />
         </div>
       )}
     </div>
-  );
-}
-
-// Simple fallback icon to avoid import issues
-function Building2Icon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
-      <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
-      <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
-      <path d="M10 6h4" />
-      <path d="M10 10h4" />
-      <path d="M10 14h4" />
-      <path d="M10 18h4" />
-    </svg>
   );
 }
