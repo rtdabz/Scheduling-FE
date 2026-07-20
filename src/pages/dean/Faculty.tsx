@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 
 interface Department {
   id: number;
@@ -683,12 +684,15 @@ export default function DeanFaculty() {
 
                 {/* Quick Actions Footer */}
                 <div className="flex items-center justify-between gap-2 pt-4 border-t border-gray-100 mt-4">
-                  <button
-                    onClick={() => handleViewDetails(f)}
-                    className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
-                  >
-                    View Details
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleViewDetails(f)}
+                      className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
+                    >
+                      View Details
+                    </button>
+                    <InstructorTeachingLoadButton facultyId={f.id} />
+                  </div>
                   {canManageFaculty && (
                     <div className="flex gap-2">
                       <button

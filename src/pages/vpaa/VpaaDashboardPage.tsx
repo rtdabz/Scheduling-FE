@@ -124,6 +124,10 @@ interface DashboardData {
   activeTerm: Term | null;
 }
 
+interface InitialDataResponse extends Omit<DashboardData, 'activeTerm'> {
+  active_term: Term;
+}
+
 export default function VpaaDashboardPage() {
   useTour();
   const { toast } = useToast();
@@ -154,32 +158,16 @@ export default function VpaaDashboardPage() {
       try {
         setIsLoading(shouldShowSkeleton);
         const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
-          const [
-            schedulesRes,
-            roomsRes,
-            sectionsRes,
-            facultiesRes,
-            departmentsRes,
-            subjectsRes,
-            activeTermRes
-          ] = await Promise.all([
-            api.get<Schedule[]>('/schedules'),
-            api.get<Room[]>('/rooms'),
-            api.get<Section[]>('/sections'),
-            api.get<Faculty[]>('/faculties'),
-            api.get<Department[]>('/departments'),
-            api.get<Subject[]>('/subjects'),
-            api.get<Term>('/terms/active')
-          ]);
+          const response = await api.get<InitialDataResponse>('/initial-data');
 
           return {
-            schedules: schedulesRes.data,
-            rooms: roomsRes.data,
-            sections: sectionsRes.data,
-            faculties: facultiesRes.data,
-            departments: departmentsRes.data,
-            subjects: subjectsRes.data,
-            activeTerm: activeTermRes.data,
+            schedules: response.data.schedules,
+            rooms: response.data.rooms,
+            sections: response.data.sections,
+            faculties: response.data.faculties,
+            departments: response.data.departments,
+            subjects: response.data.subjects,
+            activeTerm: response.data.active_term,
           };
         });
 

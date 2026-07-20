@@ -101,6 +101,10 @@ interface DashboardData {
   activeTerm: Term | null;
 }
 
+interface InitialDataResponse extends Omit<DashboardData, 'activeTerm'> {
+  active_term: Term;
+}
+
 export default function ProgramHeadDashboardPage() {
   useTour();
   const { toast } = useToast();
@@ -135,26 +139,14 @@ export default function ProgramHeadDashboardPage() {
       try {
         setIsLoading(shouldShowSkeleton);
         const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
-          const [
-            facultiesRes,
-            sectionsRes,
-            subjectsRes,
-            schedulesRes,
-            activeTermRes
-          ] = await Promise.all([
-            api.get<Faculty[]>('/faculties'),
-            api.get<Section[]>('/sections'),
-            api.get<Subject[]>('/subjects'),
-            api.get<Schedule[]>('/schedules'),
-            api.get<Term>('/terms/active')
-          ]);
+          const response = await api.get<InitialDataResponse>('/initial-data');
 
           return {
-            faculties: facultiesRes.data,
-            sections: sectionsRes.data,
-            subjects: subjectsRes.data,
-            schedules: schedulesRes.data,
-            activeTerm: activeTermRes.data,
+            faculties: response.data.faculties,
+            sections: response.data.sections,
+            subjects: response.data.subjects,
+            schedules: response.data.schedules,
+            activeTerm: response.data.active_term,
           };
         });
 

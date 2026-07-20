@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, FileText, GraduationCap, LayoutGrid, Printer, Send, Upload, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, Send, Upload, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, Section } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -37,7 +37,6 @@ interface TopBarProps {
   renderActionButton: () => React.ReactNode;
   handleSubmitForApproval: () => void;
   onPrint: () => void;
-  onTeachingLoad: () => void;
   onImport: () => void;
   isLoading?: boolean;
 }
@@ -68,7 +67,6 @@ export default function TopBar({
   renderActionButton,
   handleSubmitForApproval,
   onPrint,
-  onTeachingLoad,
   onImport,
   isLoading = false
 }: TopBarProps) {
@@ -377,15 +375,6 @@ export default function TopBar({
                 >
                   <Printer className="w-4 h-4 text-[#4e0a10]" />
                   Print Schedule
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setIsPrintDropdownOpen(false); onTeachingLoad(); }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  <FileText className="w-4 h-4 text-[#4e0a10]" />
-                  Print Teaching Load
                 </button>
               </div>
             )}

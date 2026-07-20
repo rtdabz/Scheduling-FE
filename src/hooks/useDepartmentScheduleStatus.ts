@@ -101,9 +101,10 @@ export function useDepartmentScheduleStatus(
       }
     };
 
-    fetchStatus();
+    const timeoutId = window.setTimeout(fetchStatus, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
     };
   }, [departmentId, fetchKey, statusCacheKey]);
 

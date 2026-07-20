@@ -371,15 +371,14 @@ export default function DeanScheduleViewer() {
     const loadData = async () => {
       try {
         setIsLoading(true);
-        const termRes = await api.get<Term | null>('/terms/active');
-        const term = termRes.data;
+        const response = await api.get<{
+          active_term: Term | null;
+          sections: RawSection[];
+          schedules: RawSchedule[];
+        }>('/initial-data');
+        const term = response.data.active_term;
 
-        const [sectionsRes, schedulesRes] = await Promise.all([
-          api.get<RawSection[]>('/sections'),
-          api.get<RawSchedule[]>('/schedules')
-        ]);
-
-        let rawSections = sectionsRes.data;
+        let rawSections = response.data.sections;
         if (term) {
           rawSections = rawSections.filter((s) => Number(s.term_id) === Number(term.id));
         }
@@ -393,7 +392,7 @@ export default function DeanScheduleViewer() {
         }));
         setSections(mappedSections);
 
-        let rawSchedules = schedulesRes.data;
+        let rawSchedules = response.data.schedules;
         if (term) {
           rawSchedules = rawSchedules.filter((s) => Number(s.term_id) === Number(term.id));
         }

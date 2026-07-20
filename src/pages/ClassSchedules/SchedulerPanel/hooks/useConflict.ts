@@ -23,6 +23,18 @@ interface UseConflictParams {
 
 type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
+const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => (
+  left.termId === right.termId
+  && left.sectionId === right.sectionId
+  && left.subjectId === right.subjectId
+  && left.departmentId === right.departmentId
+  && (left.preferredPattern ?? null) === (right.preferredPattern ?? null)
+);
+
+const isPartTimeOutsideAvailability = (faculty: Faculty | undefined, dayIndex: number, startSlot: number): boolean => (
+  faculty?.employmentType === "part-time" && dayIndex !== 5 && startSlot < 20
+);
+
 export const useConflict = ({
   schedules,
   selectedSectionId,
@@ -57,6 +69,16 @@ export const useConflict = ({
         conflictType: "section",
         message: "The schedule duration exceeds the grid operating hours (9:00 PM)."
       };
+    }
+
+    if (facultyId) {
+      const faculty = faculties.find((f) => f.id === facultyId);
+      if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot)) {
+        return {
+          conflictType: "faculty",
+          message: `Part-time availability: ${faculty?.name ?? "Selected faculty"} can only teach from 5:00 PM onward on weekdays or any time on Saturdays.`
+        };
+      }
     }
 
     // Room-type compatibility check
@@ -107,9 +129,15 @@ export const useConflict = ({
   const checkFacultyConflict = (facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);
     if (!target) return null;
+    const targetFaculty = faculties.find((f) => f.id === facultyId);
+    if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot)) {
+      return `Part-time availability: ${targetFaculty?.name ?? facultyId} can only teach from 5:00 PM onward on weekdays or any time on Saturdays.`;
+    }
+
     const endSlot = target.startSlot + target.durationSlots;
     for (const s of schedules) {
       if (s.id === scheduleId) continue;
+      if (isLinkedMeetingBlock(target, s)) continue;
       if (s.facultyId !== facultyId) continue;
       const sEnd = s.startSlot + s.durationSlots;
       const overlaps = target.dayIndex === s.dayIndex && target.startSlot < sEnd && s.startSlot < endSlot;

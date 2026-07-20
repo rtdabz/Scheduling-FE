@@ -102,6 +102,9 @@ export default function App() {
       }
     }
 
+    const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
+    if (storedUser) return;
+
     api.get('/me')
       .then((res) => {
         const storage = localStorage.getItem('token') ? localStorage : sessionStorage;

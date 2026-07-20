@@ -48,6 +48,7 @@ interface ApiFaculty {
   first_name: string;
   last_name: string;
   department_id: number;
+  employment_type?: "full-time" | "part-time";
   status?: "active" | "inactive";
 }
 
@@ -73,6 +74,11 @@ interface AssignmentResponse {
   subjects: ApiSubject[];
   faculties: ApiFaculty[];
   schedules: ApiSchedule[];
+}
+
+interface AssignmentUpdateResponse {
+  schedule: ApiSchedule;
+  schedules?: ApiSchedule[];
 }
 
 interface AssignmentSchedule extends ApiSchedule {
@@ -105,6 +111,11 @@ const timeToMinutes = (value: string): number => {
   const [hour, minute] = value.split(":").map(Number);
   return hour * 60 + minute;
 };
+
+const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean =>
+  faculty.employment_type === "part-time" &&
+  schedule.day !== "Saturday" &&
+  timeToMinutes(schedule.start_time) < 17 * 60;
 
 const getRoomName = (schedule: ApiSchedule): string =>
   schedule.room?.room_code || schedule.room?.room_name || "Room not set";
@@ -289,13 +300,13 @@ export default function InstructorAssignment() {
     setIsSaving(true);
     setError("");
     try {
-      const response = await api.patch<ApiSchedule>(`/instructor-assignments/${selectedSchedule.id}`, {
+      const response = await api.patch<AssignmentUpdateResponse>(`/instructor-assignments/${selectedSchedule.id}`, {
         faculty_id: Number(selectedFacultyId),
       });
       setSchedules((current) => {
-        const nextSchedules = current.map((schedule) =>
-          schedule.id === selectedSchedule.id ? response.data : schedule,
-        );
+        const updatedSchedules = response.data.schedules ?? [response.data.schedule];
+        const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));
+        const nextSchedules = current.map((schedule) => updatedScheduleMap.get(schedule.id) ?? schedule);
         setCachedData<AssignmentResponse>(assignmentsCacheKey, {
           active_term: activeTerm,
           current_department_id: currentDepartmentId,
@@ -626,8 +637,15 @@ export default function InstructorAssignment() {
                   className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-[#C9952A]"
                 >
                   <option value="">Select an instructor</option>
-                  {eligibleFaculty.map((faculty) => (
-                    <option key={faculty.id} value={faculty.id}>{faculty.first_name} {faculty.last_name}</option>
+                {eligibleFaculty.map((faculty) => (
+                    <option
+                      key={faculty.id}
+                      value={faculty.id}
+                      disabled={selectedSchedule ? isPartTimeOutsideAvailability(faculty, selectedSchedule) : false}
+                    >
+                      {faculty.first_name} {faculty.last_name}
+                      {selectedSchedule && isPartTimeOutsideAvailability(faculty, selectedSchedule) ? " - Available after 5 PM or Saturday" : ""}
+                    </option>
                   ))}
                 </select>
               </label>

@@ -21,9 +21,8 @@ interface StoredUser {
   role?: string;
 }
 
-interface ScheduleRecord {
-  department_id: number | string;
-  status: string;
+interface PendingDepartmentCountResponse {
+  count: number;
 }
 
 const getStoredUser = (): StoredUser | null => {
@@ -75,14 +74,11 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
     const loadPendingCount = async () => {
       setIsCountLoading(true);
       try {
-        const response = await api.get<ScheduleRecord[]>('/schedules', { signal: controller.signal });
-        const targetStatus = role === 'vpaa' ? 'approved_by_dean' : 'submitted';
-        const pendingDepartments = new Set(
-          response.data
-            .filter((schedule) => schedule.status === targetStatus)
-            .map((schedule) => String(schedule.department_id))
+        const response = await api.get<PendingDepartmentCountResponse>(
+          '/schedules/pending-department-count',
+          { signal: controller.signal }
         );
-        setPendingCount(pendingDepartments.size);
+        setPendingCount(response.data.count);
       } catch {
         if (!controller.signal.aborted) {
           setPendingCount(0);
@@ -94,9 +90,12 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
       }
     };
 
-    loadPendingCount();
+    const timeoutId = window.setTimeout(loadPendingCount, 0);
 
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [location.pathname, role]);
 
   useEffect(() => {

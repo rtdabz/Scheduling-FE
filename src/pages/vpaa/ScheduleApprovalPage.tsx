@@ -268,26 +268,25 @@ export default function VpaaScheduleApprovalPage() {
       try {
         setIsLoading(!hasCachedData(approvalCacheKey));
         const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
-          const termRes = await api.get<{ id: number | string }>('/terms/active');
-          const term = termRes.data;
+          const response = await api.get<{
+            active_term: { id: number | string } | null;
+            departments: RawDepartment[];
+            sections: RawSection[];
+            schedules: RawSchedule[];
+          }>('/initial-data');
+          const term = response.data.active_term;
 
-          const [deptsRes, sectionsRes, schedulesRes] = await Promise.all([
-            api.get<RawDepartment[]>('/departments'),
-            api.get<RawSection[]>('/sections'),
-            api.get<RawSchedule[]>('/schedules')
-          ]);
-
-          const mappedDepts = deptsRes.data.map((d) => ({
+          const mappedDepts = response.data.departments.map((d) => ({
             id: d.id,
             name: d.department_name
           }));
 
-          let filteredSections = sectionsRes.data;
+          let filteredSections = response.data.sections;
           if (term) {
             filteredSections = filteredSections.filter((s) => Number(s.term_id) === Number(term.id));
           }
 
-          let dbSchedules = schedulesRes.data;
+          let dbSchedules = response.data.schedules;
           if (term) {
             dbSchedules = dbSchedules.filter((s) => Number(s.term_id) === Number(term.id));
           }

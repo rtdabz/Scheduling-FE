@@ -30,6 +30,13 @@ interface DropRecommendationResponse {
   recommendations: DropRecommendation[];
 }
 
+interface SelectedRecommendationResponse {
+  recommendation: {
+    id: number;
+    recommended_schedules: DropRecommendationRow[];
+  };
+}
+
 interface DropModalProps {
   rooms: Room[];
   selectedSectionId: string;
@@ -62,6 +69,8 @@ interface DropModalProps {
   setModalValidationError: (value: string) => void;
   modalConflict: string | null;
   isModalLoading: boolean;
+  selectedRecommendationId: number | null;
+  setSelectedRecommendationId: (value: number | null) => void;
   setDropContext: (value: DropContext | null) => void;
   handleModalConfirm: (e: React.FormEvent) => void;
 }
@@ -149,6 +158,8 @@ export default function DropModal({
   setModalValidationError,
   modalConflict,
   isModalLoading,
+  selectedRecommendationId,
+  setSelectedRecommendationId,
   setDropContext,
   handleModalConfirm
 }: DropModalProps) {
@@ -157,6 +168,7 @@ export default function DropModal({
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
+  const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
   const [useNinetyMinuteMeetings, setUseNinetyMinuteMeetings] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = useMemo(() => {
@@ -174,6 +186,7 @@ export default function DropModal({
       setRecommendations([]);
       setRecommendationError(null);
       setAppliedRecommendationRank(null);
+      setSelectedRecommendationId(null);
       setUseNinetyMinuteMeetings(false);
       closeButtonRef.current?.focus();
     });
@@ -188,7 +201,7 @@ export default function DropModal({
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [dropContext, dropSubject, setDropContext]);
+  }, [dropContext, dropSubject, setDropContext, setSelectedRecommendationId]);
 
   useEffect(() => {
     if (!dropContext || !dropSubject || !selectedSectionId || !shouldShowRecommendations) return;
@@ -252,12 +265,22 @@ export default function DropModal({
   const totalSlots = dropSubject ? dropSubject.units * 2 : 0;
   const d2Slots = modalDay2Duration;
   const isTwoMeetingPattern = !!modalPreferredPattern;
-  const selectedDayIndexes = new Set([modalDay1Index, modalDay2Index]);
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
     : "Single meeting";
 
+  const discardSelectedRecommendation = () => {
+    if (selectedRecommendationId !== null) {
+      void api.post(`/schedule-recommendations/${selectedRecommendationId}/reject`, {
+        reason: "Recommendation was modified manually before acceptance."
+      }).catch(() => undefined);
+    }
+    setSelectedRecommendationId(null);
+    setAppliedRecommendationRank(null);
+  };
+
   const updateTwoMeetingPattern = (day1Index: number, day2Index: number) => {
+    discardSelectedRecommendation();
     setModalPreferredPattern(`days:${day1Index}-${day2Index}`);
   };
 
@@ -304,8 +327,29 @@ export default function DropModal({
     : "Field";
   const deliveryModeLabel = modalIsHybrid ? "On-Site + Online" : modalClassMode.replace("-", " ");
 
-  const applyRecommendation = (recommendation: DropRecommendation) => {
-    const sortedRows = [...recommendation.schedules].sort((left, right) => (
+  const applyRecommendation = async (recommendation: DropRecommendation) => {
+    if (isApplyingRecommendation) return;
+    discardSelectedRecommendation();
+    setIsApplyingRecommendation(true);
+
+    try {
+      const response = await api.post<SelectedRecommendationResponse>(
+        "/schedule-recommendations/select",
+        {
+          section_id: Number(selectedSectionId),
+          subject_ids: [Number(dropSubject.id)],
+          mode: dropSubjectIsField ? "field" : modalClassMode,
+          is_hybrid: modalIsHybrid,
+          preferred_patterns: modalPreferredPattern
+            ? { [dropSubject.id]: modalPreferredPattern }
+            : {},
+          max_solutions: 3,
+          timeout_seconds: 2,
+          selected_rank: recommendation.rank
+        }
+      );
+
+    const sortedRows = [...response.data.recommendation.recommended_schedules].sort((left, right) => (
       getDayIndex(left.day) - getDayIndex(right.day)
       || timeToSlot(left.start_time) - timeToSlot(right.start_time)
     ));
@@ -349,7 +393,13 @@ export default function DropModal({
 
     setModalValidationError("");
     setAppliedRecommendationRank(recommendation.rank);
+    setSelectedRecommendationId(response.data.recommendation.id);
     setUseNinetyMinuteMeetings(false);
+    } catch {
+      setRecommendationError("This recommendation is no longer available. Please try again.");
+    } finally {
+      setIsApplyingRecommendation(false);
+    }
   };
 
   return (
@@ -386,7 +436,11 @@ export default function DropModal({
           </button>
         </div>
 
-        <form onSubmit={handleModalConfirm} className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+        <form
+          onSubmit={handleModalConfirm}
+          onChangeCapture={discardSelectedRecommendation}
+          className="flex-1 overflow-y-auto px-5 py-3 space-y-3"
+        >
           <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
@@ -456,6 +510,7 @@ export default function DropModal({
                         aria-disabled={isDisabledMode || isReadOnlyHybridMode}
                         onClick={() => {
                           if (isDisabledMode || isReadOnlyHybridMode) return;
+                          discardSelectedRecommendation();
                           setModalClassMode(m);
                           if (m !== "on-site") {
                             setModalIsHybrid(false);
@@ -640,6 +695,7 @@ export default function DropModal({
                         disabled={dropSubjectIsField}
                         aria-pressed={modalIsHybrid}
                         onClick={() => {
+                          discardSelectedRecommendation();
                           setModalClassMode("on-site");
                           setModalIsHybrid(!modalIsHybrid);
                         }}
@@ -985,7 +1041,8 @@ export default function DropModal({
                     </p>
                     <button
                       type="button"
-                      onClick={() => applyRecommendation(recommendation)}
+                      onClick={() => void applyRecommendation(recommendation)}
+                      disabled={isApplyingRecommendation}
                       className={`mt-2 w-full rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
                         isApplied
                           ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200"

@@ -467,22 +467,19 @@ export default function VpaaScheduleViewer() {
       const hasCache = hasCachedData(scheduleViewerCacheKey);
       try {
         setIsLoading(!hasCache);
-        // Fetch active term first
-        const termRes = await api.get<Term | null>('/terms/active');
-        const term = termRes.data;
+        const response = await api.get<{
+          active_term: Term | null;
+          departments: RawDepartment[];
+          sections: RawSection[];
+          faculties: RawFaculty[];
+          rooms: RawRoom[];
+          schedules: RawSchedule[];
+        }>('/initial-data');
+        const term = response.data.active_term;
         setActiveTerm(term);
 
-        // Fetch all other data in parallel
-        const [deptsRes, sectionsRes, facultiesRes, roomsRes, schedulesRes] = await Promise.all([
-          api.get<RawDepartment[]>('/departments'),
-          api.get<RawSection[]>('/sections'),
-          api.get<RawFaculty[]>('/faculties'),
-          api.get<RawRoom[]>('/rooms'),
-          api.get<RawSchedule[]>('/schedules')
-        ]);
-
         // Map departments
-        const mappedDepts = deptsRes.data.map((d) => ({
+        const mappedDepts = response.data.departments.map((d) => ({
           id: d.id.toString(),
           name: d.department_name,
           code: d.department_code
@@ -490,7 +487,7 @@ export default function VpaaScheduleViewer() {
         setDepartments(mappedDepts);
 
         // Map sections (filtered by active term)
-        let rawSections = sectionsRes.data;
+        let rawSections = response.data.sections;
         if (term) {
           rawSections = rawSections.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
         }
@@ -503,7 +500,7 @@ export default function VpaaScheduleViewer() {
         setSections(mappedSections);
 
         // Map faculties
-        const mappedFaculties = facultiesRes.data.map((f) => ({
+        const mappedFaculties = response.data.faculties.map((f) => ({
           id: f.id.toString(),
           name: `${f.first_name ?? ""} ${f.last_name ?? ""}`.trim(),
           departmentId: f.department_id ? f.department_id.toString() : ""
@@ -511,14 +508,14 @@ export default function VpaaScheduleViewer() {
         setFaculties(mappedFaculties);
 
         // Map rooms
-        const mappedRooms = roomsRes.data.map((r) => ({
+        const mappedRooms = response.data.rooms.map((r) => ({
           id: r.id.toString(),
           name: r.room_code + (r.room_name ? ` - ${r.room_name}` : '')
         }));
         setRooms(mappedRooms);
 
         // Map schedules (filtered by active term)
-        let rawSchedules = schedulesRes.data;
+        let rawSchedules = response.data.schedules;
         if (term) {
           rawSchedules = rawSchedules.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
         }

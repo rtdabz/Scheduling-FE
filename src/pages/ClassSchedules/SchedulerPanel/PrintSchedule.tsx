@@ -230,7 +230,19 @@ export default function PrintSchedule({
       currentY += 6;
 
       const sectionSchedules = allSchedules.filter((s) => s.sectionId === section.id);
-      const filledRows = [...sectionSchedules];
+      const schedulesBySubject = new Map<string, ScheduleItem[]>();
+
+      sectionSchedules.forEach((schedule) => {
+        const subjectSchedules = schedulesBySubject.get(schedule.subjectId) ?? [];
+        subjectSchedules.push(schedule);
+        schedulesBySubject.set(schedule.subjectId, subjectSchedules);
+      });
+
+      const filledRows = Array.from(schedulesBySubject.values()).flatMap((subjectSchedules) =>
+        subjectSchedules.sort((left, right) => (
+          left.dayIndex - right.dayIndex || left.startSlot - right.startSlot
+        ))
+      );
 
       const head: RowInput[] = [
         [
@@ -248,16 +260,32 @@ export default function PrintSchedule({
         ]
       ];
 
-      const body = filledRows.map((item) => [
-        item.subjectCode,
-        item.subjectName,
+      const body: RowInput[] = filledRows.map((item, index) => {
+        const previousItem = filledRows[index - 1];
+        const isAdditionalMeeting = previousItem?.subjectId === item.subjectId;
+        const subjectMeetingCount = schedulesBySubject.get(item.subjectId)?.length ?? 1;
+
+        return [
+        ...(isAdditionalMeeting ? [] : [
+          {
+            content: item.subjectCode,
+            rowSpan: subjectMeetingCount,
+            styles: { halign: "center" as const, valign: "middle" as const }
+          },
+          {
+            content: item.subjectName,
+            rowSpan: subjectMeetingCount,
+            styles: { halign: "center" as const, valign: "middle" as const }
+          }
+        ]),
         item.lectureUnits.toString(),
         item.laboratoryUnits.toString(),
         item.totalUnits.toString(),
         item.day,
         `${item.startTime} – ${item.endTime}`,
         item.roomName
-      ]);
+        ];
+      });
 
       const rowHeight = 5.5;
       const headerHeight = 11;

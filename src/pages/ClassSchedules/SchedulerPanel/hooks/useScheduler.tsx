@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { CheckCircle2, LayoutGrid, Users } from "lucide-react";
+import { CheckCircle2, LayoutGrid, Loader2, Users } from "lucide-react";
 import {
   DAYS,
   getSubjectClassification,
@@ -127,6 +127,26 @@ interface AtomicScheduleResponse {
   deleted_schedule_ids: number[];
 }
 
+interface AcceptedRecommendationResponse {
+  schedules: ApiScheduleRecord[];
+}
+
+interface ScheduleUpdateResponse {
+  schedule: ApiScheduleRecord;
+  schedules?: ApiScheduleRecord[];
+}
+
+interface InitialDataResponse {
+  active_term: ApiTermRecord | null;
+  rooms: ApiRoomRecord[];
+  subjects: ApiSubjectRecord[];
+  faculties: ApiFacultyRecord[];
+  sections: ApiSectionRecord[];
+  schedules: ApiScheduleRecord[];
+  departments: ApiDepartmentRecord[];
+  users: UserSummary[];
+}
+
 interface TargetScheduleDay {
   day: string;
   startSlot: number;
@@ -134,7 +154,16 @@ interface TargetScheduleDay {
 }
 
 const hasUsableSchedulerCache = (data: SchedulerCacheData | undefined): data is SchedulerCacheData => {
-  return Boolean(data?.activeTerm && data.sections.length > 0);
+  return Boolean(
+    data
+      && Array.isArray(data.rooms)
+      && Array.isArray(data.sections)
+      && Array.isArray(data.subjects)
+      && Array.isArray(data.faculties)
+      && Array.isArray(data.departments)
+      && Array.isArray(data.users)
+      && Array.isArray(data.schedules)
+  );
 };
 
 const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
@@ -201,12 +230,38 @@ const getApiViolations = (error: unknown): ApiViolation[] => {
   return [];
 };
 
+const getApiErrorMessage = (error: unknown): string | null => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error
+  ) {
+    const response = (error as { response?: { data?: { message?: unknown; violations?: unknown } } }).response;
+    if (Array.isArray(response?.data?.violations)) {
+      const messages = response.data.violations
+        .map((violation) => (
+          typeof violation === "object" && violation !== null && "message" in violation
+            ? (violation as { message?: unknown }).message
+            : null
+        ))
+        .filter((message): message is string => typeof message === "string" && message.trim() !== "");
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
+
+    return typeof response?.data?.message === "string" ? response.data.message : null;
+  }
+
+  return null;
+};
+
 export const useScheduler = () => {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const schedulerCacheKey = `scheduler:v2:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v4:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -218,6 +273,8 @@ export const useScheduler = () => {
   const [users, setUsers] = useState<UserSummary[]>(canUseInitialCache ? cachedSchedulerData.users : []);
   const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
+  const [isMarkingSectionDone, setIsMarkingSectionDone] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
@@ -243,28 +300,26 @@ export const useScheduler = () => {
       };
     }
 
-    const fetchRooms = api.get<ApiRoomRecord[]>('/rooms', { signal }).then(res => {
-      let apiRooms = res.data;
+    const fetchInitialData = api.get<InitialDataResponse>('/initial-data', { signal });
+
+    setIsLoading(true);
+
+    loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
+      const response = await fetchInitialData;
+      const initialData = response.data;
+      let apiRooms = initialData.rooms;
       if (!isVpaa && user?.department_id) {
         apiRooms = apiRooms.filter((r) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
       }
-      return apiRooms.map((r): Room => ({
+      const mappedRooms = apiRooms.map((r): Room => ({
         id: r.id.toString(),
         name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status
       }));
-    });
 
-    // Query subjects using department_id parameter to filter at database level
-    const subjectsUrl = !isVpaa && user?.department_id
-      ? `/subjects?department_id=${user.department_id}`
-      : '/subjects';
-
-    const fetchSubjects = api.get<ApiSubjectRecord[]>(subjectsUrl, { signal }).then(res => {
-      const apiSubjects = res.data;
-      return apiSubjects.map((s): Subject => ({
+      const mappedSubjects = initialData.subjects.map((s): Subject => ({
         id: s.id.toString(),
         code: s.subject_code,
         name: s.subject_name,
@@ -278,10 +333,10 @@ export const useScheduler = () => {
         roomTypeRequired: s.room_type_required,
         status: s.status ?? "active"
       }));
-    });
 
-    const fetchFaculties = api.get<ApiFacultyRecord[]>('/faculties', { signal }).then(res =>
-      res.data.map((f): Faculty => ({
+      const mappedFaculties = initialData.faculties
+        .filter((f) => isVpaa || !user?.department_id || Number(f.department_id) === Number(user.department_id))
+        .map((f): Faculty => ({
         id: f.id.toString(),
         name: `${f.first_name} ${f.last_name}`,
         employmentType: f.employment_type,
@@ -291,29 +346,13 @@ export const useScheduler = () => {
         maxUnits: f.max_units ? Number(f.max_units) : undefined,
         status: f.status
       }))
-    );
-
-    const fetchTerm = api.get<ApiTermRecord>('/terms/active', { signal }).then(res => res.data);
-
-    // Parallel fetch sections and schedules
-    const sectionsUrl = !isVpaa && user?.department_id
-      ? `/sections/department/${user.department_id}`
-      : '/sections';
-    const fetchSections = api.get<ApiSectionRecord[]>(sectionsUrl, { signal }).then(res => res.data);
-    const fetchSchedules = api.get<ApiScheduleRecord[]>('/schedules', { signal }).then(res => res.data);
-    const fetchDepartments = api.get<ApiDepartmentRecord[]>('/departments', { signal }).then(res => res.data);
-    const fetchUsers = api.get<UserSummary[]>('/user', { signal })
-      .then(res => res.data)
-      .catch((): UserSummary[] => []);
-
-    setIsLoading(true);
-
-    loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
-      const [mappedRooms, mappedSubjects, mappedFaculties, term, rawSections, rawSchedules, rawDepartments, rawUsers] = await Promise.all([fetchRooms, fetchSubjects, fetchFaculties, fetchTerm, fetchSections, fetchSchedules, fetchDepartments, fetchUsers]);
+      const term = initialData.active_term;
+      const rawSections = initialData.sections;
+      const rawSchedules = initialData.schedules;
 
       // Filter sections by term_id immediately once loaded
       const filteredSections = rawSections
-        .filter((s) => Number(s.term_id) === Number(term.id))
+        .filter((s) => !term || Number(s.term_id) === Number(term.id))
         .map((s): Section => ({
           id: s.id.toString(),
           name: s.section_name,
@@ -326,7 +365,7 @@ export const useScheduler = () => {
 
       // Filter and map schedules by term_id immediately once loaded
       const filteredSchedules = rawSchedules
-        .filter((item) => Number(item.term_id) === Number(term.id))
+        .filter((item) => !term || Number(item.term_id) === Number(term.id))
         .map(mapApiScheduleToItem);
 
       return {
@@ -334,8 +373,8 @@ export const useScheduler = () => {
         subjects: mappedSubjects,
         faculties: mappedFaculties,
         activeTerm: term,
-        departments: rawDepartments,
-        users: rawUsers,
+        departments: initialData.departments,
+        users: initialData.users,
         sections: filteredSections,
         schedules: filteredSchedules,
       };
@@ -414,6 +453,23 @@ export const useScheduler = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTerm, schedulerCacheKey]);
 
+  const applyUpdatedSchedules = useCallback((updatedSchedules: ScheduleItem[]) => {
+    const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));
+    setSchedules((previousSchedules) => {
+      const nextSchedules = previousSchedules.map((schedule) =>
+        updatedScheduleMap.get(schedule.id) ?? schedule
+      );
+      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
+      if (cachedData) {
+        setCachedData<SchedulerCacheData>(schedulerCacheKey, {
+          ...cachedData,
+          schedules: nextSchedules,
+        });
+      }
+      return nextSchedules;
+    });
+  }, [schedulerCacheKey]);
+
   const isInitialLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -440,6 +496,7 @@ export const useScheduler = () => {
   const [isDay2ModifiedByUser, setIsDay2ModifiedByUser] = useState<boolean>(false);
   const [modalValidationError, setModalValidationError] = useState<string>("");
   const [modalConflict, setModalConflict] = useState<string | null>(null);
+  const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
 
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
   const [facultyActionSlotId, setFacultyActionSlotId] = useState<string | null>(null);
@@ -451,7 +508,6 @@ export const useScheduler = () => {
   const [isSubmitApprovalModalOpen, setIsSubmitApprovalModalOpen] = useState(false);
   const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [isTeachingLoadOpen, setIsTeachingLoadOpen] = useState(false);
   const [roomViewRoomId, setRoomViewRoomId] = useState<string>("");
 
   useEffect(() => {
@@ -617,6 +673,19 @@ export const useScheduler = () => {
     subjects,
     faculties
   });
+
+  const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
+    const subject = subjects.find((item) => item.id === schedule.subjectId);
+    if (subject?.category !== "gec") {
+      return true;
+    }
+
+    return Boolean(
+      user?.department_id &&
+      subject.departmentId &&
+      Number(user.department_id) === Number(subject.departmentId)
+    );
+  }, [subjects, user?.department_id]);
 
   // Derive placed map from schedules — no extra state or render cycle needed
   const placed = useMemo(() => {
@@ -998,6 +1067,7 @@ export const useScheduler = () => {
     }
 
     setIsModalLoading(true);
+    let shouldCloseModal = true;
     try {
       const existingRecords = dropContext.isRescheduling
         ? schedules.filter((s) => s.subjectId === subject.id && s.sectionId === selectedSectionId)
@@ -1024,13 +1094,25 @@ export const useScheduler = () => {
         .slice(targetDays.length)
         .map((schedule) => Number(schedule.id));
 
-      const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
-        operations,
-        delete_ids: deleteIds
-      });
+      let savedScheduleRecords: ApiScheduleRecord[];
+      let deletedScheduleRecordIds: number[] = [];
 
-      const savedScheduleItems = response.data.schedules.map(mapApiScheduleToItem);
-      const deletedScheduleIds = new Set(response.data.deleted_schedule_ids.map(String));
+      if (selectedRecommendationId !== null) {
+        const response = await api.post<AcceptedRecommendationResponse>(
+          `/schedule-recommendations/${selectedRecommendationId}/accept`
+        );
+        savedScheduleRecords = response.data.schedules;
+      } else {
+        const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
+          operations,
+          delete_ids: deleteIds
+        });
+        savedScheduleRecords = response.data.schedules;
+        deletedScheduleRecordIds = response.data.deleted_schedule_ids;
+      }
+
+      const savedScheduleItems = savedScheduleRecords.map(mapApiScheduleToItem);
+      const deletedScheduleIds = new Set(deletedScheduleRecordIds.map(String));
 
       if (dropContext.isRescheduling) {
         if (resolvedDay1StartSlot !== modalDay1StartSlot) {
@@ -1055,21 +1137,27 @@ export const useScheduler = () => {
       });
       setIsModalLoading(false);
       setDropContext(null);
+      setSelectedRecommendationId(null);
       setConflictInfo(null);
       await refreshSchedules();
     } catch (err) {
-      console.error(err);
       const violations = getApiViolations(err);
       if (violations.length > 0) {
         const messages = violations.map((v) => v.message).join(" ");
+        setModalValidationError(messages);
         toast.error("Schedule Conflict", messages);
       } else {
+        setModalValidationError("Could not save the schedule to the database.");
         toast.error("Operation Failed", "Could not save the schedule to the database.");
       }
+      shouldCloseModal = selectedRecommendationId === null;
     } finally {
       setIsModalLoading(false);
-      setDropContext(null);
-      setConflictInfo(null);
+      if (shouldCloseModal) {
+        setDropContext(null);
+        setSelectedRecommendationId(null);
+        setConflictInfo(null);
+      }
     }
   };
 
@@ -1169,12 +1257,14 @@ export const useScheduler = () => {
 
   const handleMarkSectionDone = async () => {
     if (!selectedSectionId) return;
+    if (isMarkingSectionDone) return;
     if (sectionSchedules.length === 0) {
       toast.error("Nothing to Mark Done", "Plot at least one subject before marking this section done.");
       return;
     }
 
     try {
+      setIsMarkingSectionDone(true);
       await Promise.all(
         sectionSchedules.map((s) =>
           api.put(`/schedules/${s.id}`, { status: "completed" })
@@ -1192,6 +1282,8 @@ export const useScheduler = () => {
       await refreshSchedules();
     } catch {
       toast.error("Failed to mark section done", "An error occurred.");
+    } finally {
+      setIsMarkingSectionDone(false);
     }
   };
 
@@ -1235,25 +1327,11 @@ export const useScheduler = () => {
     }
   };
 
-  const handleStartFacultyAssignment = async () => {
-    if (!selectedSectionId) return;
-    try {
-      await Promise.all(
-        sectionSchedules.map((s) =>
-          api.put(`/schedules/${s.id}`, { status: "faculty_assignment" })
-        )
-      );
-      toast.success("Faculty Assignment Started", "Faculty assignment phase is now active.");
-      await refreshSchedules();
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to start faculty assignment", "An error occurred.");
-    }
-  };
-
   const handleFinalize = async () => {
     if (!selectedSectionId) return;
+    if (isFinalizing) return;
     try {
+      setIsFinalizing(true);
       await Promise.all(
         sectionSchedules.map((s) =>
           api.put(`/schedules/${s.id}`, { status: "finalized" })
@@ -1262,8 +1340,9 @@ export const useScheduler = () => {
       toast.success("Finalized", "Schedule successfully marked as finalized.");
       await refreshSchedules();
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to finalize", "An error occurred.");
+      toast.error("Failed to finalize", getApiErrorMessage(err) ?? "An error occurred.");
+    } finally {
+      setIsFinalizing(false);
     }
   };
 
@@ -1288,21 +1367,20 @@ export const useScheduler = () => {
       return;
     }
     if (facultyActionSlotId === scheduleId) return;
+    const targetSchedule = schedules.find((schedule) => schedule.id === scheduleId);
+    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
+      setPopupValidationError("Only the CAS Department can assign instructors for GEC subjects.");
+      return;
+    }
     const fac = faculties.find((f) => f.id === facultyId);
     if (!fac) return;
     setFacultyActionSlotId(scheduleId);
     try {
-      const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
-      const updatedSchedule = mapApiScheduleToItem(response.data);
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-        )
-      );
+      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
+      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
-      await refreshSchedules();
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("Failed to assign faculty", "An error occurred.");
     } finally {
       setFacultyActionSlotId(null);
@@ -1314,19 +1392,18 @@ export const useScheduler = () => {
     if (!facultyAssignmentPopup) return;
     const { scheduleId } = facultyAssignmentPopup;
     if (facultyActionSlotId === scheduleId) return;
+    const targetSchedule = schedules.find((schedule) => schedule.id === scheduleId);
+    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
+      setPopupValidationError("Only the CAS Department can remove instructors from GEC subjects.");
+      return;
+    }
     setFacultyActionSlotId(scheduleId);
     try {
-      const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, { faculty_id: null });
-      const updatedSchedule = mapApiScheduleToItem(response.data);
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-        )
-      );
+      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${scheduleId}`, { faculty_id: null });
+      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
-      await refreshSchedules();
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("Failed to remove faculty", "An error occurred.");
     } finally {
       setFacultyActionSlotId(null);
@@ -1337,21 +1414,20 @@ export const useScheduler = () => {
   const handleInlineFacultyAssign = async (slotId: string, facId: string) => {
     if (!facId) return;
     if (facultyActionSlotId === slotId) return;
+    const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
+    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
+      toast.error("Assignment Restricted", "Only the CAS Department can assign instructors for GEC subjects.");
+      return;
+    }
     const fac = faculties.find((f) => f.id === facId);
     if (!fac) return;
     setFacultyActionSlotId(slotId);
     try {
-      const response = await api.put<ApiScheduleRecord>(`/schedules/${slotId}`, { faculty_id: Number(facId) });
-      const updatedSchedule = mapApiScheduleToItem(response.data);
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-        )
-      );
+      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${slotId}`, { faculty_id: Number(facId) });
+      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
-      await refreshSchedules();
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("Failed to assign faculty", "An error occurred.");
     } finally {
       setFacultyActionSlotId(null);
@@ -1360,19 +1436,18 @@ export const useScheduler = () => {
 
   const handleRemoveInlineFaculty = async (slotId: string) => {
     if (facultyActionSlotId === slotId) return;
+    const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
+    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
+      toast.error("Assignment Restricted", "Only the CAS Department can remove instructors from GEC subjects.");
+      return;
+    }
     setFacultyActionSlotId(slotId);
     try {
-      const response = await api.put<ApiScheduleRecord>(`/schedules/${slotId}`, { faculty_id: null });
-      const updatedSchedule = mapApiScheduleToItem(response.data);
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-        )
-      );
+      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${slotId}`, { faculty_id: null });
+      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
-      await refreshSchedules();
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("Failed to remove faculty", "An error occurred.");
     } finally {
       setFacultyActionSlotId(null);
@@ -1541,15 +1616,18 @@ export const useScheduler = () => {
         return (
           <button
             onClick={handleMarkSectionDone}
-            disabled={!canMarkDone}
+            disabled={!canMarkDone || isMarkingSectionDone}
             title={!canMarkDone ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement` : "Mark this section as done"}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-              canMarkDone
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+              canMarkDone && !isMarkingSectionDone
                 ? "bg-[#4e0a10] hover:bg-[#3a0809] text-white cursor-pointer"
+                : canMarkDone
+                ? "bg-[#4e0a10] text-white cursor-wait opacity-80"
                 : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
           >
-            {canMarkDone ? "Done" : `${remaining} unplaced`}
+            {isMarkingSectionDone && <Loader2 className="h-4 w-4 animate-spin" />}
+            {canMarkDone ? (isMarkingSectionDone ? "Marking..." : "Done") : `${remaining} unplaced`}
           </button>
         );
       }
@@ -1564,22 +1642,24 @@ export const useScheduler = () => {
       case "rejected":
         return <button onClick={handleResubmit} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Resubmit</button>;
       case "approved":
-        return <button onClick={handleStartFacultyAssignment} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Start Faculty Assignment</button>;
       case "faculty_assignment": {
         const unassigned = sectionSchedules.filter((s) => !s.facultyId).length;
         const allAssigned = unassigned === 0;
         return (
           <button
             onClick={handleFinalize}
-            disabled={!allAssigned}
+            disabled={!allAssigned || isFinalizing}
             title={!allAssigned ? `${unassigned} slot${unassigned !== 1 ? "s" : ""} still need faculty` : undefined}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-              allAssigned
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+              allAssigned && !isFinalizing
                 ? "bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer"
+                : allAssigned
+                ? "bg-emerald-700 text-white cursor-wait opacity-80"
                 : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
           >
-            {allAssigned ? "Mark as Finalized" : `${unassigned} slots still need faculty`}
+            {isFinalizing && <Loader2 className="h-4 w-4 animate-spin" />}
+            {allAssigned ? (isFinalizing ? "Finalizing..." : "Mark as Finalized") : `${unassigned} slots still need faculty`}
           </button>
         );
       }
@@ -1664,6 +1744,8 @@ export const useScheduler = () => {
     modalValidationError,
     setModalValidationError,
     modalConflict,
+    selectedRecommendationId,
+    setSelectedRecommendationId,
     handleEditMovingSchedule,
     facultyAssignmentPopup,
     facultyActionSlotId,
@@ -1682,8 +1764,6 @@ export const useScheduler = () => {
     setIsRoomViewOpen,
     isPrintModalOpen,
     setIsPrintModalOpen,
-    isTeachingLoadOpen,
-    setIsTeachingLoadOpen,
     activeTerm,
     departments,
     users,
@@ -1718,6 +1798,7 @@ export const useScheduler = () => {
     filteredSubjects,
     checkConflict,
     checkFacultyConflict,
+    canManageScheduleFaculty,
     getDragOverConflict,
     handleConfirmSchedule,
     handleModalConfirm,
@@ -1725,7 +1806,6 @@ export const useScheduler = () => {
     handleClearAll,
     handleSubmitForApproval,
     handleResubmit,
-    handleStartFacultyAssignment,
     handleFinalize,
     handlePopupFacultyChange,
     handleAssignFaculty,

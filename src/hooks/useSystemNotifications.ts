@@ -112,11 +112,12 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
       }
     };
 
-    void load();
+    const initialTimeoutId = window.setTimeout(load, 0);
     const intervalId = window.setInterval(load, pollMs);
 
     return () => {
       active = false;
+      window.clearTimeout(initialTimeoutId);
       window.clearInterval(intervalId);
     };
   }, [limit, pollMs]);

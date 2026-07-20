@@ -101,6 +101,10 @@ interface SchedulingOverviewData {
   activeTerm: Term | null;
 }
 
+interface InitialDataResponse extends Omit<SchedulingOverviewData, 'activeTerm'> {
+  active_term: Term;
+}
+
 export default function SecretarySchedulingOperationsPage() {
   useTour();
   const navigate = useNavigate();
@@ -135,29 +139,15 @@ export default function SecretarySchedulingOperationsPage() {
         setIsLoading(shouldShowSkeleton);
 
         const data = await loadCachedData<SchedulingOverviewData>(overviewCacheKey, async () => {
-          const [
-            schedulesRes,
-            roomsRes,
-            sectionsRes,
-            facultiesRes,
-            subjectsRes,
-            activeTermRes,
-          ] = await Promise.all([
-            api.get<Schedule[]>('/schedules'),
-            api.get<Room[]>('/rooms'),
-            api.get<Section[]>('/sections'),
-            api.get<Faculty[]>('/faculties'),
-            api.get<Subject[]>('/subjects'),
-            api.get<Term>('/terms/active'),
-          ]);
+          const response = await api.get<InitialDataResponse>('/initial-data');
 
           return {
-            schedules: schedulesRes.data,
-            rooms: roomsRes.data,
-            sections: sectionsRes.data,
-            faculties: facultiesRes.data,
-            subjects: subjectsRes.data,
-            activeTerm: activeTermRes.data,
+            schedules: response.data.schedules,
+            rooms: response.data.rooms,
+            sections: response.data.sections,
+            faculties: response.data.faculties,
+            subjects: response.data.subjects,
+            activeTerm: response.data.active_term,
           };
         });
 

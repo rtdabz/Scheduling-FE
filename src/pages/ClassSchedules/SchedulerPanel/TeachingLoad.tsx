@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
@@ -18,6 +18,7 @@ interface TeachingLoadProps {
   users: UserSummary[];
   departments: Department[];
   selectedSectionId: string;
+  selectedFacultyId?: string;
 }
 
 interface StoredUser {
@@ -43,6 +44,9 @@ interface AutoTableDocument extends jsPDF {
     finalY: number;
   };
 }
+
+const PRINT_DEBOUNCE_MS = 1500;
+let lastTeachingLoadPrintAt = 0;
 
 const parseFacultyName = (name: string) => {
   const parts = name.trim().split(/\s+/);
@@ -78,8 +82,10 @@ export default function TeachingLoad({
   users,
   departments,
   selectedSectionId,
+  selectedFacultyId,
 }: TeachingLoadProps) {
   const { toast } = useToast();
+  const isPrintingRef = useRef(false);
 
   let logoUrl = tccLogo;
   if (!tccLogo.startsWith("data:") && !tccLogo.startsWith("http:") && !tccLogo.startsWith("https:")) {
@@ -126,6 +132,9 @@ export default function TeachingLoad({
   };
 
   const handlePrint = () => {
+    if (isPrintingRef.current) return;
+    isPrintingRef.current = true;
+
     const loadImgSafe = (url: string): Promise<HTMLImageElement | null> => {
       return new Promise((resolve) => {
         const img = new Image();
@@ -139,6 +148,9 @@ export default function TeachingLoad({
     Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl)])
       .then(([logoImg, muniImg]) => {
         generatePdf(logoImg, muniImg);
+      })
+      .finally(() => {
+        isPrintingRef.current = false;
       });
   };
 
@@ -167,8 +179,9 @@ export default function TeachingLoad({
 
     const targetFaculties = faculties.filter((f) => {
       const matchesDept = !targetDeptId || Number(f.departmentId) === Number(targetDeptId);
+      const matchesFaculty = !selectedFacultyId || f.id === selectedFacultyId;
       const hasSchedules = allSchedules.some((s) => s.facultyId === f.id);
-      return matchesDept && hasSchedules;
+      return matchesDept && matchesFaculty && hasSchedules;
     });
 
     if (targetFaculties.length === 0) {
@@ -653,6 +666,13 @@ export default function TeachingLoad({
 
   useEffect(() => {
     if (isTeachingLoadOpen) {
+      const now = Date.now();
+      if (now - lastTeachingLoadPrintAt < PRINT_DEBOUNCE_MS) {
+        setIsTeachingLoadOpen(false);
+        return;
+      }
+
+      lastTeachingLoadPrintAt = now;
       handlePrint();
       setIsTeachingLoadOpen(false);
     }

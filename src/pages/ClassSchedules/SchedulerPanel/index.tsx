@@ -8,7 +8,6 @@ import ClearAllModal from "./Modals/ClearAllModal";
 import SubmitApprovalModal from "./Modals/SubmitApprovalModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
-import TeachingLoad from "./TeachingLoad";
 import ScheduleImportModal from "./Modals/ScheduleImportModal";
 import { useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
@@ -22,7 +21,6 @@ export default function SchedulerPanel() {
       <TopBar
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
-        onTeachingLoad={() => scheduler.setIsTeachingLoadOpen(true)}
         onImport={() => setIsImportModalOpen(true)}
       />
 
@@ -49,18 +47,6 @@ export default function SchedulerPanel() {
         isPrintModalOpen={scheduler.isPrintModalOpen}
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}
-        selectedSectionId={scheduler.selectedSectionId}
-      />
-      <TeachingLoad
-        faculties={scheduler.faculties}
-        allSchedules={scheduler.schedules}
-        subjects={scheduler.subjects}
-        isTeachingLoadOpen={scheduler.isTeachingLoadOpen}
-        setIsTeachingLoadOpen={scheduler.setIsTeachingLoadOpen}
-        sections={scheduler.sections}
-        activeTerm={scheduler.activeTerm}
-        users={scheduler.users}
-        departments={scheduler.departments}
         selectedSectionId={scheduler.selectedSectionId}
       />
     </div>
