@@ -560,9 +560,19 @@ export default function DropModal({
                       <option value="">Select a room...</option>
                       {rooms
                         .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
+                        .map((r) => {
+                          const isUnavailable = r.status === "not available";
+                          return (
+                            <option
+                              key={r.id}
+                              value={r.id}
+                              disabled={isUnavailable}
+                              className={isUnavailable ? "text-gray-400 bg-gray-100 italic" : ""}
+                            >
+                              {r.name} {isUnavailable ? " — (Not Available)" : ""}
+                            </option>
+                          );
+                        })}
                     </select>
                   ) : (
                     <input

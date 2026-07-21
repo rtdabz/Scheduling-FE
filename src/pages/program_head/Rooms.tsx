@@ -22,7 +22,8 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+
 
 interface Department {
   id: number;
@@ -35,7 +36,7 @@ interface Room {
   room_code: string;
   room_name: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
-  status: 'available' | 'occupied' | 'maintenance';
+  status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
   createdAt?: string;
@@ -46,7 +47,7 @@ interface ApiRoom {
   room_code: string;
   room_name: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
-  status: 'available' | 'occupied' | 'maintenance';
+  status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
   created_at: string;
@@ -108,7 +109,7 @@ export default function ProgramHeadRooms() {
   const [roomCode, setRoomCode] = useState('');
   const [roomName, setRoomName] = useState('');
   const [roomType, setRoomType] = useState<'lecture' | 'laboratory' | 'online' | 'field'>('lecture');
-  const [status, setStatus] = useState<'available' | 'occupied' | 'maintenance'>('available');
+  const [status, setStatus] = useState<'available' | 'not available'>('available');
   const [departmentId, setDepartmentId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -176,7 +177,7 @@ export default function ProgramHeadRooms() {
         room_name: trimmedName,
         room_type: roomType,
         status,
-        department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (user?.department_id ? Number(user.department_id) : null)
+        department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (departmentId ? parseInt(departmentId) : (user?.department_id ? Number(user.department_id) : null))
       };
 
       if (isEditMode && editingId !== null) {
@@ -184,6 +185,7 @@ export default function ProgramHeadRooms() {
         const updatedRoom = mapApiRoom(res.data.room);
         setRooms(prev => {
           const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
+          clearDataCache();
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
           return nextRooms;
         });
@@ -193,6 +195,7 @@ export default function ProgramHeadRooms() {
         const createdRoom = mapApiRoom(res.data.room);
         setRooms(prev => {
           const nextRooms = [createdRoom, ...prev];
+          clearDataCache();
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
           return nextRooms;
         });
@@ -240,6 +243,7 @@ export default function ProgramHeadRooms() {
         await api.delete(`/rooms/${idToDelete}`);
         setRooms(prev => {
           const nextRooms = prev.filter(r => r.id !== idToDelete);
+          clearDataCache();
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
           return nextRooms;
         });
@@ -295,12 +299,9 @@ export default function ProgramHeadRooms() {
           header: 'Status',
           cell: info => {
             const val = (info.getValue() as string) || 'available';
-            let badgeColor = 'bg-green-50 text-green-700 border-green-200';
-            if (val === 'occupied') {
-              badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-            } else if (val === 'maintenance') {
-              badgeColor = 'bg-red-50 text-red-700 border-red-200';
-            }
+            const badgeColor = val === 'not available'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-green-50 text-green-700 border-green-200';
             return (
               <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
                 {val}
@@ -466,8 +467,8 @@ export default function ProgramHeadRooms() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 Array.from({ length: 6 }).map((_, index) => (
-                  <tr 
-                    key={`skeleton-row-${index}`} 
+                  <tr
+                    key={`skeleton-row-${index}`}
                     className={`h-12 border-b border-gray-100 ${
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                     }`}
@@ -682,12 +683,11 @@ export default function ProgramHeadRooms() {
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as 'available' | 'occupied' | 'maintenance')}
+                    onChange={(e) => setStatus(e.target.value as 'available' | 'not available')}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
                   >
                     <option value="available">Available</option>
-                    <option value="occupied">Occupied</option>
-                    <option value="maintenance">Maintenance</option>
+                    <option value="not available">Not Available</option>
                   </select>
                 </div>
               </div>
@@ -787,4 +787,4 @@ export default function ProgramHeadRooms() {
       )}
     </div>
   );
-}
+};

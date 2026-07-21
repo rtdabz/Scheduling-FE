@@ -56,6 +56,7 @@ const ScheduleCard = memo(function ScheduleCard({
   const canAssignFaculty = isPhase2Active && currentStatus !== "finalized";
   const isAwaitingFaculty = canAssignFaculty && !hasFaculty;
   const isFacultyAssigned = isPhase2Active && hasFaculty;
+  const roomDisplayName = (room?.name ?? schedule.roomName) || "Unassigned Room";
 
   return (
     <div
@@ -63,7 +64,7 @@ const ScheduleCard = memo(function ScheduleCard({
       onDragStart={(e) => !isPhase2Active && onDragStart(e, schedule)}
       onDragEnd={onDragEnd}
       onClick={() => onCardClick(schedule.id)}
-      className={`w-full rounded-xl border-2 border-l-4 box-border relative shadow-sm hover:shadow-md hover:scale-[1.02] hover:z-10 transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-hidden p-2 ${gridStyles.container} ${
+      className={`w-full rounded-xl border-2 border-l-4 box-border relative shadow-sm hover:shadow-md hover:scale-[1.02] hover:z-30 transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible p-2 ${gridStyles.container} ${
         isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
       } ${
         isAwaitingFaculty
@@ -80,6 +81,50 @@ const ScheduleCard = memo(function ScheduleCard({
         height: `${cardHeight}px`,
       }}
     >
+      {/* Detailed Hover Tooltip Popover */}
+      <div className="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 p-3 bg-slate-900/95 text-white rounded-xl shadow-2xl backdrop-blur-md z-50 border border-slate-700 text-xs space-y-2 leading-snug">
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-slate-900/95" />
+        <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
+          <div className="min-w-0">
+            <span className="font-extrabold text-[#C9952A] text-xs uppercase tracking-wider block truncate">{subject.code}</span>
+            <span className="font-semibold text-slate-100 text-xs block truncate">{subject.name}</span>
+          </div>
+          <span className="text-[10px] bg-slate-800 text-slate-300 font-bold px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
+            {subject.units} Units
+          </span>
+        </div>
+
+        <div className="space-y-1.5 text-[11px] text-slate-300">
+          <div className="flex items-center gap-2">
+            <User className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
+            <span className="truncate">
+              <strong className="text-slate-200">Instructor: </strong>
+              {hasFaculty ? schedule.facultyName : <span className="text-amber-400 italic">Unassigned</span>}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <MapPin className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
+            <span className="truncate">
+              <strong className="text-slate-200">Room: </strong>
+              {roomDisplayName}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
+            <span className="truncate">
+              <strong className="text-slate-200">Time: </strong>
+              {schedule.startTime} – {schedule.endTime}
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-1.5 flex items-center gap-1.5 border-t border-slate-800">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${modeBadgeClass}`}>
+            {schedule.isHybrid ? "On-Site / Online" : modeLabel}
+          </span>
+        </div>
+      </div>
+
       {isEditable && !isPhase2Active && (
         <div className="absolute top-1 right-1 z-20">
           <button
@@ -129,31 +174,31 @@ const ScheduleCard = memo(function ScheduleCard({
 
       <div className="flex flex-col h-full justify-between min-w-0">
         <div className="min-w-0">
-          <div className="flex flex-row justify-between items-start gap-2">
-            <span className={`text-xs font-bold uppercase tracking-wide truncate ${gridStyles.text}`}>
+          <div className="flex items-center justify-between gap-1 pr-6">
+            <span className={`text-xs font-black uppercase tracking-wide truncate ${gridStyles.text}`} title={subject.code}>
               {subject.code}
             </span>
-            <div className="flex gap-1 shrink-0 pr-7">
-              <span className={`text-[10px] bg-white/70 rounded-full px-1.5 py-0.5 font-bold ${gridStyles.badgeText}`}>
-                {subject.units}u
-              </span>
-              {schedule.isHybrid ? (
-                <>
-                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-bold bg-blue-100 text-blue-700">
-                    On-Site
-                  </span>
-                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-bold bg-green-100 text-green-700">
-                    Online
-                  </span>
-                </>
-              ) : (
-                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-bold ${modeBadgeClass}`}>
-                  {modeLabel}
-                </span>
-              )}
-            </div>
+            <span className={`text-[10px] bg-white/80 rounded-full px-1.5 py-0.5 font-bold shrink-0 ${gridStyles.badgeText}`}>
+              {subject.units}u
+            </span>
           </div>
-          <div className="text-[11px] font-medium text-gray-700 mt-0.5 truncate" title={subject.name}>
+          <div className="flex flex-wrap gap-1 items-center mt-1">
+            {schedule.isHybrid ? (
+              <>
+                <span className="text-[9px] rounded-full px-1.5 py-0.5 font-bold bg-blue-100 text-blue-700">
+                  On-Site
+                </span>
+                <span className="text-[9px] rounded-full px-1.5 py-0.5 font-bold bg-green-100 text-green-700">
+                  Online
+                </span>
+              </>
+            ) : (
+              <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-bold ${modeBadgeClass}`}>
+                {modeLabel}
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] font-medium text-gray-700 mt-1 truncate" title={subject.name}>
             {subject.name}
           </div>
         </div>
@@ -172,7 +217,7 @@ const ScheduleCard = memo(function ScheduleCard({
             )}
             <div className="flex items-center gap-1 truncate">
               <MapPin className="w-3 h-3 shrink-0 text-gray-400" />
-              <span className="text-[10px] text-gray-500 truncate">{room?.name ?? schedule.roomName}</span>
+              <span className="text-[10px] text-gray-500 truncate">{roomDisplayName}</span>
             </div>
             <div className="flex items-center gap-1 truncate">
               <Clock className="w-3 h-3 shrink-0 text-gray-400" />
@@ -181,6 +226,7 @@ const ScheduleCard = memo(function ScheduleCard({
           </div>
         )}
       </div>
+
       {isAwaitingFaculty && (
         <div className="absolute left-0 right-0 bottom-0 flex items-center justify-center gap-1 bg-orange-500 text-white text-[10px] font-bold rounded-b-xl py-1">
           <UserPlus className="w-3 h-3" />

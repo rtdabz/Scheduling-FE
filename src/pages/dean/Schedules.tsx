@@ -10,7 +10,7 @@ interface Section {
   departmentName: string;
 }
 
-type SubjectCategory = "major" | "gec" | "gee" | "pathfit" | "nstp";
+type SubjectCategory = "major" | "minor";
 
 interface Schedule {
   id: string;
@@ -190,7 +190,7 @@ const normalizeDepartmentKey = (code: string, name: string) => {
 };
 
 const getDepartmentCardStyles = (code: string, name: string, category: SubjectCategory) => {
-  if (category === "gee") {
+  if (category === "minor") {
     return { container: "border-purple-400 border-l-purple-600 bg-purple-50", text: "text-purple-700" };
   }
 
@@ -198,7 +198,7 @@ const getDepartmentCardStyles = (code: string, name: string, category: SubjectCa
     case "IT":
       return { container: "border-blue-400 border-l-blue-700 bg-blue-50", text: "text-blue-800" };
     case "AS":
-      return { container: "border-red-400 border-l-red-600 bg-red-50", text: "text-red-800" };
+      return { container: "border-[#7C3AED]/40 border-l-[#7C3AED] bg-[#7C3AED]/10", text: "text-[#7C3AED]" };
     case "EDUC":
       return { container: "border-orange-400 border-l-orange-600 bg-orange-50", text: "text-orange-800" };
     case "BA":
@@ -670,6 +670,7 @@ export default function DeanScheduleViewer() {
                                 key={schedule.id}
                                 type="button"
                                 onClick={() => setSelectedSchedule(schedule)}
+                                title={`${schedule.subjectCode}: ${schedule.subjectName}\nSection: ${schedule.sectionName || "Unassigned"}\nInstructor: ${schedule.facultyName}\nRoom: ${schedule.roomName || "Unassigned"}\nTime: ${day}, ${schedule.startTime} – ${schedule.endTime}`}
                                 className={`rounded-xl border-2 border-l-4 p-2 box-border overflow-hidden shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-150 text-left ${conflicts.length > 0 ? "bg-red-50 text-red-800 border-red-300 border-l-red-600 ring-2 ring-red-200" : gridStyles.container}`}
                                 style={{
                                   gridColumn: dayIndex + 2,

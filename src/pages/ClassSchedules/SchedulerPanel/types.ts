@@ -1,8 +1,8 @@
-export type SubjectCategory = "major" | "gec" | "gee" | "pathfit" | "nstp";
+export type SubjectCategory = "major" | "minor";
 export type Semester = "1st" | "2nd" | "summer";
 export type YearLevel = 1 | 2 | 3 | 4;
 export type RoomType = "lecture" | "laboratory" | "field" | "online";
-export type RoomStatus = "available" | "occupied" | "maintenance";
+export type RoomStatus = "available" | "not available";
 export type DeliveryMode = "on-site" | "online" | "field";
 export type ScheduleStatus =
   | "draft"

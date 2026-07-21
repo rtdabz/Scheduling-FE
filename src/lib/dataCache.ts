@@ -37,6 +37,12 @@ export const setCachedData = <T>(key: string, data: T): void => {
   writeStoredData(key, data);
 };
 
+export const clearCachedKey = (key: string): void => {
+  dataCache.delete(key);
+  pendingRequests.delete(key);
+  sessionStorage.removeItem(getStorageKey(key));
+};
+
 export const clearDataCache = (): void => {
   dataCache.clear();
   pendingRequests.clear();

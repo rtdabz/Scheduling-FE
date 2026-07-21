@@ -339,10 +339,7 @@ export default function TimetableGrid({
         </span>
         {[
           { label: "Major", color: "bg-blue-50 border-blue-400" },
-          { label: "GEC", color: "bg-red-50 border-red-400" },
-          { label: "GEE", color: "bg-purple-50 border-purple-400" },
-          { label: "PATHFIT", color: "bg-orange-50 border-orange-400" },
-          { label: "NSTP", color: "bg-yellow-50 border-yellow-400" }
+          { label: "Minor", color: "bg-purple-50 border-purple-400" }
         ].map(({ label, color }) => (
           <span key={label} className="flex items-center gap-1">
             <span className={`w-2.5 h-2.5 rounded border ${color}`} />

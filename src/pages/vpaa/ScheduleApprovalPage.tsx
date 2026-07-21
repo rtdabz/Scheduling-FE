@@ -146,10 +146,10 @@ const getDeptColorClasses = (dept: string) => {
   switch (normalizeDepartmentKey(dept)) {
     case 'AS':
       return {
-        bg: 'bg-red-50',
-        border: 'border-red-400',
-        text: 'text-red-900',
-        accent: 'border-l-red-600'
+        bg: 'bg-[#7C3AED]/10',
+        border: 'border-[#7C3AED]/40',
+        text: 'text-[#7C3AED]',
+        accent: 'border-l-[#7C3AED]'
       };
     case 'IT':
       return {

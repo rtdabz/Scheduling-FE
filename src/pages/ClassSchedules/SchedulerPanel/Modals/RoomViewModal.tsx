@@ -88,9 +88,14 @@ export default function RoomViewModal({
                 onChange={(e) => setRoomViewRoomId(e.target.value)}
                 className="appearance-none border border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] min-w-[180px]"
               >
-                {rooms.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
+                {rooms.map((r) => {
+                  const isUnavailable = r.status === "not available";
+                  return (
+                    <option key={r.id} value={r.id} className={isUnavailable ? "text-slate-400 italic" : ""}>
+                      {r.name}{isUnavailable ? " — (Not Available)" : ""}
+                    </option>
+                  );
+                })}
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>

@@ -22,7 +22,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearCachedKey } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -37,7 +37,7 @@ interface Subject {
   lecture_hours: number;
   lab_hours: number;
   units: number;
-  subject_category: 'major' | 'gec' | 'gee' | 'pathfit' | 'nstp';
+  subject_category: 'major' | 'minor';
   room_type_required: 'lecture' | 'laboratory' | 'field' | 'online';
   year_level: '1' | '2' | '3' | '4';
   semester: '1st' | '2nd' | 'summer';
@@ -54,7 +54,7 @@ interface ApiSubject {
   lecture_hours: number;
   lab_hours: number;
   units: number;
-  subject_category: 'major' | 'gec' | 'gee' | 'pathfit' | 'nstp';
+  subject_category: 'major' | 'minor';
   room_type_required: 'lecture' | 'laboratory' | 'field' | 'online';
   year_level: '1' | '2' | '3' | '4';
   semester: '1st' | '2nd' | 'summer';
@@ -77,7 +77,7 @@ const mapApiSubject = (s: ApiSubject): Subject => ({
   lecture_hours: s.lecture_hours || 0,
   lab_hours: s.lab_hours || 0,
   units: s.units || 0,
-  subject_category: s.subject_category,
+  subject_category: (s.subject_category as string) === 'major' ? 'major' : 'minor',
   room_type_required: s.room_type_required,
   year_level: s.year_level,
   semester: s.semester,
@@ -123,7 +123,7 @@ export default function SubjectManager() {
   const [lectureHours, setLectureHours] = useState<number>(3);
   const [labHours, setLabHours] = useState<number>(0);
   const [units, setUnits] = useState<number>(3);
-  const [subjectCategory, setSubjectCategory] = useState<'major' | 'gec' | 'gee' | 'pathfit' | 'nstp'>('major');
+  const [subjectCategory, setSubjectCategory] = useState<'major' | 'minor'>('major');
   const [roomTypeRequired, setRoomTypeRequired] = useState<'lecture' | 'laboratory' | 'field' | 'online'>('lecture');
   const [yearLevel, setYearLevel] = useState<'1' | '2' | '3' | '4'>('1');
   const [semester, setSemester] = useState<'1st' | '2nd' | 'summer'>('1st');
@@ -137,7 +137,8 @@ export default function SubjectManager() {
   const [unitsError, setUnitsError] = useState('');
 
   useEffect(() => {
-    fetchData();
+    clearCachedKey(subjectsCacheKey);
+    fetchData(true);
   }, []);
 
   const fetchData = async (forceRefresh = false) => {
@@ -342,17 +343,11 @@ export default function SubjectManager() {
           accessorKey: 'subject_category',
           header: 'Category',
           cell: info => {
-            const val = (info.getValue() as string) || '';
-            let badgeColor = 'bg-rose-50 text-rose-700 border-rose-200';
-            if (val === 'gec') {
-              badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-            } else if (val === 'gee') {
-              badgeColor = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-            } else if (val === 'pathfit') {
-              badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-            } else if (val === 'nstp') {
-              badgeColor = 'bg-sky-50 text-sky-700 border-sky-200';
-            }
+            const raw = (info.getValue() as string) || '';
+            const val = raw.toLowerCase() === 'major' ? 'major' : 'minor';
+            const badgeColor = val === 'minor'
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+              : 'bg-rose-50 text-rose-700 border-rose-200';
             return (
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
                 {val}
@@ -758,7 +753,12 @@ export default function SubjectManager() {
                     type="number"
                     min="0"
                     value={lectureHours}
-                    onChange={(e) => setLectureHours(parseInt(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const newLec = parseInt(e.target.value) || 0;
+                      setLectureHours(newLec);
+                      setUnits(newLec + labHours);
+                      setUnitsError('');
+                    }}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
                   />
                 </div>
@@ -771,7 +771,12 @@ export default function SubjectManager() {
                     type="number"
                     min="0"
                     value={labHours}
-                    onChange={(e) => setLabHours(parseInt(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const newLab = parseInt(e.target.value) || 0;
+                      setLabHours(newLab);
+                      setUnits(lectureHours + newLab);
+                      setUnitsError('');
+                    }}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
                   />
                 </div>
@@ -805,14 +810,11 @@ export default function SubjectManager() {
                   </label>
                   <select
                     value={subjectCategory}
-                    onChange={(e) => setSubjectCategory(e.target.value as 'major' | 'gec' | 'gee' | 'pathfit' | 'nstp')}
+                    onChange={(e) => setSubjectCategory(e.target.value as 'major' | 'minor')}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
                   >
                     <option value="major">Major</option>
-                    <option value="gec">GEC</option>
-                    <option value="gee">GEE</option>
-                    <option value="pathfit">Pathfit</option>
-                    <option value="nstp">NSTP</option>
+                    <option value="minor">Minor</option>
                   </select>
                 </div>
 

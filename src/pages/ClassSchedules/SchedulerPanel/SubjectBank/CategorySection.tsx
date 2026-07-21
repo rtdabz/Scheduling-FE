@@ -20,10 +20,7 @@ interface CategorySectionProps {
 
 const categoryDotColor: Record<Subject["category"], string> = {
   major: "bg-blue-500",
-  gec: "bg-red-500",
-  gee: "bg-purple-500",
-  pathfit: "bg-orange-500",
-  nstp: "bg-yellow-500"
+  minor: "bg-purple-500",
 };
 
 export default function CategorySection({
@@ -57,18 +54,20 @@ export default function CategorySection({
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 font-medium">
+            <span className="text-[11px] font-semibold text-gray-400">
               {subjects.length}
             </span>
             <ChevronDown
-              className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isCollapsed ? "-rotate-90" : "rotate-0"}`}
+              className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${
+                isCollapsed ? "-rotate-90" : ""
+              }`}
             />
           </div>
         </button>
       </div>
 
       {!isCollapsed && (
-        <div className="space-y-2 mb-3 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="mt-1 space-y-2 pl-1">
           {subjects.map((subject) => (
             <SubjectCard
               key={subject.id}
@@ -77,8 +76,8 @@ export default function CategorySection({
               isEditable={isEditable}
               isDragging={dragSubjectId === subject.id}
               isSelected={placementSubjectId === subject.id}
-              onClick={onSubjectClick}
-              onDragStart={onDragStart}
+              onClick={() => onSubjectClick(subject.id)}
+              onDragStart={(e) => onDragStart(e, subject.id)}
               onDragEnd={onDragEnd}
             />
           ))}

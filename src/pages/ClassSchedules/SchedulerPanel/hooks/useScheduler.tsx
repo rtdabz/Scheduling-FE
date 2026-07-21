@@ -326,7 +326,7 @@ export const useScheduler = () => {
         units: s.units,
         lectureHours: s.lecture_hours ?? 0,
         labHours: s.lab_hours ?? 0,
-        category: s.subject_category,
+        category: (s.subject_category as string) === "major" ? "major" : "minor",
         semester: s.semester,
         departmentId: s.department_id ?? null,
         yearLevel: normalizeYearLevel(s.year_level),
@@ -634,15 +634,15 @@ export const useScheduler = () => {
     departmentTotalSections > 0 &&
     departmentRemainingSections === 0 &&
     !departmentHasSubmittedSchedule &&
-    departmentSectionProgress.every((section) => section.status === "completed");
+departmentSectionProgress.every((section) => section.status === "completed");
 
   const dropSubject = dropContext
     ? subjects.find((s) => s.id === dropContext.subjectId) ?? null
     : null;
   const dropSubjectIsField =
-    dropSubject?.category === "pathfit" || dropSubject?.category === "nstp";
+    dropSubject?.roomTypeRequired === "field";
 
-  const listCategories: Subject["category"][] = ["major", "gec", "gee", "pathfit", "nstp"];
+  const listCategories: Subject["category"][] = ["major", "minor"];
 
   const filteredSubjects = useMemo(() => {
     return semesterSubjects.filter((subject) => {
@@ -676,7 +676,7 @@ export const useScheduler = () => {
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
-    if (subject?.category !== "gec") {
+    if (subject?.category !== "minor") {
       return true;
     }
 
@@ -701,7 +701,7 @@ export const useScheduler = () => {
   useEffect(() => {
     if (dropContext) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
-      const isFieldSubject = subject?.category === "pathfit" || subject?.category === "nstp";
+      const isFieldSubject = subject?.roomTypeRequired === "field";
       const totalSlots = subject ? subject.units * 2 : 0;
 
       if (isFieldSubject) {
@@ -761,8 +761,10 @@ export const useScheduler = () => {
         let resolvedRoomId = "";
         if (subject && !isFieldSubject) {
           const matchingTypeRooms = rooms.filter(r => 
-            !subject.roomTypeRequired || r.roomType === subject.roomTypeRequired
+            (r.status === "available" || !r.status) &&
+            (!subject.roomTypeRequired || r.roomType === subject.roomTypeRequired)
           );
+          const availableRooms = rooms.filter(r => r.status === "available" || !r.status);
           const nonConflictingRoom = matchingTypeRooms.find(r => {
             const conflict = checkConflict(
               subject.id,
@@ -777,7 +779,7 @@ export const useScheduler = () => {
             );
             return !conflict || conflict.conflictType !== "room";
           });
-          resolvedRoomId = nonConflictingRoom?.id || (matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (rooms.length > 0 ? rooms[0].id : ""));
+          resolvedRoomId = nonConflictingRoom?.id || (matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : ""));
         }
 
         setModalRoomId(resolvedRoomId);
@@ -836,13 +838,14 @@ export const useScheduler = () => {
       setModalIsHybrid(false);
       setModalRoomId("field");
     } else if (modalClassMode === "on-site" && (modalRoomId === "online" || modalRoomId === "field")) {
-      // Re-assign first available room if none is set
       if (!modalRoomId || modalRoomId === "online" || modalRoomId === "field") {
         const subject = dropContext ? subjects.find((s) => s.id === dropContext.subjectId) : null;
         const matchingTypeRooms = rooms.filter(r => 
-          !subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired
+          (r.status === "available" || !r.status) &&
+          (!subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired)
         );
-        const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (rooms.length > 0 ? rooms[0].id : "");
+        const availableRooms = rooms.filter(r => r.status === "available" || !r.status);
+        const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : "");
         setModalRoomId(defaultRoomId);
       }
     }

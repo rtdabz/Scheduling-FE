@@ -207,7 +207,7 @@ const getDeptStyles = (code: string) => {
     case "IT":
       return "bg-blue-50 text-blue-800 border-blue-400 border-l-blue-700 hover:bg-blue-100/60";
     case "AS":
-      return "bg-red-50 text-red-800 border-red-400 border-l-red-600 hover:bg-red-100/60";
+      return "bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/40 border-l-[#7C3AED] hover:bg-[#7C3AED]/20";
     case "EDUC":
       return "bg-orange-50 text-orange-800 border-orange-400 border-l-orange-600 hover:bg-orange-100/60";
     case "BA":
@@ -228,7 +228,7 @@ const getDeptStyles = (code: string) => {
 const getDeptBadgeStyles = (code: string) => {
   switch (normalizeDepartmentKey(code)) {
     case "IT": return "bg-blue-100 text-blue-800 border-blue-200";
-    case "AS": return "bg-red-100 text-red-800 border-red-200";
+    case "AS": return "bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/30";
     case "EDUC": return "bg-orange-100 text-orange-800 border-orange-200";
     case "BA": return "bg-yellow-100 text-yellow-800 border-yellow-200";
     case "HM": return "bg-lime-100 text-lime-800 border-lime-200";
@@ -1101,6 +1101,7 @@ export default function VpaaScheduleViewer() {
                                 key={schedule.id}
                                 type="button"
                                 onClick={() => setSelectedSchedule(schedule)}
+                                title={`${schedule.subjectCode}: ${schedule.subjectName}\nSection: ${schedule.sectionName || "Unassigned"}\nInstructor: ${schedule.facultyName}\nRoom: ${schedule.roomName || "Unassigned"}\nTime: ${schedule.day}, ${schedule.startTime} – ${schedule.endTime}`}
                                 className={`absolute border-2 border-l-4 p-2 flex flex-col justify-between text-left select-none rounded-xl shadow-sm hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden box-border leading-snug ${conflicts.length > 0 ? "border-red-300 border-l-red-600 bg-red-50 text-red-800 ring-2 ring-red-200" : getDeptStyles(schedule.departmentCode)}`}
                                 style={{ top: `${top + 2}px`, height: `${height - 4}px`, left: `calc(${left} + 2px)`, width: `calc(${width} - 4px)`, zIndex: 10 }}
                               >
