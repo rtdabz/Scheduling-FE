@@ -63,7 +63,7 @@ interface ApiSchedule {
   end_time: string;
   status: string;
   section?: { section_name?: string } | null;
-  room?: { room_code?: string; room_name?: string | null } | null;
+  room?: { room_code?: string; building?: string | null } | null;
   faculty?: { first_name?: string; last_name?: string } | null;
 }
 
@@ -118,7 +118,7 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
   timeToMinutes(schedule.start_time) < 17 * 60;
 
 const getRoomName = (schedule: ApiSchedule): string =>
-  schedule.room?.room_code || schedule.room?.room_name || "Room not set";
+  schedule.room?.room_code || schedule.room?.building || "Room not set";
 
 const getFacultyName = (schedule: ApiSchedule): string | null => {
   if (!schedule.faculty) return null;

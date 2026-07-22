@@ -82,7 +82,7 @@ interface RawSchedule {
   } | null;
   room?: {
     room_code?: string;
-    room_name?: string | null;
+    building?: string | null;
   } | null;
 }
 
@@ -405,7 +405,7 @@ export default function DeanScheduleViewer() {
           if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
             else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+            else roomName = item.room.room_code + (item.room.building ? ` - ${item.room.building}` : '');
           }
 
           const dayIndex = dayMapToIndex[item.day] ?? 0;

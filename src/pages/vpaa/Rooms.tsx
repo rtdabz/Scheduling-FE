@@ -34,7 +34,7 @@ interface Department {
 interface Room {
   id: number;
   room_code: string;
-  room_name: string;
+  building: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
   status: 'available' | 'not available';
   department_id: number | null;
@@ -45,7 +45,7 @@ interface Room {
 interface ApiRoom {
   id: number;
   room_code: string;
-  room_name: string;
+  building: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
   status: 'available' | 'not available';
   department_id: number | null;
@@ -62,7 +62,7 @@ interface RoomsPageData {
 const mapApiRoom = (r: ApiRoom): Room => ({
   id: r.id,
   room_code: r.room_code,
-  room_name: r.room_name || '',
+  building: r.building || '',
   room_type: r.room_type,
   status: r.status,
   department_id: r.department_id,
@@ -107,7 +107,7 @@ export default function VpaaRooms() {
 
   // Form state
   const [roomCode, setRoomCode] = useState('');
-  const [roomName, setRoomName] = useState('');
+  const [building, setBuilding] = useState('');
   const [roomType, setRoomType] = useState<'lecture' | 'laboratory' | 'online' | 'field'>('lecture');
   const [status, setStatus] = useState<'available' | 'not available'>('available');
   const [departmentId, setDepartmentId] = useState('');
@@ -115,7 +115,7 @@ export default function VpaaRooms() {
 
   // Error states
   const [codeError, setCodeError] = useState('');
-  const [nameError, setNameError] = useState('');
+  const [buildingError, setBuildingError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -148,7 +148,7 @@ export default function VpaaRooms() {
 
     let hasError = false;
     const trimmedCode = roomCode.trim();
-    const trimmedName = roomName.trim();
+    const trimmedBuilding = building.trim();
 
     if (!trimmedCode) {
       setCodeError('Room code is required');
@@ -160,11 +160,11 @@ export default function VpaaRooms() {
       setCodeError('');
     }
 
-    if (trimmedName && trimmedName.length > 100) {
-      setNameError('Room name must not exceed 100 characters');
+    if (!trimmedBuilding) {
+      setBuildingError('Building is required');
       hasError = true;
     } else {
-      setNameError('');
+      setBuildingError('');
     }
 
     if (hasError) return;
@@ -174,7 +174,7 @@ export default function VpaaRooms() {
     try {
       const payload = {
         room_code: trimmedCode,
-        room_name: trimmedName,
+        building: trimmedBuilding,
         room_type: roomType,
         status,
         department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (departmentId ? parseInt(departmentId) : (user?.department_id ? Number(user.department_id) : null))
@@ -203,7 +203,7 @@ export default function VpaaRooms() {
       }
 
       setRoomCode('');
-      setRoomName('');
+      setBuilding('');
       setRoomType('lecture');
       setStatus('available');
       setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
@@ -221,12 +221,12 @@ export default function VpaaRooms() {
 
   const handleEditClick = (room: Room) => {
     setRoomCode(room.room_code);
-    setRoomName(room.room_name || '');
+    setBuilding(room.building || '');
     setRoomType(room.room_type);
     setStatus(room.status);
     setDepartmentId(room.department_id ? room.department_id.toString() : '');
     setCodeError('');
-    setNameError('');
+    setBuildingError('');
     setEditingId(room.id);
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -270,9 +270,9 @@ export default function VpaaRooms() {
           )
         },
         {
-          accessorKey: 'room_name',
-          header: 'Room Name',
-          cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
+          accessorKey: 'building',
+          header: 'Building',
+          cell: info => <span className="font-bold text-gray-800">{(info.getValue() as string) || '—'}</span>
         },
         {
           accessorKey: 'room_type',
@@ -403,7 +403,7 @@ export default function VpaaRooms() {
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search room code or name..."
+            placeholder="Search room code or building..."
             className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
           />
         </div>
@@ -413,12 +413,12 @@ export default function VpaaRooms() {
               setIsEditMode(false);
               setEditingId(null);
               setRoomCode('');
-              setRoomName('');
+              setBuilding('');
               setRoomType('lecture');
               setStatus('available');
               setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
               setCodeError('');
-              setNameError('');
+              setBuildingError('');
               setIsModalOpen(true);
             }}
             className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
@@ -643,23 +643,30 @@ export default function VpaaRooms() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Room Name
+                  Building <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={roomName}
+                <select
+                  value={building}
                   onChange={(e) => {
-                    setRoomName(e.target.value);
-                    setNameError('');
+                    setBuilding(e.target.value);
+                    setBuildingError('');
                   }}
-                  placeholder="e.g. Computer Lab 1"
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    nameError
+                    buildingError
                       ? 'border-red-500 focus:ring-red-500'
                       : 'border-gray-200 focus:ring-[#C9952A]'
                   }`}
-                />
-                {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
+                >
+                  <option value="">Select Building</option>
+                  <option value="NEE Building">NEE Building</option>
+                  <option value="Building 1">Building 1</option>
+                  <option value="Building 2">Building 2</option>
+                  <option value="Building 3">Building 3</option>
+                  <option value="Building 4">Building 4</option>
+                  <option value="Building 5">Building 5</option>
+                  <option value="Building 6">Building 6</option>
+                </select>
+                {buildingError && <p className="text-xs text-red-500 mt-1 font-semibold">{buildingError}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -198,7 +198,7 @@ export interface ApiFacultyRecord {
 export interface ApiRoomRecord {
   id: number | string;
   room_code: string;
-  room_name?: string | null;
+  building?: string | null;
   room_type: RoomType;
   status: RoomStatus;
   department_id: number | null;
@@ -236,7 +236,7 @@ export interface ApiScheduleRecord {
   } | null;
   room?: {
     room_code?: string;
-    room_name?: string | null;
+    building?: string | null;
   } | null;
 }
 

@@ -116,7 +116,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
       laboratoryUnits: Number(schedule.subject?.lab_hours ?? 0),
       totalUnits: Number(schedule.subject?.units ?? 0),
       sectionName: schedule.section?.section_name ?? "",
-      roomName: schedule.room?.room_name || schedule.room?.room_code || "",
+      roomName: schedule.room?.building || schedule.room?.room_code || "",
       day: schedule.day,
       startTime: schedule.start_time,
       endTime: schedule.end_time,

@@ -176,7 +176,7 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   if (item.room) {
     if (item.room.room_code === "ONLINE") roomName = "Online";
     else if (item.room.room_code === "FIELD") roomName = "Field";
-    else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : "");
+    else roomName = item.room.room_code + (item.room.building ? ` - ${item.room.building}` : "");
   }
 
   let roomIdStr = item.room_id.toString();
@@ -313,7 +313,7 @@ export const useScheduler = () => {
       }
       const mappedRooms = apiRooms.map((r): Room => ({
         id: r.id.toString(),
-        name: r.room_code + (r.room_name ? ` - ${r.room_name}` : ''),
+        name: r.room_code + (r.building ? ` - ${r.building}` : ''),
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status

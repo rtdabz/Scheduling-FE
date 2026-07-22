@@ -44,7 +44,7 @@ interface Schedule {
 interface Room {
   id: number;
   room_code: string;
-  room_name?: string;
+  building?: string;
   room_type: string;
   department_id?: number | null;
 }

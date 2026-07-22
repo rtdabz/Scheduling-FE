@@ -48,7 +48,7 @@ interface Faculty {
 interface Room {
   id: number;
   room_code: string;
-  room_name?: string;
+  building?: string;
 }
 
 interface Section {

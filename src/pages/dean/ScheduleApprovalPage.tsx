@@ -83,7 +83,7 @@ interface RawSchedule {
   } | null;
   room?: {
     room_code?: string;
-    room_name?: string | null;
+    building?: string | null;
   } | null;
 }
 
@@ -504,7 +504,7 @@ export default function DeanScheduleApprovalPage() {
     if (!item.room) return 'Unassigned';
     if (item.room.room_code === 'ONLINE') return 'Online';
     if (item.room.room_code === 'FIELD') return 'Field';
-    return item.room.room_name ? `${item.room.room_code} - ${item.room.room_name}` : item.room.room_code;
+    return item.room.building ? `${item.room.room_code} - ${item.room.building}` : item.room.room_code;
   };
 
   const getInstructorName = (item: RawSchedule) => {

@@ -95,7 +95,7 @@ interface RawFaculty {
 interface RawRoom {
   id: number | string;
   room_code: string;
-  room_name?: string | null;
+  building?: string | null;
 }
 
 interface RawSchedule {
@@ -113,7 +113,7 @@ interface RawSchedule {
   department?: { department_name?: string; department_code?: string } | null;
   subject?: { subject_code?: string; subject_name?: string } | null;
   faculty?: { first_name?: string; last_name?: string } | null;
-  room?: { room_code?: string; room_name?: string | null } | null;
+  room?: { room_code?: string; building?: string | null } | null;
 }
 
 interface ScheduleViewerData {
@@ -510,7 +510,7 @@ export default function VpaaScheduleViewer() {
         // Map rooms
         const mappedRooms = response.data.rooms.map((r) => ({
           id: r.id.toString(),
-          name: r.room_code + (r.room_name ? ` - ${r.room_name}` : '')
+          name: r.room_code + (r.building ? ` - ${r.building}` : '')
         }));
         setRooms(mappedRooms);
 
@@ -528,13 +528,12 @@ export default function VpaaScheduleViewer() {
           if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
             else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code + (item.room.room_name ? ` - ${item.room.room_name}` : '');
+            else roomName = item.room.room_code + (item.room.building ? ` - ${item.room.building}` : '');
           }
 
           const dayIndex = dayMapToIndex[item.day] ?? 0;
           const startSlot = timeStrToSlot(item.start_time);
           const endSlot = timeStrToSlot(item.end_time);
-
           return {
             id: item.id.toString(),
             sectionId,
