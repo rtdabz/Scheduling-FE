@@ -153,8 +153,7 @@ export default function CourseManager() {
   const [unitsError, setUnitsError] = useState('');
 
   useEffect(() => {
-    clearCachedKey(coursesCacheKey);
-    fetchData(true);
+    fetchData();
   }, []);
 
   const fetchData = async (forceRefresh = false) => {
