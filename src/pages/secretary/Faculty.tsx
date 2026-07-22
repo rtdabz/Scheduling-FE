@@ -149,6 +149,14 @@ export default function SecretaryFaculty() {
   const [employmentFilter, setEmploymentFilter] = useState('');
   const [sortBy, setSortBy] = useState('name');
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(6);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, departmentFilter, employmentFilter, sortBy]);
+
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
@@ -402,6 +410,15 @@ export default function SecretaryFaculty() {
     return list;
   }, [filteredFaculties, sortBy]);
 
+  const totalItems = sortedFaculties.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const activePage = Math.min(currentPage, Math.max(1, totalPages));
+
+  const paginatedFaculties = useMemo(() => {
+    const startIndex = (activePage - 1) * pageSize;
+    return sortedFaculties.slice(startIndex, startIndex + pageSize);
+  }, [sortedFaculties, activePage, pageSize]);
+
   // General workload stats summary
   const summaryStats = useMemo(() => {
     let available = 0;
@@ -583,7 +600,7 @@ export default function SecretaryFaculty() {
             <p className="text-xs font-sans">Try adjusting search parameters or add a new record.</p>
           </div>
         ) : (
-          sortedFaculties.map((f) => {
+          paginatedFaculties.map((f) => {
             const statusDetails = getWorkloadStatus(f);
             const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
             const required = f.max_units - f.deload_units;
@@ -717,6 +734,70 @@ export default function SecretaryFaculty() {
           })
         )}
       </div>
+
+      {/* Pagination Section */}
+      {totalItems > 0 && (
+        <div className="px-6 py-4 border border-gray-100 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 bg-white shadow-sm mt-6">
+          <div className="flex items-center gap-4">
+            <div className="text-xs font-semibold text-gray-500">
+              Showing {(activePage - 1) * pageSize + 1}–
+              {Math.min(activePage * pageSize, totalItems)} of {totalItems} {isInstructorsPath ? 'instructors' : 'faculty'}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-semibold">Show</span>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
+              >
+                {[6, 12, 24, 48].map(size => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={activePage === 1}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              First
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={activePage === 1}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              Prev
+            </button>
+            <span className="text-xs font-semibold text-gray-500 font-sans">
+              Page {activePage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={activePage === totalPages}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              Next
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={activePage === totalPages}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              Last
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* View Details Modal Overlay */}
       {isDetailsModalOpen && detailsFaculty && (

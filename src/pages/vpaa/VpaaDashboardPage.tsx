@@ -427,8 +427,8 @@ export default function VpaaDashboardPage() {
       {isLoading ? (
         <div className="space-y-5">
           {/* Skeleton Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3">
-            {Array.from({ length: 9 }).map((_, i) => (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
                 <Skeleton className="h-3 w-16" />
                 <Skeleton className="h-7 w-8" />
@@ -444,8 +444,8 @@ export default function VpaaDashboardPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          {/* Summary Metric Cards (9 Cards Grid) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3">
+          {/* Summary Metric Cards (6 Cards Grid) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {/* Total Departments */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Departments</span>
@@ -497,33 +497,6 @@ export default function VpaaDashboardPage() {
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{totalSchedules}</span>
                 <CalendarDays className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
-            {/* Pending Dean Approvals */}
-            <div className="bg-white p-4 rounded-xl border border-amber-250 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow bg-amber-50/10">
-              <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider truncate">Pending Dean</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-amber-700">{summaryMetrics.pendingDean}</span>
-                <Clock className="w-4 h-4 text-[#F5A623]" />
-              </div>
-            </div>
-
-            {/* Pending VPAA Approvals */}
-            <div className="bg-white p-4 rounded-xl border border-[#5A1220]/25 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow bg-red-50/5">
-              <span className="text-[10px] font-bold text-[#5A1220] uppercase tracking-wider truncate">Pending VPAA</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-[#7B1113]">{summaryMetrics.pendingVpaa}</span>
-                <Clock className="w-4 h-4 text-[#5A1220]" />
-              </div>
-            </div>
-
-            {/* Approved Schedules */}
-            <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow bg-emerald-50/10">
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider truncate">Approved</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-emerald-700">{summaryMetrics.approved}</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               </div>
             </div>
           </div>
