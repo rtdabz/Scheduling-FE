@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/logo.jpg';
@@ -27,70 +27,59 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  useEffect(() => {
-    const expired = sessionStorage.getItem('session_expired');
-    if (expired) {
-      toast.warning('Session Expired', 'Your session has expired. Please log in again.');
-      sessionStorage.removeItem('session_expired');
-    }
-  }, [toast]);
-
-const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
     setIsLoading(true);
     try {
-        const res = await api.post<LoginResponse>('/login', { username: username.trim(), password });
-        clearDataCache();
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        sessionStorage.removeItem('token');
-        sessionStorage.removeItem('user');
-        const storage = rememberMe ? localStorage : sessionStorage;
-        storage.setItem('token', res.data.token);
-        storage.setItem('user', JSON.stringify(res.data.user));
-        localStorage.setItem('lastActivity', Date.now().toString());
-        const roleNames: Record<string, string> = {
-          'vpaa': 'VPAA',
-          'dean': 'Dean',
-          'secretary': 'Secretary',
-          'program_head': 'Program Head',
-        };
-        const role = roleNames[res.data.user.role] || 'User';
-        toast.success('Login Successful', `Welcome back ${role}!`);
-        
-        // Dynamic redirection based on role
-        if (res.data.user.role === 'vpaa') {
-          navigate('/dashboard');
-        } else if (res.data.user.role === 'dean') {
-          navigate('/dean/dashboard');
-        } else if (res.data.user.role === 'secretary') {
-          navigate('/secretary/dashboard');
-        } else if (res.data.user.role === 'program_head') {
-          navigate('/program_head/dashboard');
-        } else {
-          navigate('/dashboard');
-        }
+      const res = await api.post<LoginResponse>('/login', { username: username.trim(), password });
+      clearDataCache();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem('token', res.data.token);
+      storage.setItem('user', JSON.stringify(res.data.user));
+      const roleNames: Record<string, string> = {
+        'vpaa': 'VPAA',
+        'dean': 'Dean',
+        'secretary': 'Secretary',
+        'program_head': 'Program Head',
+      };
+      const role = roleNames[res.data.user.role] || 'User';
+      toast.success('Login Successful', `Welcome back ${role}!`);
+
+      if (res.data.user.role === 'vpaa') {
+        navigate('/dashboard');
+      } else if (res.data.user.role === 'dean') {
+        navigate('/dean/dashboard');
+      } else if (res.data.user.role === 'secretary') {
+        navigate('/secretary/dashboard');
+      } else if (res.data.user.role === 'program_head') {
+        navigate('/program_head/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (error) {
-        const axiosError = error as AxiosError<ApiErrorResponse>;
-        const message = axiosError.response?.data?.message
-          || (axiosError.request ? 'Unable to reach the server. Please check that the backend is running.' : 'Unable to sign in.');
-        toast.error('Login Failed', message);
+      const axiosError = error as AxiosError<ApiErrorResponse>;
+      const message = axiosError.response?.data?.message
+        || (axiosError.request ? 'Unable to reach the server. Please check that the backend is running.' : 'Unable to sign in.');
+      toast.error('Login Failed', message);
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
-};
+  };
 
   return (
-    <div className="min-h-screen flex w-full">
+    <div className="min-h-screen flex w-full relative">
       {/* Left Panel */}
       <div className="hidden md:flex flex-1 relative bg-[#4e0a10] overflow-hidden items-center justify-center p-12">
         {/* Animated Background Shapes */}
         <div className="absolute inset-0 z-0">
-           {/* Shapes */}
-           <div className="absolute top-[10%] left-[20%] w-64 h-64 rounded-full border border-accent/20 animate-float opacity-20" />
-           <div className="absolute bottom-[20%] right-[10%] w-48 h-48 rounded-[2rem] border border-primary-light/10 animate-float-slow rotate-45 opacity-20" />
-           <div className="absolute bottom-[10%] left-[30%] w-32 h-32 rounded-full bg-primary-light/5 animate-float blur-3xl" />
+          <div className="absolute top-[10%] left-[20%] w-64 h-64 rounded-full border border-accent/20 animate-float opacity-20" />
+          <div className="absolute bottom-[20%] right-[10%] w-48 h-48 rounded-[2rem] border border-primary-light/10 animate-float-slow rotate-45 opacity-20" />
+          <div className="absolute bottom-[10%] left-[30%] w-32 h-32 rounded-full bg-primary-light/5 animate-float blur-3xl" />
         </div>
 
         {/* Content */}
@@ -210,7 +199,6 @@ const handleSubmit = async (e: React.FormEvent) => {
                     'Sign In'
                   )}
                 </span>
-                {/* Shimmer effect via before pseudo element */}
                 <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent,rgba(255,255,255,0.1),transparent)] bg-[length:200%_100%] animate-shimmer opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
             </div>

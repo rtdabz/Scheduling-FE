@@ -249,6 +249,7 @@ export default function Settings() {
     },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
+    autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),

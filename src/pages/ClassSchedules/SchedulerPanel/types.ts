@@ -1,4 +1,5 @@
-export type SubjectCategory = "major" | "minor";
+export type CourseCategory = "major" | "minor";
+export type SubjectCategory = CourseCategory; // Legacy alias
 export type Semester = "1st" | "2nd" | "summer";
 export type YearLevel = 1 | 2 | 3 | 4;
 export type RoomType = "lecture" | "laboratory" | "field" | "online";
@@ -38,20 +39,21 @@ export interface UserSummary {
   department_id?: number | null;
 }
 
-export interface Subject {
+export interface Course {
   id: string;
   code: string;
   name: string;
   units: number;
   lectureHours: number;
   labHours: number;
-  category: SubjectCategory;
+  category: CourseCategory;
   semester: Semester;
   departmentId: number | null;
   yearLevel: YearLevel;
   roomTypeRequired: RoomType;
   status: "active" | "inactive";
 }
+export type Subject = Course; // Legacy alias
 
 export interface Section {
   id: string;
@@ -86,10 +88,14 @@ export interface ScheduleItem {
   id: string;
   termId: number;
   departmentId: number;
-  subjectId: string;
-  subjectCode: string;
-  subjectName: string;
-  subjectType: SubjectCategory;
+  courseId: string;
+  subjectId?: string; // Legacy alias
+  courseCode: string;
+  subjectCode?: string; // Legacy alias
+  courseName: string;
+  subjectName?: string; // Legacy alias
+  courseType: CourseCategory;
+  subjectType?: CourseCategory; // Legacy alias
   lectureUnits: number;
   laboratoryUnits: number;
   totalUnits: number;
@@ -115,15 +121,18 @@ export interface DepartmentSectionProgress {
   sectionId: string;
   sectionName: string;
   yearLevel: number;
-  requiredSubjects: number;
-  plottedSubjects: number;
+  requiredCourses: number;
+  requiredSubjects?: number;
+  plottedCourses: number;
+  plottedSubjects?: number;
   status: ScheduleItem["status"];
   isDone: boolean;
   isSelected: boolean;
 }
 
 export interface DropContext {
-  subjectId: string;
+  courseId: string;
+  subjectId?: string;
   dayIndex: number;
   startSlot: number;
   isRescheduling: boolean;
@@ -156,20 +165,24 @@ export interface ApiTermRecord {
   is_enabled?: boolean | number;
 }
 
-export interface ApiSubjectRecord {
+export interface ApiCourseRecord {
   id: number | string;
-  subject_code: string;
-  subject_name: string;
+  course_code: string;
+  subject_code?: string;
+  course_name: string;
+  subject_name?: string;
   units: number;
   lecture_hours?: number | null;
   lab_hours?: number | null;
-  subject_category: SubjectCategory;
+  course_category: CourseCategory;
+  subject_category?: CourseCategory;
   semester: Semester;
   department_id: number | null;
   year_level: string | number;
   room_type_required: RoomType;
   status?: "active" | "inactive";
 }
+export type ApiSubjectRecord = ApiCourseRecord; // Legacy alias
 
 export interface ApiSectionRecord {
   id: number | string;
@@ -208,7 +221,8 @@ export interface ApiScheduleRecord {
   id: number | string;
   term_id: number | string;
   department_id: number | string;
-  subject_id: number | string;
+  course_id: number | string;
+  subject_id?: number | string;
   section_id: number | string;
   room_id: number | string;
   faculty_id?: number | string | null;
@@ -219,10 +233,24 @@ export interface ApiScheduleRecord {
   status: ScheduleStatus;
   is_hybrid?: boolean | number;
   preferred_pattern?: string | null;
-  subject?: {
+  course?: {
+    course_code?: string;
     subject_code?: string;
+    course_name?: string;
     subject_name?: string;
-    subject_category?: SubjectCategory;
+    course_category?: CourseCategory;
+    subject_category?: CourseCategory;
+    lecture_hours?: number | string | null;
+    lab_hours?: number | string | null;
+    units?: number | string | null;
+  } | null;
+  subject?: {
+    course_code?: string;
+    subject_code?: string;
+    course_name?: string;
+    subject_name?: string;
+    course_category?: CourseCategory;
+    subject_category?: CourseCategory;
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
     units?: number | string | null;

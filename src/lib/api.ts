@@ -19,16 +19,12 @@ api.interceptors.request.use((config) => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        localStorage.setItem('lastActivity', Date.now().toString());
     }
     return config;
 });
 
 api.interceptors.response.use(
     (response) => {
-        if (localStorage.getItem('token') || sessionStorage.getItem('token')) {
-            localStorage.setItem('lastActivity', Date.now().toString());
-        }
         return response;
     },
     (error) => {

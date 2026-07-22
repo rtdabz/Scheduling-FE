@@ -1,12 +1,12 @@
 import type React from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, Search } from "lucide-react";
-import type { Subject, Section } from "../types";
+import type { Course, Section } from "../types";
 import type { SubjectClassification } from "../constants";
 import CategorySection from "./CategorySection";
 import Skeleton from "../../../../components/ui/Skeleton";
 import SearchField from "../components/SearchField";
 
-interface SubjectBankProps {
+interface CourseBankProps {
   sections: Section[];
   isPhase2Active: boolean;
   currentStatus: string;
@@ -17,8 +17,8 @@ interface SubjectBankProps {
   setSearchQuery: (value: string) => void;
   subjectClassFilter: SubjectClassification;
   setSubjectClassFilter: (value: SubjectClassification) => void;
-  listCategories: Subject["category"][];
-  filteredSubjects: Subject[];
+  listCategories: Course["category"][];
+  filteredSubjects: Course[];
   collapsedCategories: Record<string, boolean>;
   toggleCategory: (category: string) => void;
   scheduledSubjectIds: Set<string>;
@@ -31,7 +31,7 @@ interface SubjectBankProps {
   isLoading?: boolean;
 }
 
-export default function SubjectBank({
+export default function CourseBank({
   sections,
   isPhase2Active,
   currentStatus,
@@ -54,7 +54,7 @@ export default function SubjectBank({
   handleDragStartFromBank,
   handleDragEnd,
   isLoading = false
-}: SubjectBankProps) {
+}: CourseBankProps) {
   if (isPhase2Active && currentStatus !== "approved") return null;
 
   const visibleCategories = listCategories.filter((c) =>
@@ -72,10 +72,10 @@ export default function SubjectBank({
       <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
         <div className="flex items-center gap-2">
           <BookOpen className="w-5 h-5 text-[#4e0a10]" />
-          <span className="text-base font-semibold text-gray-800">Subject Bank</span>
+          <span className="text-base font-semibold text-gray-800">Course Bank</span>
         </div>
         <p className="text-xs text-gray-500 mt-0.5">
-          Click a subject, then click a time slot — or drag it onto the timetable
+          Click a course, then click a time slot — or drag it onto the timetable
         </p>
         <div className="flex items-center gap-2 mt-2.5">
           <span className="flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5 text-[10px] font-semibold">
@@ -92,11 +92,11 @@ export default function SubjectBank({
         <SearchField
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Search subjects..."
-          clearLabel="Clear subject search"
+          placeholder="Search courses..."
+          clearLabel="Clear course search"
         />
 
-        <div className="flex items-center gap-1 mt-2.5 bg-gray-100 rounded-lg p-0.5" role="group" aria-label="Filter subjects by type">
+        <div className="flex items-center gap-1 mt-2.5 bg-gray-100 rounded-lg p-0.5" role="group" aria-label="Filter courses by type">
           {classFilters.map(({ value, label }) => (
             <button
               key={value}
@@ -118,7 +118,7 @@ export default function SubjectBank({
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {isLoading ? (
           Array.from({ length: 5 }).map((_, idx) => (
-            <div key={`sk-subject-${idx}`} className="bg-white border border-gray-200 border-l-4 border-l-gray-300 rounded-xl p-3 mb-2 animate-pulse">
+            <div key={`sk-course-${idx}`} className="bg-white border border-gray-200 border-l-4 border-l-gray-300 rounded-xl p-3 mb-2 animate-pulse">
               <div className="flex justify-between items-start gap-1">
                 <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-4 w-8 rounded-full" />
@@ -146,7 +146,7 @@ export default function SubjectBank({
         ) : visibleCategories.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-10">
             <Search className="w-8 h-8 text-gray-300 mb-2" />
-            <p className="text-sm text-gray-400 font-medium">No subjects found</p>
+            <p className="text-sm text-gray-400 font-medium">No courses found</p>
             <p className="text-xs text-gray-300 mt-0.5">Try a different keyword</p>
           </div>
         ) : (
@@ -155,7 +155,7 @@ export default function SubjectBank({
               {visibleIdx > 0 && <div className="border-t border-gray-100 my-1" />}
               <CategorySection
                 category={category}
-                subjects={filteredSubjects.filter((s) => s.category === category)}
+                courses={filteredSubjects.filter((s) => s.category === category)}
                 isCollapsed={collapsedCategories[category] === true}
                 onToggle={toggleCategory}
                 scheduledSubjectIds={scheduledSubjectIds}

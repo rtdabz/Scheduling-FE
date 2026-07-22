@@ -732,6 +732,7 @@ export default function DeanScheduleApprovalPage() {
     },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
+    autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),

@@ -28,7 +28,7 @@ export const secretaryNav: NavSection[] = [
       { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections' },
       { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors' },
       { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
-      { label: 'Subjects', path: '/secretary/subjects', icon: BookOpen, id: 'sidebar-subjects' },
+      { label: 'Courses', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses' },
     ]
   },
   {

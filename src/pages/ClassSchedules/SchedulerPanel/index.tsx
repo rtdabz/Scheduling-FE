@@ -1,6 +1,6 @@
 import TopBar from "./TopBar";
 import FacultyPanel from "./FacultyPanel";
-import SubjectBank from "./SubjectBank";
+import CourseBank from "./CourseBank";
 import TimetableGrid from "./TimetableGrid";
 import DropModal from "./Modals/DropModal";
 import FacultyModal from "./Modals/FacultyModal";
@@ -26,7 +26,7 @@ export default function SchedulerPanel() {
 
       <div className="flex flex-col lg:flex-row gap-6 w-full min-h-[640px] lg:h-[calc(100vh-220px)] lg:min-h-[650px] overflow-hidden">
         <FacultyPanel {...scheduler} />
-        <SubjectBank {...scheduler} />
+        <CourseBank {...scheduler} />
         <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
       </div>
 

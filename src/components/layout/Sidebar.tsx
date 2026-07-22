@@ -161,7 +161,7 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
       <button
         type="button"
         onClick={onToggleSidebar}
-        className="absolute -right-7 top-24 z-10 hidden h-12 w-7 items-center justify-center rounded-r-full border border-l-0 border-[#C9952A]/30 bg-[#4e0a10] text-[#E8D5C4] shadow-lg shadow-black/20 transition-all duration-300 hover:border-[#C9952A]/60 hover:bg-[#641017] hover:text-white md:flex"
+        className="absolute -right-8 top-0 z-10 hidden h-12 w-8 items-center justify-center rounded-br-full border border-t-0 border-l-0 border-[#C9952A]/30 bg-[#4e0a10] text-[#E8D5C4] shadow-lg shadow-black/20 transition-all duration-300 hover:border-[#C9952A]/60 hover:bg-[#641017] hover:text-white md:flex"
         aria-label={isOpen ? 'Collapse navigation menu' : 'Expand navigation menu'}
         aria-expanded={isOpen}
         aria-controls="primary-navigation"

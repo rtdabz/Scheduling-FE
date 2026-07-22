@@ -31,7 +31,7 @@ const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules')
 const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
 const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
-const SecretarySubjects = lazy(() => import('./pages/secretary/Subjects'));
+const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
 
 interface StoredUser {
@@ -78,30 +78,6 @@ export default function App() {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (!token) return;
 
-    // Check if inactivity timeout has occurred before loading
-    const lastActivity = localStorage.getItem('lastActivity');
-    if (lastActivity) {
-      const diff = Date.now() - parseInt(lastActivity, 10);
-      if (diff > 120 * 60 * 1000) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        localStorage.removeItem('lastActivity');
-        sessionStorage.removeItem('token');
-        sessionStorage.removeItem('user');
-        sessionStorage.setItem('session_expired', 'true');
-
-        // Clear cookies
-        document.cookie.split(';').forEach((c) => {
-          document.cookie = c
-            .replace(/^ +/, '')
-            .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-        });
-
-        window.location.href = '/';
-        return;
-      }
-    }
-
     const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
     if (storedUser) return;
 
@@ -116,10 +92,12 @@ export default function App() {
         clearDataCache();
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        localStorage.removeItem('lastActivity');
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
-        window.location.href = '/';
+
+        if (window.location.pathname !== '/') {
+          window.location.href = '/';
+        }
       });
   }, []);
 
@@ -159,7 +137,8 @@ export default function App() {
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
             <Route path="/secretary/schedules" element={<SecretarySchedules />} />
             <Route path="/secretary/rooms" element={<SecretaryRooms />} />
-            <Route path="/secretary/subjects" element={<SecretarySubjects />} />
+            <Route path="/secretary/courses" element={<SecretaryCourses />} />
+            <Route path="/secretary/subjects" element={<SecretaryCourses />} />
             <Route path="/secretary/sections" element={<SecretarySections />} />
             <Route path="/secretary/instructors" element={<SecretaryFaculty />} />
             <Route path="/secretary/instructor-assignment" element={<InstructorAssignment />} />

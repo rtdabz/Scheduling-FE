@@ -6,6 +6,7 @@ import {
   slotToTimeStr
 } from "../constants";
 import type {
+  ApiCourseRecord,
   ApiDepartmentRecord,
   ApiFacultyRecord,
   ApiRoomRecord,
@@ -139,6 +140,7 @@ interface ScheduleUpdateResponse {
 interface InitialDataResponse {
   active_term: ApiTermRecord | null;
   rooms: ApiRoomRecord[];
+  courses?: ApiCourseRecord[];
   subjects: ApiSubjectRecord[];
   faculties: ApiFacultyRecord[];
   sections: ApiSectionRecord[];
@@ -183,17 +185,26 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   if (item.room?.room_code === "ONLINE") roomIdStr = "online";
   else if (item.room?.room_code === "FIELD") roomIdStr = "field";
 
+  const courseId = item.course_id?.toString() ?? item.subject_id?.toString() ?? "";
+  const courseCode = item.course?.course_code ?? item.subject?.course_code ?? item.subject?.subject_code ?? "";
+  const courseName = item.course?.course_name ?? item.subject?.course_name ?? item.subject?.subject_name ?? "";
+  const courseType = item.course?.course_category ?? item.subject?.course_category ?? item.subject?.subject_category ?? "major";
+
   return {
     id: item.id.toString(),
     termId: Number(item.term_id),
     departmentId: Number(item.department_id),
-    subjectId: item.subject_id.toString(),
-    subjectCode: item.subject?.subject_code ?? "",
-    subjectName: item.subject?.subject_name ?? "",
-    subjectType: item.subject?.subject_category ?? "major",
-    lectureUnits: toNumber(item.subject?.lecture_hours),
-    laboratoryUnits: toNumber(item.subject?.lab_hours),
-    totalUnits: toNumber(item.subject?.units),
+    courseId,
+    subjectId: courseId,
+    courseCode,
+    subjectCode: courseCode,
+    courseName,
+    subjectName: courseName,
+    courseType,
+    subjectType: courseType,
+    lectureUnits: toNumber(item.course?.lecture_hours ?? item.subject?.lecture_hours),
+    laboratoryUnits: toNumber(item.course?.lab_hours ?? item.subject?.lab_hours),
+    totalUnits: toNumber(item.course?.units ?? item.subject?.units),
     sectionName: item.section?.section_name ?? "",
     roomName,
     day: DAYS[dayIndex] || "Mon",
@@ -261,7 +272,7 @@ export const useScheduler = () => {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const schedulerCacheKey = `scheduler:v4:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v6:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -275,6 +286,11 @@ export const useScheduler = () => {
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
   const [isMarkingSectionDone, setIsMarkingSectionDone] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [selectedSectionId, setSelectedSectionId] = useState<string>(() => {
+    return canUseInitialCache && cachedSchedulerData?.sections?.length
+      ? cachedSchedulerData.sections[0].id
+      : "";
+  });
 
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
@@ -293,6 +309,9 @@ export const useScheduler = () => {
       setUsers(cachedData.users);
       setSections(cachedData.sections);
       setSchedules(cachedData.schedules);
+      if (!selectedSectionId && cachedData.sections.length > 0) {
+        setSelectedSectionId(cachedData.sections[0].id);
+      }
       setIsLoading(false);
       return () => {
         active = false;
@@ -302,7 +321,9 @@ export const useScheduler = () => {
 
     const fetchInitialData = api.get<InitialDataResponse>('/initial-data', { signal });
 
-    setIsLoading(true);
+    if (subjects.length === 0) {
+      setIsLoading(true);
+    }
 
     loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
       const response = await fetchInitialData;
@@ -319,14 +340,15 @@ export const useScheduler = () => {
         status: r.status
       }));
 
-      const mappedSubjects = initialData.subjects.map((s): Subject => ({
+      const rawCourses = initialData.courses ?? initialData.subjects ?? [];
+      const mappedSubjects = rawCourses.map((s): Subject => ({
         id: s.id.toString(),
-        code: s.subject_code,
-        name: s.subject_name,
+        code: s.course_code ?? s.subject_code ?? "",
+        name: s.course_name ?? s.subject_name ?? "",
         units: s.units,
         lectureHours: s.lecture_hours ?? 0,
         labHours: s.lab_hours ?? 0,
-        category: (s.subject_category as string) === "major" ? "major" : "minor",
+        category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
         semester: s.semester,
         departmentId: s.department_id ?? null,
         yearLevel: normalizeYearLevel(s.year_level),
@@ -390,6 +412,7 @@ export const useScheduler = () => {
         setUsers(data.users);
         setSections(data.sections);
         setSchedules(data.schedules);
+        setSelectedSectionId((prev) => (prev && data.sections.some((sec) => sec.id === prev) ? prev : (data.sections[0]?.id ?? "")));
       })
       .catch(() => {
         if (active && !signal.aborted) {
@@ -420,8 +443,6 @@ export const useScheduler = () => {
   // Click-to-place / click-to-move (mouse-free alternative to drag-and-drop)
   const [placementSubjectId, setPlacementSubjectId] = useState<string | null>(null);
   const [movingScheduleId, setMovingScheduleId] = useState<string | null>(null);
-
-  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
 
   useEffect(() => {
     if (sections.length === 0) return;
@@ -615,7 +636,9 @@ export const useScheduler = () => {
           sectionId: section.id,
           sectionName: section.name,
           yearLevel: section.yearLevel,
+          requiredCourses: requiredSubjects,
           requiredSubjects,
+          plottedCourses: plottedSubjects,
           plottedSubjects,
           status,
           isDone: isFullyPlotted && departmentReadyStatuses.includes(status),
@@ -1471,13 +1494,14 @@ departmentSectionProgress.every((section) => section.status === "completed");
     setMovingScheduleId(null);
   };
 
-
   const handleEditMovingSchedule = () => {
     if (!movingScheduleId) return;
     const sched = schedules.find((s) => s.id === movingScheduleId);
     if (!sched) return;
+    const courseIdToUse = sched.courseId ?? sched.subjectId;
     setDropContext({
-      subjectId: sched.subjectId,
+      courseId: courseIdToUse,
+      subjectId: courseIdToUse,
       dayIndex: sched.dayIndex,
       startSlot: sched.startSlot,
       isRescheduling: true,
@@ -1527,6 +1551,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     if (placementSubjectId) {
       setDropContext({
+        courseId: placementSubjectId,
         subjectId: placementSubjectId,
         dayIndex,
         startSlot: timeIndex,
