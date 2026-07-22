@@ -161,7 +161,7 @@ export default function DeanFaculty() {
   const isDean = user?.role?.toLowerCase() === 'dean';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
-  const canManageFaculty = isVpaa || isSecretary || isProgramHead;
+  const canManageFaculty = isVpaa;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
   const title = isInstructorsPath ? 'Instructors' : 'Faculty';
