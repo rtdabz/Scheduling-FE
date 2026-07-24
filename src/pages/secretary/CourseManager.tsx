@@ -2,15 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import {
-  Pencil,
-  Trash2,
   Search,
-  AlertTriangle,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown,
-  X,
-  Loader2
+  ArrowDown
 } from 'lucide-react';
 import {
   useReactTable,
@@ -22,7 +17,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearCachedKey } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -95,15 +90,14 @@ export default function CourseManager() {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const coursesCacheKey = `page:courses:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
-  const cachedCoursesData = getCachedData<CoursesPageData>(coursesCacheKey);
-  const [courses, setCourses] = useState<Course[]>(cachedCoursesData?.courses ?? []);
-  const [departments, setDepartments] = useState<Department[]>(cachedCoursesData?.departments ?? []);
-  const [isLoading, setIsLoading] = useState(!hasCachedData(coursesCacheKey));
-
-  const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isDean = user?.role?.toLowerCase() === 'dean';
-  const isSecretary = user?.role?.toLowerCase() === 'secretary';
-  const canManageCourses = isVpaa || isDean || isSecretary;
+  
+  const [courses, setCourses] = useState<Course[]>(() => {
+    const cached = getCachedData<CoursesPageData>(coursesCacheKey);
+    return cached?.courses ?? [];
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    return !hasCachedData(coursesCacheKey);
+  });
 
   // Table States
   const [globalFilter, setGlobalFilter] = useState('');
@@ -117,200 +111,32 @@ export default function CourseManager() {
     return courses;
   }, [courses]);
 
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
-
-  // Form state
-  const [courseCode, setCourseCode] = useState('');
-  const [courseName, setCourseName] = useState('');
-  const [lectureHours, setLectureHours] = useState<number>(3);
-  const [labHours, setLabHours] = useState<number>(0);
-  const [units, setUnits] = useState<number>(3);
-  const [courseCategory, setCourseCategory] = useState<'major' | 'minor'>('major');
-  const [roomTypeRequired, setRoomTypeRequired] = useState<'lecture' | 'laboratory' | 'field' | 'online'>('lecture');
-  const [departmentId, setDepartmentId] = useState('');
-  const [status, setStatus] = useState<'active' | 'inactive'>('active');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Error states
-  const [codeError, setCodeError] = useState('');
-  const [nameError, setNameError] = useState('');
-  const [unitsError, setUnitsError] = useState('');
-
   useEffect(() => {
     fetchData();
   }, []);
 
-  const fetchData = async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(coursesCacheKey));
+  const fetchData = async () => {
+    // Only show skeleton loader if we don't have any cached courses
+    if (!hasCachedData(coursesCacheKey)) {
+      setIsLoading(true);
+    }
     try {
+      // Force refresh to always get the most up-to-date active curriculum
       const data = await loadCachedData<CoursesPageData>(coursesCacheKey, async () => {
         const url = user?.department_id ? `/courses?department_id=${user.department_id}` : '/courses';
-        const [coursesRes, deptsRes] = await Promise.all([
-          api.get<ApiCourse[]>(url),
-          api.get<Department[]>('/departments')
+        const [coursesRes] = await Promise.all([
+          api.get<ApiCourse[]>(url)
         ]);
         return {
           courses: coursesRes.data.map(mapApiCourse),
-          departments: deptsRes.data,
+          departments: []
         };
-      }, forceRefresh);
+      }, true);
       setCourses(data.courses);
-      setDepartments(data.departments);
     } catch {
-      toast.error('Error', 'Failed to load courses and departments data.');
+      toast.error('Error', 'Failed to load courses data.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    let hasError = false;
-    const trimmedCode = courseCode.trim();
-    const trimmedName = courseName.trim();
-
-    if (!trimmedCode) {
-      setCodeError('Course code is required');
-      hasError = true;
-    } else if (trimmedCode.length > 50) {
-      setCodeError('Course code must not exceed 50 characters');
-      hasError = true;
-    } else {
-      setCodeError('');
-    }
-
-    if (!trimmedName) {
-      setNameError('Course name is required');
-      hasError = true;
-    } else if (trimmedName.length > 100) {
-      setNameError('Course name must not exceed 100 characters');
-      hasError = true;
-    } else {
-      setNameError('');
-    }
-
-    if (units < 0) {
-      setUnitsError('Units cannot be negative');
-      hasError = true;
-    } else {
-      setUnitsError('');
-    }
-
-    if (hasError) return;
-
-    setIsSubmitting(true);
-
-    try {
-      const payload = {
-        course_code: trimmedCode,
-        course_name: trimmedName,
-        lecture_hours: Number(lectureHours),
-        lab_hours: Number(labHours),
-        units: Number(units),
-        course_category: courseCategory,
-        room_type_required: roomTypeRequired,
-        department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (user?.department_id ? Number(user.department_id) : null),
-        status
-      };
-
-      if (isEditMode && editingId !== null) {
-        const res = await api.put<ApiCourse>(`/courses/${editingId}`, payload);
-        const updatedCourse = mapApiCourse(res.data);
-        setCourses(prev => {
-          const nextCourses = prev.map(s => s.id === editingId ? updatedCourse : s);
-          setCachedData<CoursesPageData>(coursesCacheKey, { courses: nextCourses, departments });
-          return nextCourses;
-        });
-        toast.success('Success', 'Course updated successfully');
-      } else {
-        const res = await api.post<ApiCourse>('/courses', payload);
-        const createdCourse = mapApiCourse(res.data);
-        setCourses(prev => {
-          const nextCourses = [createdCourse, ...prev];
-          setCachedData<CoursesPageData>(coursesCacheKey, { courses: nextCourses, departments });
-          return nextCourses;
-        });
-        toast.success('Success', 'Course created successfully');
-      }
-
-      setIsModalOpen(false);
-      resetForm();
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string, errors?: Record<string, string[]> } } };
-      const apiErrors = err?.response?.data?.errors;
-      if (apiErrors && (apiErrors.course_code || apiErrors.subject_code)) {
-        setCodeError(apiErrors.course_code?.[0] || apiErrors.subject_code?.[0] || 'Code error');
-      } else {
-        const message = err?.response?.data?.message || 'Failed to save course';
-        toast.error('Error', message);
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const resetForm = () => {
-    setCourseCode('');
-    setCourseName('');
-    setLectureHours(3);
-    setLabHours(0);
-    setUnits(3);
-    setCourseCategory('major');
-    setRoomTypeRequired('lecture');
-    setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
-    setStatus('active');
-    setCodeError('');
-    setNameError('');
-    setUnitsError('');
-    setEditingId(null);
-    setIsEditMode(false);
-  };
-
-  const handleEditClick = (course: Course) => {
-    setCourseCode(course.course_code);
-    setCourseName(course.course_name);
-    setLectureHours(course.lecture_hours);
-    setLabHours(course.lab_hours);
-    setUnits(course.units);
-    setCourseCategory(course.course_category);
-    setRoomTypeRequired(course.room_type_required);
-    setDepartmentId(course.department_id ? course.department_id.toString() : '');
-    setStatus(course.status);
-    setCodeError('');
-    setNameError('');
-    setUnitsError('');
-    setEditingId(course.id);
-    setIsEditMode(true);
-    setIsModalOpen(true);
-  };
-
-  const triggerDeleteConfirmation = (id: number) => {
-    setIdToDelete(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const confirmDeleteCourse = async () => {
-    if (idToDelete !== null) {
-      try {
-        await api.delete(`/courses/${idToDelete}`);
-        setCourses(prev => {
-          const nextCourses = prev.filter(s => s.id !== idToDelete);
-          setCachedData<CoursesPageData>(coursesCacheKey, { courses: nextCourses, departments });
-          return nextCourses;
-        });
-        toast.success('Deleted', 'Course removed successfully');
-      } catch {
-        toast.error('Error', 'Failed to delete course');
-      } finally {
-        setIsDeleteModalOpen(false);
-        setIdToDelete(null);
-      }
     }
   };
 
@@ -359,6 +185,22 @@ export default function CourseManager() {
           cell: info => <span className="text-gray-600 font-medium text-xs">{info.getValue() as string} hrs</span>
         },
         {
+          accessorKey: 'year_level',
+          header: 'Year Level',
+          cell: info => {
+            const val = (info.getValue() as string) || '';
+            return <span className="font-bold text-gray-700 text-xs">{val}</span>;
+          }
+        },
+        {
+          accessorKey: 'semester',
+          header: 'Semester',
+          cell: info => {
+            const val = (info.getValue() as string) || '';
+            return <span className="font-bold text-gray-700 text-xs capitalize">{val}</span>;
+          }
+        },
+        {
           accessorKey: 'room_type_required',
           header: 'Room Type',
           cell: info => {
@@ -389,62 +231,11 @@ export default function CourseManager() {
               </span>
             );
           }
-        },
-        {
-          accessorKey: 'status',
-          header: 'Status',
-          cell: info => {
-            const val = (info.getValue() as string) || 'active';
-            let badgeColor = 'bg-green-50 text-green-700 border-green-200';
-            if (val === 'inactive') {
-              badgeColor = 'bg-red-50 text-red-700 border-red-200';
-            }
-            return (
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-                {val}
-              </span>
-            );
-          }
         }
       ];
-
-      if (canManageCourses) {
-        cols.push({
-          id: 'actions',
-          header: () => <div className="text-right">Actions</div>,
-          enableSorting: false,
-          cell: ({ row }) => (
-            <div className="flex justify-end gap-1.5">
-              <div className="relative group">
-                <button
-                  onClick={() => handleEditClick(row.original)}
-                  className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Pencil size={17} />
-                </button>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                  Edit
-                </span>
-              </div>
-              <div className="relative group">
-                <button
-                  onClick={() => triggerDeleteConfirmation(row.original.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Trash2 size={17} />
-                </button>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                  Delete
-                </span>
-              </div>
-            </div>
-          )
-        });
-      }
-
       return cols;
     },
-    [canManageCourses]
+    []
   );
 
   const table = useReactTable<Course>({
@@ -481,17 +272,6 @@ export default function CourseManager() {
             />
           </div>
         </div>
-        {canManageCourses && (
-          <button
-            onClick={() => {
-              resetForm();
-              setIsModalOpen(true);
-            }}
-            className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm shrink-0"
-          >
-            <span className="text-lg leading-none">+</span> Add Course
-          </button>
-        )}
       </div>
 
       {/* Table Section */}
@@ -555,7 +335,10 @@ export default function CourseManager() {
                       <Skeleton className="h-4 w-8" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="h-4 w-8" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-12" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs">
                       <Skeleton className="h-4 w-20 rounded-full" />
@@ -563,23 +346,14 @@ export default function CourseManager() {
                     <td className="px-4 py-2.5 align-middle text-xs">
                       <Skeleton className="h-4 w-16" />
                     </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                      <div className="flex justify-end gap-2">
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                      </div>
-                    </td>
                   </tr>
                 ))
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No courses found.</p>
-                      <p className="text-xs">Try adjusting your search criteria or add a new course.</p>
+                      <p className="text-base font-semibold">No courses found in the active curriculum.</p>
+                      <p className="text-xs">Ensure an active curriculum is set with assigned courses.</p>
                     </div>
                   </td>
                 </tr>
@@ -592,7 +366,7 @@ export default function CourseManager() {
                     }`}
                   >
                     {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['course_code', 'actions'].includes(cell.column.id);
+                      const isNoWrap = ['course_code'].includes(cell.column.id);
                       return (
                         <td
                           key={cell.id}
@@ -677,246 +451,6 @@ export default function CourseManager() {
           </div>
         )}
       </div>
-
-      {/* Create / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
-              <h2 className="text-lg font-bold text-[#1A1410] font-display">
-                {isEditMode ? 'Edit Course' : 'Add New Course'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Course Code <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={courseCode}
-                    onChange={(e) => {
-                      setCourseCode(e.target.value.toUpperCase());
-                      setCodeError('');
-                    }}
-                    placeholder="e.g. CS-401"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      codeError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                  {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Course Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={courseName}
-                    onChange={(e) => {
-                      setCourseName(e.target.value);
-                      setNameError('');
-                    }}
-                    placeholder="e.g. Software Engineering"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      nameError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                  {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Lec Hours
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={lectureHours}
-                    onChange={(e) => {
-                      const newLec = parseInt(e.target.value) || 0;
-                      setLectureHours(newLec);
-                      setUnits(newLec + labHours);
-                      setUnitsError('');
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Lab Hours
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={labHours}
-                    onChange={(e) => {
-                      const newLab = parseInt(e.target.value) || 0;
-                      setLabHours(newLab);
-                      setUnits(lectureHours + newLab);
-                      setUnitsError('');
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Units <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={units}
-                    onChange={(e) => {
-                      setUnits(parseInt(e.target.value) || 0);
-                      setUnitsError('');
-                    }}
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      unitsError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Course Category
-                  </label>
-                  <select
-                    value={courseCategory}
-                    onChange={(e) => setCourseCategory(e.target.value as 'major' | 'minor')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="major">Major</option>
-                    <option value="minor">Minor</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Room Type Required
-                  </label>
-                  <select
-                    value={roomTypeRequired}
-                    onChange={(e) => setRoomTypeRequired(e.target.value as 'lecture' | 'laboratory' | 'field' | 'online')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="lecture">Lecture</option>
-                    <option value="laboratory">Laboratory</option>
-                    <option value="field">Field</option>
-                    <option value="online">Online</option>
-                  </select>
-                </div>
-              </div>
-
-
-
-              {isVpaa && (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Department
-                  </label>
-                  <select
-                    value={departmentId}
-                    onChange={(e) => setDepartmentId(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="">General / All Departments</option>
-                    {departments.map((dept) => (
-                      <option key={dept.id} value={dept.id}>
-                        {dept.department_code} - {dept.department_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Status
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 font-semibold text-sm transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-6 py-2.5 bg-[#4e0a10] hover:bg-[#C9952A] text-white font-semibold text-sm rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {isEditMode ? 'Save Changes' : 'Create Course'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Course?</h3>
-            <p className="text-xs text-gray-500 mb-6">
-              Are you sure you want to delete this course? This action cannot be undone.
-            </p>
-            <div className="flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-bold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteCourse}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
-              >
-                Yes, Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

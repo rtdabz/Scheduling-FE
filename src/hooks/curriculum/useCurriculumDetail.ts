@@ -65,7 +65,7 @@ export function useCurriculumDetail(id: string | undefined) {
 
   const fetchCourses = useCallback(async () => {
     try {
-      const res = await api.get('/courses');
+      const res = await api.get('/courses?all=true');
       const data = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
       setAllCourses(data);
     } catch {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Pencil, Loader2, BookOpen, AlertCircle } from 'lucide-react';
 import type { CurriculumCourse } from '../../types/curriculum';
+import { formatCourseName } from '../../lib/formatters';
 
 export interface EditCourseFormData {
   courseId: number;
@@ -48,11 +49,11 @@ export default function EditCourseModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedCode = courseCode.trim();
-    const trimmedName = courseName.trim();
+    const trimmedCode = courseCode.replace(/\s+/g, ' ').trim().toUpperCase();
+    const formattedName = formatCourseName(courseName);
 
-    if (!trimmedCode || !trimmedName) {
-      if (!trimmedCode && !trimmedName) setError('Course Code and Course Name are required');
+    if (!trimmedCode || !formattedName) {
+      if (!trimmedCode && !formattedName) setError('Course Code and Course Name are required');
       else if (!trimmedCode) setError('Course Code is required');
       else setError('Course Name is required');
       return;
@@ -63,7 +64,7 @@ export default function EditCourseModal({
     await onSave({
       courseId: course.id,
       courseCode: trimmedCode,
-      courseName: trimmedName,
+      courseName: formattedName,
       courseCategory,
       lecUnits,
       labUnits,
@@ -116,6 +117,7 @@ export default function EditCourseModal({
               type="text"
               value={courseCode}
               onChange={(e) => setCourseCode(e.target.value)}
+              onBlur={() => setCourseCode(courseCode.replace(/\s+/g, ' ').trim().toUpperCase())}
               placeholder="e.g. IT 101"
               className="w-full px-3.5 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-900 uppercase bg-white outline-none focus:ring-1 focus:ring-[#C9952A] focus:border-[#C9952A] shadow-sm"
             />
@@ -130,6 +132,7 @@ export default function EditCourseModal({
               type="text"
               value={courseName}
               onChange={(e) => setCourseName(e.target.value)}
+              onBlur={() => setCourseName(formatCourseName(courseName))}
               placeholder="e.g. Data Structures and Algorithms"
               className="w-full px-3.5 py-2 border border-gray-300 rounded-xl text-xs font-medium text-gray-900 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] focus:border-[#C9952A] shadow-sm"
             />

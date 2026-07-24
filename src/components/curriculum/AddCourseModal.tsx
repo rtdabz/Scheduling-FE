@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Loader2, BookOpen, AlertCircle } from 'lucide-react';
+import { formatCourseName } from '../../lib/formatters';
 
 export interface ManualCourseRowRequest {
   rowId: string;
@@ -92,6 +93,23 @@ export default function AddCourseModal({
     );
   };
 
+  const handleInputBlur = (rowId: string, field: 'courseCode' | 'courseName') => {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.rowId === rowId) {
+          let updatedVal = r[field];
+          if (field === 'courseName') {
+            updatedVal = formatCourseName(updatedVal);
+          } else if (field === 'courseCode') {
+            updatedVal = updatedVal.replace(/\s+/g, ' ').trim().toUpperCase();
+          }
+          return { ...r, [field]: updatedVal };
+        }
+        return r;
+      })
+    );
+  };
+
   const handleCategoryChange = (rowId: string, category: 'major' | 'minor') => {
     setRows((prev) =>
       prev.map((r) => (r.rowId === rowId ? { ...r, courseCategory: category } : r))
@@ -127,8 +145,8 @@ export default function AddCourseModal({
     if (hasValidationError) return;
 
     const payload = validatedRows.map((r) => ({
-      courseCode: r.courseCode.trim(),
-      courseName: r.courseName.trim(),
+      courseCode: r.courseCode.replace(/\s+/g, ' ').trim().toUpperCase(),
+      courseName: formatCourseName(r.courseName),
       courseCategory: r.courseCategory,
       lecUnits: r.lecUnits ?? 0,
       labUnits: r.labUnits ?? 0,
@@ -192,7 +210,7 @@ export default function AddCourseModal({
                     {index + 1}
                   </div>
 
-                  {/* Course Code Text Input */}
+                   {/* Course Code Text Input */}
                   <div className="w-32 shrink-0">
                     <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
                       Course Code <span className="text-red-500">*</span>
@@ -201,6 +219,7 @@ export default function AddCourseModal({
                       type="text"
                       value={row.courseCode}
                       onChange={(e) => handleInputChange(row.rowId, 'courseCode', e.target.value)}
+                      onBlur={() => handleInputBlur(row.rowId, 'courseCode')}
                       placeholder="e.g. IT 101"
                       className={`w-full px-3 py-2 border rounded-xl text-xs font-bold text-gray-900 uppercase bg-white outline-none transition-colors shadow-sm ${
                         row.error && !row.courseCode.trim()
@@ -219,6 +238,7 @@ export default function AddCourseModal({
                       type="text"
                       value={row.courseName}
                       onChange={(e) => handleInputChange(row.rowId, 'courseName', e.target.value)}
+                      onBlur={() => handleInputBlur(row.rowId, 'courseName')}
                       placeholder="e.g. Data Structures and Algorithms"
                       className={`w-full px-3.5 py-2 border rounded-xl text-xs bg-white outline-none transition-colors shadow-sm ${
                         row.error && !row.courseName.trim()
