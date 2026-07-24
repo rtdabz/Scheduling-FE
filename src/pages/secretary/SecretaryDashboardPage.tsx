@@ -467,8 +467,8 @@ export default function SecretarySchedulingOperationsPage() {
 
       {isLoading ? (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {Array.from({ length: 6 }).map((_, index) => (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {Array.from({ length: 5 }).map((_, index) => (
               <div key={index} className="bg-white p-4 rounded-xl border-[0.5px] border-gray-200 animate-pulse min-h-[82px] flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <Skeleton className="h-3 w-14" />
@@ -545,11 +545,10 @@ export default function SecretarySchedulingOperationsPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <SummaryMetricCard label="Schedules" value={totalSchedules} icon={CalendarDays} />
             <SummaryMetricCard label="Pending" value={pendingApprovals} icon={Clock} iconClassName="text-[#F5A623]" iconWrapperClassName="bg-[#F5A623]/5" />
-            <SummaryMetricCard label="Sections" value={visibleSections.length} icon={Layers} />
-            <SummaryMetricCard label="Faculty" value={facultyStats.total} icon={Users} />
+            <SummaryMetricCard label="Faculty" value={facultyStats.total} icon={Users} onClick={() => navigate('/secretary/instructors')} />
             <SummaryMetricCard label="Rooms" value={visibleRooms.length} icon={DoorOpen} />
             <SummaryMetricCard label="Subjects" value={visibleSubjects.length} icon={BookOpen} />
           </div>

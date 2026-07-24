@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import {
@@ -6,21 +7,19 @@ import {
   Trash2,
   Search,
   AlertTriangle,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   X,
-  Loader2
+  Loader2,
+  Building2,
+  ArrowLeft,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  LayoutGrid,
+  List,
+  Filter,
+  Plus
 } from 'lucide-react';
-import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-  flexRender
-} from '@tanstack/react-table';
-import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
@@ -54,9 +53,41 @@ interface ApiRoom {
   updated_at: string;
 }
 
+interface Schedule {
+  id: number;
+  term_id: number;
+  section_id: number;
+  course_id: number;
+  faculty_id: number | null;
+  room_id: number;
+  department_id: number;
+  day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  start_time: string;
+  end_time: string;
+  mode: string;
+  status: string;
+  section?: {
+    id: number;
+    section_name: string;
+  } | null;
+  course?: {
+    id: number;
+    course_code: string;
+    course_name: string;
+  } | null;
+  faculty?: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    middle_name?: string | null;
+  } | null;
+}
+
 interface RoomsPageData {
   rooms: Room[];
   departments: Department[];
+  schedules?: Schedule[];
+  activeTerm?: any;
 }
 
 const mapApiRoom = (r: ApiRoom): Room => ({
@@ -71,6 +102,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
 });
 
 export default function ProgramHeadRooms() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
@@ -78,6 +110,8 @@ export default function ProgramHeadRooms() {
   const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
   const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
+  const [activeTerm, setActiveTerm] = useState<any | null>(cachedRoomsData?.activeTerm ?? null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
@@ -90,13 +124,12 @@ export default function ProgramHeadRooms() {
     return rooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(user.department_id));
   }, [rooms, isVpaa, user?.department_id]);
 
-  // Table States
+  // Card view and schedule details states
   const [globalFilter, setGlobalFilter] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10
-  });
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [roomTypeFilter, setRoomTypeFilter] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -125,19 +158,22 @@ export default function ProgramHeadRooms() {
     setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
     try {
       const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const [roomsRes, deptsRes] = await Promise.all([
-          api.get<ApiRoom[]>('/rooms'),
-          api.get<Department[]>('/departments')
+        const [initialDataRes] = await Promise.all([
+          api.get<{ rooms: ApiRoom[]; departments: Department[]; schedules: Schedule[]; active_term: any }>('/initial-data')
         ]);
         return {
-          rooms: roomsRes.data.map(mapApiRoom),
-          departments: deptsRes.data,
+          rooms: initialDataRes.data.rooms.map(mapApiRoom),
+          departments: initialDataRes.data.departments,
+          schedules: initialDataRes.data.schedules,
+          activeTerm: initialDataRes.data.active_term,
         };
       }, forceRefresh);
       setRooms(data.rooms);
       setDepartments(data.departments);
+      setSchedules(data.schedules || []);
+      setActiveTerm(data.activeTerm || null);
     } catch {
-      toast.error('Error', 'Failed to load rooms and departments data.');
+      toast.error('Error', 'Failed to load rooms and schedules data.');
     } finally {
       setIsLoading(false);
     }
@@ -186,7 +222,7 @@ export default function ProgramHeadRooms() {
         setRooms(prev => {
           const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
           clearDataCache();
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
         toast.success('Success', 'Room updated successfully');
@@ -196,7 +232,7 @@ export default function ProgramHeadRooms() {
         setRooms(prev => {
           const nextRooms = [createdRoom, ...prev];
           clearDataCache();
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
         toast.success('Success', 'Room created successfully');
@@ -244,7 +280,7 @@ export default function ProgramHeadRooms() {
         setRooms(prev => {
           const nextRooms = prev.filter(r => r.id !== idToDelete);
           clearDataCache();
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
         toast.success('Deleted', 'Room removed successfully');
@@ -257,352 +293,597 @@ export default function ProgramHeadRooms() {
     }
   };
 
-  const columns = useMemo<ColumnDef<Room>[]>(
-    () => {
-      const cols: ColumnDef<Room>[] = [
-        {
-          accessorKey: 'room_code',
-          header: 'Room Code',
-          cell: info => (
-            <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
-              {info.getValue() as string}
-            </span>
-          )
-        },
-        {
-          accessorKey: 'building',
-          header: 'Building',
-          cell: info => <span className="font-bold text-gray-800">{(info.getValue() as string) || '—'}</span>
-        },
-        {
-          accessorKey: 'room_type',
-          header: 'Room Type',
-          cell: info => {
-            const val = (info.getValue() as string) || '';
-            let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-            if (val === 'laboratory') {
-              badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
-            } else if (val === 'online') {
-              badgeColor = 'bg-green-50 text-green-700 border-green-200';
-            } else if (val === 'field') {
-              badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-            }
-            return (
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-                {val}
-              </span>
-            );
-          }
-        },
-        {
-          accessorKey: 'status',
-          header: 'Status',
-          cell: info => {
-            const val = (info.getValue() as string) || 'available';
-            const badgeColor = val === 'not available'
-              ? 'bg-red-50 text-red-700 border-red-200'
-              : 'bg-green-50 text-green-700 border-green-200';
-            return (
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-                {val}
-              </span>
-            );
-          }
-        },
-        {
-          accessorKey: 'department',
-          header: 'Department',
-          cell: info => {
-            const dept = info.getValue() as Department | null;
-            return (
-              <span className="text-gray-700 font-semibold text-xs">
-                {dept ? `${dept.department_code} - ${dept.department_name}` : 'General / All'}
-              </span>
-            );
-          }
-        },
-        {
-          accessorKey: 'createdAt',
-          header: 'Created At',
-          cell: info => {
-            const val = info.getValue() as string;
-            if (!val) return '—';
-            try {
-              const date = new Date(val);
-              return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-            } catch {
-              return '—';
-            }
-          }
-        }
-      ];
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    const parts = timeStr.split(':');
+    let hour = parseInt(parts[0], 10);
+    const minute = parts[1];
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    hour = hour ? hour : 12;
+    return `${hour}:${minute} ${ampm}`;
+  };
 
-      if (canManageRooms) {
-        cols.push({
-          id: 'actions',
-          header: () => <div className="text-right">Actions</div>,
-          enableSorting: false,
-          cell: ({ row }) => (
-            <div className="flex justify-end gap-1.5">
-              <div className="relative group">
-                <button
-                  onClick={() => handleEditClick(row.original)}
-                  className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Pencil size={17} />
-                </button>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                  Edit
-                </span>
-              </div>
-              <div className="relative group">
-                <button
-                  onClick={() => triggerDeleteConfirmation(row.original.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Trash2 size={17} />
-                </button>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                  Delete
-                </span>
-              </div>
-            </div>
-          )
-        });
+  const getMinutes = (timeStr: string) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  };
+
+  const getRoomStatusToday = (roomId: number) => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayName = days[new Date().getDay()];
+    
+    const todaySchedules = schedules.filter(s => s.room_id === roomId && s.day === todayName);
+    
+    if (todaySchedules.length === 0) {
+      return { status: 'free-all-day', text: 'Free all day' };
+    }
+    
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    const activeClass = todaySchedules.find(s => {
+      const start = getMinutes(s.start_time);
+      const end = getMinutes(s.end_time);
+      return currentMinutes >= start && currentMinutes <= end;
+    });
+    
+    if (activeClass) {
+      const code = activeClass.course?.course_code || 'Class';
+      const section = activeClass.section?.section_name || '';
+      return { 
+        status: 'occupied', 
+        text: `Live: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
+        class: activeClass
+      };
+    }
+    
+    const upcomingClasses = todaySchedules
+      .filter(s => getMinutes(s.start_time) > currentMinutes)
+      .sort((a, b) => getMinutes(a.start_time) - getMinutes(b.start_time));
+      
+    if (upcomingClasses.length > 0) {
+      const nextClass = upcomingClasses[0];
+      const code = nextClass.course?.course_code || 'Class';
+      return {
+        status: 'upcoming',
+        text: `Next: ${code} at ${formatTime(nextClass.start_time)}`,
+        class: nextClass
+      };
+    }
+    
+    return { status: 'no-more-classes', text: 'No more classes today' };
+  };
+
+  const searchedRooms = useMemo(() => {
+    let result = filteredRooms;
+
+    if (globalFilter.trim()) {
+      const query = globalFilter.toLowerCase();
+      result = result.filter(r => 
+        r.room_code.toLowerCase().includes(query) || 
+        (r.building && r.building.toLowerCase().includes(query)) ||
+        (r.room_type && r.room_type.toLowerCase().includes(query)) ||
+        (r.department?.department_code && r.department.department_code.toLowerCase().includes(query)) ||
+        (r.department?.department_name && r.department.department_name.toLowerCase().includes(query))
+      );
+    }
+
+    if (departmentFilter) {
+      result = result.filter(r => r.department_id !== null && Number(r.department_id) === Number(departmentFilter));
+    }
+
+    if (roomTypeFilter) {
+      result = result.filter(r => r.room_type === roomTypeFilter);
+    }
+
+    return result;
+  }, [filteredRooms, globalFilter, departmentFilter, roomTypeFilter]);
+
+  const buildings = useMemo(() => {
+    const map = new Map<string, Room[]>();
+    searchedRooms.forEach(room => {
+      const b = room.building || 'Other/Unassigned';
+      if (!map.has(b)) {
+        map.set(b, []);
       }
+      map.get(b)!.push(room);
+    });
+    
+    return Array.from(map.entries())
+      .map(([name, roomsInBuilding]) => {
+        const total = roomsInBuilding.length;
+        const available = roomsInBuilding.filter(r => r.status === 'available').length;
+        return {
+          name,
+          rooms: roomsInBuilding,
+          totalCount: total,
+          availableCount: available,
+        };
+      })
+      .sort((a, b) => {
+        if (a.name === 'Other/Unassigned') return 1;
+        if (b.name === 'Other/Unassigned') return -1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [searchedRooms]);
 
-      return cols;
-    },
-    [canManageRooms]
-  );
-
-  const table = useReactTable<Room>({
-    data: filteredRooms,
-    columns,
-    state: {
-      globalFilter,
-      sorting,
-      pagination
-    },
-    onGlobalFilterChange: setGlobalFilter,
-    onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    autoResetPageIndex: false,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel()
-  });
+  const roomsInSelectedBuilding = useMemo(() => {
+    if (!selectedBuilding) return [];
+    return searchedRooms
+      .filter(r => (r.building || 'Other/Unassigned') === selectedBuilding)
+      .sort((a, b) => a.room_code.localeCompare(b.room_code, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [searchedRooms, selectedBuilding]);
 
   return (
-    <div>
-      {/* Top Bar Section */}
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
-        <div className="relative flex-1 sm:max-w-md">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+    <div className="space-y-6">
+      {/* Search and Filters Bar */}
+      <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
+        {/* Search */}
+        <div className="relative flex-1 max-w-lg">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
           <input
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search room code or building..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
+            placeholder="Search rooms or buildings..."
+            className="w-full pl-11 pr-4 py-2 border border-gray-200 rounded-lg outline-none text-xs focus:ring-1 focus:ring-[#C9952A] bg-gray-50/50 focus:bg-white transition-all font-sans"
           />
         </div>
-        {canManageRooms && (
-          <button
-            onClick={() => {
-              setIsEditMode(false);
-              setEditingId(null);
-              setRoomCode('');
-              setBuilding('');
-              setRoomType('lecture');
-              setStatus('available');
-              setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
-              setCodeError('');
-              setBuildingError('');
-              setIsModalOpen(true);
-            }}
-            className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
-          >
-            <span className="text-lg leading-none">+</span> Add Room
-          </button>
-        )}
+
+        {/* Dropdowns & Actions */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Department Filter (Only for VPAA) */}
+          {isVpaa && (
+            <div className="flex items-center gap-1.5">
+              <Filter size={13} className="text-gray-400" />
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+              >
+                <option value="">All Departments</option>
+                {departments.map(d => (
+                  <option key={d.id} value={d.id}>{d.department_code}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Room Type Filter */}
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
+            <select
+              value={roomTypeFilter}
+              onChange={(e) => setRoomTypeFilter(e.target.value)}
+              className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+            >
+              <option value="">All Types</option>
+              <option value="lecture">Lecture</option>
+              <option value="laboratory">Laboratory</option>
+            </select>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                viewMode === 'grid' ? 'bg-white text-[#4e0a10] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                viewMode === 'list' ? 'bg-white text-[#4e0a10] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+              }`}
+              title="List View"
+            >
+              <List size={14} />
+            </button>
+          </div>
+
+          {/* Add button inside filter bar */}
+          {canManageRooms && (
+            <button
+              onClick={() => {
+                setIsEditMode(false);
+                setEditingId(null);
+                setRoomCode('');
+                setBuilding('');
+                setRoomType('lecture');
+                setStatus('available');
+                setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
+                setCodeError('');
+                setBuildingError('');
+                setIsModalOpen(true);
+              }}
+              className="bg-[#4e0a10] text-white px-4 py-1.5 rounded-lg hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-1.5 font-semibold text-xs shadow-sm cursor-pointer ml-auto"
+            >
+              <Plus size={15} />
+              <span>Add Room</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Table Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr
-                    key={`skeleton-row-${index}`}
-                    className={`h-12 border-b border-gray-100 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-xl" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+              <Skeleton className="h-1.5 w-full rounded" />
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : selectedBuilding === null ? (
+        /* Buildings Selection View */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-[#1A1410] font-sans uppercase tracking-wider text-gray-500">
+              Buildings Overview ({buildings.length})
+            </h2>
+          </div>
+
+          {buildings.length === 0 ? (
+            <div className="py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white font-sans">
+              <p className="text-base font-semibold">No buildings found.</p>
+              <p className="text-xs">Try adjusting your search criteria or add a room.</p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {buildings.map((building) => {
+                const percent = Math.round((building.availableCount / building.totalCount) * 100);
+                return (
+                  <div
+                    key={building.name}
+                    onClick={() => setSelectedBuilding(building.name)}
+                    className="bg-white border border-gray-100 hover:border-[#C9952A]/40 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-4 group font-sans"
                   >
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-32" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-24 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-20 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-28" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-20" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                      <div className="flex justify-end gap-2">
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] group-hover:bg-[#C9952A]/10 group-hover:text-[#C9952A] flex items-center justify-center transition-colors">
+                        <Building2 size={24} />
                       </div>
-                    </td>
-                  </tr>
-                ))
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No rooms found.</p>
-                      <p className="text-xs">Try adjusting your search criteria or add a new room.</p>
+                      <span className="text-[11px] font-bold uppercase tracking-wider bg-gray-50 text-gray-500 border border-gray-150 px-2 py-0.5 rounded-full">
+                        {building.totalCount} {building.totalCount === 1 ? 'room' : 'rooms'}
+                      </span>
                     </div>
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr
-                    key={row.id}
-                    className={`transition-colors h-12 hover:bg-gray-50/70 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['room_code', 'createdAt', 'actions'].includes(cell.column.id);
+
+                    <div>
+                      <h3 className="text-base font-bold text-gray-800 font-sans group-hover:text-[#C9952A] transition-colors leading-tight">
+                        {building.name}
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1 font-semibold">
+                        {building.availableCount} Available • {building.totalCount - building.availableCount} Unavailable
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2">
+                      <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                        <span>Availability</span>
+                        <span>{percent}%</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#4e0a10] rounded-full transition-all duration-500 group-hover:bg-[#C9952A]"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Buildings List View */
+            <div className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm font-sans">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/75 border-b border-gray-150">
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Building Name</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Total Rooms</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Available Rooms</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Unavailable Rooms</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Availability</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {buildings.map((building) => {
+                      const percent = Math.round((building.availableCount / building.totalCount) * 100);
                       return (
-                        <td
-                          key={cell.id}
-                          className={`px-4 py-2.5 align-middle text-xs ${
-                            isNoWrap ? 'whitespace-nowrap' : ''
-                          }`}
+                        <tr
+                          key={building.name}
+                          onClick={() => setSelectedBuilding(building.name)}
+                          className="hover:bg-gray-50/50 transition-colors cursor-pointer"
                         >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
+                                <Building2 size={16} />
+                              </div>
+                              <span className="text-sm font-bold text-gray-800 hover:text-[#C9952A] transition-colors">
+                                {building.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-655 font-semibold">
+                            {building.totalCount}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-emerald-600 font-semibold">
+                            {building.availableCount}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-red-655 font-semibold">
+                            {building.totalCount - building.availableCount}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3 max-w-xs">
+                              <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-[#4e0a10] rounded-full"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-bold text-gray-500">{percent}%</span>
+                            </div>
+                          </td>
+                        </tr>
                       );
                     })}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-
-        {/* Pagination Section */}
-        {table.getFilteredRowModel().rows.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-gray-500">
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-                {Math.min(
-                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                  table.getFilteredRowModel().rows.length
-                )} of {table.getFilteredRowModel().rows.length} rooms
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-semibold">Show</span>
-                <select
-                  value={table.getState().pagination.pageSize}
-                  onChange={e => {
-                    table.setPageSize(Number(e.target.value));
-                  }}
-                  className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-                >
-                  {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
-                    </option>
-                  ))}
-                </select>
+      ) : (
+        /* Drilled-Down Rooms View */
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSelectedBuilding(null)}
+                className="p-2 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 hover:border-gray-300 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer"
+              >
+                <ArrowLeft size={16} />
+              </button>
+              <div>
+                <h2 className="text-lg font-bold text-gray-855 font-sans">
+                  {selectedBuilding} Rooms
+                </h2>
+                <p className="text-xs text-gray-400 font-sans font-semibold">
+                  Viewing rooms in {selectedBuilding}
+                </p>
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                First
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold text-gray-500 px-1">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Last
-              </button>
-            </div>
+            
+            <span className="text-xs font-bold uppercase tracking-wider bg-[#4e0a10]/5 text-[#4e0a10] border border-[#4e0a10]/15 px-3 py-1 rounded-full w-max font-sans">
+              {roomsInSelectedBuilding.length} {roomsInSelectedBuilding.length === 1 ? 'Room' : 'Rooms'} Total
+            </span>
           </div>
-        )}
-      </div>
+
+          {roomsInSelectedBuilding.length === 0 ? (
+            <div className="py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white font-sans">
+              <p className="text-base font-semibold">No rooms match your search in this building.</p>
+              <p className="text-xs">Adjust search parameters or check another building.</p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {roomsInSelectedBuilding.map((room) => {
+                const liveStatus = getRoomStatusToday(room.id);
+                
+                let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                if (room.room_type === 'laboratory') {
+                  badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
+                } else if (room.room_type === 'online') {
+                  badgeColor = 'bg-green-50 text-green-700 border-green-200';
+                } else if (room.room_type === 'field') {
+                  badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
+                }
+                
+                const statusBadgeColor = room.status === 'not available'
+                  ? 'bg-red-50 text-red-700 border-red-200'
+                  : 'bg-green-50 text-green-700 border-green-200';
+
+                return (
+                  <div
+                    key={room.id}
+                    onClick={() => navigate(`/program_head/rooms/${room.id}`)}
+                    className="bg-white border border-gray-150 hover:border-[#C9952A]/40 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-sm font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg uppercase border border-[#C9952A]/20">
+                          {room.room_code}
+                        </span>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider pt-1.5 font-semibold">
+                          {room.department ? `${room.department.department_code} Department` : 'General / All'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
+                          {room.room_type}
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadgeColor}`}>
+                          {room.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Today's Schedule Overview */}
+                    <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-3.5 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 font-semibold mb-1">
+                          <Clock size={12} />
+                          <span>Today's Status</span>
+                        </div>
+                        {liveStatus.status === 'occupied' ? (
+                          <div className="flex items-center gap-2">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            </span>
+                            <p className="text-xs font-bold text-emerald-600 truncate">
+                              {liveStatus.text}
+                            </p>
+                          </div>
+                        ) : liveStatus.status === 'upcoming' ? (
+                          <p className="text-xs font-bold text-amber-600 truncate">
+                            {liveStatus.text}
+                          </p>
+                        ) : (
+                          <p className="text-xs font-bold text-gray-500 truncate">
+                            {liveStatus.text}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions Corner (Only if canManageRooms) */}
+                    {canManageRooms && (
+                      <div className="flex justify-end gap-2 border-t border-gray-100 pt-3" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleEditClick(room)}
+                          className="px-3 py-1.5 bg-white border border-gray-250 text-gray-700 hover:text-[#C9952A] hover:bg-gray-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
+                        >
+                          <Pencil size={13} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => triggerDeleteConfirmation(room.id)}
+                          className="px-3 py-1.5 bg-white border border-gray-250 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
+                        >
+                          <Trash2 size={13} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Rooms List View */
+            <div className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm font-sans">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/75 border-b border-gray-150">
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Room Code</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Department</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Room Type</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Today's Status</th>
+                      {canManageRooms && <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {roomsInSelectedBuilding.map((room) => {
+                      const liveStatus = getRoomStatusToday(room.id);
+                      
+                      let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
+                      if (room.room_type === 'laboratory') {
+                        badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
+                      } else if (room.room_type === 'online') {
+                        badgeColor = 'bg-green-50 text-green-700 border-green-200';
+                      } else if (room.room_type === 'field') {
+                        badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
+                      }
+                      
+                      const statusBadgeColor = room.status === 'not available'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-green-50 text-green-700 border-green-200';
+
+                      return (
+                        <tr
+                          key={room.id}
+                          onClick={() => navigate(`/program_head/rooms/${room.id}`)}
+                          className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-xs font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg border border-[#C9952A]/20">
+                              {room.room_code}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-655 font-semibold">
+                            {room.department ? `${room.department.department_code}` : 'General / All'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
+                              {room.room_type}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadgeColor}`}>
+                              {room.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {liveStatus.status === 'occupied' ? (
+                              <div className="flex items-center gap-2">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                </span>
+                                <p className="text-xs font-bold text-emerald-600 max-w-[200px] truncate">
+                                  {liveStatus.text}
+                                </p>
+                              </div>
+                            ) : liveStatus.status === 'upcoming' ? (
+                              <p className="text-xs font-bold text-amber-600 max-w-[200px] truncate">
+                                {liveStatus.text}
+                              </p>
+                            ) : (
+                              <p className="text-xs font-bold text-gray-500 max-w-[200px] truncate">
+                                {liveStatus.text}
+                              </p>
+                            )}
+                          </td>
+                          {canManageRooms && (
+                            <td className="px-6 py-4 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => handleEditClick(room)}
+                                  className="p-1 text-gray-500 hover:text-[#C9952A] transition-colors"
+                                  title="Edit Room"
+                                >
+                                  <Pencil size={15} />
+                                </button>
+                                <button
+                                  onClick={() => triggerDeleteConfirmation(room.id)}
+                                  className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                                  title="Delete Room"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create / Edit Modal */}
       {isModalOpen && (

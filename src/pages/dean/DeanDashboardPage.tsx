@@ -356,8 +356,8 @@ export default function DeanDashboardPage() {
       {isLoading ? (
         <div className="space-y-6">
           {/* Skeleton Summary Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
                 <Skeleton className="h-3 w-16" />
                 <Skeleton className="h-7 w-8" />
@@ -373,23 +373,17 @@ export default function DeanDashboardPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Summary Metric Cards (8 Cards Grid) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+          {/* Summary Metric Cards (7 Cards Grid) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {/* Total Faculty */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/dean/faculty')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Faculty</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{deptFaculties.length}</span>
                 <GraduationCap className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
-            {/* Total Sections */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Sections</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{deptSections.length}</span>
-                <Layers className="w-4 h-4 text-[#5A1220]/60" />
               </div>
             </div>
 
