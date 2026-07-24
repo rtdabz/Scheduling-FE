@@ -26,7 +26,7 @@ type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: s
 const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => (
   left.termId === right.termId
   && left.sectionId === right.sectionId
-  && left.subjectId === right.subjectId
+  && (left.courseId ?? left.subjectId) === (right.courseId ?? right.subjectId)
   && left.departmentId === right.departmentId
   && (left.preferredPattern ?? null) === (right.preferredPattern ?? null)
 );
@@ -101,7 +101,7 @@ export const useConflict = ({
       const overlaps = dayIndex === s.dayIndex && startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
         if (s.sectionId === sectionId) {
-          const sub = subjects.find((x) => x.id === s.subjectId);
+          const sub = subjects.find((x) => x.id === (s.courseId ?? s.subjectId));
           return {
             conflictType: "section",
             message: `Section conflict: This section already has a class (${sub?.code ?? ""}) scheduled at this time.`
@@ -159,7 +159,7 @@ export const useConflict = ({
       const sched = schedules.find((s) => s.id === draggedScheduleId);
       if (!sched) return false;
       dur = sched.durationSlots;
-      subjectId = sched.subjectId;
+      subjectId = sched.courseId ?? sched.subjectId ?? "";
       excludeId = sched.id;
       prefPattern = sched.preferredPattern ?? null;
     } else if (dragSubjectId) {

@@ -233,9 +233,10 @@ export default function PrintSchedule({
       const schedulesBySubject = new Map<string, ScheduleItem[]>();
 
       sectionSchedules.forEach((schedule) => {
-        const subjectSchedules = schedulesBySubject.get(schedule.subjectId) ?? [];
+        const key = schedule.courseId ?? schedule.subjectId ?? "";
+        const subjectSchedules = schedulesBySubject.get(key) ?? [];
         subjectSchedules.push(schedule);
-        schedulesBySubject.set(schedule.subjectId, subjectSchedules);
+        schedulesBySubject.set(key, subjectSchedules);
       });
 
       const filledRows = Array.from(schedulesBySubject.values()).flatMap((subjectSchedules) =>
@@ -262,8 +263,10 @@ export default function PrintSchedule({
 
       const body: RowInput[] = filledRows.map((item, index) => {
         const previousItem = filledRows[index - 1];
-        const isAdditionalMeeting = previousItem?.subjectId === item.subjectId;
-        const subjectMeetingCount = schedulesBySubject.get(item.subjectId)?.length ?? 1;
+        const itemKey = item.courseId ?? item.subjectId ?? "";
+        const prevKey = previousItem ? (previousItem.courseId ?? previousItem.subjectId ?? "") : "";
+        const isAdditionalMeeting = prevKey === itemKey;
+        const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
 
         return [
         ...(isAdditionalMeeting ? [] : [

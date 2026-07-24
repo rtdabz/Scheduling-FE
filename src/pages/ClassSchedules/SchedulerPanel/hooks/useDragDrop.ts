@@ -62,7 +62,7 @@ export const useDragDrop = ({
     setDragSubjectId(null);
     setDragFromCell(`${schedule.dayIndex}-${schedule.startSlot}`);
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", schedule.subjectId);
+    e.dataTransfer.setData("text/plain", schedule.courseId ?? schedule.subjectId ?? "");
   };
 
   const handleDragEnd = () => {
@@ -85,15 +85,12 @@ export const useDragDrop = ({
     setHoveredCell(null);
     setConflictInfo(null);
 
-    const subjectId = e.dataTransfer.getData("text/plain") || dragSubjectId;
-    if (!subjectId) return;
-
     if (draggedScheduleId) {
       const sched = schedules.find((s) => s.id === draggedScheduleId);
       if (!sched) return;
 
       const conflict = checkConflict(
-        sched.subjectId,
+        sched.courseId ?? sched.subjectId ?? "",
         sched.sectionId,
         null,
         sched.roomId,

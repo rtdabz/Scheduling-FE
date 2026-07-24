@@ -556,8 +556,8 @@ export const useScheduler = () => {
   const isPhase1Completed = ["completed", "approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
 
-  const scheduledSubjectIds = useMemo(
-    () => new Set(sectionSchedules.map((s) => s.subjectId)),
+  const scheduledSubjectIds = useMemo<Set<string>>(
+    () => new Set(sectionSchedules.map((s) => s.courseId ?? s.subjectId ?? "").filter((id): id is string => Boolean(id))),
     [sectionSchedules]
   );
 
@@ -715,7 +715,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const nextPlaced: Record<string, string> = {};
     schedules.forEach((s) => {
       for (let offset = 0; offset < s.durationSlots; offset++) {
-        nextPlaced[`${s.dayIndex}-${s.startSlot + offset}`] = s.subjectId;
+        nextPlaced[`${s.dayIndex}-${s.startSlot + offset}`] = s.courseId ?? s.subjectId ?? "";
       }
     });
     return nextPlaced;
@@ -892,19 +892,19 @@ departmentSectionProgress.every((section) => section.status === "completed");
         if (patternDays) {
           if (d1 > 0) {
             conflict = checkConflict(
-              dropContext.subjectId, selectedSectionId, null, modalRoomId,
+              dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalRoomId,
               patternDays[0], modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
             );
           }
           if (!conflict && d2 > 0) {
             conflict = checkConflict(
-              dropContext.subjectId, selectedSectionId, null, modalRoomId,
+              dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalRoomId,
               patternDays[1], modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
             );
           }
         } else {
           conflict = checkConflict(
-            dropContext.subjectId, selectedSectionId, null, modalRoomId,
+            dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalRoomId,
             dropContext.dayIndex, dropContext.startSlot, totalSlots, excludeIds, modalPreferredPattern
           );
         }
@@ -1568,7 +1568,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         return;
       }
       const conflict = checkConflict(
-        sched.subjectId,
+        sched.courseId ?? sched.subjectId ?? "",
         sched.sectionId,
         null,
         sched.roomId,

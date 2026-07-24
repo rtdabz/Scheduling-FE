@@ -172,8 +172,10 @@ export default function TopBar({
 
   const getDepartmentStatusLabel = (section: DepartmentSectionProgress) => {
     if (section.isDone) return "Done";
-    if (section.requiredSubjects > section.plottedSubjects) {
-      return `${Math.max(0, section.requiredSubjects - section.plottedSubjects)} unplaced`;
+    const req = section.requiredCourses ?? section.requiredSubjects ?? 0;
+    const plotted = section.plottedCourses ?? section.plottedSubjects ?? 0;
+    if (req > plotted) {
+      return `${Math.max(0, req - plotted)} unplaced`;
     }
     return "Needs Done";
   };

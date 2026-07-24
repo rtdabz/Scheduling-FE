@@ -165,7 +165,7 @@ export default function FacultyPanel({
                     Needs Faculty ({unassignedSlotsCount})
                   </h3>
                   {unassignedSchedules.map((slot) => {
-                    const sub = subjectById.get(slot.subjectId);
+                    const sub = subjectById.get(slot.courseId ?? slot.subjectId ?? "");
                     const selectedFacultyId = selectedFacultyBySlot[slot.id] ?? "";
                     const selectedFaculty = facultyById.get(selectedFacultyId);
                     const conflictWarning = conflictWarningBySlot[slot.id] ?? "";
@@ -319,7 +319,7 @@ export default function FacultyPanel({
                     <div className="text-center py-4 text-slate-400 text-xs">No slots assigned yet</div>
                   ) : (
                     assignedSchedules.map((slot) => {
-                      const sub = subjectById.get(slot.subjectId);
+                      const sub = subjectById.get(slot.courseId ?? slot.subjectId ?? "");
                       const isSavingSlot = facultyActionSlotId === slot.id;
                       const canManageFaculty = canManageScheduleFaculty(slot);
                       return (

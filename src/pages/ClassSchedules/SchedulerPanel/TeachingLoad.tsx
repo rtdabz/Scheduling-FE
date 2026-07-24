@@ -364,8 +364,8 @@ export default function TeachingLoad({
           const totalU = sub ? sub.units : 3;
 
           return {
-            code: s.subjectCode,
-            title: s.subjectName,
+            code: s.courseCode ?? s.subjectCode ?? "",
+            title: s.courseName ?? s.subjectName ?? "",
             day: s.day.substring(0, 3),
             time: `${s.startTime} - ${s.endTime}`,
             section: s.sectionName,

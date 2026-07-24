@@ -179,7 +179,8 @@ export default function RoomViewModal({
 
             {/* Booked class blocks */}
             {roomClasses.map((sched) => {
-              const styles = getGridCardStyles(sched.subjectType);
+              const styles = getGridCardStyles(sched.courseType ?? sched.subjectType ?? "major");
+              const code = sched.courseCode ?? sched.subjectCode ?? "";
               return (
                 <div
                   key={sched.id}
@@ -188,10 +189,10 @@ export default function RoomViewModal({
                     gridColumn: sched.dayIndex + 2,
                     gridRow: `${sched.startSlot + 2} / span ${sched.durationSlots}`
                   }}
-                  title={`${sched.subjectCode} - ${sched.sectionName} - ${sched.startTime}-${sched.endTime}`}
+                  title={`${code} - ${sched.sectionName} - ${sched.startTime}-${sched.endTime}`}
                 >
                   <div className={`text-[11px] font-bold uppercase truncate ${styles.text}`}>
-                    {sched.subjectCode}
+                    {code}
                   </div>
                   <div className="text-[10px] font-semibold text-slate-600 truncate">
                     {sched.sectionName}

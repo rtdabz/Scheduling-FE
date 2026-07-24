@@ -10,8 +10,7 @@ import {
   ArrowUp,
   ArrowDown,
   X,
-  Loader2,
-  Filter
+  Loader2
 } from 'lucide-react';
 import {
   useReactTable,
@@ -106,10 +105,6 @@ export default function CourseManager() {
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
   const canManageCourses = isVpaa || isDean || isSecretary;
 
-  // Filter States
-  const [yearLevelFilter, setYearLevelFilter] = useState<string>('all');
-  const [semesterFilter, setSemesterFilter] = useState<string>('all');
-
   // Table States
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -119,12 +114,8 @@ export default function CourseManager() {
   });
 
   const filteredCourses = useMemo(() => {
-    return courses.filter((c) => {
-      const matchYear = yearLevelFilter === 'all' || c.year_level?.toString() === yearLevelFilter;
-      const matchSem = semesterFilter === 'all' || c.semester === semesterFilter;
-      return matchYear && matchSem;
-    });
-  }, [courses, yearLevelFilter, semesterFilter]);
+    return courses;
+  }, [courses]);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -141,8 +132,6 @@ export default function CourseManager() {
   const [units, setUnits] = useState<number>(3);
   const [courseCategory, setCourseCategory] = useState<'major' | 'minor'>('major');
   const [roomTypeRequired, setRoomTypeRequired] = useState<'lecture' | 'laboratory' | 'field' | 'online'>('lecture');
-  const [yearLevel, setYearLevel] = useState<'1' | '2' | '3' | '4'>('1');
-  const [semester, setSemester] = useState<'1st' | '2nd' | 'summer'>('1st');
   const [departmentId, setDepartmentId] = useState('');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -226,8 +215,6 @@ export default function CourseManager() {
         units: Number(units),
         course_category: courseCategory,
         room_type_required: roomTypeRequired,
-        year_level: yearLevel,
-        semester,
         department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (user?.department_id ? Number(user.department_id) : null),
         status
       };
@@ -276,8 +263,6 @@ export default function CourseManager() {
     setUnits(3);
     setCourseCategory('major');
     setRoomTypeRequired('lecture');
-    setYearLevel('1');
-    setSemester('1st');
     setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
     setStatus('active');
     setCodeError('');
@@ -295,8 +280,6 @@ export default function CourseManager() {
     setUnits(course.units);
     setCourseCategory(course.course_category);
     setRoomTypeRequired(course.room_type_required);
-    setYearLevel(course.year_level);
-    setSemester(course.semester);
     setDepartmentId(course.department_id ? course.department_id.toString() : '');
     setStatus(course.status);
     setCodeError('');
@@ -347,12 +330,6 @@ export default function CourseManager() {
           accessorKey: 'course_name',
           header: 'Course Name',
           cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
-        },
-        {
-          id: 'year_sem',
-          header: 'Yr & Sem',
-          accessorFn: row => `${row.year_level} - ${row.semester}`,
-          cell: info => <span className="text-gray-600 font-medium text-xs">{info.getValue() as string}</span>
         },
         {
           accessorKey: 'course_category',
@@ -502,37 +479,6 @@ export default function CourseManager() {
               placeholder="Search course code, name, etc..."
               className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
             />
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm">
-              <Filter size={14} className="text-gray-400" />
-              <span className="text-gray-500">Year:</span>
-              <select
-                value={yearLevelFilter}
-                onChange={(e) => setYearLevelFilter(e.target.value)}
-                className="bg-transparent outline-none font-bold text-[#4e0a10] cursor-pointer"
-              >
-                <option value="all">All Years</option>
-                <option value="1">1st Year</option>
-                <option value="2">2nd Year</option>
-                <option value="3">3rd Year</option>
-                <option value="4">4th Year</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm">
-              <Filter size={14} className="text-gray-400" />
-              <span className="text-gray-500">Sem:</span>
-              <select
-                value={semesterFilter}
-                onChange={(e) => setSemesterFilter(e.target.value)}
-                className="bg-transparent outline-none font-bold text-[#4e0a10] cursor-pointer"
-              >
-                <option value="all">All Semesters</option>
-                <option value="1st">1st Sem</option>
-                <option value="2nd">2nd Sem</option>
-                <option value="summer">Summer</option>
-              </select>
-            </div>
           </div>
         </div>
         {canManageCourses && (
@@ -883,38 +829,7 @@ export default function CourseManager() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Year Level
-                  </label>
-                  <select
-                    value={yearLevel}
-                    onChange={(e) => setYearLevel(e.target.value as '1' | '2' | '3' | '4')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="1">1st Year</option>
-                    <option value="2">2nd Year</option>
-                    <option value="3">3rd Year</option>
-                    <option value="4">4th Year</option>
-                  </select>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Semester
-                  </label>
-                  <select
-                    value={semester}
-                    onChange={(e) => setSemester(e.target.value as '1st' | '2nd' | 'summer')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="1st">1st Semester</option>
-                    <option value="2nd">2nd Semester</option>
-                    <option value="summer">Summer</option>
-                  </select>
-                </div>
-              </div>
 
               {isVpaa && (
                 <div>

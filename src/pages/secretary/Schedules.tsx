@@ -1,4 +1,4 @@
-import SchedulerPanel from "./SchedulerPanel";
+import SchedulerPanel from "../ClassSchedules/SchedulerPanel";
 
 export default function SecretarySchedules() {
   return (

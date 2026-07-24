@@ -80,12 +80,12 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
   })),
   subjects: data.subjects.map((subject) => ({
     id: String(subject.id),
-    code: subject.subject_code,
-    name: subject.subject_name,
+    code: subject.course_code ?? subject.subject_code ?? "",
+    name: subject.course_name ?? subject.subject_name ?? "",
     units: subject.units,
     lectureHours: Number(subject.lecture_hours ?? 0),
     labHours: Number(subject.lab_hours ?? 0),
-    category: subject.subject_category,
+    category: subject.course_category ?? subject.subject_category ?? "major",
     semester: subject.semester,
     departmentId: subject.department_id,
     yearLevel: normalizeYearLevel(subject.year_level),
@@ -104,17 +104,23 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
   schedules: data.schedules.map((schedule) => {
     const startSlot = timeToSlot(schedule.start_time);
     const endSlot = timeToSlot(schedule.end_time);
+    const course = schedule.course ?? schedule.subject;
+    const courseId = schedule.course_id ?? schedule.subject_id;
     return {
       id: String(schedule.id),
       termId: Number(schedule.term_id),
       departmentId: Number(schedule.department_id),
+      courseId: String(courseId),
+      courseCode: course?.course_code ?? course?.subject_code ?? "",
+      courseName: course?.course_name ?? course?.subject_name ?? "",
+      courseType: course?.course_category ?? course?.subject_category ?? "major",
       subjectId: String(schedule.subject_id),
-      subjectCode: schedule.subject?.subject_code ?? "",
-      subjectName: schedule.subject?.subject_name ?? "",
-      subjectType: schedule.subject?.subject_category ?? "major",
-      lectureUnits: Number(schedule.subject?.lecture_hours ?? 0),
-      laboratoryUnits: Number(schedule.subject?.lab_hours ?? 0),
-      totalUnits: Number(schedule.subject?.units ?? 0),
+      subjectCode: course?.subject_code ?? "",
+      subjectName: course?.subject_name ?? "",
+      subjectType: course?.subject_category ?? "major",
+      lectureUnits: Number(course?.lecture_hours ?? 0),
+      laboratoryUnits: Number(course?.lab_hours ?? 0),
+      totalUnits: Number(course?.units ?? 0),
       sectionName: schedule.section?.section_name ?? "",
       roomName: schedule.room?.building || schedule.room?.room_code || "",
       day: schedule.day,

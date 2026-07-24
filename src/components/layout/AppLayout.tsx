@@ -75,7 +75,11 @@ export default function AppLayout() {
 
   const navItems = getNavItems()
   const activeNavItem = findActiveNavItem(navItems, location.pathname)
-  const shouldShowPageTitle = Boolean(activeNavItem && !activeNavItem.label.toLowerCase().includes('dashboard'))
+  const shouldShowPageTitle = Boolean(
+    activeNavItem &&
+    !activeNavItem.label.toLowerCase().includes('dashboard') &&
+    !location.pathname.includes('/curricula')
+  )
   const pageTitle: PageTitleConfig | null = activeNavItem
     ? {
         title: activeNavItem.label,
