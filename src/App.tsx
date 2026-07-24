@@ -32,6 +32,7 @@ const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
 const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
 const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
+const RoomDetailPage = lazy(() => import('./pages/RoomDetailPage'));
 const CurriculumListPage = lazy(() => import('./pages/curriculum/CurriculumListPage'));
 const CurriculumDetailPage = lazy(() => import('./pages/curriculum/CurriculumDetailPage'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
@@ -121,6 +122,7 @@ export default function App() {
             <Route path="/schedules/approval" element={<VpaaScheduleApprovalPage />} />
             <Route path="/faculty" element={<VpaaFaculty />} />
             <Route path="/rooms" element={<VpaaRooms />} />
+            <Route path="/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/curricula" element={<CurriculumListPage />} />
             <Route path="/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/users" element={<VpaaUsers />} />
@@ -134,6 +136,7 @@ export default function App() {
             <Route path="/dean/schedules/approval" element={<DeanScheduleApprovalPage />} />
             <Route path="/dean/faculty" element={<DeanFaculty />} />
             <Route path="/dean/rooms" element={<DeanRooms />} />
+            <Route path="/dean/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/dean/curricula" element={<CurriculumListPage />} />
             <Route path="/dean/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/dean/reports" element={<DeanReports />} />
@@ -143,6 +146,7 @@ export default function App() {
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
             <Route path="/secretary/schedules" element={<SecretarySchedules />} />
             <Route path="/secretary/rooms" element={<SecretaryRooms />} />
+            <Route path="/secretary/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/secretary/courses" element={<SecretaryCourses />} />
             <Route path="/secretary/curricula" element={<CurriculumListPage />} />
             <Route path="/secretary/curricula/:id" element={<CurriculumDetailPage />} />
@@ -156,6 +160,7 @@ export default function App() {
             <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
             <Route path="/program_head/faculty" element={<ProgramHeadFaculty />} />
             <Route path="/program_head/rooms" element={<ProgramHeadRooms />} />
+            <Route path="/program_head/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/program_head/curricula" element={<CurriculumListPage />} />
             <Route path="/program_head/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />

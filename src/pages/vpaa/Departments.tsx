@@ -24,6 +24,29 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import api from '../../lib/api';
 
+const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
+  'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
+  'ARTS AND SCIENCE':            { bg: 'bg-red-100 border-red-400 text-red-900',             modal: 'bg-red-600'     },
+  'HOSPITALITY MANAGEMENT':      { bg: 'bg-green-100 border-green-400 text-green-900',       modal: 'bg-green-500'   },
+  'MIDWIFERY':                   { bg: 'bg-emerald-100 border-emerald-600 text-emerald-900', modal: 'bg-emerald-700' },
+  'LIBRARY INFORMATION SCIENCE': { bg: 'bg-pink-100 border-pink-400 text-pink-900',          modal: 'bg-pink-500'    },
+  'EDUCATION':                   { bg: 'bg-orange-100 border-orange-400 text-orange-900',    modal: 'bg-orange-500'  },
+  'CRIMINAL JUSTICE':            { bg: 'bg-red-200 border-red-800 text-red-950',             modal: 'bg-red-900'     },
+};
+
+const getDepartmentColor = (name: string) => {
+  const normalized = name.toUpperCase().trim();
+  for (const key of Object.keys(DEPARTMENT_COLORS)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return DEPARTMENT_COLORS[key];
+    }
+  }
+  return { 
+    bg: 'bg-[#C9952A]/10 border-[#C9952A]/20 text-[#C9952A]', 
+    modal: 'bg-[#4e0a10] hover:bg-[#C9952A]' 
+  };
+};
+
 interface Department {
   id: number;
   code: string;          // e.g. "CCS"
@@ -78,6 +101,10 @@ export default function Departments() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [codeError, setCodeError] = useState('');
   const [nameError, setNameError] = useState('');
+
+  const activeColors = useMemo(() => {
+    return getDepartmentColor(name);
+  }, [name]);
 
   useEffect(() => {
     fetchDepartments();
@@ -226,11 +253,15 @@ export default function Departments() {
       {
         accessorKey: 'code',
         header: 'Code',
-        cell: info => (
-          <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
-            {info.getValue() as string}
-          </span>
-        )
+        cell: info => {
+          const deptName = info.row.original.name || '';
+          const colors = getDepartmentColor(deptName);
+          return (
+            <span className={`px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border ${colors.bg}`}>
+              {info.getValue() as string}
+            </span>
+          );
+        }
       },
       {
         accessorKey: 'name',
@@ -534,14 +565,15 @@ export default function Departments() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
+            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50 relative overflow-hidden">
+              <div className={`absolute top-0 left-0 right-0 h-1.5 ${name ? activeColors.modal : 'bg-[#4e0a10]'}`} />
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode ? 'Edit Department' : 'Add New Department'}
               </h2>
               <button 
                 type="button"
                 onClick={() => setIsModalOpen(false)} 
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors relative z-10"
               >
                 <X size={20} />
               </button>
@@ -598,7 +630,9 @@ export default function Departments() {
                 <button 
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-white rounded-xl transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer ${
+                    name ? `${activeColors.modal} hover:opacity-90` : 'bg-[#4e0a10] hover:bg-[#C9952A]'
+                  }`}
                 >
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting 

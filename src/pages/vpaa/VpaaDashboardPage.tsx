@@ -427,8 +427,8 @@ export default function VpaaDashboardPage() {
       {isLoading ? (
         <div className="space-y-5">
           {/* Skeleton Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
                 <Skeleton className="h-3 w-16" />
                 <Skeleton className="h-7 w-8" />
@@ -444,10 +444,13 @@ export default function VpaaDashboardPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          {/* Summary Metric Cards (6 Cards Grid) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* Summary Metric Cards (5 Cards Grid) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Total Departments */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/departments')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Departments</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{departments.length}</span>
@@ -456,7 +459,10 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Total Faculty */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/faculty')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Total Faculty</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{faculties.length}</span>
@@ -464,18 +470,9 @@ export default function VpaaDashboardPage() {
               </div>
             </div>
 
-            {/* Total Sections */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Sections</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{sections.length}</span>
-                <Layers className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
             {/* Total Subjects */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Subjects</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Courses</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{subjects.length}</span>
                 <BookOpen className="w-4 h-4 text-[#5A1220]/60" />
@@ -721,7 +718,11 @@ export default function VpaaDashboardPage() {
                   }
 
                   return (
-                    <div key={dept.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow space-y-3">
+                    <div
+                      key={dept.id}
+                      onClick={() => navigate('/departments')}
+                      className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow space-y-3 cursor-pointer"
+                    >
                       <div className="flex justify-between items-start gap-2">
                         <div>
                           <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded border uppercase">
@@ -771,100 +772,6 @@ export default function VpaaDashboardPage() {
                   );
                 })
               )}
-            </div>
-          </div>
-
-          <ActivityFeed
-            title="Notifications"
-            icon={ClipboardList}
-            items={notificationItems}
-            emptyMessage="No scheduling notifications yet."
-            actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open approval queue ->'}
-            onAction={() => {
-              if (unreadCount > 0) {
-                void markAllAsRead();
-                return;
-              }
-
-              navigate('/schedules/approval');
-            }}
-            unreadCount={unreadCount}
-          />
-
-          {/* Quick Actions & Shortcut Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Quick Actions Card */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3">
-              <h2 className="text-gray-800 font-bold text-lg">Quick Actions</h2>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => navigate('/schedules/approval')}
-                  className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center"
-                >
-                  <CheckSquare className="w-5 h-5 text-[#5A1220] group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold">Schedule Approval</span>
-                </button>
-                <button
-                  onClick={() => navigate('/schedules')}
-                  className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center"
-                >
-                  <CalendarDays className="w-5 h-5 text-[#5A1220] group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold">Schedule Viewer</span>
-                </button>
-                <button
-                  onClick={() => navigate('/faculty')}
-                  className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center"
-                >
-                  <Users className="w-5 h-5 text-[#5A1220] group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold">Teaching Load</span>
-                </button>
-                <button
-                  onClick={() => navigate('/reports')}
-                  className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center"
-                >
-                  <FileBarChart className="w-5 h-5 text-[#5A1220] group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold">Reports</span>
-                </button>
-                <button
-                  onClick={handleExportSchedules}
-                  className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center"
-                >
-                  <Download className="w-5 h-5 text-[#5A1220] group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold">Export Schedule</span>
-                </button>
-                <button
-                  onClick={handleExportFacultyLoad}
-                  className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-700 hover:text-[#5A1220] flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm group text-center"
-                >
-                  <Download className="w-5 h-5 text-[#5A1220] group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold">Export Faculty Load</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Quick overview note/description text */}
-            <div className="lg:col-span-2 bg-[#5A1220]/5 border border-[#5A1220]/15 p-4 rounded-xl flex flex-col justify-between">
-              <div className="space-y-3">
-                <h3 className="text-[#5A1220] font-extrabold text-sm flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#5A1220]" />
-                  Academic Scheduling Guidelines (VPAA Review)
-                </h3>
-                <p className="text-gray-600 text-xs leading-relaxed">
-                  As VPAA, you are responsible for the final review and publication of the academic schedule for the active term. 
-                  Schedules submitted by department heads must pass through their respective Deans for initial verification before 
-                  appearing in your VPAA Approval Queue. 
-                </p>
-                <p className="text-gray-600 text-xs leading-relaxed">
-                  Ensure all faculty members conform to their maximum allowable units. Overloaded and Pro Bono workloads should be 
-                  vetted against university policies prior to issuing final approvals.
-                </p>
-              </div>
-              <div className="flex items-center justify-between text-[11px] font-semibold text-gray-400 mt-4 pt-4 border-t border-[#5A1220]/10">
-                <span>Tagoloan Community College Scheduling Engine</span>
-                <span className="text-[#5A1220] hover:underline cursor-pointer" onClick={() => navigate('/settings')}>
-                  System Config &rarr;
-                </span>
-              </div>
             </div>
           </div>
         </div>
