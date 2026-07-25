@@ -20,7 +20,6 @@ import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCach
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import {
-  ActivityFeed,
   AttentionPanel,
   ScheduleProgressCard,
   QuickActionsPanel,
@@ -546,10 +545,10 @@ export default function SecretarySchedulingOperationsPage() {
       ) : (
         <div className="space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            <SummaryMetricCard label="Schedules" value={totalSchedules} icon={CalendarDays} />
+            <SummaryMetricCard label="Schedules" value={totalSchedules} icon={CalendarDays} onClick={() => navigate('/secretary/schedules')} />
             <SummaryMetricCard label="Pending" value={pendingApprovals} icon={Clock} iconClassName="text-[#F5A623]" iconWrapperClassName="bg-[#F5A623]/5" />
             <SummaryMetricCard label="Faculty" value={facultyStats.total} icon={Users} onClick={() => navigate('/secretary/instructors')} />
-            <SummaryMetricCard label="Rooms" value={visibleRooms.length} icon={DoorOpen} />
+            <SummaryMetricCard label="Rooms" value={visibleRooms.length} icon={DoorOpen} onClick={() => navigate('/secretary/rooms')} />
             <SummaryMetricCard label="Subjects" value={visibleSubjects.length} icon={BookOpen} />
           </div>
 
@@ -594,25 +593,7 @@ export default function SecretarySchedulingOperationsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <QuickActionsPanel title="Quick Actions" actions={quickActions} />
-            <ActivityFeed
-              title="Notifications"
-              icon={ClipboardList}
-              items={notificationItems}
-              emptyMessage="No scheduling notifications yet."
-              actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open scheduling workspace ->'}
-              onAction={() => {
-                if (unreadCount > 0) {
-                  void markAllAsRead();
-                  return;
-                }
-
-                navigate('/secretary/schedules');
-              }}
-              unreadCount={unreadCount}
-            />
-          </div>
+          <QuickActionsPanel title="Quick Actions" actions={quickActions} />
         </div>
       )}
     </div>

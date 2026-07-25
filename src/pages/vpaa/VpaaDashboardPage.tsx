@@ -30,7 +30,13 @@ interface Schedule {
   id: number;
   term_id: number;
   section_id: number;
+  faculty_id?: number | null;
+  subject_id?: number | null;
   room_id?: number | null;
+  day: string;
+  start_time: string;
+  end_time: string;
+  mode?: 'on-site' | 'online' | 'field';
   status: string;
   updated_at?: string;
   section?: {
@@ -41,6 +47,21 @@ interface Schedule {
       department_code: string;
       department_name: string;
     } | null;
+  } | null;
+  faculty?: {
+    id: number;
+    first_name: string;
+    last_name: string;
+  } | null;
+  room?: {
+    id: number;
+    room_code: string;
+    building?: string | null;
+  } | null;
+  subject?: {
+    id: number;
+    subject_code: string;
+    subject_name: string;
   } | null;
 }
 
@@ -128,6 +149,160 @@ interface InitialDataResponse extends Omit<DashboardData, 'activeTerm'> {
   active_term: Term;
 }
 
+// ── Weekly Timetable Calendar Helpers ──
+const START_HOUR = 7;
+const END_HOUR = 21;
+
+const parseTimeToSlotIndex = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const match12 = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+  if (match12) {
+    let hour = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const ampm = match12[3].toUpperCase();
+    if (ampm === "PM" && hour !== 12) hour += 12;
+    if (ampm === "AM" && hour === 12) hour = 0;
+    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
+    return Math.max(0, totalHalfHours - 14); // 7:00 AM starts at slot 14
+  }
+  const parts = timeStr.split(':');
+  if (parts.length >= 2) {
+    const hour = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
+    return Math.max(0, totalHalfHours - 14);
+  }
+  return 0;
+};
+
+const getShortDay = (day: string): string => {
+  const normalized = day.trim().toLowerCase();
+  if (normalized.startsWith("mon")) return "Mon";
+  if (normalized.startsWith("tue")) return "Tue";
+  if (normalized.startsWith("wed")) return "Wed";
+  if (normalized.startsWith("thu")) return "Thu";
+  if (normalized.startsWith("fri")) return "Fri";
+  if (normalized.startsWith("sat")) return "Sat";
+  if (normalized.startsWith("sun")) return "Sun";
+  return "Mon";
+};
+
+const normalizeDepartmentKey = (code: string, name = "") => {
+  const normalizedCode = code.trim().toUpperCase();
+  const value = name.toLowerCase();
+  if (["IT", "CIT"].includes(normalizedCode) || value.includes("information technology")) return "IT";
+  if (["AS", "CAS"].includes(normalizedCode) || value.includes("arts and sciences")) return "AS";
+  if (["EDUC", "CED"].includes(normalizedCode) || value.includes("education")) return "EDUC";
+  if (["BA", "CBA"].includes(normalizedCode) || value.includes("business")) return "BA";
+  if (["HM", "CHM"].includes(normalizedCode) || value.includes("hospitality")) return "HM";
+  if (["CM", "MID"].includes(normalizedCode) || value.includes("midwifery")) return "MID";
+  if (["CRIM", "CCJ", "CCJPS"].includes(normalizedCode) || value.includes("criminal")) return "CRIM";
+  if (["LIS", "CLIS"].includes(normalizedCode) || value.includes("library")) return "LIS";
+  return "";
+};
+
+const getDeptStyles = (code: string) => {
+  switch (normalizeDepartmentKey(code)) {
+    case "IT":
+      return "bg-blue-50 text-blue-800 border-blue-200 border-l-blue-600 hover:bg-blue-100/60";
+    case "AS":
+      return "bg-purple-50 text-purple-800 border-purple-200 border-l-purple-600 hover:bg-purple-100/60";
+    case "EDUC":
+      return "bg-orange-50 text-orange-855 border-orange-250 border-l-orange-500 hover:bg-orange-100/60";
+    case "BA":
+      return "bg-yellow-50/50 text-yellow-850 border-yellow-300 border-l-yellow-600 hover:bg-yellow-100/60";
+    case "HM":
+      return "bg-lime-50 text-lime-850 border-lime-300 border-l-lime-600 hover:bg-lime-100/60";
+    case "MID":
+      return "bg-emerald-50 text-emerald-850 border-emerald-300 border-l-emerald-600 hover:bg-emerald-100/60";
+    case "CRIM":
+      return "bg-[#5A1220]/5 text-[#5A1220] border-[#5A1220]/20 border-l-[#5A1220] hover:bg-[#5A1220]/10";
+    case "LIS":
+      return "bg-pink-50 text-pink-850 border-pink-300 border-l-pink-600 hover:bg-pink-100/60";
+    default:
+      return "bg-gray-50 text-gray-800 border-gray-300 border-l-gray-500 hover:bg-gray-100/60";
+  }
+};
+
+interface LayoutItem {
+  schedule: Schedule;
+  leftPct: number;
+  widthPct: number;
+}
+
+const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
+  const sorted = [...daySchedules].sort((a, b) => {
+    const aStart = parseTimeToSlotIndex(a.start_time);
+    const bStart = parseTimeToSlotIndex(b.start_time);
+    if (aStart !== bStart) return aStart - bStart;
+    return (
+      (parseTimeToSlotIndex(b.end_time) - parseTimeToSlotIndex(b.start_time)) -
+      (parseTimeToSlotIndex(a.end_time) - parseTimeToSlotIndex(a.start_time))
+    );
+  });
+
+  const layouts: LayoutItem[] = [];
+  const clusters: Schedule[][] = [];
+
+  for (const s of sorted) {
+    let placed = false;
+    for (const cluster of clusters) {
+      const overlaps = cluster.some((c) => {
+        const sStart = parseTimeToSlotIndex(s.start_time);
+        const sEnd = parseTimeToSlotIndex(s.end_time);
+        const cStart = parseTimeToSlotIndex(c.start_time);
+        const cEnd = parseTimeToSlotIndex(c.end_time);
+        return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
+      });
+      if (overlaps) {
+        cluster.push(s);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      clusters.push([s]);
+    }
+  }
+
+  for (const cluster of clusters) {
+    const columns: Schedule[][] = [];
+    for (const s of cluster) {
+      let colIdx = 0;
+      while (true) {
+        if (!columns[colIdx]) {
+          columns[colIdx] = [s];
+          break;
+        }
+        const overlapsCol = columns[colIdx].some((c) => {
+          const sStart = parseTimeToSlotIndex(s.start_time);
+          const sEnd = parseTimeToSlotIndex(s.end_time);
+          const cStart = parseTimeToSlotIndex(c.start_time);
+          const cEnd = parseTimeToSlotIndex(c.end_time);
+          return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
+        });
+        if (!overlapsCol) {
+          columns[colIdx].push(s);
+          break;
+        }
+        colIdx += 1;
+      }
+    }
+    const colCount = columns.length;
+    columns.forEach((col, colIdx) => {
+      col.forEach((s) => {
+        layouts.push({
+          schedule: s,
+          leftPct: (colIdx / colCount) * 100,
+          widthPct: (1 / colCount) * 100,
+        });
+      });
+    });
+  }
+
+  return layouts;
+};
+
 export default function VpaaDashboardPage() {
   useTour();
   const { toast } = useToast();
@@ -149,6 +324,87 @@ export default function VpaaDashboardPage() {
   const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
   const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
+
+  // Timetable Calendar Filters and state
+  const [calendarDeptFilter, setCalendarDeptFilter] = useState<string>('all');
+  const [calendarFilterType, setCalendarFilterType] = useState<'section' | 'faculty' | 'room'>('section');
+  const [calendarSelectedId, setCalendarSelectedId] = useState<string>('');
+  const [calendarSearchQuery, setCalendarSearchQuery] = useState<string>('');
+
+  const calendarOptions = useMemo(() => {
+    let list: Array<{ id: string; name: string }> = [];
+    if (calendarFilterType === 'section') {
+      const filtered = calendarDeptFilter === 'all'
+        ? sections
+        : sections.filter(sec => Number(sec.department_id) === Number(calendarDeptFilter));
+      list = filtered.map(sec => ({ id: sec.id.toString(), name: sec.section_name }));
+    } else if (calendarFilterType === 'faculty') {
+      const filtered = calendarDeptFilter === 'all'
+        ? faculties
+        : faculties.filter(fac => Number(fac.department_id) === Number(calendarDeptFilter));
+      list = filtered.map(fac => ({ id: fac.id.toString(), name: `${fac.first_name} ${fac.last_name}` }));
+    } else {
+      // Room
+      list = rooms.map(r => ({ id: r.id.toString(), name: r.room_code + (r.building ? ` (${r.building})` : '') }));
+    }
+
+    if (calendarSearchQuery.trim()) {
+      const q = calendarSearchQuery.toLowerCase();
+      list = list.filter(item => item.name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [calendarFilterType, calendarDeptFilter, calendarSearchQuery, sections, faculties, rooms]);
+
+  useEffect(() => {
+    setCalendarSearchQuery('');
+  }, [calendarFilterType, calendarDeptFilter]);
+
+  useEffect(() => {
+    if (calendarOptions.length > 0) {
+      const exists = calendarOptions.some(opt => opt.id === calendarSelectedId);
+      if (!exists) {
+        setCalendarSelectedId(calendarOptions[0].id);
+      }
+    } else {
+      setCalendarSelectedId('');
+    }
+  }, [calendarOptions, calendarSelectedId]);
+
+  const calendarFilteredSchedules = useMemo(() => {
+    if (!calendarSelectedId) return [];
+    
+    // Filter active term first
+    const activeTermSchedules = activeTerm?.id
+      ? schedules.filter(s => Number(s.term_id) === Number(activeTerm.id))
+      : schedules;
+
+    if (calendarFilterType === 'section') {
+      return activeTermSchedules.filter(s => s.section_id?.toString() === calendarSelectedId);
+    }
+    if (calendarFilterType === 'faculty') {
+      return activeTermSchedules.filter(s => s.faculty_id?.toString() === calendarSelectedId);
+    }
+    if (calendarFilterType === 'room') {
+      return activeTermSchedules.filter(s => s.room_id?.toString() === calendarSelectedId);
+    }
+    return [];
+  }, [calendarSelectedId, calendarFilterType, schedules, activeTerm]);
+
+  const timeSlots = useMemo(() => {
+    const slots = [];
+    for (let slot = 0; slot < 28; slot += 1) { // 28 half-hour slots from 7:00 AM to 9:00 PM
+      const totalMinutes = 7 * 60 + slot * 30;
+      let hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      const ampm = hours >= 12 ? "PM" : "AM";
+      if (hours > 12) hours -= 12;
+      if (hours === 0) hours = 12;
+      slots.push({
+        label: `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`,
+      });
+    }
+    return slots;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -480,7 +736,10 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Classrooms */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/rooms')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Classrooms</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{rooms.length}</span>
@@ -489,7 +748,10 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Schedules */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/schedules')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Schedules</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{totalSchedules}</span>
@@ -630,15 +892,6 @@ export default function VpaaDashboardPage() {
                   </div>
                 </div>
               </div>
-
-              <div className="pt-4 border-t border-gray-150 flex justify-end">
-                <button
-                  onClick={() => navigate('/faculty')}
-                  className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  Manage workload distribution &rarr;
-                </button>
-              </div>
             </div>
 
             {/* Schedule Approval Queue */}
@@ -695,82 +948,159 @@ export default function VpaaDashboardPage() {
             </div>
           </div>
 
-          {/* Department Status Overview Section (Widget 1 & 5) */}
+          {/* Institutional Timetable Calendar Section */}
           <div className="space-y-3">
             <h2 className="text-gray-800 font-bold text-lg flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-[#5A1220]" />
-              Department Status Overview
+              <CalendarDays className="w-5 h-5 text-[#5A1220]" />
+              Institutional Timetable Calendar
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {departmentStats.length === 0 ? (
-                <div className="col-span-full bg-white p-8 border border-gray-200 rounded-2xl text-center">
-                  <p className="text-gray-400 text-sm">No department data has been registered.</p>
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
+              {/* Filter Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  {/* Department Filter */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Department</span>
+                    <select
+                      value={calendarDeptFilter}
+                      onChange={(e) => setCalendarDeptFilter(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
+                    >
+                      <option value="all">All Departments</option>
+                      {departments.map((dept) => (
+                        <option key={dept.id} value={dept.id}>{dept.department_code}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Filter Type */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">View By</span>
+                    <select
+                      value={calendarFilterType}
+                      onChange={(e) => setCalendarFilterType(e.target.value as 'section' | 'faculty' | 'room')}
+                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
+                    >
+                      <option value="section">Section</option>
+                      <option value="faculty">Faculty Member</option>
+                      <option value="room">Classroom</option>
+                    </select>
+                  </div>
+
+                  {/* Search Filter */}
+                  <div className="flex flex-col gap-1.5 min-w-[150px]">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Search Item</span>
+                    <input
+                      type="text"
+                      placeholder="Type to search..."
+                      value={calendarSearchQuery}
+                      onChange={(e) => setCalendarSearchQuery(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold"
+                    />
+                  </div>
+
+                  {/* Selection Dropdown */}
+                  <div className="flex flex-col gap-1.5 min-w-[200px]">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Item</span>
+                    <select
+                      value={calendarSelectedId}
+                      onChange={(e) => setCalendarSelectedId(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
+                    >
+                      {calendarOptions.length === 0 ? (
+                        <option value="">No items available</option>
+                      ) : (
+                        calendarOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>{opt.name}</option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-gray-450 font-semibold bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200/80">
+                  Total classes: <span className="font-extrabold text-[#5A1220]">{calendarFilteredSchedules.length}</span>
+                </div>
+              </div>
+
+              {/* Weekly Timetable Calendar Grid */}
+              {!calendarSelectedId ? (
+                <div className="rounded-xl border border-dashed border-gray-250 bg-gray-50/50 py-12 text-center text-sm text-gray-400 font-medium">
+                  Select a section, faculty member, or classroom to view the weekly schedule timetable.
+                </div>
+              ) : calendarFilteredSchedules.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-250 bg-gray-50/50 py-12 text-center text-sm text-gray-400 font-medium">
+                  No classes scheduled for the selected {calendarFilterType}.
                 </div>
               ) : (
-                departmentStats.map(dept => {
-                  let badgeStyles = 'bg-gray-100 text-gray-500 border border-gray-200';
-                  if (dept.approvalStatus === 'VPAA Approved') {
-                    badgeStyles = 'bg-emerald-50 text-emerald-700 border border-emerald-250';
-                  } else if (dept.approvalStatus === 'Pending Review') {
-                    badgeStyles = 'bg-amber-50 text-amber-700 border border-amber-250';
-                  } else if (dept.approvalStatus === 'Partially Approved') {
-                    badgeStyles = 'bg-blue-50 text-blue-700 border border-blue-200';
-                  }
-
-                  return (
-                    <div
-                      key={dept.id}
-                      onClick={() => navigate('/departments')}
-                      className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow space-y-3 cursor-pointer"
-                    >
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded border uppercase">
-                            {dept.department_code}
-                          </span>
-                          <h3 className="text-sm font-bold text-gray-800 mt-2 truncate max-w-[180px]" title={dept.department_name}>
-                            {dept.department_name}
-                          </h3>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[1000px] bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm relative flex flex-row">
+                    {/* Time Column */}
+                    <div className="w-20 shrink-0 border-r border-gray-200 bg-gray-50 select-none">
+                      <div className="h-10 border-b border-gray-200 bg-gray-100/55 flex items-center justify-center font-bold text-[10px] uppercase text-gray-400">Time</div>
+                      {timeSlots.map((slot, index) => (
+                        <div key={index} className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[9px] font-semibold text-gray-400">
+                          {slot.label.includes(":00") ? <span className="font-bold text-gray-600">{slot.label}</span> : <span className="opacity-30">.</span>}
                         </div>
-                        <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${badgeStyles}`}>
-                          {dept.approvalStatus}
-                        </span>
-                      </div>
-
-                      <div className="space-y-3">
-                        {/* Summary breakdown mini logs */}
-                        <div className="grid grid-cols-3 gap-2 text-[10px] text-gray-500 font-semibold">
-                          <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Sections</p>
-                            <p className="text-gray-800 font-bold mt-0.5">{dept.sectionsCount}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Completed</p>
-                            <p className="text-emerald-600 font-bold mt-0.5">{dept.completedCount}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Pending</p>
-                            <p className="text-amber-600 font-bold mt-0.5">{dept.pendingCount}</p>
-                          </div>
-                        </div>
-
-                        {/* Progress slider bar */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center text-[9px] font-bold text-gray-400">
-                            <span>PROGRESS</span>
-                            <span>{dept.progressPercent}%</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              style={{ width: `${dept.progressPercent}%` }}
-                              className="bg-[#5A1220] h-full rounded-full transition-all duration-300"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  );
-                })
+
+                    {/* Days Columns */}
+                    <div className="flex-1 flex flex-row relative">
+                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => {
+                        const daySchedules = calendarFilteredSchedules.filter((schedule) => getShortDay(schedule.day) === day);
+                        const layouts = getDayLayouts(daySchedules);
+                        return (
+                          <div key={day} className="flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[140px]">
+                            <div className="h-10 border-b border-gray-200 bg-gray-50 flex flex-col items-center justify-center select-none">
+                              <span className="font-bold text-xs text-gray-700 uppercase tracking-wide">{day}</span>
+                              <span className="text-[9px] font-bold text-gray-400">{daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}</span>
+                            </div>
+
+                            <div className="relative" style={{ height: `${28 * 24}px` }}>
+                              {timeSlots.map((_, index) => <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />)}
+                              {daySchedules.map((schedule) => {
+                                const startIdx = parseTimeToSlotIndex(schedule.start_time);
+                                const endIdx = parseTimeToSlotIndex(schedule.end_time);
+                                const top = startIdx * 24;
+                                const height = (endIdx - startIdx) * 24;
+                                const layout = layouts.find((item) => item.schedule.id === schedule.id);
+                                const left = layout ? `${layout.leftPct}%` : "0%";
+                                const width = layout ? `${layout.widthPct}%` : "100%";
+                                const deptCode = schedule.section?.department?.department_code || "GEN";
+
+                                return (
+                                  <div
+                                    key={schedule.id}
+                                    className={`absolute rounded-md border border-l-4 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all ${getDeptStyles(deptCode)}`}
+                                    style={{
+                                      top: `${top}px`,
+                                      height: `${height}px`,
+                                      left: left,
+                                      width: width,
+                                      fontSize: '9px',
+                                      lineHeight: '1.2'
+                                    }}
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="font-extrabold truncate text-gray-900">{schedule.subject?.subject_code || "Subject"}</p>
+                                      <p className="opacity-80 truncate font-semibold text-gray-700">{schedule.subject?.subject_name}</p>
+                                    </div>
+                                    <div className="mt-1 opacity-80 text-[8px] font-semibold text-gray-655">
+                                      <p className="truncate font-bold text-[#5A1220]">{schedule.section?.section_name}</p>
+                                      <p className="truncate font-bold text-slate-800">{schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}</p>
+                                      <p className="truncate font-bold text-slate-800">{schedule.room?.room_code || 'Unassigned'}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>

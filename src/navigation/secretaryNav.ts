@@ -43,7 +43,6 @@ export const secretaryNav: NavSection[] = [
   {
     section: 'SYSTEM',
     items: [
-      { label: 'Activity Log', path: '/secretary/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
       { label: 'Settings', path: '/secretary/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

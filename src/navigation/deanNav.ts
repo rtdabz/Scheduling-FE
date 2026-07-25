@@ -43,7 +43,6 @@ export const deanNav: NavSection[] = [
     section: 'SYSTEM',
     items: [
       { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports' },
-      { label: 'Activity Log', path: '/dean/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
       { label: 'User Management', path: '/dean/users', icon: Users, id: 'sidebar-users' },
     ]
   }

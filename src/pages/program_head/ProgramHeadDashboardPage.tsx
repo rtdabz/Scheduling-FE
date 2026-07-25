@@ -7,7 +7,7 @@ import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCach
 import { useNavigate } from 'react-router-dom';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
-import { ActivityFeed } from '../../components/overview';
+
 import {
   Users,
   Layers,
@@ -355,7 +355,10 @@ export default function ProgramHeadDashboardPage() {
             </div>
 
             {/* Total Schedules */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/program_head/schedules')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Schedules</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{deptSchedulesCount}</span>
@@ -648,22 +651,6 @@ export default function ProgramHeadDashboardPage() {
             </div>
           </div>
 
-          <ActivityFeed
-            title="Notifications"
-            icon={ClipboardList}
-            items={notificationItems}
-            emptyMessage="No scheduling notifications yet."
-            actionLabel={unreadCount > 0 ? 'Mark all as read ->' : 'Open scheduler ->'}
-            onAction={() => {
-              if (unreadCount > 0) {
-                void markAllAsRead();
-                return;
-              }
-
-              navigate('/program_head/schedules');
-            }}
-            unreadCount={unreadCount}
-          />
         </div>
       )}
     </div>

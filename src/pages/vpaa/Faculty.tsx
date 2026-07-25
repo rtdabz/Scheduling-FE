@@ -605,7 +605,7 @@ export default function VpaaFaculty() {
             const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
             const required = f.max_units - f.deload_units;
             const pct = required > 0 ? Math.round((f.assigned_units / required) * 100) : 0;
-            
+
             let progressColor = 'bg-[#F5A623]';
             if (f.assigned_units > required) {
               progressColor = f.probono_units > 0 ? 'bg-purple-500' : 'bg-red-500';
@@ -743,7 +743,7 @@ export default function VpaaFaculty() {
               Showing {(activePage - 1) * pageSize + 1}–
               {Math.min(activePage * pageSize, totalItems)} of {totalItems} {isInstructorsPath ? 'instructors' : 'faculty'}
             </div>
-            
+
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-500 font-semibold">Show</span>
               <select
@@ -825,7 +825,7 @@ export default function VpaaFaculty() {
               {/* Load Metrics Breakdown Card */}
               <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm space-y-3 font-sans">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Required Load Balance</h3>
-                
+
                 <div className="grid grid-cols-2 gap-4 text-xs font-sans">
                   <div>
                     <span className="text-gray-400 block font-semibold">Max Units (Base)</span>
@@ -944,11 +944,10 @@ export default function VpaaFaculty() {
                       setFirstNameError('');
                     }}
                     placeholder="John"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                      firstNameError
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${firstNameError
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
+                      }`}
                   />
                   {firstNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{firstNameError}</p>}
                 </div>
@@ -965,11 +964,10 @@ export default function VpaaFaculty() {
                       setLastNameError('');
                     }}
                     placeholder="Doe"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                      lastNameError
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
+                      }`}
                   />
                   {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{lastNameError}</p>}
                 </div>
@@ -1015,11 +1013,10 @@ export default function VpaaFaculty() {
                       setMaxUnitsError('');
                     }}
                     min="1"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                      maxUnitsError
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${maxUnitsError
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
+                      }`}
                   />
                   {maxUnitsError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{maxUnitsError}</p>}
                 </div>
@@ -1075,11 +1072,10 @@ export default function VpaaFaculty() {
                       setDepartmentId(e.target.value);
                       setDepartmentError('');
                     }}
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                      departmentError
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${departmentError
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
+                      }`}
                   >
                     <option value="">Select Department</option>
                     {departments.map(dept => (
