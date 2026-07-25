@@ -46,6 +46,13 @@ export const curriculumService = {
     });
   },
 
+  async attachCoursesBatch(
+    curriculumId: number | string,
+    courses: Array<{ course_id: number; year_level: number; semester: number }>
+  ): Promise<void> {
+    await api.post(`/curricula/${curriculumId}/courses/batch`, { courses });
+  },
+
   async detachCourse(curriculumId: number | string, courseId: number): Promise<void> {
     await api.delete(`/curricula/${curriculumId}/courses/${courseId}`);
   },

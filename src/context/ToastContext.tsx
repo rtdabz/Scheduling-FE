@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
@@ -60,12 +60,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss]
   )
 
-  const toastApi = {
+  const toastApi = useMemo(() => ({
     success: (title: string, message: string, duration?: number) => addToast('success', title, message, duration),
     error: (title: string, message: string, duration?: number) => addToast('error', title, message, duration),
     warning: (title: string, message: string, duration?: number) => addToast('warning', title, message, duration),
     info: (title: string, message: string, duration?: number) => addToast('info', title, message, duration),
-  }
+  }), [addToast])
 
   return (
     <ToastContext.Provider value={{ toasts, toast: toastApi, dismiss }}>

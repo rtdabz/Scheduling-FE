@@ -18,6 +18,7 @@ interface SemesterCardProps {
   onConfirmRemove: (courseId: number, courseCode: string) => void;
   onAddCourseToSemester: (
     courses: Array<{
+      rowId: string;
       courseCode: string;
       courseName: string;
       courseCategory: 'major' | 'minor';
@@ -25,7 +26,8 @@ interface SemesterCardProps {
       labUnits: number;
     }>,
     yearLevel: number,
-    semester: number
+    semester: number,
+    onProgress?: (rowId: string, status: 'saving' | 'success' | 'error', errorMsg?: string) => void
   ) => Promise<void>;
   onEditCourse?: (data: EditCourseFormData) => Promise<void>;
 }
@@ -50,13 +52,13 @@ export default function SemesterCard({
   onEditCourse,
 }: SemesterCardProps) {
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isAdding, setIsAdding] = useState(false);
 
   const [editingCourse, setEditingCourse] = useState<CurriculumCourse | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
   const handleSaveCourses = async (
     courseRequests: Array<{
+      rowId: string;
       courseCode: string;
       courseName: string;
       courseCategory: 'major' | 'minor';
@@ -64,13 +66,13 @@ export default function SemesterCard({
       labUnits: number;
     }>,
     yearLevel: number,
-    semester: number
+    semester: number,
+    onProgress?: (rowId: string, status: 'saving' | 'success' | 'error', errorMsg?: string) => void
   ) => {
-    setIsAdding(true);
     try {
-      await onAddCourseToSemester(courseRequests, yearLevel, semester);
-    } finally {
-      setIsAdding(false);
+      await onAddCourseToSemester(courseRequests, yearLevel, semester, onProgress);
+    } catch {
+      // Handled per-row
     }
   };
 
@@ -136,7 +138,6 @@ export default function SemesterCard({
           isOpen={isAddOpen}
           yearLevel={term.year_level}
           semester={term.semester}
-          isSubmitting={isAdding}
           onClose={() => setIsAddOpen(false)}
           onSaveCourses={handleSaveCourses}
         />

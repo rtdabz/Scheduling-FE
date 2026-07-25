@@ -91,6 +91,7 @@ export default function CurriculumCard({
       <div className="flex items-center gap-2 pt-3 border-t border-gray-100 flex-wrap">
         <button
           onClick={() => onView(curriculum.id)}
+          title="View curriculum details"
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
         >
           <Eye size={14} />
@@ -101,6 +102,7 @@ export default function CurriculumCard({
           <>
             <button
               onClick={() => onEdit(curriculum)}
+              title="Edit curriculum information"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
             >
               <Pencil size={14} />
@@ -108,32 +110,33 @@ export default function CurriculumCard({
             </button>
             <button
               onClick={() => onDuplicate(curriculum.id)}
+              title="Create a copy of this curriculum as a draft"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
             >
               <Copy size={14} />
               Duplicate
             </button>
-            {curriculum.status !== 'archived' && (
-              <>
-                <button
-                  onClick={handleStatusToggle}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                    curriculum.status === 'active'
-                      ? 'text-gray-600 hover:bg-gray-100'
-                      : 'text-emerald-600 hover:bg-emerald-50'
-                  }`}
-                >
-                  <CheckCircle2 size={14} />
-                  {curriculum.status === 'active' ? 'Deactivate' : 'Activate'}
-                </button>
-                <button
-                  onClick={() => onArchive(curriculum.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Archive size={14} />
-                  Archive
-                </button>
-              </>
+            <button
+              onClick={handleStatusToggle}
+              title={curriculum.status === 'active' ? 'Set status to draft' : 'Set status to active (deactivates other curricula in same department)'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                curriculum.status === 'active'
+                  ? 'text-gray-600 hover:bg-gray-100'
+                  : 'text-emerald-600 hover:bg-emerald-50'
+              }`}
+            >
+              <CheckCircle2 size={14} />
+              {curriculum.status === 'active' ? 'Deactivate' : 'Activate'}
+            </button>
+            {curriculum.status !== 'active' && (
+              <button
+                onClick={() => onArchive(curriculum.id)}
+                title="Archive this curriculum"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <Archive size={14} />
+                Archive
+              </button>
             )}
           </>
         )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../lib/dataCache';
 
@@ -110,40 +110,43 @@ export function useDepartmentScheduleStatus(
 
   // ── Derived values ──
 
-  const stageCounts: StageCounts = {
+  const stageCounts: StageCounts = useMemo(() => ({
     draft: sections.filter(s => s.status === 'draft').length,
     completed: sections.filter(s => s.status === 'completed').length,
     submitted: sections.filter(s => s.status === 'submitted').length,
     approved_by_dean: sections.filter(s => s.status === 'approved_by_dean').length,
     approved: sections.filter(s => s.status === 'approved').length,
-  };
+  }), [sections]);
 
   const totalSections = sections.length;
 
   // "Drafted" means the section has left the pure-draft stage (any status !== draft)
-  const draftedCount = sections.filter(s => s.status !== 'draft').length;
+  const draftedCount = useMemo(() => sections.filter(s => s.status !== 'draft').length, [sections]);
 
-  const draftingProgress =
-    totalSections > 0 ? Math.round((draftedCount / totalSections) * 100) : 0;
+  const draftingProgress = useMemo(() =>
+    totalSections > 0 ? Math.round((draftedCount / totalSections) * 100) : 0
+  , [totalSections, draftedCount]);
 
   // Build year-level summaries for the checklist
-  const presentYears = Array.from(new Set(sections.map(s => s.year_level))).sort();
-
-  const yearLevels: YearLevelSummary[] = presentYears.map(yr => {
-    const group = sections.filter(s => s.year_level === yr);
-    const drafted = group.filter(s => s.status !== 'draft').length;
-    return {
-      year_level: yr,
-      label: YEAR_LABELS[yr] ?? `Year ${yr}`,
-      total: group.length,
-      drafted,
-      isComplete: group.length > 0 && drafted === group.length,
-    };
-  });
+  const yearLevels: YearLevelSummary[] = useMemo(() => {
+    const presentYears = Array.from(new Set(sections.map(s => s.year_level))).sort();
+    return presentYears.map(yr => {
+      const group = sections.filter(s => s.year_level === yr);
+      const drafted = group.filter(s => s.status !== 'draft').length;
+      return {
+        year_level: yr,
+        label: YEAR_LABELS[yr] ?? `Year ${yr}`,
+        total: group.length,
+        drafted,
+        isComplete: group.length > 0 && drafted === group.length,
+      };
+    });
+  }, [sections]);
 
   // Submit is allowed only when every year level is complete (no drafts remaining)
-  const canSubmit =
-    yearLevels.length > 0 && yearLevels.every(yl => yl.isComplete);
+  const canSubmit = useMemo(() =>
+    yearLevels.length > 0 && yearLevels.every(yl => yl.isComplete)
+  , [yearLevels]);
 
   return {
     sections,

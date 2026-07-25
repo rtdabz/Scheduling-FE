@@ -454,7 +454,8 @@ export const useScheduler = () => {
 
   const refreshSchedules = useCallback(async () => {
     try {
-      const res = await api.get<ApiScheduleRecord[]>('/schedules');
+      const url = activeTerm ? `/schedules/term/${activeTerm.id}` : '/schedules';
+      const res = await api.get<ApiScheduleRecord[]>(url);
       let apiData = res.data;
       if (activeTerm) {
         apiData = apiData.filter((item) => Number(item.term_id) === Number(activeTerm.id));

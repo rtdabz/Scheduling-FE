@@ -54,7 +54,7 @@ export default function CurriculumDetailPage() {
             <Skeleton className="h-12 w-full rounded-xl" />
           </div>
           <div className="space-y-6">
-            {[1, 2].map((i) => (
+            {[1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-64 rounded-2xl" />
             ))}
           </div>
@@ -84,23 +84,27 @@ export default function CurriculumDetailPage() {
             onSelectYear={setSelectedYear}
           />
 
-          {/* Two-Column Left and Right Semester Cards Grid */}
+          {/* Three-Column Left, Middle and Right Semester Cards Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             {currentYearSemesters.map((term) => (
-              <SemesterCard
+              <div
                 key={`${term.year_level}-${term.semester}`}
-                term={term}
-                availableCourses={availableCourses}
-                highlightedCourseId={highlightedCourseId}
-                removingCourseId={removingCourseId}
-                isRemoving={isRemoving}
-                canEdit={canManageCurriculum}
-                onInitiateRemove={(cId) => setRemovingCourseId(cId)}
-                onCancelRemove={() => setRemovingCourseId(null)}
-                onConfirmRemove={handleRemoveCourse}
-                onAddCourseToSemester={handleAddCourseToSemester}
-                onEditCourse={handleEditCourse}
-              />
+                className={term.semester === 3 ? 'col-span-1 lg:col-span-2' : ''}
+              >
+                <SemesterCard
+                  term={term}
+                  availableCourses={availableCourses}
+                  highlightedCourseId={highlightedCourseId}
+                  removingCourseId={removingCourseId}
+                  isRemoving={isRemoving}
+                  canEdit={canManageCurriculum}
+                  onInitiateRemove={(cId) => setRemovingCourseId(cId)}
+                  onCancelRemove={() => setRemovingCourseId(null)}
+                  onConfirmRemove={handleRemoveCourse}
+                  onAddCourseToSemester={handleAddCourseToSemester}
+                  onEditCourse={handleEditCourse}
+                />
+              </div>
             ))}
           </div>
         </>

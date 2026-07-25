@@ -31,6 +31,8 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { useCurriculum } from '../../hooks/curriculum/useCurriculum';
 import CurriculumFormModal from '../../components/curriculum/CurriculumFormModal';
 import CurriculumCard from '../../components/curriculum/CurriculumCard';
+import CurriculumArchiveModal from '../../components/curriculum/CurriculumArchiveModal';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import type { Curriculum } from '../../types/curriculum';
 
 const statusColors: Record<string, string> = {
@@ -43,6 +45,7 @@ export default function CurriculumListPage() {
   const navigate = useNavigate();
   const {
     curricula,
+    rawCurricula,
     departments,
     isLoading,
     userRole,
@@ -61,6 +64,7 @@ export default function CurriculumListPage() {
 
   // View mode
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
 
   // Academic year filter
   const [academicYearFilter, setAcademicYearFilter] = useState<string>('all');
@@ -78,6 +82,34 @@ export default function CurriculumListPage() {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingCurriculum, setEditingCurriculum] = useState<Curriculum | null>(null);
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const triggerArchiveConfirmation = (id: number) => {
+    const target = rawCurricula.find((c) => c.id === id);
+    if (!target) return;
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Archive Curriculum',
+      message: `Are you sure you want to archive "${target.name}"?\n\nThis will remove it from the active list. You can restore it later from the Archive.`,
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        await handleArchive(id);
+      },
+    });
+  };
 
   const academicYears = useMemo(() => {
     const set = new Set<string>();
@@ -128,18 +160,6 @@ export default function CurriculumListPage() {
         accessorKey: 'name',
         header: 'Curriculum Name',
         cell: (info) => <span className="font-bold text-gray-800">{info.getValue() as string}</span>,
-      },
-      {
-        accessorKey: 'department',
-        header: 'Department',
-        cell: (info) => {
-          const dept = info.getValue() as Curriculum['department'];
-          return (
-            <span className="text-gray-700 font-semibold text-xs">
-              {dept ? dept.department_code : 'N/A'}
-            </span>
-          );
-        },
       },
       {
         accessorKey: 'curriculum_version',
@@ -227,8 +247,6 @@ export default function CurriculumListPage() {
                   >
                     <Copy size={15} />
                   </button>
-                  {item.status !== 'archived' && (
-                    <>
                       <button
                         onClick={() =>
                           handleStatusChange(item.id, item.status === 'active' ? 'draft' : 'active')
@@ -242,15 +260,15 @@ export default function CurriculumListPage() {
                       >
                         <CheckCircle2 size={15} />
                       </button>
-                      <button
-                        onClick={() => handleArchive(item.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                        title="Archive Curriculum"
-                      >
-                        <Archive size={15} />
-                      </button>
-                    </>
-                  )}
+                      {item.status !== 'active' && (
+                        <button
+                          onClick={() => triggerArchiveConfirmation(item.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          title="Archive Curriculum"
+                        >
+                          <Archive size={15} />
+                        </button>
+                      )}
                 </>
               )}
             </div>
@@ -290,17 +308,27 @@ export default function CurriculumListPage() {
         </div>
 
         {canManageCurriculum && (
-          <button
-            onClick={() => {
-              setEditingCurriculum(null);
-              setIsEditMode(false);
-              setIsFormModalOpen(true);
-            }}
-            className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm shrink-0 cursor-pointer"
-          >
-            <Plus size={16} />
-            Create Curriculum
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setIsArchiveOpen(true)}
+              className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
+              title="View Archived Curricula"
+            >
+              <Archive size={16} />
+              <span>Archive</span>
+            </button>
+            <button
+              onClick={() => {
+                setEditingCurriculum(null);
+                setIsEditMode(false);
+                setIsFormModalOpen(true);
+              }}
+              className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
+            >
+              <Plus size={16} />
+              Create Curriculum
+            </button>
+          </div>
         )}
       </div>
 
@@ -349,7 +377,6 @@ export default function CurriculumListPage() {
               <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="draft">Draft</option>
-              <option value="archived">Archived</option>
             </select>
           </div>
         </div>
@@ -459,7 +486,7 @@ export default function CurriculumListPage() {
                 }}
                 onDuplicate={handleDuplicate}
                 onStatusChange={handleStatusChange}
-                onArchive={handleArchive}
+                onArchive={triggerArchiveConfirmation}
               />
             ))
           )}
@@ -471,12 +498,30 @@ export default function CurriculumListPage() {
         isOpen={isFormModalOpen}
         isEditMode={isEditMode}
         curriculum={editingCurriculum}
-        departments={departments}
         onClose={() => setIsFormModalOpen(false)}
         onSubmit={async (data) => {
           await handleCreateOrUpdate(data, editingCurriculum);
           setIsFormModalOpen(false);
         }}
+      />
+
+      {/* Curriculum Archive Modal */}
+      <CurriculumArchiveModal
+        isOpen={isArchiveOpen}
+        onClose={() => setIsArchiveOpen(false)}
+        curricula={rawCurricula}
+        onRestore={handleStatusChange}
+      />
+
+      {/* Confirm Action Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        confirmLabel="Archive"
+        variant="maroon"
       />
     </div>
   );

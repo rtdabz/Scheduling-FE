@@ -107,9 +107,18 @@ export default function CourseManager() {
     pageSize: 10
   });
 
+  const [yearLevelFilter, setYearLevelFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [semesterFilter, setSemesterFilter] = useState('all');
+
   const filteredCourses = useMemo(() => {
-    return courses;
-  }, [courses]);
+    return courses.filter((course) => {
+      const matchYear = yearLevelFilter === 'all' || course.year_level?.toString() === yearLevelFilter;
+      const matchCategory = categoryFilter === 'all' || course.course_category?.toLowerCase() === categoryFilter.toLowerCase();
+      const matchSemester = semesterFilter === 'all' || course.semester?.toLowerCase() === semesterFilter.toLowerCase();
+      return matchYear && matchCategory && matchSemester;
+    });
+  }, [courses, yearLevelFilter, categoryFilter, semesterFilter]);
 
   useEffect(() => {
     fetchData();
@@ -270,6 +279,44 @@ export default function CourseManager() {
               placeholder="Search course code, name, etc..."
               className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
             />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={yearLevelFilter}
+              onChange={(e) => setYearLevelFilter(e.target.value)}
+              title="Filter by Year Level"
+              className="px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A]/50 outline-none text-sm shadow-sm bg-white font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50/30 cursor-pointer transition-all duration-200"
+            >
+              <option value="all">All Year Levels</option>
+              <option value="1">1st Year</option>
+              <option value="2">2nd Year</option>
+              <option value="3">3rd Year</option>
+              <option value="4">4th Year</option>
+            </select>
+
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              title="Filter by Course Category"
+              className="px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A]/50 outline-none text-sm shadow-sm bg-white font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50/30 cursor-pointer transition-all duration-200"
+            >
+              <option value="all">All Categories</option>
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+            </select>
+
+            <select
+              value={semesterFilter}
+              onChange={(e) => setSemesterFilter(e.target.value)}
+              title="Filter by Semester"
+              className="px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A]/50 outline-none text-sm shadow-sm bg-white font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50/30 cursor-pointer transition-all duration-200"
+            >
+              <option value="all">All Semesters</option>
+              <option value="1st">1st Semester</option>
+              <option value="2nd">2nd Semester</option>
+              <option value="summer">Summer</option>
+            </select>
           </div>
         </div>
       </div>
