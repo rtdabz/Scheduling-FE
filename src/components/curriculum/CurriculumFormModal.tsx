@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import type { Curriculum, Department } from '../../types/curriculum';
+import type { Curriculum } from '../../types/curriculum';
 
 interface CurriculumFormModalProps {
   isOpen: boolean;
   isEditMode: boolean;
   curriculum: Curriculum | null;
-  departments: Department[];
   onClose: () => void;
   onSubmit: (data: Partial<Curriculum>) => Promise<void>;
 }
@@ -15,13 +14,11 @@ export default function CurriculumFormModal({
   isOpen,
   isEditMode,
   curriculum,
-  departments,
   onClose,
   onSubmit,
 }: CurriculumFormModalProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
   const [curriculumVersion, setCurriculumVersion] = useState('');
   const [academicYear, setAcademicYear] = useState('');
   const [effectiveSchoolYear, setEffectiveSchoolYear] = useState('');
@@ -36,7 +33,6 @@ export default function CurriculumFormModal({
       if (isEditMode && curriculum) {
         setName(curriculum.name);
         setCode(curriculum.code);
-        setDepartmentId(curriculum.department_id?.toString() || '');
         setCurriculumVersion(curriculum.curriculum_version || '');
         setAcademicYear(curriculum.academic_year || '');
         setEffectiveSchoolYear(curriculum.effective_school_year);
@@ -45,7 +41,6 @@ export default function CurriculumFormModal({
       } else {
         setName('');
         setCode('');
-        setDepartmentId('');
         setCurriculumVersion('');
         setAcademicYear('');
         setEffectiveSchoolYear('');
@@ -82,7 +77,6 @@ export default function CurriculumFormModal({
       await onSubmit({
         name: name.trim(),
         code: code.trim().toUpperCase(),
-        department_id: departmentId ? parseInt(departmentId) : null,
         curriculum_version: curriculumVersion.trim() || null,
         academic_year: academicYear.trim() || null,
         effective_school_year: effectiveSchoolYear.trim(),
@@ -149,24 +143,6 @@ export default function CurriculumFormModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Department
-              </label>
-              <select
-                value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-              >
-                <option value="">Select Department</option>
-                {departments.map((dept) => (
-                  <option key={dept.id} value={dept.id}>
-                    {dept.department_code} - {dept.department_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                 Version
               </label>
               <input
@@ -177,9 +153,7 @@ export default function CurriculumFormModal({
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                 Academic Year
@@ -192,7 +166,9 @@ export default function CurriculumFormModal({
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                 Effective School Year <span className="text-red-500">*</span>
@@ -205,21 +181,21 @@ export default function CurriculumFormModal({
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'draft' | 'active' | 'archived')}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-            >
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
-            </select>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as 'draft' | 'active' | 'archived')}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+              >
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
           </div>
 
           <div>

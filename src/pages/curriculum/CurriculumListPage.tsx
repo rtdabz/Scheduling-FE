@@ -471,7 +471,6 @@ export default function CurriculumListPage() {
         isOpen={isFormModalOpen}
         isEditMode={isEditMode}
         curriculum={editingCurriculum}
-        departments={departments}
         onClose={() => setIsFormModalOpen(false)}
         onSubmit={async (data) => {
           await handleCreateOrUpdate(data, editingCurriculum);

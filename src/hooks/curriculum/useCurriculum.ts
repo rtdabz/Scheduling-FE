@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearDataCache } from '../../lib/dataCache';
 import type { Curriculum, Department } from '../../types/curriculum';
 
 interface CurriculaPageData {
@@ -85,18 +85,46 @@ export function useCurriculum() {
       if (editingCurriculum) {
         const updated = await curriculumService.updateCurriculum(editingCurriculum.id, data);
         setCurricula((prev) => {
-          const next = prev.map((c) => (c.id === editingCurriculum.id ? updated : c));
+          const next = prev.map((c) => {
+            if (c.id === editingCurriculum.id) {
+              return updated;
+            }
+            if (
+              updated.status === 'active' &&
+              c.department_id === updated.department_id &&
+              c.status === 'active'
+            ) {
+              return { ...c, status: 'draft' as const };
+            }
+            return c;
+          });
           setCachedData<CurriculaPageData>(curriculaCacheKey, { curricula: next, departments });
           return next;
         });
+        if (updated.status === 'active') {
+          clearDataCache();
+        }
         toast.success('Success', 'Curriculum updated successfully.');
       } else {
         const created = await curriculumService.createCurriculum(data);
         setCurricula((prev) => {
-          const next = [created, ...prev];
+          const next = [created, ...prev].map((c) => {
+            if (
+              created.status === 'active' &&
+              c.id !== created.id &&
+              c.department_id === created.department_id &&
+              c.status === 'active'
+            ) {
+              return { ...c, status: 'draft' as const };
+            }
+            return c;
+          });
           setCachedData<CurriculaPageData>(curriculaCacheKey, { curricula: next, departments });
           return next;
         });
+        if (created.status === 'active') {
+          clearDataCache();
+        }
         toast.success('Success', 'Curriculum created successfully.');
       }
     } catch (error: unknown) {
@@ -110,10 +138,25 @@ export function useCurriculum() {
     try {
       const updated = await curriculumService.updateStatus(id, status);
       setCurricula((prev) => {
-        const next = prev.map((c) => (c.id === id ? updated : c));
+        const next = prev.map((c) => {
+          if (c.id === id) {
+            return updated;
+          }
+          if (
+            status === 'active' &&
+            c.department_id === updated.department_id &&
+            c.status === 'active'
+          ) {
+            return { ...c, status: 'draft' as const };
+          }
+          return c;
+        });
         setCachedData<CurriculaPageData>(curriculaCacheKey, { curricula: next, departments });
         return next;
       });
+      if (status === 'active') {
+        clearDataCache();
+      }
       toast.success(
         'Status Updated',
         `Curriculum status changed to ${status}.`

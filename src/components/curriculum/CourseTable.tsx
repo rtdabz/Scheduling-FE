@@ -81,6 +81,7 @@ export default function CourseTable({
                         <button
                           onClick={() => onConfirmRemove(course.id, course.code)}
                           disabled={isRemoving}
+                          title="Confirm removal of this course from the curriculum"
                           className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                         >
                           {isRemoving ? <Loader2 size={10} className="animate-spin" /> : <AlertTriangle size={10} />}
@@ -88,6 +89,7 @@ export default function CourseTable({
                         </button>
                         <button
                           onClick={onCancelRemove}
+                          title="Cancel course removal"
                           className="px-2 py-1 text-[10px] font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                         >
                           Cancel
