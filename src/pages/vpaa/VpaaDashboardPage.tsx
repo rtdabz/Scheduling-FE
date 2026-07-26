@@ -328,67 +328,43 @@ export default function VpaaDashboardPage() {
   // Timetable Calendar Filters and state
   const [calendarDeptFilter, setCalendarDeptFilter] = useState<string>('all');
   const [calendarFilterType, setCalendarFilterType] = useState<'section' | 'faculty' | 'room'>('section');
-  const [calendarSelectedId, setCalendarSelectedId] = useState<string>('');
   const [calendarSearchQuery, setCalendarSearchQuery] = useState<string>('');
 
-  const calendarOptions = useMemo(() => {
-    let list: Array<{ id: string; name: string }> = [];
-    if (calendarFilterType === 'section') {
-      const filtered = calendarDeptFilter === 'all'
-        ? sections
-        : sections.filter(sec => Number(sec.department_id) === Number(calendarDeptFilter));
-      list = filtered.map(sec => ({ id: sec.id.toString(), name: sec.section_name }));
-    } else if (calendarFilterType === 'faculty') {
-      const filtered = calendarDeptFilter === 'all'
-        ? faculties
-        : faculties.filter(fac => Number(fac.department_id) === Number(calendarDeptFilter));
-      list = filtered.map(fac => ({ id: fac.id.toString(), name: `${fac.first_name} ${fac.last_name}` }));
-    } else {
-      // Room
-      list = rooms.map(r => ({ id: r.id.toString(), name: r.room_code + (r.building ? ` (${r.building})` : '') }));
-    }
-
-    if (calendarSearchQuery.trim()) {
-      const q = calendarSearchQuery.toLowerCase();
-      list = list.filter(item => item.name.toLowerCase().includes(q));
-    }
-    return list;
-  }, [calendarFilterType, calendarDeptFilter, calendarSearchQuery, sections, faculties, rooms]);
-
-  useEffect(() => {
-    setCalendarSearchQuery('');
-  }, [calendarFilterType, calendarDeptFilter]);
-
-  useEffect(() => {
-    if (calendarOptions.length > 0) {
-      const exists = calendarOptions.some(opt => opt.id === calendarSelectedId);
-      if (!exists) {
-        setCalendarSelectedId(calendarOptions[0].id);
-      }
-    } else {
-      setCalendarSelectedId('');
-    }
-  }, [calendarOptions, calendarSelectedId]);
-
   const calendarFilteredSchedules = useMemo(() => {
-    if (!calendarSelectedId) return [];
-    
     // Filter active term first
     const activeTermSchedules = activeTerm?.id
       ? schedules.filter(s => Number(s.term_id) === Number(activeTerm.id))
       : schedules;
 
+    // Filter department first
+    let deptSchedules = activeTermSchedules;
+    if (calendarDeptFilter !== 'all') {
+      deptSchedules = activeTermSchedules.filter(s => Number(s.section?.department_id) === Number(calendarDeptFilter));
+    }
+
+    // Filter by search query based on View By type
+    if (!calendarSearchQuery.trim()) {
+      return deptSchedules;
+    }
+
+    const q = calendarSearchQuery.toLowerCase();
     if (calendarFilterType === 'section') {
-      return activeTermSchedules.filter(s => s.section_id?.toString() === calendarSelectedId);
+      return deptSchedules.filter(s => s.section?.section_name?.toLowerCase().includes(q));
     }
     if (calendarFilterType === 'faculty') {
-      return activeTermSchedules.filter(s => s.faculty_id?.toString() === calendarSelectedId);
+      return deptSchedules.filter(s => {
+        const fullName = `${s.faculty?.first_name || ''} ${s.faculty?.last_name || ''}`.toLowerCase();
+        return fullName.includes(q);
+      });
     }
     if (calendarFilterType === 'room') {
-      return activeTermSchedules.filter(s => s.room_id?.toString() === calendarSelectedId);
+      return deptSchedules.filter(s => {
+        const roomName = `${s.room?.room_code || ''} ${s.room?.building || ''}`.toLowerCase();
+        return roomName.includes(q);
+      });
     }
-    return [];
-  }, [calendarSelectedId, calendarFilterType, schedules, activeTerm]);
+    return deptSchedules;
+  }, [calendarDeptFilter, calendarFilterType, calendarSearchQuery, schedules, activeTerm]);
 
   const timeSlots = useMemo(() => {
     const slots = [];
@@ -978,7 +954,10 @@ export default function VpaaDashboardPage() {
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">View By</span>
                     <select
                       value={calendarFilterType}
-                      onChange={(e) => setCalendarFilterType(e.target.value as 'section' | 'faculty' | 'room')}
+                      onChange={(e) => {
+                        setCalendarFilterType(e.target.value as 'section' | 'faculty' | 'room');
+                        setCalendarSearchQuery('');
+                      }}
                       className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
                     >
                       <option value="section">Section</option>
@@ -988,33 +967,15 @@ export default function VpaaDashboardPage() {
                   </div>
 
                   {/* Search Filter */}
-                  <div className="flex flex-col gap-1.5 min-w-[150px]">
+                  <div className="flex flex-col gap-1.5 min-w-[180px]">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Search Item</span>
                     <input
                       type="text"
-                      placeholder="Type to search..."
+                      placeholder={`Search ${calendarFilterType}...`}
                       value={calendarSearchQuery}
                       onChange={(e) => setCalendarSearchQuery(e.target.value)}
                       className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold"
                     />
-                  </div>
-
-                  {/* Selection Dropdown */}
-                  <div className="flex flex-col gap-1.5 min-w-[200px]">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Item</span>
-                    <select
-                      value={calendarSelectedId}
-                      onChange={(e) => setCalendarSelectedId(e.target.value)}
-                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
-                    >
-                      {calendarOptions.length === 0 ? (
-                        <option value="">No items available</option>
-                      ) : (
-                        calendarOptions.map((opt) => (
-                          <option key={opt.id} value={opt.id}>{opt.name}</option>
-                        ))
-                      )}
-                    </select>
                   </div>
                 </div>
 
@@ -1024,13 +985,9 @@ export default function VpaaDashboardPage() {
               </div>
 
               {/* Weekly Timetable Calendar Grid */}
-              {!calendarSelectedId ? (
+              {calendarFilteredSchedules.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-250 bg-gray-50/50 py-12 text-center text-sm text-gray-400 font-medium">
-                  Select a section, faculty member, or classroom to view the weekly schedule timetable.
-                </div>
-              ) : calendarFilteredSchedules.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-250 bg-gray-50/50 py-12 text-center text-sm text-gray-400 font-medium">
-                  No classes scheduled for the selected {calendarFilterType}.
+                  No classes scheduled matching the selected filters.
                 </div>
               ) : (
                 <div className="overflow-x-auto">

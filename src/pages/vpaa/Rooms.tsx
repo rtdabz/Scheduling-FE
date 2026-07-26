@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import {
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import RoomDetailModal from '../../components/ui/RoomDetailModal';
 
 
 interface Department {
@@ -113,6 +114,8 @@ export default function VpaaRooms() {
   const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
   const [activeTerm, setActiveTerm] = useState<any | null>(cachedRoomsData?.activeTerm ?? null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
+  const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDean = user?.role?.toLowerCase() === 'dean';
@@ -129,7 +132,10 @@ export default function VpaaRooms() {
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
+  const location = useLocation();
+  const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
+    location.state?.selectedBuilding ?? null
+  );
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [activeTabDay, setActiveTabDay] = useState<string>('Monday');
 
@@ -428,16 +434,16 @@ export default function VpaaRooms() {
   return (
     <div className="space-y-6">
       {/* Search and Filters Bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         {/* Search */}
         <div className="relative flex-1 max-w-lg">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder="Search rooms or buildings..."
-            className="w-full pl-11 pr-4 py-2 border border-gray-200 rounded-lg outline-none text-xs focus:ring-1 focus:ring-[#C9952A] bg-gray-50/50 focus:bg-white transition-all font-sans"
+            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
 
@@ -450,7 +456,7 @@ export default function VpaaRooms() {
               <select
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+                className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
               >
                 <option value="">All Departments</option>
                 {departments.map(d => (
@@ -466,7 +472,7 @@ export default function VpaaRooms() {
             <select
               value={roomTypeFilter}
               onChange={(e) => setRoomTypeFilter(e.target.value)}
-              className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="">All Types</option>
               <option value="lecture">Lecture</option>
@@ -475,24 +481,24 @@ export default function VpaaRooms() {
           </div>
 
           {/* View Mode Toggle */}
-          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-355 shadow-sm">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === 'grid' ? 'bg-white text-[#4e0a10] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid' ? 'bg-white text-[#5A1220] shadow-sm scale-105' : 'text-gray-400 hover:text-gray-600'
               }`}
               title="Grid View"
             >
-              <LayoutGrid size={14} />
+              <LayoutGrid size={15} />
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === 'list' ? 'bg-white text-[#4e0a10] shadow-sm' : 'text-gray-400 hover:text-gray-600'
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list' ? 'bg-white text-[#5A1220] shadow-sm scale-105' : 'text-gray-400 hover:text-gray-600'
               }`}
               title="List View"
             >
-              <List size={14} />
+              <List size={15} />
             </button>
           </div>
 
@@ -511,7 +517,7 @@ export default function VpaaRooms() {
                 setBuildingError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#4e0a10] text-white px-4 py-1.5 rounded-lg hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-1.5 font-semibold text-xs shadow-sm cursor-pointer ml-auto"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto"
             >
               <Plus size={15} />
               <span>Add Room</span>
@@ -711,7 +717,10 @@ export default function VpaaRooms() {
                 return (
                   <div
                     key={room.id}
-                    onClick={() => navigate(`/rooms/${room.id}`)}
+                    onClick={() => {
+                      setSelectedRoomIdForDetail(room.id);
+                      setIsDetailModalOpen(true);
+                    }}
                     className="bg-white border border-gray-150 hover:border-[#C9952A]/40 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans"
                   >
                     <div className="flex items-start justify-between">
@@ -821,7 +830,10 @@ export default function VpaaRooms() {
                       return (
                         <tr
                           key={room.id}
-                          onClick={() => navigate(`/rooms/${room.id}`)}
+                          onClick={() => {
+                            setSelectedRoomIdForDetail(room.id);
+                            setIsDetailModalOpen(true);
+                          }}
                           className="hover:bg-gray-50/50 transition-colors cursor-pointer"
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -1083,6 +1095,16 @@ export default function VpaaRooms() {
           </div>
         </div>
       )}
+
+      {/* Classroom Detail Modal */}
+      <RoomDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedRoomIdForDetail(null);
+        }}
+        roomId={selectedRoomIdForDetail}
+      />
     </div>
   );
 };

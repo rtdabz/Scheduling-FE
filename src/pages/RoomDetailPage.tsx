@@ -175,7 +175,7 @@ export default function RoomDetailPage() {
       {/* Back Button + Header */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => navigate(getBackPath())}
+          onClick={() => navigate(getBackPath(), { state: { selectedBuilding: room?.building } })}
           className="p-2 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 hover:border-gray-300 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer"
         >
           <ArrowLeft size={16} />

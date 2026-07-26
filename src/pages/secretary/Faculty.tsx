@@ -447,51 +447,51 @@ export default function SecretaryFaculty() {
     <div className="space-y-6 font-sans pb-12">
       {/* Summary Statistics Dashboard Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
-        <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">{summaryStats.total}</p>
+        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
+          <p className="text-2xl font-extrabold text-gray-900 mt-0.5">{summaryStats.total}</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-xs text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <CheckCircle2 size={13} className="text-emerald-500" />
+        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
+          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
+            <CheckCircle2 size={12} className="text-emerald-500" />
             Available
           </p>
-          <p className="text-3xl font-extrabold text-emerald-700 mt-1">{summaryStats.available}</p>
+          <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{summaryStats.available}</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-xs text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Info size={13} className="text-blue-500" />
+        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
+          <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1">
+            <Info size={12} className="text-blue-500" />
             Fully Loaded
           </p>
-          <p className="text-3xl font-extrabold text-blue-700 mt-1">{summaryStats.fullyLoaded}</p>
+          <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{summaryStats.fullyLoaded}</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-xs text-red-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <AlertCircle size={13} className="text-red-500" />
+        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
+          <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider flex items-center gap-1">
+            <AlertCircle size={12} className="text-red-500" />
             Overloaded
           </p>
-          <p className="text-3xl font-extrabold text-red-700 mt-1">{summaryStats.overloaded}</p>
+          <p className="text-2xl font-extrabold text-red-700 mt-0.5">{summaryStats.overloaded}</p>
         </div>
-        <div className="bg-white p-5 rounded-xl border-[0.5px] border-gray-200 col-span-2 md:col-span-1">
-          <p className="text-xs text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Award size={13} className="text-purple-500" />
+        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200 col-span-2 md:col-span-1">
+          <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1">
+            <Award size={12} className="text-purple-500" />
             Pro Bono
           </p>
-          <p className="text-3xl font-extrabold text-purple-700 mt-1">{summaryStats.probono}</p>
+          <p className="text-2xl font-extrabold text-purple-700 mt-0.5">{summaryStats.probono}</p>
         </div>
       </div>
 
       {/* Search and Filters Bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
         <div className="relative flex-1 max-w-lg">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search instructors by name..."
-            className="w-full pl-11 pr-4 py-2 border border-gray-200 rounded-lg outline-none text-xs focus:ring-1 focus:ring-[#C9952A] bg-gray-50/50 focus:bg-white transition-all font-sans"
+            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
 
@@ -504,7 +504,7 @@ export default function SecretaryFaculty() {
               <select
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+                className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
               >
                 <option value="">All Departments</option>
                 {departments.map(d => (
@@ -520,7 +520,7 @@ export default function SecretaryFaculty() {
             <select
               value={employmentFilter}
               onChange={(e) => setEmploymentFilter(e.target.value)}
-              className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="">All Types</option>
               <option value="full-time">Full-time</option>
@@ -534,7 +534,7 @@ export default function SecretaryFaculty() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-2 py-1.5 border border-gray-250 rounded-lg outline-none text-[11px] bg-white text-gray-700 font-sans focus:ring-1 focus:ring-[#C9952A]"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="name">Sort by Name</option>
               <option value="units">Sort by Workload Units</option>
@@ -566,7 +566,7 @@ export default function SecretaryFaculty() {
                 setDepartmentError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#4e0a10] text-white px-4 py-1.5 rounded-lg hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-1.5 font-semibold text-xs shadow-sm cursor-pointer ml-auto"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto"
             >
               <Plus size={15} />
               <span>Add Instructor</span>
