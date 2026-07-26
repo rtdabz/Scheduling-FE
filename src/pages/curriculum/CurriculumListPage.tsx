@@ -221,7 +221,10 @@ export default function CurriculumListPage() {
           return (
             <div className="flex items-center gap-1">
               <button
-                onClick={() => navigate(`/secretary/curricula/${item.id}`)}
+                onClick={() => {
+                  const path = userRole === 'vpaa' ? `/curricula/${item.id}` : `/${userRole}/curricula/${item.id}`;
+                  navigate(path);
+                }}
                 className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                 title="View Curriculum"
               >
@@ -310,8 +313,16 @@ export default function CurriculumListPage() {
         {canManageCurriculum && (
           <div className="flex items-center gap-2 shrink-0">
             <button
+              onClick={() => navigate('/curriculum-view')}
+              className="border border-[#C9952A] text-[#4e0a10] bg-amber-50/50 hover:bg-amber-100 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-bold text-xs shadow-sm cursor-pointer"
+              title="View Visual Curriculum Map (CMO Prescribed)"
+            >
+              <BookOpen size={16} className="text-[#C9952A]" />
+              <span>Curriculum View</span>
+            </button>
+            <button
               onClick={() => setIsArchiveOpen(true)}
-              className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
+              className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-xs shadow-sm cursor-pointer"
               title="View Archived Curricula"
             >
               <Archive size={16} />
@@ -478,7 +489,10 @@ export default function CurriculumListPage() {
                 key={item.id}
                 curriculum={item}
                 canEdit={canManageCurriculum}
-                onView={(id) => navigate(`/secretary/curricula/${id}`)}
+                onView={(id) => {
+                  const path = userRole === 'vpaa' ? `/curricula/${id}` : `/${userRole}/curricula/${id}`;
+                  navigate(path);
+                }}
                 onEdit={(c) => {
                   setEditingCurriculum(c);
                   setIsEditMode(true);

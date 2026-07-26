@@ -133,7 +133,7 @@ export default function RoomViewModal({
             className="min-w-[720px] border border-slate-200 rounded-xl overflow-hidden bg-white select-none"
             style={{
               display: "grid",
-              gridTemplateColumns: "70px repeat(6, minmax(0, 1fr))",
+              gridTemplateColumns: "70px repeat(7, minmax(0, 1fr))",
               gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(${SLOT_COUNT}, ${SLOT_HEIGHT_PX}px)`
             }}
           >

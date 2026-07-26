@@ -73,7 +73,7 @@ export default function CurriculumDetailPage() {
             overallStats={overallStats}
             isActivating={isActivating}
             canActivate={canManageCurriculum}
-            onBack={() => navigate('/secretary/curricula')}
+            onBack={() => navigate(userRole === 'vpaa' ? '/curricula' : `/${userRole}/curricula`)}
             onActivate={handleActivate}
           />
 

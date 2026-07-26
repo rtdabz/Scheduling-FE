@@ -37,13 +37,13 @@ import api from "../../../../lib/api";
 import { getCachedData, loadCachedData, setCachedData } from "../../../../lib/dataCache";
 
 const dayMapToIndex: Record<string, number> = {
-  "Monday": 0,
-  "Tuesday": 1,
-  "Wednesday": 2,
-  "Thursday": 3,
-  "Friday": 4,
-  "Saturday": 5,
-  "Sunday": 6
+  "Monday": 0, "Mon": 0,
+  "Tuesday": 1, "Tue": 1,
+  "Wednesday": 2, "Wed": 2,
+  "Thursday": 3, "Thu": 3,
+  "Friday": 4, "Fri": 4,
+  "Saturday": 5, "Sat": 5,
+  "Sunday": 6, "Sun": 6
 };
 
 const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -71,7 +71,7 @@ const getPreferredPatternDayIndexes = (preferredPattern?: string | null): [numbe
   if (preferredPattern === "MW") return [0, 2];
   if (preferredPattern === "TTh") return [1, 3];
 
-  const customMatch = preferredPattern.match(/^days:([0-5])-([0-5])$/);
+  const customMatch = preferredPattern.match(/^days:([0-6])-([0-6])$/);
   if (!customMatch) return null;
 
   return [Number(customMatch[1]), Number(customMatch[2])];
@@ -934,6 +934,20 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const startTime24h = slotToTime24h(startSlot);
     const endTime24h = slotToTime24h(startSlot + sched.durationSlots);
 
+    const isNumericId = !isNaN(Number(scheduleId));
+
+    if (!isNumericId) {
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          schedule.id === scheduleId
+            ? { ...schedule, dayIndex, day: fullDayNames[dayIndex], startSlot }
+            : schedule
+        )
+      );
+      toast.success("Schedule Relocated", "Class schedule updated.");
+      return;
+    }
+
     try {
       const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, {
         day: dayName,
@@ -950,7 +964,16 @@ departmentSectionProgress.every((section) => section.status === "completed");
       await refreshSchedules();
     } catch (err) {
       console.error(err);
-      toast.error("Relocation Failed", "Could not save the new schedule slot.");
+      const violations = getApiViolations(err);
+      const apiMessage = getApiErrorMessage(err);
+      if (violations.length > 0) {
+        const messages = violations.map((v) => v.message).join(" ");
+        toast.error("Schedule Conflict", messages);
+      } else if (apiMessage) {
+        toast.error("Relocation Failed", apiMessage);
+      } else {
+        toast.error("Relocation Failed", "Could not save the new schedule slot.");
+      }
     }
   };
 
@@ -1134,12 +1157,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
           operations,
           delete_ids: deleteIds
         });
-        savedScheduleRecords = response.data.schedules;
-        deletedScheduleRecordIds = response.data.deleted_schedule_ids;
+        savedScheduleRecords = response.data.schedules ?? [];
+        deletedScheduleRecordIds = response.data.deleted_schedule_ids ?? [];
       }
 
       const savedScheduleItems = savedScheduleRecords.map(mapApiScheduleToItem);
-      const deletedScheduleIds = new Set(deletedScheduleRecordIds.map(String));
+      const deletedScheduleIds = new Set((deletedScheduleRecordIds ?? []).map(String));
 
       if (dropContext.isRescheduling) {
         if (resolvedDay1StartSlot !== modalDay1StartSlot) {
@@ -1169,10 +1192,14 @@ departmentSectionProgress.every((section) => section.status === "completed");
       await refreshSchedules();
     } catch (err) {
       const violations = getApiViolations(err);
+      const apiMessage = getApiErrorMessage(err);
       if (violations.length > 0) {
         const messages = violations.map((v) => v.message).join(" ");
         setModalValidationError(messages);
         toast.error("Schedule Conflict", messages);
+      } else if (apiMessage) {
+        setModalValidationError(apiMessage);
+        toast.error("Operation Failed", apiMessage);
       } else {
         setModalValidationError("Could not save the schedule to the database.");
         toast.error("Operation Failed", "Could not save the schedule to the database.");
@@ -1202,25 +1229,44 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!isEditable) return;
     const target = schedules.find(s => s.id === scheduleId);
     try {
-      if (target && target.preferredPattern) {
+      if (!target) {
+        setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
+        return;
+      }
+
+      const isNumericId = !isNaN(Number(target.id));
+
+      if (!isNumericId) {
+        setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
+        toast.success("Schedule Removed", "Class schedule successfully removed.");
+        return;
+      }
+
+      if (target.preferredPattern) {
         const linked = schedules.filter(
           s => s.subjectId === target.subjectId &&
                s.sectionId === target.sectionId &&
-               s.preferredPattern === target.preferredPattern
+               s.preferredPattern === target.preferredPattern &&
+               !isNaN(Number(s.id))
         );
-        await Promise.all(linked.map(s => api.delete(`/schedules/${s.id}`)));
+        if (linked.length > 0) {
+          await Promise.allSettled(linked.map(s => api.delete(`/schedules/${s.id}`)));
+        }
       } else {
-        await api.delete(`/schedules/${scheduleId}`);
+        await api.delete(`/schedules/${target.id}`);
       }
+      setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
       toast.success("Schedule Removed", "Class schedule successfully removed.");
       await refreshSchedules();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to remove schedule", "An error occurred.");
+      const apiMsg = getApiErrorMessage(err);
+      toast.error("Failed to remove schedule", apiMsg || "An error occurred.");
+    } finally {
+      setDeleteConfirmScheduleId(null);
+      setConflictInfo(null);
+      setMovingScheduleId((prev) => (prev === scheduleId ? null : prev));
     }
-    setDeleteConfirmScheduleId(null);
-    setConflictInfo(null);
-    setMovingScheduleId((prev) => (prev === scheduleId ? null : prev));
   };
 
   const handleClearAll = () => {
@@ -1236,7 +1282,11 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const clearedCount = sectionSchedules.length;
     const sectionName = sections.find((s) => s.id === selectedSectionId)?.name ?? "the section";
     try {
-      await Promise.all(sectionSchedules.map((s) => api.delete(`/schedules/${s.id}`)));
+      const validSchedules = sectionSchedules.filter((s) => !isNaN(Number(s.id)));
+      if (validSchedules.length > 0) {
+        await Promise.allSettled(validSchedules.map((s) => api.delete(`/schedules/${s.id}`)));
+      }
+      setSchedules((prev) => prev.filter((s) => s.sectionId !== selectedSectionId));
       toast.success(
         "Schedule Cleared",
         `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
@@ -1244,12 +1294,14 @@ departmentSectionProgress.every((section) => section.status === "completed");
       await refreshSchedules();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to clear schedules", "An error occurred.");
+      const apiMsg = getApiErrorMessage(err);
+      toast.error("Failed to clear schedules", apiMsg || "An error occurred.");
+    } finally {
+      setConflictInfo(null);
+      setPlacementSubjectId(null);
+      setMovingScheduleId(null);
+      setIsClearAllModalOpen(false);
     }
-    setConflictInfo(null);
-    setPlacementSubjectId(null);
-    setMovingScheduleId(null);
-    setIsClearAllModalOpen(false);
   };
 
   const cancelClearAll = () => setIsClearAllModalOpen(false);

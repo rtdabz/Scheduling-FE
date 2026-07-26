@@ -32,7 +32,7 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
 );
 
 const isPartTimeOutsideAvailability = (faculty: Faculty | undefined, dayIndex: number, startSlot: number): boolean => (
-  faculty?.employmentType === "part-time" && dayIndex !== 5 && startSlot < 20
+  faculty?.employmentType === "part-time" && dayIndex !== 5 && dayIndex !== 6 && startSlot < 20
 );
 
 export const useConflict = ({
@@ -76,7 +76,7 @@ export const useConflict = ({
       if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot)) {
         return {
           conflictType: "faculty",
-          message: `Part-time availability: ${faculty?.name ?? "Selected faculty"} can only teach from 5:00 PM onward on weekdays or any time on Saturdays.`
+          message: `Part-time availability: ${faculty?.name ?? "Selected faculty"} can only teach from 5:00 PM onward on weekdays or any time on Saturdays or Sundays.`
         };
       }
     }
@@ -131,7 +131,7 @@ export const useConflict = ({
     if (!target) return null;
     const targetFaculty = faculties.find((f) => f.id === facultyId);
     if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot)) {
-      return `Part-time availability: ${targetFaculty?.name ?? facultyId} can only teach from 5:00 PM onward on weekdays or any time on Saturdays.`;
+      return `Part-time availability: ${targetFaculty?.name ?? facultyId} can only teach from 5:00 PM onward on weekdays or any time on Saturdays or Sundays.`;
     }
 
     const endSlot = target.startSlot + target.durationSlots;

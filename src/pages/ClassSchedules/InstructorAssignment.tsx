@@ -86,7 +86,7 @@ interface AssignmentSchedule extends ApiSchedule {
   department: ApiDepartment;
 }
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const ASSIGNMENT_STATUSES = ["approved", "faculty_assignment", "finalized"];
 
 const getStoredUser = (): StoredUser => {
@@ -115,6 +115,7 @@ const timeToMinutes = (value: string): number => {
 const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean =>
   faculty.employment_type === "part-time" &&
   schedule.day !== "Saturday" &&
+  schedule.day !== "Sunday" &&
   timeToMinutes(schedule.start_time) < 17 * 60;
 
 const getRoomName = (schedule: ApiSchedule): string =>
@@ -644,7 +645,7 @@ export default function InstructorAssignment() {
                       disabled={selectedSchedule ? isPartTimeOutsideAvailability(faculty, selectedSchedule) : false}
                     >
                       {faculty.first_name} {faculty.last_name}
-                      {selectedSchedule && isPartTimeOutsideAvailability(faculty, selectedSchedule) ? " - Available after 5 PM or Saturday" : ""}
+                      {selectedSchedule && isPartTimeOutsideAvailability(faculty, selectedSchedule) ? " - Available after 5 PM or Saturday/Sunday" : ""}
                     </option>
                   ))}
                 </select>

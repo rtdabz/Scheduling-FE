@@ -75,7 +75,7 @@ interface DropModalProps {
   handleModalConfirm: (e: React.FormEvent) => void;
 }
 
-const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const getStoredRole = (): string => {
   const userJson = localStorage.getItem("user") || sessionStorage.getItem("user");
@@ -260,7 +260,7 @@ export default function DropModal({
 
   const FULL_DAYS: Record<string, string> = {
     Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday",
-    Thu: "Thursday", Fri: "Friday", Sat: "Saturday"
+    Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday"
   };
   const totalSlots = dropSubject ? dropSubject.units * 2 : 0;
   const d2Slots = modalDay2Duration;

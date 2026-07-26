@@ -135,13 +135,14 @@ export function useCurriculum() {
     let previousCurricula: Curriculum[] = [];
     setCurricula((prev) => {
       previousCurricula = prev;
+      const targetDeptId = prev.find((x) => x.id === id)?.department_id;
       const next = prev.map((c) => {
         if (c.id === id) {
           return { ...c, status: status as any };
         }
         if (
           status === 'active' &&
-          c.department_id === c.department_id &&
+          c.department_id === targetDeptId &&
           c.status === 'active'
         ) {
           return { ...c, status: 'draft' as const };

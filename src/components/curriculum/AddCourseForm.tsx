@@ -14,6 +14,10 @@ interface AddCourseFormProps {
   availableCourses: CourseOption[];
   isAdding: boolean;
   onAddCourse: (courseId: number) => Promise<void>;
+  onAddCourseWithTarget?: (courseId: number, yearLevel: number, term: number) => Promise<void>;
+  initialYearLevel?: number;
+  initialTerm?: number;
+  showYearTermSelectors?: boolean;
   onCancel?: () => void;
 }
 
@@ -21,12 +25,23 @@ export default function AddCourseForm({
   availableCourses,
   isAdding,
   onAddCourse,
+  onAddCourseWithTarget,
+  initialYearLevel = 1,
+  initialTerm = 1,
+  showYearTermSelectors = false,
   onCancel,
 }: AddCourseFormProps) {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [searchVal, setSearchVal] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [yearLevel, setYearLevel] = useState<number>(initialYearLevel);
+  const [term, setTerm] = useState<number>(initialTerm);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setYearLevel(initialYearLevel);
+    setTerm(initialTerm);
+  }, [initialYearLevel, initialTerm]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -51,15 +66,45 @@ export default function AddCourseForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCourseId) return;
-    await onAddCourse(selectedCourseId);
+    if (showYearTermSelectors && onAddCourseWithTarget) {
+      await onAddCourseWithTarget(selectedCourseId, yearLevel, term);
+    } else {
+      await onAddCourse(selectedCourseId);
+    }
     setSelectedCourseId(null);
     setSearchVal('');
     setIsDropdownOpen(false);
   };
 
   return (
-    <div className="bg-[#4e0a10]/[0.02] border-t border-[#C9952A]/20 p-4">
-      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+    <div className="bg-[#4e0a10]/[0.02] border-t border-[#C9952A]/20 p-4 font-sans">
+      <form onSubmit={handleSubmit} className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+        {/* Optional Year Level & Term Selectors */}
+        {showYearTermSelectors && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={yearLevel}
+              onChange={(e) => setYearLevel(Number(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-xl text-xs bg-white font-bold text-gray-700 outline-none focus:ring-1 focus:ring-[#C9952A]"
+            >
+              <option value={1}>Year 1</option>
+              <option value={2}>Year 2</option>
+              <option value={3}>Year 3</option>
+              <option value={4}>Year 4</option>
+            </select>
+
+            <select
+              value={term}
+              onChange={(e) => setTerm(Number(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-xl text-xs bg-white font-bold text-gray-700 outline-none focus:ring-1 focus:ring-[#C9952A]"
+            >
+              <option value={1}>1st Semester</option>
+              <option value={2}>2nd Semester</option>
+              <option value={3}>Summer Term</option>
+            </select>
+          </div>
+        )}
+
         {/* Combobox Dropdown */}
         <div className="relative flex-1" ref={dropdownRef}>
           <div
@@ -69,7 +114,7 @@ export default function AddCourseForm({
             <span className={selectedCourse ? 'text-gray-900 font-bold' : 'text-gray-400'}>
               {selectedCourse
                 ? `${selectedCourse.course_code} — ${selectedCourse.course_name}`
-                : 'Select course to add to this semester...'}
+                : 'Select course to add to curriculum...'}
             </span>
             <Search size={14} className="text-gray-400" />
           </div>
@@ -150,7 +195,7 @@ export default function AddCourseForm({
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-40 shadow-sm"
           >
             {isAdding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            Add to Semester
+            Add Course
           </button>
           {onCancel && (
             <button
