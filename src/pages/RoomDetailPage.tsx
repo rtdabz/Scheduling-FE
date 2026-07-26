@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Skeleton from '../components/ui/Skeleton';
 import {
@@ -250,7 +250,7 @@ export default function RoomDetailPage() {
       <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm font-sans">
         {/* Day Tabs */}
         <div className="flex border-b border-gray-200 overflow-x-auto bg-gray-50/50">
-          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
+          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => {
             const count = schedules.filter(s => s.room_id === room.id && s.day === day).length;
             const isActive = activeTabDay === day;
             return (

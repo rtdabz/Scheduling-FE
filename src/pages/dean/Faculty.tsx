@@ -22,6 +22,7 @@ import {
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
+import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 
 interface Department {
   id: number;
@@ -709,6 +710,11 @@ export default function DeanFaculty() {
                       View Details
                     </button>
                     <InstructorTeachingLoadButton facultyId={f.id} />
+                    <InstructorTimetableButton
+                      facultyId={f.id}
+                      facultyName={name}
+                      departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
+                    />
                   </div>
                   {canManageFaculty && (
                     <div className="flex gap-2">

@@ -35,6 +35,7 @@ const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
 const RoomDetailPage = lazy(() => import('./pages/RoomDetailPage'));
 const CurriculumListPage = lazy(() => import('./pages/curriculum/CurriculumListPage'));
 const CurriculumDetailPage = lazy(() => import('./pages/curriculum/CurriculumDetailPage'));
+const CurriculumViewPage = lazy(() => import('./pages/curriculum/CurriculumViewPage'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
 
 interface StoredUser {
@@ -125,6 +126,8 @@ export default function App() {
             <Route path="/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/curricula" element={<CurriculumListPage />} />
             <Route path="/curricula/:id" element={<CurriculumDetailPage />} />
+            <Route path="/curriculum-view" element={<CurriculumViewPage />} />
+            <Route path="/curricula/view" element={<CurriculumViewPage />} />
             <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
             <Route path="/reports" element={<VpaaReports />} />
@@ -163,6 +166,7 @@ export default function App() {
             <Route path="/program_head/rooms/:id" element={<RoomDetailPage />} />
             <Route path="/program_head/curricula" element={<CurriculumListPage />} />
             <Route path="/program_head/curricula/:id" element={<CurriculumDetailPage />} />
+            <Route path="/program_head/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />
           </Route>
 

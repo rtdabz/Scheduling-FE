@@ -25,7 +25,7 @@ interface Schedule {
   facultyName: string | null;
   roomId: string;
   roomName: string;
-  day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat";
+  day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
   startTime: string;
   endTime: string;
   mode: "on-site" | "online" | "field";
@@ -112,16 +112,16 @@ interface OverflowGroup {
 }
 
 const dayMapToIndex: Record<string, number> = {
-  "Monday": 0,
-  "Tuesday": 1,
-  "Wednesday": 2,
-  "Thursday": 3,
-  "Friday": 4,
-  "Saturday": 5,
-  "Sunday": 6
+  "Monday": 0, "Mon": 0,
+  "Tuesday": 1, "Tue": 1,
+  "Wednesday": 2, "Wed": 2,
+  "Thursday": 3, "Thu": 3,
+  "Friday": 4, "Fri": 4,
+  "Saturday": 5, "Sat": 5,
+  "Sunday": 6, "Sun": 6
 };
 
-const DAYS_MAP: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS_MAP: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const timeStrToSlot = (timeStr: string): number => {
   const parts = timeStr.split(':');
@@ -142,7 +142,7 @@ const slotToTimeStr12h = (slotIndex: number): string => {
   return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
 };
 
-const DAYS: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const START_HOUR = 7;
 const END_HOUR = 21;
 const SLOT_HEIGHT_PX = 24;
@@ -581,7 +581,7 @@ export default function DeanScheduleViewer() {
             </div>
           ) : (
             <div className="min-w-[1100px] bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-              <div className="grid grid-cols-[88px_repeat(6,minmax(0,1fr))]">
+              <div className="grid grid-cols-[88px_repeat(7,minmax(0,1fr))]">
                 <div className="sticky top-0 left-0 z-30 h-12 border-r border-b border-slate-200 bg-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-500 uppercase">
                   Time
                 </div>
@@ -595,9 +595,9 @@ export default function DeanScheduleViewer() {
                 ))}
 
                 <div
-                  className="col-span-7 grid relative"
+                  className="col-span-8 grid relative"
                   style={{
-                    gridTemplateColumns: "88px repeat(6, minmax(0, 1fr))",
+                    gridTemplateColumns: "88px repeat(7, minmax(0, 1fr))",
                     gridTemplateRows: `repeat(${timeSlots.length}, ${SLOT_HEIGHT_PX}px)`
                   }}
                 >

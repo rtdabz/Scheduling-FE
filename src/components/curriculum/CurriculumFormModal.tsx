@@ -27,6 +27,7 @@ export default function CurriculumFormModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState('');
   const [codeError, setCodeError] = useState('');
+  const [effectiveYearError, setEffectiveYearError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -49,6 +50,7 @@ export default function CurriculumFormModal({
       }
       setNameError('');
       setCodeError('');
+      setEffectiveYearError('');
     }
   }, [isOpen, isEditMode, curriculum]);
 
@@ -68,6 +70,13 @@ export default function CurriculumFormModal({
       hasError = true;
     } else {
       setCodeError('');
+    }
+
+    if (!effectiveSchoolYear.trim()) {
+      setEffectiveYearError('Effective school year is required');
+      hasError = true;
+    } else {
+      setEffectiveYearError('');
     }
 
     if (hasError) return;
@@ -176,10 +185,13 @@ export default function CurriculumFormModal({
               <input
                 type="text"
                 value={effectiveSchoolYear}
-                onChange={(e) => setEffectiveSchoolYear(e.target.value)}
+                onChange={(e) => { setEffectiveSchoolYear(e.target.value); setEffectiveYearError(''); }}
                 placeholder="e.g. 2024-2025"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                  effectiveYearError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                }`}
               />
+              {effectiveYearError && <p className="text-xs text-red-500 mt-1 font-semibold">{effectiveYearError}</p>}
             </div>
 
             <div>

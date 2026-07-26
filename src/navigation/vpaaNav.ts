@@ -7,7 +7,8 @@ import {
   ClipboardList,
   Users,
   Settings,
-  Building2
+  Building2,
+  BookOpen
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -35,6 +36,7 @@ export const vpaaNav: NavSection[] = [
       },
       { label: 'Faculty', path: '/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
       { label: 'Rooms', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Curriculum', path: '/curriculum-view', icon: BookOpen, id: 'sidebar-curriculum-view' },
     ]
   },
   {

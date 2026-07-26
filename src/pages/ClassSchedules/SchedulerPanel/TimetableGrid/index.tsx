@@ -197,7 +197,7 @@ export default function TimetableGrid({
               className="min-w-[900px] border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none"
               style={{
                 display: "grid",
-                gridTemplateColumns: "80px repeat(6, minmax(0, 1fr))",
+                gridTemplateColumns: "80px repeat(7, minmax(0, 1fr))",
                 gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(28, ${slotHeight}px)`
               }}
             >
