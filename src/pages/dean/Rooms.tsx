@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -189,8 +190,12 @@ export default function DeanRooms() {
     e.preventDefault();
 
     let hasError = false;
-    const trimmedCode = roomCode.trim();
     const trimmedBuilding = building.trim();
+    
+    let trimmedCode = roomCode.trim();
+    if (!selectedBuilding && !isEditMode) {
+      trimmedCode = trimmedBuilding ? `${trimmedBuilding.toUpperCase()}-101` : '';
+    }
 
     if (!trimmedCode) {
       setCodeError('Room code is required');
@@ -217,7 +222,7 @@ export default function DeanRooms() {
       const payload = {
         room_code: trimmedCode,
         building: trimmedBuilding,
-        room_type: roomType,
+        room_type: (!selectedBuilding && !isEditMode) ? 'lecture' : roomType,
         status,
         department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (departmentId ? parseInt(departmentId) : (user?.department_id ? Number(user.department_id) : null))
       };
@@ -500,7 +505,7 @@ export default function DeanRooms() {
                 setIsEditMode(false);
                 setEditingId(null);
                 setRoomCode('');
-                setBuilding('');
+                setBuilding(selectedBuilding || '');
                 setRoomType('lecture');
                 setStatus('available');
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
@@ -511,7 +516,7 @@ export default function DeanRooms() {
               className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto"
             >
               <Plus size={15} />
-              <span>Add Room</span>
+              <span>{selectedBuilding ? 'Add Room' : 'Add Building'}</span>
             </button>
           )}
         </div>
@@ -898,12 +903,14 @@ export default function DeanRooms() {
       )}
 
       {/* Create / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
-                {isEditMode ? 'Edit Room' : 'Add New Room'}
+                {isEditMode 
+                  ? 'Edit Room Details' 
+                  : (selectedBuilding ? 'Add New Room' : 'Add New Building')}
               </h2>
               <button
                 type="button"
@@ -914,71 +921,70 @@ export default function DeanRooms() {
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Room Code <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={roomCode}
-                  onChange={(e) => {
-                    setRoomCode(e.target.value.toUpperCase());
-                    setCodeError('');
-                  }}
-                  placeholder="e.g. CCS-LAB1"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    codeError
-                      ? 'border-red-500 focus:ring-red-500'
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
-                {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Building <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={building}
-                  onChange={(e) => {
-                    setBuilding(e.target.value);
-                    setBuildingError('');
-                  }}
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    buildingError
-                      ? 'border-red-500 focus:ring-red-500'
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                >
-                  <option value="">Select Building</option>
-                  <option value="NEE Building">NEE Building</option>
-                  <option value="Building 1">Building 1</option>
-                  <option value="Building 2">Building 2</option>
-                  <option value="Building 3">Building 3</option>
-                  <option value="Building 4">Building 4</option>
-                  <option value="Building 5">Building 5</option>
-                  <option value="Building 6">Building 6</option>
-                </select>
-                {buildingError && <p className="text-xs text-red-500 mt-1 font-semibold">{buildingError}</p>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              {!selectedBuilding && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Room Type <span className="text-red-500">*</span>
+                    Building Name <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={roomType}
-                    onChange={(e) => setRoomType(e.target.value as 'lecture' | 'laboratory' | 'online' | 'field')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="lecture">Lecture</option>
-                    <option value="laboratory">Laboratory</option>
-                  </select>
+                  <input
+                    type="text"
+                    value={building}
+                    onChange={(e) => {
+                      setBuilding(e.target.value);
+                      setBuildingError('');
+                    }}
+                    placeholder="e.g. NEE Building, Building 1"
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                      buildingError
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                  />
+                  {buildingError && <p className="text-xs text-red-500 mt-1 font-semibold">{buildingError}</p>}
                 </div>
+              )}
 
+              {(selectedBuilding || isEditMode) && (
                 <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    Room Code <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={roomCode}
+                    onChange={(e) => {
+                      setRoomCode(e.target.value.toUpperCase());
+                      setCodeError('');
+                    }}
+                    placeholder="e.g. CCS-LAB1"
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                      codeError
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                  />
+                  {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                {(selectedBuilding || isEditMode) && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Room Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={roomType}
+                      onChange={(e) => setRoomType(e.target.value as 'lecture' | 'laboratory' | 'online' | 'field')}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                    >
+                      <option value="lecture">Lecture</option>
+                      <option value="laboratory">Laboratory</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className={(selectedBuilding || isEditMode) ? "" : "col-span-2"}>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                     Status <span className="text-red-500">*</span>
                   </label>
@@ -1045,18 +1051,19 @@ export default function DeanRooms() {
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
-                    : (isEditMode ? 'Save Changes' : 'Create Room')
+                    : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
                   }
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      {isDeleteModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 text-center space-y-4">
               <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
@@ -1084,7 +1091,8 @@ export default function DeanRooms() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Classroom Detail Modal */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, BookOpen } from 'lucide-react';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import type { CurriculumDetail, CurriculumTerm } from '../../types/curriculum';
@@ -49,8 +50,8 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
     archived: 'bg-red-50 text-red-700 border-red-200',
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
           <h2 className="text-lg font-bold text-[#1A1410] font-display">Curriculum Details</h2>
@@ -172,6 +173,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

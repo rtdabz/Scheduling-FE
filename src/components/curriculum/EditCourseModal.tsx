@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Pencil, Loader2, BookOpen, AlertCircle } from 'lucide-react';
 import type { CurriculumCourse } from '../../types/curriculum';
 import { formatCourseName } from '../../lib/formatters';
@@ -73,8 +74,8 @@ export default function EditCourseModal({
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col">
         {/* Modal Header */}
         <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
@@ -224,6 +225,7 @@ export default function EditCourseModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

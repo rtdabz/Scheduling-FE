@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   CheckCircle2,
@@ -345,8 +346,8 @@ export default function CurriculumViewPage() {
       </div>
 
       {/* Course Detail Chip Popover Modal */}
-      {selectedChip && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      {selectedChip && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl border border-gray-200 w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 font-sans">
             {/* Popover Header */}
             <div className="p-5 bg-slate-50 border-b border-gray-200 flex justify-between items-center">
@@ -405,7 +406,8 @@ export default function CurriculumViewPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

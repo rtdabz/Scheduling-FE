@@ -549,7 +549,7 @@ export default function SecretarySchedulingOperationsPage() {
             <SummaryMetricCard label="Pending" value={pendingApprovals} icon={Clock} iconClassName="text-[#F5A623]" iconWrapperClassName="bg-[#F5A623]/5" />
             <SummaryMetricCard label="Faculty" value={facultyStats.total} icon={Users} onClick={() => navigate('/secretary/instructors')} />
             <SummaryMetricCard label="Rooms" value={visibleRooms.length} icon={DoorOpen} onClick={() => navigate('/secretary/rooms')} />
-            <SummaryMetricCard label="Subjects" value={visibleSubjects.length} icon={BookOpen} />
+            <SummaryMetricCard label="Subjects" value={visibleSubjects.length} icon={BookOpen} onClick={() => navigate('/secretary/curricula')} />
           </div>
 
           <AttentionPanel

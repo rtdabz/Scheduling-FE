@@ -91,7 +91,7 @@ export default function RoomDetailPage() {
   useEffect(() => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const currentDayIdx = new Date().getDay();
-    const defaultDay = currentDayIdx === 0 ? 'Monday' : days[currentDayIdx];
+    const defaultDay = days[currentDayIdx];
     setActiveTabDay(defaultDay);
   }, []);
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Search, RotateCcw, Archive, BookOpen } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
 
@@ -47,8 +48,8 @@ export default function CurriculumArchiveModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
         {/* Modal Header */}
         <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
@@ -157,6 +158,7 @@ export default function CurriculumArchiveModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

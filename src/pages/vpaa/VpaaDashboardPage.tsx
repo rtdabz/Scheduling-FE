@@ -703,7 +703,10 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* Total Subjects */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div
+              onClick={() => navigate('/curriculum-view')}
+              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
+            >
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Courses</span>
               <div className="flex items-baseline justify-between mt-2">
                 <span className="text-2xl font-extrabold text-gray-900">{subjects.length}</span>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   X,
@@ -105,7 +106,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
     if (isOpen) {
       const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const currentDayIdx = new Date().getDay();
-      const defaultDay = currentDayIdx === 0 ? 'Monday' : days[currentDayIdx];
+      const defaultDay = days[currentDayIdx];
       setActiveTabDay(defaultDay);
     }
   }, [isOpen]);
@@ -149,8 +150,8 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
     ? 'bg-red-50 text-red-700 border-red-200'
     : 'bg-green-50 text-green-700 border-green-200';
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-100 flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -264,7 +265,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
               <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans">
                 {/* Day Tabs */}
                 <div className="flex border-b border-gray-200 overflow-x-auto bg-gray-50/50">
-                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => {
                     const count = schedules.filter(s => s.room_id === room.id && s.day === day).length;
                     const isActive = activeTabDay === day;
                     return (
@@ -379,6 +380,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

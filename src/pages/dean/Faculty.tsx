@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import {
@@ -709,7 +710,6 @@ export default function DeanFaculty() {
                     >
                       View Details
                     </button>
-                    <InstructorTeachingLoadButton facultyId={f.id} />
                     <InstructorTimetableButton
                       facultyId={f.id}
                       facultyName={name}
@@ -806,8 +806,8 @@ export default function DeanFaculty() {
       )}
 
       {/* View Details Modal Overlay */}
-      {isDetailsModalOpen && detailsFaculty && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      {isDetailsModalOpen && detailsFaculty && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
               <div>
@@ -908,21 +908,16 @@ export default function DeanFaculty() {
             </div>
 
             <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsDetailsModalOpen(false)}
-                className="px-4 py-2 border border-gray-250 bg-white rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-xs transition-colors cursor-pointer"
-              >
-                Close Details
-              </button>
+              <InstructorTeachingLoadButton facultyId={detailsFaculty.id} />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Create / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
@@ -1144,12 +1139,13 @@ export default function DeanFaculty() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      {isDeleteModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-in zoom-in-95 duration-200 font-sans">
             <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-4 border border-red-100 animate-pulse font-sans">
               <AlertTriangle size={24} />
@@ -1175,7 +1171,8 @@ export default function DeanFaculty() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

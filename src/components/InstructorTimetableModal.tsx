@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Calendar, Clock, Loader2, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react";
 import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
@@ -228,7 +229,7 @@ export default function InstructorTimetableModal({
           const courseName = s.course?.course_name ?? s.subject?.course_name ?? s.subject?.subject_name ?? "";
           const category = s.course?.course_category ?? s.subject?.subject_category ?? "major";
           const sectionName = s.section?.section_name ?? "SEC";
-          const roomName = s.room ? (s.room.room_code === "ONLINE" ? "Online" : s.room.room_code) : "TBA";
+          const roomName = s.room ? (s.room.room_code === "ONLINE" ? "Online" : (s.room.room_code ?? "TBA")) : "TBA";
 
           return {
             id: s.id,
@@ -474,8 +475,8 @@ export default function InstructorTimetableModal({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
       <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-6xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200">
         {/* Top Control Bar matching Schedule Builder TimetableGrid Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
@@ -627,6 +628,7 @@ export default function InstructorTimetableModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
