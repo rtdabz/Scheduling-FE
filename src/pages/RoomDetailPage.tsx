@@ -11,6 +11,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import api from '../lib/api';
+import { getCachedData } from '../lib/dataCache';
 
 interface Department {
   id: number;
@@ -96,6 +97,40 @@ export default function RoomDetailPage() {
   }, []);
 
   useEffect(() => {
+    const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+    const user = userJson ? JSON.parse(userJson) : null;
+    const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+    const cachedRoomsData = getCachedData<any>(roomsCacheKey);
+
+    let cachedRoom: Room | undefined;
+    let cachedSchedules: Schedule[] = [];
+
+    if (cachedRoomsData) {
+      cachedRoom = cachedRoomsData.rooms.find((r: any) => String(r.id) === id);
+      cachedSchedules = cachedRoomsData.schedules || [];
+    }
+
+    if (cachedRoom) {
+      setRoom(cachedRoom);
+      setSchedules(cachedSchedules);
+      setIsLoading(false);
+
+      const fetchRoomBackground = async () => {
+        try {
+          const [roomRes, initialRes] = await Promise.all([
+            api.get<Room>(`/rooms/${id}`),
+            api.get<{ schedules: Schedule[] }>('/initial-data'),
+          ]);
+          setRoom(roomRes.data);
+          setSchedules(initialRes.data.schedules);
+        } catch {
+          // Ignore background fetch errors
+        }
+      };
+      fetchRoomBackground();
+      return;
+    }
+
     const fetchRoom = async () => {
       setIsLoading(true);
       try {

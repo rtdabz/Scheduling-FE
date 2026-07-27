@@ -459,6 +459,16 @@ export default function VpaaScheduleViewer() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   
+  const activeExtraFiltersCount = useMemo(() => {
+    let count = 0;
+    if (selectedFacultyId !== "All") count++;
+    if (selectedRoomId !== "All") count++;
+    if (selectedDay !== "All") count++;
+    if (selectedConflictStatus !== "All") count++;
+    if (selectedAssignmentStatus !== "All") count++;
+    return count;
+  }, [selectedFacultyId, selectedRoomId, selectedDay, selectedConflictStatus, selectedAssignmentStatus]);
+  
   // Detail State
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
 
@@ -835,17 +845,26 @@ export default function VpaaScheduleViewer() {
 
 
   return (
-    <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-800 font-sans">
-      <div className="bg-slate-50/70 border-b border-slate-200 p-4 space-y-3">
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+    <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-md shadow-slate-100/50 overflow-hidden text-slate-800 font-sans relative">
+      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#4e0a10] via-[#C9952A] to-[#4e0a10]" />
+      
+      <div className="bg-slate-50/70 border-b border-slate-200 p-5 space-y-4 pt-6">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-black text-[#4e0a10] font-display">All Schedules</h2>
-            <p className="text-xs text-slate-500 font-medium">
-              {activeTerm ? `${activeTerm.academic_year ?? "Active Term"} ${activeTerm.semester ?? ""}` : "Institution-wide schedule monitoring"}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="text-xl font-extrabold text-[#4e0a10] tracking-tight font-display">All Schedules</h2>
+              {activeTerm && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#C9952A]/10 text-[#4e0a10] border border-[#C9952A]/20">
+                  {activeTerm.semester ? `${activeTerm.semester} Sem` : ""} {activeTerm.academic_year ?? "Active Term"}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 font-semibold mt-1">
+              Institution-wide schedule monitoring, conflict detection, and department management dashboard.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/80 shadow-inner w-fit">
             {(["overview", "list", "grid"] as ViewMode[]).map((mode) => {
               const isDisabled = mode === "grid" && !hasGridScope;
               const Icon = mode === "overview" ? LayoutDashboard : mode === "list" ? List : CalendarDays;
@@ -856,12 +875,12 @@ export default function VpaaScheduleViewer() {
                   type="button"
                   disabled={isDisabled}
                   onClick={() => !isDisabled && setViewMode(mode)}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 h-9 text-xs font-bold transition-all ${
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
                     viewMode === mode
-                      ? "bg-[#4e0a10] text-[#E8D5C4] shadow-sm"
+                      ? "bg-[#4e0a10] text-[#E8D5C4] shadow-md scale-[1.02]"
                       : isDisabled
-                      ? "bg-slate-100 text-slate-300 cursor-not-allowed"
-                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                      ? "text-slate-300 cursor-not-allowed opacity-50"
+                      : "text-slate-600 hover:text-[#4e0a10] hover:bg-white/50"
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -874,66 +893,138 @@ export default function VpaaScheduleViewer() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr_auto] gap-3 select-none">
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search subject, section, faculty, room..." className="w-full h-11 pl-10 pr-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] focus:ring-1 focus:ring-[#C9952A]/30" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input 
+              value={searchTerm} 
+              onChange={(event) => setSearchTerm(event.target.value)} 
+              placeholder="Search subject, section, faculty, room..." 
+              className="w-full h-11 pl-10 pr-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] focus:ring-1 focus:ring-[#C9952A]/30" 
+            />
           </div>
 
-          <select value={selectedDeptId} onChange={handleDepartmentChange} className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+          <select 
+            value={selectedDeptId} 
+            onChange={handleDepartmentChange} 
+            className="h-11 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] cursor-pointer"
+          >
             <option value="All">All Departments</option>
             {departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.code} - {dept.name}</option>)}
           </select>
 
-          <select value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setViewMode(event.target.value === "All" ? (selectedDeptId === "All" ? "overview" : "list") : "grid"); }} className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+          <select 
+            value={selectedSectionId} 
+            onChange={(event) => { setSelectedSectionId(event.target.value); setViewMode(event.target.value === "All" ? (selectedDeptId === "All" ? "overview" : "list") : "grid"); }} 
+            className="h-11 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] cursor-pointer"
+          >
             <option value="All">All Sections</option>
             {filteredSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
           </select>
 
-          <button type="button" onClick={() => setIsMoreFiltersOpen((value) => !value)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 hover:bg-slate-50">
-            <Filter className="w-4 h-4 text-[#C9952A]" />
-            More Filters
+          <button 
+            type="button" 
+            onClick={() => setIsMoreFiltersOpen((value) => !value)} 
+            className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition-all duration-150 cursor-pointer ${
+              isMoreFiltersOpen || activeExtraFiltersCount > 0
+                ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Filter className={`w-4 h-4 ${isMoreFiltersOpen || activeExtraFiltersCount > 0 ? "text-[#4e0a10]" : "text-[#C9952A]"}`} />
+            <span>More Filters</span>
+            {activeExtraFiltersCount > 0 && (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#4e0a10] text-[10px] font-black text-white ml-0.5">
+                {activeExtraFiltersCount}
+              </span>
+            )}
           </button>
         </div>
 
         {isMoreFiltersOpen && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-xl border border-slate-200 bg-white p-3">
-            <select value={selectedFacultyId} onChange={(event) => { setSelectedFacultyId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3.5 shadow-inner">
+            <select 
+              value={selectedFacultyId} 
+              onChange={(event) => { setSelectedFacultyId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} 
+              className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+            >
               <option value="All">All Faculty</option>
               {filteredFaculty.map((faculty) => <option key={faculty.id} value={faculty.id}>{faculty.name}</option>)}
             </select>
-            <select value={selectedRoomId} onChange={(event) => { setSelectedRoomId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+            
+            <select 
+              value={selectedRoomId} 
+              onChange={(event) => { setSelectedRoomId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} 
+              className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+            >
               <option value="All">All Rooms</option>
               {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
             </select>
-            <select value={selectedDay} onChange={(event) => setSelectedDay(event.target.value)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+            
+            <select 
+              value={selectedDay} 
+              onChange={(event) => setSelectedDay(event.target.value)} 
+              className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+            >
               <option value="All">All Days</option>
               {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
             </select>
-            <select value={selectedConflictStatus} onChange={(event) => setSelectedConflictStatus(event.target.value as ConflictStatus)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+            
+            <select 
+              value={selectedConflictStatus} 
+              onChange={(event) => setSelectedConflictStatus(event.target.value as ConflictStatus)} 
+              className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+            >
               <option value="All">All Conflicts</option>
               <option value="Conflict">With Conflict</option>
               <option value="No Conflict">No Conflict</option>
             </select>
-            <select value={selectedAssignmentStatus} onChange={(event) => setSelectedAssignmentStatus(event.target.value as AssignmentStatus)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]">
+            
+            <select 
+              value={selectedAssignmentStatus} 
+              onChange={(event) => setSelectedAssignmentStatus(event.target.value as AssignmentStatus)} 
+              className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+            >
               <option value="All">All Assignments</option>
               <option value="Complete">Complete</option>
               <option value="Missing Faculty">Missing Faculty</option>
               <option value="Missing Room">Missing Room</option>
               <option value="Missing Assignment">Missing Assignment</option>
             </select>
-            <button onClick={handleResetFilters} className="inline-flex items-center justify-center gap-2 px-4 h-10 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-sm font-semibold transition-all shadow-sm">
+            
+            <button 
+              onClick={handleResetFilters} 
+              className="inline-flex items-center justify-center gap-2 px-4 h-10 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-sm font-semibold transition-all shadow-sm cursor-pointer hover:text-[#4e0a10]"
+            >
               <RefreshCw className="w-4 h-4" />
               Reset
             </button>
           </div>
         )}
+        
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500"><Filter className="w-3.5 h-3.5 text-[#C9952A]" />{filteredSchedules.length} result{filteredSchedules.length === 1 ? "" : "s"}</span>
-            {activeFilterChips.map((chip) => <span key={chip} className="rounded-full bg-[#4e0a10]/10 border border-[#4e0a10]/15 px-2 py-1 text-[10px] font-bold text-[#4e0a10]">{chip}</span>)}
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500">
+              <Filter className="w-3.5 h-3.5 text-[#C9952A]" />
+              {filteredSchedules.length} result{filteredSchedules.length === 1 ? "" : "s"}
+            </span>
+            {activeFilterChips.map((chip) => (
+              <span key={chip} className="rounded-full bg-[#4e0a10]/5 border border-[#4e0a10]/15 px-2.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
+                {chip}
+              </span>
+            ))}
           </div>
+          
           <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 w-fit">
             {(["All", "on-site", "online", "field"] as const).map((mode) => (
-              <button key={mode} type="button" onClick={() => setSelectedMode(mode)} className={`px-3 h-8 rounded-lg text-[10px] font-bold transition-all ${selectedMode === mode ? "bg-[#4e0a10] text-[#E8D5C4] shadow-sm" : "text-slate-600 hover:bg-slate-50"}`}>
+              <button 
+                key={mode} 
+                type="button" 
+                onClick={() => setSelectedMode(mode)} 
+                className={`px-3 h-8 rounded-lg text-[10px] font-bold transition-all ${
+                  selectedMode === mode 
+                    ? "bg-[#4e0a10] text-[#E8D5C4] shadow-sm" 
+                    : "text-slate-600 hover:bg-white/50"
+                }`}
+              >
                 {mode === "All" ? "All Modes" : getModeLabel(mode)}
               </button>
             ))}
@@ -942,40 +1033,132 @@ export default function VpaaScheduleViewer() {
       </div>
 
       {viewMode === "overview" && (
-        <div className="p-4 space-y-4">
+        <div className="p-5 space-y-5">
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
             {[
-              { icon: Calendar, label: "Schedules", value: overviewStats.schedules },
-              { icon: Building2, label: "Departments", value: overviewStats.departments },
-              { icon: Layers, label: "Sections", value: overviewStats.sections },
-              { icon: Users, label: "Faculty", value: overviewStats.faculty },
-              { icon: DoorOpen, label: "Rooms", value: overviewStats.rooms },
-              { icon: User, label: "No Faculty", value: overviewStats.unassignedFaculty },
-              { icon: MapPin, label: "No Room", value: overviewStats.unassignedRooms },
-              { icon: AlertTriangle, label: "Conflicts", value: overviewStats.conflicts },
-            ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><Icon className="w-4 h-4 text-[#C9952A]" /></div>
-                <p className="text-2xl font-black text-[#4e0a10] leading-tight mt-1">{value}</p>
-              </div>
-            ))}
+              { icon: Calendar, label: "Schedules", value: overviewStats.schedules, type: "normal" },
+              { icon: Building2, label: "Departments", value: overviewStats.departments, type: "normal" },
+              { icon: Layers, label: "Sections", value: overviewStats.sections, type: "normal" },
+              { icon: Users, label: "Faculty", value: overviewStats.faculty, type: "normal" },
+              { icon: DoorOpen, label: "Rooms", value: overviewStats.rooms, type: "normal" },
+              { icon: User, label: "No Faculty", value: overviewStats.unassignedFaculty, type: "warning" },
+              { icon: MapPin, label: "No Room", value: overviewStats.unassignedRooms, type: "warning" },
+              { icon: AlertTriangle, label: "Conflicts", value: overviewStats.conflicts, type: "danger" },
+            ].map(({ icon: Icon, label, value, type }) => {
+              let cardStyles = "bg-white border border-slate-200/80 text-slate-800 hover:border-slate-300";
+              let textStyles = "text-[#4e0a10]";
+              let iconStyles = "text-[#C9952A]";
+              
+              if (type === "warning" && value > 0) {
+                cardStyles = "bg-amber-50/30 border border-amber-200 text-amber-900 hover:border-amber-300 hover:bg-amber-50/60";
+                textStyles = "text-amber-700";
+                iconStyles = "text-amber-500";
+              } else if (type === "danger" && value > 0) {
+                cardStyles = "bg-rose-50/30 border border-rose-200 text-rose-900 hover:border-rose-300 hover:bg-rose-50/60";
+                textStyles = "text-rose-700";
+                iconStyles = "text-rose-500 animate-bounce";
+              }
+              
+              return (
+                <div
+                  key={label}
+                  className={`rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between min-h-[90px] ${cardStyles}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                    <Icon className={`w-4 h-4 ${iconStyles}`} />
+                  </div>
+                  <p className={`text-2xl font-black leading-tight mt-2 ${textStyles}`}>{value}</p>
+                </div>
+              );
+            })}
           </div>
 
-          <div className="rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between"><h3 className="text-sm font-black text-slate-800">Department Summaries</h3><span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Monitoring Overview</span></div>
-            {isLoading ? <div className="p-4 space-y-2">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}</div> : departmentSummaries.length === 0 ? <div className="p-8 text-center text-sm text-slate-400 italic">No department schedules found.</div> : (
-              <div className="divide-y divide-slate-100">
-                {departmentSummaries.map((summary) => (
-                  <div key={summary.department.id} className="grid grid-cols-1 md:grid-cols-[1.5fr_repeat(6,minmax(0,1fr))] gap-2 px-4 py-3 text-xs items-center">
-                    <div className="min-w-0"><p className="font-black text-[#4e0a10] truncate">{summary.department.code} - {summary.department.name}</p><p className="text-slate-400 font-semibold">{summary.schedules} schedule entries</p></div>
-                    <p><span className="font-black text-slate-800">{summary.sections}</span> sections</p>
-                    <p><span className="font-black text-slate-800">{summary.faculty}</span> faculty</p>
-                    <p><span className="font-black text-slate-800">{summary.rooms}</span> rooms</p>
-                    <p className={summary.conflicts > 0 ? "font-bold text-red-600" : "text-slate-500"}>{summary.conflicts} conflicts</p>
-                    <p className={summary.missingAssignments > 0 ? "font-bold text-amber-700" : "text-slate-500"}>{summary.missingAssignments} missing</p>
-                    <button type="button" onClick={() => { setSelectedDeptId(summary.department.id); setViewMode("list"); }} className="text-left md:text-center rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-bold text-[#4e0a10] hover:bg-[#4e0a10]/5">Review</button>
-                  </div>
+          <div className="rounded-2xl border border-slate-200/85 bg-white overflow-hidden shadow-sm">
+            <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-800">Department Summaries</h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Monitoring Overview</span>
+            </div>
+            {isLoading ? (
+              <div className="p-4 space-y-2">
+                {[0, 1, 2].map((item) => (
+                  <Skeleton key={item} className="h-14 w-full rounded-xl" />
                 ))}
+              </div>
+            ) : departmentSummaries.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-400 italic">No department schedules found.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs font-sans">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/50 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                      <th className="px-5 py-3">Department</th>
+                      <th className="px-4 py-3 text-center">Schedules</th>
+                      <th className="px-4 py-3 text-center">Sections</th>
+                      <th className="px-4 py-3 text-center">Faculty</th>
+                      <th className="px-4 py-3 text-center">Rooms</th>
+                      <th className="px-4 py-3 text-center">Conflicts</th>
+                      <th className="px-4 py-3 text-center">Missing</th>
+                      <th className="px-5 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+                    {departmentSummaries.map((summary) => (
+                      <tr key={summary.department.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-5 py-3.5 font-sans">
+                          <p className="font-extrabold text-[#4e0a10] text-sm">
+                            {summary.department.code}
+                          </p>
+                          <p className="text-slate-400 text-[11px] font-semibold truncate max-w-xs md:max-w-md">
+                            {summary.department.name}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-bold text-slate-800">
+                          {summary.schedules}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {summary.sections}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {summary.faculty}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {summary.rooms}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {summary.conflicts > 0 ? (
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-100 font-bold">
+                              {summary.conflicts}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-semibold">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {summary.missingAssignments > 0 ? (
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">
+                              {summary.missingAssignments}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-semibold">-</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDeptId(summary.department.id);
+                              setViewMode("list");
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl bg-[#4e0a10] hover:bg-[#C9952A] text-white px-3.5 py-1.5 text-xs font-bold shadow-sm transition-all duration-150 cursor-pointer"
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -983,15 +1166,17 @@ export default function VpaaScheduleViewer() {
       )}
 
       {viewMode === "list" && (
-        <div className="p-4 space-y-3">
+        <div className="p-5 space-y-4 font-sans">
           {hasDepartmentOnlyScope ? (
-            <div className="rounded-2xl border border-slate-200 overflow-hidden">
-              <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-2">
+            <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-sm">
+              <div className="bg-slate-50/80 px-5 py-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-black text-[#4e0a10]">Section Summary</h3>
-                  <p className="text-sm font-semibold text-slate-500">Choose a section before opening a detailed timetable.</p>
+                  <h3 className="text-base font-extrabold text-[#4e0a10] tracking-tight">Section Timetables</h3>
+                  <p className="text-xs font-semibold text-slate-400 mt-0.5">Choose a class section below to view its complete weekly schedule grid.</p>
                 </div>
-                <span className="text-sm font-bold text-slate-500">{sectionSummaries.length} section{sectionSummaries.length === 1 ? "" : "s"}</span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                  {sectionSummaries.length} section{sectionSummaries.length === 1 ? "" : "s"}
+                </span>
               </div>
               {isLoading ? (
                 <div className="p-4 space-y-2">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div>
@@ -999,72 +1184,215 @@ export default function VpaaScheduleViewer() {
                 <div className="p-10 text-center text-sm text-slate-400 italic">This department has no section schedules.</div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {sectionSummaries.map((summary) => (
-                    <div key={summary.section.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_1fr_auto] gap-3 px-4 py-4 text-sm items-center">
-                      <p className="font-black text-slate-800">{summary.section.name}</p>
-                      <p className="font-semibold text-slate-600">{summary.schedules} class{summary.schedules === 1 ? "" : "es"}</p>
-                    <p className={summary.schedules === 0 ? "font-bold text-slate-400" : summary.conflictCount > 0 ? "font-bold text-red-600" : summary.missingAssignments > 0 ? "font-bold text-amber-700" : "font-bold text-emerald-700"}>{summary.status}</p>
-                    <button type="button" disabled={summary.schedules === 0} onClick={() => { setSelectedSectionId(summary.section.id); setViewMode("grid"); }} className="h-10 rounded-xl bg-[#4e0a10] px-4 text-sm font-bold text-[#E8D5C4] hover:bg-[#C9952A] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors">
-                      View timetable
-                    </button>
-                    </div>
-                  ))}
+                  {sectionSummaries.map((summary) => {
+                    let badgeClass = "bg-slate-100 text-slate-600 border-slate-200";
+                    if (summary.status === "Fully assigned") badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                    else if (summary.status.includes("missing")) badgeClass = "bg-amber-50 text-amber-700 border-amber-100";
+                    else if (summary.status.includes("conflict")) badgeClass = "bg-rose-50 text-rose-700 border-rose-100";
+                    
+                    return (
+                      <div key={summary.section.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_1.2fr_auto] gap-3 px-5 py-4 text-sm items-center hover:bg-slate-50/40 transition-colors">
+                        <div>
+                          <p className="font-extrabold text-slate-800 text-base">{summary.section.name}</p>
+                        </div>
+                        <p className="font-semibold text-slate-500">{summary.schedules} class{summary.schedules === 1 ? "" : "es"}</p>
+                        <div>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}`}>
+                            {summary.status}
+                          </span>
+                        </div>
+                        <button 
+                          type="button" 
+                          disabled={summary.schedules === 0} 
+                          onClick={() => { setSelectedSectionId(summary.section.id); setViewMode("grid"); }} 
+                          className="h-9 px-4 rounded-xl bg-[#4e0a10] hover:bg-[#C9952A] text-xs font-bold text-white shadow-sm transition-all duration-150 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          View timetable
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           ) : (
             <>
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select value={groupKey} onChange={(event) => setGroupKey(event.target.value as GroupKey)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]"><option value="department">Group by Department</option><option value="section">Group by Section</option><option value="day">Group by Day</option><option value="faculty">Group by Faculty</option><option value="room">Group by Room</option></select>
-                    <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A]"><option value="department">Sort Department</option><option value="section">Sort Section</option><option value="subject">Sort Subject</option><option value="day">Sort Day</option><option value="startTime">Sort Start Time</option><option value="faculty">Sort Faculty</option><option value="room">Sort Room</option></select>
-                    <button type="button" onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")} className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50">{sortDirection === "asc" ? "Ascending" : "Descending"}</button>
-                  </div>
-                  <p className="text-sm font-bold text-slate-400">Page {currentPage} of {pageCount}</p>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select 
+                    value={groupKey} 
+                    onChange={(event) => setGroupKey(event.target.value as GroupKey)} 
+                    className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+                  >
+                    <option value="department">Group by Department</option>
+                    <option value="section">Group by Section</option>
+                    <option value="day">Group by Day</option>
+                    <option value="faculty">Group by Faculty</option>
+                    <option value="room">Group by Room</option>
+                  </select>
+                  
+                  <select 
+                    value={sortKey} 
+                    onChange={(event) => setSortKey(event.target.value as SortKey)} 
+                    className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
+                  >
+                    <option value="department">Sort Department</option>
+                    <option value="section">Sort Section</option>
+                    <option value="subject">Sort Subject</option>
+                    <option value="day">Sort Day</option>
+                    <option value="startTime">Sort Start Time</option>
+                    <option value="faculty">Sort Faculty</option>
+                    <option value="room">Sort Room</option>
+                  </select>
+                  
+                  <button 
+                    type="button" 
+                    onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")} 
+                    className="h-10 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-sm font-bold shadow-sm cursor-pointer transition-all duration-150"
+                  >
+                    {sortDirection === "asc" ? "Ascending" : "Descending"}
+                  </button>
                 </div>
-                {groupKey === "section" && (
-                  <div className="rounded-xl border border-[#C9952A]/20 bg-[#F7F4F0] px-4 py-2 text-xs font-semibold text-slate-600">
-                    Each section group contains the different subjects scheduled for that same section.
-                  </div>
-                )}
-                <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                  {isLoading ? <div className="p-4 space-y-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div> : groupedSchedules.length === 0 ? <div className="p-10 text-center text-sm text-slate-400 italic">No schedules match the selected filters.</div> : (
-                    <div className="divide-y divide-slate-100">
-                      {groupedSchedules.map(([group, groupSchedules]) => (
-                        <div key={group}><div className="bg-slate-50 px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3"><div><p className="text-sm font-black text-[#4e0a10]">{group}</p>{groupKey === "section" && <p className="text-[11px] font-semibold text-slate-500">Subjects scheduled for this section</p>}</div><p className="text-xs font-bold text-slate-400">{groupSchedules.length} class{groupSchedules.length === 1 ? "" : "es"}</p></div><div className="divide-y divide-slate-100">
+                <p className="text-xs font-bold text-slate-400">Page {currentPage} of {pageCount}</p>
+              </div>
+              
+              {groupKey === "section" && (
+                <div className="rounded-xl border border-[#C9952A]/20 bg-[#F7F4F0] px-4 py-2.5 text-xs font-semibold text-[#4e0a10]">
+                  Each section group contains the different subjects scheduled for that same section.
+                </div>
+              )}
+              
+              <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-sm">
+                <div className={`hidden md:grid grid-cols-1 ${groupKey === "section" ? "md:grid-cols-[1.2fr_1.1fr_1fr_1fr_0.7fr]" : "md:grid-cols-[1.2fr_1.1fr_0.8fr_1fr_1fr_0.7fr]"} gap-2 px-5 py-3 bg-slate-50/80 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-400`}>
+                  <div>Subject</div>
+                  <div>Schedule / Time</div>
+                  {groupKey !== "section" && <div>Section</div>}
+                  <div>Faculty</div>
+                  <div>Room</div>
+                  <div className="text-right">Dept / Status</div>
+                </div>
+                
+                {isLoading ? (
+                  <div className="p-4 space-y-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div>
+                ) : groupedSchedules.length === 0 ? (
+                  <div className="p-10 text-center text-sm text-slate-400 italic">No schedules match the selected filters.</div>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {groupedSchedules.map(([group, groupSchedules]) => (
+                      <div key={group}>
+                        <div className="bg-slate-50/40 px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-extrabold text-[#4e0a10]">{group}</p>
+                            {groupKey === "section" && <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Subjects scheduled for this section</p>}
+                          </div>
+                          <span className="inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                            {groupSchedules.length} class{groupSchedules.length === 1 ? "" : "es"}
+                          </span>
+                        </div>
+                        <div className="divide-y divide-slate-100 font-medium">
                           {groupSchedules.map((schedule) => {
                             const conflicts = getConflictLabels(conflictMap.get(schedule.id));
-                            return <button key={schedule.id} type="button" onClick={() => setSelectedSchedule(schedule)} className={`w-full text-left grid grid-cols-1 ${groupKey === "section" ? "md:grid-cols-[1.2fr_1.1fr_1fr_1fr_0.7fr]" : "md:grid-cols-[1.2fr_1.1fr_0.8fr_1fr_1fr_0.7fr]"} gap-2 px-4 py-3 text-sm hover:bg-slate-50 transition-colors`}><div className="min-w-0"><p className="font-black text-slate-800 truncate">{schedule.subjectCode || "Subject"}</p><p className="text-slate-500 truncate">{schedule.subjectName || "Untitled subject"}</p></div><p className="font-semibold text-slate-700">{schedule.day}, {schedule.startTime} - {schedule.endTime}</p>{groupKey !== "section" && <p className="text-slate-600 truncate">{schedule.sectionName || "Unassigned Section"}</p>}<p className={isUnassignedFaculty(schedule) ? "font-bold text-slate-500 truncate" : "text-slate-600 truncate"}>{schedule.facultyName}</p><p className={isUnassignedRoom(schedule) ? "font-bold text-slate-500 truncate" : "text-slate-600 truncate"}>{schedule.roomName || "Unassigned Room"}</p><div className="flex flex-wrap gap-1"><span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${getDeptBadgeStyles(schedule.departmentCode)}`}>{schedule.departmentCode || "TCC"}</span>{conflicts.length > 0 && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600">{conflicts.join(", ")}</span>}</div></button>;
+                            const isUnassignedFac = isUnassignedFaculty(schedule);
+                            const isUnassignedRm = isUnassignedRoom(schedule);
+                            
+                            return (
+                              <button 
+                                key={schedule.id} 
+                                type="button" 
+                                onClick={() => setSelectedSchedule(schedule)} 
+                                className={`w-full text-left grid grid-cols-1 ${
+                                  groupKey === "section" 
+                                    ? "md:grid-cols-[1.2fr_1.1fr_1fr_1fr_0.7fr]" 
+                                    : "md:grid-cols-[1.2fr_1.1fr_0.8fr_1fr_1fr_0.7fr]"
+                                } gap-2 px-5 py-3.5 text-xs items-center hover:bg-slate-50/60 transition-colors cursor-pointer`}
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-extrabold text-[#4e0a10] text-sm truncate">{schedule.subjectCode || "Subject"}</p>
+                                  <p className="text-slate-400 font-semibold text-[11px] truncate mt-0.5">{schedule.subjectName || "Untitled subject"}</p>
+                                </div>
+                                <div className="text-slate-700 font-bold">
+                                  <p>{schedule.day}</p>
+                                  <p className="text-slate-400 font-medium text-[11px] mt-0.5">{schedule.startTime} - {schedule.endTime}</p>
+                                </div>
+                                {groupKey !== "section" && (
+                                  <p className="text-slate-700 font-semibold truncate bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md w-fit text-[11px]">
+                                    {schedule.sectionName || "Unassigned"}
+                                  </p>
+                                )}
+                                <p className={isUnassignedFac ? "font-bold text-amber-600 italic bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md w-fit text-[11px]" : "text-slate-700 font-semibold truncate"}>
+                                  {schedule.facultyName}
+                                </p>
+                                <p className={isUnassignedRm ? "font-bold text-amber-600 italic bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md w-fit text-[11px]" : "text-slate-700 font-semibold truncate"}>
+                                  {schedule.roomName || "Unassigned"}
+                                </p>
+                                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getDeptBadgeStyles(schedule.departmentCode)}`}>
+                                    {schedule.departmentCode || "TCC"}
+                                  </span>
+                                  {conflicts.length > 0 && (
+                                    <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">
+                                      Conflict
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            );
                           })}
-                        </div></div>
-                      ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between"><button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className="px-4 h-10 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 disabled:opacity-40">Previous</button><button type="button" disabled={currentPage === pageCount} onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))} className="px-4 h-10 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 disabled:opacity-40">Next</button></div>
+              
+              <div className="flex items-center justify-between pt-2">
+                <button 
+                  type="button" 
+                  disabled={currentPage === 1} 
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} 
+                  className="px-4 h-10 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-sm font-bold text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
+                >
+                  Previous
+                </button>
+                <button 
+                  type="button" 
+                  disabled={currentPage === pageCount} 
+                  onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))} 
+                  className="px-4 h-10 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-sm font-bold text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
             </>
           )}
         </div>
       )}
       {viewMode === "grid" && (
-        <div className="bg-slate-50/20 p-4 space-y-3">
-          <div className="rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/10 px-4 py-3 text-sm font-semibold text-[#4e0a10]">
-            Simultaneous classes are not necessarily conflicts. Only Faculty Conflict, Room Conflict, or Section Conflict items are marked in red.
+        <div className="bg-slate-50/20 p-5 space-y-4 font-sans">
+          <div className="rounded-xl border border-[#C9952A]/25 bg-[#C9952A]/5 px-4 py-3 text-xs font-semibold text-[#4e0a10] flex items-start gap-2.5 shadow-sm">
+            <Info className="w-4 h-4 text-[#C9952A] shrink-0 mt-0.5" />
+            <p>
+              Simultaneous classes are not necessarily conflicts. Only <strong className="text-red-700 font-extrabold">Faculty Conflict</strong>, <strong className="text-red-700 font-extrabold">Room Conflict</strong>, or <strong className="text-red-700 font-extrabold">Section Conflict</strong> items are marked in red.
+            </p>
           </div>
 
           {!hasGridScope ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
-              Select a section, faculty member, or room before opening the Weekly Grid.
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
+              <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <h4 className="font-extrabold text-slate-700 text-sm">No Grid Scope Active</h4>
+              <p className="text-xs font-medium text-slate-400 mt-1 max-w-xs mx-auto">Select a department section, faculty member, or room from the filters before opening the Weekly Grid.</p>
             </div>
           ) : filteredSchedules.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
-              No schedules match this grid scope.
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
+              <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <h4 className="font-extrabold text-slate-700 text-sm">No Schedules Found</h4>
+              <p className="text-xs font-medium text-slate-400 mt-1">No schedules match this grid scope.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[1120px] bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm relative flex flex-row">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200/80 shadow-sm bg-white">
+              <div className="min-w-[1120px] bg-white relative flex flex-row">
                 <div className="w-24 shrink-0 border-r border-slate-200 bg-slate-50/70 select-none">
-                  <div className="h-12 border-b border-slate-200 bg-slate-50/80 flex items-center justify-center font-bold text-xs uppercase text-slate-500">Time</div>
+                  <div className="h-12 border-b border-slate-200 bg-slate-50/90 flex items-center justify-center font-extrabold text-xs uppercase text-slate-500 tracking-wider">Time</div>
                   {timeSlots.map((slot, index) => (
                     <div key={index} className="h-6 border-b border-slate-100 last:border-b-0 flex items-center justify-center text-[10px] font-semibold text-slate-400">
                       {slot.label.includes(":00") ? <span className="font-bold text-slate-600">{slot.label}</span> : <span className="opacity-30">.</span>}
@@ -1078,9 +1406,9 @@ export default function VpaaScheduleViewer() {
                     const layouts = getDayLayouts(daySchedules);
                     return (
                       <div key={day} className="flex-1 border-r border-slate-200 last:border-r-0 relative min-w-[150px]">
-                        <div className="h-12 border-b border-slate-200 bg-slate-50/80 flex flex-col items-center justify-center select-none">
-                          <span className="font-bold text-sm text-slate-700 uppercase tracking-wide">{day}</span>
-                          <span className="text-[10px] font-bold text-slate-400">{daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}</span>
+                        <div className="h-12 border-b border-slate-200 bg-slate-50/90 flex flex-col items-center justify-center select-none py-1">
+                          <span className="font-extrabold text-xs text-slate-700 uppercase tracking-wider">{day}</span>
+                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">{daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}</span>
                         </div>
 
                         <div className="relative">
@@ -1101,21 +1429,40 @@ export default function VpaaScheduleViewer() {
                                 type="button"
                                 onClick={() => setSelectedSchedule(schedule)}
                                 title={`${schedule.subjectCode}: ${schedule.subjectName}\nSection: ${schedule.sectionName || "Unassigned"}\nInstructor: ${schedule.facultyName}\nRoom: ${schedule.roomName || "Unassigned"}\nTime: ${schedule.day}, ${schedule.startTime} – ${schedule.endTime}`}
-                                className={`absolute border-2 border-l-4 p-2 flex flex-col justify-between text-left select-none rounded-xl shadow-sm hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden box-border leading-snug ${conflicts.length > 0 ? "border-red-300 border-l-red-600 bg-red-50 text-red-800 ring-2 ring-red-200" : getDeptStyles(schedule.departmentCode)}`}
+                                className={`absolute border-2 border-l-4 p-2.5 flex flex-col justify-between text-left select-none rounded-xl shadow-sm hover:shadow-md hover:scale-[1.02] hover:-translate-y-0.5 transition-all overflow-hidden box-border leading-snug cursor-pointer ${
+                                  conflicts.length > 0 
+                                    ? "border-red-300 border-l-red-600 bg-red-50 text-red-800 ring-2 ring-red-200" 
+                                    : getDeptStyles(schedule.departmentCode)
+                                }`}
                                 style={{ top: `${top + 2}px`, height: `${height - 4}px`, left: `calc(${left} + 2px)`, width: `calc(${width} - 4px)`, zIndex: 10 }}
                               >
-                                <div className="min-w-0">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="font-extrabold text-xs tracking-wide leading-none truncate">{schedule.subjectCode || "Subject"}</span>
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold border shrink-0 ${conflicts.length > 0 ? "bg-red-100 text-red-700 border-red-200" : getDeptBadgeStyles(schedule.departmentCode)}`}>{schedule.sectionName || "Section"}</span>
+                                <div className="min-w-0 w-full">
+                                  <div className="flex items-center justify-between gap-1 w-full">
+                                    <span className="font-extrabold text-xs tracking-wider leading-none truncate max-w-[65%]">{schedule.subjectCode || "Subject"}</span>
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-black border shrink-0 ${
+                                      conflicts.length > 0 
+                                        ? "bg-red-100 text-red-700 border-red-200" 
+                                        : getDeptBadgeStyles(schedule.departmentCode)
+                                    }`}>{schedule.sectionName || "Section"}</span>
                                   </div>
-                                  <p className="text-[11px] font-medium leading-tight mt-1 truncate opacity-90">{schedule.subjectName || "Untitled subject"}</p>
-                                  {conflicts.length > 0 && <p className="mt-1 text-[10px] font-black text-red-700 truncate">{conflicts.join(", ")}</p>}
+                                  <p className="text-[10px] font-semibold leading-tight mt-1 truncate opacity-90">{schedule.subjectName || "Untitled subject"}</p>
+                                  {conflicts.length > 0 && (
+                                    <div className="mt-1 flex items-center gap-1 text-[9px] font-extrabold text-red-700 bg-red-100/50 border border-red-200 px-1 rounded w-fit max-w-full truncate">
+                                      <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-red-600" />
+                                      <span className="truncate">{conflicts.join(", ")}</span>
+                                    </div>
+                                  )}
                                 </div>
                                 {showBottomRow && (
-                                  <div className="mt-1 space-y-0.5 border-t border-white/50 pt-1">
-                                    <p className="text-[10px] font-bold opacity-75 truncate">{schedule.roomName || "Unassigned Room"}</p>
-                                    <p className="text-[10px] font-bold opacity-75 truncate">{schedule.facultyName}</p>
+                                  <div className="mt-1 space-y-0.5 border-t border-slate-200/40 pt-1 w-full text-[9px] font-bold opacity-75">
+                                    <p className="truncate flex items-center gap-1">
+                                      <MapPin className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                                      <span>{schedule.roomName || "Unassigned"}</span>
+                                    </p>
+                                    <p className="truncate flex items-center gap-1">
+                                      <User className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                                      <span>{schedule.facultyName}</span>
+                                    </p>
                                   </div>
                                 )}
                               </button>
@@ -1131,10 +1478,81 @@ export default function VpaaScheduleViewer() {
           )}
         </div>
       )}
-      <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500 select-none"><span className="flex items-center gap-1.5 mr-2"><Info className="w-4 h-4 text-slate-400" />Department Color Legend:</span>{departments.map((dept) => <span key={dept.id} className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 rounded-lg border border-slate-300 shrink-0 ${getDeptBadgeStyles(dept.code)}`} />{dept.code}</span>)}</div>
+      
+      <div className="px-6 py-4 border-t border-slate-200/80 bg-slate-50/80 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500 select-none">
+        <span className="flex items-center gap-1.5 mr-2 text-slate-400">
+          <Info className="w-4 h-4" />
+          Department Color Legend:
+        </span>
+        {departments.map((dept) => (
+          <span key={dept.id} className="flex items-center gap-1.5 bg-white border border-slate-200/60 rounded-full px-2.5 py-0.5 shadow-sm">
+            <span className={`w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0 ${getDeptBadgeStyles(dept.code).split(' ')[0]}`} />
+            <span className="text-slate-600 font-bold text-[11px]">{dept.code}</span>
+          </span>
+        ))}
+      </div>
 
       {selectedSchedule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"><div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden"><div className="p-4 border-b border-slate-100 flex items-start justify-between gap-3"><div><p className="text-xs font-black text-[#C9952A] uppercase tracking-wider">{selectedSchedule.subjectCode}</p><h3 className="text-lg font-black text-[#4e0a10] leading-tight">{selectedSchedule.subjectName || "Untitled subject"}</h3></div><button type="button" onClick={() => setSelectedSchedule(null)} className="rounded-lg p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-50"><X className="w-5 h-5" /></button></div><div className="p-4 space-y-3 text-sm">{[{ icon: Building2, label: "Department", value: `${selectedSchedule.departmentCode} - ${selectedSchedule.departmentName}` }, { icon: Layers, label: "Section", value: selectedSchedule.sectionName || "Unassigned Section" }, { icon: User, label: "Faculty", value: selectedSchedule.facultyName }, { icon: MapPin, label: "Room", value: selectedSchedule.roomName || "Unassigned Room" }, { icon: Calendar, label: "Schedule", value: `${selectedSchedule.day}, ${selectedSchedule.startTime} - ${selectedSchedule.endTime}` }, { icon: BookOpen, label: "Class Mode", value: getModeLabel(selectedSchedule.mode) }].map(({ icon: Icon, label, value }) => <div key={label} className="flex items-start gap-3"><Icon className="w-4 h-4 text-[#C9952A] mt-0.5 shrink-0" /><div><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="font-semibold text-slate-700">{value}</p></div></div>)}{getConflictLabels(conflictMap.get(selectedSchedule.id)).length > 0 && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-600">Conflict detected: {getConflictLabels(conflictMap.get(selectedSchedule.id)).join(", ")}</div>}</div></div></div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-md overflow-hidden relative font-sans">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#4e0a10] to-[#C9952A]" />
+            
+            <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-4 pt-6 bg-slate-50/50">
+              <div>
+                <p className="text-[10px] font-extrabold text-[#C9952A] uppercase tracking-widest">{selectedSchedule.subjectCode}</p>
+                <h3 className="text-lg font-black text-[#4e0a10] leading-snug mt-0.5">{selectedSchedule.subjectName || "Untitled subject"}</h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setSelectedSchedule(null)} 
+                className="rounded-xl p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4 text-xs font-medium text-slate-600">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+                {[
+                  { icon: Building2, label: "Department", value: `${selectedSchedule.departmentCode} - ${selectedSchedule.departmentName}` },
+                  { icon: Layers, label: "Section", value: selectedSchedule.sectionName || "Unassigned Section" },
+                  { icon: User, label: "Faculty", value: selectedSchedule.facultyName },
+                  { icon: MapPin, label: "Room", value: selectedSchedule.roomName || "Unassigned Room" },
+                  { icon: Calendar, label: "Schedule", value: `${selectedSchedule.day}, ${selectedSchedule.startTime} - ${selectedSchedule.endTime}` },
+                  { icon: BookOpen, label: "Class Mode", value: getModeLabel(selectedSchedule.mode) }
+                ].map(({ icon: Icon, label, value }) => (
+                  <div key={label} className="flex gap-2.5 items-start">
+                    <Icon className="w-4 h-4 text-[#C9952A] mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                      <p className="font-bold text-slate-700 text-[11px] leading-tight mt-0.5 break-words">{value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {getConflictLabels(conflictMap.get(selectedSchedule.id)).length > 0 && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs font-bold text-rose-700 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold uppercase text-[9px] tracking-wider text-rose-800">Conflict Detected</p>
+                    <p className="mt-0.5 leading-snug">{getConflictLabels(conflictMap.get(selectedSchedule.id)).join(", ")}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button 
+                type="button" 
+                onClick={() => setSelectedSchedule(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-white text-xs font-bold text-slate-500 hover:text-slate-700 shadow-sm transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

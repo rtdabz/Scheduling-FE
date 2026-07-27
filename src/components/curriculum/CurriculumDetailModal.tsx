@@ -25,7 +25,7 @@ const yearLabels: Record<number, string> = {
 
 export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }: CurriculumDetailModalProps) {
   const [detail, setDetail] = useState<CurriculumDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (isOpen && curriculumId) {
@@ -36,6 +36,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
         .finally(() => setIsLoading(false));
     } else {
       setDetail(null);
+      setIsLoading(true);
     }
   }, [isOpen, curriculumId]);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,6 +12,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import api from '../../lib/api';
+import { getCachedData } from '../../lib/dataCache';
 import Skeleton from './Skeleton';
 
 interface Department {
@@ -111,11 +112,56 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
     }
   }, [isOpen]);
 
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!isOpen || !roomId) return;
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen || !roomId) {
+      setRoom(null);
+      setSchedules([]);
+      setIsLoading(true);
+      return;
+    }
+
+    const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+    const user = userJson ? JSON.parse(userJson) : null;
+    const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+    const cachedRoomsData = getCachedData<any>(roomsCacheKey);
+
+    let cachedRoom: Room | undefined;
+    let cachedSchedules: Schedule[] = [];
+
+    if (cachedRoomsData) {
+      cachedRoom = cachedRoomsData.rooms.find((r: any) => r.id === roomId);
+      cachedSchedules = cachedRoomsData.schedules || [];
+    }
+
+    if (cachedRoom) {
+      setRoom(cachedRoom);
+      setSchedules(cachedSchedules);
+      setIsLoading(false);
+
+      const fetchRoomBackground = async () => {
+        try {
+          const [roomRes, initialRes] = await Promise.all([
+            api.get<Room>(`/rooms/${roomId}`),
+            api.get<{ schedules: Schedule[] }>('/initial-data'),
+          ]);
+          setRoom(roomRes.data);
+          setSchedules(initialRes.data.schedules);
+        } catch {
+          // Ignore background fetch errors
+        }
+      };
+      fetchRoomBackground();
+      return;
+    }
 
     const fetchRoom = async () => {
       setIsLoading(true);
+      setRoom(null);
       try {
         const [roomRes, initialRes] = await Promise.all([
           api.get<Room>(`/rooms/${roomId}`),
@@ -124,13 +170,13 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
         setRoom(roomRes.data);
         setSchedules(initialRes.data.schedules);
       } catch {
-        onClose();
+        onCloseRef.current();
       } finally {
         setIsLoading(false);
       }
     };
     fetchRoom();
-  }, [roomId, isOpen, onClose]);
+  }, [roomId, isOpen]);
 
   const activeRoomSchedules = useMemo(() => {
     if (!room) return [];
