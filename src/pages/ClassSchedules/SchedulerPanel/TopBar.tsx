@@ -5,6 +5,7 @@ import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, Section } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
 import SearchField from "./components/SearchField";
+import GenerateScheduleButton from "./GenerateSchedule/GenerateScheduleButton";
 
 interface GroupedYear {
   yearLevel: number;
@@ -38,6 +39,8 @@ interface TopBarProps {
   handleSubmitForApproval: () => void;
   onPrint: () => void;
   onImport: () => void;
+  onGenerate?: (sectionId: string) => void;
+  isGenerateDisabled?: boolean;
   isLoading?: boolean;
 }
 
@@ -68,6 +71,8 @@ export default function TopBar({
   handleSubmitForApproval,
   onPrint,
   onImport,
+  onGenerate,
+  isGenerateDisabled,
   isLoading = false
 }: TopBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -346,6 +351,12 @@ export default function TopBar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          {onGenerate && (
+            <GenerateScheduleButton
+              disabled={Boolean(isGenerateDisabled)}
+              onClick={() => selectedSectionId && onGenerate(selectedSectionId)}
+            />
+          )}
           <button
             type="button"
             onClick={onImport}

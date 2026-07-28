@@ -102,9 +102,10 @@ const getStoredUser = (): StoredUser => {
 const formatTime = (value: string): string => {
   const [hourValue, minuteValue] = value.split(":");
   const hour = Number(hourValue);
+  const minute = Number(minuteValue);
   const suffix = hour >= 12 ? "PM" : "AM";
   const displayHour = hour % 12 || 12;
-  return `${displayHour}:${minuteValue} ${suffix}`;
+  return minute === 0 ? `${displayHour} ${suffix}` : `${displayHour}:${minuteValue} ${suffix}`;
 };
 
 const timeToMinutes = (value: string): number => {

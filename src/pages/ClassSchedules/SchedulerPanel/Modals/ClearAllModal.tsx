@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, Trash2, X } from "lucide-react";
+import { AlertTriangle, Loader2, Trash2, X } from "lucide-react";
 import type { ScheduleItem, Section } from "../types";
 
 interface ClearAllModalProps {
   sections: Section[];
   isClearAllModalOpen: boolean;
+  isClearingAll?: boolean;
   selectedSectionId: string;
   sectionSchedules: ScheduleItem[];
   confirmClearAll: () => void;
@@ -14,6 +15,7 @@ interface ClearAllModalProps {
 export default function ClearAllModal({
   sections,
   isClearAllModalOpen,
+  isClearingAll = false,
   selectedSectionId,
   sectionSchedules,
   confirmClearAll,
@@ -40,7 +42,7 @@ export default function ClearAllModal({
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) cancelClearAll(); }}
+      onClick={(e) => { if (e.target === e.currentTarget && !isClearingAll) cancelClearAll(); }}
     >
       <div
         role="alertdialog"
@@ -54,8 +56,9 @@ export default function ClearAllModal({
           <button
             type="button"
             onClick={cancelClearAll}
+            disabled={isClearingAll}
             aria-label="Close"
-            className="absolute right-4 top-4 text-rose-400 hover:text-rose-600 hover:bg-white/70 rounded-full p-1 transition-colors"
+            className="absolute right-4 top-4 text-rose-400 hover:text-rose-600 hover:bg-white/70 rounded-full p-1 transition-colors disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
@@ -97,17 +100,23 @@ export default function ClearAllModal({
             ref={cancelButtonRef}
             type="button"
             onClick={cancelClearAll}
-            className="border border-gray-300 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+            disabled={isClearingAll}
+            className="border border-gray-300 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
           >
             Keep Schedule
           </button>
           <button
             type="button"
             onClick={confirmClearAll}
-            className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-1"
+            disabled={isClearingAll}
+            className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Trash2 className="w-4 h-4" />
-            Yes, Clear All
+            {isClearingAll ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+            {isClearingAll ? "Clearing..." : "Yes, Clear All"}
           </button>
         </div>
       </div>

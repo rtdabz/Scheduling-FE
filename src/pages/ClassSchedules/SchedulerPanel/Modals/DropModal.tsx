@@ -7,7 +7,7 @@ import type { DeliveryMode, DropContext, Subject, Room, ScheduleStatus } from ".
 interface DropRecommendationRow {
   term_id: number;
   section_id: number;
-  subject_id: number;
+  course_id: number;
   faculty_id: number | null;
   room_id: number;
   department_id: number;
@@ -47,6 +47,10 @@ interface DropModalProps {
   setModalRoomId: (value: string) => void;
   modalClassMode: "on-site" | "online" | "field";
   setModalClassMode: (value: "on-site" | "online" | "field") => void;
+  modalDay2RoomId: string;
+  setModalDay2RoomId: (value: string) => void;
+  modalDay2ClassMode: "on-site" | "online" | "field";
+  setModalDay2ClassMode: (value: "on-site" | "online" | "field") => void;
   modalIsHybrid: boolean;
   setModalIsHybrid: (value: boolean) => void;
   modalPreferredPattern: string | null;
@@ -137,6 +141,10 @@ export default function DropModal({
   setModalRoomId,
   modalClassMode,
   setModalClassMode,
+  modalDay2RoomId,
+  setModalDay2RoomId,
+  modalDay2ClassMode,
+  setModalDay2ClassMode,
   modalIsHybrid,
   setModalIsHybrid,
   modalPreferredPattern,
@@ -163,13 +171,11 @@ export default function DropModal({
   setDropContext,
   handleModalConfirm
 }: DropModalProps) {
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
   const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
-  const [useNinetyMinuteMeetings, setUseNinetyMinuteMeetings] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = useMemo(() => {
     const role = getStoredRole();
@@ -182,12 +188,10 @@ export default function DropModal({
     if (!dropContext || !dropSubject) return;
 
     const frameId = window.requestAnimationFrame(() => {
-      setIsAdvancedOpen(false);
       setRecommendations([]);
       setRecommendationError(null);
       setAppliedRecommendationRank(null);
       setSelectedRecommendationId(null);
-      setUseNinetyMinuteMeetings(false);
       closeButtonRef.current?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -217,7 +221,7 @@ export default function DropModal({
           "/schedule-recommendations/preview",
           {
             section_id: Number(selectedSectionId),
-            subject_ids: [Number(dropSubject.id)],
+            course_ids: [Number(dropSubject.id)],
             mode: dropSubjectIsField ? "field" : modalClassMode,
             is_hybrid: modalIsHybrid,
             preferred_patterns: modalPreferredPattern
@@ -263,7 +267,6 @@ export default function DropModal({
     Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday"
   };
   const totalSlots = dropSubject ? dropSubject.units * 2 : 0;
-  const d2Slots = modalDay2Duration;
   const isTwoMeetingPattern = !!modalPreferredPattern;
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
@@ -305,10 +308,6 @@ export default function DropModal({
     updateTwoMeetingPattern(modalDay1Index, nextDayIndex);
   };
 
-  const meetingPatternOptions = [
-    { value: "", label: "Single meeting" },
-    { value: "twice", label: "Twice a week" }
-  ];
   const totalSelectedSlots = modalPreferredPattern
     ? modalDay1Duration + modalDay2Duration
     : totalSlots;
@@ -316,7 +315,6 @@ export default function DropModal({
     ? modalDay1Duration === totalSlots && modalDay2Duration === totalSlots
     : true;
   const durationTotalMatches = totalSelectedSlots === totalSlots || usesFullDurationMeetings;
-  const canUseNinetyMinuteMeetings = totalSlots === 6;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
@@ -337,7 +335,7 @@ export default function DropModal({
         "/schedule-recommendations/select",
         {
           section_id: Number(selectedSectionId),
-          subject_ids: [Number(dropSubject.id)],
+          course_ids: [Number(dropSubject.id)],
           mode: dropSubjectIsField ? "field" : modalClassMode,
           is_hybrid: modalIsHybrid,
           preferred_patterns: modalPreferredPattern
@@ -349,52 +347,55 @@ export default function DropModal({
         }
       );
 
-    const sortedRows = [...response.data.recommendation.recommended_schedules].sort((left, right) => (
-      getDayIndex(left.day) - getDayIndex(right.day)
-      || timeToSlot(left.start_time) - timeToSlot(right.start_time)
-    ));
-    const firstRow = sortedRows[0];
-    if (!firstRow || !dropContext) return;
+      const sortedRows = [...response.data.recommendation.recommended_schedules].sort((left, right) => (
+        getDayIndex(left.day) - getDayIndex(right.day)
+        || timeToSlot(left.start_time) - timeToSlot(right.start_time)
+      ));
+      const firstRow = sortedRows[0];
+      if (!firstRow || !dropContext) return;
 
-    const firstDayIndex = getDayIndex(firstRow.day);
-    const firstStartSlot = timeToSlot(firstRow.start_time);
-    const firstEndSlot = timeToSlot(firstRow.end_time);
+      const firstDayIndex = getDayIndex(firstRow.day);
+      const firstStartSlot = timeToSlot(firstRow.start_time);
+      const firstEndSlot = timeToSlot(firstRow.end_time);
 
-    setModalRoomId(String(firstRow.room_id));
-    setModalClassMode(firstRow.mode);
-    setModalIsHybrid(firstRow.is_hybrid);
+      setModalRoomId(String(firstRow.room_id));
+      setModalClassMode(firstRow.mode);
+      setModalIsHybrid(firstRow.is_hybrid);
 
-    if (sortedRows.length > 1) {
-      const secondRow = sortedRows[1];
-      const secondDayIndex = getDayIndex(secondRow.day);
-      setModalPreferredPattern(firstRow.preferred_pattern ?? `days:${firstDayIndex}-${secondDayIndex}`);
-      setModalDay1Index(firstDayIndex);
-      setModalDay2Index(secondDayIndex);
-      setModalDay1StartSlot(firstStartSlot);
-      setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
-      setModalDay2StartSlot(timeToSlot(secondRow.start_time));
-      setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
-      setIsDay2ModifiedByUser(true);
-    } else {
-      setModalPreferredPattern(null);
-      setModalDay1Index(firstDayIndex);
-      setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
-      setModalDay1StartSlot(firstStartSlot);
-      setModalDay1Duration(dropSubject.units * 2);
-      setModalDay2StartSlot(firstStartSlot);
-      setModalDay2Duration(0);
-      setIsDay2ModifiedByUser(false);
-      setDropContext({
-        ...dropContext,
-        dayIndex: firstDayIndex,
-        startSlot: firstStartSlot
-      });
-    }
+      if (sortedRows.length > 1) {
+        const secondRow = sortedRows[1];
+        const secondDayIndex = getDayIndex(secondRow.day);
+        setModalPreferredPattern(firstRow.preferred_pattern ?? `days:${firstDayIndex}-${secondDayIndex}`);
+        setModalDay1Index(firstDayIndex);
+        setModalDay2Index(secondDayIndex);
+        setModalDay1StartSlot(firstStartSlot);
+        setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
+        setModalDay2StartSlot(timeToSlot(secondRow.start_time));
+        setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
+        setModalDay2RoomId(String(secondRow.room_id));
+        setModalDay2ClassMode(secondRow.mode);
+        setIsDay2ModifiedByUser(true);
+      } else {
+        setModalPreferredPattern(null);
+        setModalDay1Index(firstDayIndex);
+        setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
+        setModalDay1StartSlot(firstStartSlot);
+        setModalDay1Duration(dropSubject.units * 2);
+        setModalDay2StartSlot(firstStartSlot);
+        setModalDay2Duration(0);
+        setModalDay2RoomId("");
+        setModalDay2ClassMode("on-site");
+        setIsDay2ModifiedByUser(false);
+        setDropContext({
+          ...dropContext,
+          dayIndex: firstDayIndex,
+          startSlot: firstStartSlot
+        });
+      }
 
-    setModalValidationError("");
-    setAppliedRecommendationRank(recommendation.rank);
-    setSelectedRecommendationId(response.data.recommendation.id);
-    setUseNinetyMinuteMeetings(false);
+      setModalValidationError("");
+      setAppliedRecommendationRank(recommendation.rank);
+      setSelectedRecommendationId(response.data.recommendation.id);
     } catch {
       setRecommendationError("This recommendation is no longer available. Please try again.");
     } finally {
@@ -415,7 +416,7 @@ export default function DropModal({
         aria-describedby="placement-modal-desc"
         className="bg-white rounded-2xl shadow-2xl min-h-0 flex-1 overflow-hidden flex flex-col transition-all duration-200 animate-in fade-in zoom-in-95"
       >
-        <div className="flex justify-between items-start px-5 pt-4 pb-3 border-b border-gray-100">
+        <div className="flex justify-between items-start px-5 pt-4 pb-3 border-b border-gray-100 shrink-0">
           <div className="flex items-start gap-3">
             <CalendarPlus className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
             <div>
@@ -439,9 +440,9 @@ export default function DropModal({
         <form
           onSubmit={handleModalConfirm}
           onChangeCapture={discardSelectedRecommendation}
-          className="flex-1 overflow-y-auto px-5 py-3 space-y-3"
+          className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-gray-50/30"
         >
-          <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
+          <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3 shrink-0">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -482,43 +483,89 @@ export default function DropModal({
             </div>
           </section>
 
-          <div className="grid grid-cols-1 gap-3 items-start">
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(16rem,0.9fr)_minmax(20rem,1.1fr)] gap-3 items-start">
-            <div className="space-y-3 rounded-xl border border-gray-100 bg-white p-3">
+          {/* Meeting Pattern Card */}
+          <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isTwoMeetingPattern}
+                onChange={(event) => {
+                  const isChecked = event.target.checked;
+                  const nextPattern = isChecked
+                    ? `days:${modalDay1Index}-${modalDay2Index}`
+                    : null;
+                  setIsDay2ModifiedByUser(false);
+
+                  if (nextPattern) {
+                    const nextDay2Index = modalDay1Index === modalDay2Index
+                      ? getFallbackMeetingDayIndex(modalDay1Index)
+                      : modalDay2Index;
+                    const dayOneSlots = totalSlots;
+                    const dayTwoSlots = totalSlots;
+                    setModalDay2Index(nextDay2Index);
+                    setModalPreferredPattern(`days:${modalDay1Index}-${nextDay2Index}`);
+                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayOneSlots));
+                    setModalDay1Duration(dayOneSlots);
+                    setModalDay2Duration(dayTwoSlots);
+                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
+                  } else {
+                    setModalPreferredPattern(null);
+                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                    setModalDay1Duration(totalSlots);
+                    setModalDay2Duration(0);
+                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                  }
+                }}
+                className="h-4.5 w-4.5 rounded border-gray-300 text-[#4e0a10] focus:ring-[#4e0a10] cursor-pointer"
+              />
               <div>
-                <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
+                <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">
+                  Schedule Twice a Week
+                </span>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Split this course into two separate meetings.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* Meetings Cards Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* First Meeting */}
+            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
+                <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
+                First Meeting
+              </h4>
+
+              {/* Class Mode */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
                   Class Mode
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {([
                     { value: "on-site" as const, label: "On-Site", Icon: Building2, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" },
-                    { value: "online" as const, label: "Online", Icon: Monitor, selectedCls: "bg-green-600 text-white border-green-600" },
-                    { value: "field" as const, label: "Field", Icon: TreePine, selectedCls: "bg-orange-600 text-white border-orange-600" }
+                    { value: "online" as const, label: "Online", Icon: Monitor, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" },
+                    { value: "field" as const, label: "Field", Icon: TreePine, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" }
                   ]).map(({ value: m, label, Icon, selectedCls }) => {
-                    const isHybridDeliveryMode = modalIsHybrid && (m === "on-site" || m === "online");
-                    const isSelected = isHybridDeliveryMode || (!modalIsHybrid && modalClassMode === m);
-                    const isReadOnlyHybridMode = modalIsHybrid;
+                    const isSelected = modalClassMode === m;
                     const isDisabledMode =
-                      (dropSubjectIsField && m !== "field")
-                      || (!dropSubjectIsField && m === "field")
-                      || (modalIsHybrid && m === "field");
+                      (dropSubjectIsField && m !== "field") ||
+                      (!dropSubjectIsField && m === "field");
                     return (
                       <button
                         key={m}
                         type="button"
-                        disabled={isDisabledMode || isReadOnlyHybridMode}
-                        aria-disabled={isDisabledMode || isReadOnlyHybridMode}
+                        disabled={isDisabledMode}
                         onClick={() => {
-                          if (isDisabledMode || isReadOnlyHybridMode) return;
+                          if (isDisabledMode) return;
                           discardSelectedRecommendation();
                           setModalClassMode(m);
-                          if (m !== "on-site") {
-                            setModalIsHybrid(false);
-                          }
                         }}
                         className={`flex items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-all ${
                           isSelected
-                            ? `${selectedCls} cursor-not-allowed`
+                            ? `${selectedCls} cursor-default`
                             : isDisabledMode
                             ? "opacity-50 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
                             : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
@@ -530,23 +577,11 @@ export default function DropModal({
                     );
                   })}
                 </div>
-                {dropSubjectIsField && (
-                  <p className="text-sm text-orange-500 mt-1">Field mode is required for this subject type.</p>
-                )}
               </div>
 
+              {/* Room */}
               <div>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <label className="text-sm font-bold uppercase tracking-wide text-gray-700">
-                    Room
-                  </label>
-                  {modalClassMode === "on-site" && modalRoomId && (
-                    <span className="rounded-full bg-[#C9952A]/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-[#7a4c08]">
-                      Recommended
-                    </span>
-                  )}
-                </div>
-                <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-gray-400">
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
                   Room
                 </label>
                 <div className="relative">
@@ -555,7 +590,7 @@ export default function DropModal({
                     <select
                       value={modalRoomId}
                       onChange={(e) => { setModalRoomId(e.target.value); setModalValidationError(""); }}
-                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
+                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
                     >
                       <option value="">Select a room...</option>
                       {rooms
@@ -578,8 +613,8 @@ export default function DropModal({
                     <input
                       type="text"
                       readOnly
-                      value={recommendedRoomLabel}
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm font-semibold text-gray-500 outline-none"
+                      value={modalClassMode === "online" ? "Online" : "Field"}
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm font-semibold text-gray-500 outline-none"
                     />
                   )}
                   {modalClassMode === "on-site" && (
@@ -587,362 +622,352 @@ export default function DropModal({
                   )}
                 </div>
                 {modalClassMode === "on-site" && modalValidationError && !modalRoomId && (
-                  <p className="text-sm text-red-500 mt-1">{modalValidationError}</p>
+                  <p className="text-xs text-red-500 mt-1">{modalValidationError}</p>
                 )}
               </div>
 
+              {/* Day Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                  Meeting Pattern
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Meeting Day
                 </label>
-                <div className="relative">
-                  <CalendarDays className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                {isTwoMeetingPattern ? (
                   <select
-                    value={modalPreferredPattern ? "twice" : ""}
+                    value={modalDay1Index}
                     onChange={(event) => {
-                      const nextPattern = event.target.value === "twice"
-                        ? `days:${modalDay1Index}-${modalDay2Index}`
-                        : null;
-                      setIsDay2ModifiedByUser(false);
-
-                      if (nextPattern) {
-                        const nextDay2Index = modalDay1Index === modalDay2Index
-                          ? getFallbackMeetingDayIndex(modalDay1Index)
-                          : modalDay2Index;
-                        const dayOneSlots = Math.ceil(totalSlots / 2);
-                        const dayTwoSlots = Math.max(1, totalSlots - dayOneSlots);
-                        setUseNinetyMinuteMeetings(false);
-                        setModalDay2Index(nextDay2Index);
-                        setModalPreferredPattern(`days:${modalDay1Index}-${nextDay2Index}`);
-                        setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayOneSlots));
-                        setModalDay1Duration(dayOneSlots);
-                        setModalDay2Duration(dayTwoSlots);
-                        setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
-                      } else {
-                        setUseNinetyMinuteMeetings(false);
-                        setModalPreferredPattern(null);
-                        setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
-                        setModalDay1Duration(totalSlots);
-                        setModalDay2Duration(0);
-                        setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
-                      }
+                      const nextDay = Number(event.target.value);
+                      handleDay1Change(nextDay);
                     }}
-                    className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
                   >
-                    {meetingPatternOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                    {DAYS.map((day, index) => (
+                      <option key={day} value={index} disabled={index === modalDay2Index}>
+                        {index === modalDay2Index ? `${day} (Selected as second meeting)` : day}
+                      </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-              </div>
-
-              {isTwoMeetingPattern && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                      First meeting day
-                    </label>
-                    <select
-                      value={modalDay1Index}
-                      onChange={(event) => {
-                        const nextDay = Number(event.target.value);
-                        handleDay1Change(nextDay);
-                      }}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
-                    >
-                      {DAYS.map((day, index) => (
-                        <option key={day} value={index} disabled={index === modalDay2Index}>
-                          {index === modalDay2Index ? `${day} (Selected as second meeting)` : day}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                      Second meeting day
-                    </label>
-                    <select
-                      value={modalDay2Index}
-                      onChange={(event) => {
-                        const nextDay = Number(event.target.value);
-                        handleDay2Change(nextDay);
-                      }}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
-                    >
-                      {DAYS.map((day, index) => (
-                        <option key={day} value={index} disabled={index === modalDay1Index}>
-                          {index === modalDay1Index ? `${day} (Selected as first meeting)` : day}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/20">
-                <button
-                  type="button"
-                  onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-                  aria-expanded={isAdvancedOpen}
-                  className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors"
-                >
-                  <span className="text-sm font-bold text-gray-600 uppercase tracking-wider">
-                    Advanced Options
-                  </span>
-                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isAdvancedOpen ? "rotate-180" : ""}`} />
-                </button>
-
-                {isAdvancedOpen && (
-                  <div className="p-3 bg-white animate-in fade-in slide-in-from-top-1 duration-150">
-                    <div className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50/50">
-                      <div>
-                        <span className="text-sm font-semibold text-gray-700">Hybrid (On-Site & Online)</span>
-                        <p className="text-xs text-gray-400 mt-0.5">Keeps the room assignment and marks the class as blended.</p>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={dropSubjectIsField}
-                        aria-pressed={modalIsHybrid}
-                        onClick={() => {
-                          discardSelectedRecommendation();
-                          setModalClassMode("on-site");
-                          setModalIsHybrid(!modalIsHybrid);
-                        }}
-                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          dropSubjectIsField
-                            ? "bg-gray-100 cursor-not-allowed"
-                            : modalIsHybrid
-                            ? "bg-[#4e0a10] cursor-pointer"
-                            : "bg-gray-200 cursor-pointer"
-                        }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            modalIsHybrid ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3 rounded-xl border border-gray-100 bg-white p-3">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">
-                  Schedule
-                </label>
-
-                {!modalPreferredPattern ? (
-                  <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Day</label>
-                        <div className="relative">
-                          <CalendarDays className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          <input
-                            type="text"
-                            readOnly
-                            value={FULL_DAYS[DAYS[dropContext.dayIndex]] ?? DAYS[dropContext.dayIndex]}
-                            className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Start Time</label>
-                        <div className="relative">
-                          <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          <input
-                            type="text"
-                            readOnly
-                            value={slotToTimeStr(dropContext.startSlot)}
-                            className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">End Time (Auto-computed)</label>
-                      <div className="relative">
-                        <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type="text"
-                          readOnly
-                          value={slotToTimeStr(dropContext.startSlot + dropSubject.units * 2)}
-                          className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                        />
-                      </div>
-                    </div>
-                  </div>
                 ) : (
-                  <div className="space-y-3">
-                    <label className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs font-bold ${
-                      canUseNinetyMinuteMeetings
-                        ? "border-[#C9952A]/20 bg-[#C9952A]/10 text-[#4e0a10]"
-                        : "border-gray-200 bg-gray-50 text-gray-400"
-                    }`}>
-                      <span>Use 1.5 hours for each meeting</span>
-                      <input
-                        type="checkbox"
-                        checked={useNinetyMinuteMeetings}
-                        disabled={!canUseNinetyMinuteMeetings}
-                        onChange={(event) => {
-                          const isChecked = event.target.checked;
-                          setUseNinetyMinuteMeetings(isChecked);
-
-                          if (isChecked) {
-                            setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, 3));
-                            setModalDay2StartSlot(clampStartSlotForDuration(modalDay2StartSlot, 3));
-                            setModalDay1Duration(3);
-                            setModalDay2Duration(3);
-                          } else {
-                            setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
-                            setModalDay2StartSlot(clampStartSlotForDuration(modalDay2StartSlot, totalSlots));
-                            setModalDay1Duration(totalSlots);
-                            setModalDay2Duration(totalSlots);
-                          }
-                          setModalValidationError("");
-                        }}
-                        className="h-4 w-4 rounded border-gray-300 text-[#4e0a10] focus:ring-[#4e0a10] disabled:cursor-not-allowed"
-                      />
-                    </label>
-                    <div className="grid grid-cols-1 gap-3">
-                      <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 space-y-3">
-                        <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#4e0a10]" />
-                          Day 1: {DAYS[modalDay1Index]}
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                              Start Time
-                            </label>
-                            <div className="relative">
-                              <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                              <select
-                                value={modalDay1StartSlot}
-                                onChange={(e) => setModalDay1StartSlot(Number(e.target.value))}
-                                className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2.5 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
-                              >
-                                {Array.from({ length: 29 - modalDay1Duration }, (_, i) => (
-                                  <option key={i} value={i}>
-                                    {slotToTimeStr(i)}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                          </div>
-                          {modalDay1Duration > 0 && (
-                            <div>
-                              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                End Time (Auto-computed)
-                              </label>
-                              <div className="relative">
-                                <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                <input
-                                  type="text"
-                                  readOnly
-                                  value={slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}
-                                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 space-y-3">
-                        <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#4e0a10]" />
-                          Day 2: {DAYS[modalDay2Index]}
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                              Start Time
-                            </label>
-                            <div className="relative">
-                              <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                              <select
-                                value={modalDay2StartSlot}
-                                onChange={(e) => {
-                                  setModalDay2StartSlot(Number(e.target.value));
-                                  setIsDay2ModifiedByUser(true);
-                                }}
-                                className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] bg-white text-gray-700 cursor-pointer"
-                              >
-                                {Array.from({ length: 29 - d2Slots }, (_, i) => (
-                                  <option key={i} value={i}>
-                                    {slotToTimeStr(i)}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                          </div>
-                          {d2Slots > 0 && (
-                            <div>
-                              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                End Time (Auto-computed)
-                              </label>
-                              <div className="relative">
-                                <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                <input
-                                  type="text"
-                                  readOnly
-                                  value={slotToTimeStr(modalDay2StartSlot + d2Slots)}
-                                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={`flex items-center gap-2 rounded-xl p-3 border text-xs font-bold tracking-wide uppercase select-none ${
-                      durationTotalMatches
-                        ? "bg-[#4e0a10]/5 border-[#4e0a10]/10 text-[#4e0a10]"
-                        : "bg-amber-50 border-amber-200 text-amber-800"
-                    }`}>
-                      <span>Total Contact Hours: {dropSubject.units} hours ({totalSlots} slots)</span>
-                      <span className={`ml-auto font-black px-2 py-0.5 rounded-full border ${
-                        durationTotalMatches
-                          ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                          : "text-amber-800 bg-white border-amber-200"
-                      }`}>
-                        Auto duration: {dropSubject.units} hours
-                      </span>
-                    </div>
-                  </div>
+                  <select
+                    value={modalDay1Index}
+                    onChange={(event) => {
+                      setModalDay1Index(Number(event.target.value));
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                  >
+                    {DAYS.map((day, index) => (
+                      <option key={day} value={index}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
 
-              {hasConflict && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                    <span className="text-sm font-bold text-red-700 uppercase tracking-wide">Conflicts Detected</span>
+              {/* Time Schedule (Start & End Time) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                    Start Time
+                  </label>
+                  <div className="relative">
+                    <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                    {isTwoMeetingPattern ? (
+                      <select
+                        value={modalDay1StartSlot}
+                        onChange={(e) => {
+                          const newStart = Number(e.target.value);
+                          setModalDay1StartSlot(newStart);
+                          if (newStart + modalDay1Duration > 28) {
+                            setModalDay1Duration(Math.max(1, 28 - newStart));
+                          }
+                        }}
+                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                      >
+                        {Array.from({ length: 28 }, (_, i) => (
+                          <option key={i} value={i}>
+                            {slotToTimeStr(i)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select
+                        value={modalDay1StartSlot}
+                        onChange={(e) => {
+                          const newStart = Number(e.target.value);
+                          setModalDay1StartSlot(newStart);
+                        }}
+                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                      >
+                        {Array.from({ length: 29 - totalSlots }, (_, i) => (
+                          <option key={i} value={i}>
+                            {slotToTimeStr(i)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
-                  <ul className="space-y-2">
-                    <li className="flex items-start gap-2 text-sm text-red-600">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
-                      {modalConflict}
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-red-700">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
-                      Choose another room, select a different time, or change the class mode before placing this class.
-                    </li>
-                  </ul>
                 </div>
-              )}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                    End Time {!isTwoMeetingPattern && "(Auto)"}
+                  </label>
+                  <div className="relative">
+                    <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                    {isTwoMeetingPattern ? (
+                      <select
+                        value={modalDay1StartSlot + modalDay1Duration}
+                        onChange={(e) => {
+                          const endSlot = Number(e.target.value);
+                          setModalDay1Duration(Math.max(1, endSlot - modalDay1StartSlot));
+                        }}
+                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                      >
+                        {Array.from({ length: 28 - modalDay1StartSlot }, (_, i) => {
+                          const val = modalDay1StartSlot + i + 1;
+                          const durationHrs = (val - modalDay1StartSlot) / 2;
+                          return (
+                            <option key={val} value={val}>
+                              {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${slotToTimeStr(modalDay1StartSlot + totalSlots)} (${totalSlots / 2} hrs)`}
+                        className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
+                      />
+                    )}
+                    {isTwoMeetingPattern && (
+                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+
+            {/* Second Meeting */}
+            {isTwoMeetingPattern ? (
+              <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm animate-in fade-in zoom-in-95">
+                <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
+                  <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
+                  Second Meeting
+                </h4>
+
+                {/* Class Mode */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                    Class Mode
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: "on-site" as const, label: "On-Site", Icon: Building2, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" },
+                      { value: "online" as const, label: "Online", Icon: Monitor, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" },
+                      { value: "field" as const, label: "Field", Icon: TreePine, selectedCls: "bg-[#4e0a10] text-white border-[#4e0a10]" }
+                    ]).map(({ value: m, label, Icon, selectedCls }) => {
+                      const isSelected = modalDay2ClassMode === m;
+                      const isDisabledMode =
+                        (dropSubjectIsField && m !== "field") ||
+                        (!dropSubjectIsField && m === "field");
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          disabled={isDisabledMode}
+                          onClick={() => {
+                            if (isDisabledMode) return;
+                            discardSelectedRecommendation();
+                            setModalDay2ClassMode(m);
+                          }}
+                          className={`flex items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-all ${
+                            isSelected
+                              ? `${selectedCls} cursor-default`
+                              : isDisabledMode
+                              ? "opacity-50 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Room */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                    Room
+                  </label>
+                  <div className="relative">
+                    <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                    {modalDay2ClassMode === "on-site" ? (
+                      <select
+                        value={modalDay2RoomId}
+                        onChange={(e) => { setModalDay2RoomId(e.target.value); setModalValidationError(""); }}
+                        className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
+                      >
+                        <option value="">Select a room...</option>
+                        {rooms
+                          .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
+                          .map((r) => {
+                            const isUnavailable = r.status === "not available";
+                            return (
+                              <option
+                                key={r.id}
+                                value={r.id}
+                                disabled={isUnavailable}
+                                className={isUnavailable ? "text-gray-400 bg-gray-100 italic" : ""}
+                              >
+                                {r.name} {isUnavailable ? " — (Not Available)" : ""}
+                              </option>
+                            );
+                          })}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        readOnly
+                        value={modalDay2ClassMode === "online" ? "Online" : "Field"}
+                        className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm font-semibold text-gray-500 outline-none"
+                      />
+                    )}
+                    {modalDay2ClassMode === "on-site" && (
+                      <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    )}
+                  </div>
+                  {modalDay2ClassMode === "on-site" && modalValidationError && !modalDay2RoomId && (
+                    <p className="text-xs text-red-500 mt-1">{modalValidationError}</p>
+                  )}
+                </div>
+
+                {/* Day Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                    Meeting Day
+                  </label>
+                  <select
+                    value={modalDay2Index}
+                    onChange={(event) => {
+                      const nextDay = Number(event.target.value);
+                      handleDay2Change(nextDay);
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
+                  >
+                    {DAYS.map((day, index) => (
+                      <option key={day} value={index} disabled={index === modalDay1Index}>
+                        {index === modalDay1Index ? `${day} (Selected as first meeting)` : day}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Time Schedule (Start & End Time) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                      Start Time
+                    </label>
+                    <div className="relative">
+                      <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                      <select
+                        value={modalDay2StartSlot}
+                        onChange={(e) => {
+                          const newStart = Number(e.target.value);
+                          setModalDay2StartSlot(newStart);
+                          setIsDay2ModifiedByUser(true);
+                          if (newStart + modalDay2Duration > 28) {
+                            setModalDay2Duration(Math.max(1, 28 - newStart));
+                          }
+                        }}
+                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                      >
+                        {Array.from({ length: 28 }, (_, i) => (
+                          <option key={i} value={i}>
+                            {slotToTimeStr(i)}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                      End Time
+                    </label>
+                    <div className="relative">
+                      <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                      <select
+                        value={modalDay2StartSlot + modalDay2Duration}
+                        onChange={(e) => {
+                          const endSlot = Number(e.target.value);
+                          setModalDay2Duration(Math.max(1, endSlot - modalDay2StartSlot));
+                          setIsDay2ModifiedByUser(true);
+                        }}
+                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                      >
+                        {Array.from({ length: 28 - modalDay2StartSlot }, (_, i) => {
+                          const val = modalDay2StartSlot + i + 1;
+                          const durationHrs = (val - modalDay2StartSlot) / 2;
+                          return (
+                            <option key={val} value={val}>
+                              {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-200 rounded-xl bg-gray-50/30 text-gray-400">
+                <CalendarDays className="w-8 h-8 mb-2 opacity-50" />
+                <p className="text-xs font-semibold text-center">Single Meeting selected.</p>
+                <p className="text-[10px] text-center mt-1">Change pattern to Twice a Week to configure a second meeting.</p>
+              </div>
+            )}
+
+            {isTwoMeetingPattern && (
+              <div className={`col-span-1 lg:col-span-2 flex items-center gap-2 rounded-xl p-3 border text-xs font-bold tracking-wide uppercase select-none ${
+                durationTotalMatches
+                  ? "bg-[#4e0a10]/5 border-[#4e0a10]/10 text-[#4e0a10]"
+                  : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}>
+                <span>Total Contact Hours: {dropSubject.units} hours ({totalSlots} slots)</span>
+                <span className={`ml-auto font-black px-2 py-0.5 rounded-full border ${
+                  durationTotalMatches
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    : "text-amber-800 bg-white border-amber-200"
+                }`}>
+                  Selected: {((modalDay1Duration + modalDay2Duration) / 2).toFixed(1)} hours
+                </span>
+              </div>
+            )}
+
+            {hasConflict && (
+              <div className="col-span-1 lg:col-span-2 bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                  <span className="text-sm font-bold text-red-700 uppercase tracking-wide">Conflicts Detected</span>
+                </div>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2 text-sm text-red-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                    {modalConflict}
+                  </li>
+                  <li className="flex items-start gap-2 text-sm text-red-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                    Choose another room, select a different time, or change the class mode before placing this class.
+                  </li>
+                </ul>
+              </div>
+            )}
           </div>
         </form>
 

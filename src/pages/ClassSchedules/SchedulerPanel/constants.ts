@@ -28,7 +28,7 @@ export const slotToTimeStr = (slotIndex: number): string => {
   const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12;
   if (hours === 0) hours = 12;
-  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  return minutes === 0 ? `${hours} ${ampm}` : `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
 };
 
 export const getCategoryStyles = (category: Subject["category"]) => {

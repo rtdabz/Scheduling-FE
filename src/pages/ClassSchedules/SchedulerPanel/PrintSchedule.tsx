@@ -206,9 +206,18 @@ export default function PrintSchedule({
 
     // Determine target sections belonging to the same department as the active section
     const activeSection = sections.find((s) => s.id === selectedSectionId);
-    const targetSections = activeSection
+    const unfilteredSections = activeSection
       ? sections.filter((s) => s.departmentId === activeSection.departmentId)
       : sections;
+
+    const targetSections = [...unfilteredSections].sort((a, b) => {
+      const yearA = Number(a.yearLevel) || 0;
+      const yearB = Number(b.yearLevel) || 0;
+      if (yearA !== yearB) {
+        return yearA - yearB;
+      }
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
 
     targetSections.forEach((section) => {
       // Prevent orphaned header bar at page bottom
@@ -239,7 +248,23 @@ export default function PrintSchedule({
         schedulesBySubject.set(key, subjectSchedules);
       });
 
-      const filledRows = Array.from(schedulesBySubject.values()).flatMap((subjectSchedules) =>
+      const sortedSubjects = Array.from(schedulesBySubject.values()).sort((subjectA, subjectB) => {
+        const firstA = subjectA[0];
+        const firstB = subjectB[0];
+        
+        const catA = (firstA?.courseType || firstA?.subjectType || "minor").toLowerCase();
+        const catB = (firstB?.courseType || firstB?.subjectType || "minor").toLowerCase();
+        
+        if (catA !== catB) {
+          return catA === "major" ? -1 : 1;
+        }
+        
+        const codeA = firstA?.courseCode || firstA?.subjectCode || "";
+        const codeB = firstB?.courseCode || firstB?.subjectCode || "";
+        return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      const filledRows = sortedSubjects.flatMap((subjectSchedules) =>
         subjectSchedules.sort((left, right) => (
           left.dayIndex - right.dayIndex || left.startSlot - right.startSlot
         ))
@@ -290,19 +315,6 @@ export default function PrintSchedule({
         ];
       });
 
-      const rowHeight = 5.5;
-      const headerHeight = 11;
-      const remainingHeight = 185 - currentY;
-      const realRowsHeight = headerHeight + (filledRows.length * rowHeight);
-      const spaceAfterRealRows = remainingHeight - realRowsHeight;
-      const maxEmptyRows = Math.max(0, Math.floor(spaceAfterRealRows / rowHeight));
-      const targetTotalRows = 8;
-      const desiredEmptyRows = Math.max(0, targetTotalRows - filledRows.length);
-      const emptyRowsToAdd = Math.min(desiredEmptyRows, maxEmptyRows);
-
-      for (let i = 0; i < emptyRowsToAdd; i++) {
-        body.push(["", "", "", "", "", "", "", ""]);
-      }
 
       autoTable(doc, {
         startY: currentY,

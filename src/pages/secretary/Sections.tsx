@@ -23,7 +23,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 
 interface Department {
   id: number;
@@ -189,6 +189,7 @@ export default function SecretarySections() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/sections/${idToDelete}`);
+        clearDataCache();
         setSections(prev => {
           const nextSections = prev.filter(s => s.id !== idToDelete);
           setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
@@ -251,6 +252,7 @@ export default function SecretarySections() {
       if (isEditMode && editingId !== null) {
         const res = await api.put<ApiSection>(`/sections/${editingId}`, payload);
         const updatedSection = mapApiSection(res.data);
+        clearDataCache();
         setSections(prev => {
           const nextSections = prev.map(s => s.id === editingId ? updatedSection : s);
           setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
@@ -260,6 +262,7 @@ export default function SecretarySections() {
       } else {
         const res = await api.post<ApiSection>('/sections', payload);
         const createdSection = mapApiSection(res.data);
+        clearDataCache();
         setSections(prev => {
           const nextSections = [createdSection, ...prev];
           setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
