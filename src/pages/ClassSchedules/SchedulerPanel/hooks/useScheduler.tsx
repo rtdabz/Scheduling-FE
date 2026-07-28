@@ -285,6 +285,8 @@ export const useScheduler = () => {
   const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
   const [isMarkingSectionDone, setIsMarkingSectionDone] = useState(false);
+  const [isEditingSection, setIsEditingSection] = useState(false);
+  const [isResubmittingSection, setIsResubmittingSection] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [selectedSectionId, setSelectedSectionId] = useState<string>(() => {
     return canUseInitialCache && cachedSchedulerData?.sections?.length
@@ -1612,9 +1614,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
   };
 
   const handleEditSection = async () => {
-    if (!selectedSectionId) return;
+    if (!selectedSectionId || isEditingSection) return;
 
     try {
+      setIsEditingSection(true);
       const operations = sectionSchedules.map((s) => ({
         id: Number(s.id),
         term_id: s.termId,
@@ -1644,12 +1647,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
       await refreshSchedules();
     } catch (err) {
       toast.error("Failed to unlock section", getApiErrorMessage(err) ?? "An error occurred.");
+    } finally {
+      setIsEditingSection(false);
     }
   };
 
   const handleResubmit = async () => {
-    if (!selectedSectionId) return;
+    if (!selectedSectionId || isResubmittingSection) return;
     try {
+      setIsResubmittingSection(true);
       const operations = sectionSchedules.map((s) => ({
         id: Number(s.id),
         term_id: s.termId,
@@ -1672,6 +1678,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     } catch (err) {
       console.error(err);
       toast.error("Failed to resubmit", getApiErrorMessage(err) ?? "An error occurred.");
+    } finally {
+      setIsResubmittingSection(false);
     }
   };
 
@@ -1994,15 +2002,40 @@ departmentSectionProgress.every((section) => section.status === "completed");
         );
       }
       case "completed":
-        return <button onClick={handleEditSection} className="px-4 py-2 bg-[#C9952A] hover:bg-[#b8841f] text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Edit</button>;
+        return (
+          <button
+            onClick={handleEditSection}
+            disabled={isEditingSection}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+              isEditingSection
+                ? "bg-[#C9952A] text-white cursor-wait opacity-80"
+                : "bg-[#C9952A] hover:bg-[#b8841f] text-white cursor-pointer"
+            }`}
+          >
+            {isEditingSection && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isEditingSection ? "Unlocking..." : "Edit"}
+          </button>
+        );
       case "submitted":
         return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
       case "approved_by_dean":
         return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending VPAA Approval</button>;
       case "rejected_by_dean":
-        return <button onClick={handleResubmit} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Resubmit to Dean</button>;
       case "rejected":
-        return <button onClick={handleResubmit} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 cursor-pointer">Resubmit</button>;
+        return (
+          <button
+            onClick={handleResubmit}
+            disabled={isResubmittingSection}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+              isResubmittingSection
+                ? "bg-orange-500 text-white cursor-wait opacity-80"
+                : "bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+            }`}
+          >
+            {isResubmittingSection && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isResubmittingSection ? "Resubmitting..." : "Resubmit"}
+          </button>
+        );
       case "approved":
       case "faculty_assignment": {
         const unassigned = sectionSchedules.filter((s) => !s.facultyId).length;
