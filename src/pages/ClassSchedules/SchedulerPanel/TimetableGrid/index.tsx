@@ -6,7 +6,7 @@ import {
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, ScheduleItem, Room, Section, Subject } from "../types";
+import type { ConflictInfo, ScheduleItem, Room, Section, Subject, Term } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 import Skeleton from "../../../../components/ui/Skeleton";
@@ -16,6 +16,7 @@ interface TimetableGridProps {
   rooms: Room[];
   subjects: Subject[];
   activeTermText: string;
+  activeTerm: Term | null;
   selectedSectionId: string;
   totalScheduled: number;
   totalSubjects: number;
@@ -54,6 +55,7 @@ export default function TimetableGrid({
   rooms,
   subjects,
   activeTermText,
+  activeTerm,
   selectedSectionId,
   totalScheduled,
   totalSubjects,
@@ -89,6 +91,7 @@ export default function TimetableGrid({
   const [isComfortView, setIsComfortView] = useState(false);
   const slotHeight = isComfortView ? 32 : SLOT_HEIGHT_PX;
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
+  const isSummerTerm = activeTerm?.semester === "summer";
   const placementLabel = placementSubjectId
     ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
     : movingScheduleId
@@ -209,18 +212,32 @@ export default function TimetableGrid({
                 Time
               </div>
 
-              {DAYS.map((day, dIdx) => (
-                <div
-                  key={day}
-                  className="bg-[#4e0a10]/5 border-r border-b border-slate-200 p-1.5 font-bold text-xs text-slate-700 text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20"
-                  style={{ gridColumn: dIdx + 2, gridRow: 1 }}
-                >
-                  <span className="text-slate-800 font-extrabold">{day}</span>
-                  <span className="text-[9px] text-slate-500 font-bold mt-0.5 bg-white/60 px-1.5 py-0.5 rounded-full border border-slate-100">
-                    {getClassesCountForDay(dIdx)} {getClassesCountForDay(dIdx) === 1 ? "Class" : "Classes"}
-                  </span>
-                </div>
-              ))}
+              {DAYS.map((day, dIdx) => {
+                const isWeekend = dIdx >= 5;
+                const isDisabledDay = isSummerTerm && isWeekend;
+                return (
+                  <div
+                    key={day}
+                    className={`border-r border-b border-slate-200 p-1.5 font-bold text-xs text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20 ${
+                      isDisabledDay
+                        ? "bg-slate-200/60 text-slate-400"
+                        : "bg-[#4e0a10]/5 text-slate-700"
+                    }`}
+                    style={{ gridColumn: dIdx + 2, gridRow: 1 }}
+                  >
+                    <span className={`font-extrabold ${isDisabledDay ? "text-slate-400" : "text-slate-800"}`}>{day}</span>
+                    {isDisabledDay ? (
+                      <span className="text-[9px] font-bold mt-0.5 bg-slate-300/60 text-slate-500 px-1.5 py-0.5 rounded-full border border-slate-200">
+                        N/A
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-slate-500 font-bold mt-0.5 bg-white/60 px-1.5 py-0.5 rounded-full border border-slate-100">
+                        {getClassesCountForDay(dIdx)} {getClassesCountForDay(dIdx) === 1 ? "Class" : "Classes"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
 
               {Array.from({ length: 28 }).map((_, t) => (
                 <React.Fragment key={`row-${t}`}>
@@ -250,6 +267,7 @@ export default function TimetableGrid({
                         isEditable={isEditable}
                         isPhase2Active={isPhase2Active}
                         isPlacementMode={isPlacementMode}
+                        isSummerDisabled={isSummerTerm && d >= 5}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}

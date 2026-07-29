@@ -232,10 +232,13 @@ export function useCurriculumDetail(id: string | undefined) {
                 setAllCourses((prev) => [...prev, courseData]);
               }
 
+              const payloadItem = courses.find((item) => item.rowId === rowId);
+
               successfulNewCourses.push({
                 id: courseData.id,
                 code: courseData.course_code,
                 title: courseData.course_name,
+                category: (courseData.course_category || payloadItem?.courseCategory || 'major') as 'major' | 'minor',
                 lec_units: courseData.lecture_hours,
                 lab_units: courseData.lab_hours,
                 total_units: courseData.units,

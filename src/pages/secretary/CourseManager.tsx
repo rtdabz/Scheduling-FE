@@ -112,11 +112,25 @@ export default function CourseManager() {
   const [semesterFilter, setSemesterFilter] = useState('all');
 
   const filteredCourses = useMemo(() => {
-    return courses.filter((course) => {
+    const list = courses.filter((course) => {
       const matchYear = yearLevelFilter === 'all' || course.year_level?.toString() === yearLevelFilter;
       const matchCategory = categoryFilter === 'all' || course.course_category?.toLowerCase() === categoryFilter.toLowerCase();
       const matchSemester = semesterFilter === 'all' || course.semester?.toLowerCase() === semesterFilter.toLowerCase();
       return matchYear && matchCategory && matchSemester;
+    });
+
+    const semOrder: Record<string, number> = { '1st': 1, '2nd': 2, 'summer': 3 };
+
+    return [...list].sort((a, b) => {
+      const yA = Number(a.year_level || 0);
+      const yB = Number(b.year_level || 0);
+      if (yA !== yB) return yA - yB;
+
+      const sA = semOrder[a.semester?.toLowerCase() || ''] || 99;
+      const sB = semOrder[b.semester?.toLowerCase() || ''] || 99;
+      if (sA !== sB) return sA - sB;
+
+      return (a.course_code || '').localeCompare(b.course_code || '');
     });
   }, [courses, yearLevelFilter, categoryFilter, semesterFilter]);
 

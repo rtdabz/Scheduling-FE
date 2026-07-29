@@ -31,6 +31,15 @@ export default function CourseTable({
   onCancelRemove,
   onConfirmRemove,
 }: CourseTableProps) {
+  const sortedCourses = React.useMemo(() => {
+    return [...courses].sort((a, b) => {
+      const catA = a.category?.toLowerCase() === 'major' ? 1 : 2;
+      const catB = b.category?.toLowerCase() === 'major' ? 1 : 2;
+      if (catA !== catB) return catA - catB;
+      return (a.code || '').localeCompare(b.code || '');
+    });
+  }, [courses]);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -45,7 +54,7 @@ export default function CourseTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {courses.length === 0 ? (
+          {sortedCourses.length === 0 ? (
             <tr>
               <td colSpan={canEdit ? 6 : 5} className="px-5 py-8 text-center bg-gray-50/20">
                 <div className="max-w-sm mx-auto">
@@ -58,7 +67,7 @@ export default function CourseTable({
               </td>
             </tr>
           ) : (
-            courses.map((course) => (
+            sortedCourses.map((course) => (
               <tr
                 key={course.id}
                 className={`transition-colors ${

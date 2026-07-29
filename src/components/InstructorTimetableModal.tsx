@@ -176,48 +176,14 @@ export default function InstructorTimetableModal({
       }
 
       try {
-        const rawData = await loadCachedData<ApiScheduleRecord[]>("global:schedules", async () => {
-          const res = await api.get<ApiScheduleRecord[]>("/schedules");
-          return res.data;
-        });
+        const res = await api.get<ApiScheduleRecord[]>("/schedules");
+        const rawData = res.data ?? [];
 
         if (!isMounted) return;
 
-        let facultySchedules = rawData.filter(
+        const facultySchedules = rawData.filter(
           (s) => s.faculty_id !== null && Number(s.faculty_id) === Number(facultyId)
         );
-
-        if (facultySchedules.length === 0) {
-          facultySchedules = [
-            {
-              id: 99901,
-              term_id: 1,
-              section_id: 1,
-              course_id: 1,
-              faculty_id: facultyId,
-              room_id: 1,
-              department_id: 1,
-              day: "Monday",
-              start_time: "08:00",
-              end_time: "10:00",
-              mode: "on-site",
-              status: "approved",
-              course: {
-                course_code: "IT 104",
-                course_name: "Computer Programming 1",
-                course_category: "major",
-                units: 3,
-              },
-              section: {
-                section_name: "BSIT 1C",
-              },
-              room: {
-                room_code: "COMP LAB 01",
-                building: "Main Building",
-              },
-            },
-          ];
-        }
 
         const mapped: TimetableSlotItem[] = facultySchedules.map((s) => {
           const dayIndex = DAY_MAP[s.day] ?? 0;

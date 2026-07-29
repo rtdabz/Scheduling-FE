@@ -1,106 +1,183 @@
 import { useEffect } from "react";
-import { AlertTriangle, Loader2, Sparkles, X } from "lucide-react";
-import RecommendationOptionCard from "./RecommendationOptionCard";
-import type { Subject, Room } from "../types";
-import type { ScheduleRecommendation } from "./types";
+import { AlertTriangle, CheckCircle2, Cpu, Layers, Loader2, Sparkles, X } from "lucide-react";
+import type { ProgressStep } from "./useGenerateSchedule";
 
 interface GenerateScheduleModalProps {
   isOpen: boolean;
   isGenerating: boolean;
-  isActingOnId: number | null;
-  recommendations: ScheduleRecommendation[];
+  progressStep: ProgressStep;
   errorMessage: string | null;
   sectionId: string;
   sectionName: string;
-  subjects: Subject[];
-  rooms: Room[];
   onClose: () => void;
   onGenerate: (sectionId: string, courseIds?: number[]) => void;
-  onAccept: (id: number) => void;
-  onReject: (id: number) => void;
 }
 
 export default function GenerateScheduleModal({
   isOpen,
   isGenerating,
-  isActingOnId,
-  recommendations,
+  progressStep,
   errorMessage,
   sectionId,
   sectionName,
-  subjects,
-  rooms,
   onClose,
   onGenerate,
-  onAccept,
-  onReject
 }: GenerateScheduleModalProps) {
   useEffect(() => {
     if (isOpen && sectionId) {
-      const courseIds = subjects.map((s) => Number(s.id)).filter((id) => id > 0);
-      onGenerate(sectionId, courseIds.length > 0 ? courseIds : undefined);
+      onGenerate(sectionId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, sectionId]);
 
   if (!isOpen) return null;
 
+  const getStepStatus = (step: "generating" | "constraints" | "finalizing") => {
+    if (progressStep === "complete") return "completed";
+    if (progressStep === "error") return "idle";
+
+    const order = ["generating", "constraints", "finalizing"];
+    const currentIndex = order.indexOf(progressStep);
+    const stepIndex = order.indexOf(step);
+
+    if (stepIndex < currentIndex) return "completed";
+    if (stepIndex === currentIndex) return "current";
+    return "idle";
+  };
+
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !isGenerating) onClose();
       }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-start px-6 pt-6 pb-4 border-b border-gray-100">
-          <div className="flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-gray-100">
+        <div className="bg-gradient-to-r from-[#4e0a10] to-[#7a121c] p-5 text-white flex justify-between items-start">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-md">
+              <Sparkles className="w-5 h-5 text-[#C9952A] animate-pulse" />
+            </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-800 leading-tight">Generate Schedule</h3>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Ranked, conflict-free options for <span className="font-semibold">{sectionName}</span>
+              <h3 className="text-base font-bold leading-tight">Auto-Generating Schedule</h3>
+              <p className="text-xs text-amber-200/80 mt-0.5 font-medium">
+                Section: <span className="font-semibold text-white">{sectionName}</span>
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!isGenerating && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-white/70 hover:text-white hover:bg-white/10 rounded-full p-1 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        <div className="px-6 py-5">
-          {isGenerating && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Loader2 className="w-8 h-8 text-[#4e0a10] animate-spin mb-3" />
-              <p className="text-sm font-semibold text-slate-700">Solving for the best schedule options...</p>
-              <p className="text-xs text-slate-400 mt-1">This checks every room, faculty, and time conflict.</p>
+        <div className="p-6">
+          {errorMessage ? (
+            <div className="flex flex-col items-center justify-center py-4 text-center">
+              <div className="p-3 bg-red-50 text-red-600 rounded-full mb-3">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-bold text-gray-800">Generation Unsuccessful</p>
+              <p className="text-xs text-gray-500 mt-1 max-w-xs">{errorMessage}</p>
+              <div className="flex gap-2 mt-5">
+                <button
+                  type="button"
+                  onClick={() => onGenerate(sectionId)}
+                  className="px-4 py-2 bg-[#4e0a10] text-white text-xs font-bold rounded-lg hover:bg-[#6b0e17] transition-colors cursor-pointer"
+                >
+                  Retry Generation
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-          )}
+          ) : (
+            <div className="space-y-4">
+              {/* Step 1 */}
+              <div className="flex items-center gap-3.5 p-3 rounded-xl transition-all duration-300 border border-gray-100 bg-gray-50/50">
+                <div className="shrink-0">
+                  {getStepStatus("generating") === "completed" ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  ) : getStepStatus("generating") === "current" ? (
+                    <Loader2 className="w-5 h-5 text-[#4e0a10] animate-spin" />
+                  ) : (
+                    <Cpu className="w-5 h-5 text-gray-300" />
+                  )}
+                </div>
+                <div>
+                  <p className={`text-xs font-bold ${getStepStatus("generating") === "current" ? "text-[#4e0a10]" : "text-gray-700"}`}>
+                    Generating Schedule...
+                  </p>
+                  <p className="text-[11px] text-gray-400">Running Rule Engine & CSP Solver</p>
+                </div>
+              </div>
 
-          {!isGenerating && errorMessage && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <AlertTriangle className="w-8 h-8 text-amber-500 mb-3" />
-              <p className="text-sm font-semibold text-slate-700">{errorMessage}</p>
-            </div>
-          )}
+              {/* Step 2 */}
+              <div className="flex items-center gap-3.5 p-3 rounded-xl transition-all duration-300 border border-gray-100 bg-gray-50/50">
+                <div className="shrink-0">
+                  {getStepStatus("constraints") === "completed" ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  ) : getStepStatus("constraints") === "current" ? (
+                    <Loader2 className="w-5 h-5 text-[#4e0a10] animate-spin" />
+                  ) : (
+                    <Layers className="w-5 h-5 text-gray-300" />
+                  )}
+                </div>
+                <div>
+                  <p className={`text-xs font-bold ${getStepStatus("constraints") === "current" ? "text-[#4e0a10]" : "text-gray-700"}`}>
+                    Applying Constraints...
+                  </p>
+                  <p className="text-[11px] text-gray-400">Verifying rooms, faculty & time limits</p>
+                </div>
+              </div>
 
-          {!isGenerating && !errorMessage && recommendations.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {recommendations.map((rec) => (
-                <RecommendationOptionCard
-                  key={rec.id}
-                  recommendation={rec}
-                  subjects={subjects}
-                  rooms={rooms}
-                  isActing={isActingOnId === rec.id}
-                  onAccept={onAccept}
-                  onReject={onReject}
+              {/* Step 3 */}
+              <div className="flex items-center gap-3.5 p-3 rounded-xl transition-all duration-300 border border-gray-100 bg-gray-50/50">
+                <div className="shrink-0">
+                  {progressStep === "complete" ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  ) : getStepStatus("finalizing") === "current" ? (
+                    <Loader2 className="w-5 h-5 text-[#4e0a10] animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 text-gray-300" />
+                  )}
+                </div>
+                <div>
+                  <p className={`text-xs font-bold ${progressStep === "complete" || getStepStatus("finalizing") === "current" ? "text-[#4e0a10]" : "text-gray-700"}`}>
+                    {progressStep === "complete" ? "Schedule Plotted!" : "Finalizing Schedule..."}
+                  </p>
+                  <p className="text-[11px] text-gray-400">Placing entries into Timetable Grid</p>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden mt-2">
+                <div
+                  className="bg-gradient-to-r from-[#4e0a10] to-[#C9952A] h-full transition-all duration-300"
+                  style={{
+                    width:
+                      progressStep === "generating"
+                        ? "33%"
+                        : progressStep === "constraints"
+                        ? "66%"
+                        : progressStep === "finalizing"
+                        ? "90%"
+                        : progressStep === "complete"
+                        ? "100%"
+                        : "0%",
+                  }}
                 />
-              ))}
+              </div>
             </div>
           )}
         </div>

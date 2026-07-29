@@ -39,7 +39,8 @@ export default function EditCourseModal({
     if (course && isOpen) {
       setCourseCode(course.code || '');
       setCourseName(course.title || '');
-      setCourseCategory(course.category === 'minor' ? 'minor' : 'major');
+      const cat = String(course.category || '').toLowerCase().trim();
+      setCourseCategory(cat === 'minor' ? 'minor' : 'major');
       setLecUnits(course.lec_units ?? 0);
       setLabUnits(course.lab_units ?? 0);
       setError(null);

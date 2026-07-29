@@ -58,6 +58,11 @@ interface Schedule {
     room_code: string;
     building?: string | null;
   } | null;
+  course?: {
+    id: number;
+    course_code: string;
+    course_name: string;
+  } | null;
   subject?: {
     id: number;
     subject_code: string;
@@ -1043,8 +1048,8 @@ export default function VpaaDashboardPage() {
                                     }}
                                   >
                                     <div className="min-w-0">
-                                      <p className="font-extrabold truncate text-gray-900">{schedule.subject?.subject_code || "Subject"}</p>
-                                      <p className="opacity-80 truncate font-semibold text-gray-700">{schedule.subject?.subject_name}</p>
+                                      <p className="font-extrabold truncate text-gray-900">{schedule.course?.course_code || schedule.subject?.subject_code || "Course"}</p>
+                                      <p className="opacity-80 truncate font-semibold text-gray-700">{schedule.course?.course_name || schedule.subject?.subject_name}</p>
                                     </div>
                                     <div className="mt-1 opacity-80 text-[8px] font-semibold text-gray-655">
                                       <p className="truncate font-bold text-[#5A1220]">{schedule.section?.section_name}</p>

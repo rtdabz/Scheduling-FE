@@ -111,6 +111,7 @@ interface RawSchedule {
   mode?: Schedule["mode"];
   section?: { section_name?: string } | null;
   department?: { department_name?: string; department_code?: string } | null;
+  course?: { course_code?: string; course_name?: string } | null;
   subject?: { subject_code?: string; subject_name?: string } | null;
   faculty?: { first_name?: string; last_name?: string } | null;
   room?: { room_code?: string; building?: string | null } | null;
@@ -551,8 +552,8 @@ export default function VpaaScheduleViewer() {
             departmentId,
             departmentName: item.department?.department_name ?? department?.name ?? "",
             departmentCode: item.department?.department_code ?? department?.code ?? "",
-            subjectCode: item.subject?.subject_code ?? "",
-            subjectName: item.subject?.subject_name ?? "",
+            subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
+            subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
             facultyId: item.faculty_id ? item.faculty_id.toString() : "",
             facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : "Unassigned",
             roomId: item.room_id ? item.room_id.toString() : "",

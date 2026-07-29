@@ -71,6 +71,11 @@ interface RawSchedule {
     department_name?: string;
     department_code?: string;
   } | null;
+  course?: {
+    course_code?: string;
+    course_name?: string;
+    course_category?: SubjectCategory;
+  } | null;
   subject?: {
     subject_code?: string;
     subject_name?: string;
@@ -418,9 +423,9 @@ export default function DeanScheduleViewer() {
             sectionName: item.section?.section_name ?? "",
             departmentName: item.department?.department_name ?? userDeptName,
             departmentCode: item.department?.department_code ?? "",
-            subjectCode: item.subject?.subject_code ?? "",
-            subjectName: item.subject?.subject_name ?? "",
-            subjectCategory: item.subject?.subject_category ?? "major",
+            subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
+            subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
+            subjectCategory: (item.course?.course_category ?? item.subject?.subject_category ?? "major") as SubjectCategory,
             facultyId: item.faculty_id ? item.faculty_id.toString() : "",
             facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
             roomId: item.room_id ? item.room_id.toString() : "",

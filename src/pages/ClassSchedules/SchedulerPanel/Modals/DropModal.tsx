@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, Loader2, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
-import type { DeliveryMode, DropContext, Subject, Room, ScheduleStatus } from "../types";
+import type { DeliveryMode, DropContext, Subject, Room, ScheduleStatus, Term } from "../types";
 
 interface DropRecommendationRow {
   term_id: number;
@@ -40,6 +40,7 @@ interface SelectedRecommendationResponse {
 interface DropModalProps {
   rooms: Room[];
   selectedSectionId: string;
+  activeTerm: Term | null;
   dropContext: DropContext | null;
   dropSubject: Subject | null;
   dropSubjectIsField: boolean;
@@ -134,6 +135,7 @@ const getRecommendationReason = (
 export default function DropModal({
   rooms,
   selectedSectionId,
+  activeTerm,
   dropContext,
   dropSubject,
   dropSubjectIsField,
@@ -171,6 +173,8 @@ export default function DropModal({
   setDropContext,
   handleModalConfirm
 }: DropModalProps) {
+  const isSummerTerm = activeTerm?.semester === "summer";
+  const availableDays = isSummerTerm ? DAYS.slice(0, 5) : DAYS;
   const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
@@ -292,7 +296,7 @@ export default function DropModal({
   };
 
   const getFallbackMeetingDayIndex = (excludedDayIndex: number): number => {
-    const fallbackIndex = DAYS.findIndex((_, index) => index !== excludedDayIndex);
+    const fallbackIndex = availableDays.findIndex((_, index) => index !== excludedDayIndex);
     return fallbackIndex >= 0 ? fallbackIndex : excludedDayIndex;
   };
 
@@ -640,7 +644,7 @@ export default function DropModal({
                     }}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
                   >
-                    {DAYS.map((day, index) => (
+                    {availableDays.map((day, index) => (
                       <option key={day} value={index} disabled={index === modalDay2Index}>
                         {index === modalDay2Index ? `${day} (Selected as second meeting)` : day}
                       </option>
@@ -654,7 +658,7 @@ export default function DropModal({
                     }}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                   >
-                    {DAYS.map((day, index) => (
+                    {availableDays.map((day, index) => (
                       <option key={day} value={index}>
                         {day}
                       </option>
@@ -858,7 +862,7 @@ export default function DropModal({
                     }}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
                   >
-                    {DAYS.map((day, index) => (
+                    {availableDays.map((day, index) => (
                       <option key={day} value={index} disabled={index === modalDay1Index}>
                         {index === modalDay1Index ? `${day} (Selected as first meeting)` : day}
                       </option>

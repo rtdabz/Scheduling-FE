@@ -55,7 +55,8 @@ interface RawSchedule {
   id: number | string;
   department_id: number | string;
   section_id: number | string;
-  subject_id: number | string;
+  course_id?: number | string;
+  subject_id?: number | string;
   faculty_id?: number | string | null;
   term_id: number | string;
   day: string;
@@ -73,6 +74,10 @@ interface RawSchedule {
   section?: {
     section_name?: string;
   } | null;
+  course?: {
+    course_code?: string;
+    course_name?: string;
+  } | null;
   subject?: {
     subject_code?: string;
     subject_name?: string;
@@ -86,6 +91,10 @@ interface RawSchedule {
     building?: string | null;
   } | null;
 }
+
+const getScheduleCourseCode = (s: RawSchedule) => s.course?.course_code ?? s.subject?.subject_code ?? 'Course';
+const getScheduleCourseName = (s: RawSchedule) => s.course?.course_name ?? s.subject?.subject_name ?? 'Untitled course';
+const getScheduleCourseId = (s: RawSchedule) => s.course_id ?? s.subject_id;
 
 interface ScheduleSectionOption {
   id: string;
@@ -315,7 +324,7 @@ export default function DeanScheduleApprovalPage() {
               id: Number(departmentId),
               department: firstSched.department?.department_name ?? userDeptName ?? "",
               section: `${departmentSections.length} section${departmentSections.length !== 1 ? 's' : ''}`,
-              subjectsScheduled: new Set(deptSchedules.map((s) => s.subject_id)).size,
+              subjectsScheduled: new Set(deptSchedules.map((s) => getScheduleCourseId(s))).size,
               submittedBy: "Coordinator",
               submittedAt: firstSched.created_at ?? "",
               deanReviewedAt: firstSched.reviewed_at_dean ?? null,
@@ -597,7 +606,7 @@ export default function DeanScheduleApprovalPage() {
 
   const modalSummary = useMemo(() => ({
     totalSections: modalSections.length,
-    totalScheduledSubjects: new Set(modalSchedules.map((schedule) => String(schedule.subject_id))).size,
+    totalScheduledSubjects: new Set(modalSchedules.map((schedule) => String(getScheduleCourseId(schedule)))).size,
     unassignedInstructors: modalSchedules.filter((schedule) => !schedule.faculty_id).length,
     totalScheduleEntries: modalSchedules.length,
   }), [modalSchedules, modalSections]);
@@ -1041,8 +1050,8 @@ export default function DeanScheduleApprovalPage() {
                           {sectionSchedules.map((item) => (
                             <div key={item.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_0.8fr_1fr_0.7fr] gap-2 px-3 py-2.5 text-xs">
                               <div className="min-w-0">
-                                <p className="font-black text-gray-800 truncate">{item.subject?.subject_code ?? 'Subject'}</p>
-                                <p className="text-gray-500 truncate">{item.subject?.subject_name ?? 'Untitled subject'}</p>
+                                <p className="font-black text-gray-800 truncate">{getScheduleCourseCode(item)}</p>
+                                <p className="text-gray-500 truncate">{getScheduleCourseName(item)}</p>
                               </div>
                               <div className="font-semibold text-gray-700">{item.day}, {formatTime24hTo12h(item.start_time)} - {formatTime24hTo12h(item.end_time)}</div>
                               <div className="text-gray-600 truncate">{getRoomName(item)}</div>
@@ -1104,10 +1113,10 @@ export default function DeanScheduleApprovalPage() {
                           <div key={item.id} className={`${colors.bg} ${colors.border} ${colors.text} border-2 border-l-[4px] ${colors.accent} p-2 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between leading-snug box-border`} style={{ gridColumn: colIndex, gridRowStart: startRow, gridRowEnd: endRow, height: `${cardHeight}px`, zIndex: 5 }}>
                             <div className="min-w-0">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-[10px] uppercase tracking-wide">{item.subject?.subject_code ?? 'Subject'}</span>
+                                <span className="font-bold text-[10px] uppercase tracking-wide">{getScheduleCourseCode(item)}</span>
                                 <span className="px-1 rounded-[3px] text-[8px] font-bold border uppercase tracking-wide shrink-0 bg-white/70 border-current">{getModeLabel(item.mode)}</span>
                               </div>
-                              <p className="font-semibold text-[9px] truncate opacity-90">{item.subject?.subject_name ?? 'Untitled subject'}</p>
+                              <p className="font-semibold text-[9px] truncate opacity-90">{getScheduleCourseName(item)}</p>
                               <p className="text-[9px] opacity-80 truncate">{getInstructorName(item)}</p>
                             </div>
                             {showBottomRow && (

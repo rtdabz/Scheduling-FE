@@ -33,8 +33,10 @@ interface Department {
 
 interface AssignedSubject {
   id: number;
-  subject_code: string;
-  subject_name: string;
+  course_code?: string;
+  course_name?: string;
+  subject_code?: string;
+  subject_name?: string;
 }
 
 interface AssignedClass {
@@ -676,7 +678,7 @@ export default function VpaaFaculty() {
                           <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
                           {f.assigned_subjects.slice(0, 3).map(sub => (
                             <span key={sub.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
-                              {sub.subject_code}
+                              {sub.course_code || sub.subject_code}
                             </span>
                           ))}
                           {f.assigned_subjects.length > 3 && (

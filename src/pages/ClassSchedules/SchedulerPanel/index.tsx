@@ -55,17 +55,12 @@ export default function SchedulerPanel() {
       <GenerateScheduleModal
         isOpen={generateSchedule.isOpen}
         isGenerating={generateSchedule.isGenerating}
-        isActingOnId={generateSchedule.isActingOnId}
-        recommendations={generateSchedule.recommendations}
+        progressStep={generateSchedule.progressStep}
         errorMessage={generateSchedule.errorMessage}
         sectionId={scheduler.selectedSectionId}
         sectionName={selectedSection?.name ?? ""}
-        subjects={scheduler.subjects}
-        rooms={scheduler.rooms}
         onClose={generateSchedule.closeModal}
         onGenerate={generateSchedule.generate}
-        onAccept={generateSchedule.accept}
-        onReject={generateSchedule.reject}
       />
       <PrintSchedule
         sections={scheduler.sections}

@@ -77,9 +77,16 @@ export default function TopBar({
 }: TopBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const printDropdownRef = useRef<HTMLDivElement>(null);
+  const listboxRef = useRef<HTMLDivElement>(null);
+  const sectionListScrollTopRef = useRef<number>(0);
+
   const [sectionSearch, setSectionSearch] = useState("");
   const [isReadinessOpen, setIsReadinessOpen] = useState(false);
   const [isPrintDropdownOpen, setIsPrintDropdownOpen] = useState(false);
+
+  const handleSectionListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    sectionListScrollTopRef.current = e.currentTarget.scrollTop;
+  };
   const selectedSection = sections.find((s) => s.id === selectedSectionId);
   const remainingSubjects = Math.max(0, totalSubjects - totalScheduled);
 
@@ -213,6 +220,19 @@ export default function TopBar({
     };
   }, [isSectionDropdownOpen, setIsSectionDropdownOpen]);
 
+  useEffect(() => {
+    if (!isSectionDropdownOpen || !listboxRef.current) return;
+
+    if (sectionListScrollTopRef.current > 0) {
+      listboxRef.current.scrollTop = sectionListScrollTopRef.current;
+    } else if (selectedSectionId) {
+      const selectedEl = listboxRef.current.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [isSectionDropdownOpen, selectedSectionId]);
+
   const phasePipeline = (
     <div className="flex items-center gap-3 select-none overflow-x-auto py-1">
       <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-300 ${
@@ -298,7 +318,13 @@ export default function TopBar({
                       inputClassName="focus:ring-[#4e0a10]/15 focus:border-[#4e0a10]"
                     />
                   </div>
-                  <div role="listbox" aria-label="Available sections" className="max-h-80 overflow-y-auto py-1">
+                  <div
+                    ref={listboxRef}
+                    onScroll={handleSectionListScroll}
+                    role="listbox"
+                    aria-label="Available sections"
+                    className="max-h-80 overflow-y-auto py-1"
+                  >
                   {filteredGroupedSections.length === 0 ? (
                     <p className="px-4 py-2.5 text-sm text-gray-400">No sections available.</p>
                   ) : (

@@ -1744,12 +1744,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!fac) return;
     setFacultyActionSlotId(scheduleId);
     try {
-      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
-      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      const response = await api.put(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
+      const resData = response.data as any;
+      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
-    } catch {
-      toast.error("Failed to assign faculty", "An error occurred.");
+    } catch (err: unknown) {
+      const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
+      toast.error("Failed to assign faculty", errMsg);
     } finally {
       setFacultyActionSlotId(null);
     }
@@ -1767,12 +1770,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
     setFacultyActionSlotId(scheduleId);
     try {
-      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${scheduleId}`, { faculty_id: null });
-      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      const response = await api.put(`/schedules/${scheduleId}`, { faculty_id: null });
+      const resData = response.data as any;
+      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
-    } catch {
-      toast.error("Failed to remove faculty", "An error occurred.");
+    } catch (err: unknown) {
+      const errMsg = getApiErrorMessage(err) || "Failed to remove faculty. Please try again.";
+      toast.error("Failed to remove faculty", errMsg);
     } finally {
       setFacultyActionSlotId(null);
     }
@@ -1791,12 +1797,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!fac) return;
     setFacultyActionSlotId(slotId);
     try {
-      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${slotId}`, { faculty_id: Number(facId) });
-      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      const response = await api.put(`/schedules/${slotId}`, { faculty_id: Number(facId) });
+      const resData = response.data as any;
+      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
-    } catch {
-      toast.error("Failed to assign faculty", "An error occurred.");
+    } catch (err: unknown) {
+      const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
+      toast.error("Failed to assign faculty", errMsg);
     } finally {
       setFacultyActionSlotId(null);
     }
@@ -1811,12 +1820,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
     setFacultyActionSlotId(slotId);
     try {
-      const response = await api.put<ScheduleUpdateResponse>(`/schedules/${slotId}`, { faculty_id: null });
-      const updatedSchedules = (response.data.schedules ?? [response.data.schedule]).map(mapApiScheduleToItem);
+      const response = await api.put(`/schedules/${slotId}`, { faculty_id: null });
+      const resData = response.data as any;
+      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
-    } catch {
-      toast.error("Failed to remove faculty", "An error occurred.");
+    } catch (err: unknown) {
+      const errMsg = getApiErrorMessage(err) || "Failed to remove faculty. Please try again.";
+      toast.error("Failed to remove faculty", errMsg);
     } finally {
       setFacultyActionSlotId(null);
     }
