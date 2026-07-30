@@ -709,6 +709,20 @@ export const useScheduler = () => {
     [sections, selectedSectionId]
   );
 
+  const sectionCourses = useMemo(() => {
+    if (!selectedSection) return subjects;
+    return subjects.filter((s) => {
+      const isMinor = s.category === "minor";
+      const matchesDept =
+        isMinor ||
+        s.departmentId === null ||
+        Number(s.departmentId) === Number(selectedSection.departmentId);
+      const matchesYear = Number(s.yearLevel) === Number(selectedSection.yearLevel);
+      const matchesSem = !selectedSection.semester || s.semester === selectedSection.semester;
+      return matchesDept && matchesYear && matchesSem;
+    });
+  }, [subjects, selectedSection]);
+
 const normalizeSemester = (sem?: string | null): string => {
   if (!sem) return "";
   const s = String(sem).toLowerCase().trim();
@@ -838,7 +852,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     });
   }, [semesterSubjects, selectedSection, subjectClassFilter, searchQuery]);
 
-  const { checkConflict, checkFacultyConflict, getDragOverConflict } = useConflict({
+  const { checkConflict, checkFacultyConflict, getDragOverConflict, conflictedMap } = useConflict({
     schedules,
     selectedSectionId,
     dragSubjectId,
@@ -1605,7 +1619,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         )
       );
       toast.success("Section Done", "This section is now locked for plotting.");
-      await refreshSchedules();
+      refreshSchedules().catch(() => {});
     } catch (err) {
       toast.error("Failed to mark section done", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
@@ -1644,7 +1658,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         )
       );
       toast.success("Section Editable", "You can plot and edit this section again.");
-      await refreshSchedules();
+      refreshSchedules().catch(() => {});
     } catch (err) {
       toast.error("Failed to unlock section", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
@@ -1673,8 +1687,16 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
       await api.post("/schedules/batch", { operations });
 
+      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          sectionScheduleIds.has(schedule.id)
+            ? { ...schedule, status: "draft" }
+            : schedule
+        )
+      );
       toast.success("Resubmitted", "Schedule successfully returned to draft.");
-      await refreshSchedules();
+      refreshSchedules().catch(() => {});
     } catch (err) {
       console.error(err);
       toast.error("Failed to resubmit", getApiErrorMessage(err) ?? "An error occurred.");
@@ -1705,8 +1727,16 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
       await api.post("/schedules/batch", { operations });
 
+      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      setSchedules((previousSchedules) =>
+        previousSchedules.map((schedule) =>
+          sectionScheduleIds.has(schedule.id)
+            ? { ...schedule, status: "finalized" }
+            : schedule
+        )
+      );
       toast.success("Finalized", "Schedule successfully marked as finalized.");
-      await refreshSchedules();
+      refreshSchedules().catch(() => {});
     } catch (err) {
       toast.error("Failed to finalize", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
@@ -2208,7 +2238,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
     dropSubjectIsField,
     listCategories,
     filteredSubjects,
+    sectionCourses,
     checkConflict,
+    conflictedMap,
     checkFacultyConflict,
     canManageScheduleFaculty,
     getDragOverConflict,

@@ -232,7 +232,7 @@ export function useCurriculumDetail(id: string | undefined) {
                 setAllCourses((prev) => [...prev, courseData]);
               }
 
-              const payloadItem = courses.find((item) => item.rowId === rowId);
+              const payloadItem = coursesInput.find((item) => item.rowId === rowId);
 
               successfulNewCourses.push({
                 id: courseData.id,

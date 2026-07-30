@@ -25,7 +25,7 @@ export default function SchedulerPanel() {
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
 
   return (
-    <div className="flex flex-col gap-6 w-full text-slate-800 antialiased">
+    <div className="flex flex-col gap-4 w-full text-slate-800 antialiased">
       <TopBar
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
@@ -34,7 +34,7 @@ export default function SchedulerPanel() {
         isGenerateDisabled={!scheduler.selectedSectionId || !scheduler.isEditable}
       />
 
-      <div className="flex flex-col lg:flex-row gap-6 w-full min-h-[640px] lg:h-[calc(100vh-220px)] lg:min-h-[650px] overflow-hidden">
+      <div className="flex flex-col lg:flex-row gap-4 w-full min-h-[560px] lg:h-[calc(100vh-180px)] lg:min-h-[560px] overflow-hidden">
         <FacultyPanel {...scheduler} />
         <CourseBank {...scheduler} />
         <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
@@ -55,12 +55,27 @@ export default function SchedulerPanel() {
       <GenerateScheduleModal
         isOpen={generateSchedule.isOpen}
         isGenerating={generateSchedule.isGenerating}
+        isApplying={generateSchedule.isApplying}
         progressStep={generateSchedule.progressStep}
         errorMessage={generateSchedule.errorMessage}
+        baseSchedules={generateSchedule.baseSchedules}
+        preferredTimeBlock={generateSchedule.preferredTimeBlock}
+        setPreferredTimeBlock={generateSchedule.setPreferredTimeBlock}
+        splitMajorEnabled={generateSchedule.splitMajorEnabled}
+        setSplitMajorEnabled={generateSchedule.setSplitMajorEnabled}
+        selectedMajorCourseIds={generateSchedule.selectedMajorCourseIds}
+        setSelectedMajorCourseIds={generateSchedule.setSelectedMajorCourseIds}
+        splitMinorEnabled={generateSchedule.splitMinorEnabled}
+        setSplitMinorEnabled={generateSchedule.setSplitMinorEnabled}
+        selectedMinorCourseIds={generateSchedule.selectedMinorCourseIds}
+        setSelectedMinorCourseIds={generateSchedule.setSelectedMinorCourseIds}
         sectionId={scheduler.selectedSectionId}
         sectionName={selectedSection?.name ?? ""}
+        availableCourses={scheduler.sectionCourses}
+        allCourses={scheduler.subjects}
         onClose={generateSchedule.closeModal}
         onGenerate={generateSchedule.generate}
+        onApplySchedule={generateSchedule.applySchedule}
       />
       <PrintSchedule
         sections={scheduler.sections}

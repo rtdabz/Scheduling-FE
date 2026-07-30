@@ -18,8 +18,8 @@ export const getSubjectClassification = (
   category: Subject["category"]
 ): Exclude<SubjectClassification, "all"> => (category === "major" ? "major" : "minor");
 
-export const SLOT_HEIGHT_PX = 24;
-export const GRID_HEADER_HEIGHT_PX = 40;
+export const SLOT_HEIGHT_PX = 19;
+export const GRID_HEADER_HEIGHT_PX = 34;
 
 export const slotToTimeStr = (slotIndex: number): string => {
   const totalMinutes = 7 * 60 + slotIndex * 30;
@@ -49,17 +49,32 @@ export const getLeftAccentBorder = (category: Subject["category"]) => {
 
 export const getGridCardStyles = (category: Subject["category"]) => {
   switch (category) {
-    case "major": return { container: "border-blue-400 border-l-blue-600 bg-blue-50", text: "text-blue-700", badgeText: "text-blue-700" };
-    case "minor": return { container: "border-purple-400 border-l-purple-600 bg-purple-50", text: "text-purple-700", badgeText: "text-purple-700" };
-    default: return { container: "border-purple-400 border-l-purple-600 bg-purple-50", text: "text-purple-700", badgeText: "text-purple-700" };
+    case "major":
+      return {
+        container: "border-blue-200/80 border-l-blue-600 bg-gradient-to-br from-blue-50 to-blue-100/30 shadow-sm hover:shadow hover:border-blue-300/80",
+        text: "text-blue-900 font-extrabold",
+        badgeText: "text-blue-700 bg-blue-100/80 border border-blue-200/40"
+      };
+    case "minor":
+      return {
+        container: "border-purple-200/80 border-l-purple-600 bg-gradient-to-br from-purple-50 to-purple-100/30 shadow-sm hover:shadow hover:border-purple-300/80",
+        text: "text-purple-900 font-extrabold",
+        badgeText: "text-purple-700 bg-purple-100/80 border border-purple-200/40"
+      };
+    default:
+      return {
+        container: "border-slate-200/80 border-l-slate-600 bg-gradient-to-br from-slate-50 to-slate-100/30 shadow-sm hover:shadow hover:border-slate-300/80",
+        text: "text-slate-900 font-extrabold",
+        badgeText: "text-slate-700 bg-slate-100/80 border border-slate-200/40"
+      };
   }
 };
 
 export const getGridModeBadgeClass = (mode: ScheduleItem["mode"]) => {
   switch (mode) {
-    case "on-site": return "bg-blue-100 text-blue-700";
-    case "online": return "bg-green-100 text-green-700";
-    case "field": return "bg-orange-100 text-orange-700";
-    default: return "bg-slate-100 text-slate-700";
+    case "on-site": return "bg-blue-50 text-blue-700 border border-blue-200/40";
+    case "online": return "bg-emerald-50 text-emerald-700 border border-emerald-200/40";
+    case "field": return "bg-amber-50 text-amber-700 border border-amber-200/40";
+    default: return "bg-slate-50 text-slate-700 border border-slate-200/40";
   }
 };

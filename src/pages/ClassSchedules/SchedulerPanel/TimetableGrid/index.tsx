@@ -31,6 +31,7 @@ interface TimetableGridProps {
   setDeleteConfirmScheduleId: (id: string | null) => void;
   conflictInfo: ConflictInfo | null;
   setConflictInfo: (value: ConflictInfo | null) => void;
+  conflictedMap?: Record<string, { conflictType: "room" | "faculty" | "section"; message: string }>;
   placementSubjectId: string | null;
   movingScheduleId: string | null;
   cancelPlacement: () => void;
@@ -70,6 +71,7 @@ export default function TimetableGrid({
   setDeleteConfirmScheduleId,
   conflictInfo,
   setConflictInfo,
+  conflictedMap,
   placementSubjectId,
   movingScheduleId,
   cancelPlacement,
@@ -89,7 +91,7 @@ export default function TimetableGrid({
   isLoading = false
 }: TimetableGridProps) {
   const [isComfortView, setIsComfortView] = useState(false);
-  const slotHeight = isComfortView ? 32 : SLOT_HEIGHT_PX;
+  const slotHeight = isComfortView ? 24 : SLOT_HEIGHT_PX;
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerTerm = activeTerm?.semester === "summer";
   const placementLabel = placementSubjectId
@@ -100,27 +102,27 @@ export default function TimetableGrid({
 
   return (
     <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/30 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200 bg-slate-50/30 shrink-0">
         <div>
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <h2 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
             <Calendar className="w-4 h-4 text-[#4e0a10]" />
             Timetable Grid
           </h2>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className="bg-[#4e0a10]/15 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase">
+          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+            <span className="bg-[#4e0a10]/15 text-[#4e0a10] border border-[#4e0a10]/10 px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase">
               {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
             </span>
-            <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-md text-[10px] font-bold">
+            <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
               {activeTermText}
             </span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3.5">
-          <div className="flex items-center gap-2 text-[11px] font-bold select-none text-slate-500">
-            <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold select-none text-slate-500">
+            <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg">
               {totalScheduled} Subjects Placed
             </span>
-            <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded-lg">
+            <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg">
               {Math.max(0, totalSubjects - totalScheduled)} Unplaced
             </span>
           </div>
@@ -128,14 +130,14 @@ export default function TimetableGrid({
             type="button"
             onClick={() => setIsComfortView(!isComfortView)}
             aria-pressed={isComfortView}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
           >
             {isComfortView ? "Compact View" : "Comfort View"}
           </button>
           <button
             type="button"
             onClick={() => setIsRoomViewOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
           >
             <DoorOpen className="w-3.5 h-3.5" />
             Room View
@@ -144,7 +146,7 @@ export default function TimetableGrid({
             type="button"
             onClick={handleClearAll}
             disabled={!isEditable || sectionSchedules.length === 0}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${
               isEditable && sectionSchedules.length > 0
                 ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 cursor-pointer"
                 : "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
@@ -158,7 +160,7 @@ export default function TimetableGrid({
 
       <div className="flex-1 overflow-auto bg-slate-50/20 relative">
         {isPlacementMode && (
-          <div className="sticky top-0 z-40 mx-3 mt-3 mb-1 flex items-center gap-2.5 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 shadow-sm">
+          <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
             {movingScheduleId ? <Move className="w-5 h-5 text-blue-700 shrink-0" /> : <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />}
             <p className="text-sm font-semibold text-blue-900">
               {movingScheduleId ? "Moving" : "Placing"}{" "}
@@ -316,6 +318,7 @@ export default function TimetableGrid({
                       rooms={rooms}
                       schedule={schedule}
                       subject={subject}
+                      conflict={conflictedMap?.[schedule.id] ?? null}
                       isEditable={isEditable}
                       isPhase2Active={isPhase2Active}
                       currentStatus={currentStatus}

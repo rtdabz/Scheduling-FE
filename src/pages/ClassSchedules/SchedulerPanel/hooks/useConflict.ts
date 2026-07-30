@@ -1,4 +1,7 @@
+import { useMemo } from "react";
 import type { Faculty, Room, ScheduleItem, Subject } from "../types";
+
+export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
 const getPreferredPatternDayIndexes = (preferredPattern?: string | null): number[] | null => {
   if (!preferredPattern) return null;
@@ -21,8 +24,6 @@ interface UseConflictParams {
   faculties: Faculty[];
 }
 
-type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
-
 const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => (
   left.termId === right.termId
   && left.sectionId === right.sectionId
@@ -35,6 +36,62 @@ const isPartTimeOutsideAvailability = (faculty: Faculty | undefined, dayIndex: n
   faculty?.employmentType === "part-time" && dayIndex !== 5 && dayIndex !== 6 && startSlot < 20
 );
 
+export const getConflictedScheduleMap = (
+  schedules: ScheduleItem[],
+  subjects: Subject[],
+  rooms: Room[],
+  faculties: Faculty[]
+): Record<string, NonNullable<ConflictResult>> => {
+  const conflictMap: Record<string, NonNullable<ConflictResult>> = {};
+
+  for (let i = 0; i < schedules.length; i++) {
+    const s1 = schedules[i];
+    const s1End = s1.startSlot + s1.durationSlots;
+    const sub1 = subjects.find((x) => x.id === (s1.courseId ?? s1.subjectId));
+
+    for (let j = i + 1; j < schedules.length; j++) {
+      const s2 = schedules[j];
+      const s2End = s2.startSlot + s2.durationSlots;
+
+      // Check if on same day and time ranges overlap
+      const overlaps = s1.dayIndex === s2.dayIndex && s1.startSlot < s2End && s2.startSlot < s1End;
+      if (!overlaps) continue;
+
+      const sub2 = subjects.find((x) => x.id === (s2.courseId ?? s2.subjectId));
+
+      // 1. Same Section conflict (Time overlap in same section)
+      if (s1.sectionId && s1.sectionId === s2.sectionId) {
+        const msg1 = `Section conflict: Overlaps with ${sub2?.code ?? "another class"} (${s2.startTime} – ${s2.endTime}).`;
+        const msg2 = `Section conflict: Overlaps with ${sub1?.code ?? "another class"} (${s1.startTime} – ${s1.endTime}).`;
+        if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "section", message: msg1 };
+        if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "section", message: msg2 };
+      }
+
+      // 2. Room conflict
+      if (s1.roomId && s1.roomId !== "online" && s1.roomId !== "field" && s1.roomId === s2.roomId) {
+        const room = rooms.find((r) => r.id === s1.roomId);
+        const roomName = room?.name ?? "Selected room";
+        const msg1 = `Room conflict: ${roomName} is already occupied by ${sub2?.code ?? "another class"} (${s2.startTime} – ${s2.endTime}).`;
+        const msg2 = `Room conflict: ${roomName} is already occupied by ${sub1?.code ?? "another class"} (${s1.startTime} – ${s1.endTime}).`;
+        if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
+        if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
+      }
+
+      // 3. Faculty conflict
+      if (s1.facultyId && s1.facultyId === s2.facultyId) {
+        const faculty = faculties.find((f) => f.id === s1.facultyId);
+        const facName = faculty?.name ?? "Assigned faculty";
+        const msg1 = `Faculty conflict: ${facName} is already teaching ${sub2?.code ?? "another class"} (${s2.startTime} – ${s2.endTime}).`;
+        const msg2 = `Faculty conflict: ${facName} is already teaching ${sub1?.code ?? "another class"} (${s1.startTime} – ${s1.endTime}).`;
+        if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "faculty", message: msg1 };
+        if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "faculty", message: msg2 };
+      }
+    }
+  }
+
+  return conflictMap;
+};
+
 export const useConflict = ({
   schedules,
   selectedSectionId,
@@ -44,6 +101,11 @@ export const useConflict = ({
   subjects,
   faculties
 }: UseConflictParams) => {
+  const conflictedMap = useMemo(
+    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
+    [schedules, subjects, rooms, faculties]
+  );
+
   const checkConflict = (
     subjectId: string,
     sectionId: string,
@@ -174,5 +236,5 @@ export const useConflict = ({
     return checkConflict(subjectId, selectedSectionId, null, "", d, t, dur, excludeId, prefPattern) !== null;
   };
 
-  return { checkConflict, checkFacultyConflict, getDragOverConflict };
+  return { checkConflict, checkFacultyConflict, getDragOverConflict, conflictedMap };
 };
