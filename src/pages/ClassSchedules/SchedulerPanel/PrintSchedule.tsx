@@ -293,6 +293,14 @@ export default function PrintSchedule({
         const isAdditionalMeeting = prevKey === itemKey;
         const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
 
+        const meetingBadge = item.meetingType === "laboratory"
+          ? " [Lab]"
+          : item.meetingType === "lecture"
+          ? " [Lec]"
+          : subjectMeetingCount > 1
+          ? ` [Split ${item.meetingIndex ?? (isAdditionalMeeting ? 2 : 1)}]`
+          : "";
+
         return [
         ...(isAdditionalMeeting ? [] : [
           {
@@ -309,7 +317,7 @@ export default function PrintSchedule({
         item.lectureUnits.toString(),
         item.laboratoryUnits.toString(),
         item.totalUnits.toString(),
-        item.day,
+        `${item.day}${meetingBadge}`,
         `${item.startTime} – ${item.endTime}`,
         item.roomName
         ];

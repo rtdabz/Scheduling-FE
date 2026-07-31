@@ -10,10 +10,22 @@ interface UseGenerateScheduleOptions {
   onAccepted?: (schedules?: ApiScheduleRecord[]) => void;
 }
 
-export const isValidPatternForApi = (pattern?: string | null): boolean => {
+export function isValidPatternForApi(pattern: string | null | undefined): boolean {
   if (!pattern) return false;
   if (pattern === "MW" || pattern === "TTh") return true;
-  return /^days:\d-\d$/.test(pattern);
+  return /^days:[0-6]-[0-6]$/.test(pattern);
+}
+
+export function isSyntheticSplitId(id: string | number | null | undefined): boolean {
+  if (id === null || id === undefined) return false;
+  const strId = String(id);
+  return strId.includes("-m") || strId.includes("-n") || strId.startsWith("temp-split-");
+}
+
+export function getCleanScheduleId(id: string | number | null | undefined): number | null {
+  if (isSyntheticSplitId(id)) return null;
+  const numId = Number(id);
+  return !isNaN(numId) && numId > 0 ? numId : null;
 };
 
 export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {

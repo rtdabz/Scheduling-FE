@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, Loader2, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, Loader2, MapPin, Monitor, Search, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
-import type { DeliveryMode, DropContext, Subject, Room, ScheduleStatus, Term } from "../types";
+import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Term } from "../types";
+import { getSubjectTotalSlots, getSubjectContactHours } from "../types";
 
 interface DropRecommendationRow {
   term_id: number;
@@ -37,8 +38,28 @@ interface SelectedRecommendationResponse {
   };
 }
 
+interface SplitSlotRecommendation {
+  rank: number;
+  score: number;
+  day: string;
+  start_time: string;
+  end_time: string;
+  room_id: number;
+  room_name: string;
+  room_type: string;
+  mode: DeliveryMode;
+}
+
+interface SplitRecommendResponse {
+  status: string;
+  message?: string;
+  recommendations: SplitSlotRecommendation[];
+}
+
 interface DropModalProps {
   rooms: Room[];
+  sections: Section[];
+  schedules: ScheduleItem[];
   selectedSectionId: string;
   activeTerm: Term | null;
   dropContext: DropContext | null;
@@ -134,6 +155,8 @@ const getRecommendationReason = (
 
 export default function DropModal({
   rooms,
+  sections,
+  schedules,
   selectedSectionId,
   activeTerm,
   dropContext,
@@ -180,6 +203,15 @@ export default function DropModal({
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
   const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
+
+  // Split-slot CSP search state — separate for first and second meetings.
+  const [splitRecs1, setSplitRecs1] = useState<SplitSlotRecommendation[]>([]);
+  const [splitRecs2, setSplitRecs2] = useState<SplitSlotRecommendation[]>([]);
+  const [isSplitSearching1, setIsSplitSearching1] = useState(false);
+  const [isSplitSearching2, setIsSplitSearching2] = useState(false);
+  const [splitSearchError1, setSplitSearchError1] = useState<string | null>(null);
+  const [splitSearchError2, setSplitSearchError2] = useState<string | null>(null);
+
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = useMemo(() => {
     const role = getStoredRole();
@@ -196,6 +228,10 @@ export default function DropModal({
       setRecommendationError(null);
       setAppliedRecommendationRank(null);
       setSelectedRecommendationId(null);
+      setSplitRecs1([]);
+      setSplitRecs2([]);
+      setSplitSearchError1(null);
+      setSplitSearchError2(null);
       closeButtonRef.current?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -266,11 +302,113 @@ export default function DropModal({
 
   if (!dropContext || !dropSubject) return null;
 
-  const FULL_DAYS: Record<string, string> = {
-    Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday",
-    Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday"
+  // Derive term_id and department_id from the selected section for the
+  // recommend-split endpoint. Both are available via the spreaded scheduler
+  // props (sections array and activeTerm).
+  const selectedSection = sections.find((s) => s.id === selectedSectionId);
+  const termId = activeTerm?.id ?? null;
+  const departmentId = selectedSection?.departmentId ?? null;
+
+  // Build the list of existing schedule IDs that are being replaced (delete_ids).
+  // These tell the Rule Engine to ignore them when checking conflicts.
+  const existingDeleteIds = dropContext.isRescheduling
+    ? schedules
+        .filter((s) => s.subjectId === dropSubject.id && s.sectionId === selectedSectionId)
+        .map((s) => Number(s.id))
+        .filter((id) => !Number.isNaN(id))
+    : [];
+
+  /**
+   * Call the Rule Engine + CSP backend to find the best conflict-free
+   * (day, time, room, mode) combinations for one split block.
+   */
+  const findBestSplitTime = useCallback(async (
+    meetingIndex: 1 | 2,
+    durationSlots: number,
+    currentRoomId: string,
+    currentMode: "on-site" | "online" | "field",
+  ) => {
+    if (!termId || !departmentId || !dropSubject) return;
+
+    const setSearching = meetingIndex === 1 ? setIsSplitSearching1 : setIsSplitSearching2;
+    const setResults   = meetingIndex === 1 ? setSplitRecs1 : setSplitRecs2;
+    const setError     = meetingIndex === 1 ? setSplitSearchError1 : setSplitSearchError2;
+
+    setSearching(true);
+    setError(null);
+    setResults([]);
+
+    try {
+      const roomIdNum = currentMode === "on-site" && currentRoomId && !Number.isNaN(Number(currentRoomId))
+        ? Number(currentRoomId)
+        : null;
+
+      const response = await api.post<SplitRecommendResponse>(
+        "/schedule-recommendations/recommend-split",
+        {
+          term_id:       termId,
+          section_id:    Number(selectedSectionId),
+          course_id:     Number(dropSubject.id),
+          department_id: departmentId,
+          duration_slots: durationSlots,
+          room_id:       roomIdNum,
+          mode:          dropSubjectIsField ? "field" : currentMode,
+          delete_ids:    existingDeleteIds,
+          max_solutions: 5,
+          timeout_seconds: 6,
+        }
+      );
+
+      if (response.data.status === "no_solution") {
+        setError("No conflict-free time found. Try a different room or mode.");
+      } else {
+        setResults(response.data.recommendations);
+      }
+    } catch {
+      setError("Could not search for a time slot. Please try again.");
+    } finally {
+      setSearching(false);
+    }
+  }, [termId, departmentId, dropSubject, selectedSectionId, dropSubjectIsField, existingDeleteIds]);
+
+  /**
+   * Apply a split-slot CSP recommendation to meeting 1 or 2.
+   */
+  const applySplitRec = (
+    rec: SplitSlotRecommendation,
+    meetingIndex: 1 | 2,
+  ) => {
+    discardSelectedRecommendation();
+    const startSlot = timeToSlot(rec.start_time);
+    const duration  = timeToSlot(rec.end_time) - startSlot;
+    const dayIndex  = getDayIndex(rec.day);
+
+    if (meetingIndex === 1) {
+      setModalDay1Index(dayIndex);
+      setModalDay1StartSlot(startSlot);
+      setModalDay1Duration(duration);
+      if (rec.mode === "on-site") setModalRoomId(String(rec.room_id));
+      setModalClassMode(rec.mode);
+      setSplitRecs1([]);
+      if (modalPreferredPattern !== null) {
+        setModalPreferredPattern(`days:${dayIndex}-${modalDay2Index}`);
+      }
+    } else {
+      setModalDay2Index(dayIndex);
+      setModalDay2StartSlot(startSlot);
+      setModalDay2Duration(duration);
+      if (rec.mode === "on-site") setModalDay2RoomId(String(rec.room_id));
+      setModalDay2ClassMode(rec.mode);
+      setIsDay2ModifiedByUser(true);
+      setSplitRecs2([]);
+      if (modalPreferredPattern !== null) {
+        setModalPreferredPattern(`days:${modalDay1Index}-${dayIndex}`);
+      }
+    }
   };
-  const totalSlots = dropSubject ? dropSubject.units * 2 : 0;
+
+  const totalSlots = getSubjectTotalSlots(dropSubject);
+  const totalContactHours = getSubjectContactHours(dropSubject);
   const isTwoMeetingPattern = !!modalPreferredPattern;
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
@@ -472,7 +610,7 @@ export default function DropModal({
                   <p className="mt-0.5 text-sm font-bold text-gray-800">{patternLabel}</p>
                   <p className="text-xs text-gray-500">
                     {slotToTimeStr(modalPreferredPattern ? modalDay1StartSlot : dropContext.startSlot)}
-                    {modalPreferredPattern ? ` · ${dropSubject.units} total hours` : `–${slotToTimeStr(dropContext.startSlot + dropSubject.units * 2)}`}
+                    {modalPreferredPattern ? ` · ${totalContactHours} total contact hrs (${dropSubject ? dropSubject.units : 3} units)` : `–${slotToTimeStr(dropContext.startSlot + totalSlots)}`}
                   </p>
                 </div>
                 <div className="col-span-2 flex items-center md:col-span-1 md:justify-end">
@@ -751,6 +889,48 @@ export default function DropModal({
                   </div>
                 </div>
               </div>
+
+              {/* Split CSP Slot Recommendations — First Meeting */}
+              {isTwoMeetingPattern && canUseRecommendations && (
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-[#C9952A]" />
+                      Intelligent Time Finder
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void findBestSplitTime(1, modalDay1Duration, modalRoomId, modalClassMode)}
+                      disabled={isSplitSearching1}
+                      className="flex items-center gap-1.5 text-xs font-bold text-[#4e0a10] border border-[#4e0a10]/30 rounded-lg px-2.5 py-1.5 bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSplitSearching1
+                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Searching…</>
+                        : <><Search className="w-3 h-3" /> Find best time</>}
+                    </button>
+                  </div>
+                  {splitSearchError1 && (
+                    <p className="text-xs text-red-500 mb-2">{splitSearchError1}</p>
+                  )}
+                  {splitRecs1.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {splitRecs1.map((rec) => (
+                        <button
+                          key={rec.rank}
+                          type="button"
+                          onClick={() => applySplitRec(rec, 1)}
+                          className="flex flex-col items-start gap-0.5 rounded-lg border border-[#4e0a10]/20 bg-[#4e0a10]/5 px-2.5 py-1.5 text-left hover:bg-[#4e0a10]/10 transition-colors"
+                        >
+                          <span className="text-xs font-extrabold text-[#4e0a10]">
+                            {rec.day}, {slotToTimeStr(timeToSlot(rec.start_time))}–{slotToTimeStr(timeToSlot(rec.end_time))}
+                          </span>
+                          <span className="text-[10px] text-gray-500">{rec.room_name} · {rec.mode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Second Meeting */}
@@ -927,8 +1107,50 @@ export default function DropModal({
                       <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
-                </div>
               </div>
+
+              {/* Split CSP Slot Recommendations — Second Meeting */}
+              {canUseRecommendations && (
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-[#C9952A]" />
+                      Intelligent Time Finder
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void findBestSplitTime(2, modalDay2Duration, modalDay2RoomId, modalDay2ClassMode)}
+                      disabled={isSplitSearching2}
+                      className="flex items-center gap-1.5 text-xs font-bold text-[#4e0a10] border border-[#4e0a10]/30 rounded-lg px-2.5 py-1.5 bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSplitSearching2
+                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Searching…</>
+                        : <><Search className="w-3 h-3" /> Find best time</>}
+                    </button>
+                  </div>
+                  {splitSearchError2 && (
+                    <p className="text-xs text-red-500 mb-2">{splitSearchError2}</p>
+                  )}
+                  {splitRecs2.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {splitRecs2.map((rec) => (
+                        <button
+                          key={rec.rank}
+                          type="button"
+                          onClick={() => applySplitRec(rec, 2)}
+                          className="flex flex-col items-start gap-0.5 rounded-lg border border-[#4e0a10]/20 bg-[#4e0a10]/5 px-2.5 py-1.5 text-left hover:bg-[#4e0a10]/10 transition-colors"
+                        >
+                          <span className="text-xs font-extrabold text-[#4e0a10]">
+                            {rec.day}, {slotToTimeStr(timeToSlot(rec.start_time))}–{slotToTimeStr(timeToSlot(rec.end_time))}
+                          </span>
+                          <span className="text-[10px] text-gray-500">{rec.room_name} · {rec.mode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-200 rounded-xl bg-gray-50/30 text-gray-400">
                 <CalendarDays className="w-8 h-8 mb-2 opacity-50" />
@@ -943,7 +1165,7 @@ export default function DropModal({
                   ? "bg-[#4e0a10]/5 border-[#4e0a10]/10 text-[#4e0a10]"
                   : "bg-amber-50 border-amber-200 text-amber-800"
               }`}>
-                <span>Total Contact Hours: {dropSubject.units} hours ({totalSlots} slots)</span>
+                <span>Total Contact Hours: {totalContactHours} hours ({totalSlots} slots) · Academic Credit: {dropSubject ? dropSubject.units : 3} Units</span>
                 <span className={`ml-auto font-black px-2 py-0.5 rounded-full border ${
                   durationTotalMatches
                     ? "text-emerald-700 bg-emerald-50 border-emerald-200"

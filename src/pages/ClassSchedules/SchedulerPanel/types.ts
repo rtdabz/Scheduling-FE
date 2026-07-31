@@ -55,6 +55,21 @@ export interface Course {
 }
 export type Subject = Course; // Legacy alias
 
+export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
+  if (!subject) return 0;
+  const lec = Number(subject.lectureHours ?? 0);
+  const lab = Number(subject.labHours ?? 0);
+  if (lec > 0 || lab > 0) {
+    const labContactHours = lab > 0 ? (lab <= 2 ? lab * 3 : lab) : 0;
+    return (lec + labContactHours) * 2;
+  }
+  return Math.round(Number(subject.units ?? 3) * 2);
+};
+
+export const getSubjectContactHours = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
+  return getSubjectTotalSlots(subject) * 0.5;
+};
+
 export interface Section {
   id: string;
   name: string;
@@ -115,6 +130,9 @@ export interface ScheduleItem {
   roomId: string;
   isHybrid?: boolean;
   preferredPattern?: string | null;
+  splitGroupId?: string | null;
+  meetingType?: "lecture" | "laboratory" | null;
+  meetingIndex?: number;
 }
 
 export interface DepartmentSectionProgress {
@@ -233,6 +251,9 @@ export interface ApiScheduleRecord {
   status: ScheduleStatus;
   is_hybrid?: boolean | number;
   preferred_pattern?: string | null;
+  split_group_id?: string | null;
+  meeting_type?: "lecture" | "laboratory" | null;
+  meeting_index?: number;
   course?: {
     course_code?: string;
     subject_code?: string;

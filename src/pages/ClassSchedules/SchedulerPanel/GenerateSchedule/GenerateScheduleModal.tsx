@@ -36,6 +36,9 @@ interface SplitOperation {
   preferred_pattern: string | null;
   status: string;
   faculty_id?: number | null;
+  split_group_id?: string | null;
+  meeting_type?: "lecture" | "laboratory" | null;
+  meeting_index?: number;
 }
 
 interface ResolvedSplitState {
@@ -107,12 +110,16 @@ const isPathfitOrNstp = (course: { code?: string; name?: string }): boolean => {
   const text = `${course.code || ""} ${course.name || ""}`.toLowerCase();
   return (
     text.includes("pathfit") ||
+    text.includes("path fit") ||
+    text.includes("path-fit") ||
     text.includes("nstp") ||
     text.includes("rotc") ||
     text.includes("cwts") ||
     text.includes("lts") ||
     text.includes("physical education") ||
-    text.includes("national service")
+    text.includes("national service") ||
+    /\bpe\b/.test(text) ||
+    /\bpe[1-4]\b/.test(text)
   );
 };
 
@@ -355,13 +362,13 @@ export default function GenerateScheduleModal({
           item.course?.lecture_hours ?? item.subject?.lecture_hours ?? 0
         );
 
-        // Per CHED/TCC scheduling policy:
-        //   1 lecture unit  = 1 clock hour  = 2 × 30-min slots
-        //   1 laboratory unit = 3 clock hours = 6 × 30-min slots
-        // e.g. LEC=2, LAB=1 → lecSlots=4 (2 hrs), labSlots=6 (3 hrs)
         const hasLab = rawLabHours > 0;
+        const groupId =
+          item.split_group_id ||
+          (typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `split-${item.id}-${Date.now()}`);
 
-        // Major courses may be scheduled Mon–Sat; Sunday requires online mode.
         const MAJOR_DAYS = [
           "Monday",
           "Tuesday",
@@ -375,14 +382,10 @@ export default function GenerateScheduleModal({
         const secondDay = MAJOR_DAYS[(baseDayIdx + 2) % MAJOR_DAYS.length];
 
         if (hasLab) {
-          // 1 lab unit × 3 clock hrs/unit × 2 slots/hr = 6 slots per lab unit.
           const labSlots = Math.max(4, Math.round(rawLabHours * 6));
-          // 1 lec unit × 1 clock hr/unit × 2 slots/hr = 2 slots per lec unit.
           const lecSlots =
             rawLecHours > 0 ? Math.max(2, Math.round(rawLecHours * 2)) : 4;
 
-          // Session −m1: Lecture on original day.
-          // Session −m2: Laboratory on next valid day.
           transformed.push(
             {
               ...item,
@@ -390,6 +393,9 @@ export default function GenerateScheduleModal({
               start_time: slotToTime24h(startSlot),
               end_time: slotToTime24h(Math.min(28, startSlot + lecSlots)),
               preferred_pattern: null,
+              split_group_id: groupId,
+              meeting_type: "lecture",
+              meeting_index: 1,
             },
             {
               ...item,
@@ -398,10 +404,12 @@ export default function GenerateScheduleModal({
               start_time: slotToTime24h(startSlot),
               end_time: slotToTime24h(Math.min(28, startSlot + labSlots)),
               preferred_pattern: null,
+              split_group_id: groupId,
+              meeting_type: "laboratory",
+              meeting_index: 2,
             }
           );
         } else {
-          // Pure lecture-only course: split evenly across two days.
           const totalLecSlots =
             rawLecHours > 0
               ? Math.max(2, Math.round(rawLecHours * 2))
@@ -415,6 +423,9 @@ export default function GenerateScheduleModal({
               start_time: slotToTime24h(startSlot),
               end_time: slotToTime24h(Math.min(28, startSlot + halfSlots)),
               preferred_pattern: null,
+              split_group_id: groupId,
+              meeting_type: "lecture",
+              meeting_index: 1,
             },
             {
               ...item,
@@ -423,11 +434,13 @@ export default function GenerateScheduleModal({
               start_time: slotToTime24h(startSlot),
               end_time: slotToTime24h(Math.min(28, startSlot + halfSlots)),
               preferred_pattern: null,
+              split_group_id: groupId,
+              meeting_type: "lecture",
+              meeting_index: 2,
             }
           );
         }
       } else if (isMinorSplitTarget) {
-        // Minor courses must stay Mon–Fri (Rule Engine: minor_day_constraint).
         const MINOR_DAYS = [
           "Monday",
           "Tuesday",
@@ -438,8 +451,12 @@ export default function GenerateScheduleModal({
         const dayIdx = MINOR_DAYS.indexOf(item.day);
         const baseDayIdx = dayIdx >= 0 ? dayIdx : 0;
         const secondDay = MINOR_DAYS[(baseDayIdx + 2) % MINOR_DAYS.length];
-        // Minor split = 3 slots = 1.5 hours per session.
         const blockSlots = 3;
+        const groupId =
+          item.split_group_id ||
+          (typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `split-${item.id}-${Date.now()}`);
 
         transformed.push(
           {
@@ -448,6 +465,9 @@ export default function GenerateScheduleModal({
             start_time: slotToTime24h(startSlot),
             end_time: slotToTime24h(Math.min(28, startSlot + blockSlots)),
             preferred_pattern: null,
+            split_group_id: groupId,
+            meeting_type: "lecture",
+            meeting_index: 1,
           },
           {
             ...item,
@@ -456,6 +476,9 @@ export default function GenerateScheduleModal({
             start_time: slotToTime24h(startSlot),
             end_time: slotToTime24h(Math.min(28, startSlot + blockSlots)),
             preferred_pattern: null,
+            split_group_id: groupId,
+            meeting_type: "lecture",
+            meeting_index: 2,
           }
         );
       } else {
@@ -539,6 +562,9 @@ export default function GenerateScheduleModal({
           ? s.preferred_pattern
           : null,
         status: s.status || "draft",
+        split_group_id: s.split_group_id ?? null,
+        meeting_type: s.meeting_type ?? null,
+        meeting_index: s.meeting_index ?? 1,
       };
       if (s.faculty_id) op.faculty_id = Number(s.faculty_id);
       return op;

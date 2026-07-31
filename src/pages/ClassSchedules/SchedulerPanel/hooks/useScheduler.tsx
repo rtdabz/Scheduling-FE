@@ -29,6 +29,7 @@ import type {
   Term,
   UserSummary
 } from "../types";
+import { getSubjectTotalSlots, getSubjectContactHours } from "../types";
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
@@ -220,7 +221,10 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     sectionId: item.section_id.toString(),
     roomId: roomIdStr,
     isHybrid: !!item.is_hybrid,
-    preferredPattern: item.preferred_pattern ?? null
+    preferredPattern: item.preferred_pattern ?? null,
+    splitGroupId: item.split_group_id ?? null,
+    meetingType: item.meeting_type ?? null,
+    meetingIndex: item.meeting_index ?? 1
   };
 };
 
@@ -825,7 +829,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const name = dropSubject.name.toUpperCase();
     const category = String(dropSubject.category || "").toLowerCase();
     if (["pathfit", "nstp", "rotc", "cwts"].includes(category)) return true;
-    return ["PATHFIT", "NSTP", "ROTC", "CWTS"].some(
+    return ["PATHFIT", "PATH FIT", "PATH-FIT", "NSTP", "ROTC", "CWTS", "PE"].some(
       (kw) => code.includes(kw) || name.includes(kw)
     );
   }, [dropSubject]);
@@ -890,7 +894,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (dropContext) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
       const isFieldSubject = subject?.roomTypeRequired === "field";
-      const totalSlots = subject ? subject.units * 2 : 0;
+      const totalSlots = getSubjectTotalSlots(subject);
 
       if (isFieldSubject) {
         setModalClassMode("field");
@@ -1078,7 +1082,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
           ? schedules.filter(s => s.subjectId === subject.id && s.sectionId === selectedSectionId).map(s => s.id)
           : [];
 
-        const totalSlots = subject.units * 2;
+        const totalSlots = getSubjectTotalSlots(subject);
         const d1 = modalDay1Duration;
         const d2 = modalDay2Duration;
         const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
@@ -1201,7 +1205,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const subject = subjects.find((s) => s.id === dropContext.subjectId);
     if (!subject) return;
 
-    const totalSlots = subject.units * 2;
+    const totalSlots = getSubjectTotalSlots(subject);
+    const contactHours = getSubjectContactHours(subject);
     const d1 = modalDay1Duration;
     const d2 = modalPreferredPattern ? modalDay2Duration : 0;
     const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
@@ -1213,7 +1218,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     const usesFullDurationMeetings = patternDays && d1 === totalSlots && d2 === totalSlots;
     if (patternDays && d1 + d2 !== totalSlots && !usesFullDurationMeetings) {
-      setModalValidationError(`Combined meeting durations must equal ${dropSubject?.units ?? subject.units} hours.`);
+      setModalValidationError(`Combined meeting durations must equal ${contactHours} hours.`);
       return;
     }
 
@@ -1336,6 +1341,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
         ? schedules.filter((s) => s.subjectId === subject.id && s.sectionId === selectedSectionId)
         : [];
 
+      const sharedSplitGroupId = targetDays.length > 1
+        ? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `split-${subject.id}-${Date.now()}`)
+        : (existingRecords[0]?.splitGroupId ?? null);
+
       const operations = targetDays.map((targetDay, index) => ({
         ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
         term_id: activeTerm.id,
@@ -1350,6 +1359,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
         mode: index === 0 ? modalClassMode : modalDay2ClassMode,
         is_hybrid: false,
         preferred_pattern: modalPreferredPattern,
+        split_group_id: sharedSplitGroupId,
+        meeting_type: targetDays.length > 1 ? (index === 0 ? "lecture" : "laboratory") : "lecture",
+        meeting_index: index + 1,
         status: existingRecords[index]?.status ?? "draft"
       }));
 
@@ -1455,21 +1467,28 @@ departmentSectionProgress.every((section) => section.status === "completed");
         return;
       }
 
-      if (target.preferredPattern) {
+      if (target.splitGroupId || target.preferredPattern) {
         const linked = schedules.filter(
-          s => s.subjectId === target.subjectId &&
-               s.sectionId === target.sectionId &&
-               s.preferredPattern === target.preferredPattern &&
-               !isNaN(Number(s.id))
+          s => (target.splitGroupId ? s.splitGroupId === target.splitGroupId : (
+                 s.subjectId === target.subjectId &&
+                 s.sectionId === target.sectionId &&
+                 s.preferredPattern === target.preferredPattern
+               )) && !isNaN(Number(s.id))
         );
         if (linked.length > 0) {
-          await Promise.allSettled(linked.map(s => api.delete(`/schedules/${s.id}`)));
+          await api.delete(`/schedules/${target.id}?delete_group=true`);
+          const linkedIds = new Set(linked.map(s => s.id));
+          setSchedules((prev) => prev.filter((s) => !linkedIds.has(s.id)));
+          toast.success("Split Schedule Removed", "All linked split meetings removed.");
+          await refreshSchedules();
+          return;
         }
-      } else {
-        await api.delete(`/schedules/${target.id}`);
       }
+
+      await api.delete(`/schedules/${target.id}`);
       setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
       toast.success("Schedule Removed", "Class schedule successfully removed.");
+      await refreshSchedules();
       await refreshSchedules();
     } catch (err) {
       console.error(err);

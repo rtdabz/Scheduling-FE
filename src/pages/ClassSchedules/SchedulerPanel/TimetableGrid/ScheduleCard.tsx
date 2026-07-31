@@ -57,7 +57,16 @@ const ScheduleCard = memo(function ScheduleCard({
   const canAssignFaculty = isPhase2Active && currentStatus !== "finalized";
   const isAwaitingFaculty = canAssignFaculty && !hasFaculty;
   const isFacultyAssigned = isPhase2Active && hasFaculty;
-  const roomDisplayName = (room?.name ?? schedule.roomName) || "Unassigned Room";
+  const rawRoomName = (room?.name ?? schedule.roomName ?? "").trim();
+  const isVirtualOrField = schedule.mode === "online" || schedule.mode === "field";
+  const isRedundantRoomName =
+    isVirtualOrField ||
+    !rawRoomName ||
+    rawRoomName.toLowerCase() === modeLabel.toLowerCase() ||
+    rawRoomName.toLowerCase() === "online" ||
+    rawRoomName.toLowerCase() === "field" ||
+    rawRoomName.toLowerCase() === "unassigned room";
+  const roomDisplayName = isRedundantRoomName ? "" : rawRoomName;
 
   const isCompact = schedule.durationSlots <= 2; // 1 hour (38px)
   const isMedium = schedule.durationSlots === 3;  // 1.5 hours (57px)
@@ -119,8 +128,8 @@ const ScheduleCard = memo(function ScheduleCard({
           <div className="flex items-center gap-2">
             <MapPin className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
             <span className="truncate">
-              <strong className="text-slate-200">Room: </strong>
-              {roomDisplayName}
+              <strong className="text-slate-200">Location: </strong>
+              {isRedundantRoomName ? modeLabel : roomDisplayName}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -202,12 +211,12 @@ const ScheduleCard = memo(function ScheduleCard({
 
       <div className="flex flex-col h-full justify-between min-w-0">
         {isCompact ? (
-          <div className="flex flex-col justify-between h-full min-w-0 pr-4">
-            <div className="flex items-center justify-between gap-1">
-              <span className={`text-[10px] font-black uppercase tracking-wide truncate ${gridStyles.text}`} title={subject.code}>
+          <div className="flex flex-col justify-between h-full min-w-0">
+            <div className="flex items-center justify-between gap-1 min-w-0">
+              <span className={`text-[10px] font-black uppercase tracking-tight truncate min-w-0 flex-1 ${gridStyles.text}`} title={subject.code}>
                 {subject.code}
               </span>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-0.5 shrink-0">
                 {schedule.isHybrid ? (
                   <span className="text-[7px] rounded px-1 py-0.2 font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
                     Hybrid
@@ -223,14 +232,18 @@ const ScheduleCard = memo(function ScheduleCard({
               </div>
             </div>
             <div className="flex items-center justify-between text-[8.5px] text-slate-500 truncate mt-0.5 gap-1">
-              <span className="truncate font-semibold">{roomDisplayName}</span>
-              <span className="shrink-0 text-slate-400 font-semibold">{schedule.startTime}</span>
+              {roomDisplayName ? (
+                <span className="truncate font-semibold">{roomDisplayName}</span>
+              ) : null}
+              <span className={`shrink-0 text-slate-400 font-semibold ${!roomDisplayName ? "ml-auto" : ""}`}>
+                {schedule.startTime}
+              </span>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col h-full justify-between min-w-0 pr-4">
-            <div className="flex items-center justify-between gap-1">
-              <span className={`text-[11px] font-black uppercase tracking-wide truncate ${gridStyles.text}`} title={subject.code}>
+          <div className="flex flex-col h-full justify-between min-w-0">
+            <div className="flex items-center justify-between gap-1 min-w-0">
+              <span className={`text-[11px] font-black uppercase tracking-tight truncate min-w-0 flex-1 ${gridStyles.text}`} title={subject.code}>
                 {subject.code}
               </span>
               <div className="flex items-center gap-1 shrink-0">
@@ -239,19 +252,21 @@ const ScheduleCard = memo(function ScheduleCard({
                     Hybrid
                   </span>
                 ) : (
-                  <span className={`text-[8px] rounded px-1.5 py-0.5 font-bold shrink-0 ${modeBadgeClass}`}>
+                  <span className={`text-[8px] rounded px-1 py-0.5 font-bold shrink-0 ${modeBadgeClass}`}>
                     {modeLabel}
                   </span>
                 )}
-                <span className={`text-[8.5px] px-1 rounded font-bold shrink-0 ${gridStyles.badgeText}`}>
+                <span className={`text-[8.5px] px-1 py-0.5 rounded font-bold shrink-0 ${gridStyles.badgeText}`}>
                   {subject.units}u
                 </span>
               </div>
             </div>
             
-            <div className="text-[10px] text-slate-600 font-semibold truncate mt-1">
-              {roomDisplayName}
-            </div>
+            {roomDisplayName ? (
+              <div className="text-[10px] text-slate-600 font-semibold truncate mt-0.5">
+                {roomDisplayName}
+              </div>
+            ) : null}
             
             <div className="text-[9.5px] text-slate-500 font-medium truncate mt-auto leading-none pt-0.5">
               {schedule.startTime} – {schedule.endTime}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Faculty, Room, ScheduleItem, Subject } from "../types";
+import { getSubjectTotalSlots } from "../types";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
@@ -227,7 +228,7 @@ export const useConflict = ({
     } else if (dragSubjectId) {
       const sub = subjects.find((s) => s.id === dragSubjectId);
       if (!sub) return false;
-      dur = sub.units * 2;
+      dur = getSubjectTotalSlots(sub);
       subjectId = sub.id;
     } else {
       return false;
