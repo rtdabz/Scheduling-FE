@@ -61,10 +61,6 @@ interface GenerateScheduleModalProps {
   allCourses?: Course[];
   preferredTimeBlock?: TimeBlockOption;
   setPreferredTimeBlock?: (val: TimeBlockOption) => void;
-  splitMajorEnabled?: boolean;
-  setSplitMajorEnabled?: (val: boolean) => void;
-  selectedMajorCourseIds?: string[];
-  setSelectedMajorCourseIds?: React.Dispatch<React.SetStateAction<string[]>>;
   splitMinorEnabled?: boolean;
   setSplitMinorEnabled?: (val: boolean) => void;
   selectedMinorCourseIds?: string[];
@@ -138,10 +134,6 @@ export default function GenerateScheduleModal({
   allCourses = [],
   preferredTimeBlock: propPreferredTimeBlock,
   setPreferredTimeBlock: propSetPreferredTimeBlock,
-  splitMajorEnabled: propSplitMajorEnabled,
-  setSplitMajorEnabled: propSetSplitMajorEnabled,
-  selectedMajorCourseIds: propSelectedMajorCourseIds,
-  setSelectedMajorCourseIds: propSetSelectedMajorCourseIds,
   splitMinorEnabled: propSplitMinorEnabled,
   setSplitMinorEnabled: propSetSplitMinorEnabled,
   selectedMinorCourseIds: propSelectedMinorCourseIds,
@@ -152,8 +144,6 @@ export default function GenerateScheduleModal({
 }: GenerateScheduleModalProps) {
   // ── Local fallback state (when props are not wired from parent) ──
   const [internalTimeBlock, setInternalTimeBlock] = useState<TimeBlockOption>("flexible");
-  const [internalSplitMajorEnabled, setInternalSplitMajorEnabled] = useState(false);
-  const [internalSelectedMajorCourseIds, setInternalSelectedMajorCourseIds] = useState<string[]>([]);
   const [internalSplitMinorEnabled, setInternalSplitMinorEnabled] = useState(false);
   const [internalSelectedMinorCourseIds, setInternalSelectedMinorCourseIds] = useState<string[]>([]);
 
@@ -165,10 +155,6 @@ export default function GenerateScheduleModal({
 
   const preferredTimeBlock = propPreferredTimeBlock ?? internalTimeBlock;
   const setPreferredTimeBlock = propSetPreferredTimeBlock ?? setInternalTimeBlock;
-  const splitMajorEnabled = propSplitMajorEnabled ?? internalSplitMajorEnabled;
-  const setSplitMajorEnabled = propSetSplitMajorEnabled ?? setInternalSplitMajorEnabled;
-  const selectedMajorCourseIds = propSelectedMajorCourseIds ?? internalSelectedMajorCourseIds;
-  const setSelectedMajorCourseIds = propSetSelectedMajorCourseIds ?? setInternalSelectedMajorCourseIds;
   const splitMinorEnabled = propSplitMinorEnabled ?? internalSplitMinorEnabled;
   const setSplitMinorEnabled = propSetSplitMinorEnabled ?? setInternalSplitMinorEnabled;
   const selectedMinorCourseIds = propSelectedMinorCourseIds ?? internalSelectedMinorCourseIds;
@@ -218,10 +204,7 @@ export default function GenerateScheduleModal({
     return Array.from(map.values());
   }, [availableCourses, allCourses, baseSchedules]);
 
-  const majorCourses = useMemo(
-    () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) => c.category === "major"),
-    [availableCourses, allSectionCourses]
-  );
+
 
   const eligibleMinorCourses = useMemo(
     () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) => c.category === "minor" && !isPathfitOrNstp(c)),
@@ -238,11 +221,7 @@ export default function GenerateScheduleModal({
   }, [isOpen, sectionId, baseSchedules.length, isGenerating, onGenerate]);
 
   // ── Toggle helpers ──
-  const toggleSelectAllMajors = useCallback(() => {
-    setSelectedMajorCourseIds((prev) =>
-      prev.length === majorCourses.length ? [] : majorCourses.map((c) => c.id)
-    );
-  }, [majorCourses, setSelectedMajorCourseIds]);
+
 
   const toggleSelectAllMinors = useCallback(() => {
     setSelectedMinorCourseIds((prev) =>
@@ -252,13 +231,7 @@ export default function GenerateScheduleModal({
     );
   }, [eligibleMinorCourses, setSelectedMinorCourseIds]);
 
-  const toggleMajorCourse = useCallback(
-    (id: string) =>
-      setSelectedMajorCourseIds((prev) =>
-        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-      ),
-    [setSelectedMajorCourseIds]
-  );
+
 
   const toggleMinorCourse = useCallback(
     (id: string) =>
@@ -276,7 +249,7 @@ export default function GenerateScheduleModal({
     if (!baseSchedules || baseSchedules.length === 0) return [];
 
     let targetMinSlot = 0;
-    let targetMaxSlot = 28;
+    let targetMaxSlot = 24;
     if (preferredTimeBlock === "morning") {
       targetMinSlot = 0;
       targetMaxSlot = 10;
@@ -285,7 +258,7 @@ export default function GenerateScheduleModal({
       targetMaxSlot = 20;
     } else if (preferredTimeBlock === "evening") {
       targetMinSlot = 20;
-      targetMaxSlot = 28;
+      targetMaxSlot = 24;
     }
 
     const transformed: ApiScheduleRecord[] = [];
@@ -297,30 +270,22 @@ export default function GenerateScheduleModal({
         (c) =>
           c.id === courseIdStr ||
           c.code.toLowerCase() ===
-            (
-              item.course?.course_code ||
-              item.subject?.course_code ||
-              ""
-            ).toLowerCase()
+          (
+            item.course?.course_code ||
+            item.subject?.course_code ||
+            ""
+          ).toLowerCase()
       );
 
-      const isMajor = courseMatch
-        ? courseMatch.category === "major"
-        : (item.course?.course_category || item.subject?.course_category) ===
-          "major";
       const isMinor = courseMatch
         ? courseMatch.category === "minor"
         : (item.course?.course_category || item.subject?.course_category) ===
-          "minor";
+        "minor";
 
-      const isSelectedMajor =
-        selectedMajorCourseIds.includes(courseIdStr) ||
-        (courseMatch ? selectedMajorCourseIds.includes(courseMatch.id) : false);
       const isSelectedMinor =
         selectedMinorCourseIds.includes(courseIdStr) ||
         (courseMatch ? selectedMinorCourseIds.includes(courseMatch.id) : false);
 
-      const isMajorSplitTarget = splitMajorEnabled && isMajor && isSelectedMajor;
       const isMinorSplitTarget =
         splitMinorEnabled &&
         isMinor &&
@@ -354,93 +319,7 @@ export default function GenerateScheduleModal({
         }
       }
 
-      if (isMajorSplitTarget) {
-        const rawLabHours = Number(
-          item.course?.lab_hours ?? item.subject?.lab_hours ?? 0
-        );
-        const rawLecHours = Number(
-          item.course?.lecture_hours ?? item.subject?.lecture_hours ?? 0
-        );
-
-        const hasLab = rawLabHours > 0;
-        const groupId =
-          item.split_group_id ||
-          (typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `split-${item.id}-${Date.now()}`);
-
-        const MAJOR_DAYS = [
-          "Monday",
-          "Tuesday",
-          "Wednesday",
-          "Thursday",
-          "Friday",
-          "Saturday",
-        ];
-        const dayIdx = MAJOR_DAYS.indexOf(item.day);
-        const baseDayIdx = dayIdx >= 0 ? dayIdx : 0;
-        const secondDay = MAJOR_DAYS[(baseDayIdx + 2) % MAJOR_DAYS.length];
-
-        if (hasLab) {
-          const labSlots = Math.max(4, Math.round(rawLabHours * 6));
-          const lecSlots =
-            rawLecHours > 0 ? Math.max(2, Math.round(rawLecHours * 2)) : 4;
-
-          transformed.push(
-            {
-              ...item,
-              id: `${item.id}-m1`,
-              start_time: slotToTime24h(startSlot),
-              end_time: slotToTime24h(Math.min(28, startSlot + lecSlots)),
-              preferred_pattern: null,
-              split_group_id: groupId,
-              meeting_type: "lecture",
-              meeting_index: 1,
-            },
-            {
-              ...item,
-              id: `${item.id}-m2`,
-              day: secondDay,
-              start_time: slotToTime24h(startSlot),
-              end_time: slotToTime24h(Math.min(28, startSlot + labSlots)),
-              preferred_pattern: null,
-              split_group_id: groupId,
-              meeting_type: "laboratory",
-              meeting_index: 2,
-            }
-          );
-        } else {
-          const totalLecSlots =
-            rawLecHours > 0
-              ? Math.max(2, Math.round(rawLecHours * 2))
-              : Math.max(2, durationSlots);
-          const halfSlots = Math.max(2, Math.ceil(totalLecSlots / 2));
-
-          transformed.push(
-            {
-              ...item,
-              id: `${item.id}-m1`,
-              start_time: slotToTime24h(startSlot),
-              end_time: slotToTime24h(Math.min(28, startSlot + halfSlots)),
-              preferred_pattern: null,
-              split_group_id: groupId,
-              meeting_type: "lecture",
-              meeting_index: 1,
-            },
-            {
-              ...item,
-              id: `${item.id}-m2`,
-              day: secondDay,
-              start_time: slotToTime24h(startSlot),
-              end_time: slotToTime24h(Math.min(28, startSlot + halfSlots)),
-              preferred_pattern: null,
-              split_group_id: groupId,
-              meeting_type: "lecture",
-              meeting_index: 2,
-            }
-          );
-        }
-      } else if (isMinorSplitTarget) {
+      if (isMinorSplitTarget) {
         const MINOR_DAYS = [
           "Monday",
           "Tuesday",
@@ -463,7 +342,7 @@ export default function GenerateScheduleModal({
             ...item,
             id: `${item.id}-n1`,
             start_time: slotToTime24h(startSlot),
-            end_time: slotToTime24h(Math.min(28, startSlot + blockSlots)),
+            end_time: slotToTime24h(Math.min(24, startSlot + blockSlots)),
             preferred_pattern: null,
             split_group_id: groupId,
             meeting_type: "lecture",
@@ -474,7 +353,7 @@ export default function GenerateScheduleModal({
             id: `${item.id}-n2`,
             day: secondDay,
             start_time: slotToTime24h(startSlot),
-            end_time: slotToTime24h(Math.min(28, startSlot + blockSlots)),
+            end_time: slotToTime24h(Math.min(24, startSlot + blockSlots)),
             preferred_pattern: null,
             split_group_id: groupId,
             meeting_type: "lecture",
@@ -497,8 +376,6 @@ export default function GenerateScheduleModal({
   }, [
     baseSchedules,
     preferredTimeBlock,
-    splitMajorEnabled,
-    selectedMajorCourseIds,
     splitMinorEnabled,
     selectedMinorCourseIds,
     allSectionCourses,
@@ -513,7 +390,7 @@ export default function GenerateScheduleModal({
     () =>
       candidateSchedules.some(
         (s) =>
-          String(s.id).includes("-m") || String(s.id).includes("-n")
+          String(s.id).includes("-n")
       ),
     [candidateSchedules]
   );
@@ -559,7 +436,7 @@ export default function GenerateScheduleModal({
         mode: s.mode || "on-site",
         is_hybrid: !!s.is_hybrid,
         preferred_pattern: isValidPatternForApi(s.preferred_pattern)
-          ? s.preferred_pattern
+          ? (s.preferred_pattern ?? null)
           : null,
         status: s.status || "draft",
         split_group_id: s.split_group_id ?? null,
@@ -682,7 +559,7 @@ export default function GenerateScheduleModal({
         (c) =>
           c.id === courseIdStr ||
           (c.code && (item.course?.course_code || item.subject?.course_code || "") &&
-           c.code.toLowerCase() === (item.course?.course_code || item.subject?.course_code || "").toLowerCase())
+            c.code.toLowerCase() === (item.course?.course_code || item.subject?.course_code || "").toLowerCase())
       );
 
       const code =
@@ -703,7 +580,7 @@ export default function GenerateScheduleModal({
         item.subject?.course_category ||
         "minor";
       const isMajor = category === "major";
-      const room = item.room ? item.room.room_code : "Assigned Room";
+      const room = item.room?.room_code || "Assigned Room";
       const faculty = item.faculty
         ? `${item.faculty.first_name || ""} ${item.faculty.last_name || ""}`.trim()
         : "Unassigned";
@@ -857,8 +734,8 @@ export default function GenerateScheduleModal({
                 {progressStep === "generating"
                   ? "Running Rule Engine & CSP Solver..."
                   : progressStep === "constraints"
-                  ? "Verifying room, faculty & time slot constraints..."
-                  : "Preparing interactive candidate preview..."}
+                    ? "Verifying room, faculty & time slot constraints..."
+                    : "Preparing interactive candidate preview..."}
               </p>
               <div className="w-64 bg-slate-200/80 rounded-full h-1.5 overflow-hidden mt-5 shadow-inner">
                 <div
@@ -868,8 +745,8 @@ export default function GenerateScheduleModal({
                       progressStep === "generating"
                         ? "35%"
                         : progressStep === "constraints"
-                        ? "70%"
-                        : "95%",
+                          ? "70%"
+                          : "95%",
                   }}
                 />
               </div>
@@ -879,8 +756,8 @@ export default function GenerateScheduleModal({
                   {progressStep === "generating"
                     ? "Step 1/3: CSP Solver"
                     : progressStep === "constraints"
-                    ? "Step 2/3: Applying Rules"
-                    : "Step 3/3: Building Preview"}
+                      ? "Step 2/3: Applying Rules"
+                      : "Step 3/3: Building Preview"}
                 </span>
               </div>
             </div>
@@ -922,7 +799,7 @@ export default function GenerateScheduleModal({
                       Biased: {preferredTimeBlock}
                     </span>
                   )}
-                  {(splitMajorEnabled || splitMinorEnabled) && (
+                  {splitMinorEnabled && (
                     <span className="text-[11px] font-semibold px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-md">
                       Splitting Active
                     </span>
@@ -1005,13 +882,12 @@ export default function GenerateScheduleModal({
                     return (
                       <div
                         key={index}
-                        className={`p-3.5 rounded-xl border transition-all duration-150 hover:shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          splitValidating
+                        className={`p-3.5 rounded-xl border transition-all duration-150 hover:shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${splitValidating
                             ? "opacity-60 animate-pulse"
                             : isMajor
-                            ? "bg-blue-50/40 border-blue-200/70 hover:border-blue-300"
-                            : "bg-purple-50/40 border-purple-200/70 hover:border-purple-300"
-                        }`}
+                              ? "bg-blue-50/40 border-blue-200/70 hover:border-blue-300"
+                              : "bg-purple-50/40 border-purple-200/70 hover:border-purple-300"
+                          }`}
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -1019,11 +895,10 @@ export default function GenerateScheduleModal({
                               {item.code}
                             </span>
                             <span
-                              className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md border ${
-                                isMajor
+                              className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md border ${isMajor
                                   ? "bg-blue-100 text-blue-800 border-blue-300"
                                   : "bg-purple-100 text-purple-800 border-purple-300"
-                              }`}
+                                }`}
                             >
                               {item.category}
                             </span>
@@ -1086,10 +961,10 @@ export default function GenerateScheduleModal({
                   {isApplying
                     ? "Applying schedule to grid..."
                     : splitValidating
-                    ? "Validating split sessions for conflicts…"
-                    : hasUnresolvableConflict
-                    ? "Resolve all conflicts before applying."
-                    : "Review the preview above before placing onto the grid."}
+                      ? "Validating split sessions for conflicts…"
+                      : hasUnresolvableConflict
+                        ? "Resolve all conflicts before applying."
+                        : "Review the preview above before placing onto the grid."}
                 </p>
                 <div className="flex items-center gap-3 ml-auto">
                   <button
@@ -1180,24 +1055,21 @@ export default function GenerateScheduleModal({
                         onClick={() =>
                           setPreferredTimeBlock(option.id as TimeBlockOption)
                         }
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                          isSelected
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${isSelected
                             ? "bg-[#4e0a10]/5 border-[#4e0a10] ring-1 ring-[#4e0a10] text-[#4e0a10]"
                             : "bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <IconComponent
-                            className={`w-3.5 h-3.5 ${
-                              isSelected ? "text-[#4e0a10]" : "text-slate-400"
-                            }`}
+                            className={`w-3.5 h-3.5 ${isSelected ? "text-[#4e0a10]" : "text-slate-400"
+                              }`}
                           />
                           <span
-                            className={`w-3 h-3 rounded-full border flex items-center justify-center ${
-                              isSelected
+                            className={`w-3 h-3 rounded-full border flex items-center justify-center ${isSelected
                                 ? "border-[#4e0a10] bg-[#4e0a10]"
                                 : "border-slate-300"
-                            }`}
+                              }`}
                           >
                             {isSelected && (
                               <span className="w-1 h-1 rounded-full bg-white" />
@@ -1214,79 +1086,7 @@ export default function GenerateScheduleModal({
                 </div>
               </div>
 
-              {/* 2. Split Major Courses */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={splitMajorEnabled}
-                      onChange={(e) => setSplitMajorEnabled(e.target.checked)}
-                      className="w-4 h-4 rounded text-[#4e0a10] focus:ring-[#4e0a10] border-slate-300 cursor-pointer"
-                    />
-                    Split Major Courses
-                  </label>
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-md">
-                    Lab 3h | Lec 2h
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-snug">
-                  Lab sessions split into 3-hour blocks; Lecture sessions split
-                  into 2-hour blocks.
-                </p>
-                {splitMajorEnabled && (
-                  <div className="pt-2 space-y-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-semibold text-slate-600">
-                        Major Courses
-                      </span>
-                      <button
-                        type="button"
-                        onClick={toggleSelectAllMajors}
-                        className="text-[#4e0a10] hover:underline font-bold cursor-pointer"
-                      >
-                        {selectedMajorCourseIds.length === majorCourses.length
-                          ? "Deselect All"
-                          : "Select All"}
-                      </button>
-                    </div>
-                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                      {majorCourses.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic">
-                          No major courses found.
-                        </p>
-                      ) : (
-                        majorCourses.map((course) => {
-                          const isChecked = selectedMajorCourseIds.includes(
-                            course.id
-                          );
-                          return (
-                            <label
-                              key={course.id}
-                              className="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-blue-50/50 border border-slate-200/70 text-xs font-medium text-slate-700 cursor-pointer transition-colors"
-                            >
-                              <div className="flex items-center gap-2 truncate pr-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => toggleMajorCourse(course.id)}
-                                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer shrink-0"
-                                />
-                                <span className="font-bold text-slate-900 shrink-0">
-                                  {course.code}
-                                </span>
-                                <span className="truncate text-slate-600">
-                                  {course.name}
-                                </span>
-                              </div>
-                            </label>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+
 
               {/* 3. Split Minor Courses */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
@@ -1327,7 +1127,7 @@ export default function GenerateScheduleModal({
                         className="text-[#4e0a10] hover:underline font-bold cursor-pointer"
                       >
                         {selectedMinorCourseIds.length ===
-                        eligibleMinorCourses.length
+                          eligibleMinorCourses.length
                           ? "Deselect All"
                           : "Select All"}
                       </button>

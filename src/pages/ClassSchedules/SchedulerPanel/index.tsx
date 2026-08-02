@@ -2,6 +2,7 @@ import TopBar from "./TopBar";
 import FacultyPanel from "./FacultyPanel";
 import CourseBank from "./CourseBank";
 import TimetableGrid from "./TimetableGrid";
+import WideTimetableGrid from "./TimetableGrid/WideTimetableGrid";
 import DropModal from "./Modals/DropModal";
 import FacultyModal from "./Modals/FacultyModal";
 import ClearAllModal from "./Modals/ClearAllModal";
@@ -36,8 +37,12 @@ export default function SchedulerPanel() {
 
       <div className="flex flex-col lg:flex-row gap-4 w-full min-h-[560px] lg:h-[calc(100vh-180px)] lg:min-h-[560px] overflow-hidden">
         <FacultyPanel {...scheduler} />
-        <CourseBank {...scheduler} />
-        <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
+        {!scheduler.isWideView && <CourseBank {...scheduler} />}
+        {scheduler.isWideView ? (
+          <WideTimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
+        ) : (
+          <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
+        )}
       </div>
 
       <DropModal {...scheduler} />
@@ -61,10 +66,7 @@ export default function SchedulerPanel() {
         baseSchedules={generateSchedule.baseSchedules}
         preferredTimeBlock={generateSchedule.preferredTimeBlock}
         setPreferredTimeBlock={generateSchedule.setPreferredTimeBlock}
-        splitMajorEnabled={generateSchedule.splitMajorEnabled}
-        setSplitMajorEnabled={generateSchedule.setSplitMajorEnabled}
-        selectedMajorCourseIds={generateSchedule.selectedMajorCourseIds}
-        setSelectedMajorCourseIds={generateSchedule.setSelectedMajorCourseIds}
+
         splitMinorEnabled={generateSchedule.splitMinorEnabled}
         setSplitMinorEnabled={generateSchedule.setSplitMinorEnabled}
         selectedMinorCourseIds={generateSchedule.selectedMinorCourseIds}

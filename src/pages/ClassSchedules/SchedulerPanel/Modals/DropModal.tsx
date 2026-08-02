@@ -198,6 +198,8 @@ export default function DropModal({
 }: DropModalProps) {
   const isSummerTerm = activeTerm?.semester === "summer";
   const availableDays = isSummerTerm ? DAYS.slice(0, 5) : DAYS;
+  const isMajor = dropSubject?.category === "major";
+  const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
@@ -300,8 +302,6 @@ export default function DropModal({
     shouldShowRecommendations
   ]);
 
-  if (!dropContext || !dropSubject) return null;
-
   // Derive term_id and department_id from the selected section for the
   // recommend-split endpoint. Both are available via the spreaded scheduler
   // props (sections array and activeTerm).
@@ -311,7 +311,7 @@ export default function DropModal({
 
   // Build the list of existing schedule IDs that are being replaced (delete_ids).
   // These tell the Rule Engine to ignore them when checking conflicts.
-  const existingDeleteIds = dropContext.isRescheduling
+  const existingDeleteIds = dropContext?.isRescheduling && dropSubject
     ? schedules
         .filter((s) => s.subjectId === dropSubject.id && s.sectionId === selectedSectionId)
         .map((s) => Number(s.id))
@@ -370,6 +370,8 @@ export default function DropModal({
       setSearching(false);
     }
   }, [termId, departmentId, dropSubject, selectedSectionId, dropSubjectIsField, existingDeleteIds]);
+
+  if (!dropContext || !dropSubject) return null;
 
   /**
    * Apply a split-slot CSP recommendation to meeting 1 or 2.
@@ -430,7 +432,7 @@ export default function DropModal({
   };
 
   const clampStartSlotForDuration = (startSlot: number, durationSlots: number): number => {
-    return Math.min(startSlot, Math.max(0, 28 - durationSlots));
+    return Math.min(startSlot, Math.max(0, 24 - durationSlots));
   };
 
   const getFallbackMeetingDayIndex = (excludedDayIndex: number): number => {
@@ -610,7 +612,7 @@ export default function DropModal({
                   <p className="mt-0.5 text-sm font-bold text-gray-800">{patternLabel}</p>
                   <p className="text-xs text-gray-500">
                     {slotToTimeStr(modalPreferredPattern ? modalDay1StartSlot : dropContext.startSlot)}
-                    {modalPreferredPattern ? ` · ${totalContactHours} total contact hrs (${dropSubject ? dropSubject.units : 3} units)` : `–${slotToTimeStr(dropContext.startSlot + totalSlots)}`}
+                    {modalPreferredPattern ? ` · ${totalContactHours} total contact hrs (${dropSubject ? dropSubject.units : 3} units)` : `–${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}`}
                   </p>
                 </div>
                 <div className="col-span-2 flex items-center md:col-span-1 md:justify-end">
@@ -638,12 +640,14 @@ export default function DropModal({
                     : null;
                   setIsDay2ModifiedByUser(false);
 
+                  const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+                  const dayOneSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+                  const dayTwoSlots = (isMajor && hasBoth) ? 4 : totalSlots;
+
                   if (nextPattern) {
                     const nextDay2Index = modalDay1Index === modalDay2Index
                       ? getFallbackMeetingDayIndex(modalDay1Index)
                       : modalDay2Index;
-                    const dayOneSlots = totalSlots;
-                    const dayTwoSlots = totalSlots;
                     setModalDay2Index(nextDay2Index);
                     setModalPreferredPattern(`days:${modalDay1Index}-${nextDay2Index}`);
                     setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayOneSlots));
@@ -652,10 +656,10 @@ export default function DropModal({
                     setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
                   } else {
                     setModalPreferredPattern(null);
-                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
-                    setModalDay1Duration(totalSlots);
+                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
+                    setModalDay1Duration(singleSlots);
                     setModalDay2Duration(0);
-                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
                   }
                 }}
                 className="h-4.5 w-4.5 rounded border-gray-300 text-[#4e0a10] focus:ring-[#4e0a10] cursor-pointer"
@@ -819,13 +823,13 @@ export default function DropModal({
                         onChange={(e) => {
                           const newStart = Number(e.target.value);
                           setModalDay1StartSlot(newStart);
-                          if (newStart + modalDay1Duration > 28) {
-                            setModalDay1Duration(Math.max(1, 28 - newStart));
+                          if (newStart + modalDay1Duration > 24) {
+                            setModalDay1Duration(Math.max(1, 24 - newStart));
                           }
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 }, (_, i) => (
+                        {Array.from({ length: 24 }, (_, i) => (
                           <option key={i} value={i}>
                             {slotToTimeStr(i)}
                           </option>
@@ -840,7 +844,7 @@ export default function DropModal({
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 29 - totalSlots }, (_, i) => (
+                        {Array.from({ length: 25 - totalSlots }, (_, i) => (
                           <option key={i} value={i}>
                             {slotToTimeStr(i)}
                           </option>
@@ -856,7 +860,7 @@ export default function DropModal({
                   </label>
                   <div className="relative">
                     <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                    {isTwoMeetingPattern ? (
+                    {isTwoMeetingPattern && !(isMajor && hasBoth) ? (
                       <select
                         value={modalDay1StartSlot + modalDay1Duration}
                         onChange={(e) => {
@@ -865,7 +869,7 @@ export default function DropModal({
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 - modalDay1StartSlot }, (_, i) => {
+                        {Array.from({ length: 24 - modalDay1StartSlot }, (_, i) => {
                           const val = modalDay1StartSlot + i + 1;
                           const durationHrs = (val - modalDay1StartSlot) / 2;
                           return (
@@ -879,7 +883,7 @@ export default function DropModal({
                       <input
                         type="text"
                         readOnly
-                        value={`${slotToTimeStr(modalDay1StartSlot + totalSlots)} (${totalSlots / 2} hrs)`}
+                        value={`${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)} (${modalDay1Duration / 2} hrs)`}
                         className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
                       />
                     )}
@@ -1064,13 +1068,13 @@ export default function DropModal({
                           const newStart = Number(e.target.value);
                           setModalDay2StartSlot(newStart);
                           setIsDay2ModifiedByUser(true);
-                          if (newStart + modalDay2Duration > 28) {
-                            setModalDay2Duration(Math.max(1, 28 - newStart));
+                          if (newStart + modalDay2Duration > 24) {
+                            setModalDay2Duration(Math.max(1, 24 - newStart));
                           }
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 }, (_, i) => (
+                        {Array.from({ length: 24 }, (_, i) => (
                           <option key={i} value={i}>
                             {slotToTimeStr(i)}
                           </option>
@@ -1085,25 +1089,34 @@ export default function DropModal({
                     </label>
                     <div className="relative">
                       <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                      <select
-                        value={modalDay2StartSlot + modalDay2Duration}
-                        onChange={(e) => {
-                          const endSlot = Number(e.target.value);
-                          setModalDay2Duration(Math.max(1, endSlot - modalDay2StartSlot));
-                          setIsDay2ModifiedByUser(true);
-                        }}
-                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
-                      >
-                        {Array.from({ length: 28 - modalDay2StartSlot }, (_, i) => {
-                          const val = modalDay2StartSlot + i + 1;
-                          const durationHrs = (val - modalDay2StartSlot) / 2;
-                          return (
-                            <option key={val} value={val}>
-                              {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
-                            </option>
-                          );
-                        })}
-                      </select>
+                      {!(isMajor && hasBoth) ? (
+                        <select
+                          value={modalDay2StartSlot + modalDay2Duration}
+                          onChange={(e) => {
+                            const endSlot = Number(e.target.value);
+                            setModalDay2Duration(Math.max(1, endSlot - modalDay2StartSlot));
+                            setIsDay2ModifiedByUser(true);
+                          }}
+                          className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                        >
+                          {Array.from({ length: 24 - modalDay2StartSlot }, (_, i) => {
+                            const val = modalDay2StartSlot + i + 1;
+                            const durationHrs = (val - modalDay2StartSlot) / 2;
+                            return (
+                              <option key={val} value={val}>
+                                {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${slotToTimeStr(modalDay2StartSlot + modalDay2Duration)} (${modalDay2Duration / 2} hrs)`}
+                          className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
+                        />
+                      )}
                       <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>

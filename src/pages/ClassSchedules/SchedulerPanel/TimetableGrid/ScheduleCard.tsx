@@ -22,7 +22,8 @@ interface ScheduleCardProps {
   onDragEnd: () => void;
   onDelete: (id: string) => void;
   onCardClick: (id: string) => void;
-  slotHeight: number;
+  slotHeight?: number;
+  isWideView?: boolean;
 }
 
 const ScheduleCard = memo(function ScheduleCard({
@@ -41,7 +42,8 @@ const ScheduleCard = memo(function ScheduleCard({
   onDragEnd,
   onDelete,
   onCardClick,
-  slotHeight
+  slotHeight,
+  isWideView = false
 }: ScheduleCardProps) {
   const room = rooms.find((r) => r.id === schedule.roomId);
   const gridStyles = getGridCardStyles(subject.category);
@@ -53,7 +55,7 @@ const ScheduleCard = memo(function ScheduleCard({
     : "Field";
   const isDraggingThis = draggedScheduleId === schedule.id;
   const hasFaculty = !!schedule.facultyId;
-  const cardHeight = schedule.durationSlots * slotHeight;
+  const cardHeight = schedule.durationSlots * (slotHeight ?? 0);
   const canAssignFaculty = isPhase2Active && currentStatus !== "finalized";
   const isAwaitingFaculty = canAssignFaculty && !hasFaculty;
   const isFacultyAssigned = isPhase2Active && hasFaculty;
@@ -71,6 +73,188 @@ const ScheduleCard = memo(function ScheduleCard({
   const isCompact = schedule.durationSlots <= 2; // 1 hour (38px)
   const isMedium = schedule.durationSlots === 3;  // 1.5 hours (57px)
 
+  if (isWideView) {
+    return (
+      <div
+        draggable={isEditable && !isPhase2Active}
+        onDragStart={(e) => !isPhase2Active && onDragStart(e, schedule)}
+        onDragEnd={onDragEnd}
+        onClick={() => onCardClick(schedule.id)}
+        className={`w-full rounded-xl border-2 border-l-4 box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible p-2.5 px-3 ${
+          slotHeight ? "" : "h-full"
+        } ${gridStyles.container} ${
+          isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
+        } ${
+          conflict
+            ? "border-red-400 border-l-red-600 ring-2 ring-red-300/60 bg-gradient-to-br from-red-50 to-red-100/30 text-red-950 shadow z-20 hover:border-red-400"
+            : isAwaitingFaculty
+            ? "border-orange-400 ring-2 ring-orange-300 cursor-pointer"
+            : isFacultyAssigned
+            ? "cursor-pointer"
+            : isEditable
+            ? "cursor-grab active:cursor-grabbing"
+            : "cursor-not-allowed"
+        } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-20" : ""} ${currentStatus === "finalized" ? "cursor-default" : ""}`}
+        style={{
+          gridColumn: schedule.dayIndex + 2,
+          gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}`,
+          ...(slotHeight ? { height: `${cardHeight}px` } : {}),
+        }}
+      >
+        {/* Detailed Hover Tooltip Popover */}
+        <div className={`opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none absolute left-1/2 -translate-x-1/2 w-64 p-3 bg-slate-900/95 text-white rounded-xl shadow-2xl backdrop-blur-md z-50 border border-slate-700 text-xs space-y-2 leading-snug ${
+          schedule.startSlot > 14 ? "bottom-full mb-2" : "top-full mt-2"
+        }`}>
+          <div className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent ${
+            schedule.startSlot > 14
+              ? "top-full border-t-8 border-t-slate-900/95"
+              : "bottom-full border-b-8 border-b-slate-900/95"
+          }`} />
+          <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
+            <div className="min-w-0">
+              <span className="font-extrabold text-[#C9952A] text-xs uppercase tracking-wider block truncate">{subject.code}</span>
+              <span className="font-semibold text-slate-100 text-xs block truncate">{subject.name}</span>
+            </div>
+            <span className="text-[10px] bg-slate-800 text-slate-300 font-bold px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
+              {subject.units} Units
+            </span>
+          </div>
+
+          <div className="space-y-1.5 text-[11px] text-slate-300">
+            <div className="flex items-center gap-2">
+              <User className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
+              <span className="truncate">
+                <strong className="text-slate-200">Instructor: </strong>
+                {hasFaculty ? schedule.facultyName : <span className="text-amber-400 italic">Unassigned</span>}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
+              <span className="truncate">
+                <strong className="text-slate-200">Location: </strong>
+                {isRedundantRoomName ? modeLabel : roomDisplayName}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
+              <span className="truncate">
+                <strong className="text-slate-200">Time: </strong>
+                {schedule.startTime} – {schedule.endTime}
+              </span>
+            </div>
+          </div>
+
+          {conflict && (
+            <div className="p-2 bg-red-950/90 border border-red-500/60 rounded-lg text-red-200 text-[11px] font-semibold flex items-start gap-1.5 shadow-inner">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <span>{conflict.message}</span>
+            </div>
+          )}
+
+          <div className="pt-1.5 flex items-center gap-1.5 border-t border-slate-800">
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${modeBadgeClass}`}>
+              {schedule.isHybrid ? "On-Site / Online" : modeLabel}
+            </span>
+          </div>
+        </div>
+
+        {conflict && (
+          <div className="absolute top-1 left-1 z-20 flex items-center gap-1 bg-red-600 text-white px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-sm animate-pulse">
+            <AlertTriangle className="w-3 h-3 text-white shrink-0" />
+            <span>Conflict</span>
+          </div>
+        )}
+
+        {isEditable && !isPhase2Active && (
+          <div className="absolute top-1 right-1 z-20">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteConfirmScheduleId(schedule.id);
+              }}
+              aria-label={`Remove ${subject.code}`}
+              title="Remove Schedule"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 w-5 h-5 rounded-md hover:bg-red-500 hover:text-white text-slate-400 flex items-center justify-center hover:shadow-sm cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+            {deleteConfirmScheduleId === schedule.id && (
+              <div
+                className="absolute right-0 top-6 w-24 rounded-xl bg-white border border-slate-200 shadow-lg p-1.5 text-[10px] text-slate-700 z-50 animate-in fade-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="font-bold text-center mb-1 text-slate-800">Remove?</div>
+                <div className="flex gap-1 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => onDelete(schedule.id)}
+                    className="flex-1 rounded-md bg-red-500 hover:bg-red-600 text-white py-0.5 font-bold cursor-pointer transition-colors"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmScheduleId(null)}
+                    className="flex-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 py-0.5 font-bold cursor-pointer transition-colors"
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isFacultyAssigned && (
+          <div className="absolute top-1 right-1 bg-green-100 rounded-full p-0.5 z-20 border border-green-200">
+            <CheckCircle2 className="w-2.5 h-2.5 text-green-600" />
+          </div>
+        )}
+
+        {/* Content - No Truncation, wrapped details */}
+        <div className="flex flex-col h-full justify-between min-w-0">
+          <div className="flex items-start justify-between gap-1.5 min-w-0">
+            <span className={`text-[12px] font-black uppercase tracking-tight break-words min-w-0 flex-1 ${gridStyles.text}`} title={subject.code}>
+              {subject.code}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              {schedule.isHybrid ? (
+                <span className="text-[8px] rounded px-1.5 py-0.5 font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                  Hybrid
+                </span>
+              ) : (
+                <span className={`text-[8px] rounded px-1 py-0.5 font-bold shrink-0 ${modeBadgeClass}`}>
+                  {modeLabel}
+                </span>
+              )}
+              <span className={`text-[8.5px] px-1 py-0.5 rounded font-bold shrink-0 ${gridStyles.badgeText}`}>
+                {subject.units}u
+              </span>
+            </div>
+          </div>
+          
+          {roomDisplayName ? (
+            <div className="text-[10px] text-slate-600 font-semibold mt-0.5 break-words">
+              {roomDisplayName}
+            </div>
+          ) : null}
+          
+          <div className="text-[9.5px] text-slate-500 font-medium mt-auto leading-none pt-0.5 break-words">
+            {schedule.startTime} – {schedule.endTime}
+          </div>
+        </div>
+
+        {isAwaitingFaculty && (
+          <div className="absolute left-0 right-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-b-xl py-1 shadow-sm text-[10px]">
+            <UserPlus className="w-3 h-3" />
+            <span>Tap to Assign Faculty</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       draggable={isEditable && !isPhase2Active}
@@ -78,6 +262,8 @@ const ScheduleCard = memo(function ScheduleCard({
       onDragEnd={onDragEnd}
       onClick={() => onCardClick(schedule.id)}
       className={`w-full rounded-xl border-2 border-l-4 box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible ${
+        slotHeight ? "" : "h-full"
+      } ${
         isCompact ? "p-1 px-1.5" : isMedium ? "p-1.5 px-2" : "p-2 px-2.5"
       } ${gridStyles.container} ${
         isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
@@ -95,7 +281,7 @@ const ScheduleCard = memo(function ScheduleCard({
       style={{
         gridColumn: schedule.dayIndex + 2,
         gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}`,
-        height: `${cardHeight}px`,
+        ...(slotHeight ? { height: `${cardHeight}px` } : {}),
       }}
     >
       {/* Detailed Hover Tooltip Popover */}

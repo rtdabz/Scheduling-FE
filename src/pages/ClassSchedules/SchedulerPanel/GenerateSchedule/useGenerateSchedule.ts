@@ -38,8 +38,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
 
   // Persistent Schedule Options State across modal operations
   const [preferredTimeBlock, setPreferredTimeBlock] = useState<TimeBlockOption>("flexible");
-  const [splitMajorEnabled, setSplitMajorEnabled] = useState(false);
-  const [selectedMajorCourseIds, setSelectedMajorCourseIds] = useState<string[]>([]);
   const [splitMinorEnabled, setSplitMinorEnabled] = useState(false);
   const [selectedMinorCourseIds, setSelectedMinorCourseIds] = useState<string[]>([]);
 
@@ -51,8 +49,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
     setProgressStep("generating");
     setBaseSchedules([]);
     setPreferredTimeBlock("flexible");
-    setSplitMajorEnabled(false);
-    setSelectedMajorCourseIds([]);
     setSplitMinorEnabled(false);
     setSelectedMinorCourseIds([]);
   }, []);
@@ -80,8 +76,9 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
       }, 550);
 
       try {
-        const payload: { section_id: number; course_ids?: number[] } = {
+        const payload: { section_id: number; course_ids?: number[]; seed?: number } = {
           section_id: Number(sectionId),
+          seed: Math.floor(Math.random() * 1000000),
         };
         if (courseIds && courseIds.length > 0) {
           payload.course_ids = courseIds;
@@ -148,7 +145,7 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           const roomId =
             !isNaN(parsedRoomId) && parsedRoomId > 0 ? parsedRoomId : 1;
           const patternToUse = isValidPatternForApi(s.preferred_pattern)
-            ? s.preferred_pattern
+            ? (s.preferred_pattern ?? null)
             : null;
 
           const op: {
@@ -251,10 +248,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
     baseSchedules,
     preferredTimeBlock,
     setPreferredTimeBlock,
-    splitMajorEnabled,
-    setSplitMajorEnabled,
-    selectedMajorCourseIds,
-    setSelectedMajorCourseIds,
     splitMinorEnabled,
     setSplitMinorEnabled,
     selectedMinorCourseIds,

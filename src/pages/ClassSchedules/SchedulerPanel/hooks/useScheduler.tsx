@@ -298,6 +298,18 @@ export const useScheduler = () => {
       : "";
   });
 
+  const [isWideView, setIsWideView] = useState<boolean>(() => {
+    return localStorage.getItem("timetable_wide_view") === "true";
+  });
+
+  const handleToggleWideView = () => {
+    setIsWideView((prev) => {
+      const next = !prev;
+      localStorage.setItem("timetable_wide_view", String(next));
+      return next;
+    });
+  };
+
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
     let active = true;
@@ -896,6 +908,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
       const isFieldSubject = subject?.roomTypeRequired === "field";
       const totalSlots = getSubjectTotalSlots(subject);
 
+      const isMajor = subject?.category === "major";
+      const hasBoth = subject && Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
+      const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+      const splitDay1Slots = (isMajor && hasBoth) ? 6 : totalSlots;
+      const splitDay2Slots = (isMajor && hasBoth) ? 4 : totalSlots;
+
       if (isFieldSubject) {
         setModalClassMode("field");
         setModalRoomId("");
@@ -906,7 +924,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         setModalDay1Index(dropContext.dayIndex);
         setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
         setModalDay1StartSlot(dropContext.startSlot);
-        setModalDay1Duration(totalSlots);
+        setModalDay1Duration(singleSlots);
         setModalDay2StartSlot(dropContext.startSlot);
         setModalDay2Duration(0);
         setIsDay2ModifiedByUser(false);
@@ -941,7 +959,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[0].startSlot);
-            setModalDay2Duration(patternDays ? totalSlots : Math.max(0, totalSlots - sorted[0].durationSlots));
+            setModalDay2Duration(patternDays ? splitDay2Slots : Math.max(0, singleSlots - sorted[0].durationSlots));
             setModalDay2RoomId("");
             setModalDay2ClassMode("on-site");
             setIsDay2ModifiedByUser(false);
@@ -949,7 +967,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
             setModalDay1Index(dropContext.dayIndex);
             setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
             setModalDay1StartSlot(dropContext.startSlot);
-            setModalDay1Duration(totalSlots);
+            setModalDay1Duration(singleSlots);
             setModalDay2StartSlot(dropContext.startSlot);
             setModalDay2Duration(0);
             setModalDay2RoomId("");
@@ -973,7 +991,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
               r.id,
               dropContext.dayIndex,
               dropContext.startSlot,
-              totalSlots,
+              singleSlots,
               undefined,
               null
             );
@@ -989,7 +1007,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         setModalDay1Index(dropContext.dayIndex);
         setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
         setModalDay1StartSlot(dropContext.startSlot);
-        setModalDay1Duration(totalSlots);
+        setModalDay1Duration(singleSlots);
         setModalDay2StartSlot(dropContext.startSlot);
         setModalDay2Duration(0);
         setModalDay2RoomId(resolvedRoomId);
@@ -1083,6 +1101,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
           : [];
 
         const totalSlots = getSubjectTotalSlots(subject);
+        const isMajor = subject?.category === "major";
+        const hasBoth = Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
+        const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+
         const d1 = modalDay1Duration;
         const d2 = modalDay2Duration;
         const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
@@ -1105,7 +1127,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         } else {
           conflict = checkConflict(
             dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalRoomId,
-            modalDay1Index, modalDay1StartSlot, totalSlots, excludeIds, modalPreferredPattern
+            modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern
           );
         }
 
@@ -1207,6 +1229,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     const totalSlots = getSubjectTotalSlots(subject);
     const contactHours = getSubjectContactHours(subject);
+    const isMajor = subject?.category === "major";
+    const hasBoth = Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
+    const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+
     const d1 = modalDay1Duration;
     const d2 = modalPreferredPattern ? modalDay2Duration : 0;
     const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
@@ -1237,7 +1263,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
       if (conflictDay1 || conflictDay2) currentHasConflict = true;
     } else {
-      const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, modalDay1StartSlot, totalSlots, excludeIds, modalPreferredPattern);
+      const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern);
       if (conflict) currentHasConflict = true;
     }
 
@@ -1246,7 +1272,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? modalDay2StartSlot : -1;
     } else {
       // Slot search resolution: look circularly for a slot where both segments fit
-      const maxSlots = 28;
+      const maxSlots = 24;
       if (patternDays) {
         let foundPatternSlots = false;
         for (let day1Offset = 0; day1Offset < maxSlots; day1Offset++) {
@@ -1270,11 +1296,11 @@ departmentSectionProgress.every((section) => section.status === "completed");
           if (foundPatternSlots) break;
         }
       } else {
-        const maxDuration = totalSlots;
+        const maxDuration = singleSlots;
         for (let offset = 0; offset < maxSlots; offset++) {
           const s = (modalDay1StartSlot + offset) % (maxSlots - maxDuration + 1);
           if (s + maxDuration > maxSlots) continue;
-          const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, s, totalSlots, excludeIds, modalPreferredPattern);
+          const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, s, singleSlots, excludeIds, modalPreferredPattern);
           if (conflict) continue;
 
           resolvedDay1StartSlot = s;
@@ -1331,7 +1357,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       if (d1 > 0) targetDays.push({ day: fullDayNames[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
       if (d2 > 0) targetDays.push({ day: fullDayNames[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
     } else {
-      targetDays.push({ day: fullDayNames[modalDay1Index], startSlot: resolvedDay1StartSlot, duration: totalSlots });
+      targetDays.push({ day: fullDayNames[modalDay1Index], startSlot: resolvedDay1StartSlot, duration: singleSlots });
     }
 
     setIsModalLoading(true);
@@ -1345,25 +1371,47 @@ departmentSectionProgress.every((section) => section.status === "completed");
         ? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `split-${subject.id}-${Date.now()}`)
         : (existingRecords[0]?.splitGroupId ?? null);
 
-      const operations = targetDays.map((targetDay, index) => ({
-        ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
-        term_id: activeTerm.id,
-        section_id: Number(selectedSectionId),
-        subject_id: Number(subject.id),
-        faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
-        room_id: Number(index === 0 ? resolvedRoom1Id : resolvedRoom2Id),
-        department_id: section.departmentId,
-        day: targetDay.day,
-        start_time: slotToTime24h(targetDay.startSlot),
-        end_time: slotToTime24h(targetDay.startSlot + targetDay.duration),
-        mode: index === 0 ? modalClassMode : modalDay2ClassMode,
-        is_hybrid: false,
-        preferred_pattern: modalPreferredPattern,
-        split_group_id: sharedSplitGroupId,
-        meeting_type: targetDays.length > 1 ? (index === 0 ? "lecture" : "laboratory") : "lecture",
-        meeting_index: index + 1,
-        status: existingRecords[index]?.status ?? "draft"
-      }));
+      const operations = targetDays.map((targetDay, index) => {
+        const isSplit = targetDays.length > 1;
+        const hasLab = Number(subject.labHours ?? 0) > 0;
+        let meetingType: "lecture" | "laboratory" | null = null;
+        if (isSplit) {
+          if (hasLab) {
+            const duration = targetDay.duration;
+            const labSlots = Number(subject.labHours ?? 0) * 6;
+            const lecSlots = Number(subject.lectureHours ?? 0) * 2;
+            if (duration === labSlots) {
+              meetingType = "laboratory";
+            } else if (duration === lecSlots) {
+              meetingType = "lecture";
+            } else {
+              meetingType = index === 0 ? "laboratory" : "lecture";
+            }
+          } else {
+            meetingType = "lecture";
+          }
+        }
+
+        return {
+          ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
+          term_id: activeTerm.id,
+          section_id: Number(selectedSectionId),
+          subject_id: Number(subject.id),
+          faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
+          room_id: Number(index === 0 ? resolvedRoom1Id : resolvedRoom2Id),
+          department_id: section.departmentId,
+          day: targetDay.day,
+          start_time: slotToTime24h(targetDay.startSlot),
+          end_time: slotToTime24h(targetDay.startSlot + targetDay.duration),
+          mode: index === 0 ? modalClassMode : modalDay2ClassMode,
+          is_hybrid: false,
+          preferred_pattern: modalPreferredPattern,
+          split_group_id: sharedSplitGroupId,
+          meeting_type: meetingType,
+          meeting_index: index + 1,
+          status: existingRecords[index]?.status ?? "draft"
+        };
+      });
 
       const deleteIds = existingRecords
         .slice(targetDays.length)
@@ -2286,6 +2334,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     renderActionButton,
     plottingPhaseIcon,
     facultyPhaseIcon,
+    isWideView,
+    handleToggleWideView,
     ...dragDrop
   };
 };

@@ -373,7 +373,7 @@ export default function VpaaDashboardPage() {
 
   const timeSlots = useMemo(() => {
     const slots = [];
-    for (let slot = 0; slot < 28; slot += 1) { // 28 half-hour slots from 7:00 AM to 9:00 PM
+    for (let slot = 0; slot < 24; slot += 1) { // 24 half-hour slots from 7:00 AM to 7:00 PM
       const totalMinutes = 7 * 60 + slot * 30;
       let hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
@@ -1022,7 +1022,7 @@ export default function VpaaDashboardPage() {
                               <span className="text-[9px] font-bold text-gray-400">{daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}</span>
                             </div>
 
-                            <div className="relative" style={{ height: `${28 * 24}px` }}>
+                            <div className="relative" style={{ height: `${24 * 24}px` }}>
                               {timeSlots.map((_, index) => <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />)}
                               {daySchedules.map((schedule) => {
                                 const startIdx = parseTimeToSlotIndex(schedule.start_time);

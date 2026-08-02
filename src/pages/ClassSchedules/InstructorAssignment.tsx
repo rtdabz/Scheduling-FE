@@ -529,7 +529,7 @@ export default function InstructorAssignment() {
                 className="relative grid select-none"
                 style={{
                   gridTemplateColumns: "72px repeat(6, minmax(138px, 1fr))",
-                  gridTemplateRows: "40px repeat(28, 24px)",
+                  gridTemplateRows: "40px repeat(24, 24px)",
                 }}
               >
                 <div
@@ -549,7 +549,7 @@ export default function InstructorAssignment() {
                   </div>
                 ))}
 
-                {Array.from({ length: 28 }, (_, slot) => (
+                {Array.from({ length: 24 }, (_, slot) => (
                   <div key={`time-row-${slot}`} className="contents">
                     {slot % 2 === 0 && (
                       <div

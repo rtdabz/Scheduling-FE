@@ -62,8 +62,8 @@ export const getConflictedScheduleMap = (
 
       // 1. Same Section conflict (Time overlap in same section)
       if (s1.sectionId && s1.sectionId === s2.sectionId) {
-        const msg1 = `Section conflict: Overlaps with ${sub2?.code ?? "another class"} (${s2.startTime} – ${s2.endTime}).`;
-        const msg2 = `Section conflict: Overlaps with ${sub1?.code ?? "another class"} (${s1.startTime} – ${s1.endTime}).`;
+        const msg1 = `Section conflict: Overlaps with ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+        const msg2 = `Section conflict: Overlaps with ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
         if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "section", message: msg1 };
         if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "section", message: msg2 };
       }
@@ -72,8 +72,8 @@ export const getConflictedScheduleMap = (
       if (s1.roomId && s1.roomId !== "online" && s1.roomId !== "field" && s1.roomId === s2.roomId) {
         const room = rooms.find((r) => r.id === s1.roomId);
         const roomName = room?.name ?? "Selected room";
-        const msg1 = `Room conflict: ${roomName} is already occupied by ${sub2?.code ?? "another class"} (${s2.startTime} – ${s2.endTime}).`;
-        const msg2 = `Room conflict: ${roomName} is already occupied by ${sub1?.code ?? "another class"} (${s1.startTime} – ${s1.endTime}).`;
+        const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+        const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
         if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
         if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
       }
@@ -82,8 +82,8 @@ export const getConflictedScheduleMap = (
       if (s1.facultyId && s1.facultyId === s2.facultyId) {
         const faculty = faculties.find((f) => f.id === s1.facultyId);
         const facName = faculty?.name ?? "Assigned faculty";
-        const msg1 = `Faculty conflict: ${facName} is already teaching ${sub2?.code ?? "another class"} (${s2.startTime} – ${s2.endTime}).`;
-        const msg2 = `Faculty conflict: ${facName} is already teaching ${sub1?.code ?? "another class"} (${s1.startTime} – ${s1.endTime}).`;
+        const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+        const msg2 = `Faculty conflict: ${facName} is already teaching ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
         if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "faculty", message: msg1 };
         if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "faculty", message: msg2 };
       }
@@ -127,10 +127,10 @@ export const useConflict = ({
     }
 
     const endSlot = startSlot + durationSlots;
-    if (endSlot > 28) {
+    if (endSlot > 24) {
       return {
         conflictType: "section",
-        message: "The schedule duration exceeds the grid operating hours (9:00 PM)."
+        message: "The schedule duration exceeds the grid operating hours (7:00 PM)."
       };
     }
 
@@ -164,24 +164,23 @@ export const useConflict = ({
       const overlaps = dayIndex === s.dayIndex && startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
         if (s.sectionId === sectionId) {
-          const sub = subjects.find((x) => x.id === (s.courseId ?? s.subjectId));
           return {
             conflictType: "section",
-            message: `Section conflict: This section already has a class (${sub?.code ?? ""}) scheduled at this time.`
+            message: `Section conflict: This section already has a class (${s.courseCode || s.subjectCode || "another class"}) scheduled at this time.`
           };
         }
         if (roomId && roomId !== "online" && roomId !== "field" && s.roomId === roomId) {
           const room = rooms.find((r) => r.id === roomId);
           return {
             conflictType: "room",
-            message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time.`
+            message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
           };
         }
         if (facultyId && s.facultyId === facultyId) {
           const faculty = faculties.find((f) => f.id === facultyId);
           return {
             conflictType: "faculty",
-            message: `Faculty conflict: ${faculty?.name ?? "Selected faculty"} is already teaching at this time.`
+            message: `Faculty conflict: ${faculty?.name ?? "Selected faculty"} is already teaching ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName} at this time.`
           };
         }
       }
@@ -206,7 +205,7 @@ export const useConflict = ({
       const overlaps = target.dayIndex === s.dayIndex && target.startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
         const fac = faculties.find((f) => f.id === facultyId);
-        return `Faculty Conflict: ${fac?.name ?? facultyId} is already scheduled in section ${s.sectionName} at ${s.startTime} – ${s.endTime}.`;
+        return `Faculty Conflict: ${fac?.name ?? facultyId} is already scheduled in section ${s.sectionName} for ${s.courseCode || s.subjectCode || "another course"} at ${s.startTime} – ${s.endTime}.`;
       }
     }
     return null;
