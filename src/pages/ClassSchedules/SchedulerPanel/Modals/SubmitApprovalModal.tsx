@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, CheckCircle2, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Send, X } from "lucide-react";
 import type { DepartmentSectionProgress, Section } from "../types";
 
 interface SubmitApprovalModalProps {
@@ -14,6 +14,7 @@ interface SubmitApprovalModalProps {
   departmentReadyToSubmit: boolean;
   confirmSubmitForApproval: () => void;
   cancelSubmitForApproval: () => void;
+  isSubmittingSchedule?: boolean;
 }
 
 export default function SubmitApprovalModal({
@@ -27,7 +28,8 @@ export default function SubmitApprovalModal({
   departmentDoneSections,
   departmentReadyToSubmit,
   confirmSubmitForApproval,
-  cancelSubmitForApproval
+  cancelSubmitForApproval,
+  isSubmittingSchedule = false
 }: SubmitApprovalModalProps) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -37,7 +39,7 @@ export default function SubmitApprovalModal({
     cancelButtonRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isSubmittingSchedule) {
         cancelSubmitForApproval();
       }
     };
@@ -67,7 +69,7 @@ export default function SubmitApprovalModal({
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(event) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && !isSubmittingSchedule) {
           cancelSubmitForApproval();
         }
       }}
@@ -83,8 +85,9 @@ export default function SubmitApprovalModal({
           <button
             type="button"
             onClick={cancelSubmitForApproval}
+            disabled={isSubmittingSchedule}
             aria-label="Close"
-            className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 hover:bg-white/70 rounded-full p-1 transition-colors"
+            className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 hover:bg-white/70 rounded-full p-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-4 h-4" />
           </button>
@@ -163,22 +166,27 @@ export default function SubmitApprovalModal({
             ref={cancelButtonRef}
             type="button"
             onClick={cancelSubmitForApproval}
-            className="border border-gray-300 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+            disabled={isSubmittingSchedule}
+            className="border border-gray-300 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Review Again
           </button>
           <button
             type="button"
             onClick={confirmSubmitForApproval}
-            disabled={!departmentReadyToSubmit}
+            disabled={!departmentReadyToSubmit || isSubmittingSchedule}
             className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-[#4e0a10]/30 focus:ring-offset-1 ${
-              departmentReadyToSubmit
+              departmentReadyToSubmit && !isSubmittingSchedule
                 ? "text-white bg-[#4e0a10] hover:bg-[#C9952A] cursor-pointer"
                 : "text-gray-400 bg-gray-200 cursor-not-allowed"
             }`}
           >
-            <Send className="w-4 h-4" />
-            Agree and Submit
+            {isSubmittingSchedule ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            {isSubmittingSchedule ? "Submitting..." : "Agree and Submit"}
           </button>
         </div>
       </div>

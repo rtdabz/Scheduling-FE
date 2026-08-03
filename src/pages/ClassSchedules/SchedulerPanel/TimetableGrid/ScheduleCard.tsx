@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { AlertTriangle, CheckCircle2, Clock, MapPin, User, UserPlus, X } from "lucide-react";
 import {
   getGridCardStyles,
@@ -103,10 +103,10 @@ const ScheduleCard = memo(function ScheduleCard({
       >
         {/* Detailed Hover Tooltip Popover */}
         <div className={`opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none absolute left-1/2 -translate-x-1/2 w-64 p-3 bg-slate-900/95 text-white rounded-xl shadow-2xl backdrop-blur-md z-50 border border-slate-700 text-xs space-y-2 leading-snug ${
-          schedule.startSlot > 14 ? "bottom-full mb-2" : "top-full mt-2"
+          (schedule.startSlot + schedule.durationSlots) > 12 ? "bottom-full mb-2" : "top-full mt-2"
         }`}>
           <div className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent ${
-            schedule.startSlot > 14
+            (schedule.startSlot + schedule.durationSlots) > 12
               ? "top-full border-t-8 border-t-slate-900/95"
               : "bottom-full border-b-8 border-b-slate-900/95"
           }`} />
@@ -286,10 +286,10 @@ const ScheduleCard = memo(function ScheduleCard({
     >
       {/* Detailed Hover Tooltip Popover */}
       <div className={`opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none absolute left-1/2 -translate-x-1/2 w-64 p-3 bg-slate-900/95 text-white rounded-xl shadow-2xl backdrop-blur-md z-50 border border-slate-700 text-xs space-y-2 leading-snug ${
-        schedule.startSlot > 14 ? "bottom-full mb-2" : "top-full mt-2"
+        (schedule.startSlot + schedule.durationSlots) > 12 ? "bottom-full mb-2" : "top-full mt-2"
       }`}>
         <div className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent ${
-          schedule.startSlot > 14
+          (schedule.startSlot + schedule.durationSlots) > 12
             ? "top-full border-t-8 border-t-slate-900/95"
             : "bottom-full border-b-8 border-b-slate-900/95"
         }`} />

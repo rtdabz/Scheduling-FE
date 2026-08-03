@@ -206,13 +206,7 @@ export default function DropModal({
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
   const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
 
-  // Split-slot CSP search state — separate for first and second meetings.
-  const [splitRecs1, setSplitRecs1] = useState<SplitSlotRecommendation[]>([]);
-  const [splitRecs2, setSplitRecs2] = useState<SplitSlotRecommendation[]>([]);
-  const [isSplitSearching1, setIsSplitSearching1] = useState(false);
-  const [isSplitSearching2, setIsSplitSearching2] = useState(false);
-  const [splitSearchError1, setSplitSearchError1] = useState<string | null>(null);
-  const [splitSearchError2, setSplitSearchError2] = useState<string | null>(null);
+
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = useMemo(() => {
@@ -230,10 +224,6 @@ export default function DropModal({
       setRecommendationError(null);
       setAppliedRecommendationRank(null);
       setSelectedRecommendationId(null);
-      setSplitRecs1([]);
-      setSplitRecs2([]);
-      setSplitSearchError1(null);
-      setSplitSearchError2(null);
       closeButtonRef.current?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -322,92 +312,7 @@ export default function DropModal({
    * Call the Rule Engine + CSP backend to find the best conflict-free
    * (day, time, room, mode) combinations for one split block.
    */
-  const findBestSplitTime = useCallback(async (
-    meetingIndex: 1 | 2,
-    durationSlots: number,
-    currentRoomId: string,
-    currentMode: "on-site" | "online" | "field",
-  ) => {
-    if (!termId || !departmentId || !dropSubject) return;
-
-    const setSearching = meetingIndex === 1 ? setIsSplitSearching1 : setIsSplitSearching2;
-    const setResults   = meetingIndex === 1 ? setSplitRecs1 : setSplitRecs2;
-    const setError     = meetingIndex === 1 ? setSplitSearchError1 : setSplitSearchError2;
-
-    setSearching(true);
-    setError(null);
-    setResults([]);
-
-    try {
-      const roomIdNum = currentMode === "on-site" && currentRoomId && !Number.isNaN(Number(currentRoomId))
-        ? Number(currentRoomId)
-        : null;
-
-      const response = await api.post<SplitRecommendResponse>(
-        "/schedule-recommendations/recommend-split",
-        {
-          term_id:       termId,
-          section_id:    Number(selectedSectionId),
-          course_id:     Number(dropSubject.id),
-          department_id: departmentId,
-          duration_slots: durationSlots,
-          room_id:       roomIdNum,
-          mode:          dropSubjectIsField ? "field" : currentMode,
-          delete_ids:    existingDeleteIds,
-          max_solutions: 5,
-          timeout_seconds: 6,
-        }
-      );
-
-      if (response.data.status === "no_solution") {
-        setError("No conflict-free time found. Try a different room or mode.");
-      } else {
-        setResults(response.data.recommendations);
-      }
-    } catch {
-      setError("Could not search for a time slot. Please try again.");
-    } finally {
-      setSearching(false);
-    }
-  }, [termId, departmentId, dropSubject, selectedSectionId, dropSubjectIsField, existingDeleteIds]);
-
   if (!dropContext || !dropSubject) return null;
-
-  /**
-   * Apply a split-slot CSP recommendation to meeting 1 or 2.
-   */
-  const applySplitRec = (
-    rec: SplitSlotRecommendation,
-    meetingIndex: 1 | 2,
-  ) => {
-    discardSelectedRecommendation();
-    const startSlot = timeToSlot(rec.start_time);
-    const duration  = timeToSlot(rec.end_time) - startSlot;
-    const dayIndex  = getDayIndex(rec.day);
-
-    if (meetingIndex === 1) {
-      setModalDay1Index(dayIndex);
-      setModalDay1StartSlot(startSlot);
-      setModalDay1Duration(duration);
-      if (rec.mode === "on-site") setModalRoomId(String(rec.room_id));
-      setModalClassMode(rec.mode);
-      setSplitRecs1([]);
-      if (modalPreferredPattern !== null) {
-        setModalPreferredPattern(`days:${dayIndex}-${modalDay2Index}`);
-      }
-    } else {
-      setModalDay2Index(dayIndex);
-      setModalDay2StartSlot(startSlot);
-      setModalDay2Duration(duration);
-      if (rec.mode === "on-site") setModalDay2RoomId(String(rec.room_id));
-      setModalDay2ClassMode(rec.mode);
-      setIsDay2ModifiedByUser(true);
-      setSplitRecs2([]);
-      if (modalPreferredPattern !== null) {
-        setModalPreferredPattern(`days:${modalDay1Index}-${dayIndex}`);
-      }
-    }
-  };
 
   const totalSlots = getSubjectTotalSlots(dropSubject);
   const totalContactHours = getSubjectContactHours(dropSubject);
@@ -455,13 +360,17 @@ export default function DropModal({
   const totalSelectedSlots = modalPreferredPattern
     ? modalDay1Duration + modalDay2Duration
     : totalSlots;
-  const usesFullDurationMeetings = modalPreferredPattern
-    ? modalDay1Duration === totalSlots && modalDay2Duration === totalSlots
-    : true;
-  const durationTotalMatches = totalSelectedSlots === totalSlots || usesFullDurationMeetings;
+
+  // Course contact hours limit: lectureHours + labHours (fallback to units if 0)
+  const courseMaxHours = (Number(dropSubject.lectureHours ?? 0) + Number(dropSubject.labHours ?? 0)) || Number(dropSubject.units ?? 3);
+  const courseMaxSlots = courseMaxHours * 2;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
+
+
+
+
   const recommendedRoomLabel = modalClassMode === "on-site"
     ? rooms.find((r) => r.id === modalRoomId)?.name || "Auto-assigning first available room..."
     : modalClassMode === "online"
@@ -524,7 +433,7 @@ export default function DropModal({
         setModalDay1Index(firstDayIndex);
         setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
         setModalDay1StartSlot(firstStartSlot);
-        setModalDay1Duration(dropSubject.units * 2);
+        setModalDay1Duration(getSubjectTotalSlots(dropSubject));
         setModalDay2StartSlot(firstStartSlot);
         setModalDay2Duration(0);
         setModalDay2RoomId("");
@@ -552,7 +461,7 @@ export default function DropModal({
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
     >
-      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col gap-4 xl:flex-row xl:items-stretch">
+      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col gap-4 xl:flex-row xl:items-stretch">
       <div
         role="dialog"
         aria-modal="true"
@@ -560,7 +469,9 @@ export default function DropModal({
         aria-describedby="placement-modal-desc"
         className="bg-white rounded-2xl shadow-2xl min-h-0 flex-1 overflow-hidden flex flex-col transition-all duration-200 animate-in fade-in zoom-in-95"
       >
-        <div className="flex justify-between items-start px-5 pt-4 pb-3 border-b border-gray-100 shrink-0">
+
+
+        <div className="flex justify-between items-start px-5 py-3 border-b border-gray-100 shrink-0">
           <div className="flex items-start gap-3">
             <CalendarPlus className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
             <div>
@@ -584,9 +495,9 @@ export default function DropModal({
         <form
           onSubmit={handleModalConfirm}
           onChangeCapture={discardSelectedRecommendation}
-          className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-gray-50/30"
+          className="flex-1 overflow-y-auto px-5 py-3 space-y-3 bg-gray-50/30"
         >
-          <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3 shrink-0">
+          <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-2 shrink-0">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -627,8 +538,12 @@ export default function DropModal({
             </div>
           </section>
 
+
+
+
+
           {/* Meeting Pattern Card */}
-          <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -642,7 +557,8 @@ export default function DropModal({
 
                   const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
                   const dayOneSlots = (isMajor && hasBoth) ? 6 : totalSlots;
-                  const dayTwoSlots = (isMajor && hasBoth) ? 4 : totalSlots;
+                  const dayTwoSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+
 
                   if (nextPattern) {
                     const nextDay2Index = modalDay1Index === modalDay2Index
@@ -654,6 +570,8 @@ export default function DropModal({
                     setModalDay1Duration(dayOneSlots);
                     setModalDay2Duration(dayTwoSlots);
                     setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
+                    setModalDay2RoomId(modalRoomId);
+                    setModalDay2ClassMode(modalClassMode);
                   } else {
                     setModalPreferredPattern(null);
                     setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
@@ -678,7 +596,7 @@ export default function DropModal({
           {/* Meetings Cards Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* First Meeting */}
-            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
               <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
                 <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
                 First Meeting
@@ -823,9 +741,14 @@ export default function DropModal({
                         onChange={(e) => {
                           const newStart = Number(e.target.value);
                           setModalDay1StartSlot(newStart);
-                          if (newStart + modalDay1Duration > 24) {
-                            setModalDay1Duration(Math.max(1, 24 - newStart));
+                          let nextDuration = modalDay1Duration;
+                          if (nextDuration > courseMaxSlots) {
+                            nextDuration = courseMaxSlots;
                           }
+                          if (newStart + nextDuration > 24) {
+                            nextDuration = Math.max(1, 24 - newStart);
+                          }
+                          setModalDay1Duration(nextDuration);
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
@@ -855,12 +778,12 @@ export default function DropModal({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
                     End Time {!isTwoMeetingPattern && "(Auto)"}
                   </label>
                   <div className="relative">
                     <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                    {isTwoMeetingPattern && !(isMajor && hasBoth) ? (
+                    {isTwoMeetingPattern ? (
                       <select
                         value={modalDay1StartSlot + modalDay1Duration}
                         onChange={(e) => {
@@ -869,7 +792,7 @@ export default function DropModal({
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 24 - modalDay1StartSlot }, (_, i) => {
+                        {Array.from({ length: Math.min(24 - modalDay1StartSlot, courseMaxSlots) }, (_, i) => {
                           const val = modalDay1StartSlot + i + 1;
                           const durationHrs = (val - modalDay1StartSlot) / 2;
                           return (
@@ -879,6 +802,7 @@ export default function DropModal({
                           );
                         })}
                       </select>
+
                     ) : (
                       <input
                         type="text"
@@ -894,52 +818,12 @@ export default function DropModal({
                 </div>
               </div>
 
-              {/* Split CSP Slot Recommendations — First Meeting */}
-              {isTwoMeetingPattern && canUseRecommendations && (
-                <div className="border-t border-gray-100 pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-[#C9952A]" />
-                      Intelligent Time Finder
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void findBestSplitTime(1, modalDay1Duration, modalRoomId, modalClassMode)}
-                      disabled={isSplitSearching1}
-                      className="flex items-center gap-1.5 text-xs font-bold text-[#4e0a10] border border-[#4e0a10]/30 rounded-lg px-2.5 py-1.5 bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSplitSearching1
-                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Searching…</>
-                        : <><Search className="w-3 h-3" /> Find best time</>}
-                    </button>
-                  </div>
-                  {splitSearchError1 && (
-                    <p className="text-xs text-red-500 mb-2">{splitSearchError1}</p>
-                  )}
-                  {splitRecs1.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {splitRecs1.map((rec) => (
-                        <button
-                          key={rec.rank}
-                          type="button"
-                          onClick={() => applySplitRec(rec, 1)}
-                          className="flex flex-col items-start gap-0.5 rounded-lg border border-[#4e0a10]/20 bg-[#4e0a10]/5 px-2.5 py-1.5 text-left hover:bg-[#4e0a10]/10 transition-colors"
-                        >
-                          <span className="text-xs font-extrabold text-[#4e0a10]">
-                            {rec.day}, {slotToTimeStr(timeToSlot(rec.start_time))}–{slotToTimeStr(timeToSlot(rec.end_time))}
-                          </span>
-                          <span className="text-[10px] text-gray-500">{rec.room_name} · {rec.mode}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+
             </div>
 
             {/* Second Meeting */}
             {isTwoMeetingPattern ? (
-              <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm animate-in fade-in zoom-in-95">
+              <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm animate-in fade-in zoom-in-95">
                 <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
                   <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
                   Second Meeting
@@ -1068,9 +952,14 @@ export default function DropModal({
                           const newStart = Number(e.target.value);
                           setModalDay2StartSlot(newStart);
                           setIsDay2ModifiedByUser(true);
-                          if (newStart + modalDay2Duration > 24) {
-                            setModalDay2Duration(Math.max(1, 24 - newStart));
+                          let nextDuration = modalDay2Duration;
+                          if (nextDuration > courseMaxSlots) {
+                            nextDuration = courseMaxSlots;
                           }
+                          if (newStart + nextDuration > 24) {
+                            nextDuration = Math.max(1, 24 - newStart);
+                          }
+                          setModalDay2Duration(nextDuration);
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
@@ -1089,80 +978,33 @@ export default function DropModal({
                     </label>
                     <div className="relative">
                       <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                      {!(isMajor && hasBoth) ? (
-                        <select
-                          value={modalDay2StartSlot + modalDay2Duration}
-                          onChange={(e) => {
-                            const endSlot = Number(e.target.value);
-                            setModalDay2Duration(Math.max(1, endSlot - modalDay2StartSlot));
-                            setIsDay2ModifiedByUser(true);
-                          }}
-                          className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
-                        >
-                          {Array.from({ length: 24 - modalDay2StartSlot }, (_, i) => {
-                            const val = modalDay2StartSlot + i + 1;
-                            const durationHrs = (val - modalDay2StartSlot) / 2;
-                            return (
-                              <option key={val} value={val}>
-                                {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
-                              </option>
-                            );
-                          })}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          readOnly
-                          value={`${slotToTimeStr(modalDay2StartSlot + modalDay2Duration)} (${modalDay2Duration / 2} hrs)`}
-                          className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                        />
-                      )}
+                      <select
+                        value={modalDay2StartSlot + modalDay2Duration}
+                        onChange={(e) => {
+                          const endSlot = Number(e.target.value);
+                          setModalDay2Duration(Math.max(1, endSlot - modalDay2StartSlot));
+                          setIsDay2ModifiedByUser(true);
+                        }}
+                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
+                      >
+                        {Array.from({ length: Math.min(24 - modalDay2StartSlot, courseMaxSlots) }, (_, i) => {
+                          const val = modalDay2StartSlot + i + 1;
+                          const durationHrs = (val - modalDay2StartSlot) / 2;
+                          return (
+                            <option key={val} value={val}>
+                              {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
+                            </option>
+                          );
+                        })}
+                      </select>
+
+
                       <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
               </div>
 
-              {/* Split CSP Slot Recommendations — Second Meeting */}
-              {canUseRecommendations && (
-                <div className="border-t border-gray-100 pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-[#C9952A]" />
-                      Intelligent Time Finder
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void findBestSplitTime(2, modalDay2Duration, modalDay2RoomId, modalDay2ClassMode)}
-                      disabled={isSplitSearching2}
-                      className="flex items-center gap-1.5 text-xs font-bold text-[#4e0a10] border border-[#4e0a10]/30 rounded-lg px-2.5 py-1.5 bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSplitSearching2
-                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Searching…</>
-                        : <><Search className="w-3 h-3" /> Find best time</>}
-                    </button>
-                  </div>
-                  {splitSearchError2 && (
-                    <p className="text-xs text-red-500 mb-2">{splitSearchError2}</p>
-                  )}
-                  {splitRecs2.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {splitRecs2.map((rec) => (
-                        <button
-                          key={rec.rank}
-                          type="button"
-                          onClick={() => applySplitRec(rec, 2)}
-                          className="flex flex-col items-start gap-0.5 rounded-lg border border-[#4e0a10]/20 bg-[#4e0a10]/5 px-2.5 py-1.5 text-left hover:bg-[#4e0a10]/10 transition-colors"
-                        >
-                          <span className="text-xs font-extrabold text-[#4e0a10]">
-                            {rec.day}, {slotToTimeStr(timeToSlot(rec.start_time))}–{slotToTimeStr(timeToSlot(rec.end_time))}
-                          </span>
-                          <span className="text-[10px] text-gray-500">{rec.room_name} · {rec.mode}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+
             </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-200 rounded-xl bg-gray-50/30 text-gray-400">
@@ -1172,22 +1014,14 @@ export default function DropModal({
               </div>
             )}
 
-            {isTwoMeetingPattern && (
-              <div className={`col-span-1 lg:col-span-2 flex items-center gap-2 rounded-xl p-3 border text-xs font-bold tracking-wide uppercase select-none ${
-                durationTotalMatches
-                  ? "bg-[#4e0a10]/5 border-[#4e0a10]/10 text-[#4e0a10]"
-                  : "bg-amber-50 border-amber-200 text-amber-800"
-              }`}>
-                <span>Total Contact Hours: {totalContactHours} hours ({totalSlots} slots) · Academic Credit: {dropSubject ? dropSubject.units : 3} Units</span>
-                <span className={`ml-auto font-black px-2 py-0.5 rounded-full border ${
-                  durationTotalMatches
-                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                    : "text-amber-800 bg-white border-amber-200"
-                }`}>
-                  Selected: {((modalDay1Duration + modalDay2Duration) / 2).toFixed(1)} hours
-                </span>
-              </div>
-            )}
+            
+
+
+            
+
+
+
+
 
             {hasConflict && (
               <div className="col-span-1 lg:col-span-2 bg-red-50 border border-red-200 rounded-xl p-4">
@@ -1210,11 +1044,29 @@ export default function DropModal({
           </div>
         </form>
 
-        <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3">
+        <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3.5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className={`flex items-center gap-2 text-sm font-semibold ${hasConflict ? "text-red-600" : "text-emerald-700"}`}>
-              {hasConflict ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
-              {hasConflict ? "Resolve the detected conflict before placing this class." : "Placement is ready to be added to the timetable."}
+            <div className="flex items-start gap-3 min-w-0">
+              <div className={`mt-0.5 rounded-full p-1 shrink-0 ${
+                hasConflict ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+              }`}>
+                {hasConflict ? (
+                  <AlertTriangle className="w-4 h-4" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className={`text-sm font-bold leading-tight ${
+                  hasConflict ? "text-red-700" : "text-emerald-800"
+                }`}>
+                  {hasConflict ? "Resolve Conflicts First" : "Placement is ready to be added"}
+                </p>
+                <p className="text-xs text-gray-500 font-bold mt-0.5 uppercase tracking-wide">
+                  Total Contact Hours: {totalContactHours} hrs ({totalSlots} slots) · {dropSubject ? dropSubject.units : 3} Units
+                  {isTwoMeetingPattern && ` · Selected: ${((modalDay1Duration + modalDay2Duration) / 2).toFixed(1)} hrs`}
+                </p>
+              </div>
             </div>
             <div className="flex justify-end gap-3">
               <button
@@ -1244,13 +1096,15 @@ export default function DropModal({
               "Place on Timetable"
             )}
               </button>
+
+
             </div>
           </div>
         </div>
       </div>
 
       {shouldShowRecommendations && (
-        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[88vh] xl:w-80">
+        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[92vh] xl:w-80">
           <div className="flex items-start gap-2 border-b border-[#C9952A]/20 pb-3">
             <div className="rounded-lg bg-white p-2 shadow-sm">
               <Lightbulb className="w-4 h-4 text-[#7a4c08]" />

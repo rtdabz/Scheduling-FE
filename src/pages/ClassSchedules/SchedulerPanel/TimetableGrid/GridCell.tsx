@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { AlertTriangle, Plus } from "lucide-react";
 
 interface GridCellProps {

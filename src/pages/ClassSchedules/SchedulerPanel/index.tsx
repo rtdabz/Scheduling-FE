@@ -78,6 +78,7 @@ export default function SchedulerPanel() {
         onClose={generateSchedule.closeModal}
         onGenerate={generateSchedule.generate}
         onApplySchedule={generateSchedule.applySchedule}
+        rooms={scheduler.rooms}
       />
       <PrintSchedule
         sections={scheduler.sections}

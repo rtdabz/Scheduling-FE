@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../lib/dataCache';
 
-export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'approved';
+export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'approved' | 'revision';
 
 export interface SectionStatusItem {
   id: number;
@@ -111,7 +111,7 @@ export function useDepartmentScheduleStatus(
   // ── Derived values ──
 
   const stageCounts: StageCounts = useMemo(() => ({
-    draft: sections.filter(s => s.status === 'draft').length,
+    draft: sections.filter(s => s.status === 'draft' || s.status === 'revision').length,
     completed: sections.filter(s => s.status === 'completed').length,
     submitted: sections.filter(s => s.status === 'submitted').length,
     approved_by_dean: sections.filter(s => s.status === 'approved_by_dean').length,
@@ -120,8 +120,8 @@ export function useDepartmentScheduleStatus(
 
   const totalSections = sections.length;
 
-  // "Drafted" means the section has left the pure-draft stage (any status !== draft)
-  const draftedCount = useMemo(() => sections.filter(s => s.status !== 'draft').length, [sections]);
+  // "Drafted" means the section has left the draft stage (status is neither draft nor revision)
+  const draftedCount = useMemo(() => sections.filter(s => s.status !== 'draft' && s.status !== 'revision').length, [sections]);
 
   const draftingProgress = useMemo(() =>
     totalSections > 0 ? Math.round((draftedCount / totalSections) * 100) : 0
@@ -132,7 +132,7 @@ export function useDepartmentScheduleStatus(
     const presentYears = Array.from(new Set(sections.map(s => s.year_level))).sort();
     return presentYears.map(yr => {
       const group = sections.filter(s => s.year_level === yr);
-      const drafted = group.filter(s => s.status !== 'draft').length;
+      const drafted = group.filter(s => s.status !== 'draft' && s.status !== 'revision').length;
       return {
         year_level: yr,
         label: YEAR_LABELS[yr] ?? `Year ${yr}`,

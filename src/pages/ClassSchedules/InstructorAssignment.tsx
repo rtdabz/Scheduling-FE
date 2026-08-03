@@ -120,7 +120,7 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
   timeToMinutes(schedule.start_time) < 17 * 60;
 
 const getRoomName = (schedule: ApiSchedule): string =>
-  schedule.room?.room_code || schedule.room?.building || "Room not set";
+  schedule.room?.room_code || "Room not set";
 
 const getFacultyName = (schedule: ApiSchedule): string | null => {
   if (!schedule.faculty) return null;

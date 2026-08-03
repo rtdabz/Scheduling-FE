@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
 import { BookOpen } from 'lucide-react';

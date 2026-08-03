@@ -20,7 +20,7 @@ import {
 import api from "../../../../lib/api";
 import type { ProgressStep, TimeBlockOption } from "./useGenerateSchedule";
 import { isValidPatternForApi } from "./useGenerateSchedule";
-import type { ApiScheduleRecord, Course } from "../types";
+import type { ApiScheduleRecord, Course, Room } from "../types";
 
 interface SplitOperation {
   term_id: number;
@@ -59,16 +59,25 @@ interface GenerateScheduleModalProps {
   sectionName: string;
   availableCourses?: Course[];
   allCourses?: Course[];
-  preferredTimeBlock?: TimeBlockOption;
-  setPreferredTimeBlock?: (val: TimeBlockOption) => void;
-  splitMinorEnabled?: boolean;
-  setSplitMinorEnabled?: (val: boolean) => void;
-  selectedMinorCourseIds?: string[];
-  setSelectedMinorCourseIds?: React.Dispatch<React.SetStateAction<string[]>>;
+  preferredTimeBlock: TimeBlockOption;
+  setPreferredTimeBlock: (val: TimeBlockOption) => void;
+  splitMinorEnabled: boolean;
+  setSplitMinorEnabled: (val: boolean) => void;
+  selectedMinorCourseIds: string[];
+  setSelectedMinorCourseIds: React.Dispatch<React.SetStateAction<string[]>>;
   onClose: () => void;
-  onGenerate: (sectionId: string, courseIds?: number[]) => void;
+  onGenerate: (
+    sectionId: string,
+    courseIds?: number[],
+    options?: {
+      preferredTimeBlock?: TimeBlockOption;
+      splitMinorEnabled?: boolean;
+      selectedMinorCourseIds?: string[];
+    }
+  ) => void;
   /** Receives pre-validated, conflict-free schedules ready to be saved. */
   onApplySchedule: (finalSchedules: ApiScheduleRecord[]) => void;
+  rooms?: Room[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -132,33 +141,22 @@ export default function GenerateScheduleModal({
   sectionName,
   availableCourses = [],
   allCourses = [],
-  preferredTimeBlock: propPreferredTimeBlock,
-  setPreferredTimeBlock: propSetPreferredTimeBlock,
-  splitMinorEnabled: propSplitMinorEnabled,
-  setSplitMinorEnabled: propSetSplitMinorEnabled,
-  selectedMinorCourseIds: propSelectedMinorCourseIds,
-  setSelectedMinorCourseIds: propSetSelectedMinorCourseIds,
+  preferredTimeBlock,
+  setPreferredTimeBlock,
+  splitMinorEnabled,
+  setSplitMinorEnabled,
+  selectedMinorCourseIds,
+  setSelectedMinorCourseIds,
   onClose,
   onGenerate,
   onApplySchedule,
+  rooms = [],
 }: GenerateScheduleModalProps) {
-  // ── Local fallback state (when props are not wired from parent) ──
-  const [internalTimeBlock, setInternalTimeBlock] = useState<TimeBlockOption>("flexible");
-  const [internalSplitMinorEnabled, setInternalSplitMinorEnabled] = useState(false);
-  const [internalSelectedMinorCourseIds, setInternalSelectedMinorCourseIds] = useState<string[]>([]);
-
   // ── Split pre-validation state ──
   const [splitValidating, setSplitValidating] = useState(false);
   const [resolvedSplit, setResolvedSplit] = useState<ResolvedSplitState | null>(null);
   /** Abort controller ref so we can cancel stale validation requests. */
   const abortRef = useRef<AbortController | null>(null);
-
-  const preferredTimeBlock = propPreferredTimeBlock ?? internalTimeBlock;
-  const setPreferredTimeBlock = propSetPreferredTimeBlock ?? setInternalTimeBlock;
-  const splitMinorEnabled = propSplitMinorEnabled ?? internalSplitMinorEnabled;
-  const setSplitMinorEnabled = propSetSplitMinorEnabled ?? setInternalSplitMinorEnabled;
-  const selectedMinorCourseIds = propSelectedMinorCourseIds ?? internalSelectedMinorCourseIds;
-  const setSelectedMinorCourseIds = propSetSelectedMinorCourseIds ?? setInternalSelectedMinorCourseIds;
 
   // ── Derived course lists ──
   const allSectionCourses = useMemo(() => {
@@ -216,9 +214,22 @@ export default function GenerateScheduleModal({
   // ── Auto-generate on open if no base schedules exist ──
   useEffect(() => {
     if (isOpen && sectionId && baseSchedules.length === 0 && !isGenerating) {
-      onGenerate(sectionId);
+      onGenerate(sectionId, undefined, {
+        preferredTimeBlock,
+        splitMinorEnabled,
+        selectedMinorCourseIds
+      });
     }
-  }, [isOpen, sectionId, baseSchedules.length, isGenerating, onGenerate]);
+  }, [
+    isOpen,
+    sectionId,
+    baseSchedules.length,
+    isGenerating,
+    onGenerate,
+    preferredTimeBlock,
+    splitMinorEnabled,
+    selectedMinorCourseIds
+  ]);
 
   // ── Toggle helpers ──
 
@@ -580,7 +591,9 @@ export default function GenerateScheduleModal({
         item.subject?.course_category ||
         "minor";
       const isMajor = category === "major";
-      const room = item.room?.room_code || "Assigned Room";
+      const room = item.room?.room_code ||
+        rooms.find((r) => String(r.id) === String(item.room_id))?.name ||
+        "Assigned Room";
       const faculty = item.faculty
         ? `${item.faculty.first_name || ""} ${item.faculty.last_name || ""}`.trim()
         : "Unassigned";
@@ -671,7 +684,11 @@ export default function GenerateScheduleModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onGenerate(sectionId)}
+              onClick={() => onGenerate(sectionId, undefined, {
+                preferredTimeBlock,
+                splitMinorEnabled,
+                selectedMinorCourseIds
+              })}
               disabled={isGenerating || isApplying}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/15 cursor-pointer disabled:opacity-50"
             >
@@ -1024,7 +1041,7 @@ export default function GenerateScheduleModal({
                     {
                       id: "flexible",
                       label: "Flexible",
-                      desc: "7 AM - 9 PM",
+                      desc: "7 AM - 7 PM",
                       icon: Clock,
                     },
                     {
@@ -1036,13 +1053,13 @@ export default function GenerateScheduleModal({
                     {
                       id: "afternoon",
                       label: "Afternoon",
-                      desc: "12 PM - 5 PM",
+                      desc: "12 PM - 7 PM",
                       icon: Sunset,
                     },
                     {
                       id: "evening",
                       label: "Evening",
-                      desc: "5 PM - 9 PM",
+                      desc: "5 PM - 7 PM",
                       icon: Moon,
                     },
                   ].map((option) => {

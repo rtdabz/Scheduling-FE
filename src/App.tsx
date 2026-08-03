@@ -127,7 +127,6 @@ export default function App() {
             <Route path="/curricula" element={<CurriculumListPage />} />
             <Route path="/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/curriculum-view" element={<CurriculumViewPage />} />
-            <Route path="/curricula/view" element={<CurriculumViewPage />} />
             <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
             <Route path="/reports" element={<VpaaReports />} />

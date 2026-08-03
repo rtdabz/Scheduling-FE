@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
 

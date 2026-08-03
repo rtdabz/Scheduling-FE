@@ -161,7 +161,7 @@ const dayMapToIndex: Record<string, number> = {
   "Sunday": 6, "Sun": 6
 };
 
-const DAYS_MAP = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS_MAP = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const timeStrToSlot = (timeStr: string): number => {
   const parts = timeStr.split(':');
@@ -183,11 +183,11 @@ const slotToTimeStr12h = (slotIndex: number): string => {
 };
 
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 // Grid configuration
 const START_HOUR = 7; // 7:00 AM
-const END_HOUR = 21; // 9:00 PM
+const END_HOUR = 19; // 7:00 PM
 const VIEWER_SLOT_HEIGHT_PX = 24;
 
 const normalizeDepartmentKey = (code: string, name = "") => {
@@ -523,7 +523,7 @@ export default function VpaaScheduleViewer() {
         // Map rooms
         const mappedRooms = response.data.rooms.map((r) => ({
           id: r.id.toString(),
-          name: r.room_code + (r.building ? ` - ${r.building}` : '')
+          name: r.room_code
         }));
         setRooms(mappedRooms);
 
@@ -541,7 +541,7 @@ export default function VpaaScheduleViewer() {
           if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
             else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code + (item.room.building ? ` - ${item.room.building}` : '');
+            else roomName = item.room.room_code;
           }
 
           const dayIndex = dayMapToIndex[item.day] ?? 0;

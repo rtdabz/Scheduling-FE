@@ -9,7 +9,7 @@ const getPreferredPatternDayIndexes = (preferredPattern?: string | null): number
   if (preferredPattern === "MW") return [0, 2];
   if (preferredPattern === "TTh") return [1, 3];
 
-  const customMatch = preferredPattern.match(/^days:([0-5])-([0-5])$/);
+  const customMatch = preferredPattern.match(/^days:([0-6])-([0-6])$/);
   if (!customMatch) return null;
 
   return [Number(customMatch[1]), Number(customMatch[2])];
@@ -25,17 +25,54 @@ interface UseConflictParams {
   faculties: Faculty[];
 }
 
-const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => (
-  left.termId === right.termId
-  && left.sectionId === right.sectionId
-  && (left.courseId ?? left.subjectId) === (right.courseId ?? right.subjectId)
-  && left.departmentId === right.departmentId
-  && (left.preferredPattern ?? null) === (right.preferredPattern ?? null)
-);
+const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => {
+  if (left.splitGroupId && right.splitGroupId) {
+    return left.splitGroupId === right.splitGroupId;
+  }
+  return (
+    left.termId === right.termId
+    && left.sectionId === right.sectionId
+    && (left.courseId ?? left.subjectId) === (right.courseId ?? right.subjectId)
+    && left.departmentId === right.departmentId
+    && (left.preferredPattern ?? null) === (right.preferredPattern ?? null)
+  );
+};
 
-const isPartTimeOutsideAvailability = (faculty: Faculty | undefined, dayIndex: number, startSlot: number): boolean => (
-  faculty?.employmentType === "part-time" && dayIndex !== 5 && dayIndex !== 6 && startSlot < 20
-);
+const timeToSlot = (timeStr: string): number => {
+  const parts = timeStr.split(":");
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+  const totalMinutes = hours * 60 + minutes;
+  return Math.round((totalMinutes - 420) / 30);
+};
+
+const isPartTimeOutsideAvailability = (
+  faculty: Faculty | undefined,
+  dayIndex: number,
+  startSlot: number,
+  durationSlots: number
+): boolean => {
+  if (!faculty) return false;
+  if (faculty.employmentType !== "part-time") return false;
+
+  const list = faculty.availabilities ?? [];
+  if (list.length === 0) {
+    // Fallback: old hardcoded rule if no availabilities are configured
+    return dayIndex !== 5 && dayIndex !== 6 && startSlot < 20;
+  }
+
+  const dayAvailabilities = list.filter((a) => Number(a.day_index) === dayIndex);
+  if (dayAvailabilities.length === 0) return true;
+
+  const attemptStart = startSlot;
+  const attemptEnd = startSlot + durationSlots;
+
+  return !dayAvailabilities.some((window) => {
+    const windowStart = timeToSlot(window.start_time);
+    const windowEnd = timeToSlot(window.end_time);
+    return attemptStart >= windowStart && attemptEnd <= windowEnd;
+  });
+};
 
 export const getConflictedScheduleMap = (
   schedules: ScheduleItem[],
@@ -45,50 +82,72 @@ export const getConflictedScheduleMap = (
 ): Record<string, NonNullable<ConflictResult>> => {
   const conflictMap: Record<string, NonNullable<ConflictResult>> = {};
 
-  for (let i = 0; i < schedules.length; i++) {
-    const s1 = schedules[i];
-    const s1End = s1.startSlot + s1.durationSlots;
+  // Build grid slot-occupancy index: [dayIndex][slotIndex]
+  const grid: ScheduleItem[][][] = Array.from({ length: 7 }, () =>
+    Array.from({ length: 24 }, () => [])
+  );
+
+  schedules.forEach((s) => {
+    const day = s.dayIndex;
+    if (day < 0 || day > 6) return;
+    const start = Math.max(0, Math.min(23, s.startSlot));
+    const end = Math.max(0, Math.min(24, s.startSlot + s.durationSlots));
+    for (let slot = start; slot < end; slot++) {
+      grid[day][slot].push(s);
+    }
+  });
+
+  const comparedPairs = new Set<string>();
+
+  schedules.forEach((s1) => {
+    const day = s1.dayIndex;
+    if (day < 0 || day > 6) return;
+    const start = Math.max(0, Math.min(23, s1.startSlot));
+    const end = Math.max(0, Math.min(24, s1.startSlot + s1.durationSlots));
     const sub1 = subjects.find((x) => x.id === (s1.courseId ?? s1.subjectId));
 
-    for (let j = i + 1; j < schedules.length; j++) {
-      const s2 = schedules[j];
-      const s2End = s2.startSlot + s2.durationSlots;
+    for (let slot = start; slot < end; slot++) {
+      const candidates = grid[day][slot];
+      for (const s2 of candidates) {
+        if (s2.id === s1.id) continue;
 
-      // Check if on same day and time ranges overlap
-      const overlaps = s1.dayIndex === s2.dayIndex && s1.startSlot < s2End && s2.startSlot < s1End;
-      if (!overlaps) continue;
+        // Ensure unique pair key to run checks exactly once per pair
+        const pairKey = s1.id < s2.id ? `${s1.id}-${s2.id}` : `${s2.id}-${s1.id}`;
+        if (comparedPairs.has(pairKey)) continue;
+        comparedPairs.add(pairKey);
 
-      const sub2 = subjects.find((x) => x.id === (s2.courseId ?? s2.subjectId));
+        const sub2 = subjects.find((x) => x.id === (s2.courseId ?? s2.subjectId));
 
-      // 1. Same Section conflict (Time overlap in same section)
-      if (s1.sectionId && s1.sectionId === s2.sectionId) {
-        const msg1 = `Section conflict: Overlaps with ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-        const msg2 = `Section conflict: Overlaps with ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
-        if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "section", message: msg1 };
-        if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "section", message: msg2 };
-      }
+        // 1. Same Section conflict (Time overlap in same section)
+        if (s1.sectionId && s1.sectionId === s2.sectionId) {
+          const msg1 = `Section conflict: Overlaps with ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+          const msg2 = `Section conflict: Overlaps with ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+          if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "section", message: msg1 };
+          if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "section", message: msg2 };
+        }
 
-      // 2. Room conflict
-      if (s1.roomId && s1.roomId !== "online" && s1.roomId !== "field" && s1.roomId === s2.roomId) {
-        const room = rooms.find((r) => r.id === s1.roomId);
-        const roomName = room?.name ?? "Selected room";
-        const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-        const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
-        if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
-        if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
-      }
+        // 2. Room conflict
+        if (s1.roomId && s1.roomId !== "online" && s1.roomId !== "field" && s1.roomId === s2.roomId) {
+          const room = rooms.find((r) => r.id === s1.roomId);
+          const roomName = room?.name ?? "Selected room";
+          const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+          const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+          if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
+          if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
+        }
 
-      // 3. Faculty conflict
-      if (s1.facultyId && s1.facultyId === s2.facultyId) {
-        const faculty = faculties.find((f) => f.id === s1.facultyId);
-        const facName = faculty?.name ?? "Assigned faculty";
-        const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-        const msg2 = `Faculty conflict: ${facName} is already teaching ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
-        if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "faculty", message: msg1 };
-        if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "faculty", message: msg2 };
+        // 3. Faculty conflict
+        if (s1.facultyId && s1.facultyId === s2.facultyId) {
+          const faculty = faculties.find((f) => f.id === s1.facultyId);
+          const facName = faculty?.name ?? "Assigned faculty";
+          const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+          const msg2 = `Faculty conflict: ${facName} is already teaching ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+          if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "faculty", message: msg1 };
+          if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "faculty", message: msg2 };
+        }
       }
     }
-  }
+  });
 
   return conflictMap;
 };
@@ -136,10 +195,10 @@ export const useConflict = ({
 
     if (facultyId) {
       const faculty = faculties.find((f) => f.id === facultyId);
-      if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot)) {
+      if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot, durationSlots)) {
         return {
           conflictType: "faculty",
-          message: `Part-time availability: ${faculty?.name ?? "Selected faculty"} can only teach from 5:00 PM onward on weekdays or any time on Saturdays or Sundays.`
+          message: `Part-time availability: The assignment falls outside the availability window for ${faculty?.name ?? "Selected faculty"}.`
         };
       }
     }
@@ -192,8 +251,8 @@ export const useConflict = ({
     const target = schedules.find((s) => s.id === scheduleId);
     if (!target) return null;
     const targetFaculty = faculties.find((f) => f.id === facultyId);
-    if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot)) {
-      return `Part-time availability: ${targetFaculty?.name ?? facultyId} can only teach from 5:00 PM onward on weekdays or any time on Saturdays or Sundays.`;
+    if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot, target.durationSlots)) {
+      return `Part-time availability: The assignment falls outside the availability window for ${targetFaculty?.name ?? facultyId}.`;
     }
 
     const endSlot = target.startSlot + target.durationSlots;

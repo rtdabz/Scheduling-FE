@@ -29,7 +29,8 @@ import type {
   Term,
   UserSummary
 } from "../types";
-import { getSubjectTotalSlots, getSubjectContactHours } from "../types";
+import { getSubjectTotalSlots } from "../types";
+
 import type { SubjectClassification } from "../constants";
 import { useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
@@ -65,6 +66,15 @@ const slotToTime24h = (slotIndex: number): string => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
+const isNotFoundError = (err: unknown): boolean => {
+  return (
+    err !== null &&
+    typeof err === "object" &&
+    "response" in err &&
+    (err as any).response?.status === 404
+  );
+};
+
 const buildPreferredPattern = (day1Index: number, day2Index: number): string => `days:${day1Index}-${day2Index}`;
 
 const getPreferredPatternDayIndexes = (preferredPattern?: string | null): [number, number] | null => {
@@ -96,6 +106,7 @@ const departmentSubmittedStatuses: ScheduleItem["status"][] = [
   "faculty_assignment",
   "finalized"
 ];
+
 
 interface StoredUser {
   id?: number;
@@ -135,6 +146,11 @@ interface AcceptedRecommendationResponse {
 
 interface ScheduleUpdateResponse {
   schedule: ApiScheduleRecord;
+  schedules?: ApiScheduleRecord[];
+}
+
+interface FacultyAssignResponse extends Partial<ApiScheduleRecord> {
+  schedule?: ApiScheduleRecord;
   schedules?: ApiScheduleRecord[];
 }
 
@@ -179,7 +195,7 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   if (item.room) {
     if (item.room.room_code === "ONLINE") roomName = "Online";
     else if (item.room.room_code === "FIELD") roomName = "Field";
-    else roomName = item.room.room_code + (item.room.building ? ` - ${item.room.building}` : "");
+    else roomName = item.room.room_code;
   }
 
   let roomIdStr = item.room_id.toString();
@@ -299,7 +315,8 @@ export const useScheduler = () => {
   });
 
   const [isWideView, setIsWideView] = useState<boolean>(() => {
-    return localStorage.getItem("timetable_wide_view") === "true";
+    const saved = localStorage.getItem("timetable_wide_view");
+    return saved === null ? true : saved === "true";
   });
 
   const handleToggleWideView = () => {
@@ -352,7 +369,7 @@ export const useScheduler = () => {
       }
       const mappedRooms = apiRooms.map((r): Room => ({
         id: r.id.toString(),
-        name: r.room_code + (r.building ? ` - ${r.building}` : ''),
+        name: r.room_code,
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status
@@ -384,15 +401,20 @@ export const useScheduler = () => {
         departmentCode: f.department?.department_code,
         departmentName: f.department?.department_name,
         maxUnits: f.max_units ? Number(f.max_units) : undefined,
-        status: f.status
+        status: f.status,
+        availabilities: f.availabilities
       }))
       const term = initialData.active_term;
       const rawSections = initialData.sections;
       const rawSchedules = initialData.schedules;
 
-      // Filter sections by term_id or semester alignment
+      // Filter sections by term_id or semester alignment (requiring academic year match)
       const filteredSections = rawSections
-        .filter((s) => !term || !s.term_id || Number(s.term_id) === Number(term.id) || (term.semester && s.semester === term.semester))
+        .filter((s) => {
+          if (!term) return true;
+          if (s.term_id && Number(s.term_id) === Number(term.id)) return true;
+          return !!(term.semester && s.semester === term.semester && s.term?.academic_year === term.academic_year);
+        })
         .map((s): Section => ({
           id: s.id.toString(),
           name: s.section_name,
@@ -445,7 +467,7 @@ export const useScheduler = () => {
       active = false;
       controller.abort();
     };
-  }, [isVpaa, schedulerCacheKey, user?.department_id]);
+  }, [isVpaa, schedulerCacheKey, user?.department_id, toast]);
 
 
 
@@ -532,7 +554,7 @@ export const useScheduler = () => {
       }
       const mappedRooms = apiRooms.map((r): Room => ({
         id: r.id.toString(),
-        name: r.room_code + (r.building ? ` - ${r.building}` : ''),
+        name: r.room_code,
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status
@@ -670,6 +692,7 @@ export const useScheduler = () => {
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isSubmitApprovalModalOpen, setIsSubmitApprovalModalOpen] = useState(false);
+  const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
   const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [roomViewRoomId, setRoomViewRoomId] = useState<string>("");
@@ -694,8 +717,44 @@ export const useScheduler = () => {
     return sectionSchedules.length > 0 ? sectionSchedules[0].status : "draft";
   }, [sectionSchedules]);
 
+  useEffect(() => {
+    if (currentStatus === "approved" || currentStatus === "approved_by_dean") {
+      window.dispatchEvent(
+        new CustomEvent("show-helper-buddy", {
+          detail: {
+            id: crypto.randomUUID(),
+            type: "approved",
+            text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
+          },
+        })
+      );
+    } else if (currentStatus === "rejected" || currentStatus === "rejected_by_dean" || currentStatus === "revision") {
+      window.dispatchEvent(
+        new CustomEvent("show-helper-buddy", {
+          detail: {
+            id: crypto.randomUUID(),
+            type: "rejected",
+            text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
+          },
+        })
+      );
+    }
+  }, [currentStatus]);
+
+  const triggerConflictReminder = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent("show-helper-buddy", {
+        detail: {
+          id: crypto.randomUUID(),
+          type: "conflict",
+          text: "There's a conflict. Here are some recommended approaches...",
+        },
+      })
+    );
+  }, []);
+
   const isPhase2Active = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
-  const isEditable = currentStatus === "draft";
+  const isEditable = currentStatus === "draft" || currentStatus === "revision";
   const isPhase1Completed = ["completed", "approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
 
@@ -912,7 +971,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
       const hasBoth = subject && Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
       const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
       const splitDay1Slots = (isMajor && hasBoth) ? 6 : totalSlots;
-      const splitDay2Slots = (isMajor && hasBoth) ? 4 : totalSlots;
+      const splitDay2Slots = (isMajor && hasBoth) ? 6 : totalSlots;
+
+
 
       if (isFieldSubject) {
         setModalClassMode("field");
@@ -931,6 +992,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
       } else if (dropContext.isRescheduling && dropContext.scheduleId) {
         const targetSched = schedules.find((s) => s.id === dropContext.scheduleId);
         if (targetSched) {
+          // Fallback room/mode for single-meeting path.
+          // The 2-meeting path below overrides these with sorted[0] values.
           setModalRoomId(targetSched.roomId);
           setModalClassMode(targetSched.mode ?? "on-site");
           setModalIsHybrid(targetSched.isHybrid ?? false);
@@ -943,6 +1006,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
           const sorted = [...existing].sort((a, b) => a.dayIndex - b.dayIndex);
 
           if (sorted.length >= 2) {
+            // Always initialize Meeting 1 from the earliest-day record (sorted[0])
+            // and Meeting 2 from sorted[1] — regardless of which card was clicked.
+            setModalRoomId(sorted[0].roomId);
+            setModalClassMode(sorted[0].mode ?? "on-site");
             setModalDay1Index(patternDays?.[0] ?? sorted[0].dayIndex);
             setModalDay2Index(patternDays?.[1] ?? sorted[1].dayIndex);
             setModalPreferredPattern(targetSched.preferredPattern ?? buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex));
@@ -1042,9 +1109,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setModalDay1Index(patternDays[0]);
       setModalDay2Index(patternDays[1]);
     }
-    setIsDay2ModifiedByUser(false);
-    setModalDay2StartSlot(modalDay1StartSlot);
-  }, [dropContext, modalPreferredPattern, modalDay1StartSlot]);
+    if (!isDay2ModifiedByUser) {
+      setModalDay2StartSlot(modalDay1StartSlot);
+    }
+  }, [dropContext, modalPreferredPattern, modalDay1StartSlot, isDay2ModifiedByUser]);
 
   useEffect(() => {
     if (!isDay2ModifiedByUser) {
@@ -1149,7 +1217,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     modalDay2Duration
   ]);
 
-  const onScheduleRelocated = async (scheduleId: string, dayIndex: number, startSlot: number) => {
+  const onScheduleRelocated = useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
     const sched = schedules.find((s) => s.id === scheduleId);
     if (!sched) return;
     const dayName = fullDayNames[dayIndex];
@@ -1185,7 +1253,13 @@ departmentSectionProgress.every((section) => section.status === "completed");
       toast.success("Schedule Relocated", "Class schedule successfully updated.");
       await refreshSchedules();
     } catch (err) {
-      console.error(err);
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+        return;
+      }
+      triggerConflictReminder();
       const violations = getApiViolations(err);
       const apiMessage = getApiErrorMessage(err);
       if (violations.length > 0) {
@@ -1197,7 +1271,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         toast.error("Relocation Failed", "Could not save the new schedule slot.");
       }
     }
-  };
+  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey]);
 
   const dragDrop = useDragDrop({
     schedules,
@@ -1214,7 +1288,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     setDropContext,
     setConflictInfo,
     checkConflict,
-    onScheduleRelocated
+    onScheduleRelocated,
+    activeTerm
   });
 
   const handleConfirmSchedule = async (e: React.FormEvent) => {
@@ -1228,7 +1303,6 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!subject) return;
 
     const totalSlots = getSubjectTotalSlots(subject);
-    const contactHours = getSubjectContactHours(subject);
     const isMajor = subject?.category === "major";
     const hasBoth = Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
     const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
@@ -1242,13 +1316,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
       return;
     }
 
-    const usesFullDurationMeetings = patternDays && d1 === totalSlots && d2 === totalSlots;
-    if (patternDays && d1 + d2 !== totalSlots && !usesFullDurationMeetings) {
-      setModalValidationError(`Combined meeting durations must equal ${contactHours} hours.`);
-      return;
-    }
+
+
+
 
     // Exclude current slots from conflict checking when rescheduling
+
     const excludeIds = dropContext.isRescheduling
       ? schedules.filter(s => s.subjectId === subject.id && s.sectionId === selectedSectionId).map(s => s.id)
       : [];
@@ -1274,38 +1347,48 @@ departmentSectionProgress.every((section) => section.status === "completed");
       // Slot search resolution: look circularly for a slot where both segments fit
       const maxSlots = 24;
       if (patternDays) {
-        let foundPatternSlots = false;
-        for (let day1Offset = 0; day1Offset < maxSlots; day1Offset++) {
-          const day1Slot = (modalDay1StartSlot + day1Offset) % (maxSlots - d1 + 1);
-          if (day1Slot + d1 > maxSlots) continue;
-          const conflictDay1 = checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], day1Slot, d1, excludeIds, modalPreferredPattern);
-          if (conflictDay1) continue;
+        if (maxSlots - d1 + 1 <= 0 || maxSlots - d2 + 1 <= 0) {
+          resolvedDay1StartSlot = -1;
+          resolvedDay2StartSlot = -1;
+        } else {
+          let foundPatternSlots = false;
+          for (let day1Offset = 0; day1Offset < maxSlots; day1Offset++) {
+            const day1Slot = (modalDay1StartSlot + day1Offset) % (maxSlots - d1 + 1);
+            if (day1Slot + d1 > maxSlots) continue;
+            const conflictDay1 = checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], day1Slot, d1, excludeIds, modalPreferredPattern);
+            if (conflictDay1) continue;
 
-          for (let day2Offset = 0; day2Offset < maxSlots; day2Offset++) {
-            const day2Slot = (modalDay2StartSlot + day2Offset) % (maxSlots - d2 + 1);
-            if (day2Slot + d2 > maxSlots) continue;
-            const conflictDay2 = checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], day2Slot, d2, excludeIds, modalPreferredPattern);
-            if (conflictDay2) continue;
+            for (let day2Offset = 0; day2Offset < maxSlots; day2Offset++) {
+              const day2Slot = (modalDay2StartSlot + day2Offset) % (maxSlots - d2 + 1);
+              if (day2Slot + d2 > maxSlots) continue;
+              const conflictDay2 = checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], day2Slot, d2, excludeIds, modalPreferredPattern);
+              if (conflictDay2) continue;
 
-            resolvedDay1StartSlot = day1Slot;
-            resolvedDay2StartSlot = day2Slot;
-            foundPatternSlots = true;
-            break;
+              resolvedDay1StartSlot = day1Slot;
+              resolvedDay2StartSlot = day2Slot;
+              foundPatternSlots = true;
+              break;
+            }
+
+            if (foundPatternSlots) break;
           }
-
-          if (foundPatternSlots) break;
         }
       } else {
         const maxDuration = singleSlots;
-        for (let offset = 0; offset < maxSlots; offset++) {
-          const s = (modalDay1StartSlot + offset) % (maxSlots - maxDuration + 1);
-          if (s + maxDuration > maxSlots) continue;
-          const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, s, singleSlots, excludeIds, modalPreferredPattern);
-          if (conflict) continue;
-
-          resolvedDay1StartSlot = s;
+        if (maxSlots - maxDuration + 1 <= 0) {
+          resolvedDay1StartSlot = -1;
           resolvedDay2StartSlot = -1;
-          break;
+        } else {
+          for (let offset = 0; offset < maxSlots; offset++) {
+            const s = (modalDay1StartSlot + offset) % (maxSlots - maxDuration + 1);
+            if (s + maxDuration > maxSlots) continue;
+            const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, s, singleSlots, excludeIds, modalPreferredPattern);
+            if (conflict) continue;
+
+            resolvedDay1StartSlot = s;
+            resolvedDay2StartSlot = -1;
+            break;
+          }
         }
       }
     }
@@ -1409,7 +1492,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
           split_group_id: sharedSplitGroupId,
           meeting_type: meetingType,
           meeting_index: index + 1,
-          status: existingRecords[index]?.status ?? "draft"
+          status: existingRecords[index]?.status ?? currentStatus
         };
       });
 
@@ -1464,6 +1547,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setConflictInfo(null);
       await refreshSchedules();
     } catch (err) {
+      triggerConflictReminder();
       const violations = getApiViolations(err);
       const apiMessage = getApiErrorMessage(err);
       if (violations.length > 0) {
@@ -1537,9 +1621,13 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
       toast.success("Schedule Removed", "Class schedule successfully removed.");
       await refreshSchedules();
-      await refreshSchedules();
     } catch (err) {
-      console.error(err);
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+        return;
+      }
       const apiMsg = getApiErrorMessage(err);
       toast.error("Failed to remove schedule", apiMsg || "An error occurred.");
     } finally {
@@ -1596,11 +1684,13 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     try {
       if (validSchedules.length > 0) {
-        await Promise.allSettled(validSchedules.map((s) => api.delete(`/schedules/${s.id}`)));
+        await api.post('/schedules/batch', {
+          operations: [],
+          delete_ids: validSchedules.map((s) => Number(s.id))
+        });
       }
       await refreshSchedules();
     } catch (err) {
-      console.error(err);
       const apiMsg = getApiErrorMessage(err);
       toast.error("Failed to clear schedules", apiMsg || "An error occurred.");
     } finally {
@@ -1616,7 +1706,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
   };
 
   const confirmSubmitForApproval = async () => {
-    if (!selectedSectionId) return;
+    if (!selectedSectionId || isSubmittingSchedule) return;
     const section = sections.find((s) => s.id === selectedSectionId);
     if (!section?.departmentId) {
       toast.error("Unable to Submit", "The selected section is not linked to a department.");
@@ -1625,13 +1715,32 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
 
     try {
+      setIsSubmittingSchedule(true);
       await api.post(`/departments/${section.departmentId}/submit-schedules`);
+
+      // Optimistic update for all sections in this department to instantly reflect submission
+      const deptSectionIds = new Set(
+        sections
+          .filter((s) => s.departmentId === section.departmentId)
+          .map((s) => s.id)
+      );
+      setSchedules((prev) =>
+        prev.map((item) =>
+          deptSectionIds.has(item.sectionId)
+            ? { ...item, status: "submitted" }
+            : item
+        )
+      );
+
       toast.success("Submitted for Approval", "Department schedule submitted successfully.");
-      await refreshSchedules();
+      // Background reload schedules to keep state completely in sync
+      refreshSchedules().catch(() => {});
+      setIsSubmitApprovalModalOpen(false);
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: { message?: string } } };
       toast.error("Failed to submit", apiError.response?.data?.message || "An error occurred.");
     } finally {
+      setIsSubmittingSchedule(false);
       setIsSubmitApprovalModalOpen(false);
     }
   };
@@ -1660,22 +1769,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     try {
       setIsMarkingSectionDone(true);
-      const operations = sectionSchedules.map((s) => ({
-        id: Number(s.id),
-        term_id: s.termId,
-        section_id: Number(s.sectionId),
-        course_id: Number(s.courseId),
-        faculty_id: s.facultyId ? Number(s.facultyId) : null,
-        room_id: resolveRoomId(s),
-        department_id: s.departmentId,
-        day: fullDayNames[s.dayIndex],
-        start_time: slotToTime24h(s.startSlot),
-        end_time: slotToTime24h(s.startSlot + s.durationSlots),
-        mode: s.mode,
-        status: "completed"
-      }));
-
-      await api.post("/schedules/batch", { operations });
+      const ids = sectionSchedules.map((s) => Number(s.id));
+      await api.patch("/schedules/batch-status", { ids, status: "completed" });
 
       const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
@@ -1699,22 +1794,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     try {
       setIsEditingSection(true);
-      const operations = sectionSchedules.map((s) => ({
-        id: Number(s.id),
-        term_id: s.termId,
-        section_id: Number(s.sectionId),
-        course_id: Number(s.courseId),
-        faculty_id: s.facultyId ? Number(s.facultyId) : null,
-        room_id: resolveRoomId(s),
-        department_id: s.departmentId,
-        day: fullDayNames[s.dayIndex],
-        start_time: slotToTime24h(s.startSlot),
-        end_time: slotToTime24h(s.startSlot + s.durationSlots),
-        mode: s.mode,
-        status: "draft"
-      }));
-
-      await api.post("/schedules/batch", { operations });
+      const ids = sectionSchedules.map((s) => Number(s.id));
+      await api.patch("/schedules/batch-status", { ids, status: "draft" });
 
       const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
@@ -1737,35 +1818,20 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!selectedSectionId || isResubmittingSection) return;
     try {
       setIsResubmittingSection(true);
-      const operations = sectionSchedules.map((s) => ({
-        id: Number(s.id),
-        term_id: s.termId,
-        section_id: Number(s.sectionId),
-        course_id: Number(s.courseId),
-        faculty_id: s.facultyId ? Number(s.facultyId) : null,
-        room_id: resolveRoomId(s),
-        department_id: s.departmentId,
-        day: fullDayNames[s.dayIndex],
-        start_time: slotToTime24h(s.startSlot),
-        end_time: slotToTime24h(s.startSlot + s.durationSlots),
-        mode: s.mode,
-        status: "draft"
-      }));
-
-      await api.post("/schedules/batch", { operations });
+      const ids = sectionSchedules.map((s) => Number(s.id));
+      await api.patch("/schedules/batch-status", { ids, status: "revision" });
 
       const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
           sectionScheduleIds.has(schedule.id)
-            ? { ...schedule, status: "draft" }
+            ? { ...schedule, status: "revision" }
             : schedule
         )
       );
-      toast.success("Resubmitted", "Schedule successfully returned to draft.");
+      toast.success("Resubmitted", "Schedule successfully returned under revision.");
       refreshSchedules().catch(() => {});
     } catch (err) {
-      console.error(err);
       toast.error("Failed to resubmit", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
       setIsResubmittingSection(false);
@@ -1777,22 +1843,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (isFinalizing) return;
     try {
       setIsFinalizing(true);
-      const operations = sectionSchedules.map((s) => ({
-        id: Number(s.id),
-        term_id: s.termId,
-        section_id: Number(s.sectionId),
-        course_id: Number(s.courseId),
-        faculty_id: s.facultyId ? Number(s.facultyId) : null,
-        room_id: resolveRoomId(s),
-        department_id: s.departmentId,
-        day: fullDayNames[s.dayIndex],
-        start_time: slotToTime24h(s.startSlot),
-        end_time: slotToTime24h(s.startSlot + s.durationSlots),
-        mode: s.mode,
-        status: "finalized"
-      }));
-
-      await api.post("/schedules/batch", { operations });
+      const ids = sectionSchedules.map((s) => Number(s.id));
+      await api.patch("/schedules/batch-status", { ids, status: "finalized" });
 
       const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
@@ -1841,13 +1893,19 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!fac) return;
     setFacultyActionSlotId(scheduleId);
     try {
-      const response = await api.put(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
-      const resData = response.data as any;
-      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const response = await api.put<FacultyAssignResponse>(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
+      const resData = response.data;
+      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
       const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
     } catch (err: unknown) {
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+        return;
+      }
       const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
       toast.error("Failed to assign faculty", errMsg);
     } finally {
@@ -1867,13 +1925,19 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
     setFacultyActionSlotId(scheduleId);
     try {
-      const response = await api.put(`/schedules/${scheduleId}`, { faculty_id: null });
-      const resData = response.data as any;
-      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const response = await api.put<FacultyAssignResponse>(`/schedules/${scheduleId}`, { faculty_id: null });
+      const resData = response.data;
+      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
       const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
     } catch (err: unknown) {
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+        return;
+      }
       const errMsg = getApiErrorMessage(err) || "Failed to remove faculty. Please try again.";
       toast.error("Failed to remove faculty", errMsg);
     } finally {
@@ -1894,13 +1958,19 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!fac) return;
     setFacultyActionSlotId(slotId);
     try {
-      const response = await api.put(`/schedules/${slotId}`, { faculty_id: Number(facId) });
-      const resData = response.data as any;
-      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, { faculty_id: Number(facId) });
+      const resData = response.data;
+      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
       const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
     } catch (err: unknown) {
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+        return;
+      }
       const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
       toast.error("Failed to assign faculty", errMsg);
     } finally {
@@ -1917,13 +1987,19 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
     setFacultyActionSlotId(slotId);
     try {
-      const response = await api.put(`/schedules/${slotId}`, { faculty_id: null });
-      const resData = response.data as any;
-      const rawList: ApiScheduleRecord[] = resData?.schedules ?? (resData?.schedule ? [resData.schedule] : (resData?.id ? [resData] : []));
+      const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, { faculty_id: null });
+      const resData = response.data;
+      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
       const updatedSchedules = rawList.map(mapApiScheduleToItem);
       applyUpdatedSchedules(updatedSchedules);
       toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
     } catch (err: unknown) {
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+        return;
+      }
       const errMsg = getApiErrorMessage(err) || "Failed to remove faculty. Please try again.";
       toast.error("Failed to remove faculty", errMsg);
     } finally {
@@ -1996,8 +2072,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     setMovingScheduleId(null);
   };
 
-  // Click a time slot to place the armed subject or move the armed class
-  const handleCellClick = (dayIndex: number, timeIndex: number) => {
+  const handleCellClick = async (dayIndex: number, timeIndex: number) => {
     if (!isEditable) return;
 
     if (placementSubjectId) {
@@ -2043,144 +2118,37 @@ departmentSectionProgress.every((section) => section.status === "completed");
       const startTime24h = slotToTime24h(timeIndex);
       const endTime24h = slotToTime24h(timeIndex + sched.durationSlots);
 
-      api.put<ApiScheduleRecord>(`/schedules/${sched.id}`, {
-        day: dayName,
-        start_time: startTime24h,
-        end_time: endTime24h
-      }).then((response) => {
+      try {
+        const response = await api.put<ApiScheduleRecord>(`/schedules/${sched.id}`, {
+          day: dayName,
+          start_time: startTime24h,
+          end_time: endTime24h
+        });
         const updatedSchedule = mapApiScheduleToItem(response.data);
         setSchedules((previousSchedules) =>
           previousSchedules.map((schedule) =>
             schedule.id === updatedSchedule.id ? updatedSchedule : schedule
           )
         );
-        refreshSchedules();
+        await refreshSchedules();
         toast.success("Schedule Relocated", "Class schedule successfully relocated.");
-      }).catch(err => {
-        console.error(err);
-        toast.error("Failed to relocate schedule", "An error occurred.");
-      });
-      setMovingScheduleId(null);
-      setConflictInfo(null);
+      } catch (err) {
+        if (isNotFoundError(err)) {
+          toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+          clearCachedKey(schedulerCacheKey);
+          void refreshData();
+          return;
+        }
+        triggerConflictReminder();
+        const apiMsg = getApiErrorMessage(err);
+        toast.error("Failed to relocate schedule", apiMsg || "An error occurred.");
+      } finally {
+        setMovingScheduleId(null);
+        setConflictInfo(null);
+      }
     }
   };
 
-  const renderStatusBadge = (status: ScheduleItem["status"]) => {
-    const configs: Record<string, { cls: string; label: string }> = {
-      draft: { cls: "bg-slate-500 text-white", label: "Draft" },
-      completed: { cls: "bg-[#4e0a10] text-white", label: "Done" },
-      submitted: { cls: "bg-yellow-500 text-white", label: "Pending Dean Approval" },
-      approved_by_dean: { cls: "bg-blue-600 text-white", label: "Pending VPAA Approval" },
-      rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
-      approved: { cls: "bg-green-600 text-white", label: "Approved" },
-      faculty_assignment: { cls: "bg-purple-600 text-white", label: "Faculty Assignment" },
-      finalized: { cls: "bg-emerald-800 text-white", label: "Finalized" },
-      rejected: { cls: "bg-red-605 text-white", label: "Rejected" }
-    };
-    const cfg = configs[status];
-    if (!cfg) return null;
-    return (
-      <span className={`${cfg.cls} px-3 py-1 rounded-full text-xs font-medium`}>
-        {cfg.label}
-      </span>
-    );
-  };
-
-  const renderActionButton = () => {
-    if (!selectedSectionId) return null;
-    switch (currentStatus) {
-      case "draft": {
-        const remaining = Math.max(0, totalSubjects - totalScheduled);
-        const canMarkDone = totalSubjects > 0 && remaining === 0;
-        return (
-          <button
-            onClick={handleMarkSectionDone}
-            disabled={!canMarkDone || isMarkingSectionDone}
-            title={!canMarkDone ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement` : "Mark this section as done"}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-              canMarkDone && !isMarkingSectionDone
-                ? "bg-[#4e0a10] hover:bg-[#3a0809] text-white cursor-pointer"
-                : canMarkDone
-                ? "bg-[#4e0a10] text-white cursor-wait opacity-80"
-                : "bg-gray-200 text-gray-400 cursor-not-allowed"
-            }`}
-          >
-            {isMarkingSectionDone && <Loader2 className="h-4 w-4 animate-spin" />}
-            {canMarkDone ? (isMarkingSectionDone ? "Marking..." : "Done") : `${remaining} unplaced`}
-          </button>
-        );
-      }
-      case "completed":
-        return (
-          <button
-            onClick={handleEditSection}
-            disabled={isEditingSection}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-              isEditingSection
-                ? "bg-[#C9952A] text-white cursor-wait opacity-80"
-                : "bg-[#C9952A] hover:bg-[#b8841f] text-white cursor-pointer"
-            }`}
-          >
-            {isEditingSection && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isEditingSection ? "Unlocking..." : "Edit"}
-          </button>
-        );
-      case "submitted":
-        return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
-      case "approved_by_dean":
-        return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending VPAA Approval</button>;
-      case "rejected_by_dean":
-      case "rejected":
-        return (
-          <button
-            onClick={handleResubmit}
-            disabled={isResubmittingSection}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-              isResubmittingSection
-                ? "bg-orange-500 text-white cursor-wait opacity-80"
-                : "bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
-            }`}
-          >
-            {isResubmittingSection && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isResubmittingSection ? "Resubmitting..." : "Resubmit"}
-          </button>
-        );
-      case "approved":
-      case "faculty_assignment": {
-        const unassigned = sectionSchedules.filter((s) => !s.facultyId).length;
-        const allAssigned = unassigned === 0;
-        return (
-          <button
-            onClick={handleFinalize}
-            disabled={!allAssigned || isFinalizing}
-            title={!allAssigned ? `${unassigned} slot${unassigned !== 1 ? "s" : ""} still need faculty` : undefined}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-              allAssigned && !isFinalizing
-                ? "bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer"
-                : allAssigned
-                ? "bg-emerald-700 text-white cursor-wait opacity-80"
-                : "bg-gray-200 text-gray-400 cursor-not-allowed"
-            }`}
-          >
-            {isFinalizing && <Loader2 className="h-4 w-4 animate-spin" />}
-            {allAssigned ? (isFinalizing ? "Finalizing..." : "Mark as Finalized") : `${unassigned} slots still need faculty`}
-          </button>
-        );
-      }
-      case "finalized":
-        return <button disabled className="px-4 py-2 bg-emerald-800 text-white text-sm font-semibold rounded-lg cursor-not-allowed opacity-75">Schedule Finalized</button>;
-      default:
-        return null;
-    }
-  };
-
-  const plottingPhaseIcon = isPhase1Completed
-    ? <CheckCircle2 className="w-4 h-4" />
-    : <LayoutGrid className="w-4 h-4" />;
-
-  const facultyPhaseIcon = isPhase2Completed
-    ? <CheckCircle2 className="w-4 h-4" />
-    : <Users className="w-4 h-4" />;
 
   const activeTermText = useMemo(() => {
     if (!activeTerm) return "";
@@ -2265,6 +2233,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     isClearAllModalOpen,
     isClearingAll,
     isSubmitApprovalModalOpen,
+    isSubmittingSchedule,
     confirmSubmitForApproval,
     cancelSubmitForApproval,
     confirmClearAll,
@@ -2318,6 +2287,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
     handleSubmitForApproval,
     handleResubmit,
     handleFinalize,
+    handleMarkSectionDone,
+    handleEditSection,
+    isMarkingSectionDone,
+    isEditingSection,
+    isResubmittingSection,
+    isFinalizing,
     handlePopupFacultyChange,
     handleAssignFaculty,
     handleRemoveFaculty,
@@ -2330,10 +2305,6 @@ departmentSectionProgress.every((section) => section.status === "completed");
     toggleCategory,
     handleSectionSelect,
     handleScheduleCardClick,
-    renderStatusBadge,
-    renderActionButton,
-    plottingPhaseIcon,
-    facultyPhaseIcon,
     isWideView,
     handleToggleWideView,
     ...dragDrop

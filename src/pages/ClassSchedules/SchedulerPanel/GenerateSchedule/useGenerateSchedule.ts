@@ -61,7 +61,15 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
   }, []);
 
   const generate = useCallback(
-    async (sectionId: string, courseIds?: number[]) => {
+    async (
+      sectionId: string,
+      courseIds?: number[],
+      options?: {
+        preferredTimeBlock?: TimeBlockOption;
+        splitMinorEnabled?: boolean;
+        selectedMinorCourseIds?: string[];
+      }
+    ) => {
       if (!sectionId) return;
       setIsGenerating(true);
       setErrorMessage(null);
@@ -76,12 +84,30 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
       }, 550);
 
       try {
-        const payload: { section_id: number; course_ids?: number[]; seed?: number } = {
+        const payload: {
+          section_id: number;
+          course_ids?: number[];
+          seed?: number;
+          preferred_time_block?: TimeBlockOption;
+          split_minor_enabled?: boolean;
+          selected_minor_course_ids?: string[];
+        } = {
           section_id: Number(sectionId),
           seed: Math.floor(Math.random() * 1000000),
         };
         if (courseIds && courseIds.length > 0) {
           payload.course_ids = courseIds;
+        }
+        if (options) {
+          if (options.preferredTimeBlock) {
+            payload.preferred_time_block = options.preferredTimeBlock;
+          }
+          if (options.splitMinorEnabled !== undefined) {
+            payload.split_minor_enabled = options.splitMinorEnabled;
+          }
+          if (options.selectedMinorCourseIds) {
+            payload.selected_minor_course_ids = options.selectedMinorCourseIds;
+          }
         }
 
         // Call preview endpoint to generate schedule candidate preview in-memory
@@ -206,7 +232,25 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           "Schedule Plotted",
           "The generated schedule has been placed into the Timetable Grid."
         );
+        window.dispatchEvent(
+          new CustomEvent("show-helper-buddy", {
+            detail: {
+              id: crypto.randomUUID(),
+              type: "info",
+              text: "You can edit a schedule by clicking its card"
+            }
+          })
+        );
       } catch (err: unknown) {
+        window.dispatchEvent(
+          new CustomEvent("show-helper-buddy", {
+            detail: {
+              id: crypto.randomUUID(),
+              type: "conflict",
+              text: "There's a conflict. Here are some recommended approaches..."
+            }
+          })
+        );
         const apiError = err as {
           response?: {
             data?: {

@@ -512,7 +512,7 @@ export default function VpaaScheduleApprovalPage() {
       case 'rejected_by_dean': return 'Rejected by Dean';
       case 'approved': return 'Approved';
       case 'rejected': return 'Rejected';
-      default: return status;
+      default: return 'UNKNOWN';
     }
   };
 
@@ -526,7 +526,7 @@ export default function VpaaScheduleApprovalPage() {
     if (!item.room) return 'Unassigned';
     if (item.room.room_code === 'ONLINE') return 'Online';
     if (item.room.room_code === 'FIELD') return 'Field';
-    return item.room.building ? `${item.room.room_code} - ${item.room.building}` : item.room.room_code;
+    return item.room.room_code;
   };
 
   const getInstructorName = (item: RawSchedule) => {

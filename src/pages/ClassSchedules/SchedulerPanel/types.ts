@@ -14,7 +14,8 @@ export type ScheduleStatus =
   | "approved"
   | "faculty_assignment"
   | "finalized"
-  | "rejected";
+  | "rejected"
+  | "revision";
 
 export interface Department {
   id: number;
@@ -60,7 +61,7 @@ export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours
   const lec = Number(subject.lectureHours ?? 0);
   const lab = Number(subject.labHours ?? 0);
   if (lec > 0 || lab > 0) {
-    const labContactHours = lab > 0 ? (lab <= 2 ? lab * 3 : lab) : 0;
+    const labContactHours = lab * 3;
     return (lec + labContactHours) * 2;
   }
   return Math.round(Number(subject.units ?? 3) * 2);
@@ -80,6 +81,14 @@ export interface Section {
   status: "active" | "inactive";
 }
 
+export interface FacultyAvailability {
+  id: number;
+  faculty_id: number;
+  day_index: number;
+  start_time: string;
+  end_time: string;
+}
+
 export interface Faculty {
   id: string;
   name: string;
@@ -89,6 +98,7 @@ export interface Faculty {
   departmentName?: string;
   maxUnits?: number;
   status?: "active" | "inactive";
+  availabilities?: FacultyAvailability[];
 }
 
 export interface Room {
@@ -210,6 +220,7 @@ export interface ApiSectionRecord {
   department_id: number;
   term_id: number;
   status?: "active" | "inactive";
+  term?: ApiTermRecord | null;
 }
 
 export interface ApiFacultyRecord {
@@ -224,6 +235,7 @@ export interface ApiFacultyRecord {
     department_code?: string;
     department_name?: string;
   } | null;
+  availabilities?: FacultyAvailability[];
 }
 
 export interface ApiRoomRecord {

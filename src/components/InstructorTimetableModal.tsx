@@ -216,8 +216,7 @@ export default function InstructorTimetableModal({
         });
 
         setSchedules(mapped);
-      } catch (err) {
-        console.error(err);
+      } catch {
         toast.error("Error", "Failed to load instructor timetable.");
       } finally {
         if (isMounted) setLoading(false);

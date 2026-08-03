@@ -1,6 +1,6 @@
 import type React from "react";
 import { DAYS, slotToTimeStr } from "../constants";
-import type { ConflictInfo, DropContext, ScheduleItem, Subject } from "../types";
+import type { ConflictInfo, DropContext, ScheduleItem, Subject, Term } from "../types";
 
 type CheckConflict = (
   subjectId: string,
@@ -30,6 +30,7 @@ interface UseDragDropParams {
   setConflictInfo: React.Dispatch<React.SetStateAction<ConflictInfo | null>>;
   checkConflict: CheckConflict;
   onScheduleRelocated?: (scheduleId: string, dayIndex: number, timeIndex: number) => void;
+  activeTerm: Term | null;
 }
 
 export const useDragDrop = ({
@@ -47,7 +48,8 @@ export const useDragDrop = ({
   setDropContext,
   setConflictInfo,
   checkConflict,
-  onScheduleRelocated
+  onScheduleRelocated,
+  activeTerm
 }: UseDragDropParams) => {
   const handleDragStartFromBank = (e: React.DragEvent, subjectId: string) => {
     setDragSubjectId(subjectId);
@@ -74,6 +76,11 @@ export const useDragDrop = ({
 
   const handleDragOver = (e: React.DragEvent, dayIndex: number, timeIndex: number) => {
     e.preventDefault();
+    const isSummerTerm = activeTerm?.semester === "summer";
+    if (isSummerTerm && dayIndex >= 5) {
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
     const key = `${dayIndex}-${timeIndex}`;
     if (hoveredCell !== key) setHoveredCell(key);
   };
@@ -84,6 +91,9 @@ export const useDragDrop = ({
     e.preventDefault();
     setHoveredCell(null);
     setConflictInfo(null);
+
+    const isSummerTerm = activeTerm?.semester === "summer";
+    if (isSummerTerm && dayIndex >= 5) return;
 
     if (draggedScheduleId) {
       const sched = schedules.find((s) => s.id === draggedScheduleId);

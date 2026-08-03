@@ -1,6 +1,6 @@
 import type { ScheduleItem, Subject } from "./types";
 
-export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export const yearLevelLabel = (year: number): string => {
   switch (year) {

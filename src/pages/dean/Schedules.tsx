@@ -25,7 +25,7 @@ interface Schedule {
   facultyName: string | null;
   roomId: string;
   roomName: string;
-  day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
+  day: "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
   startTime: string;
   endTime: string;
   mode: "on-site" | "online" | "field";
@@ -126,7 +126,7 @@ const dayMapToIndex: Record<string, number> = {
   "Sunday": 6, "Sun": 6
 };
 
-const DAYS_MAP: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS_MAP: Schedule["day"][] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const timeStrToSlot = (timeStr: string): number => {
   const parts = timeStr.split(':');
@@ -147,9 +147,9 @@ const slotToTimeStr12h = (slotIndex: number): string => {
   return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
 };
 
-const DAYS: Schedule["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS: Schedule["day"][] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const START_HOUR = 7;
-const END_HOUR = 21;
+const END_HOUR = 19;
 const SLOT_HEIGHT_PX = 24;
 
 const slotToTime = (slotIndex: number): string => {

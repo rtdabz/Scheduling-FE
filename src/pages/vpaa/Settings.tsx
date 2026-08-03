@@ -58,14 +58,9 @@ const mapApiTerm = (t: ApiTerm): Term => ({
 
 export default function Settings() {
   const { toast } = useToast();
-  const defaultTerms: Term[] = [
-    { id: 1, academic_year: '2026-2027', semester: '1st', is_active: true, is_enabled: true },
-    { id: 2, academic_year: '2026-2027', semester: '2nd', is_active: false, is_enabled: true },
-    { id: 3, academic_year: '2026-2027', semester: 'summer', is_active: false, is_enabled: false }
-  ];
   const settingsCacheKey = 'page:settings';
   const cachedSettingsData = getCachedData<SettingsPageData>(settingsCacheKey);
-  const [terms, setTerms] = useState<Term[]>(cachedSettingsData?.terms ?? defaultTerms);
+  const [terms, setTerms] = useState<Term[]>(cachedSettingsData?.terms ?? []);
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(!hasCachedData(settingsCacheKey));
 
@@ -90,7 +85,7 @@ export default function Settings() {
       const data = await loadCachedData<SettingsPageData>(settingsCacheKey, async () => {
         const res = await api.get<ApiTerm[]>('/terms');
         return {
-          terms: res.data && res.data.length > 0 ? res.data.map(mapApiTerm) : defaultTerms,
+          terms: res.data ? res.data.map(mapApiTerm) : [],
         };
       }, forceRefresh);
       setTerms(data.terms);

@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -97,8 +97,8 @@ export default function WideTimetableGrid({
   const placementLabel = placementSubjectId
     ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
     : movingScheduleId
-    ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
-    : "";
+      ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
+      : "";
 
   return (
     <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/80 shadow-md flex flex-col overflow-hidden h-full">
@@ -129,10 +129,10 @@ export default function WideTimetableGrid({
           <button
             type="button"
             onClick={handleToggleWideView}
-            aria-pressed={true}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border cursor-pointer bg-[#4e0a10] border-[#4e0a10] text-white hover:bg-[#6b0e17] hover:border-[#6b0e17]"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
           >
-            Wide View
+            <BookOpen className="w-3.5 h-3.5" />
+            Show Course Bank
           </button>
           <button
             type="button"
@@ -146,11 +146,10 @@ export default function WideTimetableGrid({
             type="button"
             onClick={handleClearAll}
             disabled={!isEditable || sectionSchedules.length === 0}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${
-              isEditable && sectionSchedules.length > 0
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${isEditable && sectionSchedules.length > 0
                 ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 cursor-pointer"
                 : "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
-            }`}
+              }`}
           >
             <Trash2 className="w-3.5 h-3.5" />
             Clear All
@@ -220,11 +219,10 @@ export default function WideTimetableGrid({
                 return (
                   <div
                     key={day}
-                    className={`border-r border-b p-1.5 font-bold text-xs text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20 ${
-                      isDisabledDay
+                    className={`border-r border-b p-1.5 font-bold text-xs text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20 ${isDisabledDay
                         ? "bg-slate-800/90 text-slate-500 border-slate-700/30"
                         : "bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
-                    }`}
+                      }`}
                     style={{ gridColumn: dIdx + 2, gridRow: 1 }}
                   >
                     <span className={`font-extrabold tracking-widest ${isDisabledDay ? "text-slate-500" : "text-white"}`}>{day}</span>
