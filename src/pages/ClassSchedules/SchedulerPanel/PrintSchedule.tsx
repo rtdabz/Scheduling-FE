@@ -381,14 +381,14 @@ export default function PrintSchedule({
           lineColor: [0, 0, 0]
         },
         columnStyles: {
-          0: { cellWidth: 267 * 0.12 },
-          1: { cellWidth: 267 * 0.32 },
-          2: { cellWidth: 267 * 0.05, halign: 'center' },
-          3: { cellWidth: 267 * 0.05, halign: 'center' },
-          4: { cellWidth: 267 * 0.05, halign: 'center' },
-          5: { cellWidth: 267 * 0.07, halign: 'center' },
+          0: { cellWidth: 267 * 0.11 },
+          1: { cellWidth: 267 * 0.31 },
+          2: { cellWidth: 267 * 0.045, halign: 'center' },
+          3: { cellWidth: 267 * 0.045, halign: 'center' },
+          4: { cellWidth: 267 * 0.045, halign: 'center' },
+          5: { cellWidth: 267 * 0.11, halign: 'center' },
           6: { cellWidth: 267 * 0.20, halign: 'center' },
-          7: { cellWidth: 267 * 0.14, halign: 'center' }
+          7: { cellWidth: 267 * 0.135, halign: 'center' }
         }
       });
 

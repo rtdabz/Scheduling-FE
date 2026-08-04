@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
@@ -116,7 +115,6 @@ interface InitialDataResponse extends Omit<DashboardData, 'activeTerm'> {
 }
 
 export default function DeanDashboardPage() {
-  useTour();
   const { toast } = useToast();
   const navigate = useNavigate();
 

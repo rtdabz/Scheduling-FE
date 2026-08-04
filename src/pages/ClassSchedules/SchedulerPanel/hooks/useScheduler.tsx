@@ -195,7 +195,7 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   if (item.room) {
     if (item.room.room_code === "ONLINE") roomName = "Online";
     else if (item.room.room_code === "FIELD") roomName = "Field";
-    else roomName = item.room.room_code;
+    else roomName = item.room.room_code ?? "";
   }
 
   let roomIdStr = item.room_id.toString();
@@ -1148,7 +1148,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setModalDay2RoomId("field");
     } else if (modalDay2ClassMode === "on-site" && (modalDay2RoomId === "online" || modalDay2RoomId === "field")) {
       if (!modalDay2RoomId || modalDay2RoomId === "online" || modalDay2RoomId === "field") {
-        const subject = dropContext ? subjects.find((s) => s.id === dropContext.subjectId) : null;
+        const subject = dropContext ? subjects.find((s) => String(s.id) === String(dropContext.subjectId)) : null;
         const matchingTypeRooms = rooms.filter(r => 
           (r.status === "available" || !r.status) &&
           (!subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired)
@@ -1162,10 +1162,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
   useEffect(() => {
     if (dropContext && modalRoomId) {
-      const subject = subjects.find((s) => s.id === dropContext.subjectId);
+      const subject = subjects.find((s) => String(s.id) === String(dropContext.subjectId));
       if (subject) {
         const excludeIds = dropContext.isRescheduling
-          ? schedules.filter(s => s.subjectId === subject.id && s.sectionId === selectedSectionId).map(s => s.id)
+          ? schedules.filter(s => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)).map(s => s.id)
           : [];
 
         const totalSlots = getSubjectTotalSlots(subject);
@@ -1323,7 +1323,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     // Exclude current slots from conflict checking when rescheduling
 
     const excludeIds = dropContext.isRescheduling
-      ? schedules.filter(s => s.subjectId === subject.id && s.sectionId === selectedSectionId).map(s => s.id)
+      ? schedules.filter(s => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)).map(s => s.id)
       : [];
 
     let resolvedDay1StartSlot = -1;
@@ -1447,7 +1447,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     let shouldCloseModal = true;
     try {
       const existingRecords = dropContext.isRescheduling
-        ? schedules.filter((s) => s.subjectId === subject.id && s.sectionId === selectedSectionId)
+        ? schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId))
         : [];
 
       const sharedSplitGroupId = targetDays.length > 1

@@ -141,7 +141,7 @@ export const useDragDrop = ({
     } else {
       const subjectId = e.dataTransfer.getData("text/plain") || dragSubjectId;
       if (!subjectId) return;
-      const sub = subjects.find((s) => s.id === subjectId);
+      const sub = subjects.find((s) => String(s.id) === String(subjectId));
       if (!sub) return;
       setDropContext({ courseId: subjectId, subjectId, dayIndex, startSlot: timeIndex, isRescheduling: false });
       setDragSubjectId(null);

@@ -104,7 +104,7 @@ export const getConflictedScheduleMap = (
     if (day < 0 || day > 6) return;
     const start = Math.max(0, Math.min(23, s1.startSlot));
     const end = Math.max(0, Math.min(24, s1.startSlot + s1.durationSlots));
-    const sub1 = subjects.find((x) => x.id === (s1.courseId ?? s1.subjectId));
+    const sub1 = subjects.find((x) => String(x.id) === String(s1.courseId ?? s1.subjectId));
 
     for (let slot = start; slot < end; slot++) {
       const candidates = grid[day][slot];
@@ -116,7 +116,7 @@ export const getConflictedScheduleMap = (
         if (comparedPairs.has(pairKey)) continue;
         comparedPairs.add(pairKey);
 
-        const sub2 = subjects.find((x) => x.id === (s2.courseId ?? s2.subjectId));
+        const sub2 = subjects.find((x) => String(x.id) === String(s2.courseId ?? s2.subjectId));
 
         // 1. Same Section conflict (Time overlap in same section)
         if (s1.sectionId && s1.sectionId === s2.sectionId) {
@@ -128,7 +128,7 @@ export const getConflictedScheduleMap = (
 
         // 2. Room conflict
         if (s1.roomId && s1.roomId !== "online" && s1.roomId !== "field" && s1.roomId === s2.roomId) {
-          const room = rooms.find((r) => r.id === s1.roomId);
+          const room = rooms.find((r) => String(r.id) === String(s1.roomId));
           const roomName = room?.name ?? "Selected room";
           const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
           const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
@@ -138,7 +138,7 @@ export const getConflictedScheduleMap = (
 
         // 3. Faculty conflict
         if (s1.facultyId && s1.facultyId === s2.facultyId) {
-          const faculty = faculties.find((f) => f.id === s1.facultyId);
+          const faculty = faculties.find((f) => String(f.id) === String(s1.facultyId));
           const facName = faculty?.name ?? "Assigned faculty";
           const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
           const msg2 = `Faculty conflict: ${facName} is already teaching ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
@@ -194,7 +194,7 @@ export const useConflict = ({
     }
 
     if (facultyId) {
-      const faculty = faculties.find((f) => f.id === facultyId);
+      const faculty = faculties.find((f) => String(f.id) === String(facultyId));
       if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot, durationSlots)) {
         return {
           conflictType: "faculty",
@@ -205,13 +205,17 @@ export const useConflict = ({
 
     // Room-type compatibility check
     if (roomId && roomId !== "online" && roomId !== "field") {
-      const room = rooms.find((r) => r.id === roomId);
-      const subject = subjects.find((s) => s.id === subjectId);
-      if (room?.roomType && subject?.roomTypeRequired && room.roomType !== subject.roomTypeRequired) {
-        return {
-          conflictType: "room",
-          message: `Room type mismatch: ${subject.code} requires a '${subject.roomTypeRequired}' room, but '${room.name}' is a '${room.roomType}' room.`
-        };
+      const room = rooms.find((r) => String(r.id) === String(roomId));
+      const subject = subjects.find((s) => String(s.id) === String(subjectId));
+      const isMajorOrMinor = subject?.category === "major" || subject?.category === "minor";
+      const isSplit = !!preferredPattern;
+      if (!isSplit || !isMajorOrMinor) {
+        if (room?.roomType && subject?.roomTypeRequired && room.roomType !== subject.roomTypeRequired) {
+          return {
+            conflictType: "room",
+            message: `Room type mismatch: ${subject.code} requires a '${subject.roomTypeRequired}' room, but '${room.name}' is a '${room.roomType}' room.`
+          };
+        }
       }
     }
     for (const s of schedules) {
@@ -229,14 +233,14 @@ export const useConflict = ({
           };
         }
         if (roomId && roomId !== "online" && roomId !== "field" && s.roomId === roomId) {
-          const room = rooms.find((r) => r.id === roomId);
+          const room = rooms.find((r) => String(r.id) === String(roomId));
           return {
             conflictType: "room",
             message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
           };
         }
         if (facultyId && s.facultyId === facultyId) {
-          const faculty = faculties.find((f) => f.id === facultyId);
+          const faculty = faculties.find((f) => String(f.id) === String(facultyId));
           return {
             conflictType: "faculty",
             message: `Faculty conflict: ${faculty?.name ?? "Selected faculty"} is already teaching ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName} at this time.`
@@ -250,7 +254,7 @@ export const useConflict = ({
   const checkFacultyConflict = (facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);
     if (!target) return null;
-    const targetFaculty = faculties.find((f) => f.id === facultyId);
+    const targetFaculty = faculties.find((f) => String(f.id) === String(facultyId));
     if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot, target.durationSlots)) {
       return `Part-time availability: The assignment falls outside the availability window for ${targetFaculty?.name ?? facultyId}.`;
     }
@@ -263,7 +267,7 @@ export const useConflict = ({
       const sEnd = s.startSlot + s.durationSlots;
       const overlaps = target.dayIndex === s.dayIndex && target.startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
-        const fac = faculties.find((f) => f.id === facultyId);
+        const fac = faculties.find((f) => String(f.id) === String(facultyId));
         return `Faculty Conflict: ${fac?.name ?? facultyId} is already scheduled in section ${s.sectionName} for ${s.courseCode || s.subjectCode || "another course"} at ${s.startTime} – ${s.endTime}.`;
       }
     }
@@ -284,10 +288,10 @@ export const useConflict = ({
       excludeId = sched.id;
       prefPattern = sched.preferredPattern ?? null;
     } else if (dragSubjectId) {
-      const sub = subjects.find((s) => s.id === dragSubjectId);
+      const sub = subjects.find((s) => String(s.id) === String(dragSubjectId));
       if (!sub) return false;
       dur = getSubjectTotalSlots(sub);
-      subjectId = sub.id;
+      subjectId = String(sub.id);
     } else {
       return false;
     }

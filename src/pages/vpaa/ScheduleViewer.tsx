@@ -541,7 +541,7 @@ export default function VpaaScheduleViewer() {
           if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
             else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code;
+            else roomName = item.room.room_code ?? "";
           }
 
           const dayIndex = dayMapToIndex[item.day] ?? 0;

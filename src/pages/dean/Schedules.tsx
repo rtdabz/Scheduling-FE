@@ -430,7 +430,7 @@ export default function DeanScheduleViewer() {
             facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
             roomId: item.room_id ? item.room_id.toString() : "",
             roomName,
-            day: DAYS_MAP[dayIndex] || "Mon",
+            day: DAYS_MAP[dayIndex] || "Monday",
             startTime: slotToTimeStr12h(startSlot),
             endTime: slotToTimeStr12h(endSlot),
             mode: item.mode ?? "on-site"

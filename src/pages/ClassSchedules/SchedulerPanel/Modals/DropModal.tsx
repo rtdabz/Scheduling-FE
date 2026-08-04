@@ -25,6 +25,7 @@ interface DropRecommendation {
   rank: number;
   score: number;
   schedules: DropRecommendationRow[];
+  isSingleMeeting?: boolean;
 }
 
 interface DropRecommendationResponse {
@@ -99,6 +100,17 @@ interface DropModalProps {
   setSelectedRecommendationId: (value: number | null) => void;
   setDropContext: (value: DropContext | null) => void;
   handleModalConfirm: (e: React.FormEvent) => void;
+  checkConflict: (
+    subjectId: string,
+    sectionId: string,
+    facultyId: string | null,
+    roomId: string,
+    dayIndex: number,
+    startSlot: number,
+    durationSlots: number,
+    excludeScheduleId?: string | string[],
+    preferredPattern?: string | null
+  ) => { conflictType: "section" | "room" | "faculty"; message: string } | null;
 }
 
 const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -115,6 +127,13 @@ const getStoredRole = (): string => {
   }
 };
 
+const slotToTime24h = (slotIndex: number): string => {
+  const totalMinutes = 7 * 60 + slotIndex * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+};
+
 const timeToSlot = (time: string): number => {
   const [hourRaw, minuteRaw] = time.split(":");
   const hour = Number(hourRaw);
@@ -127,6 +146,17 @@ const getDayIndex = (day: string): number => {
   const fullIndex = fullDayNames.findIndex((item) => item.toLowerCase() === day.toLowerCase());
   if (fullIndex >= 0) return fullIndex;
   return DAYS.findIndex((item) => item.toLowerCase() === day.toLowerCase());
+};
+
+const getPreferredPatternDayIndexes = (preferredPattern?: string | null): number[] | null => {
+  if (!preferredPattern) return null;
+  if (preferredPattern === "MW") return [0, 2];
+  if (preferredPattern === "TTh") return [1, 3];
+
+  const customMatch = preferredPattern.match(/^days:([0-6])-([0-6])$/);
+  if (!customMatch) return null;
+
+  return [Number(customMatch[1]), Number(customMatch[2])];
 };
 
 const normalizePatternLabel = (rows: DropRecommendationRow[]): string => {
@@ -194,7 +224,8 @@ export default function DropModal({
   selectedRecommendationId,
   setSelectedRecommendationId,
   setDropContext,
-  handleModalConfirm
+  handleModalConfirm,
+  checkConflict
 }: DropModalProps) {
   const isSummerTerm = activeTerm?.semester === "summer";
   const availableDays = isSummerTerm ? DAYS.slice(0, 5) : DAYS;
@@ -248,23 +279,179 @@ export default function DropModal({
       setIsRecommendationLoading(true);
       setRecommendationError(null);
 
+      const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
+      const excludeIds = schedules
+        .filter((item) => String(item.sectionId) === String(selectedSectionId) && String(item.courseId ?? item.subjectId) === String(dropSubject.id))
+        .map((item) => String(item.id));
+
+      const conflictDay1 = patternDays && modalDay1Duration > 0
+        ? checkConflict(
+            dropSubject.id,
+            selectedSectionId,
+            null,
+            modalRoomId,
+            patternDays[0],
+            modalDay1StartSlot,
+            modalDay1Duration,
+            excludeIds,
+            modalPreferredPattern
+          )
+        : null;
+
+      const conflictDay2 = patternDays && modalDay2Duration > 0
+        ? checkConflict(
+            dropSubject.id,
+            selectedSectionId,
+            null,
+            modalDay2RoomId,
+            patternDays[1],
+            modalDay2StartSlot,
+            modalDay2Duration,
+            excludeIds,
+            modalPreferredPattern
+          )
+        : null;
+
+      const isMeeting1Conflicted = !!conflictDay1 && !conflictDay2;
+      const isMeeting2Conflicted = !conflictDay1 && !!conflictDay2;
+
       try {
-        const response = await api.post<DropRecommendationResponse>(
-          "/schedule-recommendations/preview",
-          {
-            section_id: Number(selectedSectionId),
-            course_ids: [Number(dropSubject.id)],
-            mode: dropSubjectIsField ? "field" : modalClassMode,
-            is_hybrid: modalIsHybrid,
-            preferred_patterns: modalPreferredPattern
-              ? { [dropSubject.id]: modalPreferredPattern }
-              : {},
-            max_solutions: 3,
-            timeout_seconds: 2
-          },
-          { signal: controller.signal }
-        );
-        setRecommendations(response.data.recommendations);
+        if (isTwoMeetingPattern && (isMeeting1Conflicted || isMeeting2Conflicted)) {
+          const duration = isMeeting1Conflicted ? modalDay1Duration : modalDay2Duration;
+          const roomIdVal = isMeeting1Conflicted ? modalRoomId : modalDay2RoomId;
+          const modeVal = isMeeting1Conflicted ? modalClassMode : modalDay2ClassMode;
+          const meetingType = dropSubject.labHours > 0
+            ? (duration === dropSubject.labHours * 2 ? "laboratory" : "lecture")
+            : "lecture";
+
+          const existingSched = schedules.find(
+            (item) => String(item.sectionId) === String(selectedSectionId) && String(item.courseId ?? item.subjectId) === String(dropSubject.id)
+          );
+          const facultyId = existingSched?.facultyId ?? null;
+
+          const preferredDay = isMeeting1Conflicted
+            ? fullDayNames[modalDay1Index]
+            : fullDayNames[modalDay2Index];
+          const preferredStartTime = isMeeting1Conflicted
+            ? slotToTime24h(modalDay1StartSlot)
+            : slotToTime24h(modalDay2StartSlot);
+
+          const cleanRoomId = roomIdVal && !isNaN(Number(roomIdVal)) ? Number(roomIdVal) : null;
+          const cleanFacultyId = facultyId && !isNaN(Number(facultyId)) ? Number(facultyId) : null;
+          const cleanTermId = activeTerm?.id && !isNaN(Number(activeTerm.id)) ? Number(activeTerm.id) : null;
+          const cleanSectionId = selectedSectionId && !isNaN(Number(selectedSectionId)) ? Number(selectedSectionId) : null;
+          const cleanCourseId = dropSubject?.id && !isNaN(Number(dropSubject.id)) ? Number(dropSubject.id) : null;
+          const cleanDeptId = dropSubject?.departmentId && !isNaN(Number(dropSubject.departmentId)) ? Number(dropSubject.departmentId) : null;
+
+          const response = await api.post<SplitRecommendResponse>(
+            "/schedule-recommendations/recommend-split",
+            {
+              term_id: cleanTermId,
+              section_id: cleanSectionId,
+              course_id: cleanCourseId,
+              department_id: cleanDeptId,
+              duration_slots: duration,
+              room_id: cleanRoomId,
+              mode: modeVal,
+              faculty_id: cleanFacultyId,
+              delete_ids: excludeIds.map(Number).filter((id) => !isNaN(id)),
+              meeting_type: meetingType,
+              preferred_day: preferredDay,
+              preferred_start_time: preferredStartTime,
+              max_solutions: 5,
+              timeout_seconds: 5
+            },
+            { signal: controller.signal }
+          );
+
+          const mappedRecommendations: DropRecommendation[] = response.data.recommendations.map((rec) => {
+            const recRow: DropRecommendationRow = {
+              term_id: cleanTermId!,
+              section_id: cleanSectionId!,
+              course_id: cleanCourseId!,
+              faculty_id: cleanFacultyId,
+              room_id: rec.room_id,
+              department_id: cleanDeptId!,
+              day: rec.day,
+              start_time: rec.start_time,
+              end_time: rec.end_time,
+              mode: rec.mode,
+              is_hybrid: false,
+              preferred_pattern: modalPreferredPattern,
+              status: "draft"
+            };
+
+            const unchangedRoomIdStr = isMeeting1Conflicted ? modalDay2RoomId : modalRoomId;
+            const unchangedClassMode = isMeeting1Conflicted ? modalDay2ClassMode : modalClassMode;
+            let resolvedUnchangedRoomId: number | null = null;
+            if (unchangedRoomIdStr === "online" || unchangedClassMode === "online") {
+              const onlineRoom = rooms.find(r => r.roomType === "online");
+              resolvedUnchangedRoomId = onlineRoom ? Number(onlineRoom.id) : null;
+            } else if (unchangedRoomIdStr === "field" || unchangedClassMode === "field") {
+              const fieldRoom = rooms.find(r => r.roomType === "field");
+              resolvedUnchangedRoomId = fieldRoom ? Number(fieldRoom.id) : null;
+            } else if (unchangedRoomIdStr && !isNaN(Number(unchangedRoomIdStr))) {
+              resolvedUnchangedRoomId = Number(unchangedRoomIdStr);
+            }
+
+            const unchangedRow: DropRecommendationRow = {
+              term_id: cleanTermId!,
+              section_id: cleanSectionId!,
+              course_id: cleanCourseId!,
+              faculty_id: cleanFacultyId,
+              room_id: resolvedUnchangedRoomId!,
+              department_id: cleanDeptId!,
+              day: fullDayNames[isMeeting1Conflicted ? modalDay2Index : modalDay1Index],
+              start_time: slotToTime24h(isMeeting1Conflicted ? modalDay2StartSlot : modalDay1StartSlot),
+              end_time: slotToTime24h(
+                (isMeeting1Conflicted ? modalDay2StartSlot : modalDay1StartSlot) +
+                (isMeeting1Conflicted ? modalDay2Duration : modalDay1Duration)
+              ),
+              mode: unchangedClassMode,
+              is_hybrid: false,
+              preferred_pattern: modalPreferredPattern,
+              status: "draft"
+            };
+
+            const schedulesList = [recRow, unchangedRow].sort((left, right) => (
+              getDayIndex(left.day) - getDayIndex(right.day) ||
+              timeToSlot(left.start_time) - timeToSlot(right.start_time)
+            ));
+
+            const sortedDay1Index = getDayIndex(schedulesList[0].day);
+            const sortedDay2Index = getDayIndex(schedulesList[1].day);
+            const sortedPattern = `days:${sortedDay1Index}-${sortedDay2Index}`;
+
+            schedulesList[0].preferred_pattern = sortedPattern;
+            schedulesList[1].preferred_pattern = sortedPattern;
+
+            return {
+              rank: rec.rank,
+              score: rec.score,
+              schedules: schedulesList,
+              isSingleMeeting: true
+            };
+          });
+
+          setRecommendations(mappedRecommendations);
+        } else {
+          const response = await api.post<DropRecommendationResponse>(
+            "/schedule-recommendations/preview",
+            {
+              section_id: Number(selectedSectionId),
+              course_ids: [Number(dropSubject.id)],
+              mode: dropSubjectIsField ? "field" : modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_patterns: modalPreferredPattern
+                ? { [dropSubject.id]: modalPreferredPattern }
+                : {},
+              max_solutions: 3,
+              timeout_seconds: 2
+            },
+            { signal: controller.signal }
+          );
+          setRecommendations(response.data.recommendations);
+        }
       } catch {
         if (!controller.signal.aborted) {
           setRecommendationError("Recommendations are unavailable right now.");
@@ -289,13 +476,25 @@ export default function DropModal({
     modalIsHybrid,
     modalPreferredPattern,
     selectedSectionId,
-    shouldShowRecommendations
+    shouldShowRecommendations,
+    modalDay1Duration,
+    modalDay2Duration,
+    modalRoomId,
+    modalDay2RoomId,
+    modalDay1Index,
+    modalDay2Index,
+    modalDay1StartSlot,
+    modalDay2StartSlot,
+    schedules,
+    checkConflict,
+    activeTerm,
+    modalDay2ClassMode
   ]);
 
   // Derive term_id and department_id from the selected section for the
   // recommend-split endpoint. Both are available via the spreaded scheduler
   // props (sections array and activeTerm).
-  const selectedSection = sections.find((s) => s.id === selectedSectionId);
+  const selectedSection = sections.find((s) => String(s.id) === String(selectedSectionId));
   const termId = activeTerm?.id ?? null;
   const departmentId = selectedSection?.departmentId ?? null;
 
@@ -303,7 +502,7 @@ export default function DropModal({
   // These tell the Rule Engine to ignore them when checking conflicts.
   const existingDeleteIds = dropContext?.isRescheduling && dropSubject
     ? schedules
-        .filter((s) => s.subjectId === dropSubject.id && s.sectionId === selectedSectionId)
+        .filter((s) => String(s.subjectId) === String(dropSubject.id) && String(s.sectionId) === String(selectedSectionId))
         .map((s) => Number(s.id))
         .filter((id) => !Number.isNaN(id))
     : [];
@@ -382,6 +581,63 @@ export default function DropModal({
     if (isApplyingRecommendation) return;
     discardSelectedRecommendation();
     setIsApplyingRecommendation(true);
+
+    if (recommendation.isSingleMeeting) {
+      try {
+        const sortedRows = [...recommendation.schedules].sort((left, right) => (
+          getDayIndex(left.day) - getDayIndex(right.day)
+          || timeToSlot(left.start_time) - timeToSlot(right.start_time)
+        ));
+        const firstRow = sortedRows[0];
+        if (!firstRow || !dropContext) return;
+
+        const firstDayIndex = getDayIndex(firstRow.day);
+        const firstStartSlot = timeToSlot(firstRow.start_time);
+        const firstEndSlot = timeToSlot(firstRow.end_time);
+
+        setModalRoomId(String(firstRow.room_id));
+        setModalClassMode(firstRow.mode);
+        setModalIsHybrid(firstRow.is_hybrid);
+
+        if (sortedRows.length > 1) {
+          const secondRow = sortedRows[1];
+          const secondDayIndex = getDayIndex(secondRow.day);
+          setModalPreferredPattern(firstRow.preferred_pattern ?? `days:${firstDayIndex}-${secondDayIndex}`);
+          setModalDay1Index(firstDayIndex);
+          setModalDay2Index(secondDayIndex);
+          setModalDay1StartSlot(firstStartSlot);
+          setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
+          setModalDay2StartSlot(timeToSlot(secondRow.start_time));
+          setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
+          setModalDay2RoomId(String(secondRow.room_id));
+          setModalDay2ClassMode(secondRow.mode);
+          setIsDay2ModifiedByUser(true);
+        } else {
+          setModalPreferredPattern(null);
+          setModalDay1Index(firstDayIndex);
+          setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
+          setModalDay1StartSlot(firstStartSlot);
+          setModalDay1Duration(getSubjectTotalSlots(dropSubject));
+          setModalDay2StartSlot(firstStartSlot);
+          setModalDay2Duration(0);
+          setModalDay2RoomId("");
+          setModalDay2ClassMode("on-site");
+          setIsDay2ModifiedByUser(false);
+          setDropContext({
+            ...dropContext,
+            dayIndex: firstDayIndex,
+            startSlot: firstStartSlot
+          });
+        }
+
+        setModalValidationError("");
+        setAppliedRecommendationRank(recommendation.rank);
+        setSelectedRecommendationId(null);
+      } finally {
+        setIsApplyingRecommendation(false);
+      }
+      return;
+    }
 
     try {
       const response = await api.post<SelectedRecommendationResponse>(
@@ -658,7 +914,12 @@ export default function DropModal({
                     >
                       <option value="">Select a room...</option>
                       {rooms
-                        .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
+                        .filter((r) => {
+                          const isMajorOrMinor = dropSubject.category === "major" || dropSubject.category === "minor";
+                          const isSplit = !!modalPreferredPattern;
+                          if (isSplit && isMajorOrMinor) return true;
+                          return !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired;
+                        })
                         .map((r) => {
                           const isUnavailable = r.status === "not available";
                           return (
@@ -885,7 +1146,12 @@ export default function DropModal({
                       >
                         <option value="">Select a room...</option>
                         {rooms
-                          .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
+                          .filter((r) => {
+                            const isMajorOrMinor = dropSubject.category === "major" || dropSubject.category === "minor";
+                            const isSplit = !!modalPreferredPattern;
+                            if (isSplit && isMajorOrMinor) return true;
+                            return !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired;
+                          })
                           .map((r) => {
                             const isUnavailable = r.status === "not available";
                             return (

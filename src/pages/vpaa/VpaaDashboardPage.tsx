@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useTour } from '../../hooks/useTour';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
@@ -309,7 +308,6 @@ const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
 };
 
 export default function VpaaDashboardPage() {
-  useTour();
   const { toast } = useToast();
   const navigate = useNavigate();
 
