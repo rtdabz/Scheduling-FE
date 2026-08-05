@@ -254,7 +254,7 @@ export interface ApiScheduleRecord {
   course_id: number | string;
   subject_id?: number | string;
   section_id: number | string;
-  room_id: number | string;
+  room_id: number | string | null;
   faculty_id?: number | string | null;
   day: string;
   start_time: string;

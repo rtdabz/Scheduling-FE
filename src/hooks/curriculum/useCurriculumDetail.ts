@@ -15,6 +15,21 @@ interface CurriculumDetailCacheData {
   terms: CurriculumTerm[];
 }
 
+interface BatchCreateCourseResult {
+  row_id: string;
+  status: 'success' | 'error';
+  message?: string;
+  course?: CourseOption;
+}
+
+interface ApiErrorResponse {
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
+}
+
 export function useCurriculumDetail(id: string | undefined) {
   const { toast } = useToast();
   const cacheKey = id ? `curriculum:detail:${id}` : '';
@@ -63,9 +78,13 @@ export function useCurriculumDetail(id: string | undefined) {
     [id, cacheKey, toast]
   );
 
-  const fetchCourses = useCallback(async () => {
+  const fetchCourses = useCallback(async (departmentId?: number | null) => {
     try {
-      const res = await api.get('/courses?all=true');
+      const params = new URLSearchParams({ all: 'true' });
+      if (departmentId) {
+        params.set('department_id', String(departmentId));
+      }
+      const res = await api.get(`/courses?${params.toString()}`);
       const data = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
       setAllCourses(data);
     } catch {
@@ -76,9 +95,14 @@ export function useCurriculumDetail(id: string | undefined) {
   useEffect(() => {
     if (id) {
       fetchCurriculum();
-      fetchCourses();
     }
-  }, [id, fetchCurriculum, fetchCourses]);
+  }, [id, fetchCurriculum]);
+
+  useEffect(() => {
+    if (curriculum) {
+      fetchCourses(curriculum.department_id);
+    }
+  }, [curriculum, fetchCourses]);
 
   useEffect(() => {
     if (highlightedCourseId) {
@@ -212,7 +236,7 @@ export function useCurriculumDetail(id: string | undefined) {
           courses: payload,
         });
 
-        const results = res.data.results || [];
+        const results: BatchCreateCourseResult[] = res.data.results || [];
         const successfulNewCourses: CurriculumCourse[] = [];
 
         for (const resItem of results) {
@@ -251,7 +275,7 @@ export function useCurriculumDetail(id: string | undefined) {
           }
         }
 
-        const allFailed = results.length > 0 && results.every((r: any) => r.status === 'error');
+        const allFailed = results.length > 0 && results.every((r) => r.status === 'error');
         if (allFailed) {
           toast.error('Error', 'Failed to save courses. Please review individual row errors.');
         } else if (successfulNewCourses.length > 0) {
@@ -300,8 +324,9 @@ export function useCurriculumDetail(id: string | undefined) {
             `${successfulNewCourses.length} course${successfulNewCourses.length > 1 ? 's' : ''} saved successfully.`
           );
         }
-      } catch (err: any) {
-        const globalErrMsg = err?.response?.data?.message || 'Failed to save courses.';
+      } catch (err: unknown) {
+        const apiError = err as ApiErrorResponse;
+        const globalErrMsg = apiError.response?.data?.message || 'Failed to save courses.';
         toast.error('Error', globalErrMsg);
         if (onProgress) {
           for (const item of validRows) {
@@ -310,7 +335,7 @@ export function useCurriculumDetail(id: string | undefined) {
         }
       }
     },
-    [id, cacheKey, allCourses, curriculum, fetchCurriculum, toast]
+    [id, cacheKey, allCourses, curriculum, toast]
   );
 
   const handleRemoveCourse = useCallback(
@@ -353,7 +378,7 @@ export function useCurriculumDetail(id: string | undefined) {
         setIsRemoving(false);
       }
     },
-    [id, selectedYear, toast, fetchCurriculum]
+    [id, selectedYear, cacheKey, curriculum, toast, fetchCurriculum]
   );
 
   const handleEditCourse = useCallback(
@@ -368,6 +393,70 @@ export function useCurriculumDetail(id: string | undefined) {
       if (!id) return;
       const { courseId, courseCode, courseName, courseCategory, lecUnits, labUnits } = data;
       const totalUnits = lecUnits + labUnits;
+      const normalizedCode = courseCode.replace(/\s+/g, ' ').trim().toUpperCase();
+      const currentTerm = terms.find((t) => t.courses.some((c) => c.id === courseId));
+      const existingCourse = allCourses.find(
+        (course) => course.course_code.replace(/\s+/g, ' ').trim().toUpperCase() === normalizedCode && course.id !== courseId
+      );
+      const existingCourseIsAlreadyAdded = existingCourse
+        ? terms.some((term) => term.courses.some((course) => course.id === existingCourse.id))
+        : false;
+
+      if (existingCourseIsAlreadyAdded) {
+        toast.error('Error', `${normalizedCode} is already added to this curriculum.`);
+        return;
+      }
+
+      if (existingCourse && currentTerm) {
+        setTerms((prev) => {
+          const next = prev.map((term) => {
+            if (!term.courses.some((course) => course.id === courseId)) {
+              return term;
+            }
+
+            const updatedCourses = term.courses.map((course) =>
+              course.id === courseId
+                ? {
+                    id: existingCourse.id,
+                    code: existingCourse.course_code,
+                    title: existingCourse.course_name,
+                    category: (existingCourse.course_category || 'major') as 'major' | 'minor',
+                    lec_units: existingCourse.lecture_hours,
+                    lab_units: existingCourse.lab_hours,
+                    total_units: existingCourse.units,
+                  }
+                : course
+            );
+
+            return {
+              ...term,
+              courses: updatedCourses,
+              totals: {
+                lec: updatedCourses.reduce((sum, course) => sum + course.lec_units, 0),
+                lab: updatedCourses.reduce((sum, course) => sum + course.lab_units, 0),
+                tu: updatedCourses.reduce((sum, course) => sum + course.total_units, 0),
+              },
+            };
+          });
+
+          if (cacheKey && curriculum) {
+            setCachedData(cacheKey, { curriculum, terms: next });
+          }
+
+          return next;
+        });
+
+        try {
+          await curriculumService.attachCourse(id, existingCourse.id, currentTerm.year_level, currentTerm.semester, courseId);
+          clearDataCache();
+          toast.success('Course Updated', `${normalizedCode} linked successfully.`);
+        } catch {
+          toast.error('Error', 'Failed to update course.');
+          fetchCurriculum(true);
+        }
+
+        return;
+      }
 
       setTerms((prev) => {
         const next = prev.map((t) => {
@@ -422,7 +511,7 @@ export function useCurriculumDetail(id: string | undefined) {
 
       try {
         await api.put(`/courses/${courseId}`, {
-          course_code: courseCode,
+          course_code: normalizedCode,
           course_name: courseName,
           course_category: courseCategory,
           lecture_hours: lecUnits,
@@ -437,7 +526,7 @@ export function useCurriculumDetail(id: string | undefined) {
         fetchCurriculum(true);
       }
     },
-    [id, cacheKey, curriculum, toast, fetchCurriculum]
+    [id, cacheKey, curriculum, terms, allCourses, toast, fetchCurriculum]
   );
 
   return {

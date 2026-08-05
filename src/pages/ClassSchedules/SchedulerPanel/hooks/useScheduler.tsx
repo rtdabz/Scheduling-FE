@@ -198,8 +198,8 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     else roomName = item.room.room_code ?? "";
   }
 
-  let roomIdStr = item.room_id.toString();
-  if (item.room?.room_code === "ONLINE") roomIdStr = "online";
+  let roomIdStr = item.room_id == null ? "" : item.room_id.toString();
+  if (item.room?.room_code === "ONLINE" || (item.room_id == null && item.mode === "online")) roomIdStr = "online";
   else if (item.room?.room_code === "FIELD") roomIdStr = "field";
 
   const courseId = item.course_id?.toString() ?? item.subject_id?.toString() ?? "";
@@ -1049,7 +1049,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
             (r.status === "available" || !r.status) &&
             (!subject.roomTypeRequired || r.roomType === subject.roomTypeRequired)
           );
-          const availableRooms = rooms.filter(r => r.status === "available" || !r.status);
+          const availableRooms = rooms.filter(r =>
+            (r.status === "available" || !r.status) &&
+            (r.roomType === "lecture" || r.roomType === "laboratory")
+          );
           const nonConflictingRoom = matchingTypeRooms.find(r => {
             const conflict = checkConflict(
               subject.id,
@@ -1134,7 +1137,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
           (r.status === "available" || !r.status) &&
           (!subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired)
         );
-        const availableRooms = rooms.filter(r => r.status === "available" || !r.status);
+        const availableRooms = rooms.filter(r =>
+          (r.status === "available" || !r.status) &&
+          (r.roomType === "lecture" || r.roomType === "laboratory")
+        );
         const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : "");
         setModalRoomId(defaultRoomId);
       }
@@ -1153,7 +1159,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
           (r.status === "available" || !r.status) &&
           (!subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired)
         );
-        const availableRooms = rooms.filter(r => r.status === "available" || !r.status);
+        const availableRooms = rooms.filter(r =>
+          (r.status === "available" || !r.status) &&
+          (r.roomType === "lecture" || r.roomType === "laboratory")
+        );
         const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : "");
         setModalDay2RoomId(defaultRoomId);
       }

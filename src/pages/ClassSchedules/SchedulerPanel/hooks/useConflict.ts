@@ -204,9 +204,16 @@ export const useConflict = ({
     }
 
     // Room-type compatibility check
-    if (roomId && roomId !== "online" && roomId !== "field") {
+    if (roomId) {
       const room = rooms.find((r) => String(r.id) === String(roomId));
       const subject = subjects.find((s) => String(s.id) === String(subjectId));
+      if (room?.roomType === "online" || room?.roomType === "field") {
+        return {
+          conflictType: "room",
+          message: `Room type mismatch: ${subject?.code ?? "This class"} must use a physical lecture or laboratory room for on-site delivery.`
+        };
+      }
+
       const isMajorOrMinor = subject?.category === "major" || subject?.category === "minor";
       const isSplit = !!preferredPattern;
       if (!isSplit || !isMajorOrMinor) {
