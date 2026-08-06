@@ -21,12 +21,13 @@ import api from "../../../../lib/api";
 import type { ProgressStep, TimeBlockOption } from "./useGenerateSchedule";
 import { isValidPatternForApi } from "./useGenerateSchedule";
 import type { ApiScheduleRecord, Course, Room } from "../types";
+import { DAYS, GRID_HEADER_HEIGHT_PX, slotToTimeStr } from "../constants";
 
 interface SplitOperation {
   term_id: number;
   section_id: number;
   course_id: number;
-  room_id: number;
+  room_id: number | null;
   department_id: number;
   day: string;
   start_time: string;
@@ -127,6 +128,16 @@ const isPathfitOrNstp = (course: { code?: string; name?: string }): boolean => {
     /\bpe[1-4]\b/.test(text)
   );
 };
+
+const PREVIEW_DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -434,7 +445,11 @@ export default function GenerateScheduleModal({
       const courseId = Number(s.course_id ?? s.subject_id);
       const parsedRoomId = Number(s.room_id);
       const roomId =
-        !isNaN(parsedRoomId) && parsedRoomId > 0 ? parsedRoomId : 1;
+        s.mode === "online"
+          ? null
+          : !isNaN(parsedRoomId) && parsedRoomId > 0
+            ? parsedRoomId
+            : null;
       const op: SplitOperation = {
         term_id: Number(s.term_id),
         section_id: Number(s.section_id),
@@ -625,6 +640,148 @@ export default function GenerateScheduleModal({
     return Object.values(groups);
   }, [previewSchedules, allSectionCourses]);
 
+  const previewSchedulesByDay = useMemo(() => {
+    const dayMap = new Map<
+      string,
+      {
+        id: string | number;
+        code: string;
+        name: string;
+        category: string;
+        isMajor: boolean;
+        day: string;
+        start_time: string;
+        end_time: string;
+        room: string;
+        mode: string;
+        meetingType?: "lecture" | "laboratory" | null;
+      }[]
+    >();
+
+    PREVIEW_DAYS.forEach((day) => dayMap.set(day, []));
+
+    previewSchedules.forEach((item) => {
+      const courseIdStr = (item.course_id ?? item.subject_id)?.toString() ?? "";
+      const foundCourse = allSectionCourses.find(
+        (c) =>
+          c.id === courseIdStr ||
+          (c.code &&
+            (item.course?.course_code || item.subject?.course_code || "") &&
+            c.code.toLowerCase() ===
+              (item.course?.course_code || item.subject?.course_code || "").toLowerCase())
+      );
+
+      const code =
+        foundCourse?.code ||
+        item.course?.course_code ||
+        item.subject?.course_code ||
+        item.subject?.subject_code ||
+        "COURSE";
+      const name =
+        foundCourse?.name ||
+        item.course?.course_name ||
+        item.subject?.course_name ||
+        item.subject?.subject_name ||
+        "Course Session";
+      const category =
+        foundCourse?.category ||
+        item.course?.course_category ||
+        item.subject?.course_category ||
+        "minor";
+      const mode = item.mode || "on-site";
+      const room =
+        mode === "online"
+          ? "Online"
+          : item.room?.room_code ||
+            rooms.find((r) => String(r.id) === String(item.room_id))?.name ||
+            "Room TBA";
+
+      const targetDay = PREVIEW_DAYS.includes(item.day) ? item.day : "Monday";
+      dayMap.get(targetDay)?.push({
+        id: item.id,
+        code,
+        name,
+        category,
+        isMajor: category === "major",
+        day: targetDay,
+        start_time: item.start_time,
+        end_time: item.end_time,
+        room,
+        mode,
+        meetingType: item.meeting_type,
+      });
+    });
+
+    return PREVIEW_DAYS.map((day) => ({
+      day,
+      sessions: (dayMap.get(day) ?? []).sort((a, b) =>
+        a.start_time.localeCompare(b.start_time)
+      ),
+    }));
+  }, [previewSchedules, allSectionCourses, rooms]);
+
+  const previewGridSessions = useMemo(() => {
+    return previewSchedules
+      .map((item) => {
+        const courseIdStr = (item.course_id ?? item.subject_id)?.toString() ?? "";
+        const foundCourse = allSectionCourses.find(
+          (c) =>
+            c.id === courseIdStr ||
+            (c.code &&
+              (item.course?.course_code || item.subject?.course_code || "") &&
+              c.code.toLowerCase() ===
+                (item.course?.course_code || item.subject?.course_code || "").toLowerCase())
+        );
+        const code =
+          foundCourse?.code ||
+          item.course?.course_code ||
+          item.subject?.course_code ||
+          item.subject?.subject_code ||
+          "COURSE";
+        const name =
+          foundCourse?.name ||
+          item.course?.course_name ||
+          item.subject?.course_name ||
+          item.subject?.subject_name ||
+          "Course Session";
+        const category =
+          foundCourse?.category ||
+          item.course?.course_category ||
+          item.subject?.course_category ||
+          "minor";
+        const mode = item.mode || "on-site";
+        const room =
+          mode === "online"
+            ? "Online"
+            : item.room?.room_code ||
+              rooms.find((r) => String(r.id) === String(item.room_id))?.name ||
+              "Room TBA";
+        const dayIndex = DAYS.indexOf(item.day);
+        const startSlot = timeStrToSlot(item.start_time);
+        const durationSlots = Math.max(
+          1,
+          timeStrToSlot(item.end_time) - startSlot
+        );
+
+        return {
+          id: item.id,
+          code,
+          name,
+          category,
+          isMajor: category === "major",
+          dayIndex: dayIndex >= 0 ? dayIndex : 0,
+          startSlot,
+          durationSlots,
+          start_time: item.start_time,
+          end_time: item.end_time,
+          room,
+          mode,
+          meetingType: item.meeting_type,
+        };
+      })
+      .sort((a, b) => a.dayIndex - b.dayIndex || a.startSlot - b.startSlot);
+  }, [previewSchedules, allSectionCourses, rooms]);
+
   if (!isOpen) return null;
 
   const uniqueCoursesCount = new Set(
@@ -643,9 +800,12 @@ export default function GenerateScheduleModal({
 
   const applyDisabled =
     previewSchedules.length === 0 ||
+    isGenerating ||
     splitValidating ||
     hasUnresolvableConflict ||
     isApplying;
+
+  const optionsDisabled = isGenerating || isApplying;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -657,7 +817,7 @@ export default function GenerateScheduleModal({
         if (e.target === e.currentTarget && !isGenerating && !isApplying) onClose();
       }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] max-h-[850px] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-amber-900/20">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-7xl h-[92vh] max-h-[900px] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-amber-900/20">
         {/* Header */}
         <div className="bg-gradient-to-r from-[#4e0a10] via-[#5c0d14] to-[#7a121c] p-4 sm:p-5 text-white flex justify-between items-center shrink-0 border-b border-amber-500/20">
           <div className="flex items-center gap-3">
@@ -735,52 +895,8 @@ export default function GenerateScheduleModal({
               </button>
             </div>
           </div>
-        ) : isGenerating ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50/80 backdrop-blur-2xs">
-            <div className="flex flex-col items-center justify-center text-center max-w-sm">
-              <div className="relative flex items-center justify-center mb-6">
-                <div className="w-20 h-20 rounded-full border-4 border-slate-200 border-t-[#4e0a10] border-r-[#C9952A] animate-spin shadow-sm" />
-                <div className="absolute w-12 h-12 rounded-full bg-gradient-to-br from-[#4e0a10]/10 to-[#C9952A]/20 flex items-center justify-center animate-pulse">
-                  <Sparkles className="w-6 h-6 text-[#C9952A]" />
-                </div>
-              </div>
-              <h4 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Generating Optimal Schedule
-              </h4>
-              <p className="text-xs text-slate-500 mt-1 font-medium min-h-[18px]">
-                {progressStep === "generating"
-                  ? "Running Rule Engine & CSP Solver..."
-                  : progressStep === "constraints"
-                    ? "Verifying room, faculty & time slot constraints..."
-                    : "Preparing interactive candidate preview..."}
-              </p>
-              <div className="w-64 bg-slate-200/80 rounded-full h-1.5 overflow-hidden mt-5 shadow-inner">
-                <div
-                  className="bg-gradient-to-r from-[#4e0a10] via-[#7a121c] to-[#C9952A] h-full transition-all duration-300 rounded-full"
-                  style={{
-                    width:
-                      progressStep === "generating"
-                        ? "35%"
-                        : progressStep === "constraints"
-                          ? "70%"
-                          : "95%",
-                  }}
-                />
-              </div>
-              <div className="mt-4 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-white px-3 py-1 rounded-full border border-slate-200/80 shadow-2xs">
-                <Cpu className="w-3.5 h-3.5 text-[#4e0a10]" />
-                <span>
-                  {progressStep === "generating"
-                    ? "Step 1/3: CSP Solver"
-                    : progressStep === "constraints"
-                      ? "Step 2/3: Applying Rules"
-                      : "Step 3/3: Building Preview"}
-                </span>
-              </div>
-            </div>
-          </div>
         ) : (
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100">
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] overflow-hidden bg-slate-100">
             {/* Left Panel: Preview */}
             <div className="flex-1 flex flex-col min-w-0 bg-white border-r border-slate-200 overflow-hidden">
               {/* Summary Stats Header */}
@@ -793,7 +909,12 @@ export default function GenerateScheduleModal({
                   </span>
 
                   {/* Validation status badge */}
-                  {splitValidating ? (
+                  {isGenerating ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Generating preview
+                    </span>
+                  ) : splitValidating ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                       <Loader2 className="w-3 h-3 animate-spin" />
                       Validating splits…
@@ -847,8 +968,217 @@ export default function GenerateScheduleModal({
                 </div>
               )}
 
-              {/* Preview Cards */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Preview Board */}
+              <div className="flex-1 overflow-hidden p-3">
+                {isGenerating ? (
+                  <div className="h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none">
+                    <div
+                      className="h-full grid"
+                      style={{
+                        gridTemplateColumns: "62px repeat(7, minmax(0, 1fr))",
+                        gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(24, minmax(0, 1fr))`,
+                      }}
+                    >
+                      <div className="bg-gradient-to-b from-[#4e0a10] to-[#3d080c] border-r border-b border-[#c9952a]/30 p-1 font-black text-[9px] text-[#c9952a] text-center uppercase tracking-wider flex items-center justify-center">
+                        <Clock className="w-3 h-3 mr-1" />
+                        Time
+                      </div>
+                      {DAYS.map((day) => (
+                        <div
+                          key={day}
+                          className="border-r border-b p-1 font-bold text-[10px] text-center uppercase tracking-wider flex flex-col justify-center items-center bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
+                        >
+                          <span className="font-extrabold tracking-widest">
+                            {day}
+                          </span>
+                        </div>
+                      ))}
+                      {Array.from({ length: 24 }).map((_, slot) => (
+                        <div key={`loading-row-${slot}`} className="contents">
+                          {slot % 2 === 0 && (
+                            <div
+                              className="bg-slate-50/90 border-r border-b border-slate-200 text-[8px] font-bold text-slate-500 flex justify-center items-center px-1"
+                              style={{ gridColumn: 1, gridRow: `${slot + 2} / span 2` }}
+                            >
+                              <span className="font-extrabold text-slate-600 whitespace-nowrap">
+                                {slotToTimeStr(slot)}
+                              </span>
+                            </div>
+                          )}
+                          {DAYS.map((_, dayIndex) => (
+                            <div
+                              key={`loading-cell-${dayIndex}-${slot}`}
+                              className="border-r border-b border-slate-200 bg-white/80"
+                            />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="absolute left-0 right-0 top-[48px] z-20 h-1 bg-slate-100">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#4e0a10] via-[#7a121c] to-[#C9952A] transition-all duration-300"
+                        style={{
+                          width:
+                            progressStep === "generating"
+                              ? "35%"
+                              : progressStep === "constraints"
+                                ? "70%"
+                                : "95%",
+                        }}
+                      />
+                    </div>
+
+                    <div className="absolute left-[74px] right-3 top-[58px] z-20 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50/95 px-3 py-2 shadow-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Cpu className="w-4 h-4 text-[#4e0a10] shrink-0" />
+                        <span className="text-xs font-extrabold text-slate-900">
+                          Generating schedule
+                        </span>
+                        <span className="truncate text-[11px] font-semibold text-slate-600">
+                          {progressStep === "generating"
+                            ? "Building candidate timetable..."
+                            : progressStep === "constraints"
+                              ? "Checking rooms, modes, and conflicts..."
+                              : "Preparing final preview..."}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-[10px] font-black uppercase tracking-wide text-amber-800">
+                        {progressStep === "generating"
+                          ? "Step 1/3"
+                          : progressStep === "constraints"
+                            ? "Step 2/3"
+                            : "Step 3/3"}
+                      </span>
+                    </div>
+                  </div>
+                ) : previewSchedules.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                    <Layers className="w-10 h-10 mb-2 opacity-50 text-slate-300" />
+                    <p className="text-sm font-semibold text-slate-600">
+                      No Generated Schedules
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                      Click Regenerate or select a valid section to generate a
+                      schedule preview.
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    className={`h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none ${splitValidating ? "opacity-70" : ""}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "62px repeat(7, minmax(0, 1fr))",
+                      gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(24, minmax(0, 1fr))`,
+                    }}
+                  >
+                    <div
+                      className="bg-gradient-to-b from-[#4e0a10] to-[#3d080c] border-r border-b border-[#c9952a]/30 p-1 font-black text-[9px] text-[#c9952a] text-center uppercase tracking-wider select-none flex items-center justify-center"
+                      style={{ gridColumn: 1, gridRow: 1 }}
+                    >
+                      <Clock className="w-3 h-3 mr-1" />
+                      Time
+                    </div>
+
+                    {DAYS.map((day, dayIndex) => (
+                      <div
+                        key={day}
+                        className="border-r border-b p-1 font-bold text-[10px] text-center uppercase tracking-wider select-none flex flex-col justify-center items-center bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
+                        style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+                      >
+                        <span className="font-extrabold tracking-widest">
+                          {day}
+                        </span>
+                        <span className="text-[8px] text-[#c9952a] font-extrabold mt-0.5 bg-[#c9952a]/15 border border-[#c9952a]/30 px-1.5 py-0.5 rounded-full">
+                          {previewGridSessions.filter((s) => s.dayIndex === dayIndex).length}
+                        </span>
+                      </div>
+                    ))}
+
+                    {Array.from({ length: 24 }).map((_, slot) => (
+                      <div key={`preview-row-${slot}`} className="contents">
+                        {slot % 2 === 0 && (
+                          <div
+                            className="bg-slate-50/90 border-r border-b border-slate-200 text-[8px] font-bold text-slate-500 flex justify-center items-center select-none px-1"
+                            style={{
+                              gridColumn: 1,
+                              gridRow: `${slot + 2} / span 2`,
+                            }}
+                          >
+                            <span className="font-extrabold text-slate-600 whitespace-nowrap">
+                              {slotToTimeStr(slot)}
+                            </span>
+                          </div>
+                        )}
+
+                        {DAYS.map((_, dayIndex) => (
+                          <div
+                            key={`preview-cell-${dayIndex}-${slot}`}
+                            className="border-r border-b border-slate-200 bg-white"
+                            style={{ gridColumn: dayIndex + 2, gridRow: slot + 2 }}
+                          />
+                        ))}
+                      </div>
+                    ))}
+
+                    {previewGridSessions.map((session) => {
+                      const isLab = session.meetingType === "laboratory";
+                      const isOnline = session.mode === "online";
+                      const isCompact = session.durationSlots <= 2;
+                      return (
+                        <div
+                          key={`${session.id}-${session.dayIndex}-${session.startSlot}-${session.meetingType ?? "class"}`}
+                          className={`z-10 m-0.5 rounded-lg border-2 border-l-4 box-border overflow-hidden px-2 py-1 shadow-sm ${
+                            isLab
+                              ? "bg-amber-50/95 border-amber-100/80 border-l-[#c9952a]"
+                              : session.isMajor
+                                ? "bg-rose-50/95 border-rose-100/80 border-l-[#4e0a10]"
+                                : "bg-amber-50/95 border-amber-100/80 border-l-[#c9952a]"
+                          }`}
+                          style={{
+                            gridColumn: session.dayIndex + 2,
+                            gridRow: `${session.startSlot + 2} / span ${session.durationSlots}`,
+                          }}
+                          title={`${session.code} ${session.name}`}
+                        >
+                          <div className="flex h-full min-w-0 flex-col justify-between">
+                            <div className="flex items-center justify-between gap-1 min-w-0">
+                              <span
+                                className={`truncate text-[10px] font-black uppercase tracking-tight ${
+                                  session.isMajor ? "text-[#4e0a10]" : "text-amber-900"
+                                }`}
+                              >
+                                {session.code}
+                              </span>
+                              <span
+                                className={`shrink-0 rounded px-1 py-0.5 text-[7px] font-bold uppercase ${
+                                  isLab
+                                    ? "bg-amber-100 text-amber-800"
+                                    : isOnline
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-blue-50 text-blue-700"
+                                }`}
+                              >
+                                {isLab ? "Lab" : isOnline ? "Online" : "Lec"}
+                              </span>
+                            </div>
+                            {!isCompact && (
+                              <div className="truncate text-[9px] font-semibold text-slate-600">
+                                {session.room}
+                              </div>
+                            )}
+                            <div className="truncate text-[8.5px] font-medium text-slate-500">
+                              {formatTimeDisplay(session.start_time)}-{formatTimeDisplay(session.end_time)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="hidden">
                 {previewSchedules.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
                     <Layers className="w-10 h-10 mb-2 opacity-50 text-slate-300" />
@@ -975,7 +1305,9 @@ export default function GenerateScheduleModal({
               {/* Left Panel Footer */}
               <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
                 <p className="text-xs text-slate-500 font-medium hidden sm:block">
-                  {isApplying
+                  {isGenerating
+                    ? "Generating schedule preview..."
+                    : isApplying
                     ? "Applying schedule to grid..."
                     : splitValidating
                       ? "Validating split sessions for conflicts…"
@@ -1012,7 +1344,7 @@ export default function GenerateScheduleModal({
             </div>
 
             {/* Right Panel: Schedule Options */}
-            <div className="w-full md:w-[360px] lg:w-[400px] bg-slate-50 p-4 sm:p-5 overflow-y-auto shrink-0 space-y-5 flex flex-col justify-start">
+            <div className={`min-w-0 bg-slate-50 p-3 sm:p-4 overflow-hidden shrink-0 space-y-3 flex flex-col justify-start ${optionsDisabled ? "opacity-60" : ""}`}>
               <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                 <div className="flex items-center gap-2">
                   <Filter className="w-4 h-4 text-[#4e0a10]" />
@@ -1026,16 +1358,13 @@ export default function GenerateScheduleModal({
               </div>
 
               {/* 1. Preferred Time Block */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <Clock className="w-4 h-4 text-[#4e0a10]" />
                     Preferred Time Block
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 leading-snug">
-                  Select a preferred window to bias class placements.
-                </p>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {[
                     {
@@ -1069,10 +1398,11 @@ export default function GenerateScheduleModal({
                       <button
                         key={option.id}
                         type="button"
+                        disabled={optionsDisabled}
                         onClick={() =>
                           setPreferredTimeBlock(option.id as TimeBlockOption)
                         }
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                        className={`p-2 rounded-lg border text-left transition-all flex flex-col justify-between min-h-[62px] disabled:cursor-not-allowed ${isSelected
                             ? "bg-[#4e0a10]/5 border-[#4e0a10] ring-1 ring-[#4e0a10] text-[#4e0a10]"
                             : "bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100"
                           }`}
@@ -1106,30 +1436,20 @@ export default function GenerateScheduleModal({
 
 
               {/* 3. Split Minor Courses */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
                     <input
                       type="checkbox"
                       checked={splitMinorEnabled}
+                      disabled={optionsDisabled}
                       onChange={(e) => setSplitMinorEnabled(e.target.checked)}
-                      className="w-4 h-4 rounded text-[#4e0a10] focus:ring-[#4e0a10] border-slate-300 cursor-pointer"
+                      className="w-4 h-4 rounded text-[#4e0a10] focus:ring-[#4e0a10] border-slate-300 cursor-pointer disabled:cursor-not-allowed"
                     />
                     Split Minor Courses
                   </label>
                   <span className="text-[10px] font-extrabold px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded-md">
                     1.5h Sessions
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-snug">
-                  Splits minor courses into 1.5-hour sessions on valid days
-                  according to scheduling rules.
-                </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-start gap-1.5 text-[11px] text-amber-800">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                  <span>
-                    PATHFIT &amp; NSTP (ROTC/CWTS) are automatically excluded
-                    from splitting.
                   </span>
                 </div>
                 {splitMinorEnabled && (
@@ -1141,7 +1461,8 @@ export default function GenerateScheduleModal({
                       <button
                         type="button"
                         onClick={toggleSelectAllMinors}
-                        className="text-[#4e0a10] hover:underline font-bold cursor-pointer"
+                        disabled={optionsDisabled}
+                        className="text-[#4e0a10] hover:underline font-bold cursor-pointer disabled:cursor-not-allowed disabled:text-slate-400"
                       >
                         {selectedMinorCourseIds.length ===
                           eligibleMinorCourses.length
@@ -1149,7 +1470,7 @@ export default function GenerateScheduleModal({
                           : "Select All"}
                       </button>
                     </div>
-                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                    <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
                       {eligibleMinorCourses.length === 0 ? (
                         <p className="text-[11px] text-slate-400 italic">
                           No eligible minor courses found.
@@ -1168,8 +1489,9 @@ export default function GenerateScheduleModal({
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
+                                  disabled={optionsDisabled}
                                   onChange={() => toggleMinorCourse(course.id)}
-                                  className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 border-slate-300 cursor-pointer shrink-0"
+                                  className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 border-slate-300 cursor-pointer shrink-0 disabled:cursor-not-allowed"
                                 />
                                 <span className="font-bold text-slate-900 shrink-0">
                                   {course.code}

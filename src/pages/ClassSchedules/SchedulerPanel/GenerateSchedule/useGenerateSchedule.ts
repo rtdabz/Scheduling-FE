@@ -169,7 +169,11 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           const courseId = Number(s.course_id ?? s.subject_id);
           const parsedRoomId = Number(s.room_id);
           const roomId =
-            !isNaN(parsedRoomId) && parsedRoomId > 0 ? parsedRoomId : 1;
+            s.mode === "online"
+              ? null
+              : !isNaN(parsedRoomId) && parsedRoomId > 0
+                ? parsedRoomId
+                : null;
           const patternToUse = isValidPatternForApi(s.preferred_pattern)
             ? (s.preferred_pattern ?? null)
             : null;
@@ -178,7 +182,7 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
             term_id: number;
             section_id: number;
             course_id: number;
-            room_id: number;
+            room_id: number | null;
             department_id: number;
             day: string;
             start_time: string;

@@ -99,7 +99,6 @@ export default function WideTimetableGrid({
     : movingScheduleId
       ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
       : "";
-
   return (
     <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/80 shadow-md flex flex-col overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 shrink-0">

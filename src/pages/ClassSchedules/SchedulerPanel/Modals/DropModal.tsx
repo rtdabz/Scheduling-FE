@@ -310,7 +310,7 @@ export default function DropModal({
           const cleanTermId = activeTerm?.id && !isNaN(Number(activeTerm.id)) ? Number(activeTerm.id) : null;
           const cleanSectionId = selectedSectionId && !isNaN(Number(selectedSectionId)) ? Number(selectedSectionId) : null;
           const cleanCourseId = dropSubject?.id && !isNaN(Number(dropSubject.id)) ? Number(dropSubject.id) : null;
-          const cleanDeptId = dropSubject?.departmentId && !isNaN(Number(dropSubject.departmentId)) ? Number(dropSubject.departmentId) : null;
+          const cleanDeptId = departmentId && !isNaN(Number(departmentId)) ? Number(departmentId) : null;
 
           const buildCurrentMeetingRow = (
             dayIndex: number,
@@ -604,9 +604,7 @@ export default function DropModal({
     ? modalDay1Duration + modalDay2Duration
     : totalSlots;
 
-  // Course contact hours limit: lectureHours + labHours (fallback to units if 0)
-  const courseMaxHours = (Number(dropSubject.lectureHours ?? 0) + Number(dropSubject.labHours ?? 0)) || Number(dropSubject.units ?? 3);
-  const courseMaxSlots = courseMaxHours * 2;
+  const courseMaxSlots = isTwoMeetingPattern && hasBoth ? 6 : totalSlots;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
@@ -1444,18 +1442,19 @@ export default function DropModal({
             </div>
           ) : (
             <div className="mt-3 space-y-2 overflow-y-auto pr-1">
-              {recommendations.map((recommendation) => {
+              {recommendations.map((recommendation, index) => {
                 const isApplied = appliedRecommendationRank === recommendation.rank;
+                const displayRank = index + 1;
 
                 return (
                   <div
-                    key={recommendation.rank}
+                    key={`${recommendation.rank}-${index}`}
                     className={`rounded-lg border bg-white p-3 shadow-sm transition-colors ${
                       isApplied ? "border-emerald-300 ring-1 ring-emerald-200" : "border-white/70"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-extrabold text-[#4e0a10]">Option {recommendation.rank}</p>
+                      <p className="text-sm font-extrabold text-[#4e0a10]">Option {displayRank}</p>
                       {isApplied && (
                         <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
                           <CheckCircle2 className="w-3.5 h-3.5" />
