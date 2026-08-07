@@ -224,7 +224,7 @@ export default function GenerateScheduleModal({
 
   // ── Auto-generate on open if no base schedules exist ──
   useEffect(() => {
-    if (isOpen && sectionId && baseSchedules.length === 0 && !isGenerating) {
+    if (isOpen && sectionId && baseSchedules.length === 0 && !isGenerating && !errorMessage) {
       onGenerate(sectionId, undefined, {
         preferredTimeBlock,
         splitMinorEnabled,
@@ -236,6 +236,7 @@ export default function GenerateScheduleModal({
     sectionId,
     baseSchedules.length,
     isGenerating,
+    errorMessage,
     onGenerate,
     preferredTimeBlock,
     splitMinorEnabled,
@@ -814,7 +815,7 @@ export default function GenerateScheduleModal({
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 sm:p-6"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !isGenerating && !isApplying) onClose();
+        if (e.target === e.currentTarget && !isApplying) onClose();
       }}
     >
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-7xl h-[92vh] max-h-[900px] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-amber-900/20">
@@ -860,7 +861,7 @@ export default function GenerateScheduleModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isGenerating || isApplying}
+              disabled={isApplying}
               className="text-white/70 hover:text-white hover:bg-white/10 rounded-full p-1.5 transition-colors cursor-pointer disabled:opacity-50"
             >
               <X className="w-5 h-5" />

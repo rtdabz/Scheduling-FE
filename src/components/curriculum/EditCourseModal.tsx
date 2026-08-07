@@ -31,8 +31,8 @@ export default function EditCourseModal({
   const [courseCode, setCourseCode] = useState('');
   const [courseName, setCourseName] = useState('');
   const [courseCategory, setCourseCategory] = useState<'major' | 'minor'>('major');
-  const [lecUnits, setLecUnits] = useState(0);
-  const [labUnits, setLabUnits] = useState(0);
+  const [lecUnits, setLecUnits] = useState('');
+  const [labUnits, setLabUnits] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,8 +41,8 @@ export default function EditCourseModal({
       setCourseName(course.title || '');
       const cat = String(course.category || '').toLowerCase().trim();
       setCourseCategory(cat === 'minor' ? 'minor' : 'major');
-      setLecUnits(course.lec_units ?? 0);
-      setLabUnits(course.lab_units ?? 0);
+      setLecUnits(course.lec_units == null ? '' : String(course.lec_units).padStart(2, '0'));
+      setLabUnits(course.lab_units == null ? '' : String(course.lab_units).padStart(2, '0'));
       setError(null);
     }
   }, [course, isOpen]);
@@ -61,6 +61,13 @@ export default function EditCourseModal({
       return;
     }
 
+    if (!lecUnits.trim() || !labUnits.trim()) {
+      if (!lecUnits.trim() && !labUnits.trim()) setError('LEC Units and LAB Units are required');
+      else if (!lecUnits.trim()) setError('LEC Units is required');
+      else setError('LAB Units is required');
+      return;
+    }
+
     setError(null);
 
     await onSave({
@@ -68,8 +75,8 @@ export default function EditCourseModal({
       courseCode: trimmedCode,
       courseName: formattedName,
       courseCategory,
-      lecUnits,
-      labUnits,
+      lecUnits: Number(lecUnits),
+      labUnits: Number(labUnits),
     });
 
     onClose();
@@ -162,13 +169,12 @@ export default function EditCourseModal({
                 LEC Units
               </label>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={lecUnits}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setLecUnits(isNaN(val) || val < 0 ? 0 : val);
-                }}
+                onChange={(e) => setLecUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                placeholder="01"
                 className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm text-center"
               />
             </div>
@@ -178,13 +184,12 @@ export default function EditCourseModal({
                 LAB Units
               </label>
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={labUnits}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setLabUnits(isNaN(val) || val < 0 ? 0 : val);
-                }}
+                onChange={(e) => setLabUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                placeholder="01"
                 className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm text-center"
               />
             </div>
@@ -194,7 +199,7 @@ export default function EditCourseModal({
                 Total Units
               </label>
               <div className="h-[34px] flex items-center justify-center bg-[#4e0a10]/10 text-[#4e0a10] font-black text-xs rounded-xl">
-                {lecUnits + labUnits}u
+                {(Number(lecUnits) || 0) + (Number(labUnits) || 0)}u
               </div>
             </div>
           </div>

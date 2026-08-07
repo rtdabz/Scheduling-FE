@@ -8,8 +8,8 @@ export interface ManualCourseRowRequest {
   courseCode: string;
   courseName: string;
   courseCategory: 'major' | 'minor';
-  lecUnits: number;
-  labUnits: number;
+  lecUnits: string;
+  labUnits: string;
   error?: string;
   saveStatus?: 'idle' | 'saving' | 'success' | 'error';
 }
@@ -55,14 +55,14 @@ export default function AddCourseModal({
   onSaveCourses,
 }: AddCourseModalProps) {
   const [rows, setRows] = useState<ManualCourseRowRequest[]>([
-    { rowId: 'row-1', courseCode: '', courseName: '', courseCategory: 'major', lecUnits: 0, labUnits: 0, saveStatus: 'idle' },
+    { rowId: 'row-1', courseCode: '', courseName: '', courseCategory: 'major', lecUnits: '', labUnits: '', saveStatus: 'idle' },
   ]);
 
   // Reset modal state when opened
   useEffect(() => {
     if (isOpen) {
       setRows([
-        { rowId: `row-${Date.now()}-1`, courseCode: '', courseName: '', courseCategory: 'major', lecUnits: 0, labUnits: 0, saveStatus: 'idle' },
+        { rowId: `row-${Date.now()}-1`, courseCode: '', courseName: '', courseCategory: 'major', lecUnits: '', labUnits: '', saveStatus: 'idle' },
       ]);
     }
   }, [isOpen]);
@@ -82,7 +82,7 @@ export default function AddCourseModal({
   const handleAddRow = () => {
     setRows((prev) => [
       ...prev,
-      { rowId: `row-${Date.now()}-${prev.length + 1}`, courseCode: '', courseName: '', courseCategory: 'major', lecUnits: 0, labUnits: 0, saveStatus: 'idle' },
+      { rowId: `row-${Date.now()}-${prev.length + 1}`, courseCode: '', courseName: '', courseCategory: 'major', lecUnits: '', labUnits: '', saveStatus: 'idle' },
     ]);
   };
 
@@ -129,18 +129,20 @@ export default function AddCourseModal({
   };
 
   const handleUnitChange = (rowId: string, field: 'lecUnits' | 'labUnits', valStr: string) => {
-    const parsed = parseInt(valStr, 10);
-    const num = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+    const digits = valStr.replace(/\D/g, '').slice(0, 2);
     setRows((prev) =>
-      prev.map((r) => (r.rowId === rowId ? { ...r, [field]: num } : r))
+      prev.map((r) => (r.rowId === rowId ? { ...r, [field]: digits, error: undefined } : r))
     );
   };
 
   const handleRetryRow = async (row: ManualCourseRowRequest) => {
-    if (!row.courseCode.trim() || !row.courseName.trim()) {
+    if (!row.courseCode.trim() || !row.courseName.trim() || !row.lecUnits.trim() || !row.labUnits.trim()) {
       let errMsg = 'Course Code and Course Name are required';
       if (!row.courseCode.trim() && row.courseName.trim()) errMsg = 'Course Code is required';
       if (row.courseCode.trim() && !row.courseName.trim()) errMsg = 'Course Name is required';
+      if (row.courseCode.trim() && row.courseName.trim() && !row.lecUnits.trim() && !row.labUnits.trim()) errMsg = 'LEC Units and LAB Units are required';
+      if (row.courseCode.trim() && row.courseName.trim() && !row.lecUnits.trim() && row.labUnits.trim()) errMsg = 'LEC Units is required';
+      if (row.courseCode.trim() && row.courseName.trim() && row.lecUnits.trim() && !row.labUnits.trim()) errMsg = 'LAB Units is required';
       setRows((prev) => prev.map((r) => r.rowId === row.rowId ? { ...r, error: errMsg } : r));
       return;
     }
@@ -155,8 +157,8 @@ export default function AddCourseModal({
         courseCode: row.courseCode.replace(/\s+/g, ' ').trim().toUpperCase(),
         courseName: formatCourseName(row.courseName),
         courseCategory: row.courseCategory,
-        lecUnits: row.lecUnits ?? 0,
-        labUnits: row.labUnits ?? 0,
+        lecUnits: Number(row.lecUnits),
+        labUnits: Number(row.labUnits),
       };
 
       await onSaveCourses(
@@ -195,11 +197,14 @@ export default function AddCourseModal({
       if (r.saveStatus === 'success') {
         return r;
       }
-      if (!r.courseCode.trim() || !r.courseName.trim()) {
+      if (!r.courseCode.trim() || !r.courseName.trim() || !r.lecUnits.trim() || !r.labUnits.trim()) {
         hasValidationError = true;
         let errMsg = 'Course Code and Course Name are required';
         if (!r.courseCode.trim() && r.courseName.trim()) errMsg = 'Course Code is required';
         if (r.courseCode.trim() && !r.courseName.trim()) errMsg = 'Course Name is required';
+        if (r.courseCode.trim() && r.courseName.trim() && !r.lecUnits.trim() && !r.labUnits.trim()) errMsg = 'LEC Units and LAB Units are required';
+        if (r.courseCode.trim() && r.courseName.trim() && !r.lecUnits.trim() && r.labUnits.trim()) errMsg = 'LEC Units is required';
+        if (r.courseCode.trim() && r.courseName.trim() && r.lecUnits.trim() && !r.labUnits.trim()) errMsg = 'LAB Units is required';
         return { ...r, error: errMsg };
       }
       return { ...r, error: undefined };
@@ -217,8 +222,8 @@ export default function AddCourseModal({
       courseCode: r.courseCode.replace(/\s+/g, ' ').trim().toUpperCase(),
       courseName: formatCourseName(r.courseName),
       courseCategory: r.courseCategory,
-      lecUnits: r.lecUnits ?? 0,
-      labUnits: r.labUnits ?? 0,
+      lecUnits: Number(r.lecUnits),
+      labUnits: Number(r.labUnits),
     }));
 
     setRows((prev) =>
@@ -368,13 +373,18 @@ export default function AddCourseModal({
                         LEC
                       </label>
                       <input
-                        type="number"
-                        min="0"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         disabled={isLocked}
-                        value={row.lecUnits === 0 && !row.courseCode && !row.courseName ? '' : row.lecUnits}
+                        value={row.lecUnits}
                         onChange={(e) => handleUnitChange(row.rowId, 'lecUnits', e.target.value)}
-                        placeholder="0"
-                        className="w-full px-2 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm text-center disabled:bg-gray-100/50 disabled:text-gray-500"
+                        placeholder="01"
+                        className={`w-full px-2 py-2 border rounded-xl text-xs font-bold text-gray-800 bg-white outline-none shadow-sm text-center disabled:bg-gray-100/50 disabled:text-gray-500 ${
+                          row.error && !row.lecUnits.trim()
+                            ? 'border-red-400 focus:ring-1 focus:ring-red-400'
+                            : 'border-gray-300 focus:ring-1 focus:ring-[#C9952A]'
+                        }`}
                       />
                     </div>
 
@@ -384,20 +394,25 @@ export default function AddCourseModal({
                         LAB
                       </label>
                       <input
-                        type="number"
-                        min="0"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         disabled={isLocked}
-                        value={row.labUnits === 0 && !row.courseCode && !row.courseName ? '' : row.labUnits}
+                        value={row.labUnits}
                         onChange={(e) => handleUnitChange(row.rowId, 'labUnits', e.target.value)}
-                        placeholder="0"
-                        className="w-full px-2 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm text-center disabled:bg-gray-100/50 disabled:text-gray-500"
+                        placeholder="01"
+                        className={`w-full px-2 py-2 border rounded-xl text-xs font-bold text-gray-800 bg-white outline-none shadow-sm text-center disabled:bg-gray-100/50 disabled:text-gray-500 ${
+                          row.error && !row.labUnits.trim()
+                            ? 'border-red-400 focus:ring-1 focus:ring-red-400'
+                            : 'border-gray-300 focus:ring-1 focus:ring-[#C9952A]'
+                        }`}
                       />
                     </div>
 
                     {/* Total Units Preview */}
                     <div className="w-14 shrink-0 text-center pt-5">
                       <span className="inline-block px-2 py-1 bg-[#4e0a10]/10 text-[#4e0a10] rounded-lg text-xs font-extrabold">
-                        {row.lecUnits + row.labUnits}u
+                        {(Number(row.lecUnits) || 0) + (Number(row.labUnits) || 0)}u
                       </span>
                     </div>
 
