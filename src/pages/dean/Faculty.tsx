@@ -210,9 +210,16 @@ export default function DeanFaculty() {
           api.get<ApiFacultyMember[]>('/faculties'),
           api.get<Department[]>('/departments')
         ]);
+        const rawFaculties = Array.isArray(facultiesRes.data)
+          ? facultiesRes.data
+          : ((facultiesRes.data as any)?.data || []);
+        const rawDepts = Array.isArray(deptsRes.data)
+          ? deptsRes.data
+          : ((deptsRes.data as any)?.data || []);
+
         return {
-          faculties: facultiesRes.data.map(mapApiFaculty),
-          departments: deptsRes.data,
+          faculties: rawFaculties.map(mapApiFaculty),
+          departments: rawDepts,
         };
       }, forceRefresh);
       setFaculties(data.faculties);

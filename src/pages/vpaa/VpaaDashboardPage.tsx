@@ -22,7 +22,14 @@ import {
   CheckSquare,
   AlertCircle,
   Bell,
-  ClipboardList
+  ClipboardList,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
+  Filter,
+  SlidersHorizontal,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 interface Schedule {
@@ -56,6 +63,7 @@ interface Schedule {
     id: number;
     room_code: string;
     building?: string | null;
+    room_type?: string | null;
   } | null;
   course?: {
     id: number;
@@ -228,6 +236,118 @@ const getDeptStyles = (code: string) => {
   }
 };
 
+const getClassType = (schedule: Schedule): 'Lecture' | 'Laboratory' => {
+  // Check if room is a laboratory
+  const roomType = schedule.room?.room_type?.toLowerCase() || '';
+  if (roomType.includes('lab') || roomType.includes('laboratory')) {
+    return 'Laboratory';
+  }
+  const roomCode = schedule.room?.room_code?.toLowerCase() || '';
+  if (roomCode.includes('lab')) {
+    return 'Laboratory';
+  }
+  
+  // Check if subject code ends with 'L' or contains 'Lab'
+  const subCode = schedule.subject?.subject_code?.toUpperCase() || '';
+  if (subCode.endsWith('L') || subCode.includes('LAB') || subCode.includes('-L')) {
+    return 'Laboratory';
+  }
+  
+  const subName = schedule.subject?.subject_name?.toLowerCase() || '';
+  if (subName.includes('laboratory') || subName.includes(' lab')) {
+    return 'Laboratory';
+  }
+  
+  return 'Lecture';
+};
+
+const getBuildingColor = (buildingName: string) => {
+  const normalized = (buildingName || 'Main').trim().toUpperCase();
+  const colors: Record<string, string> = {
+    'MAIN': 'bg-rose-50 text-rose-800 border-rose-200 border-l-rose-600 hover:bg-rose-100/60',
+    'IT BUILDING': 'bg-cyan-50 text-cyan-800 border-cyan-200 border-l-cyan-600 hover:bg-cyan-100/60',
+    'ENG BUILDING': 'bg-teal-50 text-teal-800 border-teal-200 border-l-teal-600 hover:bg-teal-100/60',
+    'SCIENCE': 'bg-amber-50 text-amber-800 border-amber-200 border-l-amber-600 hover:bg-amber-100/60',
+    'ANNEX': 'bg-violet-50 text-violet-800 border-violet-200 border-l-violet-600 hover:bg-violet-100/60',
+    'GYM': 'bg-emerald-50 text-emerald-800 border-emerald-200 border-l-emerald-600 hover:bg-emerald-100/60',
+  };
+  
+  if (colors[normalized]) return colors[normalized];
+  
+  // Simple hash for dynamic fallback colors
+  const hash = normalized.split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
+  const colorKeys = Object.keys(colors);
+  const selectedKey = colorKeys[hash % colorKeys.length];
+  return colors[selectedKey];
+};
+
+interface AvailabilityBlock {
+  startSlot: number;
+  endSlot: number;
+  status: 'occupied' | 'available' | 'no-schedule';
+  schedule?: Schedule;
+}
+
+const getDayAvailabilityBlocks = (
+  daySchedules: Schedule[],
+  filterRoom: string,
+  filterBuilding: string
+): AvailabilityBlock[] => {
+  const blocks: AvailabilityBlock[] = [];
+  let currentBlock: AvailabilityBlock | null = null;
+
+  for (let t = 0; t < 25; t++) {
+    let status: 'occupied' | 'available' | 'no-schedule' = 'available';
+    let matchingSchedule: Schedule | undefined = undefined;
+
+    // Check if slot is occupied
+    const activeSchedulesInSlot = daySchedules.filter(s => {
+      const start = parseTimeToSlotIndex(s.start_time);
+      const end = parseTimeToSlotIndex(s.end_time);
+      return t >= start && t < end;
+    });
+
+    if (activeSchedulesInSlot.length > 0) {
+      status = 'occupied';
+      matchingSchedule = activeSchedulesInSlot[0];
+    } else {
+      if (filterRoom === 'all' && filterBuilding === 'all') {
+        status = 'no-schedule';
+      } else {
+        status = 'available';
+      }
+    }
+
+    if (!currentBlock) {
+      currentBlock = {
+        startSlot: t,
+        endSlot: t + 1,
+        status,
+        schedule: matchingSchedule
+      };
+    } else if (
+      currentBlock.status === status &&
+      (!matchingSchedule || currentBlock.schedule?.id === matchingSchedule.id)
+    ) {
+      currentBlock.endSlot = t + 1;
+    } else {
+      blocks.push(currentBlock);
+      currentBlock = {
+        startSlot: t,
+        endSlot: t + 1,
+        status,
+        schedule: matchingSchedule
+      };
+    }
+  }
+
+  if (currentBlock) {
+    blocks.push(currentBlock);
+  }
+
+  return blocks;
+};
+
 interface LayoutItem {
   schedule: Schedule;
   leftPct: number;
@@ -328,50 +448,30 @@ export default function VpaaDashboardPage() {
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
   const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
-  // Timetable Calendar Filters and state
-  const [calendarDeptFilter, setCalendarDeptFilter] = useState<string>('all');
-  const [calendarFilterType, setCalendarFilterType] = useState<'section' | 'faculty' | 'room'>('section');
-  const [calendarSearchQuery, setCalendarSearchQuery] = useState<string>('');
+  // Timetable Calendar Filters and state (Essential only)
+  const daysOfWeek = useMemo(() => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], []);
+  const todayShort = useMemo(() => daysOfWeek[new Date().getDay()], [daysOfWeek]);
+  const [filterDept, setFilterDept] = useState<string>('all');
+  const [filterDay, setFilterDay] = useState<string>(todayShort);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const calendarFilteredSchedules = useMemo(() => {
-    // Filter active term first
-    const activeTermSchedules = activeTerm?.id
-      ? schedules.filter(s => Number(s.term_id) === Number(activeTerm.id))
-      : schedules;
+  // Lock background body scroll when fullscreen calendar is open
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
 
-    // Filter department first
-    let deptSchedules = activeTermSchedules;
-    if (calendarDeptFilter !== 'all') {
-      deptSchedules = activeTermSchedules.filter(s => Number(s.section?.department_id) === Number(calendarDeptFilter));
-    }
-
-    // Filter by search query based on View By type
-    if (!calendarSearchQuery.trim()) {
-      return deptSchedules;
-    }
-
-    const q = calendarSearchQuery.toLowerCase();
-    if (calendarFilterType === 'section') {
-      return deptSchedules.filter(s => s.section?.section_name?.toLowerCase().includes(q));
-    }
-    if (calendarFilterType === 'faculty') {
-      return deptSchedules.filter(s => {
-        const fullName = `${s.faculty?.first_name || ''} ${s.faculty?.last_name || ''}`.toLowerCase();
-        return fullName.includes(q);
-      });
-    }
-    if (calendarFilterType === 'room') {
-      return deptSchedules.filter(s => {
-        const roomName = `${s.room?.room_code || ''} ${s.room?.building || ''}`.toLowerCase();
-        return roomName.includes(q);
-      });
-    }
-    return deptSchedules;
-  }, [calendarDeptFilter, calendarFilterType, calendarSearchQuery, schedules, activeTerm]);
-
+  // Time slots mapping definition
   const timeSlots = useMemo(() => {
     const slots = [];
-    for (let slot = 0; slot < 24; slot += 1) { // 24 half-hour slots from 7:00 AM to 7:00 PM
+    for (let slot = 0; slot < 25; slot += 1) { // 25 half-hour slots from 7:00 AM to 7:30 PM (ends at 7:00 PM label)
       const totalMinutes = 7 * 60 + slot * 30;
       let hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
@@ -385,6 +485,86 @@ export default function VpaaDashboardPage() {
     return slots;
   }, []);
 
+  // Main calendar filter function
+  const calendarFilteredSchedules = useMemo(() => {
+    const activeTermSchedules = activeTerm?.id
+      ? schedules.filter(s => Number(s.term_id) === Number(activeTerm.id))
+      : schedules;
+
+    // Filter department
+    let deptSchedules = activeTermSchedules;
+    if (filterDept !== 'all') {
+      deptSchedules = activeTermSchedules.filter(s => Number(s.section?.department_id) === Number(filterDept));
+    }
+
+    // Filter day
+    if (filterDay !== 'all') {
+      deptSchedules = deptSchedules.filter(s => getShortDay(s.day) === filterDay);
+    }
+
+    // Filter by search query (Universal Search)
+    if (!searchQuery.trim()) {
+      return deptSchedules;
+    }
+
+    const q = searchQuery.toLowerCase();
+    return deptSchedules.filter(s => {
+      const sectionName = s.section?.section_name?.toLowerCase() || '';
+      const courseCode = s.course?.course_code?.toLowerCase() || '';
+      const courseName = s.course?.course_name?.toLowerCase() || '';
+      const facultyName = s.faculty
+        ? `${s.faculty.first_name} ${s.faculty.last_name}`.toLowerCase()
+        : '';
+      const roomCode = s.room?.room_code?.toLowerCase() || '';
+      const building = s.room?.building?.toLowerCase() || '';
+
+      return sectionName.includes(q) ||
+             courseCode.includes(q) ||
+             courseName.includes(q) ||
+             facultyName.includes(q) ||
+             roomCode.includes(q) ||
+             building.includes(q);
+    });
+  }, [filterDept, filterDay, searchQuery, schedules, activeTerm]);
+
+  // ── Calculated Summary Metrics ──
+  const totalClassesCount = calendarFilteredSchedules.length;
+  
+  const roomsInUseCount = useMemo(() => {
+    const usedRoomIds = new Set(calendarFilteredSchedules.map(s => s.room_id).filter(Boolean));
+    return usedRoomIds.size;
+  }, [calendarFilteredSchedules]);
+
+  const availableRoomsCount = useMemo(() => {
+    return Math.max(0, rooms.length - roomsInUseCount);
+  }, [rooms, roomsInUseCount]);
+
+  // Current time states for indicator line
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentDayName = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[now.getDay()];
+  }, [now]);
+
+  const currentDayTimeTop = useMemo(() => {
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const totalMinutes = hours * 60 + minutes;
+    const startMinutes = 7 * 60; // 7:00 AM
+    const elapsed = totalMinutes - startMinutes;
+    if (elapsed < 0 || elapsed > 12 * 60) return null; // Outside 7:00 AM - 7:00 PM
+    return elapsed * 0.8; // 600px height / 720 minutes = 0.8px per minute
+  }, [now]);
+
+
+
   useEffect(() => {
     let active = true;
 
@@ -394,15 +574,15 @@ export default function VpaaDashboardPage() {
         setIsLoading(shouldShowSkeleton);
         const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
           const response = await api.get<InitialDataResponse>('/initial-data');
-
+          const d = response.data || ({} as InitialDataResponse);
           return {
-            schedules: response.data.schedules,
-            rooms: response.data.rooms,
-            sections: response.data.sections,
-            faculties: response.data.faculties,
-            departments: response.data.departments,
-            subjects: response.data.subjects,
-            activeTerm: response.data.active_term,
+            schedules: Array.isArray(d.schedules) ? d.schedules : [],
+            rooms: Array.isArray(d.rooms) ? d.rooms : [],
+            sections: Array.isArray(d.sections) ? d.sections : [],
+            faculties: Array.isArray(d.faculties) ? d.faculties : [],
+            departments: Array.isArray(d.departments) ? d.departments : [],
+            subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray((d as any).courses) ? (d as any).courses : []),
+            activeTerm: d.active_term || null,
           };
         });
 
@@ -615,7 +795,7 @@ export default function VpaaDashboardPage() {
   };
 
   return (
-    <div className="space-y-5 pb-8 transition-all duration-200 font-sans bg-gray-50/20">
+    <div className="space-y-5 pb-8 font-sans min-h-screen bg-[#F7F4F0]">
       {/* Breadcrumbs Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -631,6 +811,7 @@ export default function VpaaDashboardPage() {
         )}
       </div>
 
+      {/* Notice Banner */}
       <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
         approvalQueue.length > 0
           ? 'border-amber-200 bg-amber-50 text-amber-800'
@@ -644,429 +825,666 @@ export default function VpaaDashboardPage() {
         </span>
       </div>
 
-      {/* Greeting Banner */}
-      <div className="bg-[#5A1220] py-3 px-5 rounded-xl text-white border border-[#5A1220]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
-        <div>
-          <h1 className="font-sans text-lg font-bold tracking-tight text-white">
-            Welcome back, <span className="text-[#F5A623]">{user?.name || 'VPAA Administrator'}</span>
-          </h1>
-          <p className="text-[#E2D9D0] text-xs mt-1">Vice President for Academic Affairs Executive Dashboard</p>
-        </div>
-        {activeTerm && (
-          <span className="text-xs sm:text-sm bg-white/10 px-4 py-2 rounded-xl text-[#F5A623] font-bold border border-white/5 uppercase tracking-wider">
-            {activeTerm.term_name}
-          </span>
-        )}
-      </div>
-
       {isLoading ? (
         <div className="space-y-5">
           {/* Skeleton Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
                 <Skeleton className="h-3 w-16" />
                 <Skeleton className="h-7 w-8" />
               </div>
             ))}
           </div>
           {/* Skeleton Widgets */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Skeleton className="h-[340px] rounded-2xl" />
-            <Skeleton className="h-[340px] rounded-2xl" />
-            <Skeleton className="h-[340px] rounded-2xl" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-[400px] rounded-2xl" />
+            <Skeleton className="h-[400px] rounded-2xl" />
           </div>
         </div>
       ) : (
-        <div className="space-y-5">
-          {/* Summary Metric Cards (5 Cards Grid) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {/* Total Departments */}
-            <div
-              onClick={() => navigate('/departments')}
-              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
-            >
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Departments</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{departments.length}</span>
-                <Building2 className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
-            {/* Total Faculty */}
-            <div
-              onClick={() => navigate('/faculty')}
-              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
-            >
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Total Faculty</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{faculties.length}</span>
-                <GraduationCap className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
-            {/* Total Subjects */}
-            <div
-              onClick={() => navigate('/curriculum-view')}
-              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
-            >
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Courses</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{subjects.length}</span>
-                <BookOpen className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
-            {/* Classrooms */}
-            <div
-              onClick={() => navigate('/rooms')}
-              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
-            >
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Classrooms</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{rooms.length}</span>
-                <DoorOpen className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-
-            {/* Schedules */}
-            <div
-              onClick={() => navigate('/schedules')}
-              className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer"
-            >
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Schedules</span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-extrabold text-gray-900">{totalSchedules}</span>
-                <CalendarDays className="w-4 h-4 text-[#5A1220]/60" />
-              </div>
-            </div>
-          </div>
-
-          {/* Top Section Widgets Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Overall Scheduling Progress */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[280px]">
-              <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-4">
-                  <TrendingUp className="w-5 h-5 text-[#5A1220]" />
-                  <span>Overall Scheduling Progress</span>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Progress Indicator */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-gray-500">Institutional Completion</span>
-                      <span className="font-bold text-[#5A1220] text-sm">{overallStats.progressPercent}%</span>
-                    </div>
-                    <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden flex">
-                      <div
-                        style={{ width: `${overallStats.progressPercent}%` }}
-                        className="bg-[#5A1220] h-full transition-all duration-500 rounded-full"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Summary Breakdown counts */}
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Completed</p>
-                      <p className="text-xl font-extrabold text-gray-800 mt-1">{overallStats.approvedCount}</p>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pending</p>
-                      <p className="text-xl font-extrabold text-gray-800 mt-1">{overallStats.pendingCount}</p>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Drafts</p>
-                      <p className="text-xl font-extrabold text-gray-800 mt-1">{overallStats.draftCount}</p>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Rejected</p>
-                      <p className="text-xl font-extrabold text-gray-800 mt-1">{overallStats.rejectedCount}</p>
-                    </div>
-                  </div>
+        /* Main Dashboard Grid matching layout diagram */
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+          
+          {/* ═══════════════════════════════════════════════════════════
+              LEFT COLUMN: 2x2 CARDS -> TABLE (TIMETABLE)
+             ═══════════════════════════════════════════════════════════ */}
+          <div className="xl:col-span-6 space-y-4 flex flex-col h-full">
+            
+            {/* 1. 2x2 CARDS Grid (4 Cards) */}
+            <div className="grid grid-cols-2 gap-3.5">
+              {/* Card 1: Departments */}
+              <div
+                onClick={() => navigate('/departments')}
+                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
+              >
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Departments</span>
+                <div className="flex items-baseline justify-between mt-2">
+                  <span className="text-2xl font-black text-gray-900">{departments.length}</span>
+                  <Building2 className="w-4.5 h-4.5 text-[#5A1220]/70" />
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-150 flex items-center justify-between text-xs text-gray-400">
-                <span>Total Sections: {sections.length}</span>
-                <span>Active semester overview</span>
-              </div>
-            </div>
-
-            {/* Faculty Teaching Load Overview */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[280px]">
-              <div>
-                <div className="flex items-center gap-2.5 text-gray-800 font-bold mb-4">
-                  <GraduationCap className="w-5 h-5 text-[#5A1220]" />
-                  <span>Faculty Teaching Load Overview</span>
+              {/* Card 2: Faculty */}
+              <div
+                onClick={() => navigate('/faculty')}
+                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
+              >
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Total Faculty</span>
+                <div className="flex items-baseline justify-between mt-2">
+                  <span className="text-2xl font-black text-gray-900">{faculties.length}</span>
+                  <GraduationCap className="w-4.5 h-4.5 text-[#5A1220]/70" />
                 </div>
+              </div>
 
-                <div className="space-y-4">
-                  {/* Total stats progress lines */}
-                  {/* 🟢 Available */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-xs font-semibold text-gray-600">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
-                        Available
-                      </span>
-                      <span>{facultyStats.available} / {facultyStats.total}</span>
-                    </div>
-                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${facultyStats.total > 0 ? (facultyStats.available / facultyStats.total) * 100 : 0}%` }}
-                        className="bg-emerald-500 h-full rounded-full transition-all"
-                      />
-                    </div>
-                  </div>
+              {/* Card 3: Courses */}
+              <div
+                onClick={() => navigate('/curriculum-view')}
+                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
+              >
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Courses</span>
+                <div className="flex items-baseline justify-between mt-2">
+                  <span className="text-2xl font-black text-gray-900">{subjects.length}</span>
+                  <BookOpen className="w-4.5 h-4.5 text-[#5A1220]/70" />
+                </div>
+              </div>
 
-                  {/* 🔵 Fully Loaded */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-xs font-semibold text-gray-600">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 block" />
-                        Fully Loaded
-                      </span>
-                      <span>{facultyStats.fullyLoaded} / {facultyStats.total}</span>
-                    </div>
-                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${facultyStats.total > 0 ? (facultyStats.fullyLoaded / facultyStats.total) * 100 : 0}%` }}
-                        className="bg-blue-500 h-full rounded-full transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 🔴 Overloaded */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-xs font-semibold text-gray-600">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-red-500 block" />
-                        Overloaded
-                      </span>
-                      <span>{facultyStats.overloaded} / {facultyStats.total}</span>
-                    </div>
-                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${facultyStats.total > 0 ? (facultyStats.overloaded / facultyStats.total) * 100 : 0}%` }}
-                        className="bg-red-500 h-full rounded-full transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 🟣 Pro Bono */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-xs font-semibold text-gray-600">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-purple-500 block" />
-                        Pro Bono
-                      </span>
-                      <span>{facultyStats.probono} / {facultyStats.total}</span>
-                    </div>
-                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${facultyStats.total > 0 ? (facultyStats.probono / facultyStats.total) * 100 : 0}%` }}
-                        className="bg-purple-500 h-full rounded-full transition-all"
-                      />
-                    </div>
-                  </div>
+              {/* Card 4: Classrooms */}
+              <div
+                onClick={() => navigate('/rooms')}
+                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
+              >
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Classrooms</span>
+                <div className="flex items-baseline justify-between mt-2">
+                  <span className="text-2xl font-black text-gray-900">{rooms.length}</span>
+                  <DoorOpen className="w-4.5 h-4.5 text-[#5A1220]/70" />
                 </div>
               </div>
             </div>
 
-            {/* Schedule Approval Queue */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between min-h-[280px]">
-              <div>
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div className="flex items-center gap-2.5 text-gray-800 font-bold">
-                    <CheckSquare className="w-5 h-5 text-[#5A1220]" />
-                    <span>Schedule Approval Queue</span>
+            {/* 2. TABLE: Overall Department Schedule Timetable */}
+            <div className={`${
+              isFullscreen
+                ? 'fixed inset-0 z-[99999] bg-white p-6 flex flex-col overflow-hidden w-screen h-screen'
+                : 'bg-white p-5 rounded-2xl border border-gray-200 shadow-sm font-sans flex-1 flex flex-col justify-between'
+            }`}>
+              
+              {/* Table Header Controls */}
+              <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3">
+                <div className="space-y-2 flex-1">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="w-4.5 h-4.5 text-[#5A1220]" />
+                    <h2 className="text-gray-850 font-bold text-base leading-none">
+                      Institutional Timetable Calendar
+                    </h2>
                   </div>
-                  {approvalQueue.length > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 text-red-650 text-[10px] font-bold border border-red-100">
-                      {approvalQueue.length} Awaiting VPAA
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-3 max-h-[180px] overflow-y-auto pr-1">
-                  {approvalQueue.length === 0 ? (
-                    <div className="py-8 flex flex-col items-center justify-center text-center">
-                      <CheckCircle2 className="w-12 h-12 text-emerald-500 mb-2" />
-                      <p className="text-gray-700 font-bold text-xs">Approval Queue Cleared</p>
-                      <p className="text-gray-400 text-[11px] mt-0.5">No schedules currently pending VPAA approval.</p>
+                  
+                  {/* Action Filters */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Department Filter */}
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
+                      <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Dept</span>
+                      <select
+                        value={filterDept}
+                        onChange={(e) => setFilterDept(e.target.value)}
+                        className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
+                      >
+                        <option value="all">All Departments</option>
+                        {departments.map((dept) => (
+                          <option key={dept.id} value={dept.id}>{dept.department_code}</option>
+                        ))}
+                      </select>
                     </div>
-                  ) : (
-                    approvalQueue.slice(0, 3).map((item) => (
-                      <div key={item.id} className="p-3 bg-gray-50 border border-gray-200 rounded-xl flex justify-between items-center text-xs">
-                        <div className="space-y-0.5">
-                          <p className="font-bold text-gray-800">{item.section_name}</p>
-                          <p className="text-[10px] text-gray-400">{item.department_code} &bull; {item.submission_date}</p>
-                        </div>
-                        <button
-                          onClick={() => navigate('/schedules/approval')}
-                          className="px-3 py-1.5 bg-[#5A1220] hover:bg-[#C9952A] text-white text-[10px] font-bold rounded-lg cursor-pointer transition-all duration-200"
-                        >
-                          Review Schedule
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
 
-              {approvalQueue.length > 3 && (
-                <div className="mt-4 flex justify-end border-t border-gray-100 pt-3">
-                  <button
-                    onClick={() => navigate('/schedules/approval')}
-                    className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline flex items-center gap-1.5 cursor-pointer"
-                  >
-                    View entire approval queue &rarr;
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Institutional Timetable Calendar Section */}
-          <div className="space-y-3">
-            <h2 className="text-gray-800 font-bold text-lg flex items-center gap-2">
-              <CalendarDays className="w-5 h-5 text-[#5A1220]" />
-              Institutional Timetable Calendar
-            </h2>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
-              {/* Filter Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-4">
-                <div className="flex flex-wrap items-center gap-4">
-                  {/* Department Filter */}
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Department</span>
-                    <select
-                      value={calendarDeptFilter}
-                      onChange={(e) => setCalendarDeptFilter(e.target.value)}
-                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
-                    >
-                      <option value="all">All Departments</option>
-                      {departments.map((dept) => (
-                        <option key={dept.id} value={dept.id}>{dept.department_code}</option>
-                      ))}
-                    </select>
+                    {/* Day Filter */}
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
+                      <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Day</span>
+                      <select
+                        value={filterDay}
+                        onChange={(e) => setFilterDay(e.target.value)}
+                        className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
+                      >
+                        <option value="all">All Days</option>
+                        <option value="Sun">Sunday</option>
+                        <option value="Mon">Monday</option>
+                        <option value="Tue">Tuesday</option>
+                        <option value="Wed">Wednesday</option>
+                        <option value="Thu">Thursday</option>
+                        <option value="Fri">Friday</option>
+                        <option value="Sat">Saturday</option>
+                      </select>
+                    </div>
                   </div>
+                </div>
 
-                  {/* Filter Type */}
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">View By</span>
-                    <select
-                      value={calendarFilterType}
-                      onChange={(e) => {
-                        setCalendarFilterType(e.target.value as 'section' | 'faculty' | 'room');
-                        setCalendarSearchQuery('');
-                      }}
-                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold cursor-pointer"
-                    >
-                      <option value="section">Section</option>
-                      <option value="faculty">Faculty Member</option>
-                      <option value="room">Classroom</option>
-                    </select>
-                  </div>
-
-                  {/* Search Filter */}
-                  <div className="flex flex-col gap-1.5 min-w-[180px]">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Search Item</span>
+                {/* Search Bar & Screen Controls */}
+                <div className="flex items-center gap-2 w-full lg:w-auto relative">
+                  <div className="relative flex-1 lg:w-48 lg:flex-none">
                     <input
                       type="text"
-                      placeholder={`Search ${calendarFilterType}...`}
-                      value={calendarSearchQuery}
-                      onChange={(e) => setCalendarSearchQuery(e.target.value)}
-                      className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold"
+                      placeholder="Search..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-2.5 py-1.5 pl-8 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold shadow-sm transition-all"
                     />
+                    <Filter className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" />
                   </div>
-                </div>
 
-                <div className="text-[11px] text-gray-450 font-semibold bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200/80">
-                  Total classes: <span className="font-extrabold text-[#5A1220]">{calendarFilteredSchedules.length}</span>
+                  {/* Full Window Toggle Button */}
+                  <button
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="p-1.5 text-gray-700 hover:text-[#5A1220] hover:bg-gray-100 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
+                    title={isFullscreen ? "Exit Full Window" : "Full Window View"}
+                  >
+                    {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+
+                  {/* Reset Button */}
+                  {(filterDept !== 'all' || filterDay !== todayShort || searchQuery !== '') && (
+                    <button
+                      onClick={() => {
+                        setFilterDept('all');
+                        setFilterDay(todayShort);
+                        setSearchQuery('');
+                      }}
+                      className="p-1.5 text-gray-555 hover:text-[#5A1220] hover:bg-red-50 hover:border-red-200 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
+                      title="Reset Filters"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Weekly Timetable Calendar Grid */}
-              {calendarFilteredSchedules.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-250 bg-gray-50/50 py-12 text-center text-sm text-gray-400 font-medium">
-                  No classes scheduled matching the selected filters.
+              {/* Compact Metrics Strip */}
+              <div className="flex items-center justify-between text-xs py-2 px-1 border-b border-gray-100 text-gray-500 font-semibold">
+                <div className="flex items-center gap-4">
+                  <span>Classes: <strong className="text-[#5A1220]">{totalClassesCount}</strong></span>
+                  <span>Rooms in Use: <strong className="text-slate-800">{roomsInUseCount}</strong></span>
+                  <span>Available Rooms: <strong className="text-emerald-600">{availableRoomsCount}</strong></span>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <div className="min-w-[1000px] bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm relative flex flex-row">
+                <span className="text-[10px] text-gray-400">7:00 AM &ndash; 7:00 PM</span>
+              </div>
+
+              {/* Timetable Grid (Sunday to Saturday, 7:00 AM - 7:00 PM, 30-min slots) */}
+              <div className={`mt-3 ${isFullscreen ? 'flex-1 overflow-hidden flex flex-col' : 'flex-1 flex flex-col min-h-0'}`}>
+                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-inner flex-1 flex flex-col">
+                  <div className={`min-w-[600px] bg-white relative flex flex-row scrollbar-thin ${
+                    isFullscreen 
+                      ? 'flex-1 overflow-y-auto' 
+                      : 'h-[580px] overflow-y-hidden'
+                  }`}>
                     {/* Time Column */}
-                    <div className="w-20 shrink-0 border-r border-gray-200 bg-gray-50 select-none">
-                      <div className="h-10 border-b border-gray-200 bg-gray-100/55 flex items-center justify-center font-bold text-[10px] uppercase text-gray-400">Time</div>
+                    <div className="w-16 shrink-0 sticky left-0 z-20 bg-gray-50 select-none border-r border-gray-200">
+                      <div className="sticky top-0 left-0 z-40 h-9 border-b border-gray-200 bg-gray-100 flex items-center justify-center font-extrabold text-[9px] uppercase tracking-wider text-gray-500">
+                        Time
+                      </div>
                       {timeSlots.map((slot, index) => (
-                        <div key={index} className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[9px] font-semibold text-gray-400">
-                          {slot.label.includes(":00") ? <span className="font-bold text-gray-600">{slot.label}</span> : <span className="opacity-30">.</span>}
+                        <div
+                          key={index}
+                          className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[8px] font-semibold text-gray-400 bg-gray-50/90"
+                        >
+                          {slot.label.includes(":00") ? (
+                            <span className="font-bold text-gray-600">{slot.label}</span>
+                          ) : (
+                            <span className="text-gray-400 font-medium">{slot.label}</span>
+                          )}
                         </div>
                       ))}
                     </div>
 
-                    {/* Days Columns */}
+                    {/* Day Columns (Sunday to Saturday) */}
                     <div className="flex-1 flex flex-row relative">
-                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => {
-                        const daySchedules = calendarFilteredSchedules.filter((schedule) => getShortDay(schedule.day) === day);
-                        const layouts = getDayLayouts(daySchedules);
-                        return (
-                          <div key={day} className="flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[140px]">
-                            <div className="h-10 border-b border-gray-200 bg-gray-50 flex flex-col items-center justify-center select-none">
-                              <span className="font-bold text-xs text-gray-700 uppercase tracking-wide">{day}</span>
-                              <span className="text-[9px] font-bold text-gray-400">{daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}</span>
-                            </div>
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                        .filter(day => filterDay === 'all' || getShortDay(day) === filterDay)
+                        .map((day) => {
+                          const daySchedules = calendarFilteredSchedules.filter(
+                            (schedule) => getShortDay(schedule.day) === day
+                          );
+                          const isToday = day === currentDayName;
+                          const layouts = getDayLayouts(daySchedules);
 
-                            <div className="relative" style={{ height: `${24 * 24}px` }}>
-                              {timeSlots.map((_, index) => <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />)}
-                              {daySchedules.map((schedule) => {
-                                const startIdx = parseTimeToSlotIndex(schedule.start_time);
-                                const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                                const top = startIdx * 24;
-                                const height = (endIdx - startIdx) * 24;
-                                const layout = layouts.find((item) => item.schedule.id === schedule.id);
-                                const left = layout ? `${layout.leftPct}%` : "0%";
-                                const width = layout ? `${layout.widthPct}%` : "100%";
-                                const deptCode = schedule.section?.department?.department_code || "GEN";
+                          return (
+                            <div
+                              key={day}
+                              className={`flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[130px] transition-colors duration-250 ${
+                                isToday ? 'bg-red-500/[0.015]' : ''
+                              }`}
+                            >
+                              {/* Sticky Day Column Header */}
+                              <div
+                                className={`sticky top-0 z-10 h-9 border-b border-gray-200 flex flex-col items-center justify-center select-none ${
+                                  isToday
+                                    ? 'bg-red-50/95 text-[#5A1220] font-black border-b-2 border-b-red-500 shadow-sm'
+                                    : 'bg-gray-50 text-gray-700'
+                                }`}
+                              >
+                                <span className="font-bold text-xs uppercase tracking-wider">{day}</span>
+                                <span className="text-[7.5px] font-extrabold opacity-75">
+                                  {daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}
+                                </span>
+                              </div>
 
-                                return (
+                              {/* Column Body Grid */}
+                              <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
+                                {timeSlots.map((_, index) => (
+                                  <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />
+                                ))}
+
+                                {/* Google Calendar Time Indicator Line */}
+                                {isToday && currentDayTimeTop !== null && (
                                   <div
-                                    key={schedule.id}
-                                    className={`absolute rounded-md border border-l-4 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all ${getDeptStyles(deptCode)}`}
-                                    style={{
-                                      top: `${top}px`,
-                                      height: `${height}px`,
-                                      left: left,
-                                      width: width,
-                                      fontSize: '9px',
-                                      lineHeight: '1.2'
-                                    }}
+                                    className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center"
+                                    style={{ top: `${currentDayTimeTop}px` }}
                                   >
-                                    <div className="min-w-0">
-                                      <p className="font-extrabold truncate text-gray-900">{schedule.course?.course_code || schedule.subject?.subject_code || "Course"}</p>
-                                      <p className="opacity-80 truncate font-semibold text-gray-700">{schedule.course?.course_name || schedule.subject?.subject_name}</p>
-                                    </div>
-                                    <div className="mt-1 opacity-80 text-[8px] font-semibold text-gray-655">
-                                      <p className="truncate font-bold text-[#5A1220]">{schedule.section?.section_name}</p>
-                                      <p className="truncate font-bold text-slate-800">{schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}</p>
-                                      <p className="truncate font-bold text-slate-800">{schedule.room?.room_code || 'Unassigned'}</p>
-                                    </div>
+                                    <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
                                   </div>
-                                );
-                              })}
+                                )}
+
+                                {/* Rendering Schedule Cards */}
+                                {daySchedules.map((schedule) => {
+                                  const startIdx = parseTimeToSlotIndex(schedule.start_time);
+                                  const endIdx = parseTimeToSlotIndex(schedule.end_time);
+                                  const top = startIdx * 24;
+                                  const height = (endIdx - startIdx) * 24;
+                                  const layout = layouts.find((item) => item.schedule.id === schedule.id);
+                                  
+                                  const left = layout ? `${layout.leftPct}%` : "0%";
+                                  const width = layout ? `${layout.widthPct}%` : "100%";
+                                  const deptCode = schedule.section?.department?.department_code || "GEN";
+                                  const isLab = getClassType(schedule) === 'Laboratory';
+
+                                  return (
+                                    <div
+                                      key={schedule.id}
+                                      className={`group absolute rounded-lg border border-l-3 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all duration-200 hover:scale-[1.02] hover:shadow-md hover:z-25 ${getDeptStyles(deptCode)}`}
+                                      style={{
+                                        top: `${top + 2}px`,
+                                        height: `${height - 4}px`,
+                                        left: `calc(${left} + 1px)`,
+                                        width: `calc(${width} - 2px)`,
+                                        fontSize: '8.5px',
+                                        lineHeight: '1.2'
+                                      }}
+                                    >
+                                      {/* Header */}
+                                      <div className="min-w-0 flex items-center justify-between gap-1">
+                                        <p className="font-black truncate text-gray-900">
+                                          {schedule.course?.course_code || schedule.subject?.subject_code || "Class"}
+                                        </p>
+                                        <span className={`px-1 rounded-[3px] text-[7px] font-black uppercase ${
+                                          isLab
+                                            ? 'bg-purple-100 text-purple-800'
+                                            : 'bg-slate-100 text-slate-700'
+                                        }`}>
+                                          {isLab ? 'LAB' : 'LEC'}
+                                        </span>
+                                      </div>
+
+                                      {/* Details Body */}
+                                      <div className="mt-0.5 flex-1 flex flex-col justify-end opacity-85 text-[7.5px] font-bold text-gray-500 space-y-0.5">
+                                        <p className="truncate font-black text-[#5A1220]">{schedule.section?.section_name}</p>
+                                        <p className="truncate text-slate-800">
+                                          {schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}
+                                        </p>
+                                      </div>
+
+                                      {/* Hover Popover */}
+                                      <div className={`absolute hidden group-hover:flex flex-col gap-2 z-40 w-64 bg-slate-900 text-white rounded-xl shadow-2xl p-3.5 font-sans text-xs pointer-events-none select-none border border-slate-700 ${
+                                        ['Thu', 'Fri', 'Sat'].includes(day) ? 'right-full mr-2 top-0' : 'left-full ml-2 top-0'
+                                      }`}>
+                                        <div className="flex items-center justify-between border-b border-gray-700 pb-1">
+                                          <span className="font-bold text-[#F5A623]">
+                                            {schedule.course?.course_code || schedule.subject?.subject_code}
+                                          </span>
+                                          <span className="text-[9px] px-1.5 py-0.5 bg-white/10 rounded font-semibold uppercase">
+                                            {schedule.mode || 'Lecture'}
+                                          </span>
+                                        </div>
+                                        <p className="font-bold text-gray-100 text-xs">
+                                          {schedule.course?.course_name || schedule.subject?.subject_name || 'Subject'}
+                                        </p>
+                                        <div className="space-y-1 text-gray-300 text-[10px] border-t border-gray-700 pt-1.5">
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-400">Instructor:</span>
+                                            <span className="font-bold text-white">
+                                              {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
+                                            </span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-400">Section:</span>
+                                            <span className="font-bold text-white">{schedule.section?.section_name}</span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-400">Room:</span>
+                                            <span className="font-bold text-white">
+                                              {schedule.room?.building || 'Main'} &bull; {schedule.room?.room_code || 'Unassigned'}
+                                            </span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-400">Time:</span>
+                                            <span className="font-bold text-[#F5A623]">{schedule.start_time} - {schedule.end_time}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
+
+          {/* ═══════════════════════════════════════════════════════════
+              RIGHT COLUMN: 2 PIE CHARTS -> DETAILS NOTE -> BAR CHART
+             ═══════════════════════════════════════════════════════════ */}
+          <div className="xl:col-span-6 space-y-4 flex flex-col h-full font-sans">
+            
+            {/* 1. 2 PIE CHARTS Side-by-Side */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              
+              {/* PIE CHART 1: Schedule Status Distribution */}
+              <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between font-sans">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                  <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckSquare className="w-4 h-4 text-[#5A1220]" />
+                    Schedule Status
+                  </h3>
+                  <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                    Total: {sections.length}
+                  </span>
+                </div>
+
+                {/* Interactive Donut Visualization */}
+                <div className="flex items-center justify-center my-3 relative">
+                  <svg className="w-28 h-28 -rotate-90 transform" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="11" />
+                    {(() => {
+                      const total = sections.length || 1;
+                      const data = [
+                        { count: overallStats.approvedCount, color: '#10B981' },
+                        { count: overallStats.pendingCount, color: '#F59E0B' },
+                        { count: overallStats.draftCount, color: '#94A3B8' },
+                        { count: overallStats.rejectedCount, color: '#F43F5E' },
+                      ];
+                      let cumulative = 0;
+                      const circumference = 2 * Math.PI * 38;
+
+                      return data.map((item, idx) => {
+                        if (item.count <= 0) return null;
+                        const pct = (item.count / total) * 100;
+                        const dashArray = `${(pct / 100) * circumference} ${circumference}`;
+                        const dashOffset = -((cumulative / 100) * circumference);
+                        cumulative += pct;
+
+                        return (
+                          <circle
+                            key={idx}
+                            cx="50"
+                            cy="50"
+                            r="38"
+                            fill="transparent"
+                            stroke={item.color}
+                            strokeWidth="11"
+                            strokeDasharray={dashArray}
+                            strokeDashoffset={dashOffset}
+                            className="transition-all duration-500"
+                          />
+                        );
+                      });
+                    })()}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-sans">
+                    <span className="text-2xl font-black text-gray-900 leading-none">{sections.length}</span>
+                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Schedules</span>
+                  </div>
+                </div>
+
+                {/* Donut Legend */}
+                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 font-sans">
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Approved</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {overallStats.approvedCount}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Pending</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {overallStats.pendingCount}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Drafts</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {overallStats.draftCount}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Rejected</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {overallStats.rejectedCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* PIE CHART 2: Faculty Load Distribution */}
+              <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between font-sans">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                  <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4 text-[#5A1220]" />
+                    Faculty Load
+                  </h3>
+                  <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                    Total: {faculties.length}
+                  </span>
+                </div>
+
+                {/* Interactive Donut Visualization */}
+                <div className="flex items-center justify-center my-3 relative">
+                  <svg className="w-28 h-28 -rotate-90 transform" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="11" />
+                    {(() => {
+                      const total = faculties.length || 1;
+                      const data = [
+                        { count: facultyStats.available, color: '#10B981' },
+                        { count: facultyStats.fullyLoaded, color: '#3B82F6' },
+                        { count: facultyStats.overloaded, color: '#EF4444' },
+                        { count: facultyStats.probono, color: '#A855F7' },
+                      ];
+                      let cumulative = 0;
+                      const circumference = 2 * Math.PI * 38;
+
+                      return data.map((item, idx) => {
+                        if (item.count <= 0) return null;
+                        const pct = (item.count / total) * 100;
+                        const dashArray = `${(pct / 100) * circumference} ${circumference}`;
+                        const dashOffset = -((cumulative / 100) * circumference);
+                        cumulative += pct;
+
+                        return (
+                          <circle
+                            key={idx}
+                            cx="50"
+                            cy="50"
+                            r="38"
+                            fill="transparent"
+                            stroke={item.color}
+                            strokeWidth="11"
+                            strokeDasharray={dashArray}
+                            strokeDashoffset={dashOffset}
+                            className="transition-all duration-500"
+                          />
+                        );
+                      });
+                    })()}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-sans">
+                    <span className="text-2xl font-black text-gray-900 leading-none">{faculties.length}</span>
+                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Faculty</span>
+                  </div>
+                </div>
+
+                {/* Donut Legend */}
+                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 font-sans">
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Available</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {facultyStats.available}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Loaded</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {facultyStats.fullyLoaded}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Overload</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {facultyStats.overloaded}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
+                      <span className="font-semibold text-gray-600 text-[11px]">Pro Bono</span>
+                    </div>
+                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                      {facultyStats.probono}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. DETAILS NOTE (Wide Strip Card) */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50/60 p-3.5 rounded-2xl border border-amber-200/80 shadow-sm flex items-start gap-3">
+              <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-800 shrink-0 mt-0.5">
+                <Bell className="w-4.5 h-4.5 text-amber-700" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-bold text-xs text-amber-950 uppercase tracking-wider">Executive Scheduling Notice</h4>
+                  <span className="text-[10px] font-extrabold text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded-full">
+                    {activeTerm ? activeTerm.term_name : 'Active Term'}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-900/80 mt-0.5 leading-relaxed">
+                  {approvalQueue.length > 0
+                    ? `${approvalQueue.length} department schedule${approvalQueue.length === 1 ? '' : 's'} are currently awaiting VPAA final review and endorsement. Cross-department room capacities and faculty unit loads are monitored in real time.`
+                    : 'All submitted department schedules have been reviewed and approved. Academic timetable operations are running normally.'}
+                </p>
+                {approvalQueue.length > 0 && (
+                  <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-amber-200/60">
+                    <span className="text-[10.5px] font-semibold text-amber-900">
+                      Pending: <strong>{approvalQueue.map(q => q.section_name).slice(0, 3).join(', ')}{approvalQueue.length > 3 ? '...' : ''}</strong>
+                    </span>
+                    <button
+                      onClick={() => navigate('/schedules/approval')}
+                      className="px-2.5 py-1 bg-[#5A1220] hover:bg-[#410b15] text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                    >
+                      Review Queue &rarr;
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 3. BAR CHART: Department Progress Comparison (Fits all departments without scrolling) */}
+            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-1 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5 mb-3">
+                  <div>
+                    <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-[#5A1220]" />
+                      Department Scheduling Progress
+                    </h3>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Section readiness & approval completion by department</p>
+                  </div>
+                  <span className="text-xs font-black text-[#5A1220] bg-red-50 px-2.5 py-1 rounded-xl border border-red-100">
+                    {overallStats.progressPercent}% Institutional
+                  </span>
+                </div>
+
+                {/* All Departments Fitted Cleanly - No Scrollbar */}
+                <div className="space-y-2">
+                  {departmentStats.map((dept) => {
+                    const isCompleted = dept.progressPercent === 100;
+                    return (
+                      <div key={dept.id} className="space-y-1 pb-1.5 border-b border-gray-100 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-gray-900 w-14 text-xs">{dept.department_code}</span>
+                            <span className="text-[11px] text-gray-500 truncate max-w-[180px]">{dept.department_name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-gray-400">{dept.completedCount}/{dept.sectionsCount} Sections</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                              isCompleted
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {dept.progressPercent}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden flex">
+                          <div
+                            style={{ width: `${dept.progressPercent}%` }}
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              isCompleted ? 'bg-emerald-500' : 'bg-[#5A1220]'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-gray-100 pt-3 mt-3 flex items-center justify-between text-[11px] text-gray-400">
+                <span>Active Departments: {departments.length}</span>
+                <button
+                  onClick={() => navigate('/departments')}
+                  className="font-bold text-[#5A1220] hover:underline cursor-pointer"
+                >
+                  Manage Departments &rarr;
+                </button>
+              </div>
+            </div>
+
+          </div>
+
         </div>
       )}
     </div>

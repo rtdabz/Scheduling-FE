@@ -167,14 +167,17 @@ export default function VpaaRooms() {
     setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
     try {
       const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const [initialDataRes] = await Promise.all([
-          api.get<{ rooms: ApiRoom[]; departments: Department[]; schedules: Schedule[]; active_term: any }>('/initial-data')
-        ]);
+        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data');
+        const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
+        const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
+        const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
+        const activeTerm = initialDataRes.data?.active_term || null;
+
         return {
-          rooms: initialDataRes.data.rooms.map(mapApiRoom),
-          departments: initialDataRes.data.departments,
-          schedules: initialDataRes.data.schedules,
-          activeTerm: initialDataRes.data.active_term,
+          rooms: rawRooms.map(mapApiRoom),
+          departments: rawDepts,
+          schedules: rawSchedules,
+          activeTerm: activeTerm,
         };
       }, forceRefresh);
       setRooms(data.rooms);
