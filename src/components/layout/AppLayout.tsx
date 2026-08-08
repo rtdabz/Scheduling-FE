@@ -151,10 +151,7 @@ export default function AppLayout() {
 
       {/* Main content */}
       <div
-        className={`
-          flex flex-col flex-1 min-w-0 overflow-hidden
-          transition-all duration-300
-        `}
+        className="flex flex-col flex-1 min-w-0 overflow-hidden"
       >
         <main className="flex-1 overflow-y-auto p-4 pt-16 sm:p-6 sm:pt-6 md:p-8">
           {shouldShowPageTitle && pageTitle && (
