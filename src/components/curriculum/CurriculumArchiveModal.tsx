@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Search, RotateCcw, Archive, BookOpen } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
@@ -20,7 +20,7 @@ export default function CurriculumArchiveModal({
   const [hiddenIds, setHiddenIds] = useState<number[]>([]);
 
   // Reset hiddenIds when modal opens
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
       setHiddenIds([]);
     }

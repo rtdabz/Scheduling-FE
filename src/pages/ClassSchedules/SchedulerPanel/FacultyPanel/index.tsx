@@ -62,9 +62,8 @@ export default function FacultyPanel({
           {Array.from({ length: Math.max(1, totalSlotsCount) }).map((_, index) => (
             <span
               key={`assignment-progress-${index}`}
-              className={`h-full flex-1 first:rounded-l-full last:rounded-r-full ${
-                index < assignedSlotsCount ? "bg-emerald-600" : "bg-slate-200"
-              }`}
+              className={`h-full flex-1 first:rounded-l-full last:rounded-r-full ${index < assignedSlotsCount ? "bg-emerald-600" : "bg-slate-200"
+                }`}
             />
           ))}
         </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import { useMemo } from 'react';
 import { BookOpen, Pencil, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import type { CurriculumCourse } from '../../types/curriculum';
 
@@ -31,7 +31,7 @@ export default function CourseTable({
   onCancelRemove,
   onConfirmRemove,
 }: CourseTableProps) {
-  const sortedCourses = React.useMemo(() => {
+  const sortedCourses = useMemo(() => {
     return [...courses].sort((a, b) => {
       const catA = a.category?.toLowerCase() === 'major' ? 1 : 2;
       const catB = b.category?.toLowerCase() === 'major' ? 1 : 2;

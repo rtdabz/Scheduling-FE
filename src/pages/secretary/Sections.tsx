@@ -11,7 +11,8 @@ import {
   ArrowDown,
   X,
   Loader2,
-  Plus
+  Plus,
+  Layers
 } from 'lucide-react';
 import {
   useReactTable,
@@ -24,6 +25,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import SectionModal from './SectionModal';
 
 interface Department {
   id: number;
@@ -101,6 +103,8 @@ export default function SecretarySections() {
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageSections = isVpaa || isSecretary || isProgramHead;
 
+  const activeTerm = useMemo(() => terms.find((t) => t.is_active) ?? terms[0], [terms]);
+
   const filteredSections = useMemo(() => {
     if (isVpaa) return sections;
     if (!user?.department_id) return [];
@@ -121,20 +125,6 @@ export default function SecretarySections() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
-
-  // Form state
-  const [sectionName, setSectionName] = useState('');
-  const [yearLevel, setYearLevel] = useState<'1' | '2' | '3' | '4'>('1');
-  const [semester, setSemester] = useState<'1st' | '2nd' | 'summer'>('1st');
-  const [departmentId, setDepartmentId] = useState('');
-  const [termId, setTermId] = useState('');
-  const [status, setStatus] = useState<'active' | 'inactive'>('active');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Error states
-  const [nameError, setNameError] = useState('');
-  const [departmentError, setDepartmentError] = useState('');
-  const [termError, setTermError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -166,15 +156,6 @@ export default function SecretarySections() {
   };
 
   const handleEditClick = (section: Section) => {
-    setSectionName(section.section_name);
-    setYearLevel(section.year_level);
-    setSemester(section.semester);
-    setDepartmentId(section.department_id ? section.department_id.toString() : '');
-    setTermId(section.term_id ? section.term_id.toString() : '');
-    setStatus(section.status);
-    setNameError('');
-    setDepartmentError('');
-    setTermError('');
     setEditingId(section.id);
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -205,77 +186,49 @@ export default function SecretarySections() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    let hasError = false;
-    const trimmedName = sectionName.trim();
-
-    if (!trimmedName) {
-      setNameError('Section name is required');
-      hasError = true;
-    } else if (trimmedName.length > 100) {
-      setNameError('Section name must not exceed 100 characters');
-      hasError = true;
-    } else {
-      setNameError('');
+  const handleSaveSingle = async (
+    secName: string,
+    yrLevel: '1' | '2' | '3' | '4',
+    deptId: number
+  ) => {
+    if (isEditMode && editingId !== null) {
+      const payload = {
+        section_name: secName,
+        year_level: yrLevel,
+        department_id: deptId,
+      };
+      const res = await api.put<ApiSection>(`/sections/${editingId}`, payload);
+      const updatedSection = mapApiSection(res.data);
+      clearDataCache();
+      setSections((prev) => {
+        const nextSections = prev.map((s) => (s.id === editingId ? updatedSection : s));
+        setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+        return nextSections;
+      });
+      toast.success('Updated', 'Section updated successfully');
     }
+  };
 
-    const deptVal = isVpaa ? departmentId : (user?.department_id?.toString() || '');
-    if (!deptVal) {
-      setDepartmentError('Department is required');
-      hasError = true;
-    } else {
-      setDepartmentError('');
-    }
-
-    if (!termId) {
-      setTermError('Term is required');
-      hasError = true;
-    } else {
-      setTermError('');
-    }
-
-    if (hasError) return;
-
-    setIsSubmitting(true);
-    const payload = {
-      section_name: trimmedName,
-      year_level: yearLevel,
-      semester,
-      department_id: Number(deptVal),
-      term_id: Number(termId),
-      status
+  const handleSaveBatch = async (
+    batchSections: Array<{ section_name: string; year_level: '1' | '2' | '3' | '4' }>,
+    deptId: number
+  ) => {
+    const batchPayload = {
+      sections: batchSections.map((s) => ({
+        section_name: s.section_name,
+        year_level: s.year_level,
+        department_id: deptId,
+      })),
     };
-
-    try {
-      if (isEditMode && editingId !== null) {
-        const res = await api.put<ApiSection>(`/sections/${editingId}`, payload);
-        const updatedSection = mapApiSection(res.data);
-        clearDataCache();
-        setSections(prev => {
-          const nextSections = prev.map(s => s.id === editingId ? updatedSection : s);
-          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
-          return nextSections;
-        });
-        toast.success('Updated', 'Section updated successfully');
-      } else {
-        const res = await api.post<ApiSection>('/sections', payload);
-        const createdSection = mapApiSection(res.data);
-        clearDataCache();
-        setSections(prev => {
-          const nextSections = [createdSection, ...prev];
-          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
-          return nextSections;
-        });
-        toast.success('Created', 'Section created successfully');
-      }
-      setIsModalOpen(false);
-    } catch {
-      toast.error('Error', isEditMode ? 'Failed to update section' : 'Failed to create section');
-    } finally {
-      setIsSubmitting(false);
-    }
+    const res = await api.post<{ message: string; sections: ApiSection[] }>('/sections/batch', batchPayload);
+    const createdSections = res.data.sections.map(mapApiSection);
+    clearDataCache();
+    setSections((prev) => {
+      const nextSections = [...createdSections, ...prev];
+      setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+      return nextSections;
+    });
+    toast.success('Sections Saved', res.data.message || `${createdSections.length} sections created successfully.`);
   };
 
   const columns = useMemo<ColumnDef<Section>[]>(
@@ -424,18 +377,6 @@ export default function SecretarySections() {
             onClick={() => {
               setIsEditMode(false);
               setEditingId(null);
-              setSectionName('');
-              setYearLevel('1');
-              setSemester('1st');
-              setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
-              
-              const activeTerm = terms.find(t => t.is_active);
-              setTermId(activeTerm ? activeTerm.id.toString() : '');
-              
-              setStatus('active');
-              setNameError('');
-              setDepartmentError('');
-              setTermError('');
               setIsModalOpen(true);
             }}
             className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
@@ -623,183 +564,19 @@ export default function SecretarySections() {
         )}
       </div>
 
-      {/* Create / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
-              <h2 className="text-lg font-bold text-[#1A1410] font-display">
-                {isEditMode ? 'Edit Section' : 'Add New Section'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Section Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={sectionName}
-                  onChange={(e) => {
-                    setSectionName(e.target.value.toUpperCase());
-                    setNameError('');
-                  }}
-                  placeholder="e.g. BSIT 4A"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                    nameError
-                      ? 'border-red-500 focus:ring-red-500'
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
-                {nameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{nameError}</p>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Year Level <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={yearLevel}
-                    onChange={(e) => setYearLevel(e.target.value as '1' | '2' | '3' | '4')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                  >
-                    <option value="1">1st Year</option>
-                    <option value="2">2nd Year</option>
-                    <option value="3">3rd Year</option>
-                    <option value="4">4th Year</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Semester <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={semester}
-                    onChange={(e) => setSemester(e.target.value as '1st' | '2nd' | 'summer')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                  >
-                    <option value="1st">1st Semester</option>
-                    <option value="2nd">2nd Semester</option>
-                    <option value="summer">Summer</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Status <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-
-              {isVpaa ? (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Assigned Department <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={departmentId}
-                    onChange={(e) => {
-                      setDepartmentId(e.target.value);
-                      setDepartmentError('');
-                    }}
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                      departmentError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  >
-                    <option value="">Select Department</option>
-                    {departments.map(dept => (
-                      <option key={dept.id} value={dept.id.toString()}>
-                        {dept.department_code} - {dept.department_name}
-                      </option>
-                    ))}
-                  </select>
-                  {departmentError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{departmentError}</p>}
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Department
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={
-                      departments.find(d => d.id === user?.department_id)
-                        ? `${departments.find(d => d.id === user?.department_id)?.department_code} - ${departments.find(d => d.id === user?.department_id)?.department_name}`
-                        : 'No Department Assigned'
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 text-sm outline-none cursor-not-allowed font-sans"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Academic Term <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={termId}
-                  onChange={(e) => {
-                    setTermId(e.target.value);
-                    setTermError('');
-                  }}
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${
-                    termError
-                      ? 'border-red-500 focus:ring-red-500'
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                >
-                  <option value="">Select Term</option>
-                  {terms.map(t => (
-                    <option key={t.id} value={t.id.toString()}>
-                      A.Y. {t.academic_year} - {t.semester} Semester {t.is_active ? '(Active)' : ''}
-                    </option>
-                  ))}
-                </select>
-                {termError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{termError}</p>}
-              </div>
-
-              {/* Form Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200/80 bg-gray-50/50 -mx-6 -mb-6 p-6">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-all cursor-pointer font-sans"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 font-sans"
-                >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                  <span>{isEditMode ? 'Save Changes' : 'Add Section'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Create / Edit Modal (Portal Isolated for 0-lag typing) */}
+      <SectionModal
+        isOpen={isModalOpen}
+        isEditMode={isEditMode}
+        editingSection={sections.find((s) => s.id === editingId)}
+        activeTerm={activeTerm ?? null}
+        departments={departments}
+        userDepartmentId={user?.department_id}
+        isVpaa={isVpaa}
+        onClose={() => setIsModalOpen(false)}
+        onSaveSingle={handleSaveSingle}
+        onSaveBatch={handleSaveBatch}
+      />
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && (

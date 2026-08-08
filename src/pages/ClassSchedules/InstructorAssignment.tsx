@@ -50,6 +50,11 @@ interface ApiFaculty {
   department_id: number;
   employment_type?: "full-time" | "part-time";
   status?: "active" | "inactive";
+  availabilities?: Array<{
+    day_index: number;
+    start_time: string;
+    end_time: string;
+  }>;
 }
 
 interface ApiSchedule {
@@ -113,14 +118,45 @@ const timeToMinutes = (value: string): number => {
   return hour * 60 + minute;
 };
 
-const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean =>
-  faculty.employment_type === "part-time" &&
-  schedule.day !== "Saturday" &&
-  schedule.day !== "Sunday" &&
-  timeToMinutes(schedule.start_time) < 17 * 60;
+const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean => {
+  if (faculty.employment_type !== "part-time") return false;
+
+  const list = faculty.availabilities ?? [];
+  const dayIndexMap: Record<string, number> = {
+    Monday: 0,
+    Tuesday: 1,
+    Wednesday: 2,
+    Thursday: 3,
+    Friday: 4,
+    Saturday: 5,
+    Sunday: 6,
+  };
+  const dayIndex = dayIndexMap[schedule.day] ?? -1;
+
+  if (list.length === 0) {
+    // Fallback: old hardcoded rule if no availabilities are configured in DB
+    return (
+      schedule.day !== "Saturday" &&
+      schedule.day !== "Sunday" &&
+      timeToMinutes(schedule.start_time) < 17 * 60
+    );
+  }
+
+  const dayAvailabilities = list.filter((a) => Number(a.day_index) === dayIndex);
+  if (dayAvailabilities.length === 0) return true;
+
+  const attemptStart = timeToMinutes(schedule.start_time);
+  const attemptEnd = timeToMinutes(schedule.end_time);
+
+  return !dayAvailabilities.some((window) => {
+    const windowStart = timeToMinutes(window.start_time);
+    const windowEnd = timeToMinutes(window.end_time);
+    return attemptStart >= windowStart && attemptEnd <= windowEnd;
+  });
+};
 
 const getRoomName = (schedule: ApiSchedule): string =>
-  schedule.room?.room_code || schedule.room?.building || "Room not set";
+  schedule.room?.room_code || "Room not set";
 
 const getFacultyName = (schedule: ApiSchedule): string | null => {
   if (!schedule.faculty) return null;
@@ -529,7 +565,7 @@ export default function InstructorAssignment() {
                 className="relative grid select-none"
                 style={{
                   gridTemplateColumns: "72px repeat(6, minmax(138px, 1fr))",
-                  gridTemplateRows: "40px repeat(28, 24px)",
+                  gridTemplateRows: "40px repeat(24, 24px)",
                 }}
               >
                 <div
@@ -549,7 +585,7 @@ export default function InstructorAssignment() {
                   </div>
                 ))}
 
-                {Array.from({ length: 28 }, (_, slot) => (
+                {Array.from({ length: 24 }, (_, slot) => (
                   <div key={`time-row-${slot}`} className="contents">
                     {slot % 2 === 0 && (
                       <div

@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, Send, Upload, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Loader2, Printer, Send, Upload, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, Section } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -34,14 +34,166 @@ interface TopBarProps {
   departmentRemainingSections: number;
   departmentReadyToSubmit: boolean;
   departmentHasSubmittedSchedule: boolean;
-  renderStatusBadge: (status: ScheduleItem["status"]) => React.ReactNode;
-  renderActionButton: () => React.ReactNode;
   handleSubmitForApproval: () => void;
   onPrint: () => void;
   onImport: () => void;
   onGenerate?: (sectionId: string) => void;
   isGenerateDisabled?: boolean;
   isLoading?: boolean;
+
+  isMarkingSectionDone: boolean;
+  isEditingSection: boolean;
+  isResubmittingSection: boolean;
+  isFinalizing: boolean;
+  handleMarkSectionDone: () => Promise<void>;
+  handleEditSection: () => Promise<void>;
+  handleResubmit: () => Promise<void>;
+  handleFinalize: () => Promise<void>;
+  sectionSchedules: ScheduleItem[];
+}
+
+const statusBadgeConfigs: Record<string, { cls: string; label: string }> = {
+  draft: { cls: "bg-slate-500 text-white", label: "Draft" },
+  completed: { cls: "bg-[#4e0a10] text-white", label: "Done" },
+  submitted: { cls: "bg-yellow-500 text-white", label: "Pending Dean Approval" },
+  approved_by_dean: { cls: "bg-blue-600 text-white", label: "Pending VPAA Approval" },
+  rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
+  approved: { cls: "bg-green-600 text-white", label: "Approved" },
+  faculty_assignment: { cls: "bg-purple-600 text-white", label: "Faculty Assignment" },
+  finalized: { cls: "bg-emerald-800 text-white", label: "Finalized" },
+  rejected: { cls: "bg-red-600 text-white", label: "Rejected" },
+  revision: { cls: "bg-orange-600 text-white", label: "Under Revision" }
+};
+
+function StatusBadge({ status }: { status: ScheduleItem["status"] }) {
+  const cfg = statusBadgeConfigs[status] || {
+    cls: "bg-red-500 text-white",
+    label: "UNKNOWN"
+  };
+  return (
+    <span className={`${cfg.cls} px-3 py-1 rounded-full text-xs font-medium`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+interface ActionButtonProps {
+  selectedSectionId: string;
+  currentStatus: ScheduleItem["status"];
+  totalSubjects: number;
+  totalScheduled: number;
+  isMarkingSectionDone: boolean;
+  isEditingSection: boolean;
+  isResubmittingSection: boolean;
+  isFinalizing: boolean;
+  handleMarkSectionDone: () => Promise<void>;
+  handleEditSection: () => Promise<void>;
+  handleResubmit: () => Promise<void>;
+  handleFinalize: () => Promise<void>;
+  sectionSchedules: ScheduleItem[];
+}
+
+function ActionButton({
+  selectedSectionId,
+  currentStatus,
+  totalSubjects,
+  totalScheduled,
+  isMarkingSectionDone,
+  isEditingSection,
+  isResubmittingSection,
+  isFinalizing,
+  handleMarkSectionDone,
+  handleEditSection,
+  handleResubmit,
+  handleFinalize,
+  sectionSchedules
+}: ActionButtonProps) {
+  if (!selectedSectionId) return null;
+  switch (currentStatus) {
+    case "draft":
+    case "revision": {
+      const remaining = Math.max(0, totalSubjects - totalScheduled);
+      const canMarkDone = totalSubjects > 0 && remaining === 0;
+      return (
+        <button
+          onClick={handleMarkSectionDone}
+          disabled={!canMarkDone || isMarkingSectionDone}
+          title={!canMarkDone ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement` : "Mark this section as done"}
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+            canMarkDone && !isMarkingSectionDone
+              ? "bg-[#4e0a10] hover:bg-[#3a0809] text-white cursor-pointer"
+              : canMarkDone
+              ? "bg-[#4e0a10] text-white cursor-wait opacity-80"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+          }`}
+        >
+          {isMarkingSectionDone && <Loader2 className="h-4 w-4 animate-spin" />}
+          {canMarkDone ? (isMarkingSectionDone ? "Marking..." : "Done") : `${remaining} unplaced`}
+        </button>
+      );
+    }
+    case "completed":
+      return (
+        <button
+          onClick={handleEditSection}
+          disabled={isEditingSection}
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+            isEditingSection
+              ? "bg-[#C9952A] text-white cursor-wait opacity-80"
+              : "bg-[#C9952A] hover:bg-[#b8841f] text-white cursor-pointer"
+          }`}
+        >
+          {isEditingSection && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isEditingSection ? "Unlocking..." : "Edit"}
+        </button>
+      );
+    case "submitted":
+      return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
+    case "approved_by_dean":
+      return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending VPAA Approval</button>;
+    case "rejected_by_dean":
+    case "rejected":
+      return (
+        <button
+          onClick={handleResubmit}
+          disabled={isResubmittingSection}
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+            isResubmittingSection
+              ? "bg-orange-500 text-white cursor-wait opacity-80"
+              : "bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+          }`}
+        >
+          {isResubmittingSection && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isResubmittingSection ? "Resubmitting..." : "Resubmit"}
+        </button>
+      );
+    case "approved":
+    case "faculty_assignment": {
+      const unassigned = sectionSchedules.filter((s) => !s.facultyId).length;
+      const allAssigned = unassigned === 0;
+      return (
+        <button
+          onClick={handleFinalize}
+          disabled={!allAssigned || isFinalizing}
+          title={!allAssigned ? `${unassigned} slot${unassigned !== 1 ? "s" : ""} still need faculty` : undefined}
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+            allAssigned && !isFinalizing
+              ? "bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer"
+              : allAssigned
+              ? "bg-emerald-700 text-white cursor-wait opacity-80"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+          }`}
+        >
+          {isFinalizing && <Loader2 className="h-4 w-4 animate-spin" />}
+          {allAssigned ? (isFinalizing ? "Finalizing..." : "Mark as Finalized") : `${unassigned} slots still need faculty`}
+        </button>
+      );
+    }
+    case "finalized":
+      return <button disabled className="px-4 py-2 bg-emerald-800 text-white text-sm font-semibold rounded-lg cursor-not-allowed opacity-75">Schedule Finalized</button>;
+    default:
+      return null;
+  }
 }
 
 export default function TopBar({
@@ -66,14 +218,21 @@ export default function TopBar({
   departmentRemainingSections,
   departmentReadyToSubmit,
   departmentHasSubmittedSchedule,
-  renderStatusBadge,
-  renderActionButton,
   handleSubmitForApproval,
   onPrint,
   onImport,
   onGenerate,
   isGenerateDisabled,
-  isLoading = false
+  isLoading = false,
+  isMarkingSectionDone,
+  isEditingSection,
+  isResubmittingSection,
+  isFinalizing,
+  handleMarkSectionDone,
+  handleEditSection,
+  handleResubmit,
+  handleFinalize,
+  sectionSchedules
 }: TopBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const printDropdownRef = useRef<HTMLDivElement>(null);
@@ -112,17 +271,20 @@ export default function TopBar({
       };
     }
 
-    if (currentStatus === "draft") {
+    if (currentStatus === "draft" || currentStatus === "revision") {
+      const isRev = currentStatus === "revision";
       if (remainingSubjects > 0) {
         return {
-          title: "Plot remaining subjects",
+          title: isRev ? "Revision: Plot remaining subjects" : "Plot remaining subjects",
           description: `${remainingSubjects} subject${remainingSubjects !== 1 ? "s" : ""} still need time and room placement.`,
         };
       }
 
       return {
-        title: "Section ready to mark done",
-        description: "Review this section, then click Done to lock it for department submission.",
+        title: isRev ? "Revision ready to mark done" : "Section ready to mark done",
+        description: isRev
+          ? "Review this revised section, then click Done to lock it for department submission."
+          : "Review this section, then click Done to lock it for department submission.",
       };
     }
 
@@ -427,7 +589,7 @@ export default function TopBar({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p>
-                    {!isLoading && renderStatusBadge(currentStatus)}
+                    {!isLoading && <StatusBadge status={currentStatus} />}
                   </div>
                   <p className="text-sm font-bold text-gray-800 mt-0.5">{nextStep.title}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{nextStep.description}</p>
@@ -543,7 +705,23 @@ export default function TopBar({
         <div className="flex flex-wrap items-center justify-start xl:justify-end gap-2">
           {isLoading ? (
             <Skeleton className="h-9 w-28 rounded-lg" />
-          ) : currentStatus !== "finalized" ? renderActionButton() : null}
+          ) : currentStatus !== "finalized" ? (
+            <ActionButton
+              selectedSectionId={selectedSectionId}
+              currentStatus={currentStatus}
+              totalSubjects={totalSubjects}
+              totalScheduled={totalScheduled}
+              isMarkingSectionDone={isMarkingSectionDone}
+              isEditingSection={isEditingSection}
+              isResubmittingSection={isResubmittingSection}
+              isFinalizing={isFinalizing}
+              handleMarkSectionDone={handleMarkSectionDone}
+              handleEditSection={handleEditSection}
+              handleResubmit={handleResubmit}
+              handleFinalize={handleFinalize}
+              sectionSchedules={sectionSchedules}
+            />
+          ) : null}
         </div>
       </div>
       </div>

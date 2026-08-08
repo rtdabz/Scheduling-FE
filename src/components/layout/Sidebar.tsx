@@ -3,7 +3,7 @@ import Skeleton from '../ui/Skeleton';
 import type { NavSection, NavItem } from '../../navigation/types';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LogOut, RefreshCw, Settings, User, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, LogOut, RefreshCw, Settings, User, X } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import { clearDataCache } from '../../lib/dataCache';
@@ -345,12 +345,16 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
             )}
 
             {isOpen && (
-              <ChevronRight className={`h-4 w-4 flex-shrink-0 text-[#E8D5C4]/60 transition-transform duration-200 ${showProfile ? 'rotate-90 text-[#C9952A]' : ''}`} />
+              <ChevronsUpDown className={`h-4 w-4 flex-shrink-0 text-[#E8D5C4]/60 transition-colors duration-200 ${showProfile ? 'text-[#C9952A]' : ''}`} />
             )}
           </button>
 
           {showProfile && (
-            <div className="absolute bottom-12 left-0 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200/80 bg-[#F7F4F0] shadow-2xl md:bottom-0 md:left-full md:ml-3">
+            <div className={`absolute z-50 overflow-hidden rounded-2xl border border-slate-200/80 bg-[#F7F4F0] shadow-2xl transition-all duration-200 ${
+              isOpen 
+                ? 'bottom-full left-0 right-0 mb-2 w-full' 
+                : 'bottom-0 left-full ml-3 w-60'
+            }`}>
               <div className="flex flex-col gap-0.5 border-b border-gray-100 bg-gray-50/50 p-4">
                 <p className="text-sm font-bold leading-tight text-gray-800">{user?.name || 'Administrator'}</p>
                 <p className="truncate text-xs font-medium text-gray-500">{user?.username || 'admin'}@tcc.edu.ph</p>

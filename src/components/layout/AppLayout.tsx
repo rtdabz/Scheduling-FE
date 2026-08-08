@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+// import { HelperBuddy } from '../HelperBuddy'
+import type { HelperMessage } from '../HelperBuddy'
 import Sidebar from './Sidebar'
 import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
@@ -7,6 +9,8 @@ import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
 import type { NavItem, NavSection } from '../../navigation/types'
 import { ChevronRight } from 'lucide-react'
+
+import { useTour } from '../../hooks/useTour'
 
 interface StoredUser {
   role?: string
@@ -53,8 +57,21 @@ const findActiveNavItem = (items: NavSection[], pathname: string): NavItem | nul
 }
 
 export default function AppLayout() {
+  useTour()
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
   const location = useLocation()
+  const [helperMessage, setHelperMessage] = useState<HelperMessage | null>(null)
+
+  useEffect(() => {
+    const handleShowHelper = (e: Event) => {
+      const customEvent = e as CustomEvent<HelperMessage>;
+      if (customEvent.detail) {
+        setHelperMessage(customEvent.detail);
+      }
+    };
+    window.addEventListener("show-helper-buddy", handleShowHelper);
+    return () => window.removeEventListener("show-helper-buddy", handleShowHelper);
+  }, []);
 
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
@@ -164,6 +181,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      {/* <HelperBuddy message={helperMessage} /> */}
     </div>
   )
 }

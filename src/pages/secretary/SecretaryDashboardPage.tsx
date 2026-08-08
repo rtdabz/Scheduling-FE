@@ -18,7 +18,6 @@ import {
   Minimize2,
   Filter,
 } from 'lucide-react';
-import { useTour } from '../../hooks/useTour';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
@@ -152,7 +151,6 @@ interface InitialDataResponse extends Omit<SchedulingOverviewData, 'activeTerm'>
 }
 
 export default function SecretarySchedulingOperationsPage() {
-  useTour();
   const navigate = useNavigate();
 
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');

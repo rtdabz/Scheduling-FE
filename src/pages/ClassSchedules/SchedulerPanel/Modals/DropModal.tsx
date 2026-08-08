@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, Loader2, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, Loader2, MapPin, Monitor, Search, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
-import type { DeliveryMode, DropContext, Subject, Room, ScheduleStatus, Term } from "../types";
+import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Term } from "../types";
+import { getSubjectTotalSlots, getSubjectContactHours } from "../types";
 
 interface DropRecommendationRow {
   term_id: number;
@@ -24,6 +25,7 @@ interface DropRecommendation {
   rank: number;
   score: number;
   schedules: DropRecommendationRow[];
+  isSingleMeeting?: boolean;
 }
 
 interface DropRecommendationResponse {
@@ -37,8 +39,28 @@ interface SelectedRecommendationResponse {
   };
 }
 
+interface SplitSlotRecommendation {
+  rank: number;
+  score: number;
+  day: string;
+  start_time: string;
+  end_time: string;
+  room_id: number;
+  room_name: string;
+  room_type: string;
+  mode: DeliveryMode;
+}
+
+interface SplitRecommendResponse {
+  status: string;
+  message?: string;
+  recommendations: SplitSlotRecommendation[];
+}
+
 interface DropModalProps {
   rooms: Room[];
+  sections: Section[];
+  schedules: ScheduleItem[];
   selectedSectionId: string;
   activeTerm: Term | null;
   dropContext: DropContext | null;
@@ -78,6 +100,17 @@ interface DropModalProps {
   setSelectedRecommendationId: (value: number | null) => void;
   setDropContext: (value: DropContext | null) => void;
   handleModalConfirm: (e: React.FormEvent) => void;
+  checkConflict: (
+    subjectId: string,
+    sectionId: string,
+    facultyId: string | null,
+    roomId: string,
+    dayIndex: number,
+    startSlot: number,
+    durationSlots: number,
+    excludeScheduleId?: string | string[],
+    preferredPattern?: string | null
+  ) => { conflictType: "section" | "room" | "faculty"; message: string } | null;
 }
 
 const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -94,6 +127,13 @@ const getStoredRole = (): string => {
   }
 };
 
+const slotToTime24h = (slotIndex: number): string => {
+  const totalMinutes = 7 * 60 + slotIndex * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+};
+
 const timeToSlot = (time: string): number => {
   const [hourRaw, minuteRaw] = time.split(":");
   const hour = Number(hourRaw);
@@ -108,32 +148,29 @@ const getDayIndex = (day: string): number => {
   return DAYS.findIndex((item) => item.toLowerCase() === day.toLowerCase());
 };
 
-const normalizePatternLabel = (rows: DropRecommendationRow[]): string => {
-  if (rows.length <= 1) return "Single meeting";
-  return rows.map((row) => row.day.slice(0, 3)).join(" + ");
+const getPreferredPatternDayIndexes = (preferredPattern?: string | null): number[] | null => {
+  if (!preferredPattern) return null;
+  if (preferredPattern === "MW") return [0, 2];
+  if (preferredPattern === "TTh") return [1, 3];
+
+  const customMatch = preferredPattern.match(/^days:([0-6])-([0-6])$/);
+  if (!customMatch) return null;
+
+  return [Number(customMatch[1]), Number(customMatch[2])];
 };
 
-const getRecommendationReason = (
-  recommendation: DropRecommendation,
-  subject: Subject,
-  rooms: Room[],
-  modalConflict: string | null
-): string => {
-  const firstRow = recommendation.schedules[0];
-  const room = firstRow ? rooms.find((item) => Number(item.id) === firstRow.room_id) : undefined;
-  const reasons = [
-    modalConflict ? "avoids the current conflict" : null,
-    room && room.roomType === subject.roomTypeRequired ? "matches the required room type" : null,
-    recommendation.schedules.length > 1 ? "balances contact hours across two meetings" : null,
-    firstRow?.mode !== "on-site" ? `supports ${firstRow?.mode} delivery` : null,
-    `CSP score ${recommendation.score}`
-  ].filter(Boolean);
-
-  return reasons.join(", ");
+const getRecommendationRoomLabel = (row: DropRecommendationRow, rooms: Room[]): string => {
+  const room = rooms.find((item) => Number(item.id) === row.room_id);
+  if (room) return room.name;
+  if (row.mode === "online") return "Online";
+  if (row.mode === "field") return "Field";
+  return "Recommended room";
 };
 
 export default function DropModal({
   rooms,
+  sections,
+  schedules,
   selectedSectionId,
   activeTerm,
   dropContext,
@@ -171,15 +208,21 @@ export default function DropModal({
   selectedRecommendationId,
   setSelectedRecommendationId,
   setDropContext,
-  handleModalConfirm
+  handleModalConfirm,
+  checkConflict
 }: DropModalProps) {
   const isSummerTerm = activeTerm?.semester === "summer";
   const availableDays = isSummerTerm ? DAYS.slice(0, 5) : DAYS;
+  const isMajor = dropSubject?.category === "major";
+  const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
   const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
+
+
+
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = useMemo(() => {
     const role = getStoredRole();
@@ -220,23 +263,239 @@ export default function DropModal({
       setIsRecommendationLoading(true);
       setRecommendationError(null);
 
+      const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
+      const excludeIds = schedules
+        .filter((item) => String(item.sectionId) === String(selectedSectionId) && String(item.courseId ?? item.subjectId) === String(dropSubject.id))
+        .map((item) => String(item.id));
+
+      const conflictDay1 = patternDays && modalDay1Duration > 0
+        ? checkConflict(
+            dropSubject.id,
+            selectedSectionId,
+            null,
+            modalRoomId,
+            patternDays[0],
+            modalDay1StartSlot,
+            modalDay1Duration,
+            excludeIds,
+            modalPreferredPattern
+          )
+        : null;
+
+      const conflictDay2 = patternDays && modalDay2Duration > 0
+        ? checkConflict(
+            dropSubject.id,
+            selectedSectionId,
+            null,
+            modalDay2RoomId,
+            patternDays[1],
+            modalDay2StartSlot,
+            modalDay2Duration,
+            excludeIds,
+            modalPreferredPattern
+          )
+        : null;
+
+      const isMeeting1Conflicted = !!conflictDay1;
+      const isMeeting2Conflicted = !!conflictDay2;
+
       try {
-        const response = await api.post<DropRecommendationResponse>(
-          "/schedule-recommendations/preview",
-          {
-            section_id: Number(selectedSectionId),
-            course_ids: [Number(dropSubject.id)],
-            mode: dropSubjectIsField ? "field" : modalClassMode,
-            is_hybrid: modalIsHybrid,
-            preferred_patterns: modalPreferredPattern
-              ? { [dropSubject.id]: modalPreferredPattern }
-              : {},
-            max_solutions: 3,
-            timeout_seconds: 2
-          },
-          { signal: controller.signal }
-        );
-        setRecommendations(response.data.recommendations);
+        if (isTwoMeetingPattern && (isMeeting1Conflicted || isMeeting2Conflicted)) {
+          const existingSched = schedules.find(
+            (item) => String(item.sectionId) === String(selectedSectionId) && String(item.courseId ?? item.subjectId) === String(dropSubject.id)
+          );
+          const facultyId = existingSched?.facultyId ?? null;
+
+          const cleanFacultyId = facultyId && !isNaN(Number(facultyId)) ? Number(facultyId) : null;
+          const cleanTermId = activeTerm?.id && !isNaN(Number(activeTerm.id)) ? Number(activeTerm.id) : null;
+          const cleanSectionId = selectedSectionId && !isNaN(Number(selectedSectionId)) ? Number(selectedSectionId) : null;
+          const cleanCourseId = dropSubject?.id && !isNaN(Number(dropSubject.id)) ? Number(dropSubject.id) : null;
+          const cleanDeptId = departmentId && !isNaN(Number(departmentId)) ? Number(departmentId) : null;
+
+          const buildCurrentMeetingRow = (
+            dayIndex: number,
+            startSlot: number,
+            durationSlots: number,
+            roomIdValue: string,
+            modeValue: DeliveryMode
+          ): DropRecommendationRow => {
+            let resolvedRoomId: number | null = null;
+            if (roomIdValue === "online" || modeValue === "online") {
+              const onlineRoom = rooms.find(r => r.roomType === "online");
+              resolvedRoomId = onlineRoom ? Number(onlineRoom.id) : null;
+            } else if (roomIdValue === "field" || modeValue === "field") {
+              const fieldRoom = rooms.find(r => r.roomType === "field");
+              resolvedRoomId = fieldRoom ? Number(fieldRoom.id) : null;
+            } else if (roomIdValue && !isNaN(Number(roomIdValue))) {
+              resolvedRoomId = Number(roomIdValue);
+            }
+
+            return {
+              term_id: cleanTermId!,
+              section_id: cleanSectionId!,
+              course_id: cleanCourseId!,
+              faculty_id: cleanFacultyId,
+              room_id: resolvedRoomId!,
+              department_id: cleanDeptId!,
+              day: fullDayNames[dayIndex],
+              start_time: slotToTime24h(startSlot),
+              end_time: slotToTime24h(startSlot + durationSlots),
+              mode: modeValue,
+              is_hybrid: false,
+              preferred_pattern: modalPreferredPattern,
+              status: "draft"
+            };
+          };
+
+          const recommendMeeting = async (
+            duration: number,
+            roomIdVal: string,
+            modeVal: DeliveryMode,
+            dayIndex: number,
+            startSlot: number
+          ): Promise<SplitSlotRecommendation[]> => {
+            const cleanRoomId = roomIdVal && !isNaN(Number(roomIdVal)) ? Number(roomIdVal) : null;
+            const meetingType = dropSubject.labHours > 0
+              ? (duration === dropSubject.labHours * 2 ? "laboratory" : "lecture")
+              : "lecture";
+
+            const response = await api.post<SplitRecommendResponse>(
+              "/schedule-recommendations/recommend-split",
+              {
+                term_id: cleanTermId,
+                section_id: cleanSectionId,
+                course_id: cleanCourseId,
+                department_id: cleanDeptId,
+                duration_slots: duration,
+                room_id: cleanRoomId,
+                mode: modeVal,
+                faculty_id: cleanFacultyId,
+                delete_ids: excludeIds.map(Number).filter((id) => !isNaN(id)),
+                meeting_type: meetingType,
+                preferred_day: fullDayNames[dayIndex],
+                preferred_start_time: slotToTime24h(startSlot),
+                max_solutions: 5,
+                timeout_seconds: 5
+              },
+              { signal: controller.signal }
+            );
+
+            return response.data.recommendations;
+          };
+
+          const toRecommendedRow = (rec: SplitSlotRecommendation): DropRecommendationRow => ({
+            term_id: cleanTermId!,
+            section_id: cleanSectionId!,
+            course_id: cleanCourseId!,
+            faculty_id: cleanFacultyId,
+            room_id: rec.room_id,
+            department_id: cleanDeptId!,
+            day: rec.day,
+            start_time: rec.start_time,
+            end_time: rec.end_time,
+            mode: rec.mode,
+            is_hybrid: false,
+            preferred_pattern: modalPreferredPattern,
+            status: "draft"
+          });
+
+          const rowsOverlap = (left: DropRecommendationRow, right: DropRecommendationRow): boolean => {
+            if (getDayIndex(left.day) !== getDayIndex(right.day)) return false;
+            const leftStart = timeToSlot(left.start_time);
+            const leftEnd = timeToSlot(left.end_time);
+            const rightStart = timeToSlot(right.start_time);
+            const rightEnd = timeToSlot(right.end_time);
+            return leftStart < rightEnd && rightStart < leftEnd;
+          };
+
+          let mappedRecommendations: DropRecommendation[] = [];
+
+          if (isMeeting1Conflicted && isMeeting2Conflicted) {
+            const [day1Recommendations, day2Recommendations] = await Promise.all([
+              recommendMeeting(modalDay1Duration, modalRoomId, modalClassMode, modalDay1Index, modalDay1StartSlot),
+              recommendMeeting(modalDay2Duration, modalDay2RoomId, modalDay2ClassMode, modalDay2Index, modalDay2StartSlot)
+            ]);
+
+            const pairLimit = Math.min(day1Recommendations.length, day2Recommendations.length);
+            mappedRecommendations = Array.from({ length: pairLimit }, (_, index) => {
+              const schedulesList = [
+                toRecommendedRow(day1Recommendations[index]),
+                toRecommendedRow(day2Recommendations[index])
+              ];
+
+              const sortedForPattern = [...schedulesList].sort((left, right) => (
+                getDayIndex(left.day) - getDayIndex(right.day) ||
+                timeToSlot(left.start_time) - timeToSlot(right.start_time)
+              ));
+              const sortedDay1Index = getDayIndex(sortedForPattern[0].day);
+              const sortedDay2Index = getDayIndex(sortedForPattern[1].day);
+              const sortedPattern = `days:${sortedDay1Index}-${sortedDay2Index}`;
+              schedulesList[0].preferred_pattern = sortedPattern;
+              schedulesList[1].preferred_pattern = sortedPattern;
+
+              return {
+                rank: index + 1,
+                score: day1Recommendations[index].score + day2Recommendations[index].score,
+                schedules: schedulesList,
+                isSingleMeeting: true
+              };
+            }).filter((recommendation) => !rowsOverlap(recommendation.schedules[0], recommendation.schedules[1]));
+          } else {
+            const conflictedRecommendations = await recommendMeeting(
+              isMeeting1Conflicted ? modalDay1Duration : modalDay2Duration,
+              isMeeting1Conflicted ? modalRoomId : modalDay2RoomId,
+              isMeeting1Conflicted ? modalClassMode : modalDay2ClassMode,
+              isMeeting1Conflicted ? modalDay1Index : modalDay2Index,
+              isMeeting1Conflicted ? modalDay1StartSlot : modalDay2StartSlot
+            );
+
+            const unchangedRow = isMeeting1Conflicted
+              ? buildCurrentMeetingRow(modalDay2Index, modalDay2StartSlot, modalDay2Duration, modalDay2RoomId, modalDay2ClassMode)
+              : buildCurrentMeetingRow(modalDay1Index, modalDay1StartSlot, modalDay1Duration, modalRoomId, modalClassMode);
+
+            mappedRecommendations = conflictedRecommendations.map((rec) => {
+              const schedulesList = isMeeting1Conflicted
+                ? [toRecommendedRow(rec), unchangedRow]
+                : [unchangedRow, toRecommendedRow(rec)];
+
+              const sortedForPattern = [...schedulesList].sort((left, right) => (
+                getDayIndex(left.day) - getDayIndex(right.day) ||
+                timeToSlot(left.start_time) - timeToSlot(right.start_time)
+              ));
+              const sortedDay1Index = getDayIndex(sortedForPattern[0].day);
+              const sortedDay2Index = getDayIndex(sortedForPattern[1].day);
+              const sortedPattern = `days:${sortedDay1Index}-${sortedDay2Index}`;
+              schedulesList[0].preferred_pattern = sortedPattern;
+              schedulesList[1].preferred_pattern = sortedPattern;
+
+              return {
+                rank: rec.rank,
+                score: rec.score,
+                schedules: schedulesList,
+                isSingleMeeting: true
+              };
+            }).filter((recommendation) => !rowsOverlap(recommendation.schedules[0], recommendation.schedules[1]));
+          }
+
+          setRecommendations(mappedRecommendations);
+        } else {
+          const response = await api.post<DropRecommendationResponse>(
+            "/schedule-recommendations/preview",
+            {
+              section_id: Number(selectedSectionId),
+              course_ids: [Number(dropSubject.id)],
+              mode: dropSubjectIsField ? "field" : modalClassMode,
+              is_hybrid: modalIsHybrid,
+              preferred_patterns: modalPreferredPattern
+                ? { [dropSubject.id]: modalPreferredPattern }
+                : {},
+              max_solutions: 3,
+              timeout_seconds: 2
+            },
+            { signal: controller.signal }
+          );
+          setRecommendations(response.data.recommendations);
+        }
       } catch {
         if (!controller.signal.aborted) {
           setRecommendationError("Recommendations are unavailable right now.");
@@ -261,16 +520,45 @@ export default function DropModal({
     modalIsHybrid,
     modalPreferredPattern,
     selectedSectionId,
-    shouldShowRecommendations
+    shouldShowRecommendations,
+    modalDay1Duration,
+    modalDay2Duration,
+    modalRoomId,
+    modalDay2RoomId,
+    modalDay1Index,
+    modalDay2Index,
+    modalDay1StartSlot,
+    modalDay2StartSlot,
+    schedules,
+    checkConflict,
+    activeTerm,
+    modalDay2ClassMode
   ]);
 
+  // Derive term_id and department_id from the selected section for the
+  // recommend-split endpoint. Both are available via the spreaded scheduler
+  // props (sections array and activeTerm).
+  const selectedSection = sections.find((s) => String(s.id) === String(selectedSectionId));
+  const termId = activeTerm?.id ?? null;
+  const departmentId = selectedSection?.departmentId ?? null;
+
+  // Build the list of existing schedule IDs that are being replaced (delete_ids).
+  // These tell the Rule Engine to ignore them when checking conflicts.
+  const existingDeleteIds = dropContext?.isRescheduling && dropSubject
+    ? schedules
+        .filter((s) => String(s.subjectId) === String(dropSubject.id) && String(s.sectionId) === String(selectedSectionId))
+        .map((s) => Number(s.id))
+        .filter((id) => !Number.isNaN(id))
+    : [];
+
+  /**
+   * Call the Rule Engine + CSP backend to find the best conflict-free
+   * (day, time, room, mode) combinations for one split block.
+   */
   if (!dropContext || !dropSubject) return null;
 
-  const FULL_DAYS: Record<string, string> = {
-    Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday",
-    Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday"
-  };
-  const totalSlots = dropSubject ? dropSubject.units * 2 : 0;
+  const totalSlots = getSubjectTotalSlots(dropSubject);
+  const totalContactHours = getSubjectContactHours(dropSubject);
   const isTwoMeetingPattern = !!modalPreferredPattern;
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
@@ -292,7 +580,7 @@ export default function DropModal({
   };
 
   const clampStartSlotForDuration = (startSlot: number, durationSlots: number): number => {
-    return Math.min(startSlot, Math.max(0, 28 - durationSlots));
+    return Math.min(startSlot, Math.max(0, 24 - durationSlots));
   };
 
   const getFallbackMeetingDayIndex = (excludedDayIndex: number): number => {
@@ -315,13 +603,26 @@ export default function DropModal({
   const totalSelectedSlots = modalPreferredPattern
     ? modalDay1Duration + modalDay2Duration
     : totalSlots;
-  const usesFullDurationMeetings = modalPreferredPattern
-    ? modalDay1Duration === totalSlots && modalDay2Duration === totalSlots
-    : true;
-  const durationTotalMatches = totalSelectedSlots === totalSlots || usesFullDurationMeetings;
+
+  const courseMaxSlots = isTwoMeetingPattern && hasBoth ? 6 : totalSlots;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
+
+  const onSiteRoomOptions = rooms.filter((r) => {
+    const isPhysicalRoom = r.roomType === "lecture" || r.roomType === "laboratory";
+    if (!isPhysicalRoom) return false;
+
+    const isMajorOrMinor = dropSubject.category === "major" || dropSubject.category === "minor";
+    const isSplit = !!modalPreferredPattern;
+    if (isSplit && isMajorOrMinor) return true;
+
+    return !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired;
+  });
+
+
+
+
   const recommendedRoomLabel = modalClassMode === "on-site"
     ? rooms.find((r) => r.id === modalRoomId)?.name || "Auto-assigning first available room..."
     : modalClassMode === "online"
@@ -333,6 +634,63 @@ export default function DropModal({
     if (isApplyingRecommendation) return;
     discardSelectedRecommendation();
     setIsApplyingRecommendation(true);
+
+    if (recommendation.isSingleMeeting) {
+      try {
+        const sortedRows = [...recommendation.schedules].sort((left, right) => (
+          getDayIndex(left.day) - getDayIndex(right.day)
+          || timeToSlot(left.start_time) - timeToSlot(right.start_time)
+        ));
+        const firstRow = sortedRows[0];
+        if (!firstRow || !dropContext) return;
+
+        const firstDayIndex = getDayIndex(firstRow.day);
+        const firstStartSlot = timeToSlot(firstRow.start_time);
+        const firstEndSlot = timeToSlot(firstRow.end_time);
+
+        setModalRoomId(String(firstRow.room_id));
+        setModalClassMode(firstRow.mode);
+        setModalIsHybrid(firstRow.is_hybrid);
+
+        if (sortedRows.length > 1) {
+          const secondRow = sortedRows[1];
+          const secondDayIndex = getDayIndex(secondRow.day);
+          setModalPreferredPattern(firstRow.preferred_pattern ?? `days:${firstDayIndex}-${secondDayIndex}`);
+          setModalDay1Index(firstDayIndex);
+          setModalDay2Index(secondDayIndex);
+          setModalDay1StartSlot(firstStartSlot);
+          setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
+          setModalDay2StartSlot(timeToSlot(secondRow.start_time));
+          setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
+          setModalDay2RoomId(String(secondRow.room_id));
+          setModalDay2ClassMode(secondRow.mode);
+          setIsDay2ModifiedByUser(true);
+        } else {
+          setModalPreferredPattern(null);
+          setModalDay1Index(firstDayIndex);
+          setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
+          setModalDay1StartSlot(firstStartSlot);
+          setModalDay1Duration(getSubjectTotalSlots(dropSubject));
+          setModalDay2StartSlot(firstStartSlot);
+          setModalDay2Duration(0);
+          setModalDay2RoomId("");
+          setModalDay2ClassMode("on-site");
+          setIsDay2ModifiedByUser(false);
+          setDropContext({
+            ...dropContext,
+            dayIndex: firstDayIndex,
+            startSlot: firstStartSlot
+          });
+        }
+
+        setModalValidationError("");
+        setAppliedRecommendationRank(recommendation.rank);
+        setSelectedRecommendationId(null);
+      } finally {
+        setIsApplyingRecommendation(false);
+      }
+      return;
+    }
 
     try {
       const response = await api.post<SelectedRecommendationResponse>(
@@ -384,7 +742,7 @@ export default function DropModal({
         setModalDay1Index(firstDayIndex);
         setModalDay2Index(getDayIndex(fullDayNames[Math.min(firstDayIndex + 1, fullDayNames.length - 1)]));
         setModalDay1StartSlot(firstStartSlot);
-        setModalDay1Duration(dropSubject.units * 2);
+        setModalDay1Duration(getSubjectTotalSlots(dropSubject));
         setModalDay2StartSlot(firstStartSlot);
         setModalDay2Duration(0);
         setModalDay2RoomId("");
@@ -412,7 +770,7 @@ export default function DropModal({
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
     >
-      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col gap-4 xl:flex-row xl:items-stretch">
+      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col gap-4 xl:flex-row xl:items-stretch">
       <div
         role="dialog"
         aria-modal="true"
@@ -420,7 +778,9 @@ export default function DropModal({
         aria-describedby="placement-modal-desc"
         className="bg-white rounded-2xl shadow-2xl min-h-0 flex-1 overflow-hidden flex flex-col transition-all duration-200 animate-in fade-in zoom-in-95"
       >
-        <div className="flex justify-between items-start px-5 pt-4 pb-3 border-b border-gray-100 shrink-0">
+
+
+        <div className="flex justify-between items-start px-5 py-3 border-b border-gray-100 shrink-0">
           <div className="flex items-start gap-3">
             <CalendarPlus className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
             <div>
@@ -444,9 +804,9 @@ export default function DropModal({
         <form
           onSubmit={handleModalConfirm}
           onChangeCapture={discardSelectedRecommendation}
-          className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-gray-50/30"
+          className="flex-1 overflow-y-auto px-5 py-3 space-y-3 bg-gray-50/30"
         >
-          <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3 shrink-0">
+          <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-2 shrink-0">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -472,7 +832,7 @@ export default function DropModal({
                   <p className="mt-0.5 text-sm font-bold text-gray-800">{patternLabel}</p>
                   <p className="text-xs text-gray-500">
                     {slotToTimeStr(modalPreferredPattern ? modalDay1StartSlot : dropContext.startSlot)}
-                    {modalPreferredPattern ? ` · ${dropSubject.units} total hours` : `–${slotToTimeStr(dropContext.startSlot + dropSubject.units * 2)}`}
+                    {modalPreferredPattern ? ` · ${totalContactHours} total contact hrs (${dropSubject ? dropSubject.units : 3} units)` : `–${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}`}
                   </p>
                 </div>
                 <div className="col-span-2 flex items-center md:col-span-1 md:justify-end">
@@ -487,8 +847,12 @@ export default function DropModal({
             </div>
           </section>
 
+
+
+
+
           {/* Meeting Pattern Card */}
-          <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -500,24 +864,29 @@ export default function DropModal({
                     : null;
                   setIsDay2ModifiedByUser(false);
 
+                  const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+                  const dayOneSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+                  const dayTwoSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+
+
                   if (nextPattern) {
                     const nextDay2Index = modalDay1Index === modalDay2Index
                       ? getFallbackMeetingDayIndex(modalDay1Index)
                       : modalDay2Index;
-                    const dayOneSlots = totalSlots;
-                    const dayTwoSlots = totalSlots;
                     setModalDay2Index(nextDay2Index);
                     setModalPreferredPattern(`days:${modalDay1Index}-${nextDay2Index}`);
                     setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayOneSlots));
                     setModalDay1Duration(dayOneSlots);
                     setModalDay2Duration(dayTwoSlots);
                     setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
+                    setModalDay2RoomId(modalRoomId);
+                    setModalDay2ClassMode(modalClassMode);
                   } else {
                     setModalPreferredPattern(null);
-                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
-                    setModalDay1Duration(totalSlots);
+                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
+                    setModalDay1Duration(singleSlots);
                     setModalDay2Duration(0);
-                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, totalSlots));
+                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
                   }
                 }}
                 className="h-4.5 w-4.5 rounded border-gray-300 text-[#4e0a10] focus:ring-[#4e0a10] cursor-pointer"
@@ -536,7 +905,7 @@ export default function DropModal({
           {/* Meetings Cards Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* First Meeting */}
-            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
               <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
                 <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
                 First Meeting
@@ -597,8 +966,7 @@ export default function DropModal({
                       className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
                     >
                       <option value="">Select a room...</option>
-                      {rooms
-                        .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
+                      {onSiteRoomOptions
                         .map((r) => {
                           const isUnavailable = r.status === "not available";
                           return (
@@ -681,13 +1049,18 @@ export default function DropModal({
                         onChange={(e) => {
                           const newStart = Number(e.target.value);
                           setModalDay1StartSlot(newStart);
-                          if (newStart + modalDay1Duration > 28) {
-                            setModalDay1Duration(Math.max(1, 28 - newStart));
+                          let nextDuration = modalDay1Duration;
+                          if (nextDuration > courseMaxSlots) {
+                            nextDuration = courseMaxSlots;
                           }
+                          if (newStart + nextDuration > 24) {
+                            nextDuration = Math.max(1, 24 - newStart);
+                          }
+                          setModalDay1Duration(nextDuration);
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 }, (_, i) => (
+                        {Array.from({ length: 24 }, (_, i) => (
                           <option key={i} value={i}>
                             {slotToTimeStr(i)}
                           </option>
@@ -702,7 +1075,7 @@ export default function DropModal({
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 29 - totalSlots }, (_, i) => (
+                        {Array.from({ length: 25 - totalSlots }, (_, i) => (
                           <option key={i} value={i}>
                             {slotToTimeStr(i)}
                           </option>
@@ -713,7 +1086,7 @@ export default function DropModal({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
                     End Time {!isTwoMeetingPattern && "(Auto)"}
                   </label>
                   <div className="relative">
@@ -727,7 +1100,7 @@ export default function DropModal({
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 - modalDay1StartSlot }, (_, i) => {
+                        {Array.from({ length: Math.min(24 - modalDay1StartSlot, courseMaxSlots) }, (_, i) => {
                           const val = modalDay1StartSlot + i + 1;
                           const durationHrs = (val - modalDay1StartSlot) / 2;
                           return (
@@ -737,11 +1110,12 @@ export default function DropModal({
                           );
                         })}
                       </select>
+
                     ) : (
                       <input
                         type="text"
                         readOnly
-                        value={`${slotToTimeStr(modalDay1StartSlot + totalSlots)} (${totalSlots / 2} hrs)`}
+                        value={`${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)} (${modalDay1Duration / 2} hrs)`}
                         className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
                       />
                     )}
@@ -751,11 +1125,13 @@ export default function DropModal({
                   </div>
                 </div>
               </div>
+
+
             </div>
 
             {/* Second Meeting */}
             {isTwoMeetingPattern ? (
-              <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm animate-in fade-in zoom-in-95">
+              <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm animate-in fade-in zoom-in-95">
                 <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
                   <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
                   Second Meeting
@@ -816,8 +1192,7 @@ export default function DropModal({
                         className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
                       >
                         <option value="">Select a room...</option>
-                        {rooms
-                          .filter((r) => !dropSubject.roomTypeRequired || r.roomType === dropSubject.roomTypeRequired)
+                        {onSiteRoomOptions
                           .map((r) => {
                             const isUnavailable = r.status === "not available";
                             return (
@@ -884,13 +1259,18 @@ export default function DropModal({
                           const newStart = Number(e.target.value);
                           setModalDay2StartSlot(newStart);
                           setIsDay2ModifiedByUser(true);
-                          if (newStart + modalDay2Duration > 28) {
-                            setModalDay2Duration(Math.max(1, 28 - newStart));
+                          let nextDuration = modalDay2Duration;
+                          if (nextDuration > courseMaxSlots) {
+                            nextDuration = courseMaxSlots;
                           }
+                          if (newStart + nextDuration > 24) {
+                            nextDuration = Math.max(1, 24 - newStart);
+                          }
+                          setModalDay2Duration(nextDuration);
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 }, (_, i) => (
+                        {Array.from({ length: 24 }, (_, i) => (
                           <option key={i} value={i}>
                             {slotToTimeStr(i)}
                           </option>
@@ -914,7 +1294,7 @@ export default function DropModal({
                         }}
                         className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
                       >
-                        {Array.from({ length: 28 - modalDay2StartSlot }, (_, i) => {
+                        {Array.from({ length: Math.min(24 - modalDay2StartSlot, courseMaxSlots) }, (_, i) => {
                           const val = modalDay2StartSlot + i + 1;
                           const durationHrs = (val - modalDay2StartSlot) / 2;
                           return (
@@ -924,11 +1304,15 @@ export default function DropModal({
                           );
                         })}
                       </select>
+
+
                       <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
-                </div>
               </div>
+
+
+            </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-200 rounded-xl bg-gray-50/30 text-gray-400">
                 <CalendarDays className="w-8 h-8 mb-2 opacity-50" />
@@ -937,22 +1321,14 @@ export default function DropModal({
               </div>
             )}
 
-            {isTwoMeetingPattern && (
-              <div className={`col-span-1 lg:col-span-2 flex items-center gap-2 rounded-xl p-3 border text-xs font-bold tracking-wide uppercase select-none ${
-                durationTotalMatches
-                  ? "bg-[#4e0a10]/5 border-[#4e0a10]/10 text-[#4e0a10]"
-                  : "bg-amber-50 border-amber-200 text-amber-800"
-              }`}>
-                <span>Total Contact Hours: {dropSubject.units} hours ({totalSlots} slots)</span>
-                <span className={`ml-auto font-black px-2 py-0.5 rounded-full border ${
-                  durationTotalMatches
-                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                    : "text-amber-800 bg-white border-amber-200"
-                }`}>
-                  Selected: {((modalDay1Duration + modalDay2Duration) / 2).toFixed(1)} hours
-                </span>
-              </div>
-            )}
+            
+
+
+            
+
+
+
+
 
             {hasConflict && (
               <div className="col-span-1 lg:col-span-2 bg-red-50 border border-red-200 rounded-xl p-4">
@@ -975,11 +1351,29 @@ export default function DropModal({
           </div>
         </form>
 
-        <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3">
+        <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3.5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className={`flex items-center gap-2 text-sm font-semibold ${hasConflict ? "text-red-600" : "text-emerald-700"}`}>
-              {hasConflict ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
-              {hasConflict ? "Resolve the detected conflict before placing this class." : "Placement is ready to be added to the timetable."}
+            <div className="flex items-start gap-3 min-w-0">
+              <div className={`mt-0.5 rounded-full p-1 shrink-0 ${
+                hasConflict ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+              }`}>
+                {hasConflict ? (
+                  <AlertTriangle className="w-4 h-4" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className={`text-sm font-bold leading-tight ${
+                  hasConflict ? "text-red-700" : "text-emerald-800"
+                }`}>
+                  {hasConflict ? "Resolve Conflicts First" : "Placement is ready to be added"}
+                </p>
+                <p className="text-xs text-gray-500 font-bold mt-0.5 uppercase tracking-wide">
+                  Total Contact Hours: {totalContactHours} hrs ({totalSlots} slots) · {dropSubject ? dropSubject.units : 3} Units
+                  {isTwoMeetingPattern && ` · Selected: ${((modalDay1Duration + modalDay2Duration) / 2).toFixed(1)} hrs`}
+                </p>
+              </div>
             </div>
             <div className="flex justify-end gap-3">
               <button
@@ -1009,13 +1403,15 @@ export default function DropModal({
               "Place on Timetable"
             )}
               </button>
+
+
             </div>
           </div>
         </div>
       </div>
 
       {shouldShowRecommendations && (
-        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[88vh] xl:w-80">
+        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[92vh] xl:w-80">
           <div className="flex items-start gap-2 border-b border-[#C9952A]/20 pb-3">
             <div className="rounded-lg bg-white p-2 shadow-sm">
               <Lightbulb className="w-4 h-4 text-[#7a4c08]" />
@@ -1046,23 +1442,19 @@ export default function DropModal({
             </div>
           ) : (
             <div className="mt-3 space-y-2 overflow-y-auto pr-1">
-              {recommendations.map((recommendation) => {
-                const firstRow = recommendation.schedules[0];
-                const room = firstRow ? rooms.find((item) => Number(item.id) === firstRow.room_id) : undefined;
-                const timeLabel = recommendation.schedules
-                  .map((row) => `${row.day}, ${slotToTimeStr(timeToSlot(row.start_time))}-${slotToTimeStr(timeToSlot(row.end_time))}`)
-                  .join(" / ");
+              {recommendations.map((recommendation, index) => {
                 const isApplied = appliedRecommendationRank === recommendation.rank;
+                const displayRank = index + 1;
 
                 return (
                   <div
-                    key={recommendation.rank}
+                    key={`${recommendation.rank}-${index}`}
                     className={`rounded-lg border bg-white p-3 shadow-sm transition-colors ${
                       isApplied ? "border-emerald-300 ring-1 ring-emerald-200" : "border-white/70"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-extrabold text-[#4e0a10]">Option {recommendation.rank}</p>
+                      <p className="text-sm font-extrabold text-[#4e0a10]">Option {displayRank}</p>
                       {isApplied && (
                         <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
                           <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1070,14 +1462,21 @@ export default function DropModal({
                         </span>
                       )}
                     </div>
-                    <p className="mt-1.5 text-sm font-semibold text-gray-800">{room?.name ?? firstRow?.mode ?? "Recommended slot"}</p>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">{timeLabel}</p>
-                    <p className="mt-1 text-xs leading-5 text-gray-500 capitalize">
-                      {normalizePatternLabel(recommendation.schedules)} - {firstRow?.mode ?? "on-site"}
-                    </p>
-                    <p className="mt-2 border-t border-gray-100 pt-2 text-xs leading-5 text-gray-500">
-                      {getRecommendationReason(recommendation, dropSubject, rooms, modalConflict)}
-                    </p>
+                    <div className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100 bg-gray-50/60">
+                      {recommendation.schedules.map((row, index) => (
+                        <div
+                          key={`${row.day}-${row.start_time}-${index}`}
+                          className="grid grid-cols-[4.5rem_1fr] gap-x-2 px-2.5 py-2 text-xs leading-5"
+                        >
+                          <span className="font-bold text-gray-800">{row.day}</span>
+                          <span className="text-gray-600">
+                            {slotToTimeStr(timeToSlot(row.start_time))} - {slotToTimeStr(timeToSlot(row.end_time))}
+                          </span>
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Room</span>
+                          <span className="font-semibold text-gray-700">{getRecommendationRoomLabel(row, rooms)}</span>
+                        </div>
+                      ))}
+                    </div>
                     <button
                       type="button"
                       onClick={() => void applyRecommendation(recommendation)}

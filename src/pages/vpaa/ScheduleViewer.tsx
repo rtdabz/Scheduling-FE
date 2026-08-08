@@ -70,6 +70,7 @@ export interface Schedule {
   startTime: string; // e.g. "09:00 AM"
   endTime: string; // e.g. "10:30 AM"
   mode: 'on-site' | 'online' | 'field';
+  meetingType?: string | null;
 }
 
 interface RawDepartment {
@@ -105,6 +106,7 @@ interface RawSchedule {
   faculty_id?: number | string | null;
   room_id?: number | string | null;
   term_id?: number | string | null;
+  meeting_type?: string | null;
   day: string;
   start_time: string;
   end_time: string;
@@ -159,7 +161,7 @@ const dayMapToIndex: Record<string, number> = {
   "Sunday": 6, "Sun": 6
 };
 
-const DAYS_MAP = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS_MAP = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const timeStrToSlot = (timeStr: string): number => {
   const parts = timeStr.split(':');
@@ -181,11 +183,11 @@ const slotToTimeStr12h = (slotIndex: number): string => {
 };
 
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 // Grid configuration
 const START_HOUR = 7; // 7:00 AM
-const END_HOUR = 21; // 9:00 PM
+const END_HOUR = 19; // 7:00 PM
 const VIEWER_SLOT_HEIGHT_PX = 24;
 
 const normalizeDepartmentKey = (code: string, name = "") => {
@@ -521,7 +523,7 @@ export default function VpaaScheduleViewer() {
         // Map rooms
         const mappedRooms = response.data.rooms.map((r) => ({
           id: r.id.toString(),
-          name: r.room_code + (r.building ? ` - ${r.building}` : '')
+          name: r.room_code
         }));
         setRooms(mappedRooms);
 
@@ -539,7 +541,7 @@ export default function VpaaScheduleViewer() {
           if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
             else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code + (item.room.building ? ` - ${item.room.building}` : '');
+            else roomName = item.room.room_code ?? "";
           }
 
           const dayIndex = dayMapToIndex[item.day] ?? 0;
@@ -561,7 +563,8 @@ export default function VpaaScheduleViewer() {
             day: DAYS_MAP[dayIndex] || "Mon",
             startTime: slotToTimeStr12h(startSlot),
             endTime: slotToTimeStr12h(endSlot),
-            mode: item.mode ?? "on-site"
+            mode: item.mode ?? "on-site",
+            meetingType: item.meeting_type ?? null
           };
         });
         setSchedules(mappedSchedules);
@@ -1439,7 +1442,14 @@ export default function VpaaScheduleViewer() {
                               >
                                 <div className="min-w-0 w-full">
                                   <div className="flex items-center justify-between gap-1 w-full">
-                                    <span className="font-extrabold text-xs tracking-wider leading-none truncate max-w-[65%]">{schedule.subjectCode || "Subject"}</span>
+                                    <span className="font-extrabold text-xs tracking-wider leading-none truncate max-w-[65%] flex items-center gap-1">
+                                      <span>{schedule.subjectCode || "Subject"}</span>
+                                      {schedule.meetingType && (
+                                        <span className="text-[8px] bg-slate-200/80 text-slate-800 border border-slate-300 rounded px-1 font-black shrink-0">
+                                          {schedule.meetingType === 'laboratory' ? 'Lab' : 'Lec'}
+                                        </span>
+                                      )}
+                                    </span>
                                     <span className={`text-[9px] px-1.5 py-0.5 rounded font-black border shrink-0 ${
                                       conflicts.length > 0 
                                         ? "bg-red-100 text-red-700 border-red-200" 

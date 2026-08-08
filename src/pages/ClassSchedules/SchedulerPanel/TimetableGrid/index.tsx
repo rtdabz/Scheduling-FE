@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertTriangle, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -31,6 +31,7 @@ interface TimetableGridProps {
   setDeleteConfirmScheduleId: (id: string | null) => void;
   conflictInfo: ConflictInfo | null;
   setConflictInfo: (value: ConflictInfo | null) => void;
+  conflictedMap?: Record<string, { conflictType: "room" | "faculty" | "section"; message: string }>;
   placementSubjectId: string | null;
   movingScheduleId: string | null;
   cancelPlacement: () => void;
@@ -48,6 +49,8 @@ interface TimetableGridProps {
   handleScheduleCardClick: (id: string) => void;
   handleEditMovingSchedule: () => void;
   isLoading?: boolean;
+  isWideView?: boolean;
+  handleToggleWideView?: () => void;
 }
 
 export default function TimetableGrid({
@@ -70,6 +73,7 @@ export default function TimetableGrid({
   setDeleteConfirmScheduleId,
   conflictInfo,
   setConflictInfo,
+  conflictedMap,
   placementSubjectId,
   movingScheduleId,
   cancelPlacement,
@@ -86,52 +90,52 @@ export default function TimetableGrid({
   handleRemoveSchedule,
   handleScheduleCardClick,
   handleEditMovingSchedule,
-  isLoading = false
+  isLoading = false,
+  isWideView = false,
+  handleToggleWideView
 }: TimetableGridProps) {
-  const [isComfortView, setIsComfortView] = useState(false);
-  const slotHeight = isComfortView ? 32 : SLOT_HEIGHT_PX;
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerTerm = activeTerm?.semester === "summer";
   const placementLabel = placementSubjectId
     ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
     : movingScheduleId
-    ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
-    : "";
-
+      ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
+      : "";
   return (
-    <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/30 shrink-0">
+    <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/80 shadow-md flex flex-col overflow-hidden h-full">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 shrink-0">
         <div>
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-[#4e0a10]" />
+          <h2 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
+            <Calendar className="w-4.5 h-4.5 text-[#4e0a10]" />
             Timetable Grid
           </h2>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className="bg-[#4e0a10]/15 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase">
+            <span className="bg-gradient-to-r from-[#4e0a10] to-[#70121a] text-white px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">
               {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
             </span>
-            <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-md text-[10px] font-bold">
+            <span className="bg-[#c9952a]/10 text-amber-950 border border-[#c9952a]/20 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider">
               {activeTermText}
             </span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3.5">
-          <div className="flex items-center gap-2 text-[11px] font-bold select-none text-slate-500">
-            <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold select-none text-slate-500">
+            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-sm">
               {totalScheduled} Subjects Placed
             </span>
-            <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded-lg">
+            <span className="bg-slate-50 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-full shadow-sm">
               {Math.max(0, totalSubjects - totalScheduled)} Unplaced
             </span>
           </div>
           <button
             type="button"
-            onClick={() => setIsComfortView(!isComfortView)}
-            aria-pressed={isComfortView}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
+            onClick={handleToggleWideView}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border cursor-pointer bg-[#4e0a10] border-[#4e0a10] text-white hover:bg-[#6b0e17] hover:border-[#6b0e17]"
           >
-            {isComfortView ? "Compact View" : "Comfort View"}
+            <BookOpen className="w-3.5 h-3.5" />
+            Hide Course Bank
           </button>
+
           <button
             type="button"
             onClick={() => setIsRoomViewOpen(true)}
@@ -144,11 +148,10 @@ export default function TimetableGrid({
             type="button"
             onClick={handleClearAll}
             disabled={!isEditable || sectionSchedules.length === 0}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${
-              isEditable && sectionSchedules.length > 0
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${isEditable && sectionSchedules.length > 0
                 ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 cursor-pointer"
                 : "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
-            }`}
+              }`}
           >
             <Trash2 className="w-3.5 h-3.5" />
             Clear All
@@ -156,9 +159,9 @@ export default function TimetableGrid({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto bg-slate-50/20 relative">
+      <div className="flex-1 overflow-hidden bg-slate-50/80 relative flex flex-col">
         {isPlacementMode && (
-          <div className="sticky top-0 z-40 mx-3 mt-3 mb-1 flex items-center gap-2.5 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 shadow-sm">
+          <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
             {movingScheduleId ? <Move className="w-5 h-5 text-blue-700 shrink-0" /> : <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />}
             <p className="text-sm font-semibold text-blue-900">
               {movingScheduleId ? "Moving" : "Placing"}{" "}
@@ -195,17 +198,17 @@ export default function TimetableGrid({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-hidden p-4 flex-1 min-h-0 flex flex-col">
             <div
-              className="min-w-[900px] border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none"
+              className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none flex-1 min-w-[900px]"
               style={{
                 display: "grid",
                 gridTemplateColumns: "80px repeat(7, minmax(0, 1fr))",
-                gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(28, ${slotHeight}px)`
+                gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(24, minmax(0, 1fr))`
               }}
             >
               <div
-                className="bg-[#4e0a10]/5 border-r border-b border-slate-200 p-2 font-bold text-[10px] text-[#4e0a10] text-center uppercase tracking-wider select-none flex items-center justify-center sticky top-0 left-0 z-30"
+                className="bg-gradient-to-b from-[#4e0a10] to-[#3d080c] border-r border-b border-[#c9952a]/30 p-2 font-black text-[10px] text-[#c9952a] text-center uppercase tracking-wider select-none flex items-center justify-center sticky top-0 left-0 z-30"
                 style={{ gridColumn: 1, gridRow: 1 }}
               >
                 <Clock className="w-3.5 h-3.5 mr-1" />
@@ -218,20 +221,19 @@ export default function TimetableGrid({
                 return (
                   <div
                     key={day}
-                    className={`border-r border-b border-slate-200 p-1.5 font-bold text-xs text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20 ${
-                      isDisabledDay
-                        ? "bg-slate-200/60 text-slate-400"
-                        : "bg-[#4e0a10]/5 text-slate-700"
-                    }`}
+                    className={`border-r border-b p-1.5 font-bold text-xs text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20 ${isDisabledDay
+                        ? "bg-slate-800/90 text-slate-500 border-slate-700/30"
+                        : "bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
+                      }`}
                     style={{ gridColumn: dIdx + 2, gridRow: 1 }}
                   >
-                    <span className={`font-extrabold ${isDisabledDay ? "text-slate-400" : "text-slate-800"}`}>{day}</span>
+                    <span className={`font-extrabold tracking-widest ${isDisabledDay ? "text-slate-500" : "text-white"}`}>{day}</span>
                     {isDisabledDay ? (
-                      <span className="text-[9px] font-bold mt-0.5 bg-slate-300/60 text-slate-500 px-1.5 py-0.5 rounded-full border border-slate-200">
+                      <span className="text-[8px] font-black mt-0.5 bg-slate-900/60 text-slate-400 px-1.5 py-0.5 rounded-full border border-slate-800/40">
                         N/A
                       </span>
                     ) : (
-                      <span className="text-[9px] text-slate-500 font-bold mt-0.5 bg-white/60 px-1.5 py-0.5 rounded-full border border-slate-100">
+                      <span className="text-[8.5px] text-[#c9952a] font-extrabold mt-0.5 bg-[#c9952a]/15 border border-[#c9952a]/30 px-2 py-0.5 rounded-full shadow-sm">
                         {getClassesCountForDay(dIdx)} {getClassesCountForDay(dIdx) === 1 ? "Class" : "Classes"}
                       </span>
                     )}
@@ -239,12 +241,15 @@ export default function TimetableGrid({
                 );
               })}
 
-              {Array.from({ length: 28 }).map((_, t) => (
+              {Array.from({ length: 24 }).map((_, t) => (
                 <React.Fragment key={`row-${t}`}>
                   {t % 2 === 0 && (
                     <div
                       className="bg-slate-50/90 border-r border-b border-slate-200 text-[9px] font-bold text-slate-500 flex flex-col justify-center items-center select-none sticky left-0 z-10 px-1"
-                      style={{ gridColumn: 1, gridRow: `${t + 2} / span 2`, height: `${slotHeight * 2}px` }}
+                      style={{
+                        gridColumn: 1,
+                        gridRow: `${t + 2} / span 2`
+                      }}
                     >
                       <span className="font-extrabold text-slate-600 whitespace-nowrap">
                         {slotToTimeStr(t)}
@@ -280,17 +285,16 @@ export default function TimetableGrid({
 
               {isLoading ? (
                 [
-                  { id: 'sk-grid-1', dayIndex: 0, startSlot: 2, durationSlots: 4, height: 4 * slotHeight },
-                  { id: 'sk-grid-2', dayIndex: 2, startSlot: 6, durationSlots: 3, height: 3 * slotHeight },
-                  { id: 'sk-grid-3', dayIndex: 4, startSlot: 10, durationSlots: 4, height: 4 * slotHeight }
+                  { id: 'sk-grid-1', dayIndex: 0, startSlot: 2, durationSlots: 4 },
+                  { id: 'sk-grid-2', dayIndex: 2, startSlot: 6, durationSlots: 3 },
+                  { id: 'sk-grid-3', dayIndex: 4, startSlot: 10, durationSlots: 4 }
                 ].map((sk) => (
                   <div
                     key={sk.id}
-                    className="z-10 rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between"
+                    className="z-10 rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between h-full"
                     style={{
                       gridColumn: sk.dayIndex + 2,
-                      gridRow: `${sk.startSlot + 2} / span ${sk.durationSlots}`,
-                      height: `${sk.height}px`
+                      gridRow: `${sk.startSlot + 2} / span ${sk.durationSlots}`
                     }}
                   >
                     <div className="flex flex-col h-full justify-between">
@@ -316,6 +320,7 @@ export default function TimetableGrid({
                       rooms={rooms}
                       schedule={schedule}
                       subject={subject}
+                      conflict={conflictedMap?.[schedule.id] ?? null}
                       isEditable={isEditable}
                       isPhase2Active={isPhase2Active}
                       currentStatus={currentStatus}
@@ -327,7 +332,6 @@ export default function TimetableGrid({
                       onDragEnd={handleDragEnd}
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
-                      slotHeight={slotHeight}
                     />
                   );
                 })
@@ -356,8 +360,8 @@ export default function TimetableGrid({
           Categories:
         </span>
         {[
-          { label: "Major", color: "bg-blue-50 border-blue-400" },
-          { label: "Minor", color: "bg-purple-50 border-purple-400" }
+          { label: "Major", color: "bg-rose-50 border-[#4e0a10]" },
+          { label: "Minor", color: "bg-amber-50 border-[#c9952a]" }
         ].map(({ label, color }) => (
           <span key={label} className="flex items-center gap-1">
             <span className={`w-2.5 h-2.5 rounded border ${color}`} />

@@ -37,6 +37,40 @@ const SIGNATORIES = {
   approvedBy: { name: "ATTY. NADYA B. EMANO-ELIPE", role: "OIC-College President" },
 };
 
+const formatPrintTime = (timeStr: string): string => {
+  if (!timeStr) return "";
+  const ampmMatch = timeStr.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    const hours = ampmMatch[1];
+    const minutes = ampmMatch[2] || "00";
+    const ampm = ampmMatch[3].toUpperCase();
+    return `${hours}:${minutes.padStart(2, "0")} ${ampm}`;
+  }
+  const time24hMatch = timeStr.match(/^(\d{2}):(\d{2})/);
+  if (time24hMatch) {
+    let hours = parseInt(time24hMatch[1], 10);
+    const minutes = time24hMatch[2];
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+    return `${hours}:${minutes} ${ampm}`;
+  }
+  return timeStr;
+};
+
+const getFullDayName = (day: string): string => {
+  if (!day) return "";
+  const d = day.trim().toLowerCase();
+  if (d === "mon" || d === "monday") return "Monday";
+  if (d === "tue" || d === "tuesday") return "Tuesday";
+  if (d === "wed" || d === "wednesday") return "Wednesday";
+  if (d === "thu" || d === "thursday") return "Thursday";
+  if (d === "fri" || d === "friday") return "Friday";
+  if (d === "sat" || d === "saturday") return "Saturday";
+  if (d === "sun" || d === "sunday") return "Sunday";
+  return day;
+};
+
 export default function PrintSchedule({
   sections,
   isPrintModalOpen,
@@ -293,6 +327,10 @@ export default function PrintSchedule({
         const isAdditionalMeeting = prevKey === itemKey;
         const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
 
+        const meetingBadge = subjectMeetingCount > 1
+          ? ` [Split ${item.meetingIndex ?? (isAdditionalMeeting ? 2 : 1)}]`
+          : "";
+
         return [
         ...(isAdditionalMeeting ? [] : [
           {
@@ -309,8 +347,8 @@ export default function PrintSchedule({
         item.lectureUnits.toString(),
         item.laboratoryUnits.toString(),
         item.totalUnits.toString(),
-        item.day,
-        `${item.startTime} – ${item.endTime}`,
+        getFullDayName(item.day),
+        `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
         item.roomName
         ];
       });
@@ -343,14 +381,14 @@ export default function PrintSchedule({
           lineColor: [0, 0, 0]
         },
         columnStyles: {
-          0: { cellWidth: 267 * 0.12 },
-          1: { cellWidth: 267 * 0.32 },
-          2: { cellWidth: 267 * 0.05, halign: 'center' },
-          3: { cellWidth: 267 * 0.05, halign: 'center' },
-          4: { cellWidth: 267 * 0.05, halign: 'center' },
-          5: { cellWidth: 267 * 0.07, halign: 'center' },
+          0: { cellWidth: 267 * 0.11 },
+          1: { cellWidth: 267 * 0.31 },
+          2: { cellWidth: 267 * 0.045, halign: 'center' },
+          3: { cellWidth: 267 * 0.045, halign: 'center' },
+          4: { cellWidth: 267 * 0.045, halign: 'center' },
+          5: { cellWidth: 267 * 0.11, halign: 'center' },
           6: { cellWidth: 267 * 0.20, halign: 'center' },
-          7: { cellWidth: 267 * 0.14, halign: 'center' }
+          7: { cellWidth: 267 * 0.135, halign: 'center' }
         }
       });
 

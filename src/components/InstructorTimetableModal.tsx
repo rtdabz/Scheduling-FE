@@ -120,7 +120,7 @@ const getGridCardStyles = (category: "major" | "minor") => {
   };
 };
 
-const STATIC_TIME_LABELS: string[] = Array.from({ length: 28 }, (_, slotIndex) => {
+const STATIC_TIME_LABELS: string[] = Array.from({ length: 24 }, (_, slotIndex) => {
   const totalMinutes = 7 * 60 + slotIndex * 30;
   let hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -145,7 +145,7 @@ export default function InstructorTimetableModal({
   const slotHeight = isComfortView ? 34 : 26;
 
   const memoizedGridCells = useMemo(() => (
-    Array.from({ length: 28 }).map((_, slotIdx) => (
+    Array.from({ length: 24 }).map((_, slotIdx) => (
       <React.Fragment key={slotIdx}>
         <div
           className="bg-slate-50/90 border-r border-b border-slate-200 text-[10px] font-bold text-slate-400 text-right select-none flex items-center justify-end pr-2 sticky left-0 z-10"
@@ -216,8 +216,7 @@ export default function InstructorTimetableModal({
         });
 
         setSchedules(mapped);
-      } catch (err) {
-        console.error(err);
+      } catch {
         toast.error("Error", "Failed to load instructor timetable.");
       } finally {
         if (isMounted) setLoading(false);
@@ -250,7 +249,7 @@ export default function InstructorTimetableModal({
       ? `${lastName.toUpperCase()}_${firstName.toUpperCase()}`
       : lastName.toUpperCase();
 
-    const totalSlots = 28;
+    const totalSlots = 24;
 
     const gridCells: (TimetableSlotItem | null)[][] = Array.from({ length: totalSlots }, () =>
       Array(7).fill(null)
@@ -502,7 +501,7 @@ export default function InstructorTimetableModal({
                 style={{
                   display: "grid",
                   gridTemplateColumns: "80px repeat(7, minmax(0, 1fr))",
-                  gridTemplateRows: `40px repeat(28, ${slotHeight}px)`
+                  gridTemplateRows: `40px repeat(24, ${slotHeight}px)`
                 }}
               >
                 {/* Time Header */}

@@ -5,6 +5,7 @@ export interface CourseOption {
   id: number;
   course_code: string;
   course_name: string;
+  course_category?: 'major' | 'minor';
   units: number;
   lecture_hours: number;
   lab_hours: number;

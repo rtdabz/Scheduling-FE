@@ -38,11 +38,18 @@ export const curriculumService = {
     return mapApiCurriculum(res.data);
   },
 
-  async attachCourse(curriculumId: number | string, courseId: number, yearLevel: number, semester: number): Promise<void> {
+  async attachCourse(
+    curriculumId: number | string,
+    courseId: number,
+    yearLevel: number,
+    semester: number,
+    replaceCourseId?: number
+  ): Promise<void> {
     await api.post(`/curricula/${curriculumId}/courses`, {
       course_id: courseId,
       year_level: yearLevel,
       semester,
+      ...(replaceCourseId ? { replace_course_id: replaceCourseId } : {}),
     });
   },
 

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
 

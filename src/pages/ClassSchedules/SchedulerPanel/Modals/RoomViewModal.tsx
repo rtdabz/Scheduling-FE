@@ -18,7 +18,7 @@ interface RoomViewModalProps {
   schedules: ScheduleItem[];
 }
 
-const SLOT_COUNT = 28;
+const SLOT_COUNT = 24;
 
 export default function RoomViewModal({
   rooms,
@@ -43,10 +43,42 @@ export default function RoomViewModal({
     [rooms, roomViewRoomId]
   );
 
-  const roomClasses = useMemo(
-    () => schedules.filter((s) => s.roomId === roomViewRoomId),
-    [schedules, roomViewRoomId]
-  );
+  const roomClasses = useMemo(() => {
+    return schedules.filter((s) => {
+      if (room?.roomType === "online") {
+        return s.roomId === "online" || s.mode === "online";
+      }
+      if (room?.roomType === "field") {
+        return s.roomId === "field" || s.mode === "field";
+      }
+      return s.roomId === roomViewRoomId;
+    });
+  }, [schedules, roomViewRoomId, room]);
+
+  const groupedRoomClasses = useMemo(() => {
+    const groups: Record<string, ScheduleItem[]> = {};
+    
+    roomClasses.forEach((sched) => {
+      const key = `${sched.dayIndex}-${sched.startSlot}-${sched.durationSlots}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(sched);
+    });
+
+    return Object.values(groups).map((group) => {
+      const base = group[0];
+      return {
+        id: base.id,
+        dayIndex: base.dayIndex,
+        startSlot: base.startSlot,
+        durationSlots: base.durationSlots,
+        startTime: base.startTime,
+        endTime: base.endTime,
+        items: group
+      };
+    });
+  }, [roomClasses]);
 
   const slotIndexes = useMemo(
     () => Array.from({ length: SLOT_COUNT }, (_, index) => index),
@@ -170,7 +202,7 @@ export default function RoomViewModal({
                 {DAYS.map((_, d) => (
                   <div
                     key={`cell-${d}-${t}`}
-                    className="border-r border-b border-slate-100"
+                    className="border-r border-b border-slate-200"
                     style={{ gridColumn: d + 2, gridRow: t + 2 }}
                   />
                 ))}
@@ -178,28 +210,61 @@ export default function RoomViewModal({
             ))}
 
             {/* Booked class blocks */}
-            {roomClasses.map((sched) => {
-              const styles = getGridCardStyles(sched.courseType ?? sched.subjectType ?? "major");
-              const code = sched.courseCode ?? sched.subjectCode ?? "";
+            {groupedRoomClasses.map((cellGroup) => {
+              // Group items by courseCode
+              const subgroups: { courseCode: string; sectionName: string; courseType: ScheduleItem["courseType"] }[] = [];
+              const courseMap: Record<string, string[]> = {};
+              const courseTypeMap: Record<string, ScheduleItem["courseType"]> = {};
+
+              cellGroup.items.forEach((item) => {
+                const code = item.courseCode || item.subjectCode || "Unspecified";
+                if (!courseMap[code]) {
+                  courseMap[code] = [];
+                }
+                courseMap[code].push(item.sectionName);
+                courseTypeMap[code] = item.courseType || item.subjectType || "major";
+              });
+
+              Object.keys(courseMap).forEach((code) => {
+                const sectionsList = [...new Set(courseMap[code])].sort();
+                subgroups.push({
+                  courseCode: code,
+                  sectionName: sectionsList.join(" | "),
+                  courseType: courseTypeMap[code]
+                });
+              });
+
+              const firstSub = subgroups[0];
+              const styles = getGridCardStyles(firstSub?.courseType ?? "major");
+              const tooltipTitle = cellGroup.items
+                .map((item) => `${item.courseCode || item.subjectCode || "PE"} - ${item.sectionName} - ${item.startTime}-${item.endTime}`)
+                .join("\n");
+
               return (
                 <div
-                  key={sched.id}
-                  className={`m-0.5 rounded-lg border-2 border-l-4 p-1.5 overflow-hidden shadow-sm transform-gpu ${styles.container}`}
+                  key={cellGroup.id}
+                  className={`m-0.5 rounded-lg border-2 border-l-4 pt-2.5 px-1.5 pb-1.5 overflow-hidden shadow-sm transform-gpu flex flex-col justify-between ${styles.container}`}
                   style={{
-                    gridColumn: sched.dayIndex + 2,
-                    gridRow: `${sched.startSlot + 2} / span ${sched.durationSlots}`
+                    gridColumn: cellGroup.dayIndex + 2,
+                    gridRow: `${cellGroup.startSlot + 2} / span ${cellGroup.durationSlots}`
                   }}
-                  title={`${code} - ${sched.sectionName} - ${sched.startTime}-${sched.endTime}`}
+                  title={tooltipTitle}
                 >
-                  <div className={`text-[11px] font-bold uppercase truncate ${styles.text}`}>
-                    {code}
+                  <div className="flex flex-col gap-1 overflow-hidden">
+                    {subgroups.map((sub, idx) => (
+                      <div key={idx} className="flex flex-col mb-1 last:mb-0 border-b border-dashed border-slate-100/30 last:border-b-0 pb-0.5 last:pb-0">
+                        <div className={`text-[10px] font-black uppercase truncate ${getGridCardStyles(sub.courseType).text}`}>
+                          {sub.courseCode}
+                        </div>
+                        <div className="text-[9px] font-bold text-slate-700 truncate" title={sub.sectionName}>
+                          {sub.sectionName}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="text-[10px] font-semibold text-slate-600 truncate">
-                    {sched.sectionName}
-                  </div>
-                  {sched.durationSlots > 3 && (
-                    <div className="text-[9px] text-slate-400 truncate mt-0.5">
-                      {sched.startTime}-{sched.endTime}
+                  {cellGroup.durationSlots > 3 && (
+                    <div className="text-[8.5px] text-slate-400 font-bold truncate mt-auto pt-0.5 border-t border-slate-100/30">
+                      {cellGroup.startTime} - {cellGroup.endTime}
                     </div>
                   )}
                 </div>

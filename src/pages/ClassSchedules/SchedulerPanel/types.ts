@@ -14,7 +14,8 @@ export type ScheduleStatus =
   | "approved"
   | "faculty_assignment"
   | "finalized"
-  | "rejected";
+  | "rejected"
+  | "revision";
 
 export interface Department {
   id: number;
@@ -55,6 +56,21 @@ export interface Course {
 }
 export type Subject = Course; // Legacy alias
 
+export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
+  if (!subject) return 0;
+  const lec = Number(subject.lectureHours ?? 0);
+  const lab = Number(subject.labHours ?? 0);
+  if (lec > 0 || lab > 0) {
+    const labContactHours = lab * 3;
+    return (lec + labContactHours) * 2;
+  }
+  return Math.round(Number(subject.units ?? 3) * 2);
+};
+
+export const getSubjectContactHours = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
+  return getSubjectTotalSlots(subject) * 0.5;
+};
+
 export interface Section {
   id: string;
   name: string;
@@ -63,6 +79,14 @@ export interface Section {
   departmentId: number;
   termId: number;
   status: "active" | "inactive";
+}
+
+export interface FacultyAvailability {
+  id: number;
+  faculty_id: number;
+  day_index: number;
+  start_time: string;
+  end_time: string;
 }
 
 export interface Faculty {
@@ -74,6 +98,7 @@ export interface Faculty {
   departmentName?: string;
   maxUnits?: number;
   status?: "active" | "inactive";
+  availabilities?: FacultyAvailability[];
 }
 
 export interface Room {
@@ -115,6 +140,9 @@ export interface ScheduleItem {
   roomId: string;
   isHybrid?: boolean;
   preferredPattern?: string | null;
+  splitGroupId?: string | null;
+  meetingType?: "lecture" | "laboratory" | null;
+  meetingIndex?: number;
 }
 
 export interface DepartmentSectionProgress {
@@ -192,6 +220,7 @@ export interface ApiSectionRecord {
   department_id: number;
   term_id: number;
   status?: "active" | "inactive";
+  term?: ApiTermRecord | null;
 }
 
 export interface ApiFacultyRecord {
@@ -206,6 +235,7 @@ export interface ApiFacultyRecord {
     department_code?: string;
     department_name?: string;
   } | null;
+  availabilities?: FacultyAvailability[];
 }
 
 export interface ApiRoomRecord {
@@ -224,7 +254,7 @@ export interface ApiScheduleRecord {
   course_id: number | string;
   subject_id?: number | string;
   section_id: number | string;
-  room_id: number | string;
+  room_id: number | string | null;
   faculty_id?: number | string | null;
   day: string;
   start_time: string;
@@ -233,6 +263,9 @@ export interface ApiScheduleRecord {
   status: ScheduleStatus;
   is_hybrid?: boolean | number;
   preferred_pattern?: string | null;
+  split_group_id?: string | null;
+  meeting_type?: "lecture" | "laboratory" | null;
+  meeting_index?: number;
   course?: {
     course_code?: string;
     subject_code?: string;

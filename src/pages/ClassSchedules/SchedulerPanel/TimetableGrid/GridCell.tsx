@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { AlertTriangle, Plus } from "lucide-react";
 
 interface GridCellProps {
@@ -47,7 +47,7 @@ const GridCell = memo(function GridCell({
           onCellClick(dayIndex, timeIndex);
         }
       }}
-      className={`group border-r border-b border-slate-100 transition-all duration-150 relative flex items-center justify-center ${
+      className={`group border-r border-b border-slate-200 transition-all duration-150 relative flex items-center justify-center ${
         isSummerDisabled
           ? "bg-slate-100/80 cursor-not-allowed"
           : isHovered
