@@ -169,9 +169,10 @@ export default function EditCourseModal({
                 LEC Units
               </label>
               <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
+                type="number"
+                min="0"
+                max="99"
+                step="1"
                 value={lecUnits}
                 onChange={(e) => setLecUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
                 placeholder="01"
@@ -184,9 +185,10 @@ export default function EditCourseModal({
                 LAB Units
               </label>
               <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
+                type="number"
+                min="0"
+                max="99"
+                step="1"
                 value={labUnits}
                 onChange={(e) => setLabUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
                 placeholder="01"

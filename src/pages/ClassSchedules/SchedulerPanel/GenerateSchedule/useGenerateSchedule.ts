@@ -5,6 +5,7 @@ import type { ApiScheduleRecord } from "../types";
 
 export type ProgressStep = "generating" | "constraints" | "finalizing" | "complete" | "error";
 export type TimeBlockOption = "flexible" | "morning" | "afternoon" | "evening";
+export type DeliveryModeOption = "on-site" | "online" | "field";
 
 interface UseGenerateScheduleOptions {
   onAccepted?: (schedules?: ApiScheduleRecord[]) => void;
@@ -68,6 +69,7 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
         preferredTimeBlock?: TimeBlockOption;
         splitMinorEnabled?: boolean;
         selectedMinorCourseIds?: string[];
+        mode?: DeliveryModeOption;
       }
     ) => {
       if (!sectionId) return;
@@ -91,6 +93,7 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           preferred_time_block?: TimeBlockOption;
           split_minor_enabled?: boolean;
           selected_minor_course_ids?: string[];
+          mode?: DeliveryModeOption;
         } = {
           section_id: Number(sectionId),
           seed: Math.floor(Math.random() * 1000000),
@@ -107,6 +110,9 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           }
           if (options.selectedMinorCourseIds) {
             payload.selected_minor_course_ids = options.selectedMinorCourseIds;
+          }
+          if (options.mode) {
+            payload.mode = options.mode;
           }
         }
 

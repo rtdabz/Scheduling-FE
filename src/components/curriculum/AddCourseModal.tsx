@@ -373,9 +373,10 @@ export default function AddCourseModal({
                         LEC
                       </label>
                       <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
+                        type="number"
+                        min="0"
+                        max="99"
+                        step="1"
                         disabled={isLocked}
                         value={row.lecUnits}
                         onChange={(e) => handleUnitChange(row.rowId, 'lecUnits', e.target.value)}
@@ -394,9 +395,10 @@ export default function AddCourseModal({
                         LAB
                       </label>
                       <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
+                        type="number"
+                        min="0"
+                        max="99"
+                        step="1"
                         disabled={isLocked}
                         value={row.labUnits}
                         onChange={(e) => handleUnitChange(row.rowId, 'labUnits', e.target.value)}

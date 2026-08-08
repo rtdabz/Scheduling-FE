@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import api from "../../../../lib/api";
-import type { ProgressStep, TimeBlockOption } from "./useGenerateSchedule";
+import type { DeliveryModeOption, ProgressStep, TimeBlockOption } from "./useGenerateSchedule";
 import { isValidPatternForApi } from "./useGenerateSchedule";
 import type { ApiScheduleRecord, Course, Room } from "../types";
 import { DAYS, GRID_HEADER_HEIGHT_PX, slotToTimeStr } from "../constants";
@@ -74,6 +74,7 @@ interface GenerateScheduleModalProps {
       preferredTimeBlock?: TimeBlockOption;
       splitMinorEnabled?: boolean;
       selectedMinorCourseIds?: string[];
+      mode?: DeliveryModeOption;
     }
   ) => void;
   /** Receives pre-validated, conflict-free schedules ready to be saved. */
@@ -168,6 +169,18 @@ export default function GenerateScheduleModal({
   const [resolvedSplit, setResolvedSplit] = useState<ResolvedSplitState | null>(null);
   /** Abort controller ref so we can cancel stale validation requests. */
   const abortRef = useRef<AbortController | null>(null);
+  const hasMissingPhysicalRoomError = !!errorMessage
+    && /No (laboratory room|classroom \(lecture room\)) found/i.test(errorMessage);
+
+  const currentGenerateOptions = useCallback(
+    (mode?: DeliveryModeOption) => ({
+      preferredTimeBlock,
+      splitMinorEnabled,
+      selectedMinorCourseIds,
+      ...(mode ? { mode } : {}),
+    }),
+    [preferredTimeBlock, selectedMinorCourseIds, splitMinorEnabled],
+  );
 
   // ── Derived course lists ──
   const allSectionCourses = useMemo(() => {
@@ -845,11 +858,7 @@ export default function GenerateScheduleModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onGenerate(sectionId, undefined, {
-                preferredTimeBlock,
-                splitMinorEnabled,
-                selectedMinorCourseIds
-              })}
+              onClick={() => onGenerate(sectionId, undefined, currentGenerateOptions())}
               disabled={isGenerating || isApplying}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/15 cursor-pointer disabled:opacity-50"
             >
@@ -879,13 +888,31 @@ export default function GenerateScheduleModal({
               Generation Unsuccessful
             </h4>
             <p className="text-xs text-gray-600 mt-1 max-w-md">{errorMessage}</p>
+            {hasMissingPhysicalRoomError && (
+              <div className="mt-5 max-w-md rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-xs font-bold text-amber-900">
+                  Another option: do you want to make this schedule online?
+                </p>
+              </div>
+            )}
             <div className="flex gap-3 mt-6">
+              {hasMissingPhysicalRoomError && (
+                <button
+                  type="button"
+                  onClick={() => onGenerate(sectionId, undefined, currentGenerateOptions("online"))}
+                  disabled={isGenerating || isApplying}
+                  className="px-5 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition-colors cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  Yes, Make Online
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => onGenerate(sectionId)}
-                className="px-5 py-2.5 bg-[#4e0a10] text-white text-xs font-bold rounded-xl hover:bg-[#6b0e17] transition-colors cursor-pointer shadow-md"
+                onClick={() => onGenerate(sectionId, undefined, currentGenerateOptions())}
+                disabled={isGenerating || isApplying}
+                className="px-5 py-2.5 bg-[#4e0a10] text-white text-xs font-bold rounded-xl hover:bg-[#6b0e17] transition-colors cursor-pointer shadow-md disabled:opacity-50"
               >
-                Retry Generation
+                {hasMissingPhysicalRoomError ? "No, Regenerate" : "Retry Generation"}
               </button>
               <button
                 type="button"

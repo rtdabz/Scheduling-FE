@@ -1,6 +1,6 @@
 const dataCache = new Map<string, unknown>();
 const pendingRequests = new Map<string, Promise<unknown>>();
-const STORAGE_PREFIX = 'wicars:data-cache:v2:';
+const STORAGE_PREFIX = 'wicars:data-cache:v3:';
 
 const getStorageKey = (key: string): string => `${STORAGE_PREFIX}${key}`;
 
