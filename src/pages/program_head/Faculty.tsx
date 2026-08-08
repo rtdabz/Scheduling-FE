@@ -25,6 +25,38 @@ import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../
 import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 
+const DEPARTMENT_COLORS: Record<string, string> = {
+  'INFORMATION TECHNOLOGY':      'bg-blue-100 border-blue-400 text-blue-900',
+  'CIT':                         'bg-blue-100 border-blue-400 text-blue-900',
+  'IT':                          'bg-blue-100 border-blue-400 text-blue-900',
+  'ARTS AND SCIENCE':            'bg-red-100 border-red-400 text-red-900',
+  'CAS':                         'bg-red-100 border-red-400 text-red-900',
+  'HOSPITALITY MANAGEMENT':      'bg-green-100 border-green-400 text-green-900',
+  'CHM':                         'bg-green-100 border-green-400 text-green-900',
+  'MIDWIFERY':                   'bg-emerald-100 border-emerald-600 text-emerald-900',
+  'LIBRARY INFORMATION SCIENCE': 'bg-pink-100 border-pink-400 text-pink-900',
+  'BLIS':                        'bg-pink-100 border-pink-400 text-pink-900',
+  'LIS':                         'bg-pink-100 border-pink-400 text-pink-900',
+  'EDUCATION':                   'bg-orange-100 border-orange-400 text-orange-900',
+  'CED':                         'bg-orange-100 border-orange-400 text-orange-900',
+  'CRIMINAL JUSTICE':            'bg-red-200 border-red-800 text-red-950',
+  'CCJPS':                       'bg-red-200 border-red-800 text-red-950',
+  'CRIM':                        'bg-red-200 border-red-800 text-red-950',
+  'BUSINESS ADMINISTRATION':     'bg-emerald-100 border-emerald-400 text-emerald-900',
+  'CBA':                         'bg-emerald-100 border-emerald-400 text-emerald-900',
+};
+
+const getDepartmentColor = (nameOrCode?: string) => {
+  if (!nameOrCode) return 'bg-[#C9952A]/10 border-[#C9952A]/20 text-[#C9952A]';
+  const normalized = nameOrCode.toUpperCase().trim();
+  for (const [key, val] of Object.entries(DEPARTMENT_COLORS)) {
+    if (normalized === key || normalized.includes(key) || key.includes(normalized)) {
+      return val;
+    }
+  }
+  return 'bg-[#C9952A]/10 border-[#C9952A]/20 text-[#C9952A]';
+};
+
 interface Department {
   id: number;
   department_name: string;
@@ -629,10 +661,17 @@ export default function ProgramHeadFaculty() {
                 <div className="space-y-4">
                   {/* Header: Name, Dept, Status */}
                   <div className="flex justify-between items-start gap-4">
-                    <div>
-                      <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
-                      <span className="text-[10px] text-gray-500 font-semibold mt-1 block">
-                        {f.department ? `${f.department.department_code} - ${f.department.department_name}` : 'No Department'}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
+                        {f.department?.department_code && (
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${getDepartmentColor(f.department.department_code || f.department.department_name)}`}>
+                            {f.department.department_code}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-semibold block">
+                        {f.department?.department_name || 'No Department'}
                       </span>
                     </div>
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${statusDetails.color}`}>
