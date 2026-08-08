@@ -197,6 +197,8 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     else if (item.room.room_code === "FIELD") roomName = "Field";
     else roomName = item.room.room_code ?? "";
   }
+  if (!roomName && item.mode === "online") roomName = "Online";
+  if (!roomName && item.mode === "field") roomName = "Field";
 
   let roomIdStr = item.room_id == null ? "" : item.room_id.toString();
   if (item.room?.room_code === "ONLINE" || (item.room_id == null && item.mode === "online")) roomIdStr = "online";
@@ -292,7 +294,7 @@ export const useScheduler = () => {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const schedulerCacheKey = `scheduler:v6:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v7:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -380,9 +382,9 @@ export const useScheduler = () => {
         id: s.id.toString(),
         code: s.course_code ?? s.subject_code ?? "",
         name: s.course_name ?? s.subject_name ?? "",
-        units: s.units,
-        lectureHours: s.lecture_hours ?? 0,
-        labHours: s.lab_hours ?? 0,
+        units: toNumber(s.units),
+        lectureHours: toNumber(s.lecture_hours),
+        labHours: toNumber(s.lab_hours),
         category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
         semester: s.semester,
         departmentId: s.department_id ?? null,
@@ -519,12 +521,17 @@ export const useScheduler = () => {
     (newSchedules?: ApiScheduleRecord[]) => {
       if (newSchedules && newSchedules.length > 0) {
         const mapped = newSchedules.map(mapApiScheduleToItem);
-        const replacedCourseIds = new Set(mapped.map((s) => s.courseId));
-        const targetSecId = mapped[0]?.sectionId;
+        const replacedCourseIds = new Set(mapped.map((s) => s.courseId || s.subjectId).filter(Boolean));
+        const targetSectionIds = new Set(mapped.map((s) => s.sectionId).filter(Boolean));
+        const savedScheduleIds = new Set(mapped.map((s) => s.id).filter(Boolean));
 
         setSchedules((prev) => {
           const filtered = prev.filter(
-            (item) => !(item.sectionId === targetSecId && replacedCourseIds.has(item.courseId))
+            (item) => {
+              if (savedScheduleIds.has(item.id)) return false;
+              const itemCourseId = item.courseId || item.subjectId || "";
+              return !(targetSectionIds.has(item.sectionId) && replacedCourseIds.has(itemCourseId));
+            }
           );
           const updated = [...filtered, ...mapped];
           const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
@@ -899,8 +906,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const code = dropSubject.code.toUpperCase();
     const name = dropSubject.name.toUpperCase();
     const category = String(dropSubject.category || "").toLowerCase();
-    if (["pathfit", "nstp", "rotc", "cwts"].includes(category)) return true;
-    return ["PATHFIT", "PATH FIT", "PATH-FIT", "NSTP", "ROTC", "CWTS", "PE"].some(
+    if (["pathfit", "nstp", "rotc", "cwts", "lts"].includes(category)) return true;
+    return ["PATHFIT", "PATH FIT", "PATH-FIT", "NSTP", "ROTC", "CWTS", "LTS", "PE"].some(
       (kw) => code.includes(kw) || name.includes(kw)
     );
   }, [dropSubject]);

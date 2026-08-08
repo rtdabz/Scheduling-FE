@@ -6,14 +6,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 5174,
+    port: 5173,
     strictPort: true,
     allowedHosts: [
-      '18933xwt-5174.asse.devtunnels.ms',
+      '18933xwt-5173.asse.devtunnels.ms',
+      '18933xwt-8000.asse.devtunnels.ms',
     ],
     hmr: {
       protocol: 'wss',
-      host: '18933xwt-5174.asse.devtunnels.ms',
+      host: '18933xwt-5173.asse.devtunnels.ms',
       clientPort: 443,
     },
     proxy: {

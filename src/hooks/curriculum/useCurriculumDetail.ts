@@ -221,13 +221,15 @@ export function useCurriculumDetail(id: string | undefined) {
 
       try {
         const payload = validRows.map((item) => ({
+          // Curriculum units stay academic units. Laboratory contact-hour
+          // expansion belongs only to scheduling, not course data.
+          units: (item.lecUnits ?? 0) + (item.labUnits ?? 0),
           row_id: item.rowId,
           course_code: item.trimmedCode,
           course_name: item.trimmedName,
           course_category: item.courseCategory,
           lecture_hours: item.lecUnits ?? 0,
           lab_hours: item.labUnits ?? 0,
-          units: (item.lecUnits ?? 0) + (item.labUnits ?? 0),
           year_level: yearLevel,
           semester: semester,
         }));
@@ -392,6 +394,8 @@ export function useCurriculumDetail(id: string | undefined) {
     }) => {
       if (!id) return;
       const { courseId, courseCode, courseName, courseCategory, lecUnits, labUnits } = data;
+      // Curriculum total units are academic units. Do not use laboratory
+      // scheduling/contact hours here.
       const totalUnits = lecUnits + labUnits;
       const normalizedCode = courseCode.replace(/\s+/g, ' ').trim().toUpperCase();
       const currentTerm = terms.find((t) => t.courses.some((c) => c.id === courseId));

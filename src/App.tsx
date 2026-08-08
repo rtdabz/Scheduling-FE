@@ -27,6 +27,7 @@ const DeanUsers = lazy(() => import('./pages/dean/Users'));
 const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
 const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
 const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
+const SecretarySettings = lazy(() => import('./pages/secretary/Settings'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
 const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
@@ -156,6 +157,7 @@ export default function App() {
             <Route path="/secretary/sections" element={<SecretarySections />} />
             <Route path="/secretary/instructors" element={<SecretaryFaculty />} />
             <Route path="/secretary/instructor-assignment" element={<InstructorAssignment />} />
+            <Route path="/secretary/settings" element={<SecretarySettings />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />

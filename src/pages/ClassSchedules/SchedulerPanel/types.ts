@@ -58,12 +58,6 @@ export type Subject = Course; // Legacy alias
 
 export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
   if (!subject) return 0;
-  const lec = Number(subject.lectureHours ?? 0);
-  const lab = Number(subject.labHours ?? 0);
-  if (lec > 0 || lab > 0) {
-    const labContactHours = lab * 3;
-    return (lec + labContactHours) * 2;
-  }
   return Math.round(Number(subject.units ?? 3) * 2);
 };
 

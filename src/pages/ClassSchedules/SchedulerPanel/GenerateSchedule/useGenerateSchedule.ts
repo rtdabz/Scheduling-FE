@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import api from "../../../../lib/api";
 import { useToast } from "../../../../context/ToastContext";
-import type { ApiScheduleRecord } from "../types";
+import type { ApiScheduleRecord, ScheduleItem } from "../types";
 
 export type ProgressStep = "generating" | "constraints" | "finalizing" | "complete" | "error";
 export type TimeBlockOption = "flexible" | "morning" | "afternoon" | "evening";
@@ -9,6 +9,7 @@ export type DeliveryModeOption = "on-site" | "online" | "field";
 
 interface UseGenerateScheduleOptions {
   onAccepted?: (schedules?: ApiScheduleRecord[]) => void;
+  existingSchedules?: ScheduleItem[];
 }
 
 export function isValidPatternForApi(pattern: string | null | undefined): boolean {
@@ -29,6 +30,28 @@ export function getCleanScheduleId(id: string | number | null | undefined): numb
   return !isNaN(numId) && numId > 0 ? numId : null;
 };
 
+const getReplacementDeleteIds = (
+  proposedSchedules: ApiScheduleRecord[],
+  existingSchedules: ScheduleItem[] = []
+): number[] => {
+  const replacementKeys = new Set(
+    proposedSchedules
+      .map((schedule) => {
+        const sectionId = Number(schedule.section_id);
+        const courseId = Number(schedule.course_id ?? schedule.subject_id);
+        return sectionId > 0 && courseId > 0 ? `${sectionId}:${courseId}` : null;
+      })
+      .filter((key): key is string => key !== null)
+  );
+
+  return Array.from(new Set(
+    existingSchedules
+      .filter((schedule) => replacementKeys.has(`${Number(schedule.sectionId)}:${Number(schedule.courseId || schedule.subjectId)}`))
+      .map((schedule) => getCleanScheduleId(schedule.id))
+      .filter((id): id is number => id !== null)
+  ));
+};
+
 export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
   const [isOpen, setIsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -39,8 +62,12 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
 
   // Persistent Schedule Options State across modal operations
   const [preferredTimeBlock, setPreferredTimeBlock] = useState<TimeBlockOption>("flexible");
+  const [splitSessionEnabled, setSplitSessionEnabled] = useState(false);
+  const [selectedSplitSessionCourseIds, setSelectedSplitSessionCourseIds] = useState<string[]>([]);
   const [splitMinorEnabled, setSplitMinorEnabled] = useState(false);
   const [selectedMinorCourseIds, setSelectedMinorCourseIds] = useState<string[]>([]);
+  const [splitGecEnabled, setSplitGecEnabled] = useState(false);
+  const [selectedGecCourseIds, setSelectedGecCourseIds] = useState<string[]>([]);
 
   const { toast } = useToast();
 
@@ -50,8 +77,12 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
     setProgressStep("generating");
     setBaseSchedules([]);
     setPreferredTimeBlock("flexible");
+    setSplitSessionEnabled(false);
+    setSelectedSplitSessionCourseIds([]);
     setSplitMinorEnabled(false);
     setSelectedMinorCourseIds([]);
+    setSplitGecEnabled(false);
+    setSelectedGecCourseIds([]);
   }, []);
 
   const closeModal = useCallback(() => {
@@ -67,8 +98,12 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
       courseIds?: number[],
       options?: {
         preferredTimeBlock?: TimeBlockOption;
+        splitSessionEnabled?: boolean;
+        selectedSplitSessionCourseIds?: string[];
         splitMinorEnabled?: boolean;
         selectedMinorCourseIds?: string[];
+        splitGecEnabled?: boolean;
+        selectedGecCourseIds?: string[];
         mode?: DeliveryModeOption;
       }
     ) => {
@@ -91,8 +126,12 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           course_ids?: number[];
           seed?: number;
           preferred_time_block?: TimeBlockOption;
+          split_session_enabled?: boolean;
+          selected_split_session_course_ids?: string[];
           split_minor_enabled?: boolean;
           selected_minor_course_ids?: string[];
+          split_gec_enabled?: boolean;
+          selected_gec_course_ids?: string[];
           mode?: DeliveryModeOption;
         } = {
           section_id: Number(sectionId),
@@ -105,11 +144,23 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           if (options.preferredTimeBlock) {
             payload.preferred_time_block = options.preferredTimeBlock;
           }
+          if (options.splitSessionEnabled !== undefined) {
+            payload.split_session_enabled = options.splitSessionEnabled;
+          }
+          if (options.selectedSplitSessionCourseIds) {
+            payload.selected_split_session_course_ids = options.selectedSplitSessionCourseIds;
+          }
           if (options.splitMinorEnabled !== undefined) {
             payload.split_minor_enabled = options.splitMinorEnabled;
           }
           if (options.selectedMinorCourseIds) {
             payload.selected_minor_course_ids = options.selectedMinorCourseIds;
+          }
+          if (options.splitGecEnabled !== undefined) {
+            payload.split_gec_enabled = options.splitGecEnabled;
+          }
+          if (options.selectedGecCourseIds) {
+            payload.selected_gec_course_ids = options.selectedGecCourseIds;
           }
           if (options.mode) {
             payload.mode = options.mode;
@@ -160,15 +211,10 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
       setIsApplying(true);
 
       try {
-        // Collect real integer IDs of baseline DB records to delete.
-        // Synthetic split IDs like "123-m1" are excluded.
-        const deleteIds: number[] = [];
-        baseSchedules.forEach((bs) => {
-          const numId = Number(bs.id);
-          if (!isNaN(numId) && numId > 0 && !String(bs.id).includes("-")) {
-            deleteIds.push(numId);
-          }
-        });
+        const deleteIds = getReplacementDeleteIds(
+          schedulesToApply,
+          options?.existingSchedules
+        );
 
         // Build CREATE operations from all sessions.
         const operations = schedulesToApply.map((s) => {
@@ -198,6 +244,9 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
             preferred_pattern: string | null;
             status: string;
             faculty_id?: number | null;
+            split_group_id?: string | null;
+            meeting_type?: "lecture" | "laboratory" | null;
+            meeting_index?: number | null;
           } = {
             term_id: Number(s.term_id),
             section_id: Number(s.section_id),
@@ -214,6 +263,9 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           };
 
           if (s.faculty_id) op.faculty_id = Number(s.faculty_id);
+          if (s.split_group_id) op.split_group_id = s.split_group_id;
+          if (s.meeting_type) op.meeting_type = s.meeting_type;
+          if (s.meeting_index) op.meeting_index = Number(s.meeting_index);
           return op;
         });
 
@@ -302,10 +354,18 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
     baseSchedules,
     preferredTimeBlock,
     setPreferredTimeBlock,
+    splitSessionEnabled,
+    setSplitSessionEnabled,
+    selectedSplitSessionCourseIds,
+    setSelectedSplitSessionCourseIds,
     splitMinorEnabled,
     setSplitMinorEnabled,
     selectedMinorCourseIds,
     setSelectedMinorCourseIds,
+    splitGecEnabled,
+    setSplitGecEnabled,
+    selectedGecCourseIds,
+    setSelectedGecCourseIds,
     openModal,
     closeModal,
     generate,

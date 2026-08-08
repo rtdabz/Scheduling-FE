@@ -1,5 +1,5 @@
 const MINOR_WORDS = new Set(['to', 'and', 'of', 'in', 'the', 'a', 'for', 'with', 'on', 'at', 'by', 'an', 'or', 'as', 'but']);
-const ACRONYMS = new Set(['NSTP', 'GEC', 'GEE', 'OJT', 'IT', 'PE', 'ROTC', 'CWTS', 'SIA', 'HCI', 'OOP', 'CMO']);
+const ACRONYMS = new Set(['NSTP', 'GEC', 'GEE', 'OJT', 'IT', 'PE', 'ROTC', 'CWTS', 'LTS', 'SIA', 'HCI', 'OOP', 'CMO']);
 
 export const formatCourseName = (name: string): string => {
   if (!name) return '';

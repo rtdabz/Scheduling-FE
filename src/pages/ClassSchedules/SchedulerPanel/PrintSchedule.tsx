@@ -349,7 +349,7 @@ export default function PrintSchedule({
         item.totalUnits.toString(),
         getFullDayName(item.day),
         `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
-        item.roomName
+        item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "")
         ];
       });
 

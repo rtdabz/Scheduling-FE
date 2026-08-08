@@ -1091,37 +1091,13 @@ export default function DropModal({
                   </label>
                   <div className="relative">
                     <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                    {isTwoMeetingPattern ? (
-                      <select
-                        value={modalDay1StartSlot + modalDay1Duration}
-                        onChange={(e) => {
-                          const endSlot = Number(e.target.value);
-                          setModalDay1Duration(Math.max(1, endSlot - modalDay1StartSlot));
-                        }}
-                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
-                      >
-                        {Array.from({ length: Math.min(24 - modalDay1StartSlot, courseMaxSlots) }, (_, i) => {
-                          const val = modalDay1StartSlot + i + 1;
-                          const durationHrs = (val - modalDay1StartSlot) / 2;
-                          return (
-                            <option key={val} value={val}>
-                              {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
-                            </option>
-                          );
-                        })}
-                      </select>
-
-                    ) : (
-                      <input
-                        type="text"
-                        readOnly
-                        value={`${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)} (${modalDay1Duration / 2} hrs)`}
-                        className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
-                      />
-                    )}
-                    {isTwoMeetingPattern && (
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    )}
+                    <input
+                      type="text"
+                      readOnly
+                      aria-disabled="true"
+                      value={`${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)} (${modalDay1Duration / 2} hrs)`}
+                      className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
+                    />
                   </div>
                 </div>
               </div>
@@ -1285,28 +1261,13 @@ export default function DropModal({
                     </label>
                     <div className="relative">
                       <Clock className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-                      <select
-                        value={modalDay2StartSlot + modalDay2Duration}
-                        onChange={(e) => {
-                          const endSlot = Number(e.target.value);
-                          setModalDay2Duration(Math.max(1, endSlot - modalDay2StartSlot));
-                          setIsDay2ModifiedByUser(true);
-                        }}
-                        className="w-full appearance-none border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-sm bg-white text-gray-700 font-semibold outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] cursor-pointer"
-                      >
-                        {Array.from({ length: Math.min(24 - modalDay2StartSlot, courseMaxSlots) }, (_, i) => {
-                          const val = modalDay2StartSlot + i + 1;
-                          const durationHrs = (val - modalDay2StartSlot) / 2;
-                          return (
-                            <option key={val} value={val}>
-                              {slotToTimeStr(val)} ({durationHrs} hr{durationHrs !== 1 ? "s" : ""})
-                            </option>
-                          );
-                        })}
-                      </select>
-
-
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        readOnly
+                        aria-disabled="true"
+                        value={`${slotToTimeStr(modalDay2StartSlot + modalDay2Duration)} (${modalDay2Duration / 2} hrs)`}
+                        className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed outline-none font-semibold"
+                      />
                     </div>
                   </div>
               </div>

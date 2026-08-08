@@ -19,8 +19,8 @@ import {
 } from "lucide-react";
 import api from "../../../../lib/api";
 import type { DeliveryModeOption, ProgressStep, TimeBlockOption } from "./useGenerateSchedule";
-import { isValidPatternForApi } from "./useGenerateSchedule";
-import type { ApiScheduleRecord, Course, Room } from "../types";
+import { getCleanScheduleId, isValidPatternForApi } from "./useGenerateSchedule";
+import type { ApiScheduleRecord, Course, Room, ScheduleItem } from "../types";
 import { DAYS, GRID_HEADER_HEIGHT_PX, slotToTimeStr } from "../constants";
 
 interface SplitOperation {
@@ -56,24 +56,37 @@ interface GenerateScheduleModalProps {
   progressStep: ProgressStep;
   errorMessage: string | null;
   baseSchedules: ApiScheduleRecord[];
+  existingSchedules?: ScheduleItem[];
   sectionId: string;
   sectionName: string;
   availableCourses?: Course[];
   allCourses?: Course[];
   preferredTimeBlock: TimeBlockOption;
   setPreferredTimeBlock: (val: TimeBlockOption) => void;
+  splitSessionEnabled: boolean;
+  setSplitSessionEnabled: (val: boolean) => void;
+  selectedSplitSessionCourseIds: string[];
+  setSelectedSplitSessionCourseIds: React.Dispatch<React.SetStateAction<string[]>>;
   splitMinorEnabled: boolean;
   setSplitMinorEnabled: (val: boolean) => void;
   selectedMinorCourseIds: string[];
   setSelectedMinorCourseIds: React.Dispatch<React.SetStateAction<string[]>>;
+  splitGecEnabled: boolean;
+  setSplitGecEnabled: (val: boolean) => void;
+  selectedGecCourseIds: string[];
+  setSelectedGecCourseIds: React.Dispatch<React.SetStateAction<string[]>>;
   onClose: () => void;
   onGenerate: (
     sectionId: string,
     courseIds?: number[],
     options?: {
       preferredTimeBlock?: TimeBlockOption;
+      splitSessionEnabled?: boolean;
+      selectedSplitSessionCourseIds?: string[];
       splitMinorEnabled?: boolean;
       selectedMinorCourseIds?: string[];
+      splitGecEnabled?: boolean;
+      selectedGecCourseIds?: string[];
       mode?: DeliveryModeOption;
     }
   ) => void;
@@ -130,6 +143,12 @@ const isPathfitOrNstp = (course: { code?: string; name?: string }): boolean => {
   );
 };
 
+const isGecCourse = (course: { code?: string; name?: string }): boolean => {
+  const code = (course.code || "").trim().toLowerCase();
+  const name = (course.name || "").trim().toLowerCase();
+  return /^gec(?:\s|-)?\d*/i.test(code) || name.includes("general education");
+};
+
 const PREVIEW_DAYS = [
   "Monday",
   "Tuesday",
@@ -149,16 +168,25 @@ export default function GenerateScheduleModal({
   progressStep,
   errorMessage,
   baseSchedules,
+  existingSchedules = [],
   sectionId,
   sectionName,
   availableCourses = [],
   allCourses = [],
   preferredTimeBlock,
   setPreferredTimeBlock,
+  splitSessionEnabled,
+  setSplitSessionEnabled,
+  selectedSplitSessionCourseIds,
+  setSelectedSplitSessionCourseIds,
   splitMinorEnabled,
   setSplitMinorEnabled,
   selectedMinorCourseIds,
   setSelectedMinorCourseIds,
+  splitGecEnabled,
+  setSplitGecEnabled,
+  selectedGecCourseIds,
+  setSelectedGecCourseIds,
   onClose,
   onGenerate,
   onApplySchedule,
@@ -167,19 +195,25 @@ export default function GenerateScheduleModal({
   // ── Split pre-validation state ──
   const [splitValidating, setSplitValidating] = useState(false);
   const [resolvedSplit, setResolvedSplit] = useState<ResolvedSplitState | null>(null);
+  const [gecSplitSettingEnabled, setGecSplitSettingEnabled] = useState(false);
   /** Abort controller ref so we can cancel stale validation requests. */
   const abortRef = useRef<AbortController | null>(null);
+  const splitSessionOptionKeyRef = useRef<string>("");
   const hasMissingPhysicalRoomError = !!errorMessage
     && /No (laboratory room|classroom \(lecture room\)) found/i.test(errorMessage);
 
   const currentGenerateOptions = useCallback(
     (mode?: DeliveryModeOption) => ({
       preferredTimeBlock,
+      splitSessionEnabled,
+      selectedSplitSessionCourseIds,
       splitMinorEnabled,
       selectedMinorCourseIds,
+      splitGecEnabled,
+      selectedGecCourseIds,
       ...(mode ? { mode } : {}),
     }),
-    [preferredTimeBlock, selectedMinorCourseIds, splitMinorEnabled],
+    [preferredTimeBlock, selectedGecCourseIds, selectedMinorCourseIds, selectedSplitSessionCourseIds, splitGecEnabled, splitMinorEnabled, splitSessionEnabled],
   );
 
   // ── Derived course lists ──
@@ -212,7 +246,7 @@ export default function GenerateScheduleModal({
         id: cId,
         code,
         name,
-        units: Number(bs.course?.units ?? bs.subject?.units ?? 3),
+        units: Number(bs.course?.units ?? bs.subject?.units ?? 0) || 3,
         lectureHours: Number(bs.course?.lecture_hours ?? bs.subject?.lecture_hours ?? 3),
         labHours: Number(bs.course?.lab_hours ?? bs.subject?.lab_hours ?? 0),
         category,
@@ -229,7 +263,23 @@ export default function GenerateScheduleModal({
 
 
   const eligibleMinorCourses = useMemo(
-    () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) => c.category === "minor" && !isPathfitOrNstp(c)),
+    () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) =>
+      c.category === "minor" && !isPathfitOrNstp(c) && !isGecCourse(c)
+    ),
+    [availableCourses, allSectionCourses]
+  );
+
+  const eligibleGecCourses = useMemo(
+    () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) =>
+      c.category === "minor" && !isPathfitOrNstp(c) && isGecCourse(c)
+    ),
+    [availableCourses, allSectionCourses]
+  );
+
+  const eligibleSplitSessionCourses = useMemo(
+    () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) =>
+      c.category === "major" && Number(c.lectureHours ?? 0) > 0 && Number(c.labHours ?? 0) > 0
+    ),
     [availableCourses, allSectionCourses]
   );
 
@@ -237,11 +287,42 @@ export default function GenerateScheduleModal({
 
   // ── Auto-generate on open if no base schedules exist ──
   useEffect(() => {
+    if (!isOpen) {
+      splitSessionOptionKeyRef.current = "";
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let active = true;
+    api.get<{ gec_split_schedule_override_enabled?: boolean }>("/scheduling-settings")
+      .then((response) => {
+        if (active) {
+          setGecSplitSettingEnabled(!!response.data.gec_split_schedule_override_enabled);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setGecSplitSettingEnabled(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen && sectionId && baseSchedules.length === 0 && !isGenerating && !errorMessage) {
       onGenerate(sectionId, undefined, {
         preferredTimeBlock,
+        splitSessionEnabled,
+        selectedSplitSessionCourseIds,
         splitMinorEnabled,
-        selectedMinorCourseIds
+        selectedMinorCourseIds,
+        splitGecEnabled,
+        selectedGecCourseIds
       });
     }
   }, [
@@ -252,8 +333,57 @@ export default function GenerateScheduleModal({
     errorMessage,
     onGenerate,
     preferredTimeBlock,
+    splitSessionEnabled,
+    selectedSplitSessionCourseIds,
     splitMinorEnabled,
-    selectedMinorCourseIds
+    selectedMinorCourseIds,
+    splitGecEnabled,
+    selectedGecCourseIds
+  ]);
+
+  useEffect(() => {
+    if (!isOpen || !sectionId || isGenerating || baseSchedules.length === 0 || errorMessage) {
+      return;
+    }
+
+    const optionKey = JSON.stringify({
+      splitSessionEnabled,
+      selectedSplitSessionCourseIds: [...selectedSplitSessionCourseIds].sort(),
+    });
+
+    if (!splitSessionOptionKeyRef.current) {
+      splitSessionOptionKeyRef.current = optionKey;
+      return;
+    }
+
+    if (splitSessionOptionKeyRef.current === optionKey) {
+      return;
+    }
+
+    splitSessionOptionKeyRef.current = optionKey;
+    onGenerate(sectionId, undefined, {
+      preferredTimeBlock,
+      splitSessionEnabled,
+      selectedSplitSessionCourseIds,
+      splitMinorEnabled,
+      selectedMinorCourseIds,
+      splitGecEnabled,
+      selectedGecCourseIds,
+    });
+  }, [
+    isOpen,
+    sectionId,
+    isGenerating,
+    baseSchedules.length,
+    errorMessage,
+    onGenerate,
+    preferredTimeBlock,
+    splitSessionEnabled,
+    selectedSplitSessionCourseIds,
+    splitMinorEnabled,
+    selectedMinorCourseIds,
+    splitGecEnabled,
+    selectedGecCourseIds,
   ]);
 
   // ── Toggle helpers ──
@@ -275,6 +405,38 @@ export default function GenerateScheduleModal({
         prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
       ),
     [setSelectedMinorCourseIds]
+  );
+
+  const toggleSelectAllGec = useCallback(() => {
+    setSelectedGecCourseIds((prev) =>
+      prev.length === eligibleGecCourses.length
+        ? []
+        : eligibleGecCourses.map((c) => c.id)
+    );
+  }, [eligibleGecCourses, setSelectedGecCourseIds]);
+
+  const toggleGecCourse = useCallback(
+    (id: string) =>
+      setSelectedGecCourseIds((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      ),
+    [setSelectedGecCourseIds]
+  );
+
+  const toggleSelectAllSplitSessions = useCallback(() => {
+    setSelectedSplitSessionCourseIds((prev) =>
+      prev.length === eligibleSplitSessionCourses.length
+        ? []
+        : eligibleSplitSessionCourses.map((c) => c.id)
+    );
+  }, [eligibleSplitSessionCourses, setSelectedSplitSessionCourseIds]);
+
+  const toggleSplitSessionCourse = useCallback(
+    (id: string) =>
+      setSelectedSplitSessionCourseIds((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      ),
+    [setSelectedSplitSessionCourseIds]
   );
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -321,10 +483,21 @@ export default function GenerateScheduleModal({
       const isSelectedMinor =
         selectedMinorCourseIds.includes(courseIdStr) ||
         (courseMatch ? selectedMinorCourseIds.includes(courseMatch.id) : false);
+      const isSelectedGec =
+        selectedGecCourseIds.includes(courseIdStr) ||
+        (courseMatch ? selectedGecCourseIds.includes(courseMatch.id) : false);
+
+      const isGec = courseMatch
+        ? isGecCourse(courseMatch)
+        : isGecCourse({
+            code: item.course?.course_code || item.subject?.course_code || "",
+            name: item.course?.course_name || item.subject?.course_name || "",
+          });
 
       const isMinorSplitTarget =
         splitMinorEnabled &&
         isMinor &&
+        !isGec &&
         !isPathfitOrNstp(
           courseMatch || {
             code:
@@ -338,6 +511,13 @@ export default function GenerateScheduleModal({
           }
         ) &&
         isSelectedMinor;
+
+      const isGecSplitTarget =
+        gecSplitSettingEnabled &&
+        splitGecEnabled &&
+        isMinor &&
+        isGec &&
+        isSelectedGec;
 
       let startSlot = timeStrToSlot(item.start_time);
       let endSlot = timeStrToSlot(item.end_time);
@@ -355,7 +535,7 @@ export default function GenerateScheduleModal({
         }
       }
 
-      if (isMinorSplitTarget) {
+      if (isMinorSplitTarget || isGecSplitTarget) {
         const MINOR_DAYS = [
           "Monday",
           "Tuesday",
@@ -414,6 +594,9 @@ export default function GenerateScheduleModal({
     preferredTimeBlock,
     splitMinorEnabled,
     selectedMinorCourseIds,
+    gecSplitSettingEnabled,
+    splitGecEnabled,
+    selectedGecCourseIds,
     allSectionCourses,
   ]);
 
@@ -447,13 +630,21 @@ export default function GenerateScheduleModal({
     setSplitValidating(true);
     setResolvedSplit(null);
 
-    const deleteIds: number[] = [];
-    baseSchedules.forEach((bs) => {
-      const numId = Number(bs.id);
-      if (!isNaN(numId) && numId > 0 && !String(bs.id).includes("-")) {
-        deleteIds.push(numId);
-      }
-    });
+    const replacementKeys = new Set(
+      candidateSchedules
+        .map((schedule) => {
+          const secId = Number(schedule.section_id);
+          const courseId = Number(schedule.course_id ?? schedule.subject_id);
+          return secId > 0 && courseId > 0 ? `${secId}:${courseId}` : null;
+        })
+        .filter((key): key is string => key !== null)
+    );
+    const deleteIds = Array.from(new Set(
+      existingSchedules
+        .filter((schedule) => replacementKeys.has(`${Number(schedule.sectionId)}:${Number(schedule.courseId || schedule.subjectId)}`))
+        .map((schedule) => getCleanScheduleId(schedule.id))
+        .filter((id): id is number => id !== null)
+    ));
 
     const operations: SplitOperation[] = candidateSchedules.map((s) => {
       const courseId = Number(s.course_id ?? s.subject_id);
@@ -543,7 +734,7 @@ export default function GenerateScheduleModal({
     return () => {
       controller.abort();
     };
-  }, [candidateSchedules, anySplit, baseSchedules]);
+  }, [candidateSchedules, anySplit, existingSchedules]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Step 3 — Merge resolved times back into rich ApiScheduleRecord objects
@@ -1463,7 +1654,155 @@ export default function GenerateScheduleModal({
 
 
 
-              {/* 3. Split Minor Courses */}
+              {/* 2. Split-Session Classes */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={splitSessionEnabled}
+                      disabled={optionsDisabled}
+                      onChange={(e) => setSplitSessionEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#4e0a10] focus:ring-[#4e0a10] border-slate-300 cursor-pointer disabled:cursor-not-allowed"
+                    />
+                    Split-Session Classes
+                  </label>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
+                    Lec + Lab
+                  </span>
+                </div>
+                {splitSessionEnabled && (
+                  <div className="pt-2 space-y-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-slate-600">
+                        Eligible Lecture + Laboratory Courses
+                      </span>
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllSplitSessions}
+                        disabled={optionsDisabled || eligibleSplitSessionCourses.length === 0}
+                        className="text-[#4e0a10] hover:underline font-bold cursor-pointer disabled:cursor-not-allowed disabled:text-slate-400"
+                      >
+                        {selectedSplitSessionCourseIds.length ===
+                          eligibleSplitSessionCourses.length && eligibleSplitSessionCourses.length > 0
+                          ? "Deselect All"
+                          : "Select All"}
+                      </button>
+                    </div>
+                    <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
+                      {eligibleSplitSessionCourses.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic">
+                          No eligible lecture + laboratory courses found.
+                        </p>
+                      ) : (
+                        eligibleSplitSessionCourses.map((course) => {
+                          const isChecked = selectedSplitSessionCourseIds.includes(course.id);
+                          return (
+                            <label
+                              key={course.id}
+                              className="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-amber-50/60 border border-slate-200/70 text-xs font-medium text-slate-700 cursor-pointer transition-colors"
+                            >
+                              <div className="flex items-center gap-2 truncate pr-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={optionsDisabled}
+                                  onChange={() => toggleSplitSessionCourse(course.id)}
+                                  className="w-3.5 h-3.5 rounded text-[#4e0a10] focus:ring-[#4e0a10] border-slate-300 cursor-pointer shrink-0 disabled:cursor-not-allowed"
+                                />
+                                <span className="font-bold text-slate-900 shrink-0">
+                                  {course.code}
+                                </span>
+                                <span className="truncate text-slate-600">
+                                  {course.name}
+                                </span>
+                              </div>
+                              <span className="shrink-0 text-[10px] font-bold text-slate-500">
+                                {Number(course.lectureHours ?? 0)}L/{Number(course.labHours ?? 0)}Lab
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Split GEC Courses */}
+              {gecSplitSettingEnabled && (
+                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={splitGecEnabled}
+                        disabled={optionsDisabled}
+                        onChange={(e) => setSplitGecEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded text-[#4e0a10] focus:ring-[#4e0a10] border-slate-300 cursor-pointer disabled:cursor-not-allowed"
+                      />
+                      Split GEC Courses
+                    </label>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md">
+                      1.5h Sessions
+                    </span>
+                  </div>
+                  {splitGecEnabled && (
+                    <div className="pt-2 space-y-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-600">
+                          Eligible GEC Courses
+                        </span>
+                        <button
+                          type="button"
+                          onClick={toggleSelectAllGec}
+                          disabled={optionsDisabled || eligibleGecCourses.length === 0}
+                          className="text-[#4e0a10] hover:underline font-bold cursor-pointer disabled:cursor-not-allowed disabled:text-slate-400"
+                        >
+                          {selectedGecCourseIds.length === eligibleGecCourses.length && eligibleGecCourses.length > 0
+                            ? "Deselect All"
+                            : "Select All"}
+                        </button>
+                      </div>
+                      <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
+                        {eligibleGecCourses.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic">
+                            No eligible GEC courses found.
+                          </p>
+                        ) : (
+                          eligibleGecCourses.map((course) => {
+                            const isChecked = selectedGecCourseIds.includes(course.id);
+                            return (
+                              <label
+                                key={course.id}
+                                className="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-emerald-50/50 border border-slate-200/70 text-xs font-medium text-slate-700 cursor-pointer transition-colors"
+                              >
+                                <div className="flex items-center gap-2 truncate pr-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={optionsDisabled}
+                                    onChange={() => toggleGecCourse(course.id)}
+                                    className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer shrink-0 disabled:cursor-not-allowed"
+                                  />
+                                  <span className="font-bold text-slate-900 shrink-0">
+                                    {course.code}
+                                  </span>
+                                  <span className="truncate text-slate-600">
+                                    {course.name}
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. Split Minor Courses */}
               <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">

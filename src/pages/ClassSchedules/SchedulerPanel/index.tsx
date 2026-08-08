@@ -20,7 +20,8 @@ export default function SchedulerPanel() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const generateSchedule = useGenerateSchedule({
-    onAccepted: scheduler.handleAcceptedRecommendation
+    onAccepted: scheduler.handleAcceptedRecommendation,
+    existingSchedules: scheduler.sectionSchedules
   });
 
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
@@ -64,13 +65,22 @@ export default function SchedulerPanel() {
         progressStep={generateSchedule.progressStep}
         errorMessage={generateSchedule.errorMessage}
         baseSchedules={generateSchedule.baseSchedules}
+        existingSchedules={scheduler.sectionSchedules}
         preferredTimeBlock={generateSchedule.preferredTimeBlock}
         setPreferredTimeBlock={generateSchedule.setPreferredTimeBlock}
 
+        splitSessionEnabled={generateSchedule.splitSessionEnabled}
+        setSplitSessionEnabled={generateSchedule.setSplitSessionEnabled}
+        selectedSplitSessionCourseIds={generateSchedule.selectedSplitSessionCourseIds}
+        setSelectedSplitSessionCourseIds={generateSchedule.setSelectedSplitSessionCourseIds}
         splitMinorEnabled={generateSchedule.splitMinorEnabled}
         setSplitMinorEnabled={generateSchedule.setSplitMinorEnabled}
         selectedMinorCourseIds={generateSchedule.selectedMinorCourseIds}
         setSelectedMinorCourseIds={generateSchedule.setSelectedMinorCourseIds}
+        splitGecEnabled={generateSchedule.splitGecEnabled}
+        setSplitGecEnabled={generateSchedule.setSplitGecEnabled}
+        selectedGecCourseIds={generateSchedule.selectedGecCourseIds}
+        setSelectedGecCourseIds={generateSchedule.setSelectedGecCourseIds}
         sectionId={scheduler.selectedSectionId}
         sectionName={selectedSection?.name ?? ""}
         availableCourses={scheduler.sectionCourses}
