@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import api from '../../lib/api';
@@ -903,308 +904,323 @@ export default function VpaaDashboardPage() {
             </div>
 
             {/* 2. TABLE: Overall Department Schedule Timetable */}
-            <div className={`${
-              isFullscreen
-                ? 'fixed inset-0 z-[99999] bg-white p-6 flex flex-col overflow-hidden w-screen h-screen'
-                : 'bg-white p-5 rounded-2xl border border-gray-200 shadow-sm font-sans flex-1 flex flex-col justify-between'
-            }`}>
-              
-              {/* Table Header Controls */}
-              <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3">
-                <div className="space-y-2 flex-1">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="w-4.5 h-4.5 text-[#5A1220]" />
-                    <h2 className="text-gray-850 font-bold text-base leading-none">
-                      Institutional Timetable Calendar
-                    </h2>
-                  </div>
-                  
-                  {/* Action Filters */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Department Filter */}
-                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
-                      <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Dept</span>
-                      <select
-                        value={filterDept}
-                        onChange={(e) => setFilterDept(e.target.value)}
-                        className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
-                      >
-                        <option value="all">All Departments</option>
-                        {departments.map((dept) => (
-                          <option key={dept.id} value={dept.id}>{dept.department_code}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Day Filter */}
-                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
-                      <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Day</span>
-                      <select
-                        value={filterDay}
-                        onChange={(e) => setFilterDay(e.target.value)}
-                        className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
-                      >
-                        <option value="all">All Days</option>
-                        <option value="Sun">Sunday</option>
-                        <option value="Mon">Monday</option>
-                        <option value="Tue">Tuesday</option>
-                        <option value="Wed">Wednesday</option>
-                        <option value="Thu">Thursday</option>
-                        <option value="Fri">Friday</option>
-                        <option value="Sat">Saturday</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Search Bar & Screen Controls */}
-                <div className="flex items-center gap-2 w-full lg:w-auto relative">
-                  <div className="relative flex-1 lg:w-48 lg:flex-none">
-                    <input
-                      type="text"
-                      placeholder="Search..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-2.5 py-1.5 pl-8 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold shadow-sm transition-all"
-                    />
-                    <Filter className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" />
-                  </div>
-
-                  {/* Full Window Toggle Button */}
-                  <button
-                    onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="p-1.5 text-gray-700 hover:text-[#5A1220] hover:bg-gray-100 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
-                    title={isFullscreen ? "Exit Full Window" : "Full Window View"}
-                  >
-                    {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                  </button>
-
-                  {/* Reset Button */}
-                  {(filterDept !== 'all' || filterDay !== todayShort || searchQuery !== '') && (
-                    <button
-                      onClick={() => {
-                        setFilterDept('all');
-                        setFilterDay(todayShort);
-                        setSearchQuery('');
-                      }}
-                      className="p-1.5 text-gray-555 hover:text-[#5A1220] hover:bg-red-50 hover:border-red-200 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
-                      title="Reset Filters"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Compact Metrics Strip */}
-              <div className="flex items-center justify-between text-xs py-2 px-1 border-b border-gray-100 text-gray-500 font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Classes: <strong className="text-[#5A1220]">{totalClassesCount}</strong></span>
-                  <span>Rooms in Use: <strong className="text-slate-800">{roomsInUseCount}</strong></span>
-                  <span>Available Rooms: <strong className="text-emerald-600">{availableRoomsCount}</strong></span>
-                </div>
-                <span className="text-[10px] text-gray-400">7:00 AM &ndash; 7:00 PM</span>
-              </div>
-
-              {/* Timetable Grid (Sunday to Saturday, 7:00 AM - 7:00 PM, 30-min slots) */}
-              <div className={`mt-3 ${isFullscreen ? 'flex-1 overflow-hidden flex flex-col' : 'flex-1 flex flex-col min-h-0'}`}>
-                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-inner flex-1 flex flex-col">
-                  <div className={`min-w-[600px] bg-white relative flex flex-row scrollbar-thin ${
-                    isFullscreen 
-                      ? 'flex-1 overflow-y-auto' 
-                      : 'h-[580px] overflow-y-hidden'
-                  }`}>
-                    {/* Time Column */}
-                    <div className="w-16 shrink-0 sticky left-0 z-20 bg-gray-50 select-none border-r border-gray-200">
-                      <div className="sticky top-0 left-0 z-40 h-9 border-b border-gray-200 bg-gray-100 flex items-center justify-center font-extrabold text-[9px] uppercase tracking-wider text-gray-500">
-                        Time
+            {(() => {
+              const timetableElement = (
+                <div
+                  className={`${
+                    isFullscreen
+                      ? 'fixed inset-0 z-[999999] bg-white p-4 sm:p-6 flex flex-col w-screen h-screen m-0 top-0 left-0 right-0 bottom-0 overflow-hidden box-border select-none'
+                      : 'bg-white p-5 rounded-2xl border border-gray-200 shadow-sm font-sans flex-1 flex flex-col justify-between'
+                  }`}
+                  style={isFullscreen ? { top: 0, left: 0, width: '100vw', height: '100vh', margin: 0 } : undefined}
+                >
+                  {/* Table Header Controls */}
+                  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3 flex-shrink-0">
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="w-4.5 h-4.5 text-[#5A1220]" />
+                        <h2 className="text-gray-850 font-bold text-base leading-none">
+                          Institutional Timetable Calendar
+                        </h2>
                       </div>
-                      {timeSlots.map((slot, index) => (
-                        <div
-                          key={index}
-                          className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[8px] font-semibold text-gray-400 bg-gray-50/90"
-                        >
-                          {slot.label.includes(":00") ? (
-                            <span className="font-bold text-gray-600">{slot.label}</span>
-                          ) : (
-                            <span className="text-gray-400 font-medium">{slot.label}</span>
-                          )}
+                      
+                      {/* Action Filters */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Department Filter */}
+                        <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
+                          <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Dept</span>
+                          <select
+                            value={filterDept}
+                            onChange={(e) => setFilterDept(e.target.value)}
+                            className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
+                          >
+                            <option value="all">All Departments</option>
+                            {departments.map((dept) => (
+                              <option key={dept.id} value={dept.id}>{dept.department_code}</option>
+                            ))}
+                          </select>
                         </div>
-                      ))}
+
+                        {/* Day Filter */}
+                        <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
+                          <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Day</span>
+                          <select
+                            value={filterDay}
+                            onChange={(e) => setFilterDay(e.target.value)}
+                            className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
+                          >
+                            <option value="all">All Days</option>
+                            <option value="Sun">Sunday</option>
+                            <option value="Mon">Monday</option>
+                            <option value="Tue">Tuesday</option>
+                            <option value="Wed">Wednesday</option>
+                            <option value="Thu">Thursday</option>
+                            <option value="Fri">Friday</option>
+                            <option value="Sat">Saturday</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Day Columns (Sunday to Saturday) */}
-                    <div className="flex-1 flex flex-row relative">
-                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-                        .filter(day => filterDay === 'all' || getShortDay(day) === filterDay)
-                        .map((day) => {
-                          const daySchedules = calendarFilteredSchedules.filter(
-                            (schedule) => getShortDay(schedule.day) === day
-                          );
-                          const isToday = day === currentDayName;
-                          const layouts = getDayLayouts(daySchedules);
+                    {/* Search Bar & Screen Controls */}
+                    <div className="flex items-center gap-2 w-full lg:w-auto relative">
+                      <div className="relative flex-1 lg:w-48 lg:flex-none">
+                        <input
+                          type="text"
+                          placeholder="Search..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full px-2.5 py-1.5 pl-8 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold shadow-sm transition-all"
+                        />
+                        <Filter className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" />
+                      </div>
 
-                          return (
-                            <div
-                              key={day}
-                              className={`flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[130px] transition-colors duration-250 ${
-                                isToday ? 'bg-red-500/[0.015]' : ''
-                              }`}
-                            >
-                              {/* Sticky Day Column Header */}
-                              <div
-                                className={`sticky top-0 z-10 h-9 border-b border-gray-200 flex flex-col items-center justify-center select-none ${
-                                  isToday
-                                    ? 'bg-red-50/95 text-[#5A1220] font-black border-b-2 border-b-red-500 shadow-sm'
-                                    : 'bg-gray-50 text-gray-700'
-                                }`}
-                              >
-                                <span className="font-bold text-xs uppercase tracking-wider">{day}</span>
-                                <span className="text-[7.5px] font-extrabold opacity-75">
-                                  {daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}
-                                </span>
-                              </div>
+                      {/* Full Window Toggle Button */}
+                      <button
+                        onClick={() => setIsFullscreen(!isFullscreen)}
+                        className="p-1.5 text-gray-700 hover:text-[#5A1220] hover:bg-gray-100 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
+                        title={isFullscreen ? "Exit Full Window (Esc)" : "Full Window View"}
+                      >
+                        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                      </button>
 
-                              {/* Column Body Grid */}
-                              <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
-                                {timeSlots.map((_, index) => (
-                                  <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />
-                                ))}
-
-                                {/* Google Calendar Time Indicator Line */}
-                                {isToday && currentDayTimeTop !== null && (
-                                  <div
-                                    className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center"
-                                    style={{ top: `${currentDayTimeTop}px` }}
-                                  >
-                                    <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
-                                  </div>
-                                )}
-
-                                {/* Rendering Schedule Cards */}
-                                {daySchedules.map((schedule) => {
-                                  const startIdx = parseTimeToSlotIndex(schedule.start_time);
-                                  const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                                  const top = startIdx * 24;
-                                  const height = (endIdx - startIdx) * 24;
-                                  const layout = layouts.find((item) => item.schedule.id === schedule.id);
-                                  
-                                  const left = layout ? `${layout.leftPct}%` : "0%";
-                                  const width = layout ? `${layout.widthPct}%` : "100%";
-                                  const deptCode = schedule.section?.department?.department_code || "GEN";
-                                  const isLab = getClassType(schedule) === 'Laboratory';
-
-                                  return (
-                                    <div
-                                      key={schedule.id}
-                                      className={`group absolute rounded-lg border border-l-3 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all duration-200 hover:scale-[1.02] hover:shadow-md hover:z-25 ${getDeptStyles(deptCode)}`}
-                                      style={{
-                                        top: `${top + 2}px`,
-                                        height: `${height - 4}px`,
-                                        left: `calc(${left} + 1px)`,
-                                        width: `calc(${width} - 2px)`,
-                                        fontSize: '8.5px',
-                                        lineHeight: '1.2'
-                                      }}
-                                    >
-                                      {/* Header */}
-                                      <div className="min-w-0 flex items-center justify-between gap-1">
-                                        <p className="font-black truncate text-gray-900">
-                                          {schedule.course?.course_code || schedule.subject?.subject_code || "Class"}
-                                        </p>
-                                        <span className={`px-1 rounded-[3px] text-[7px] font-black uppercase ${
-                                          isLab
-                                            ? 'bg-purple-100 text-purple-800'
-                                            : 'bg-slate-100 text-slate-700'
-                                        }`}>
-                                          {isLab ? 'LAB' : 'LEC'}
-                                        </span>
-                                      </div>
-
-                                      {/* Details Body */}
-                                      <div className="mt-0.5 flex-1 flex flex-col justify-end opacity-85 text-[7.5px] font-bold text-gray-500 space-y-0.5">
-                                        <p className="truncate font-black text-[#5A1220]">{schedule.section?.section_name}</p>
-                                        <p className="truncate text-slate-800">
-                                          {schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}
-                                        </p>
-                                      </div>
-
-                                      {/* Hover Popover */}
-                                      <div className={`absolute hidden group-hover:flex flex-col gap-2 z-40 w-64 bg-slate-900 text-white rounded-xl shadow-2xl p-3.5 font-sans text-xs pointer-events-none select-none border border-slate-700 ${
-                                        ['Thu', 'Fri', 'Sat'].includes(day) ? 'right-full mr-2 top-0' : 'left-full ml-2 top-0'
-                                      }`}>
-                                        <div className="flex items-center justify-between border-b border-gray-700 pb-1">
-                                          <span className="font-bold text-[#F5A623]">
-                                            {schedule.course?.course_code || schedule.subject?.subject_code}
-                                          </span>
-                                          <span className="text-[9px] px-1.5 py-0.5 bg-white/10 rounded font-semibold uppercase">
-                                            {schedule.mode || 'Lecture'}
-                                          </span>
-                                        </div>
-                                        <p className="font-bold text-gray-100 text-xs">
-                                          {schedule.course?.course_name || schedule.subject?.subject_name || 'Subject'}
-                                        </p>
-                                        <div className="space-y-1 text-gray-300 text-[10px] border-t border-gray-700 pt-1.5">
-                                          <div className="flex justify-between">
-                                            <span className="text-gray-400">Instructor:</span>
-                                            <span className="font-bold text-white">
-                                              {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-gray-400">Section:</span>
-                                            <span className="font-bold text-white">{schedule.section?.section_name}</span>
-                                          </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-gray-400">Room:</span>
-                                            <span className="font-bold text-white">
-                                              {schedule.room?.building || 'Main'} &bull; {schedule.room?.room_code || 'Unassigned'}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-gray-400">Time:</span>
-                                            <span className="font-bold text-[#F5A623]">{schedule.start_time} - {schedule.end_time}</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
+                      {/* Reset Button */}
+                      {(filterDept !== 'all' || filterDay !== todayShort || searchQuery !== '') && (
+                        <button
+                          onClick={() => {
+                            setFilterDept('all');
+                            setFilterDay(todayShort);
+                            setSearchQuery('');
+                          }}
+                          className="p-1.5 text-gray-555 hover:text-[#5A1220] hover:bg-red-50 hover:border-red-200 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
+                          title="Reset Filters"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
+
+                  {/* Compact Metrics Strip */}
+                  <div className="flex items-center justify-between text-xs py-2 px-1 border-b border-gray-100 text-gray-500 font-semibold flex-shrink-0">
+                    <div className="flex items-center gap-4">
+                      <span>Classes: <strong className="text-[#5A1220]">{totalClassesCount}</strong></span>
+                      <span>Rooms in Use: <strong className="text-slate-800">{roomsInUseCount}</strong></span>
+                      <span>Available Rooms: <strong className="text-emerald-600">{availableRoomsCount}</strong></span>
+                    </div>
+                    <span className="text-[10px] text-gray-400">7:00 AM &ndash; 7:00 PM</span>
+                  </div>
+
+                  {/* Timetable Grid (Sunday to Saturday, 7:00 AM - 7:00 PM, 30-min slots) */}
+                  <div className="mt-3 flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <div className="overflow-x-auto overflow-y-auto rounded-xl border border-gray-200 shadow-inner flex-1 flex flex-col h-full bg-white relative scrollbar-thin">
+                      <div className="min-w-[850px] bg-white relative flex flex-row flex-1">
+                        {/* Time Column */}
+                        <div className="w-16 shrink-0 sticky left-0 z-20 bg-gray-50 select-none border-r border-gray-200">
+                          <div className="sticky top-0 left-0 z-40 h-9 border-b border-gray-200 bg-gray-100 flex items-center justify-center font-extrabold text-[9px] uppercase tracking-wider text-gray-500">
+                            Time
+                          </div>
+                          {timeSlots.map((slot, index) => (
+                            <div
+                              key={index}
+                              className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[8px] font-semibold text-gray-400 bg-gray-50/90"
+                            >
+                              {slot.label.includes(":00") ? (
+                                <span className="font-bold text-gray-600">{slot.label}</span>
+                              ) : (
+                                <span className="text-gray-400 font-medium">{slot.label}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Day Columns (Sunday to Saturday) */}
+                        <div className="flex-1 flex flex-row relative">
+                          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                            .filter(day => filterDay === 'all' || getShortDay(day) === filterDay)
+                            .map((day) => {
+                              const daySchedules = calendarFilteredSchedules.filter(
+                                (schedule) => getShortDay(schedule.day) === day
+                              );
+                              const isToday = day === currentDayName;
+                              const layouts = getDayLayouts(daySchedules);
+
+                              return (
+                                <div
+                                  key={day}
+                                  className={`flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[130px] transition-colors duration-250 ${
+                                    isToday ? 'bg-red-500/[0.015]' : ''
+                                  }`}
+                                >
+                                  {/* Sticky Day Column Header */}
+                                  <div
+                                    className={`sticky top-0 z-10 h-9 border-b border-gray-200 flex flex-col items-center justify-center select-none ${
+                                      isToday
+                                        ? 'bg-red-50/95 text-[#5A1220] font-black border-b-2 border-b-red-500 shadow-sm'
+                                        : 'bg-gray-50 text-gray-700'
+                                    }`}
+                                  >
+                                    <span className="font-bold text-xs uppercase tracking-wider">{day}</span>
+                                    <span className="text-[7.5px] font-extrabold opacity-75">
+                                      {daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}
+                                    </span>
+                                  </div>
+
+                                  {/* Column Body Grid */}
+                                  <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
+                                    {timeSlots.map((_, index) => (
+                                      <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />
+                                    ))}
+
+                                    {/* Google Calendar Time Indicator Line */}
+                                    {isToday && currentDayTimeTop !== null && (
+                                      <div
+                                        className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center"
+                                        style={{ top: `${currentDayTimeTop}px` }}
+                                      >
+                                        <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
+                                      </div>
+                                    )}
+
+                                    {/* Rendering Schedule Cards */}
+                                    {daySchedules.map((schedule) => {
+                                      const startIdx = parseTimeToSlotIndex(schedule.start_time);
+                                      const endIdx = parseTimeToSlotIndex(schedule.end_time);
+                                      const top = startIdx * 24;
+                                      const height = (endIdx - startIdx) * 24;
+
+                                      if (height <= 0) return null;
+
+                                      const layout = layouts.find(item => item.schedule.id === schedule.id);
+                                      const left = layout ? `${layout.leftPct}%` : '0%';
+                                      const width = layout ? `${layout.widthPct}%` : '100%';
+                                      const deptCode = schedule.section?.department?.department_code || (schedule as unknown as { department?: { department_code?: string } })?.department?.department_code || 'GEN';
+
+                                      return (
+                                        <div
+                                          key={schedule.id}
+                                          style={{
+                                            top: `${top + 1}px`,
+                                            height: `${height - 2}px`,
+                                            left: `calc(${left} + 2px)`,
+                                            width: `calc(${width} - 4px)`,
+                                          }}
+                                          className={`group absolute rounded-lg border border-l-4 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-xs select-none transition-all duration-150 hover:scale-[1.02] hover:shadow-md hover:z-25 ${getDeptStyles(deptCode)}`}
+                                        >
+                                          <div className="space-y-0.5 min-w-0">
+                                            <div className="flex items-center justify-between gap-1">
+                                              <span className="font-extrabold text-[10px] leading-tight truncate">
+                                                {schedule.course?.course_code || schedule.subject?.subject_code || 'N/A'}
+                                              </span>
+                                              <span className="text-[7.5px] font-black uppercase px-1 py-0.2 rounded bg-black/5 shrink-0">
+                                                {schedule.section?.section_name || 'Sec'}
+                                              </span>
+                                            </div>
+                                            <p className="text-[8.5px] font-semibold opacity-90 truncate leading-tight">
+                                              {schedule.course?.course_name || schedule.subject?.subject_name || 'No title'}
+                                            </p>
+                                          </div>
+
+                                          <div className="border-t border-black/5 pt-0.5 mt-auto flex items-center justify-between text-[7.5px] font-bold opacity-80">
+                                            <span className="truncate max-w-[60%]">
+                                              {schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}
+                                            </span>
+                                            <span className="truncate">
+                                              {schedule.room?.room_code || 'Room TBA'}
+                                            </span>
+                                          </div>
+
+                                          {/* Hover Details Popover */}
+                                          <div className={`opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none absolute w-60 p-2.5 bg-slate-900 text-white rounded-xl shadow-2xl backdrop-blur-md z-50 border border-slate-700 text-xs space-y-1.5 leading-snug ${
+                                            ['Thu', 'Fri', 'Sat'].includes(day) ? 'right-full mr-2 top-0' : 'left-full ml-2 top-0'
+                                          }`}>
+                                            <div className="flex items-center justify-between border-b border-gray-700 pb-1">
+                                              <span className="font-bold text-[#F5A623]">
+                                                {schedule.course?.course_code || schedule.subject?.subject_code}
+                                              </span>
+                                              <span className="text-[9px] px-1.5 py-0.5 bg-white/10 rounded font-semibold uppercase">
+                                                {schedule.mode || 'Lecture'}
+                                              </span>
+                                            </div>
+                                            <p className="font-bold text-gray-100 text-xs">
+                                              {schedule.course?.course_name || schedule.subject?.subject_name || 'Subject'}
+                                            </p>
+                                            <div className="space-y-1 text-gray-300 text-[10px] border-t border-gray-700 pt-1.5">
+                                              <div className="flex justify-between">
+                                                <span className="text-gray-400">Instructor:</span>
+                                                <span className="font-bold text-white">
+                                                  {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
+                                                </span>
+                                              </div>
+                                              <div className="flex justify-between">
+                                                <span className="text-gray-400">Section:</span>
+                                                <span className="font-bold text-white">{schedule.section?.section_name}</span>
+                                              </div>
+                                              <div className="flex justify-between">
+                                                <span className="text-gray-400">Room:</span>
+                                                <span className="font-bold text-white">
+                                                  {schedule.room?.building || 'Main'} &bull; {schedule.room?.room_code || 'TBA'}
+                                                </span>
+                                              </div>
+                                              <div className="flex justify-between">
+                                                <span className="text-gray-400">Time:</span>
+                                                <span className="font-bold text-[#F5A623]">{schedule.start_time} - {schedule.end_time}</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Timetable Footer */}
+                  <div className="border-t border-gray-100 pt-3 mt-3 flex items-center justify-between text-[11px] text-gray-400 flex-shrink-0">
+                    <span>Institutional Academic Schedule Matrix</span>
+                    <button
+                      onClick={() => navigate('/vpaa/schedules')}
+                      className="font-bold text-[#5A1220] hover:underline cursor-pointer"
+                    >
+                      Manage Schedules &rarr;
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+
+              return isFullscreen ? createPortal(timetableElement, document.body) : timetableElement;
+            })()}
           </div>
 
           {/* ═══════════════════════════════════════════════════════════
-              RIGHT COLUMN: 2 PIE CHARTS -> DETAILS NOTE -> BAR CHART
+              RIGHT COLUMN: 2 PIE CHARTS -> BAR CHART
              ═══════════════════════════════════════════════════════════ */}
           <div className="xl:col-span-6 space-y-4 flex flex-col h-full font-sans">
             
             {/* 1. 2 PIE CHARTS Side-by-Side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
               {/* PIE CHART 1: Schedule Status Distribution */}
               <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between font-sans">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                   <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
                     <CheckSquare className="w-4 h-4 text-[#5A1220]" />
                     Schedule Status
                   </h3>
-                  <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
                     Total: {sections.length}
                   </span>
                 </div>
 
                 {/* Interactive Donut Visualization */}
-                <div className="flex items-center justify-center my-3 relative">
-                  <svg className="w-28 h-28 -rotate-90 transform" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="11" />
+                <div className="flex items-center justify-center my-4 relative">
+                  <svg className="w-32 h-32 -rotate-90 transform" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="10" />
                     {(() => {
                       const total = sections.length || 1;
                       const data = [
@@ -1231,7 +1247,7 @@ export default function VpaaDashboardPage() {
                             r="38"
                             fill="transparent"
                             stroke={item.color}
-                            strokeWidth="11"
+                            strokeWidth="10"
                             strokeDasharray={dashArray}
                             strokeDashoffset={dashOffset}
                             className="transition-all duration-500"
@@ -1242,45 +1258,45 @@ export default function VpaaDashboardPage() {
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-sans">
                     <span className="text-2xl font-black text-gray-900 leading-none">{sections.length}</span>
-                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Schedules</span>
+                    <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider mt-1">Schedules</span>
                   </div>
                 </div>
 
                 {/* Donut Legend */}
                 <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 font-sans">
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Approved</span>
+                      <span className="font-semibold text-gray-600 text-xs">Approved</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {overallStats.approvedCount}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Pending</span>
+                      <span className="font-semibold text-gray-600 text-xs">Pending</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {overallStats.pendingCount}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Drafts</span>
+                      <span className="font-semibold text-gray-600 text-xs">Drafts</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {overallStats.draftCount}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Rejected</span>
+                      <span className="font-semibold text-gray-600 text-xs">Rejected</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {overallStats.rejectedCount}
                     </span>
                   </div>
@@ -1289,20 +1305,20 @@ export default function VpaaDashboardPage() {
 
               {/* PIE CHART 2: Faculty Load Distribution */}
               <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between font-sans">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                   <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
                     <GraduationCap className="w-4 h-4 text-[#5A1220]" />
                     Faculty Load
                   </h3>
-                  <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
                     Total: {faculties.length}
                   </span>
                 </div>
 
                 {/* Interactive Donut Visualization */}
-                <div className="flex items-center justify-center my-3 relative">
-                  <svg className="w-28 h-28 -rotate-90 transform" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="11" />
+                <div className="flex items-center justify-center my-4 relative">
+                  <svg className="w-32 h-32 -rotate-90 transform" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="10" />
                     {(() => {
                       const total = faculties.length || 1;
                       const data = [
@@ -1329,7 +1345,7 @@ export default function VpaaDashboardPage() {
                             r="38"
                             fill="transparent"
                             stroke={item.color}
-                            strokeWidth="11"
+                            strokeWidth="10"
                             strokeDasharray={dashArray}
                             strokeDashoffset={dashOffset}
                             className="transition-all duration-500"
@@ -1340,82 +1356,49 @@ export default function VpaaDashboardPage() {
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-sans">
                     <span className="text-2xl font-black text-gray-900 leading-none">{faculties.length}</span>
-                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Faculty</span>
+                    <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider mt-1">Faculty</span>
                   </div>
                 </div>
 
                 {/* Donut Legend */}
                 <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 font-sans">
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Available</span>
+                      <span className="font-semibold text-gray-600 text-xs">Available</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {facultyStats.available}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Loaded</span>
+                      <span className="font-semibold text-gray-600 text-xs">Loaded</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {facultyStats.fullyLoaded}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Overload</span>
+                      <span className="font-semibold text-gray-600 text-xs">Overload</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {facultyStats.overloaded}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50/70 border border-gray-100">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+                    <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-[11px]">Pro Bono</span>
+                      <span className="font-semibold text-gray-600 text-xs">Pro Bono</span>
                     </div>
-                    <span className="font-bold text-gray-900 text-xs px-1.5 py-0.2 bg-white rounded shadow-2xs border border-gray-200/50">
+                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
                       {facultyStats.probono}
                     </span>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* 2. DETAILS NOTE (Wide Strip Card) */}
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50/60 p-3.5 rounded-2xl border border-amber-200/80 shadow-sm flex items-start gap-3">
-              <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-800 shrink-0 mt-0.5">
-                <Bell className="w-4.5 h-4.5 text-amber-700" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="font-bold text-xs text-amber-950 uppercase tracking-wider">Executive Scheduling Notice</h4>
-                  <span className="text-[10px] font-extrabold text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded-full">
-                    {activeTerm ? activeTerm.term_name : 'Active Term'}
-                  </span>
-                </div>
-                <p className="text-xs text-amber-900/80 mt-0.5 leading-relaxed">
-                  {approvalQueue.length > 0
-                    ? `${approvalQueue.length} department schedule${approvalQueue.length === 1 ? '' : 's'} are currently awaiting VPAA final review and endorsement. Cross-department room capacities and faculty unit loads are monitored in real time.`
-                    : 'All submitted department schedules have been reviewed and approved. Academic timetable operations are running normally.'}
-                </p>
-                {approvalQueue.length > 0 && (
-                  <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-amber-200/60">
-                    <span className="text-[10.5px] font-semibold text-amber-900">
-                      Pending: <strong>{approvalQueue.map(q => q.section_name).slice(0, 3).join(', ')}{approvalQueue.length > 3 ? '...' : ''}</strong>
-                    </span>
-                    <button
-                      onClick={() => navigate('/schedules/approval')}
-                      className="px-2.5 py-1 bg-[#5A1220] hover:bg-[#410b15] text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
-                    >
-                      Review Queue &rarr;
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
