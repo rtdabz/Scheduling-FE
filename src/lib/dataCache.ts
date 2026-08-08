@@ -1,16 +1,43 @@
-const dataCache = new Map<string, unknown>();
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const dataCache = new Map<string, CacheEntry<unknown>>();
 const pendingRequests = new Map<string, Promise<unknown>>();
-const STORAGE_PREFIX = 'wicars:data-cache:v2:';
+const STORAGE_PREFIX = 'wicars:data-cache:v4:';
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL
+
+// Clean up any legacy or stale cache keys from previous versions on startup
+try {
+  Object.keys(sessionStorage).forEach((key) => {
+    if (key.startsWith('wicars:data-cache:') && !key.startsWith(STORAGE_PREFIX)) {
+      sessionStorage.removeItem(key);
+    }
+  });
+} catch {
+  // Ignore storage access errors
+}
 
 const getStorageKey = (key: string): string => `${STORAGE_PREFIX}${key}`;
 
 const readStoredData = <T>(key: string): T | undefined => {
   try {
-    const stored = sessionStorage.getItem(getStorageKey(key));
-    if (!stored) return undefined;
-    const parsed = JSON.parse(stored) as T;
-    dataCache.set(key, parsed);
-    return parsed;
+    const raw = sessionStorage.getItem(getStorageKey(key));
+    if (!raw) return undefined;
+    const entry = JSON.parse(raw) as CacheEntry<T>;
+    if (!entry || typeof entry.timestamp !== 'number') {
+      sessionStorage.removeItem(getStorageKey(key));
+      return undefined;
+    }
+    // Check if expired
+    if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+      sessionStorage.removeItem(getStorageKey(key));
+      dataCache.delete(key);
+      return undefined;
+    }
+    dataCache.set(key, entry as CacheEntry<unknown>);
+    return entry.data;
   } catch {
     sessionStorage.removeItem(getStorageKey(key));
     return undefined;
@@ -19,36 +46,60 @@ const readStoredData = <T>(key: string): T | undefined => {
 
 const writeStoredData = <T>(key: string, data: T): void => {
   try {
-    sessionStorage.setItem(getStorageKey(key), JSON.stringify(data));
+    const entry: CacheEntry<T> = {
+      data,
+      timestamp: Date.now(),
+    };
+    dataCache.set(key, entry as CacheEntry<unknown>);
+    sessionStorage.setItem(getStorageKey(key), JSON.stringify(entry));
   } catch {
     // Ignore storage quota or privacy-mode failures.
   }
 };
 
-export const hasCachedData = (key: string): boolean => dataCache.has(key) || sessionStorage.getItem(getStorageKey(key)) !== null;
+export const hasCachedData = (key: string): boolean => {
+  if (dataCache.has(key)) {
+    const entry = dataCache.get(key);
+    if (entry && Date.now() - entry.timestamp <= CACHE_TTL_MS) {
+      return true;
+    }
+    dataCache.delete(key);
+  }
+  return readStoredData(key) !== undefined;
+};
 
 export const getCachedData = <T>(key: string): T | undefined => {
-  if (!dataCache.has(key)) return readStoredData<T>(key);
-  return dataCache.get(key) as T;
+  const mem = dataCache.get(key);
+  if (mem && Date.now() - mem.timestamp <= CACHE_TTL_MS) {
+    return mem.data as T;
+  }
+  return readStoredData<T>(key);
 };
 
 export const setCachedData = <T>(key: string, data: T): void => {
-  dataCache.set(key, data);
   writeStoredData(key, data);
 };
 
 export const clearCachedKey = (key: string): void => {
   dataCache.delete(key);
   pendingRequests.delete(key);
-  sessionStorage.removeItem(getStorageKey(key));
+  try {
+    sessionStorage.removeItem(getStorageKey(key));
+  } catch {
+    // Ignore
+  }
 };
 
 export const clearDataCache = (): void => {
   dataCache.clear();
   pendingRequests.clear();
-  Object.keys(sessionStorage)
-    .filter((key) => key.startsWith(STORAGE_PREFIX))
-    .forEach((key) => sessionStorage.removeItem(key));
+  try {
+    Object.keys(sessionStorage)
+      .filter((key) => key.startsWith('wicars:data-cache:'))
+      .forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    // Ignore
+  }
 };
 
 export const loadCachedData = async <T>(
@@ -56,13 +107,11 @@ export const loadCachedData = async <T>(
   loader: () => Promise<T>,
   forceRefresh = false
 ): Promise<T> => {
-  if (!forceRefresh && dataCache.has(key)) {
-    return dataCache.get(key) as T;
-  }
-
   if (!forceRefresh) {
-    const stored = readStoredData<T>(key);
-    if (stored !== undefined) return stored;
+    const cached = getCachedData<T>(key);
+    if (cached !== undefined) {
+      return cached;
+    }
   }
 
   if (!forceRefresh && pendingRequests.has(key)) {
@@ -71,7 +120,6 @@ export const loadCachedData = async <T>(
 
   const request = loader()
     .then((data) => {
-      dataCache.set(key, data);
       writeStoredData(key, data);
       return data;
     })
