@@ -574,15 +574,15 @@ export default function VpaaDashboardPage() {
         setIsLoading(shouldShowSkeleton);
         const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
           const response = await api.get<InitialDataResponse>('/initial-data');
-
+          const d = response.data || ({} as InitialDataResponse);
           return {
-            schedules: response.data.schedules,
-            rooms: response.data.rooms,
-            sections: response.data.sections,
-            faculties: response.data.faculties,
-            departments: response.data.departments,
-            subjects: response.data.subjects,
-            activeTerm: response.data.active_term,
+            schedules: Array.isArray(d.schedules) ? d.schedules : [],
+            rooms: Array.isArray(d.rooms) ? d.rooms : [],
+            sections: Array.isArray(d.sections) ? d.sections : [],
+            faculties: Array.isArray(d.faculties) ? d.faculties : [],
+            departments: Array.isArray(d.departments) ? d.departments : [],
+            subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray((d as any).courses) ? (d as any).courses : []),
+            activeTerm: d.active_term || null,
           };
         });
 
