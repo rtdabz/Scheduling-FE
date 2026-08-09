@@ -38,6 +38,61 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
   );
 };
 
+const getRoomCapacity = (room: Room | undefined): number => (
+  Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1)
+);
+
+const resolveRoom = (rooms: Room[], roomId: string): Room | undefined => {
+  if (roomId === "field") {
+    return rooms.find((r) => r.roomType === "field");
+  }
+  if (roomId === "online") {
+    return rooms.find((r) => r.roomType === "online");
+  }
+  return rooms.find((r) => String(r.id) === String(roomId));
+};
+
+const samePhysicalRoom = (leftRoomId: string, rightRoomId: string, rooms: Room[]): boolean => {
+  const leftRoom = resolveRoom(rooms, leftRoomId);
+  const rightRoom = resolveRoom(rooms, rightRoomId);
+
+  if (leftRoom?.id && rightRoom?.id) {
+    return String(leftRoom.id) === String(rightRoom.id);
+  }
+
+  return String(leftRoomId) === String(rightRoomId);
+};
+
+const exceedsSharedRoomCapacity = (
+  schedules: ScheduleItem[],
+  dayIndex: number,
+  startSlot: number,
+  endSlot: number,
+  capacity: number,
+  excludeIds: string[] = []
+): boolean => {
+  const events: Array<[number, number]> = [[startSlot, 1], [endSlot, -1]];
+
+  schedules.forEach((s) => {
+    if (excludeIds.includes(s.id)) return;
+    if (s.dayIndex !== dayIndex) return;
+    const sEnd = s.startSlot + s.durationSlots;
+    if (startSlot < sEnd && s.startSlot < endSlot) {
+      events.push([s.startSlot, 1], [sEnd, -1]);
+    }
+  });
+
+  events.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+
+  let concurrent = 0;
+  for (const [, delta] of events) {
+    concurrent += delta;
+    if (concurrent > capacity) return true;
+  }
+
+  return false;
+};
+
 const timeToSlot = (timeStr: string): number => {
   const parts = timeStr.split(":");
   const hours = Number(parts[0]);
@@ -127,9 +182,16 @@ export const getConflictedScheduleMap = (
         }
 
         // 2. Room conflict
-        if (s1.roomId && s1.roomId !== "online" && s1.roomId !== "field" && s1.roomId === s2.roomId) {
-          const room = rooms.find((r) => String(r.id) === String(s1.roomId));
-          const roomName = room?.name ?? "Selected room";
+        if (s1.roomId && s1.roomId !== "online" && samePhysicalRoom(s1.roomId, s2.roomId, rooms)) {
+          const room = resolveRoom(rooms, s1.roomId);
+          const isSharedField = room?.roomType === "field" || s1.roomId === "field";
+          const sameRoomSchedules = isSharedField
+            ? schedules.filter((item) => item.roomId && samePhysicalRoom(item.roomId, s1.roomId, rooms))
+            : schedules;
+          if (isSharedField && !exceedsSharedRoomCapacity(sameRoomSchedules, day, start, end, getRoomCapacity(room))) {
+            continue;
+          }
+          const roomName = room?.name ?? (isSharedField ? "FIELD" : "Selected room");
           const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
           const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
           if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
@@ -205,12 +267,18 @@ export const useConflict = ({
 
     // Room-type compatibility check
     if (roomId) {
-      const room = rooms.find((r) => String(r.id) === String(roomId));
+      const room = resolveRoom(rooms, roomId);
       const subject = subjects.find((s) => String(s.id) === String(subjectId));
-      if (room?.roomType === "online" || room?.roomType === "field") {
+      if (room?.roomType === "online") {
         return {
           conflictType: "room",
           message: `Room type mismatch: ${subject?.code ?? "This class"} must use a physical lecture or laboratory room for on-site delivery.`
+        };
+      }
+      if (room?.roomType === "field" && subject?.roomTypeRequired !== "field") {
+        return {
+          conflictType: "room",
+          message: `Room type mismatch: ${subject?.code ?? "This class"} must use FIELD only when the course requires field delivery.`
         };
       }
 
@@ -239,11 +307,27 @@ export const useConflict = ({
             message: `Section conflict: This section already has a class (${s.courseCode || s.subjectCode || "another class"}) scheduled at this time.`
           };
         }
-        if (roomId && roomId !== "online" && roomId !== "field" && s.roomId === roomId) {
-          const room = rooms.find((r) => String(r.id) === String(roomId));
+        if (roomId && roomId !== "online" && samePhysicalRoom(s.roomId, roomId, rooms)) {
+          const room = resolveRoom(rooms, roomId);
+          const isSharedField = room?.roomType === "field" || roomId === "field";
+          const sameRoomSchedules = isSharedField
+            ? schedules.filter((item) => item.roomId && samePhysicalRoom(item.roomId, roomId, rooms))
+            : schedules;
+          if (isSharedField && !exceedsSharedRoomCapacity(
+            sameRoomSchedules,
+            dayIndex,
+            startSlot,
+            endSlot,
+            getRoomCapacity(room),
+            excludeScheduleId ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId]) : []
+          )) {
+            continue;
+          }
           return {
             conflictType: "room",
-            message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
+            message: isSharedField
+              ? `Room capacity conflict: ${room?.name ?? "Selected room"} is already at its shared capacity (${getRoomCapacity(room)} concurrent classes).`
+              : `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
           };
         }
         if (facultyId && s.facultyId === facultyId) {

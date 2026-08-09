@@ -69,7 +69,7 @@ export default function RoomViewModal({
     return Object.values(groups).map((group) => {
       const base = group[0];
       return {
-        id: base.id,
+        id: `${base.id}-${base.dayIndex}-${base.startSlot}-${base.durationSlots}`,
         dayIndex: base.dayIndex,
         startSlot: base.startSlot,
         durationSlots: base.durationSlots,
@@ -79,6 +79,32 @@ export default function RoomViewModal({
       };
     });
   }, [roomClasses]);
+
+  const isSharedField = room?.roomType === "field";
+  const fieldCapacity = Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
+  const peakFieldOccupancy = useMemo(() => {
+    if (!isSharedField) return 0;
+
+    let peak = 0;
+    DAYS.forEach((_, dayIndex) => {
+      const events: Array<[number, number]> = [];
+      roomClasses
+        .filter((item) => item.dayIndex === dayIndex)
+        .forEach((item) => {
+          events.push([item.startSlot, 1], [item.startSlot + item.durationSlots, -1]);
+        });
+
+      events.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+
+      let concurrent = 0;
+      events.forEach(([, delta]) => {
+        concurrent += delta;
+        peak = Math.max(peak, concurrent);
+      });
+    });
+
+    return peak;
+  }, [isSharedField, roomClasses]);
 
   const slotIndexes = useMemo(
     () => Array.from({ length: SLOT_COUNT }, (_, index) => index),
@@ -152,6 +178,15 @@ export default function RoomViewModal({
             <CalendarClock className="w-3.5 h-3.5" />
             {roomClasses.length} class{roomClasses.length !== 1 ? "es" : ""} booked
           </span>
+          {isSharedField && (
+            <span className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-lg text-xs font-bold ${
+              peakFieldOccupancy > fieldCapacity
+                ? "bg-red-50 text-red-700 border-red-200"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+            }`}>
+              Shared capacity {peakFieldOccupancy}/{fieldCapacity}
+            </span>
+          )}
         </div>
 
         {/* Grid */}
@@ -211,6 +246,17 @@ export default function RoomViewModal({
 
             {/* Booked class blocks */}
             {groupedRoomClasses.map((cellGroup) => {
+              const groupEndSlot = cellGroup.startSlot + cellGroup.durationSlots;
+              const groupOverlapCount = isSharedField
+                ? roomClasses.filter((item) => {
+                  const itemEndSlot = item.startSlot + item.durationSlots;
+                  return item.dayIndex === cellGroup.dayIndex
+                    && cellGroup.startSlot < itemEndSlot
+                    && item.startSlot < groupEndSlot;
+                }).length
+                : cellGroup.items.length;
+              const exceedsCapacity = isSharedField && groupOverlapCount > fieldCapacity;
+
               // Group items by courseCode
               const subgroups: { courseCode: string; sectionName: string; courseType: ScheduleItem["courseType"] }[] = [];
               const courseMap: Record<string, string[]> = {};
@@ -251,8 +297,15 @@ export default function RoomViewModal({
                   title={tooltipTitle}
                 >
                   <div className="flex flex-col gap-1 overflow-hidden">
-                    {subgroups.map((sub, idx) => (
-                      <div key={idx} className="flex flex-col mb-1 last:mb-0 border-b border-dashed border-slate-100/30 last:border-b-0 pb-0.5 last:pb-0">
+                    {isSharedField && (
+                      <div className={`self-start rounded px-1.5 py-0.5 text-[8px] font-black uppercase ${
+                        exceedsCapacity ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                      }`}>
+                        {groupOverlapCount}/{fieldCapacity}
+                      </div>
+                    )}
+                    {subgroups.map((sub) => (
+                      <div key={`${cellGroup.id}-${sub.courseCode}-${sub.sectionName}`} className="flex flex-col mb-1 last:mb-0 border-b border-dashed border-slate-100/30 last:border-b-0 pb-0.5 last:pb-0">
                         <div className={`text-[10px] font-black uppercase truncate ${getGridCardStyles(sub.courseType).text}`}>
                           {sub.courseCode}
                         </div>

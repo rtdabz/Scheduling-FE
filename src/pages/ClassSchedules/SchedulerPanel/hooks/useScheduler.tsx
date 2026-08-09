@@ -133,6 +133,8 @@ interface SchedulerCacheData {
   departments: Department[];
   users: UserSummary[];
   schedules: ScheduleItem[];
+  fieldCourseAssignmentEnabled: boolean;
+  fieldCourseCodes: string[];
 }
 
 interface AtomicScheduleResponse {
@@ -164,6 +166,8 @@ interface InitialDataResponse {
   schedules: ApiScheduleRecord[];
   departments: ApiDepartmentRecord[];
   users: UserSummary[];
+  field_course_assignment_enabled?: boolean;
+  field_course_codes?: string[];
 }
 
 interface TargetScheduleDay {
@@ -182,6 +186,8 @@ const hasUsableSchedulerCache = (data: SchedulerCacheData | undefined): data is 
       && Array.isArray(data.departments)
       && Array.isArray(data.users)
       && Array.isArray(data.schedules)
+      && typeof data.fieldCourseAssignmentEnabled === "boolean"
+      && Array.isArray(data.fieldCourseCodes)
   );
 };
 
@@ -294,7 +300,7 @@ export const useScheduler = () => {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const schedulerCacheKey = `scheduler:v7:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v8:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -305,6 +311,12 @@ export const useScheduler = () => {
   const [departments, setDepartments] = useState<Department[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
   const [users, setUsers] = useState<UserSummary[]>(canUseInitialCache ? cachedSchedulerData.users : []);
   const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
+  const [fieldCourseAssignmentEnabled, setFieldCourseAssignmentEnabled] = useState<boolean>(
+    canUseInitialCache ? cachedSchedulerData.fieldCourseAssignmentEnabled : false
+  );
+  const [fieldCourseCodes, setFieldCourseCodes] = useState<string[]>(
+    canUseInitialCache ? cachedSchedulerData.fieldCourseCodes : []
+  );
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
   const [isMarkingSectionDone, setIsMarkingSectionDone] = useState(false);
   const [isEditingSection, setIsEditingSection] = useState(false);
@@ -346,6 +358,8 @@ export const useScheduler = () => {
       setUsers(cachedData.users);
       setSections(cachedData.sections);
       setSchedules(cachedData.schedules);
+      setFieldCourseAssignmentEnabled(cachedData.fieldCourseAssignmentEnabled);
+      setFieldCourseCodes(cachedData.fieldCourseCodes);
       if (!selectedSectionId && cachedData.sections.length > 0) {
         setSelectedSectionId(cachedData.sections[0].id);
       }
@@ -374,7 +388,8 @@ export const useScheduler = () => {
         name: r.room_code,
         departmentId: r.department_id,
         roomType: r.room_type,
-        status: r.status
+        status: r.status,
+        maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1
       }));
 
       const rawCourses = initialData.courses ?? initialData.subjects ?? [];
@@ -441,6 +456,8 @@ export const useScheduler = () => {
         users: initialData.users,
         sections: filteredSections,
         schedules: filteredSchedules,
+        fieldCourseAssignmentEnabled: !!initialData.field_course_assignment_enabled,
+        fieldCourseCodes: initialData.field_course_codes ?? [],
       };
     }, !canUseCachedData)
       .then((data) => {
@@ -454,6 +471,8 @@ export const useScheduler = () => {
         setUsers(data.users);
         setSections(data.sections);
         setSchedules(data.schedules);
+        setFieldCourseAssignmentEnabled(data.fieldCourseAssignmentEnabled);
+        setFieldCourseCodes(data.fieldCourseCodes);
         setSelectedSectionId((prev) => (prev && data.sections.some((sec) => sec.id === prev) ? prev : (data.sections[0]?.id ?? "")));
       })
       .catch(() => {
@@ -564,7 +583,8 @@ export const useScheduler = () => {
         name: r.room_code,
         departmentId: r.department_id,
         roomType: r.room_type,
-        status: r.status
+        status: r.status,
+        maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1
       }));
 
       const rawCourses = initialData.courses ?? initialData.subjects ?? [];
@@ -624,6 +644,8 @@ export const useScheduler = () => {
         users: initialData.users,
         sections: filteredSections,
         schedules: filteredSchedules,
+        fieldCourseAssignmentEnabled: !!initialData.field_course_assignment_enabled,
+        fieldCourseCodes: initialData.field_course_codes ?? [],
       };
 
       setCachedData<SchedulerCacheData>(schedulerCacheKey, freshData);
@@ -633,6 +655,8 @@ export const useScheduler = () => {
       setActiveTerm(term);
       setDepartments(initialData.departments);
       setUsers(initialData.users);
+      setFieldCourseAssignmentEnabled(!!initialData.field_course_assignment_enabled);
+      setFieldCourseCodes(initialData.field_course_codes ?? []);
       setSections(filteredSections);
       setSchedules(filteredSchedules);
       toast.success("Synchronized", "Successfully loaded fresh sections and schedules from database.");
@@ -903,14 +927,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
   const dropSubjectIsField = useMemo(() => {
     if (!dropSubject) return false;
     if (dropSubject.roomTypeRequired === "field") return true;
-    const code = dropSubject.code.toUpperCase();
-    const name = dropSubject.name.toUpperCase();
-    const category = String(dropSubject.category || "").toLowerCase();
-    if (["pathfit", "nstp", "rotc", "cwts", "lts"].includes(category)) return true;
-    return ["PATHFIT", "PATH FIT", "PATH-FIT", "NSTP", "ROTC", "CWTS", "LTS", "PE"].some(
-      (kw) => code.includes(kw) || name.includes(kw)
-    );
-  }, [dropSubject]);
+    if (!fieldCourseAssignmentEnabled) return false;
+    const configuredCodes = new Set(fieldCourseCodes.map((code) => code.trim().toUpperCase()));
+    return configuredCodes.has(dropSubject.code.trim().toUpperCase());
+  }, [dropSubject, fieldCourseAssignmentEnabled, fieldCourseCodes]);
 
   const listCategories: Subject["category"][] = ["major", "minor"];
 
@@ -971,7 +991,13 @@ departmentSectionProgress.every((section) => section.status === "completed");
   useEffect(() => {
     if (dropContext) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
-      const isFieldSubject = subject?.roomTypeRequired === "field";
+      const isFieldSubject = !!subject && (
+        subject.roomTypeRequired === "field"
+        || (
+          fieldCourseAssignmentEnabled
+          && fieldCourseCodes.map((code) => code.trim().toUpperCase()).includes(subject.code.trim().toUpperCase())
+        )
+      );
       const totalSlots = getSubjectTotalSlots(subject);
 
       const isMajor = subject?.category === "major";

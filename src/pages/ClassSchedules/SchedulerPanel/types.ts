@@ -101,6 +101,7 @@ export interface Room {
   departmentId: number | null;
   roomType: RoomType;
   status: RoomStatus;
+  maxConcurrentClasses?: number;
 }
 
 export interface ScheduleItem {
@@ -239,6 +240,7 @@ export interface ApiRoomRecord {
   room_type: RoomType;
   status: RoomStatus;
   department_id: number | null;
+  max_concurrent_classes?: number | string | null;
 }
 
 export interface ApiScheduleRecord {

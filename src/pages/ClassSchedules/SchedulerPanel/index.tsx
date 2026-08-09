@@ -73,10 +73,12 @@ export default function SchedulerPanel() {
         setSplitSessionEnabled={generateSchedule.setSplitSessionEnabled}
         selectedSplitSessionCourseIds={generateSchedule.selectedSplitSessionCourseIds}
         setSelectedSplitSessionCourseIds={generateSchedule.setSelectedSplitSessionCourseIds}
-        splitMinorEnabled={generateSchedule.splitMinorEnabled}
-        setSplitMinorEnabled={generateSchedule.setSplitMinorEnabled}
-        selectedMinorCourseIds={generateSchedule.selectedMinorCourseIds}
-        setSelectedMinorCourseIds={generateSchedule.setSelectedMinorCourseIds}
+        splitUnitsEnabled={generateSchedule.splitUnitsEnabled}
+        setSplitUnitsEnabled={generateSchedule.setSplitUnitsEnabled}
+        selectedSplitUnitCourseIds={generateSchedule.selectedSplitUnitCourseIds}
+        setSelectedSplitUnitCourseIds={generateSchedule.setSelectedSplitUnitCourseIds}
+        splitUnitsDelivery={generateSchedule.splitUnitsDelivery}
+        setSplitUnitsDelivery={generateSchedule.setSplitUnitsDelivery}
         splitGecEnabled={generateSchedule.splitGecEnabled}
         setSplitGecEnabled={generateSchedule.setSplitGecEnabled}
         selectedGecCourseIds={generateSchedule.selectedGecCourseIds}

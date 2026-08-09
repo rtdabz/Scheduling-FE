@@ -779,7 +779,7 @@ export default function SecretarySchedulingOperationsPage() {
                                     )}
 
                                     {/* Rendering Schedule Cards */}
-                                    {daySchedules.map((schedule) => {
+                                    {daySchedules.map((schedule, scheduleIndex) => {
                                       const startIdx = parseTimeToSlotIndex(schedule.start_time);
                                       const endIdx = parseTimeToSlotIndex(schedule.end_time);
                                       const top = startIdx * 24;
@@ -794,7 +794,14 @@ export default function SecretarySchedulingOperationsPage() {
 
                                       return (
                                         <div
-                                          key={schedule.id}
+                                          key={[
+                                            schedule.id ?? 'schedule',
+                                            schedule.section_id ?? 'section',
+                                            schedule.course?.id ?? schedule.subject?.id ?? 'course',
+                                            schedule.day ?? day,
+                                            schedule.start_time ?? scheduleIndex,
+                                            schedule.end_time ?? scheduleIndex,
+                                          ].join('-')}
                                           style={{
                                             top: `${top + 1}px`,
                                             height: `${height - 2}px`,
