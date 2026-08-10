@@ -86,12 +86,8 @@ export default function LoginPage() {
         <div className="relative z-20 flex flex-col items-center text-center max-w-lg">
           <img src={logo} alt="TCC Logo" className="w-28 h-28 object-contain rounded-full mb-6" />
           <h1 className="font-display text-4xl text-white font-bold mb-2">Tagoloan Community College</h1>
-          <p className="text-sidebar-text text-sm tracking-widest uppercase mb-6 opacity-80">
+          <p className="text-sidebar-text text-sm tracking-widest uppercase opacity-80">
             Academic Scheduling System
-          </p>
-          <div className="w-16 h-px bg-accent mb-6"></div>
-          <p className="text-sidebar-text text-lg italic opacity-90 font-display">
-            "Intelligent scheduling. Zero conflicts."
           </p>
         </div>
       </div>

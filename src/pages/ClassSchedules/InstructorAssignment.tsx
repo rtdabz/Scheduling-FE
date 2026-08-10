@@ -428,11 +428,14 @@ export default function InstructorAssignment() {
               <CalendarDays className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active assignment term</p>
-              <h2 className="mt-1 text-sm font-black text-[#4e0a10]">
-                {activeTerm ? `${activeTerm.semester} Semester · AY ${activeTerm.academic_year}` : "No active term selected"}
-              </h2>
-              <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active assignment term</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-xs font-bold shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  {activeTerm ? `${activeTerm.semester} Semester · AY ${activeTerm.academic_year}` : "No active term selected"}
+                </span>
+              </div>
+              <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
                 Use this workspace to assign instructors from your department to approved schedules offered to other departments.
               </p>
             </div>
@@ -536,7 +539,12 @@ export default function InstructorAssignment() {
                   {selectedDepartment.department_code} Instructor Assignment
                 </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
-                  {activeTerm && <span>{activeTerm.semester} Semester · AY {activeTerm.academic_year}</span>}
+                  {activeTerm && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      {activeTerm.semester} Semester &bull; AY {activeTerm.academic_year}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#C9952A]" /> Needs instructor</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Assigned</span>
                 </div>
