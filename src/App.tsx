@@ -23,7 +23,6 @@ const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprova
 const DeanFaculty = lazy(() => import('./pages/dean/Faculty'));
 const DeanRooms = lazy(() => import('./pages/dean/Rooms'));
 const DeanReports = lazy(() => import('./pages/dean/Reports'));
-const DeanUsers = lazy(() => import('./pages/dean/Users'));
 const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
 const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
 const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
@@ -143,7 +142,6 @@ export default function App() {
             <Route path="/dean/curricula" element={<CurriculumListPage />} />
             <Route path="/dean/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/dean/reports" element={<DeanReports />} />
-            <Route path="/dean/users" element={<DeanUsers />} />
 
             {/* Secretary Routes */}
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
