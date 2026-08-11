@@ -1,5 +1,6 @@
 export { default as ActivityFeed } from './ActivityFeed';
 export type { ActivityFeedItem } from './ActivityFeed';
+export { default as DashboardNotificationBanner } from './DashboardNotificationBanner';
 export { default as AttentionPanel } from './AttentionPanel';
 export type { AttentionItem, AttentionTone } from './AttentionPanel';
 export { default as ScheduleProgressCard } from './ScheduleProgressCard';

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
-import Skeleton from '../../components/ui/Skeleton';
+import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
@@ -557,23 +557,7 @@ export default function ProgramHeadDashboardPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-6">
-          {/* Skeleton Summary Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-7 w-8" />
-              </div>
-            ))}
-          </div>
-          {/* Skeleton Widgets */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Skeleton className="h-[340px] rounded-2xl" />
-            <Skeleton className="h-[340px] rounded-2xl" />
-            <Skeleton className="h-[340px] rounded-2xl" />
-          </div>
-        </div>
+        <DashboardSkeleton metricCount={6} widgetCount={3} variant="summary" />
       ) : (
         <div className="space-y-6">
           {/* Summary Metric Cards (6 Cards Grid) */}

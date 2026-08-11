@@ -7,6 +7,7 @@ import DropModal from "./Modals/DropModal";
 import FacultyModal from "./Modals/FacultyModal";
 import ClearAllModal from "./Modals/ClearAllModal";
 import SubmitApprovalModal from "./Modals/SubmitApprovalModal";
+import WithdrawSubmissionModal from "./Modals/WithdrawSubmissionModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
 import ScheduleImportModal from "./Modals/ScheduleImportModal";
@@ -50,6 +51,14 @@ export default function SchedulerPanel() {
       <FacultyModal {...scheduler} />
       <ClearAllModal {...scheduler} />
       <SubmitApprovalModal {...scheduler} />
+      <WithdrawSubmissionModal
+        isOpen={scheduler.isWithdrawSubmissionModalOpen}
+        sections={scheduler.departmentSectionProgress}
+        selectedSectionId={scheduler.selectedSectionId}
+        isWithdrawing={scheduler.isWithdrawingSubmission}
+        onConfirm={scheduler.confirmWithdrawSubmission}
+        onCancel={scheduler.cancelWithdrawSubmission}
+      />
       <RoomViewModal {...scheduler} />
       <ScheduleImportModal
         isOpen={isImportModalOpen}
@@ -73,14 +82,6 @@ export default function SchedulerPanel() {
         setSplitSessionEnabled={generateSchedule.setSplitSessionEnabled}
         selectedSplitSessionCourseIds={generateSchedule.selectedSplitSessionCourseIds}
         setSelectedSplitSessionCourseIds={generateSchedule.setSelectedSplitSessionCourseIds}
-        splitUnitsEnabled={generateSchedule.splitUnitsEnabled}
-        setSplitUnitsEnabled={generateSchedule.setSplitUnitsEnabled}
-        selectedSplitUnitCourseIds={generateSchedule.selectedSplitUnitCourseIds}
-        setSelectedSplitUnitCourseIds={generateSchedule.setSelectedSplitUnitCourseIds}
-        splitUnitsDelivery={generateSchedule.splitUnitsDelivery}
-        setSplitUnitsDelivery={generateSchedule.setSplitUnitsDelivery}
-        splitGecEnabled={generateSchedule.splitGecEnabled}
-        setSplitGecEnabled={generateSchedule.setSplitGecEnabled}
         selectedGecCourseIds={generateSchedule.selectedGecCourseIds}
         setSelectedGecCourseIds={generateSchedule.setSelectedGecCourseIds}
         sectionId={scheduler.selectedSectionId}

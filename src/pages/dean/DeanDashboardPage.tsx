@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell,
   BookOpen,
   CalendarDays,
   CheckSquare,
@@ -15,10 +14,12 @@ import {
   RotateCcw,
   TrendingUp,
 } from 'lucide-react';
-import Skeleton from '../../components/ui/Skeleton';
+import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
+import { DashboardNotificationBanner } from '../../components/overview';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import { useToast } from '../../context/ToastContext';
 
 interface Faculty {
@@ -168,6 +169,7 @@ export default function DeanDashboardPage() {
   const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedDashboardData?.schedules ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
+  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   // Timetable Calendar Filters and state for Dean's Department
   const daysOfWeek = useMemo(() => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], []);
@@ -499,7 +501,6 @@ export default function DeanDashboardPage() {
     return { total: deptFaculties.length, available, fullyLoaded, overloaded, probono };
   }, [deptFaculties]);
 
-  const pendingApprovals = visibleSchedules.filter(schedule => schedule.status === 'submitted' || schedule.status === 'pending').length;
 
   return (
     <div className="space-y-5 pb-8 transition-opacity duration-200 font-sans">
@@ -518,35 +519,16 @@ export default function DeanDashboardPage() {
         )}
       </div>
 
-      {/* Notice Pill */}
-      <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
-        pendingApprovals > 0
-          ? 'border-amber-200 bg-amber-50 text-amber-800'
-          : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      }`}>
-        <Bell className={`h-5 w-5 flex-shrink-0 ${pendingApprovals > 0 ? 'text-amber-600' : 'text-emerald-500'}`} />
-        <span>
-          {pendingApprovals > 0
-            ? `${pendingApprovals} schedule${pendingApprovals === 1 ? '' : 's'} currently in progress or awaiting dean endorsement.`
-            : 'All clear — department academic timetable operations are running normally.'}
-        </span>
-      </div>
+      <DashboardNotificationBanner
+        items={notificationItems}
+        unreadCount={unreadCount}
+        actionLabel="Open Approval Requests"
+        onAction={() => navigate('/dean/schedules/approval')}
+        onMarkAllRead={markAllAsRead}
+      />
 
       {isLoading ? (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-7 w-8" />
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Skeleton className="h-[400px] rounded-2xl" />
-            <Skeleton className="h-[400px] rounded-2xl" />
-          </div>
-        </div>
+        <DashboardSkeleton />
       ) : (
         /* Main Dashboard Grid matching schematic */
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">

@@ -23,24 +23,35 @@ interface UseConflictParams {
   rooms: Room[];
   subjects: Subject[];
   faculties: Faculty[];
+  fieldCourseAssignmentEnabled?: boolean;
+  fieldCourseCodes?: string[];
 }
 
 const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => {
   if (left.splitGroupId && right.splitGroupId) {
     return left.splitGroupId === right.splitGroupId;
   }
+
+  const leftMeetingKey = left.meetingType ?? left.meetingIndex ?? null;
+  const rightMeetingKey = right.meetingType ?? right.meetingIndex ?? null;
+  if (leftMeetingKey === null || rightMeetingKey === null) {
+    return false;
+  }
+
   return (
     left.termId === right.termId
     && left.sectionId === right.sectionId
     && (left.courseId ?? left.subjectId) === (right.courseId ?? right.subjectId)
     && left.departmentId === right.departmentId
     && (left.preferredPattern ?? null) === (right.preferredPattern ?? null)
+    && leftMeetingKey !== rightMeetingKey
   );
 };
 
-const getRoomCapacity = (room: Room | undefined): number => (
-  Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1)
-);
+const getRoomCapacity = (room: Room | undefined): number => {
+  if (room?.roomType === "field" || room?.roomType === "online") return 3;
+  return Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
+};
 
 const resolveRoom = (rooms: Room[], roomId: string): Room | undefined => {
   if (roomId === "field") {
@@ -69,9 +80,10 @@ const exceedsSharedRoomCapacity = (
   startSlot: number,
   endSlot: number,
   capacity: number,
-  excludeIds: string[] = []
+  excludeIds: string[] = [],
+  includeCandidate = true
 ): boolean => {
-  const events: Array<[number, number]> = [[startSlot, 1], [endSlot, -1]];
+  const events: Array<[number, number]> = includeCandidate ? [[startSlot, 1], [endSlot, -1]] : [];
 
   schedules.forEach((s) => {
     if (excludeIds.includes(s.id)) return;
@@ -173,6 +185,10 @@ export const getConflictedScheduleMap = (
 
         const sub2 = subjects.find((x) => String(x.id) === String(s2.courseId ?? s2.subjectId));
 
+        if (isLinkedMeetingBlock(s1, s2)) {
+          continue;
+        }
+
         // 1. Same Section conflict (Time overlap in same section)
         if (s1.sectionId && s1.sectionId === s2.sectionId) {
           const msg1 = `Section conflict: Overlaps with ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
@@ -182,13 +198,33 @@ export const getConflictedScheduleMap = (
         }
 
         // 2. Room conflict
-        if (s1.roomId && s1.roomId !== "online" && samePhysicalRoom(s1.roomId, s2.roomId, rooms)) {
+        if (
+          s1.roomId
+          && s2.roomId
+          && s1.mode !== "online"
+          && s2.mode !== "online"
+          && samePhysicalRoom(s1.roomId, s2.roomId, rooms)
+        ) {
           const room = resolveRoom(rooms, s1.roomId);
-          const isSharedField = room?.roomType === "field" || s1.roomId === "field";
-          const sameRoomSchedules = isSharedField
-            ? schedules.filter((item) => item.roomId && samePhysicalRoom(item.roomId, s1.roomId, rooms))
+          const isSharedField = room?.roomType === "field" || s1.roomId === "field" || s1.mode === "field" || s2.mode === "field";
+          const isSharedCapacityRoom = isSharedField;
+          const sharedCapacity = isSharedCapacityRoom ? 3 : getRoomCapacity(room);
+          const sameRoomSchedules = isSharedCapacityRoom
+            ? schedules.filter((item) =>
+                item.departmentId === s1.departmentId
+                && item.roomId
+                && samePhysicalRoom(item.roomId, s1.roomId, rooms)
+              )
             : schedules;
-          if (isSharedField && !exceedsSharedRoomCapacity(sameRoomSchedules, day, start, end, getRoomCapacity(room))) {
+          if (isSharedCapacityRoom && !exceedsSharedRoomCapacity(
+            sameRoomSchedules,
+            day,
+            start,
+            end,
+            sharedCapacity,
+            [],
+            false
+          )) {
             continue;
           }
           const roomName = room?.name ?? (isSharedField ? "FIELD" : "Selected room");
@@ -221,7 +257,9 @@ export const useConflict = ({
   draggedScheduleId,
   rooms,
   subjects,
-  faculties
+  faculties,
+  fieldCourseAssignmentEnabled = false,
+  fieldCourseCodes = []
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
     () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
@@ -266,16 +304,28 @@ export const useConflict = ({
     }
 
     // Room-type compatibility check
-    if (roomId) {
+    const subject = subjects.find((s) => String(s.id) === String(subjectId));
+    const candidateDepartmentId = subject?.departmentId ?? null;
+    const configuredFieldCourseCodes = new Set(
+      fieldCourseCodes.map((code) => code.trim().toUpperCase()).filter(Boolean)
+    );
+    const subjectRequiresField =
+      subject?.roomTypeRequired === "field"
+      || (
+        fieldCourseAssignmentEnabled
+        && !!subject?.code
+        && configuredFieldCourseCodes.has(subject.code.trim().toUpperCase())
+      );
+    const isOnlinePlacement = roomId === "online";
+    if (roomId && !isOnlinePlacement) {
       const room = resolveRoom(rooms, roomId);
-      const subject = subjects.find((s) => String(s.id) === String(subjectId));
       if (room?.roomType === "online") {
         return {
           conflictType: "room",
           message: `Room type mismatch: ${subject?.code ?? "This class"} must use a physical lecture or laboratory room for on-site delivery.`
         };
       }
-      if (room?.roomType === "field" && subject?.roomTypeRequired !== "field") {
+      if (room?.roomType === "field" && !subjectRequiresField) {
         return {
           conflictType: "room",
           message: `Room type mismatch: ${subject?.code ?? "This class"} must use FIELD only when the course requires field delivery.`
@@ -285,7 +335,12 @@ export const useConflict = ({
       const isMajorOrMinor = subject?.category === "major" || subject?.category === "minor";
       const isSplit = !!preferredPattern;
       if (!isSplit || !isMajorOrMinor) {
-        if (room?.roomType && subject?.roomTypeRequired && room.roomType !== subject.roomTypeRequired) {
+        if (
+          room?.roomType
+          && subject?.roomTypeRequired
+          && room.roomType !== subject.roomTypeRequired
+          && !(room.roomType === "field" && subjectRequiresField)
+        ) {
           return {
             conflictType: "room",
             message: `Room type mismatch: ${subject.code} requires a '${subject.roomTypeRequired}' room, but '${room.name}' is a '${room.roomType}' room.`
@@ -307,26 +362,33 @@ export const useConflict = ({
             message: `Section conflict: This section already has a class (${s.courseCode || s.subjectCode || "another class"}) scheduled at this time.`
           };
         }
-        if (roomId && roomId !== "online" && samePhysicalRoom(s.roomId, roomId, rooms)) {
+        if (roomId && !isOnlinePlacement && samePhysicalRoom(s.roomId, roomId, rooms)) {
           const room = resolveRoom(rooms, roomId);
-          const isSharedField = room?.roomType === "field" || roomId === "field";
-          const sameRoomSchedules = isSharedField
-            ? schedules.filter((item) => item.roomId && samePhysicalRoom(item.roomId, roomId, rooms))
+          const isSharedField = room?.roomType === "field" || roomId === "field" || subjectRequiresField;
+          const isSharedOnline = room?.roomType === "online" || roomId === "online";
+          const isSharedCapacityRoom = isSharedField || isSharedOnline;
+          const sharedCapacity = isSharedCapacityRoom ? 3 : getRoomCapacity(room);
+          const sameRoomSchedules = isSharedCapacityRoom
+            ? schedules.filter((item) =>
+                item.departmentId === candidateDepartmentId
+                && item.roomId
+                && samePhysicalRoom(item.roomId, roomId, rooms)
+              )
             : schedules;
-          if (isSharedField && !exceedsSharedRoomCapacity(
+          if (isSharedCapacityRoom && !exceedsSharedRoomCapacity(
             sameRoomSchedules,
             dayIndex,
             startSlot,
             endSlot,
-            getRoomCapacity(room),
+            sharedCapacity,
             excludeScheduleId ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId]) : []
           )) {
             continue;
           }
           return {
             conflictType: "room",
-            message: isSharedField
-              ? `Room capacity conflict: ${room?.name ?? "Selected room"} is already at its shared capacity (${getRoomCapacity(room)} concurrent classes).`
+            message: isSharedCapacityRoom
+              ? `Room capacity conflict: ${room?.name ?? "Selected room"} is already at this department's shared capacity (${sharedCapacity} concurrent classes).`
               : `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
           };
         }

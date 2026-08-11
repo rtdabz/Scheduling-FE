@@ -15,6 +15,7 @@ interface FacultyModalProps {
   handleAssignFaculty: (e: React.FormEvent) => void;
   handleRemoveFaculty: () => void;
   canManageScheduleFaculty: (schedule: ScheduleItem) => boolean;
+  getFacultyRestrictionMessage: (schedule: ScheduleItem) => string;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   subjects: Subject[];
   faculties: Faculty[];
@@ -31,6 +32,7 @@ export default function FacultyModal({
   handleAssignFaculty,
   handleRemoveFaculty,
   canManageScheduleFaculty,
+  getFacultyRestrictionMessage,
   checkFacultyConflict,
   subjects,
   faculties
@@ -61,6 +63,13 @@ export default function FacultyModal({
   const isSavingFaculty = facultyActionSlotId === schedule.id;
   const selectedFaculty = faculties.find((faculty) => faculty.id === facultyAssignmentPopup.facultyId);
   const canManageFaculty = canManageScheduleFaculty(schedule);
+  const restrictionMessage = getFacultyRestrictionMessage(schedule);
+  const assignedTeachingDepartmentLabel = subject?.teachingDepartmentCode
+    ? `${subject.teachingDepartmentCode} Only`
+    : subject?.teachingDepartmentName
+    ? `${subject.teachingDepartmentName} Only`
+    : "Assigned Department Only";
+  const hasAssignedTeachingDepartment = Boolean(subject?.teachingDepartmentId);
   const isSameAssignedFaculty = Boolean(schedule.facultyId && facultyAssignmentPopup.facultyId === schedule.facultyId);
   const meetingSchedules = schedules
     .filter((item) =>
@@ -153,9 +162,9 @@ export default function FacultyModal({
               <label className="text-sm font-bold text-gray-700 uppercase tracking-wide">
                 Eligible Instructor
               </label>
-              {!canManageFaculty ? (
+              {!canManageFaculty && hasAssignedTeachingDepartment ? (
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-slate-500">
-                  CAS Only
+                  {assignedTeachingDepartmentLabel}
                 </span>
               ) : schedule.facultyId && (
                 <span className="rounded-full bg-[#C9952A]/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-[#7a4c08]">
@@ -174,7 +183,7 @@ export default function FacultyModal({
                   isSavingFaculty || !canManageFaculty ? "cursor-not-allowed opacity-70" : ""
                 }`}
               >
-                <option value="">{canManageFaculty ? "Select an instructor" : "Only CAS can assign GEC subjects"}</option>
+                <option value="">{canManageFaculty ? "Select an instructor" : restrictionMessage}</option>
                 {faculties.map((faculty) => {
                   const conflict = checkFacultyConflict(faculty.id, schedule.id);
                   return (
@@ -214,7 +223,7 @@ export default function FacultyModal({
 
             {!canManageFaculty && (
               <p className="text-xs font-semibold text-slate-500">
-                This GEC subject is managed by CAS. You can view the assignment, but only CAS can change the instructor.
+                {restrictionMessage} You can view the assignment, but only that department can change the instructor.
               </p>
             )}
           </section>

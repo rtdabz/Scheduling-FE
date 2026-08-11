@@ -89,10 +89,6 @@ export default function LoginPage() {
           <p className="text-sidebar-text text-sm tracking-widest uppercase mb-6 opacity-80">
             Academic Scheduling System
           </p>
-          <div className="w-16 h-px bg-accent mb-6"></div>
-          <p className="text-sidebar-text text-lg italic opacity-90 font-display">
-            "Intelligent scheduling. Zero conflicts."
-          </p>
         </div>
       </div>
 

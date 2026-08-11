@@ -15,7 +15,7 @@ import {
   RotateCcw,
   TrendingUp,
 } from 'lucide-react';
-import Skeleton from '../../components/ui/Skeleton';
+import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
@@ -534,20 +534,7 @@ export default function SecretarySchedulingOperationsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-7 w-8" />
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Skeleton className="h-[400px] rounded-2xl" />
-            <Skeleton className="h-[400px] rounded-2xl" />
-          </div>
-        </div>
+        <DashboardSkeleton />
       ) : (
         /* Main Dashboard Grid matching VPAA schematic */
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
@@ -1131,7 +1118,7 @@ export default function SecretarySchedulingOperationsPage() {
                   ]).map((lvl: any) => {
                     const isCompleted = lvl.isComplete || lvl.percent === 100;
                     return (
-                      <div key={lvl.id} className="space-y-1 pb-1.5 border-b border-gray-100 last:border-0 last:pb-0">
+                      <div key={`${lvl.id ?? lvl.label}-${lvl.label}-${lvl.totalSections ?? 0}`} className="space-y-1 pb-1.5 border-b border-gray-100 last:border-0 last:pb-0">
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
                             <span className="font-extrabold text-gray-900 w-20 text-xs">{lvl.label}</span>

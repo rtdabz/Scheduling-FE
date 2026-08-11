@@ -53,6 +53,18 @@ const ScheduleCard = memo(function ScheduleCard({
     : schedule.mode === "online"
     ? "Online"
     : "Field";
+  const inferredMeetingType = schedule.meetingType
+    ?? (Number(subject.labHours ?? 0) > 0 ? "laboratory" : "lecture");
+  const meetingTypeLabel = inferredMeetingType === "laboratory"
+    ? "LAB"
+    : inferredMeetingType === "lecture"
+    ? "LEC"
+    : "";
+  const displayModeLabel = schedule.isHybrid
+    ? meetingTypeLabel ? `Hybrid ${meetingTypeLabel}` : "Hybrid"
+    : meetingTypeLabel && schedule.mode === "on-site"
+    ? `${modeLabel} ${meetingTypeLabel}`
+    : modeLabel;
   const isDraggingThis = draggedScheduleId === schedule.id;
   const hasFaculty = !!schedule.facultyId;
   const cardHeight = schedule.durationSlots * (slotHeight ?? 0);
@@ -110,10 +122,10 @@ const ScheduleCard = memo(function ScheduleCard({
               ? "top-full border-t-8 border-t-slate-900/95"
               : "bottom-full border-b-8 border-b-slate-900/95"
           }`} />
-          <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
+          <div className="flex items-start justify-between gap-2 border-b border-slate-700/80 pb-2">
             <div className="min-w-0">
-              <span className="font-extrabold text-[#C9952A] text-xs uppercase tracking-wider block truncate">{subject.code}</span>
-              <span className="font-semibold text-slate-100 text-xs block truncate">{subject.name}</span>
+              <span className="font-extrabold text-[#C9952A] text-xs uppercase tracking-wider block break-words whitespace-normal leading-tight">{subject.code}</span>
+              <span className="font-semibold text-slate-100 text-xs block break-words whitespace-normal leading-tight mt-0.5">{subject.name}</span>
             </div>
             <span className="text-[10px] bg-slate-800 text-slate-300 font-bold px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
               {subject.units} Units
@@ -123,21 +135,21 @@ const ScheduleCard = memo(function ScheduleCard({
           <div className="space-y-1.5 text-[11px] text-slate-300">
             <div className="flex items-center gap-2">
               <User className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
-              <span className="truncate">
+              <span className="min-w-0 break-words whitespace-normal leading-tight">
                 <strong className="text-slate-200">Instructor: </strong>
                 {hasFaculty ? schedule.facultyName : <span className="text-amber-400 italic">Unassigned</span>}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
-              <span className="truncate">
+              <span className="min-w-0 break-words whitespace-normal leading-tight">
                 <strong className="text-slate-200">Location: </strong>
                 {isRedundantRoomName ? modeLabel : roomDisplayName}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
-              <span className="truncate">
+              <span className="min-w-0 break-words whitespace-normal leading-tight">
                 <strong className="text-slate-200">Time: </strong>
                 {schedule.startTime} – {schedule.endTime}
               </span>
@@ -153,7 +165,7 @@ const ScheduleCard = memo(function ScheduleCard({
 
           <div className="pt-1.5 flex items-center gap-1.5 border-t border-slate-800">
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${modeBadgeClass}`}>
-              {schedule.isHybrid ? "On-Site / Online" : modeLabel}
+              {displayModeLabel}
             </span>
           </div>
         </div>
@@ -221,11 +233,11 @@ const ScheduleCard = memo(function ScheduleCard({
             <div className="flex items-center gap-1 shrink-0">
               {schedule.isHybrid ? (
                 <span className="text-[8px] rounded px-1.5 py-0.5 font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
-                  Hybrid
+                  {displayModeLabel}
                 </span>
               ) : (
                 <span className={`text-[8px] rounded px-1 py-0.5 font-bold shrink-0 ${modeBadgeClass}`}>
-                  {modeLabel}
+                  {displayModeLabel}
                 </span>
               )}
               <span className={`text-[8.5px] px-1 py-0.5 rounded font-bold shrink-0 ${gridStyles.badgeText}`}>
@@ -293,10 +305,10 @@ const ScheduleCard = memo(function ScheduleCard({
             ? "top-full border-t-8 border-t-slate-900/95"
             : "bottom-full border-b-8 border-b-slate-900/95"
         }`} />
-        <div className="flex items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
+        <div className="flex items-start justify-between gap-2 border-b border-slate-700/80 pb-2">
           <div className="min-w-0">
-            <span className="font-extrabold text-[#C9952A] text-xs uppercase tracking-wider block truncate">{subject.code}</span>
-            <span className="font-semibold text-slate-100 text-xs block truncate">{subject.name}</span>
+            <span className="font-extrabold text-[#C9952A] text-xs uppercase tracking-wider block break-words whitespace-normal leading-tight">{subject.code}</span>
+            <span className="font-semibold text-slate-100 text-xs block break-words whitespace-normal leading-tight mt-0.5">{subject.name}</span>
           </div>
           <span className="text-[10px] bg-slate-800 text-slate-300 font-bold px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
             {subject.units} Units
@@ -306,21 +318,21 @@ const ScheduleCard = memo(function ScheduleCard({
         <div className="space-y-1.5 text-[11px] text-slate-300">
           <div className="flex items-center gap-2">
             <User className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
-            <span className="truncate">
+            <span className="min-w-0 break-words whitespace-normal leading-tight">
               <strong className="text-slate-200">Instructor: </strong>
               {hasFaculty ? schedule.facultyName : <span className="text-amber-400 italic">Unassigned</span>}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <MapPin className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
-            <span className="truncate">
+            <span className="min-w-0 break-words whitespace-normal leading-tight">
               <strong className="text-slate-200">Location: </strong>
               {isRedundantRoomName ? modeLabel : roomDisplayName}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Clock className="w-3.5 h-3.5 text-[#C9952A] shrink-0" />
-            <span className="truncate">
+            <span className="min-w-0 break-words whitespace-normal leading-tight">
               <strong className="text-slate-200">Time: </strong>
               {schedule.startTime} – {schedule.endTime}
             </span>
@@ -336,7 +348,7 @@ const ScheduleCard = memo(function ScheduleCard({
 
         <div className="pt-1.5 flex items-center gap-1.5 border-t border-slate-800">
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${modeBadgeClass}`}>
-            {schedule.isHybrid ? "On-Site / Online" : modeLabel}
+            {displayModeLabel}
           </span>
         </div>
       </div>
@@ -398,28 +410,28 @@ const ScheduleCard = memo(function ScheduleCard({
       <div className="flex flex-col h-full justify-between min-w-0">
         {isCompact ? (
           <div className="flex flex-col justify-between h-full min-w-0">
-            <div className="flex items-center justify-between gap-1 min-w-0">
-              <span className={`text-[10px] font-black uppercase tracking-tight truncate min-w-0 flex-1 ${gridStyles.text}`} title={subject.code}>
+            <div className="flex items-start justify-between gap-1 min-w-0">
+              <span className={`text-[10px] font-black uppercase tracking-tight break-words whitespace-normal min-w-0 flex-1 leading-tight ${gridStyles.text}`} title={subject.code}>
                 {subject.code}
               </span>
-              <div className="flex items-center gap-0.5 shrink-0">
+              <div className="flex flex-wrap items-start justify-end gap-0.5 shrink-0 max-w-[58%]">
                 {schedule.isHybrid ? (
-                  <span className="text-[7px] rounded px-1 py-0.2 font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
-                    Hybrid
+                  <span className="text-[7px] rounded px-1 py-0.2 font-bold bg-blue-50 text-blue-700 border border-blue-100 break-words whitespace-normal text-right leading-tight">
+                    {displayModeLabel}
                   </span>
                 ) : (
-                  <span className={`text-[7px] rounded px-1 py-0.2 font-bold shrink-0 ${modeBadgeClass}`}>
-                    {modeLabel}
+                  <span className={`text-[7px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}>
+                    {displayModeLabel}
                   </span>
                 )}
-                <span className={`text-[7.5px] px-1 rounded font-bold shrink-0 ${gridStyles.badgeText}`}>
+                <span className={`text-[7.5px] px-1 rounded font-bold ${gridStyles.badgeText}`}>
                   {subject.units}u
                 </span>
               </div>
             </div>
-            <div className="flex items-center justify-between text-[8.5px] text-slate-500 truncate mt-0.5 gap-1">
+            <div className="flex items-start justify-between text-[8.5px] text-slate-500 mt-0.5 gap-1">
               {roomDisplayName ? (
-                <span className="truncate font-semibold">{roomDisplayName}</span>
+                <span className="break-words whitespace-normal font-semibold leading-tight min-w-0">{roomDisplayName}</span>
               ) : null}
               <span className={`shrink-0 text-slate-400 font-semibold ${!roomDisplayName ? "ml-auto" : ""}`}>
                 {schedule.startTime}
@@ -428,33 +440,33 @@ const ScheduleCard = memo(function ScheduleCard({
           </div>
         ) : (
           <div className="flex flex-col h-full justify-between min-w-0">
-            <div className="flex items-center justify-between gap-1 min-w-0">
-              <span className={`text-[11px] font-black uppercase tracking-tight truncate min-w-0 flex-1 ${gridStyles.text}`} title={subject.code}>
+            <div className="flex items-start justify-between gap-1 min-w-0">
+              <span className={`text-[11px] font-black uppercase tracking-tight break-words whitespace-normal min-w-0 flex-1 leading-tight ${gridStyles.text}`} title={subject.code}>
                 {subject.code}
               </span>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex flex-wrap items-start justify-end gap-1 shrink-0 max-w-[58%]">
                 {schedule.isHybrid ? (
-                  <span className="text-[8px] rounded px-1.5 py-0.5 font-bold bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
-                    Hybrid
+                  <span className="text-[8px] rounded px-1.5 py-0.5 font-bold bg-blue-50 text-blue-700 border border-blue-100 break-words whitespace-normal text-right leading-tight">
+                    {displayModeLabel}
                   </span>
                 ) : (
-                  <span className={`text-[8px] rounded px-1 py-0.5 font-bold shrink-0 ${modeBadgeClass}`}>
-                    {modeLabel}
+                  <span className={`text-[8px] rounded px-1 py-0.5 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}>
+                    {displayModeLabel}
                   </span>
                 )}
-                <span className={`text-[8.5px] px-1 py-0.5 rounded font-bold shrink-0 ${gridStyles.badgeText}`}>
+                <span className={`text-[8.5px] px-1 py-0.5 rounded font-bold ${gridStyles.badgeText}`}>
                   {subject.units}u
                 </span>
               </div>
             </div>
             
             {roomDisplayName ? (
-              <div className="text-[10px] text-slate-600 font-semibold truncate mt-0.5">
+              <div className="text-[10px] text-slate-600 font-semibold break-words whitespace-normal leading-tight mt-0.5">
                 {roomDisplayName}
               </div>
             ) : null}
             
-            <div className="text-[9.5px] text-slate-500 font-medium truncate mt-auto leading-none pt-0.5">
+            <div className="text-[9.5px] text-slate-500 font-medium break-words whitespace-normal mt-auto leading-tight pt-0.5">
               {schedule.startTime} – {schedule.endTime}
             </div>
           </div>
@@ -478,3 +490,4 @@ const ScheduleCard = memo(function ScheduleCard({
 });
 
 export default ScheduleCard;
+

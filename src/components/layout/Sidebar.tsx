@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Skeleton from '../ui/Skeleton';
 import type { NavSection, NavItem } from '../../navigation/types';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, LogOut, RefreshCw, Settings, User, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, X } from 'lucide-react';
 import api from '../../lib/api';
-import { useToast } from '../../context/ToastContext';
-import { clearDataCache } from '../../lib/dataCache';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -53,16 +51,11 @@ const formatRole = (role?: string): string => {
 
 export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: SidebarProps) {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { toast } = useToast();
   const user = getStoredUser();
   const role = user?.role?.toLowerCase() ?? '';
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [showProfile, setShowProfile] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (role !== 'dean' && role !== 'vpaa') {
@@ -98,17 +91,6 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
     };
   }, [role]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setShowProfile(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const toggleExpand = (label: string) => {
     setExpandedItems((prev) => ({
       ...prev,
@@ -126,26 +108,6 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
       return expandedItems[item.label];
     }
     return isChildActive(item);
-  };
-
-  const handleLogout = async () => {
-    if (isLoggingOut) return;
-
-    setIsLoggingOut(true);
-    try {
-      await api.post('/logout');
-    } catch {
-      setShowProfile(false);
-    } finally {
-      clearDataCache();
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('user');
-      toast.success('Logged Out', 'You have been successfully signed out.');
-      navigate('/');
-      setIsLoggingOut(false);
-    }
   };
 
   return (
@@ -314,18 +276,12 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
       </nav>
 
       <div className="flex-shrink-0 border-t border-white/10 p-3">
-        <div className="relative" ref={profileRef} id="sidebar-profile">
-          <button
-            type="button"
-            onClick={() => {
-              setShowProfile((current) => !current);
-            }}
-            title="Open user profile menu"
-            className={`flex w-full items-center rounded-xl border border-transparent p-1 transition-all duration-300 hover:border-white/5 hover:bg-white/10 ${
+        <div id="sidebar-profile">
+          <div
+            title={isOpen ? undefined : `${user?.name || 'Administrator'} - ${formatRole(user?.role)}`}
+            className={`flex w-full items-center rounded-xl border border-transparent p-1 ${
               isOpen ? 'gap-3 pr-3' : 'justify-center'
-            } ${showProfile ? 'border-white/10 bg-white/10' : ''}`}
-            aria-label="Open user menu"
-            aria-expanded={showProfile}
+            }`}
           >
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] shadow-sm ring-2 ring-white/10">
               <span className="font-display text-sm font-bold text-white">
@@ -343,72 +299,7 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
                 </span>
               </div>
             )}
-
-            {isOpen && (
-              <ChevronsUpDown className={`h-4 w-4 flex-shrink-0 text-[#E8D5C4]/60 transition-colors duration-200 ${showProfile ? 'text-[#C9952A]' : ''}`} />
-            )}
-          </button>
-
-          {showProfile && (
-            <div className={`absolute z-50 overflow-hidden rounded-2xl border border-slate-200/80 bg-[#F7F4F0] shadow-2xl transition-all duration-200 ${
-              isOpen 
-                ? 'bottom-full left-0 right-0 mb-2 w-full' 
-                : 'bottom-0 left-full ml-3 w-60'
-            }`}>
-              <div className="flex flex-col gap-0.5 border-b border-gray-100 bg-gray-50/50 p-4">
-                <p className="text-sm font-bold leading-tight text-gray-800">{user?.name || 'Administrator'}</p>
-                <p className="truncate text-xs font-medium text-gray-500">{user?.username || 'admin'}@tcc.edu.ph</p>
-                <span className="mt-1.5 inline-flex w-fit rounded-full border border-[#4e0a10]/10 bg-[#4e0a10]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#7B1113]">
-                  {formatRole(user?.role)}
-                </span>
-              </div>
-              <div className="space-y-0.5 p-2">
-                <button
-                  title="View profile details"
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-semibold text-gray-700 transition-all duration-200 hover:bg-[#4e0a10]/5 hover:text-[#7B1113]"
-                >
-                  <User size={16} className="text-[#C9952A]" /> My Profile
-                </button>
-                <button
-                  title="Configure settings"
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-semibold text-gray-700 transition-all duration-200 hover:bg-[#4e0a10]/5 hover:text-[#7B1113]"
-                >
-                  <Settings size={16} className="text-[#C9952A]" /> Settings
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent('restart-tour'));
-                    setShowProfile(false);
-                  }}
-                  title="Restart guided tour"
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-bold text-[#C9952A] transition-all duration-200 hover:bg-[#C9952A]/10"
-                >
-                  <RefreshCw size={16} className="text-[#C9952A]" /> Restart Tour
-                </button>
-              </div>
-              <div className="border-t border-gray-100 p-2">
-                <button
-                  type="button"
-                  disabled={isLoggingOut}
-                  onClick={handleLogout}
-                  title="Sign out of the system"
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-bold text-red-600 transition-all duration-200 hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {isLoggingOut ? (
-                    <>
-                      <span className="h-4 w-4 rounded-full border-2 border-red-600 border-t-transparent animate-spin" />
-                      Signing out...
-                    </>
-                  ) : (
-                    <>
-                      <LogOut size={16} /> Log Out
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

@@ -16,6 +16,8 @@ const VpaaUsers = lazy(() => import('./pages/vpaa/Users'));
 const Departments = lazy(() => import('./pages/vpaa/Departments'));
 const VpaaReports = lazy(() => import('./pages/vpaa/Reports'));
 const Settings = lazy(() => import('./pages/vpaa/Settings'));
+const DepartmentCourseAssignments = lazy(() => import('./pages/vpaa/DepartmentCourseAssignments'));
+const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
 
 // Other Role Pages
 const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
@@ -130,6 +132,7 @@ export default function App() {
             <Route path="/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
+            <Route path="/department-course-assignments" element={<DepartmentCourseAssignments />} />
             <Route path="/reports" element={<VpaaReports />} />
             <Route path="/settings" element={<Settings />} />
 
@@ -144,6 +147,7 @@ export default function App() {
             <Route path="/dean/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/dean/reports" element={<DeanReports />} />
             <Route path="/dean/users" element={<DeanUsers />} />
+            <Route path="/dean/settings" element={<AccountSettingsPage />} />
 
             {/* Secretary Routes */}
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
@@ -169,6 +173,7 @@ export default function App() {
             <Route path="/program_head/curricula/:id" element={<CurriculumDetailPage />} />
             <Route path="/program_head/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />
+            <Route path="/program_head/settings" element={<AccountSettingsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

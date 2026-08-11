@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 
 export interface ActivityFeedItem {
   id: number;
+  type?: string;
   title?: string;
   action: string;
   timestamp: string;

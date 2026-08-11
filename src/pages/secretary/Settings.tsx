@@ -1,10 +1,11 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, CalendarDays, ChevronDown, FlaskConical, Loader2, Plus, SlidersHorizontal, SplitSquareVertical, Trash2, TreePine } from 'lucide-react';
+import { BookOpen, CalendarDays, ChevronDown, FlaskConical, Loader2, SlidersHorizontal, SplitSquareVertical, TreePine } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import AccountSettingsPanel from '../../components/settings/AccountSettingsPanel';
 
 interface SchedulingSettings {
   department_id: number;
@@ -17,25 +18,9 @@ interface SchedulingSettings {
   custom_lab_duration_other_enabled: boolean;
   gec_split_schedule_override_enabled: boolean;
   force_schedule_reuse_enabled: boolean;
+  field_evening_schedule_enabled: boolean;
+  sunday_online_only_enabled: boolean;
   lecture_lab_available: boolean;
-  forced_day_courses: ForcedDayCourse[];
-  forced_day_rules: ForcedDayRule[];
-  forced_schedule_course_options: ForcedDayCourse[];
-  forced_schedule_course_codes: string[];
-  field_course_assignment_enabled: boolean;
-  field_course_options: ForcedDayCourse[];
-  field_course_codes: string[];
-}
-
-interface ForcedDayCourse {
-  id: number;
-  code: string;
-  name: string;
-}
-
-interface ForcedDayRule {
-  course_id: number;
-  day: string;
 }
 
 interface PendingConfirmation {
@@ -191,8 +176,6 @@ export default function SecretarySettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
-  const [isFieldCoursePickerOpen, setIsFieldCoursePickerOpen] = useState(false);
-  const [fieldCourseSearch, setFieldCourseSearch] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -215,7 +198,7 @@ export default function SecretarySettings() {
     };
   }, [toast]);
 
-  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'split_units_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'force_schedule_reuse_enabled' | 'forced_day_rules' | 'forced_schedule_course_codes' | 'field_course_assignment_enabled' | 'field_course_codes'>>) => {
+  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'split_units_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'force_schedule_reuse_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled'>>) => {
     if (!settings) {
       return;
     }
@@ -244,29 +227,9 @@ export default function SecretarySettings() {
   const customLab5HoursEnabled = !!settings?.custom_lab_duration_5_hours_enabled;
   const customLabOtherEnabled = !!settings?.custom_lab_duration_other_enabled;
   const gecSplitEnabled = !!settings?.gec_split_schedule_override_enabled;
+  const fieldEveningEnabled = !!settings?.field_evening_schedule_enabled;
+  const sundayOnlineOnlyEnabled = settings?.sunday_online_only_enabled ?? true;
   const lectureLabAvailable = !!settings?.lecture_lab_available;
-  const forcedDayCourses = settings?.forced_day_courses ?? [];
-  const forcedDayRules = settings?.forced_day_rules ?? [];
-  const forcedScheduleCourseOptions = settings?.forced_schedule_course_options ?? [];
-  const forcedScheduleCourseCodes = settings?.forced_schedule_course_codes ?? [];
-  const fieldCourseAssignmentEnabled = !!settings?.field_course_assignment_enabled;
-  const fieldCourseOptions = settings?.field_course_options ?? [];
-  const fieldCourseCodes = settings?.field_course_codes ?? [];
-  const availableForcedDayCourses = forcedDayCourses.filter(
-    (course) => !forcedDayRules.some((rule) => rule.course_id === course.id)
-  );
-  const availableForcedScheduleCourses = forcedScheduleCourseOptions.filter(
-    (course) => !forcedScheduleCourseCodes.includes(course.code)
-  );
-  const availableFieldCourses = fieldCourseOptions.filter(
-    (course) => !fieldCourseCodes.includes(course.code)
-  );
-  const filteredAvailableFieldCourses = availableFieldCourses.filter((course) => {
-    const term = fieldCourseSearch.trim().toLowerCase();
-    if (!term) return true;
-    return course.code.toLowerCase().includes(term) || course.name.toLowerCase().includes(term);
-  });
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const handleDropdownToggle = (id: string) => {
     setOpenDropdown((current) => (current === id ? null : id));
   };
@@ -278,18 +241,11 @@ export default function SecretarySettings() {
     setPendingConfirmation(null);
     action?.();
   };
-  const saveForcedDayRules = (nextRules: ForcedDayRule[]) => {
-    updateSetting({ forced_day_rules: nextRules });
-  };
-  const saveForcedScheduleCourseCodes = (nextCourseCodes: string[]) => {
-    updateSetting({ forced_schedule_course_codes: nextCourseCodes });
-  };
-  const saveFieldCourseCodes = (nextCourseCodes: string[]) => {
-    updateSetting({ field_course_codes: nextCourseCodes });
-  };
-
   return (
     <div className="p-1">
+      <div className="mb-3">
+        <AccountSettingsPanel />
+      </div>
       <div className="grid max-w-8xl items-start gap-3 rounded-xl shadow-sm lg:grid-cols-2">
         <div className="space-y-3">
           <SettingsDropdown
@@ -400,6 +356,62 @@ export default function SecretarySettings() {
             }}
           />
           <SettingToggleCard
+            title="Allow Field Subjects in Evening"
+            description="Allow field subjects to use the 5 PM to 7 PM range when daytime capacity is not enough."
+            note="Disabled: field subjects are limited to 7 AM-5 PM. Enabled: 5 PM-7 PM is allowed but not preferred."
+            enabled={fieldEveningEnabled}
+            isLoading={isLoading}
+            isSaving={isSaving}
+            icon={TreePine}
+            onToggle={() => {
+              if (!fieldEveningEnabled) {
+                requestConfirmation({
+                  title: 'Allow field subjects in evening?',
+                  message: 'Field subjects may use 5 PM-7 PM only as extra capacity. The generator will still prefer 7 AM-5 PM when possible.',
+                  confirmLabel: 'Allow Evening',
+                  variant: 'info',
+                  onConfirm: () => updateSetting({ field_evening_schedule_enabled: true }),
+                });
+                return;
+              }
+              requestConfirmation({
+                title: 'Disable field evening scheduling?',
+                message: 'Field subjects will be limited to schedules ending by 5 PM during generation.',
+                confirmLabel: 'Disable Evening',
+                variant: 'maroon',
+                onConfirm: () => updateSetting({ field_evening_schedule_enabled: false }),
+              });
+            }}
+          />
+          <SettingToggleCard
+            title="Sunday Online Only"
+            description="Require Sunday major-course meetings to use online delivery."
+            note="Enabled by default: Sunday schedules are online. Turn off only if your department allows physical Sunday classes."
+            enabled={sundayOnlineOnlyEnabled}
+            isLoading={isLoading}
+            isSaving={isSaving}
+            icon={CalendarDays}
+            onToggle={() => {
+              if (!sundayOnlineOnlyEnabled) {
+                requestConfirmation({
+                  title: 'Enable Sunday Online Only?',
+                  message: 'Major courses scheduled on Sunday will be required to use online delivery.',
+                  confirmLabel: 'Enable Rule',
+                  variant: 'info',
+                  onConfirm: () => updateSetting({ sunday_online_only_enabled: true }),
+                });
+                return;
+              }
+              requestConfirmation({
+                title: 'Allow physical Sunday classes?',
+                message: 'The generator and validator may allow on-site major-course meetings on Sunday for this department.',
+                confirmLabel: 'Allow Sunday On-site',
+                variant: 'warning',
+                onConfirm: () => updateSetting({ sunday_online_only_enabled: false }),
+              });
+            }}
+          />
+          <SettingToggleCard
             title="Custom Lab Duration"
             description="Allow selected lab courses to use custom lab meeting lengths."
             note="If Lecture + Lab is already active, use this only when the lab needs longer time."
@@ -499,324 +511,6 @@ export default function SecretarySettings() {
           )}
           </SettingToggleCard>
           </SettingsDropdown>
-
-          <SettingsDropdown
-            id="forced-day-schedule"
-            title="Forced Day Schedule"
-            description="Assign selected courses to a required generation day."
-            icon={CalendarDays}
-            isOpen={openDropdown === 'forced-day-schedule'}
-            onToggle={handleDropdownToggle}
-          >
-            <section className="border border-slate-200 bg-white shadow-sm" style={{ borderRadius: 10 }}>
-              <div className="px-5 py-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#6b0f1a]/10 text-[#6b0f1a]" style={{ borderRadius: 8 }}>
-                    <BookOpen size={16} />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Forced Schedule Courses</h2>
-                    <p className="mt-0.5 text-xs leading-5 text-slate-600">
-                      Add course codes that must be included when generation runs.
-                    </p>
-                    <p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">
-                      Selection is based on course code.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {forcedScheduleCourseCodes.length === 0 ? (
-                    <div className="border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-500" style={{ borderRadius: 8 }}>
-                      No forced schedule courses yet.
-                    </div>
-                  ) : (
-                    forcedScheduleCourseCodes.map((courseCode, index) => {
-                      const selectedCourse = forcedScheduleCourseOptions.find((course) => course.code === courseCode);
-                      return (
-                        <div key={`${courseCode}-${index}`} className="grid gap-2 border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_32px]" style={{ borderRadius: 8 }}>
-                          <select
-                            value={courseCode}
-                            disabled={isSaving}
-                            onChange={(event) => {
-                              const nextCode = event.target.value;
-                              requestConfirmation({
-                                title: `Use ${nextCode} as a forced course?`,
-                                message: 'This course code will be included automatically during generation.',
-                                confirmLabel: 'Save Course',
-                                variant: 'info',
-                                onConfirm: () => saveForcedScheduleCourseCodes(forcedScheduleCourseCodes.map((item, itemIndex) =>
-                                  itemIndex === index ? nextCode : item
-                                )),
-                              });
-                            }}
-                            className="h-9 min-w-0 border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#6b0f1a] disabled:cursor-not-allowed disabled:bg-slate-50"
-                            style={{ borderRadius: 8 }}
-                          >
-                            {selectedCourse && (
-                              <option value={selectedCourse.code}>{selectedCourse.code} - {selectedCourse.name}</option>
-                            )}
-                            {availableForcedScheduleCourses.map((course) => (
-                              <option key={course.id} value={course.code}>{course.code} - {course.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={isSaving}
-                            onClick={() => saveForcedScheduleCourseCodes(forcedScheduleCourseCodes.filter((_, itemIndex) => itemIndex !== index))}
-                            className="flex h-9 items-center justify-center border border-red-100 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            style={{ borderRadius: 8 }}
-                            aria-label="Remove forced schedule course"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={isSaving || availableForcedScheduleCourses.length === 0}
-                  onClick={() => {
-                    const nextCourse = availableForcedScheduleCourses[0];
-                    if (!nextCourse) return;
-                    requestConfirmation({
-                      title: `Add ${nextCourse.code} as a forced course?`,
-                      message: 'This course code will always be included when generation runs for matching curriculum schedules.',
-                      confirmLabel: 'Add Course',
-                      variant: 'info',
-                      onConfirm: () => saveForcedScheduleCourseCodes([...forcedScheduleCourseCodes, nextCourse.code]),
-                    });
-                  }}
-                  className="mt-3 inline-flex h-9 items-center gap-2 border border-[#6b0f1a]/20 bg-[#6b0f1a]/5 px-3 text-xs font-bold text-[#6b0f1a] transition-colors hover:bg-[#6b0f1a]/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ borderRadius: 8 }}
-                >
-                  <Plus size={14} />
-                  Add Course Code
-                </button>
-              </div>
-            </section>
-
-            <section className="border border-slate-200 bg-white shadow-sm" style={{ borderRadius: 10 }}>
-              <div className="px-5 py-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#6b0f1a]/10 text-[#6b0f1a]" style={{ borderRadius: 8 }}>
-                    <CalendarDays size={16} />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Forced Day Rules</h2>
-                    <p className="mt-0.5 text-xs leading-5 text-slate-600">
-                      Choose only the courses that must stay on a specific day.
-                    </p>
-                    <p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">
-                      Example: force NSTP, ROTC, CWTS, or LTS to Saturday when required.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {forcedDayRules.length === 0 ? (
-                    <div className="border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-500" style={{ borderRadius: 8 }}>
-                      No forced day rules yet.
-                    </div>
-                  ) : (
-                    forcedDayRules.map((rule, index) => {
-                      const selectedCourse = forcedDayCourses.find((course) => course.id === rule.course_id);
-                      return (
-                        <div key={`${rule.course_id}-${index}`} className="grid gap-2 border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_150px_32px]" style={{ borderRadius: 8 }}>
-                          <select
-                            value={rule.course_id}
-                            disabled={isSaving}
-                            onChange={(event) => {
-                              const courseId = Number(event.target.value);
-                              const nextCourse = forcedDayCourses.find((course) => course.id === courseId);
-                              requestConfirmation({
-                                title: `Force ${nextCourse?.code ?? 'this course'} to a day?`,
-                                message: 'Only use this for courses that must be generated on one required day.',
-                                confirmLabel: 'Save Rule',
-                                variant: 'warning',
-                                onConfirm: () => saveForcedDayRules(forcedDayRules.map((item, itemIndex) =>
-                                  itemIndex === index ? { ...item, course_id: courseId } : item
-                                )),
-                              });
-                            }}
-                            className="h-9 min-w-0 border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#6b0f1a] disabled:cursor-not-allowed disabled:bg-slate-50"
-                            style={{ borderRadius: 8 }}
-                          >
-                            {selectedCourse && (
-                              <option value={selectedCourse.id}>{selectedCourse.code} - {selectedCourse.name}</option>
-                            )}
-                            {availableForcedDayCourses.map((course) => (
-                              <option key={course.id} value={course.id}>{course.code} - {course.name}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={rule.day}
-                            disabled={isSaving}
-                            onChange={(event) => {
-                              const nextDay = event.target.value;
-                              requestConfirmation({
-                                title: `Force this course to ${nextDay}?`,
-                                message: 'The generator will try to keep this selected course on that day.',
-                                confirmLabel: 'Save Day',
-                                variant: 'warning',
-                                onConfirm: () => saveForcedDayRules(forcedDayRules.map((item, itemIndex) =>
-                                  itemIndex === index ? { ...item, day: nextDay } : item
-                                )),
-                              });
-                            }}
-                            className="h-9 border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#6b0f1a] disabled:cursor-not-allowed disabled:bg-slate-50"
-                            style={{ borderRadius: 8 }}
-                          >
-                            {days.map((day) => (
-                              <option key={day} value={day}>{day}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={isSaving}
-                            onClick={() => saveForcedDayRules(forcedDayRules.filter((_, itemIndex) => itemIndex !== index))}
-                            className="flex h-9 items-center justify-center border border-red-100 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            style={{ borderRadius: 8 }}
-                            aria-label="Remove forced day rule"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={isSaving || availableForcedDayCourses.length === 0}
-                  onClick={() => {
-                    const nextCourse = availableForcedDayCourses[0];
-                    if (!nextCourse) return;
-                    requestConfirmation({
-                      title: `Force ${nextCourse.code} to Saturday?`,
-                      message: 'Use this only for courses that must stay on a specific day, such as NSTP, ROTC, CWTS, or LTS when required.',
-                      confirmLabel: 'Add Rule',
-                      variant: 'warning',
-                      onConfirm: () => saveForcedDayRules([...forcedDayRules, { course_id: nextCourse.id, day: 'Saturday' }]),
-                    });
-                  }}
-                  className="mt-3 inline-flex h-9 items-center gap-2 border border-[#6b0f1a]/20 bg-[#6b0f1a]/5 px-3 text-xs font-bold text-[#6b0f1a] transition-colors hover:bg-[#6b0f1a]/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ borderRadius: 8 }}
-                >
-                  <Plus size={14} />
-                  Add Course Day
-                </button>
-              </div>
-            </section>
-          </SettingsDropdown>
-        </div>
-
-        <div className="space-y-3">
-          <SettingsDropdown
-          id="field-based-scheduling"
-          title="Field-Based Scheduling"
-          description="Manage course codes that should be treated as FIELD schedules."
-          icon={TreePine}
-          isOpen={openDropdown === 'field-based-scheduling'}
-          onToggle={handleDropdownToggle}
-        >
-          <SettingToggleCard
-            title="Field-Based Course Assignment"
-            description="Treat selected course codes as FIELD schedules across all departments."
-            note="When off, selected courses can use lecture rooms or online delivery, but not laboratories unless the course requires a lab."
-            enabled={fieldCourseAssignmentEnabled}
-            isLoading={isLoading}
-            isSaving={isSaving}
-            icon={TreePine}
-            onToggle={() => {
-              if (!fieldCourseAssignmentEnabled) {
-                requestConfirmation({
-                  title: 'Enable Field-Based Course Assignment?',
-                  message: 'Selected course codes will automatically use FIELD during schedule generation and manual placement.',
-                  confirmLabel: 'Enable Field Policy',
-                  variant: 'warning',
-                  onConfirm: () => updateSetting({ field_course_assignment_enabled: true }),
-                });
-                return;
-              }
-              requestConfirmation({
-                title: 'Turn off Field-Based Course Assignment?',
-                message: 'Selected course codes will no longer be forced to FIELD. They can use classrooms or online delivery while staying conflict-free.',
-                confirmLabel: 'Turn Off',
-                variant: 'maroon',
-                onConfirm: () => updateSetting({ field_course_assignment_enabled: false }),
-              });
-            }}
-          >
-            <div className="space-y-2">
-              {fieldCourseCodes.length === 0 ? (
-                <div className="border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-500" style={{ borderRadius: 8 }}>
-                  No field-based courses selected.
-                </div>
-              ) : (
-                fieldCourseCodes.map((courseCode, index) => {
-                  const selectedCourse = fieldCourseOptions.find((course) => course.code === courseCode);
-                  return (
-                    <div key={`${courseCode}-${index}`} className="grid gap-2 border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_32px]" style={{ borderRadius: 8 }}>
-                      <select
-                        value={courseCode}
-                        disabled={isSaving}
-                        onChange={(event) => {
-                          const nextCode = event.target.value;
-                          requestConfirmation({
-                            title: `Treat ${nextCode} as field-based?`,
-                            message: 'This course code will automatically use FIELD while the field-course policy is enabled.',
-                            confirmLabel: 'Save Course',
-                            variant: 'info',
-                            onConfirm: () => saveFieldCourseCodes(fieldCourseCodes.map((item, itemIndex) =>
-                              itemIndex === index ? nextCode : item
-                            )),
-                          });
-                        }}
-                        className="h-9 min-w-0 border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#6b0f1a] disabled:cursor-not-allowed disabled:bg-slate-50"
-                        style={{ borderRadius: 8 }}
-                      >
-                        {selectedCourse && (
-                          <option value={selectedCourse.code}>{selectedCourse.code} - {selectedCourse.name}</option>
-                        )}
-                        {availableFieldCourses.map((course) => (
-                          <option key={course.id} value={course.code}>{course.code} - {course.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() => saveFieldCourseCodes(fieldCourseCodes.filter((_, itemIndex) => itemIndex !== index))}
-                        className="flex h-9 items-center justify-center border border-red-100 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        style={{ borderRadius: 8 }}
-                        aria-label="Remove field-based course"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            <button
-              type="button"
-              disabled={isSaving || availableFieldCourses.length === 0}
-              onClick={() => {
-                setFieldCourseSearch('');
-                setIsFieldCoursePickerOpen(true);
-              }}
-              className="mt-3 inline-flex h-9 items-center gap-2 border border-[#6b0f1a]/20 bg-[#6b0f1a]/5 px-3 text-xs font-bold text-[#6b0f1a] transition-colors hover:bg-[#6b0f1a]/10 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ borderRadius: 8 }}
-            >
-              <Plus size={14} />
-              Add Field Course
-            </button>
-          </SettingToggleCard>
-          </SettingsDropdown>
         </div>
       </div>
       <ConfirmModal
@@ -830,80 +524,6 @@ export default function SecretarySettings() {
         onCancel={() => setPendingConfirmation(null)}
         onConfirm={runConfirmedAction}
       />
-      {isFieldCoursePickerOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setIsFieldCoursePickerOpen(false);
-          }}
-        >
-          <div className="w-full max-w-lg overflow-hidden bg-white shadow-2xl" style={{ borderRadius: 10 }}>
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-              <div className="flex min-w-0 gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#6b0f1a]/10 text-[#6b0f1a]" style={{ borderRadius: 8 }}>
-                  <TreePine size={16} />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">Choose Field-Based Course</h2>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500">
-                    Select the course code that should automatically use FIELD.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsFieldCoursePickerOpen(false)}
-                className="h-8 px-3 text-xs font-bold text-slate-500 hover:text-slate-800"
-              >
-                Close
-              </button>
-            </div>
-            <div className="p-4">
-              <input
-                value={fieldCourseSearch}
-                onChange={(event) => setFieldCourseSearch(event.target.value)}
-                placeholder="Search course code or name"
-                className="h-10 w-full border border-slate-200 px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#6b0f1a]"
-                style={{ borderRadius: 8 }}
-                autoFocus
-              />
-              <div className="mt-3 max-h-80 space-y-2 overflow-auto pr-1">
-                {filteredAvailableFieldCourses.length === 0 ? (
-                  <div className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs font-medium text-slate-500" style={{ borderRadius: 8 }}>
-                    No available course codes found.
-                  </div>
-                ) : (
-                  filteredAvailableFieldCourses.map((course) => (
-                    <button
-                      key={course.id}
-                      type="button"
-                      disabled={isSaving}
-                      onClick={() => {
-                        setIsFieldCoursePickerOpen(false);
-                        requestConfirmation({
-                          title: `Add ${course.code} as field-based?`,
-                          message: 'This course code will automatically use FIELD while the field-course policy is enabled.',
-                          confirmLabel: 'Add Course',
-                          variant: 'info',
-                          onConfirm: () => saveFieldCourseCodes([...fieldCourseCodes, course.code]),
-                        });
-                      }}
-                      className="flex w-full items-center justify-between gap-3 border border-slate-200 bg-white px-3 py-2 text-left transition-colors hover:border-[#6b0f1a]/30 hover:bg-[#6b0f1a]/5 disabled:cursor-not-allowed disabled:opacity-60"
-                      style={{ borderRadius: 8 }}
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-xs font-black text-slate-900">{course.code}</span>
-                        <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500">{course.name}</span>
-                      </span>
-                      <Plus size={14} className="shrink-0 text-[#6b0f1a]" />
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Loader2, Printer, Send, Upload, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Loader2, Printer, RotateCcw, Send, Upload, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, Section } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -34,7 +34,11 @@ interface TopBarProps {
   departmentRemainingSections: number;
   departmentReadyToSubmit: boolean;
   departmentHasSubmittedSchedule: boolean;
+  departmentHasPendingDeanSubmission: boolean;
   handleSubmitForApproval: () => void;
+  handleWithdrawSubmission: () => void;
+  canWithdrawSubmission: boolean;
+  isWithdrawingSubmission: boolean;
   onPrint: () => void;
   onImport: () => void;
   onGenerate?: (sectionId: string) => void;
@@ -218,7 +222,11 @@ export default function TopBar({
   departmentRemainingSections,
   departmentReadyToSubmit,
   departmentHasSubmittedSchedule,
+  departmentHasPendingDeanSubmission,
   handleSubmitForApproval,
+  handleWithdrawSubmission,
+  canWithdrawSubmission,
+  isWithdrawingSubmission,
   onPrint,
   onImport,
   onGenerate,
@@ -649,26 +657,43 @@ export default function TopBar({
                         Submitted
                       </span>
                     )}
-                    <button
-                      type="button"
-                      onClick={handleSubmitForApproval}
-                      disabled={!departmentReadyToSubmit}
-                      title={
-                        departmentReadyToSubmit
-                          ? "Submit the complete department schedule to the Dean"
-                          : departmentHasSubmittedSchedule
-                          ? "Department schedule is already under review"
-                          : "All sections must be marked Done before submission"
-                      }
-                      className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all xl:min-w-[190px] ${
-                        departmentReadyToSubmit
-                          ? "bg-[#4e0a10] text-white hover:bg-[#3a0809] shadow-sm cursor-pointer"
-                          : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      }`}
-                    >
-                      <Send className="w-4 h-4" />
-                      {departmentSubmitLabel}
-                    </button>
+                    {departmentHasPendingDeanSubmission && canWithdrawSubmission ? (
+                      <button
+                        type="button"
+                        onClick={handleWithdrawSubmission}
+                        disabled={isWithdrawingSubmission}
+                        title="Withdraw the pending submission for revisions"
+                        className="flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition-all hover:bg-orange-100 disabled:cursor-wait disabled:opacity-70 xl:min-w-[190px]"
+                      >
+                        {isWithdrawingSubmission ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-4 h-4" />
+                        )}
+                        {isWithdrawingSubmission ? "Withdrawing..." : "Withdraw Submission"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSubmitForApproval}
+                        disabled={!departmentReadyToSubmit}
+                        title={
+                          departmentReadyToSubmit
+                            ? "Submit the complete department schedule to the Dean"
+                            : departmentHasSubmittedSchedule
+                            ? "Department schedule is already under review"
+                            : "All sections must be marked Done before submission"
+                        }
+                        className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all xl:min-w-[190px] ${
+                          departmentReadyToSubmit
+                            ? "bg-[#4e0a10] text-white hover:bg-[#3a0809] shadow-sm cursor-pointer"
+                            : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                        }`}
+                      >
+                        <Send className="w-4 h-4" />
+                        {departmentSubmitLabel}
+                      </button>
+                    )}
                   </div>
 
                   {isReadinessOpen && (
