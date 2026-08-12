@@ -4,8 +4,6 @@ import {
   GraduationCap,
   DoorOpen,
   FileBarChart,
-  ClipboardList,
-  Users,
   Calendar,
   ClipboardCheck,
   Settings
@@ -44,7 +42,6 @@ export const deanNav: NavSection[] = [
     section: 'SYSTEM',
     items: [
       { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports' },
-      { label: 'User Management', path: '/dean/users', icon: Users, id: 'sidebar-users' },
       { label: 'Settings', path: '/dean/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }
