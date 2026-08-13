@@ -42,7 +42,9 @@ interface TopBarProps {
   onPrint: () => void;
   onImport: () => void;
   onGenerate?: (sectionId: string) => void;
+  onGenerateYearLevel?: () => void;
   isGenerateDisabled?: boolean;
+  isSectionGenerateDisabled?: boolean;
   isLoading?: boolean;
 
   isMarkingSectionDone: boolean;
@@ -230,7 +232,9 @@ export default function TopBar({
   onPrint,
   onImport,
   onGenerate,
+  onGenerateYearLevel,
   isGenerateDisabled,
+  isSectionGenerateDisabled,
   isLoading = false,
   isMarkingSectionDone,
   isEditingSection,
@@ -404,34 +408,31 @@ export default function TopBar({
   }, [isSectionDropdownOpen, selectedSectionId]);
 
   const phasePipeline = (
-    <div className="flex items-center gap-3 select-none overflow-x-auto py-1">
-      <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-300 ${
+    <div className="grid w-full max-w-[430px] grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-2 select-none">
+      <div className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black transition-all duration-300 ${
         isPhase1Completed
           ? "bg-green-600 text-white border-green-600 shadow-sm"
           : "bg-[#4e0a10] text-white border-[#4e0a10] shadow-sm"
       }`}>
         {isPhase1Completed ? (
-          <CheckCircle2 className="w-4 h-4" />
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
         ) : (
-          <LayoutGrid className="w-4 h-4" />
+          <LayoutGrid className="w-4 h-4 shrink-0" />
         )}
-        <span>Plotting</span>
-        <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/20 text-white">1</span>
+        <span className="truncate">Plotting</span>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[10px] font-bold text-white">1</span>
       </div>
 
-      <div className="flex items-center gap-0">
-        <div className={`w-6 h-0.5 transition-all duration-300 ${
-          isPhase2Active ? "bg-green-500" : "bg-gray-200"
-        }`} />
-        <div className={`w-2 h-2 rounded-full mx-0.5 transition-all duration-300 ${
+      <div className="flex items-center justify-center">
+        <div className={`h-0.5 flex-1 transition-all duration-300 ${
           isPhase2Active ? "bg-green-500" : "bg-gray-300"
         }`} />
-        <div className={`w-6 h-0.5 transition-all duration-300 ${
-          isPhase2Active ? "bg-green-500" : "bg-gray-200"
+        <div className={`mx-1 h-2 w-2 shrink-0 rounded-full transition-all duration-300 ${
+          isPhase2Active ? "bg-green-500" : "bg-gray-300"
         }`} />
       </div>
 
-      <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-300 whitespace-nowrap ${
+      <div className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black transition-all duration-300 ${
         isPhase2Completed
           ? "bg-green-600 text-white border-green-600 shadow-sm"
           : isPhase2Active
@@ -439,12 +440,12 @@ export default function TopBar({
           : "bg-white text-gray-400 border-gray-200"
       }`}>
         {isPhase2Completed ? (
-          <CheckCircle2 className="w-4 h-4" />
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
         ) : (
-          <Users className="w-4 h-4" />
+          <Users className="w-4 h-4 shrink-0" />
         )}
-        <span>Faculty Assignment</span>
-        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+        <span className="truncate">Faculty Assignment</span>
+        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
           isPhase2Active || isPhase2Completed ? "bg-white/20 text-white" : "bg-gray-100 text-gray-400"
         }`}>2</span>
       </div>
@@ -453,8 +454,8 @@ export default function TopBar({
 
   return (
     <div className="flex flex-col gap-3 bg-white px-5 py-4 border-b border-gray-200 rounded-t-2xl shadow-sm">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-gray-100">
-        <div className="flex flex-wrap items-center gap-3 min-w-0">
+      <div className="grid grid-cols-1 gap-3 border-b border-gray-100 pb-3 xl:grid-cols-[minmax(330px,auto)_minmax(300px,1fr)_auto] xl:items-center">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500 font-medium whitespace-nowrap">Section:</span>
             <div className="relative" ref={dropdownRef}>
@@ -463,10 +464,10 @@ export default function TopBar({
                 aria-haspopup="listbox"
                 aria-expanded={isSectionDropdownOpen}
                 onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
-                className="flex items-center justify-between text-sm bg-white border border-gray-300 rounded-lg px-4 py-2 outline-none hover:border-gray-400 focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] font-medium gap-2 min-w-[220px] transition-colors"
+                className="flex min-w-[220px] max-w-[280px] items-center justify-between gap-2 overflow-hidden rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium outline-none transition-colors hover:border-gray-400 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
               >
-                <span className="flex items-center gap-2 text-gray-800">
-                  <GraduationCap className="w-4 h-4 text-[#4e0a10]" />
+                <span className="flex min-w-0 items-center gap-2 overflow-hidden text-gray-800">
+                  <GraduationCap className="w-4 h-4 shrink-0 text-[#4e0a10]" />
                   {isLoading ? (
                     <Skeleton className="h-4 w-32" />
                   ) : selectedSection ? (
@@ -529,11 +530,11 @@ export default function TopBar({
           </div>
 
           {isLoading ? (
-            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg select-none">
+            <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 select-none">
               <Skeleton className="h-4 w-24" />
             </div>
           ) : selectedSectionId && selectedSection && (
-            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg select-none">
+            <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 select-none">
               <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Active:</span>
               <span className="text-sm font-bold text-amber-800">
                 {selectedSection.name}
@@ -542,25 +543,28 @@ export default function TopBar({
           )}
         </div>
 
-        <div className="xl:flex-1 xl:flex xl:justify-center min-w-0 overflow-x-auto">
+        <div className="flex min-w-0 justify-start xl:justify-center">
           {phasePipeline}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
           {onGenerate && (
             <GenerateScheduleButton
               disabled={Boolean(isGenerateDisabled)}
+              sectionDisabled={Boolean(isSectionGenerateDisabled)}
               onClick={() => selectedSectionId && onGenerate(selectedSectionId)}
+              onYearLevelClick={onGenerateYearLevel}
             />
           )}
           <button
             type="button"
             onClick={onImport}
             title="Import Schedule"
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#4e0a10]/30 text-[#4e0a10] hover:bg-[#4e0a10]/5 hover:border-[#4e0a10] text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-lg border border-[#4e0a10]/30 bg-white px-3 py-2 text-sm font-semibold text-[#4e0a10] transition-colors hover:border-[#4e0a10] hover:bg-[#4e0a10]/5"
           >
             <Upload className="w-4 h-4" />
-            <span>Import Schedule</span>
+            <span className="hidden 2xl:inline">Import Schedule</span>
+            <span className="2xl:hidden">Import</span>
           </button>
           <div className="relative" ref={printDropdownRef}>
             <button
@@ -568,7 +572,7 @@ export default function TopBar({
               onClick={() => setIsPrintDropdownOpen(!isPrintDropdownOpen)}
               aria-haspopup="menu"
               aria-expanded={isPrintDropdownOpen}
-              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 text-sm font-semibold rounded-lg transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50"
             >
               <Printer className="w-4 h-4" />
               <span>Print</span>
@@ -592,7 +596,7 @@ export default function TopBar({
       </div>
 
       <div className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,0.9fr)_minmax(440px,1.1fr)_auto] gap-3 items-center">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)_auto] items-center">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">

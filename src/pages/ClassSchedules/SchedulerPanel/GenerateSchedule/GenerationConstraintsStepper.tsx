@@ -22,6 +22,7 @@ import api from "../../../../lib/api";
 import { useToast } from "../../../../context/ToastContext";
 import type { TimeBlockOption } from "./useGenerateSchedule";
 import type { Course } from "../types";
+import { ReviewGroup } from "./WizardReviewComponents";
 
 interface ConstraintCourse {
   id: number;
@@ -988,45 +989,6 @@ function ReviewStep({
           Generate Schedule
         </button>
       </div>
-    </section>
-  );
-}
-
-function ReviewGroup({
-  title,
-  rows,
-  emptyText,
-  onEdit,
-}: {
-  title: string;
-  rows: string[];
-  emptyText: string;
-  onEdit: () => void;
-}) {
-  return (
-    <section className="min-h-0 border border-slate-200 bg-slate-50 p-2.5" style={{ borderRadius: 8 }}>
-      <div className="flex items-center justify-between gap-3">
-        <h6 className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</h6>
-        <button type="button" onClick={onEdit} className="text-xs font-black text-[#4e0a10] hover:underline">
-          Edit
-        </button>
-      </div>
-      {rows.length === 0 ? (
-        <p className="mt-2 text-xs font-semibold text-slate-500">{emptyText}</p>
-      ) : (
-        <ul className="mt-2 space-y-1">
-          {rows.slice(0, 4).map((row) => (
-            <li key={row} className="border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800" style={{ borderRadius: 8 }}>
-              {row}
-            </li>
-          ))}
-          {rows.length > 4 && (
-            <li className="px-3 py-1 text-xs font-bold text-slate-500">
-              +{rows.length - 4} more
-            </li>
-          )}
-        </ul>
-      )}
     </section>
   );
 }

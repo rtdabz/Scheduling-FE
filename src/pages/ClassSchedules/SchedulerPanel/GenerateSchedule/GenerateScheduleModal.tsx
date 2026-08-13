@@ -472,6 +472,7 @@ export default function GenerateScheduleModal({
         if (controller.signal.aborted) return;
         const e = err as {
           response?: {
+            status?: number;
             data?: {
               violations?: {
                 rule: string;
@@ -480,10 +481,32 @@ export default function GenerateScheduleModal({
                 day?: string;
               }[];
               message?: string;
+              errors?: Record<string, string[]>;
             };
           };
+          message?: string;
         };
-        const violations = e.response?.data?.violations ?? [];
+        const responseData = e.response?.data;
+        const validationMessages = responseData?.errors
+          ? Object.values(responseData.errors).flat()
+          : [];
+        const violations =
+          responseData?.violations?.length
+            ? responseData.violations
+            : (validationMessages.length > 0
+                ? validationMessages
+                : [
+                    responseData?.message ??
+                      e.message ??
+                      "The split schedule could not be validated.",
+                  ]
+              ).map((message) => ({
+                rule:
+                  e.response?.status === 405
+                    ? "invalid_request_method"
+                    : "split_validation_failed",
+                message,
+              }));
         setResolvedSplit({
           status: "conflict",
           operations,

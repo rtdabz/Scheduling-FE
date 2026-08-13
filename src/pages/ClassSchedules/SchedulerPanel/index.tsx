@@ -12,6 +12,7 @@ import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
 import ScheduleImportModal from "./Modals/ScheduleImportModal";
 import GenerateScheduleModal from "./GenerateSchedule/GenerateScheduleModal";
+import YearLevelGenerateScheduleModal from "./GenerateSchedule/YearLevelGenerateScheduleModal";
 import { useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
 import { useGenerateSchedule } from "./GenerateSchedule/useGenerateSchedule";
@@ -19,6 +20,7 @@ import { useGenerateSchedule } from "./GenerateSchedule/useGenerateSchedule";
 export default function SchedulerPanel() {
   const scheduler = useScheduler();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isYearLevelGenerateOpen, setIsYearLevelGenerateOpen] = useState(false);
 
   const generateSchedule = useGenerateSchedule({
     onAccepted: scheduler.handleAcceptedRecommendation,
@@ -34,7 +36,9 @@ export default function SchedulerPanel() {
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
         onImport={() => setIsImportModalOpen(true)}
         onGenerate={generateSchedule.openModal}
-        isGenerateDisabled={!scheduler.selectedSectionId || !scheduler.isEditable}
+        onGenerateYearLevel={() => setIsYearLevelGenerateOpen(true)}
+        isGenerateDisabled={!scheduler.isEditable}
+        isSectionGenerateDisabled={!scheduler.selectedSectionId}
       />
 
       <div className="flex flex-col lg:flex-row gap-4 w-full min-h-[560px] lg:h-[calc(100vh-180px)] lg:min-h-[560px] overflow-hidden">
@@ -49,7 +53,6 @@ export default function SchedulerPanel() {
 
       <DropModal {...scheduler} />
       <FacultyModal {...scheduler} />
-      <ClearAllModal {...scheduler} />
       <SubmitApprovalModal {...scheduler} />
       <WithdrawSubmissionModal
         isOpen={scheduler.isWithdrawSubmissionModalOpen}
@@ -93,6 +96,17 @@ export default function SchedulerPanel() {
         onApplySchedule={generateSchedule.applySchedule}
         rooms={scheduler.rooms}
       />
+      <YearLevelGenerateScheduleModal
+        isOpen={isYearLevelGenerateOpen}
+        onClose={() => setIsYearLevelGenerateOpen(false)}
+        sections={scheduler.sections}
+        courses={scheduler.subjects}
+        activeTerm={scheduler.activeTerm}
+        departmentId={selectedSection?.departmentId ?? scheduler.sections[0]?.departmentId ?? null}
+        existingSchedules={scheduler.schedules}
+        onAccepted={scheduler.handleAcceptedRecommendation}
+      />
+      <ClearAllModal {...scheduler} />
       <PrintSchedule
         sections={scheduler.sections}
         isPrintModalOpen={scheduler.isPrintModalOpen}

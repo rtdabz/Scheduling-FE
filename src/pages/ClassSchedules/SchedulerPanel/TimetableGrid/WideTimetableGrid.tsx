@@ -144,8 +144,8 @@ export default function WideTimetableGrid({
           <button
             type="button"
             onClick={handleClearAll}
-            disabled={!isEditable || sectionSchedules.length === 0}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${isEditable && sectionSchedules.length > 0
+            disabled={!isEditable || schedules.length === 0}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${isEditable && schedules.length > 0
                 ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 cursor-pointer"
                 : "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
               }`}

@@ -1744,26 +1744,39 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
   const handleClearAll = () => {
     if (!isEditable || isClearingAll) return;
-    const currentSectionSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
-    if (currentSectionSchedules.length === 0) return;
+    if (schedules.length === 0) return;
     setIsClearAllModalOpen(true);
   };
 
-  const confirmClearAll = async () => {
+  const confirmClearAll = async (scope: "section" | "all" = "section") => {
     if (!isEditable || isClearingAll) {
       setIsClearAllModalOpen(false);
       return;
     }
-    setIsClearingAll(true);
     const targetSecId = selectedSectionId;
-    const currentSectionSchedules = schedules.filter((s) => s.sectionId === targetSecId);
-    const clearedCount = currentSectionSchedules.length;
+    const departmentSectionIds = new Set(
+      sections
+        .filter((section) => selectedDepartmentId === null || Number(section.departmentId) === Number(selectedDepartmentId))
+        .map((section) => section.id)
+    );
+    const targetSchedules = scope === "all"
+      ? schedules.filter((s) => departmentSectionIds.has(s.sectionId))
+      : schedules.filter((s) => s.sectionId === targetSecId);
+    if (targetSchedules.length === 0) {
+      setIsClearAllModalOpen(false);
+      return;
+    }
+
+    setIsClearingAll(true);
+    const clearedCount = targetSchedules.length;
     const sectionName = sections.find((s) => s.id === targetSecId)?.name ?? "the section";
-    const validSchedules = currentSectionSchedules.filter((s) => !isNaN(Number(s.id)));
+    const validSchedules = targetSchedules.filter((s) => !isNaN(Number(s.id)));
 
     // Optimistic UI update: immediately clear local state & update local storage cache
     setSchedules((prev) => {
-      const updated = prev.filter((s) => s.sectionId !== targetSecId);
+      const updated = scope === "all"
+        ? prev.filter((s) => !departmentSectionIds.has(s.sectionId))
+        : prev.filter((s) => s.sectionId !== targetSecId);
       const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
       if (cachedData) {
         setCachedData<SchedulerCacheData>(schedulerCacheKey, {
@@ -1778,11 +1791,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
     setPlacementSubjectId(null);
     setMovingScheduleId(null);
     setIsClearAllModalOpen(false);
-    setIsClearingAll(false);
 
     toast.success(
       "Schedule Cleared",
-      `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
+      scope === "all"
+        ? `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from the schedule.`
+        : `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
     );
 
     try {

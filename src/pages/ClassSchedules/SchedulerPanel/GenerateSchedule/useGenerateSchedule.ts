@@ -222,7 +222,7 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           response = await api.post<PreviewResponse>("/schedule-recommendations/preview", {
             ...payload,
             max_iterations: 250000,
-            timeout_seconds: 8,
+            timeout_seconds: 5,
           });
           schedules = schedulesFromPreview(response.data);
         }
