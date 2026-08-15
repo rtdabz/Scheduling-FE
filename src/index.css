@@ -34,6 +34,19 @@
   }
 }
 
+/* System-wide No Shadows Override */
+*,
+*::before,
+*::after {
+  --tw-shadow: 0 0 #0000 !important;
+  --tw-shadow-colored: 0 0 #0000 !important;
+}
+
+[class*="shadow"] {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
 @layer utilities {
   .sidebar-item-active {
     background: linear-gradient(90deg, rgba(201,149,42,0.15) 0%, rgba(201,149,42,0.05) 100%);

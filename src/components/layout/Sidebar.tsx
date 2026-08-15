@@ -3,6 +3,7 @@ import Skeleton from '../ui/Skeleton';
 import type { NavSection, NavItem } from '../../navigation/types';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
+import campusBg from '../../assets/campus-bg.jpg';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, LogOut, RefreshCw, Settings, User, X } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
@@ -15,10 +16,23 @@ interface SidebarProps {
   navItems: NavSection[];
 }
 
+interface DepartmentInfo {
+  id: number;
+  department_name: string;
+  department_code: string;
+  logo?: string | null;
+}
+
 interface StoredUser {
+  id?: number;
   name?: string;
   username?: string;
   role?: string;
+  profile_picture?: string | null;
+  photo?: string | null;
+  avatar?: string | null;
+  department_id?: number | null;
+  department?: DepartmentInfo | null;
 }
 
 interface PendingDepartmentCountResponse {
@@ -55,14 +69,39 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const user = getStoredUser();
+  const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
+  const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
+  const user = currentUser ?? getStoredUser();
   const role = user?.role?.toLowerCase() ?? '';
+  const userPhoto = user?.profile_picture || user?.photo || user?.avatar || null;
+  const userDepartment = user?.department || departments.find(d => d.id === user?.department_id) || null;
+  const deptLogo = userDepartment?.logo || null;
+  const deptName = userDepartment?.department_name || (role === 'vpaa' ? 'Vice President for Academic Affairs' : null);
+  const deptCode = userDepartment?.department_code || (role === 'vpaa' ? 'VPAA' : null);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [showProfile, setShowProfile] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    api.get<StoredUser>('/me')
+      .then((res) => {
+        if (res.data) {
+          setCurrentUser(res.data);
+          const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
+          storage.setItem('user', JSON.stringify(res.data));
+        }
+      })
+      .catch(() => {});
+
+    api.get<DepartmentInfo[]>('/departments')
+      .then((res) => {
+        if (res.data) setDepartments(res.data);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (role !== 'dean' && role !== 'vpaa') {
@@ -158,29 +197,47 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
         ${isOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
       `}
     >
+      {/* Background Campus Image with Maroon Overlay (reused from LoginPage) */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <img
+          src={campusBg}
+          alt="Campus Background"
+          className="w-full h-full object-cover opacity-35 filter contrast-105 saturate-110 object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#36060b] via-[#4e0a10]/80 to-[#5A1220]/70 mix-blend-multiply" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
+      </div>
+
       <button
         type="button"
         onClick={onToggleSidebar}
         title={isOpen ? 'Collapse navigation menu' : 'Expand navigation menu'}
-        className="absolute -right-8 top-0 z-10 hidden h-12 w-8 items-center justify-center rounded-br-full border border-t-0 border-l-0 border-[#C9952A]/30 bg-[#4e0a10] text-[#E8D5C4] shadow-lg shadow-black/20 transition-all duration-300 hover:border-[#C9952A]/60 hover:bg-[#641017] hover:text-white md:flex"
+        className="absolute -right-12 top-0 z-20 hidden h-16 w-12 items-start justify-start pt-3 pl-2.5 bg-[#4e0a10] text-[#E8D5C4] transition-all duration-200 hover:bg-[#C9952A] hover:text-white md:flex cursor-pointer [clip-path:polygon(0_0,_100%_0,_0_100%)] drop-shadow-lg"
         aria-label={isOpen ? 'Collapse navigation menu' : 'Expand navigation menu'}
         aria-expanded={isOpen}
         aria-controls="primary-navigation"
       >
-        {isOpen ? <ChevronLeft size={17} /> : <ChevronRight size={17} />}
+        {isOpen ? <ChevronLeft size={19} /> : <ChevronRight size={19} />}
       </button>
 
-      <div className={`flex h-16 flex-shrink-0 items-center border-b border-white/10 ${isOpen ? 'justify-between px-4' : 'justify-center px-0'}`}>
+      <div className={`relative z-10 flex min-h-[4.25rem] py-3 flex-shrink-0 items-center border-b border-white/10 ${isOpen ? 'justify-between px-4' : 'justify-center px-0'}`}>
         <div className="flex min-w-0 items-center">
           <img
-            src={logo}
-            alt="TCC Logo"
-            className="h-10 w-10 flex-shrink-0 rounded-full object-contain ring-2 ring-[#C9952A]/40 ring-offset-2 ring-offset-[#4e0a10] transition-transform duration-500 hover:rotate-12"
+            src={deptLogo || logo}
+            alt={deptName || "TCC Logo"}
+            className="h-10 w-10 flex-shrink-0 rounded-full object-cover ring-2 ring-[#C9952A]/40 ring-offset-2 ring-offset-[#4e0a10] transition-transform duration-500 hover:rotate-12"
           />
           {isOpen && (
-            <div className="ml-3 flex min-w-0 items-baseline gap-1 whitespace-nowrap">
-              <span className="font-display bg-gradient-to-r from-white to-[#E8D5C4] bg-clip-text text-lg font-extrabold tracking-wider text-transparent">TCC</span>
-              <span className="text-sm font-bold uppercase tracking-tight text-[#C9952A]">Scheduling</span>
+            <div className="ml-3 flex min-w-0 flex-col justify-center">
+              <div className="flex items-baseline gap-1 whitespace-nowrap leading-none">
+                <span className="font-display bg-gradient-to-r from-white to-[#E8D5C4] bg-clip-text text-base font-extrabold tracking-wider text-transparent">TCC</span>
+                <span className="text-xs font-bold uppercase tracking-tight text-[#C9952A]">Scheduling</span>
+              </div>
+              {deptName && (
+                <span className="text-[10.5px] font-bold text-[#E8D5C4] tracking-wide leading-snug mt-1 whitespace-normal break-words" title={deptName}>
+                  {deptName}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -197,9 +254,12 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
         </button>
       </div>
 
-      <nav id="primary-navigation" aria-label="Primary navigation" className="flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-[#E8D5C4] md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden">
-        {navItems.map((section) => (
-          <div key={section.section} className="mb-6 last:mb-0">
+      <nav id="primary-navigation" aria-label="Primary navigation" className="relative z-10 flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-[#E8D5C4] md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden">
+        {navItems.map((section, sectionIdx) => (
+          <div key={section.section} className="mb-4 last:mb-0">
+            {sectionIdx > 0 && (
+              <div className="my-3 border-t border-white/10 mx-1" />
+            )}
             {isOpen && (
               <div className="mb-2 px-2">
                 <h4 className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.2em] text-[#E8D5C4]/40">
@@ -313,7 +373,9 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
         ))}
       </nav>
 
-      <div className="flex-shrink-0 border-t border-white/10 p-3">
+
+
+      <div className="relative z-10 flex-shrink-0 border-t border-white/10 p-3">
         <div className="relative" ref={profileRef} id="sidebar-profile">
           <button
             type="button"
@@ -327,10 +389,14 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
             aria-label="Open user menu"
             aria-expanded={showProfile}
           >
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] shadow-sm ring-2 ring-white/10">
-              <span className="font-display text-sm font-bold text-white">
-                {getInitials(user?.name)}
-              </span>
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] shadow-sm ring-2 ring-white/10 overflow-hidden">
+              {userPhoto ? (
+                <img src={userPhoto} alt={user?.name || 'User'} className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-display text-sm font-bold text-white">
+                  {getInitials(user?.name)}
+                </span>
+              )}
             </div>
 
             {isOpen && (
@@ -355,23 +421,44 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
                 ? 'bottom-full left-0 right-0 mb-2 w-full' 
                 : 'bottom-0 left-full ml-3 w-60'
             }`}>
-              <div className="flex flex-col gap-0.5 border-b border-gray-100 bg-gray-50/50 p-4">
-                <p className="text-sm font-bold leading-tight text-gray-800">{user?.name || 'Administrator'}</p>
-                <p className="truncate text-xs font-medium text-gray-500">{user?.username || 'admin'}@tcc.edu.ph</p>
-                <span className="mt-1.5 inline-flex w-fit rounded-full border border-[#4e0a10]/10 bg-[#4e0a10]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#7B1113]">
-                  {formatRole(user?.role)}
-                </span>
+              <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/50 p-4">
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] shadow-md ring-2 ring-white/20 overflow-hidden">
+                  {userPhoto ? (
+                    <img src={userPhoto} alt={user?.name || 'User'} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="font-display text-base font-bold text-white">
+                      {getInitials(user?.name)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <p className="text-sm font-bold leading-tight text-gray-800 truncate">{user?.name || 'Administrator'}</p>
+                  <p className="truncate text-xs font-medium text-gray-500">{user?.username || 'admin'}@tcc.edu.ph</p>
+                  <span className="mt-1 inline-flex w-fit rounded-full border border-[#4e0a10]/10 bg-[#4e0a10]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#7B1113]">
+                    {formatRole(user?.role)}
+                  </span>
+                </div>
               </div>
               <div className="space-y-0.5 p-2">
                 <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfile(false);
+                    navigate(`/${role || 'vpaa'}/settings`);
+                  }}
                   title="View profile details"
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-semibold text-gray-700 transition-all duration-200 hover:bg-[#4e0a10]/5 hover:text-[#7B1113]"
+                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-semibold text-gray-700 transition-all duration-200 hover:bg-[#4e0a10]/5 hover:text-[#7B1113] cursor-pointer"
                 >
                   <User size={16} className="text-[#C9952A]" /> My Profile
                 </button>
                 <button
+                  type="button"
+                  onClick={() => {
+                    setShowProfile(false);
+                    navigate(`/${role || 'vpaa'}/settings`);
+                  }}
                   title="Configure settings"
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-semibold text-gray-700 transition-all duration-200 hover:bg-[#4e0a10]/5 hover:text-[#7B1113]"
+                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-semibold text-gray-700 transition-all duration-200 hover:bg-[#4e0a10]/5 hover:text-[#7B1113] cursor-pointer"
                 >
                   <Settings size={16} className="text-[#C9952A]" /> Settings
                 </button>

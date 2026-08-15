@@ -360,23 +360,23 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Weekly Classroom Schedule</h3>
           
           {/* View Mode Switcher */}
-          <div className="bg-gray-100 p-0.5 rounded-xl flex items-center gap-0.5">
+          <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200">
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900'
+                  ? 'bg-[#5A1220] text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
               }`}
             >
               List View
             </button>
             <button
               onClick={() => setViewMode('grid')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'grid'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900'
+                  ? 'bg-[#5A1220] text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
               }`}
             >
               Grid View

@@ -308,25 +308,25 @@ export default function SecretarySections() {
           enableSorting: false,
           cell: ({ row }) => (
             <div className="flex justify-end gap-1.5">
-              <div className="relative group">
+              <div className="relative group/tooltip">
                 <button
                   onClick={() => handleEditClick(row.original)}
                   className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                 >
                   <Pencil size={17} />
                 </button>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                   Edit
                 </span>
               </div>
-              <div className="relative group">
+              <div className="relative group/tooltip">
                 <button
                   onClick={() => triggerDeleteConfirmation(row.original.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                  className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                 >
                   <Trash2 size={17} />
                 </button>
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                   Delete
                 </span>
               </div>

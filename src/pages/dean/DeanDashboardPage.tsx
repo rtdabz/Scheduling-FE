@@ -533,18 +533,81 @@ export default function DeanDashboardPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-7 w-8" />
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch animate-pulse">
+          {/* Left Column Skeleton */}
+          <div className="xl:col-span-6 space-y-4 flex flex-col h-full">
+            {/* 2x2 Metric Cards Grid */}
+            <div className="grid grid-cols-2 gap-3.5">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm min-h-[88px] flex flex-col justify-between">
+                  <Skeleton className="h-3 w-20" />
+                  <div className="flex justify-between items-center mt-2">
+                    <Skeleton className="h-7 w-10" />
+                    <Skeleton className="h-4 w-4 rounded-md" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Timetable / Section Summary Skeleton Card */}
+            <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 flex-1 min-h-[380px] space-y-4">
+              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-6 w-24 rounded-lg" />
               </div>
-            ))}
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-11 w-full rounded-xl" />
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Skeleton className="h-[400px] rounded-2xl" />
-            <Skeleton className="h-[400px] rounded-2xl" />
+          {/* Right Column Skeleton */}
+          <div className="xl:col-span-6 space-y-4 flex flex-col h-full">
+            {/* 2 Separate Cards Side-by-Side: Schedule Status & Faculty Load */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Schedule Status Card Skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 space-y-4 min-h-[240px]">
+                <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-12 rounded-full" />
+                </div>
+                <div className="flex items-center justify-center py-2">
+                  <Skeleton className="h-28 w-28 rounded-full" />
+                </div>
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-3/4" />
+                </div>
+              </div>
+
+              {/* Faculty Load Card Skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 space-y-4 min-h-[240px]">
+                <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-12 rounded-full" />
+                </div>
+                <div className="flex items-center justify-center py-2">
+                  <Skeleton className="h-28 w-28 rounded-full" />
+                </div>
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-3/4" />
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Room Usage Card Skeleton */}
+            <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 flex-1 min-h-[260px] space-y-4">
+              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                <Skeleton className="h-5 w-36" />
+                <Skeleton className="h-6 w-24 rounded-lg" />
+              </div>
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-11 w-full rounded-xl" />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       ) : (

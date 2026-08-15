@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -18,7 +18,10 @@ import {
   Award,
   BookOpen,
   Layers,
-  Info
+  Info,
+  LayoutGrid,
+  List,
+  Camera
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -61,6 +64,7 @@ interface Department {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
 }
 
 interface AssignedSubject {
@@ -92,6 +96,7 @@ interface FacultyMember {
   department_id: number;
   department: Department | null;
   status: 'active' | 'inactive';
+  profile_picture?: string | null;
   createdAt?: string;
 }
 
@@ -111,6 +116,7 @@ interface ApiFacultyMember {
   department_id: number;
   department?: Department | null;
   status: 'active' | 'inactive';
+  profile_picture?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -136,6 +142,7 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   department_id: f.department_id,
   department: f.department || null,
   status: f.status || 'active',
+  profile_picture: f.profile_picture || null,
   createdAt: f.created_at
 });
 
@@ -200,7 +207,7 @@ export default function DeanFaculty() {
   const canManageFaculty = isVpaa;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
-  const title = isInstructorsPath ? 'Instructors' : 'Faculty';
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -222,7 +229,51 @@ export default function DeanFaculty() {
   const [probonoUnits, setProbonoUnits] = useState<number>(0);
   const [departmentId, setDepartmentId] = useState('');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Invalid File', 'Please select a valid image file (JPEG, PNG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 300;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setProfilePicture(dataUrl);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Form error states
   const [firstNameError, setFirstNameError] = useState('');
@@ -274,6 +325,7 @@ export default function DeanFaculty() {
     setProbonoUnits(faculty.probono_units);
     setDepartmentId(faculty.department_id ? faculty.department_id.toString() : '');
     setStatus(faculty.status);
+    setProfilePicture(faculty.profile_picture || null);
 
     setFirstNameError('');
     setLastNameError('');
@@ -364,7 +416,8 @@ export default function DeanFaculty() {
       deload_units: deloadUnits,
       probono_units: probonoUnits,
       department_id: Number(deptVal),
-      status
+      status,
+      profile_picture: profilePicture
     };
 
     try {
@@ -492,42 +545,62 @@ export default function DeanFaculty() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
-          <p className="text-2xl font-extrabold text-gray-900 mt-0.5">{summaryStats.total}</p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-12 mt-1" />
+          ) : (
+            <p className="text-2xl font-extrabold text-gray-900 mt-0.5">{summaryStats.total}</p>
+          )}
         </div>
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
           <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
             <CheckCircle2 size={12} className="text-emerald-500" />
             Available
           </p>
-          <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{summaryStats.available}</p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-12 mt-1" />
+          ) : (
+            <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{summaryStats.available}</p>
+          )}
         </div>
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
           <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1">
             <Info size={12} className="text-blue-500" />
             Fully Loaded
           </p>
-          <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{summaryStats.fullyLoaded}</p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-12 mt-1" />
+          ) : (
+            <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{summaryStats.fullyLoaded}</p>
+          )}
         </div>
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
           <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider flex items-center gap-1">
             <AlertCircle size={12} className="text-red-500" />
             Overloaded
           </p>
-          <p className="text-2xl font-extrabold text-red-700 mt-0.5">{summaryStats.overloaded}</p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-12 mt-1" />
+          ) : (
+            <p className="text-2xl font-extrabold text-red-700 mt-0.5">{summaryStats.overloaded}</p>
+          )}
         </div>
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200 col-span-2 md:col-span-1">
           <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1">
             <Award size={12} className="text-purple-500" />
             Pro Bono
           </p>
-          <p className="text-2xl font-extrabold text-purple-700 mt-0.5">{summaryStats.probono}</p>
+          {isLoading ? (
+            <Skeleton className="h-7 w-12 mt-1" />
+          ) : (
+            <p className="text-2xl font-extrabold text-purple-700 mt-0.5">{summaryStats.probono}</p>
+          )}
         </div>
       </div>
 
       {/* Search and Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
-        <div className="relative flex-1 max-w-lg">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
@@ -586,6 +659,34 @@ export default function DeanFaculty() {
             </select>
           </div>
 
+          {/* View Mode Toggle (Grid / List) */}
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 ml-auto lg:ml-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="List View"
+            >
+              <List size={15} />
+            </button>
+          </div>
+
           {/* Add button inside filter bar */}
           {canManageFaculty && (
             <button
@@ -602,6 +703,7 @@ export default function DeanFaculty() {
                 setProbonoUnits(0);
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
                 setStatus('active');
+                setProfilePicture(null);
 
                 setFirstNameError('');
                 setLastNameError('');
@@ -609,7 +711,7 @@ export default function DeanFaculty() {
                 setDepartmentError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
             >
               <Plus size={15} />
               <span>Add Instructor</span>
@@ -618,176 +720,359 @@ export default function DeanFaculty() {
         </div>
       </div>
 
-      {/* Redesigned Card-based visual dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
-        {isLoading ? (
-          Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 animate-pulse space-y-4">
-              <div className="flex justify-between items-start">
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-32" />
-                  <Skeleton className="h-4 w-20" />
-                </div>
-                <Skeleton className="h-6 w-24 rounded-full" />
-              </div>
-              <Skeleton className="h-4 w-full rounded-full" />
-              <div className="space-y-2 pt-2 border-t border-gray-50">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-              </div>
-            </div>
-          ))
-        ) : sortedFaculties.length === 0 ? (
-          <div className="col-span-full py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white">
-            <p className="text-base font-semibold font-sans">No instructors found.</p>
-            <p className="text-xs font-sans">Try adjusting search parameters or add a new record.</p>
-          </div>
-        ) : (
-          paginatedFaculties.map((f) => {
-            const statusDetails = getWorkloadStatus(f);
-            const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
-            const required = f.max_units - f.deload_units;
-            const pct = required > 0 ? Math.round((f.assigned_units / required) * 100) : 0;
-
-            let progressColor = 'bg-[#F5A623]';
-            if (f.assigned_units > required) {
-              progressColor = f.probono_units > 0 ? 'bg-purple-500' : 'bg-red-500';
-            } else if (f.assigned_units === required) {
-              progressColor = 'bg-blue-500';
-            }
-
-            const remaining = Math.max(0, required - f.assigned_units);
-
-            return (
-              <div key={f.id} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between font-sans relative group">
-                <div className="space-y-4">
-                  {/* Header: Name, Dept, Status */}
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
-                        {f.department?.department_code && (
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${getDepartmentColor(f.department.department_code || f.department.department_name)}`}>
-                            {f.department.department_code}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-gray-500 font-semibold block">
-                        {f.department?.department_name || 'No Department'}
-                      </span>
-                    </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${statusDetails.color}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${statusDetails.dot}`} />
-                      {statusDetails.label}
-                    </span>
+      {viewMode === 'grid' ? (
+        /* Redesigned Card-based visual dashboard */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 animate-pulse space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-4 w-20" />
                   </div>
+                  <Skeleton className="h-6 w-24 rounded-full" />
+                </div>
+                <Skeleton className="h-4 w-full rounded-full" />
+                <div className="space-y-2 pt-2 border-t border-gray-50">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                </div>
+              </div>
+            ))
+          ) : sortedFaculties.length === 0 ? (
+            <div className="col-span-full py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white">
+              <p className="text-base font-semibold font-sans">No instructors found.</p>
+              <p className="text-xs font-sans">Try adjusting search parameters or add a new record.</p>
+            </div>
+          ) : (
+            paginatedFaculties.map((f) => {
+              const statusDetails = getWorkloadStatus(f);
+              const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
+              const required = f.max_units - f.deload_units;
+              const pct = required > 0 ? Math.round((f.assigned_units / required) * 100) : 0;
 
-                  {/* Progress bar info */}
-                  <div className="space-y-1.5 font-sans pt-1">
-                    <div className="flex justify-between text-xs font-semibold text-gray-500">
-                      <span>Workload Progress</span>
-                      <span className="text-gray-700">{f.assigned_units} / {required} Units ({pct}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${progressColor}`}
-                        style={{ width: `${Math.min(pct, 100)}%` }}
+              let progressColor = 'bg-[#F5A623]';
+              if (f.assigned_units > required) {
+                progressColor = f.probono_units > 0 ? 'bg-purple-500' : 'bg-red-500';
+              } else if (f.assigned_units === required) {
+                progressColor = 'bg-blue-500';
+              }
+
+              const remaining = Math.max(0, required - f.assigned_units);
+              const deptLogo = f.department?.logo || departments.find(d => d.id === f.department_id)?.logo || null;
+
+              return (
+                <div key={f.id} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between font-sans relative group overflow-hidden">
+                  {/* Centered Background Department Watermark Logo */}
+                  {deptLogo && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                      <img
+                        src={deptLogo}
+                        alt="Department Watermark"
+                        className="w-44 h-44 object-contain opacity-[0.09]"
                       />
                     </div>
-                  </div>
-
-                  {/* Card stats / details */}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
-                    <div>
-                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Employment</span>
-                      <span className="font-bold text-gray-700 capitalize">{f.employment_type}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Remaining Units</span>
-                      <span className="font-bold text-gray-700">{remaining} Units</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Assigned Subjects</span>
-                      <span className="font-bold text-gray-700">{f.assigned_subjects.length} Subjects</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Assigned Classes</span>
-                      <span className="font-bold text-gray-700">{f.assigned_classes.length} Classes</span>
-                    </div>
-                  </div>
-
-                  {/* Tags summary */}
-                  {(f.assigned_subjects.length > 0 || f.assigned_classes.length > 0) && (
-                    <div className="space-y-2 pt-2 border-t border-gray-50 font-sans">
-                      {f.assigned_subjects.length > 0 && (
-                        <div className="flex flex-wrap gap-1 items-center">
-                          <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
-                          {f.assigned_subjects.slice(0, 3).map(sub => (
-                            <span key={sub.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
-                              {sub.course_code || sub.subject_code}
-                            </span>
-                          ))}
-                          {f.assigned_subjects.length > 3 && (
-                            <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_subjects.length - 3} more</span>
-                          )}
-                        </div>
-                      )}
-                      {f.assigned_classes.length > 0 && (
-                        <div className="flex flex-wrap gap-1 items-center">
-                          <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Classes:</span>
-                          {f.assigned_classes.slice(0, 3).map(c => (
-                            <span key={c.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
-                              {c.section_name}
-                            </span>
-                          ))}
-                          {f.assigned_classes.length > 3 && (
-                            <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_classes.length - 3} more</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
                   )}
-                </div>
 
-                {/* Quick Actions Footer */}
-                <div className="flex items-center justify-between gap-2 pt-4 border-t border-gray-100 mt-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleViewDetails(f)}
-                      className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
-                    >
-                      View Details
-                    </button>
-                    <InstructorTimetableButton
-                      facultyId={f.id}
-                      facultyName={name}
-                      departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
-                    />
-                  </div>
-                  {canManageFaculty && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEditClick(f)}
-                        className="p-1.5 text-gray-500 hover:text-[#C9952A] hover:bg-amber-50 border border-transparent hover:border-amber-100 rounded-lg cursor-pointer transition-all"
-                        title="Edit Instructor"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        onClick={() => triggerDeleteConfirmation(f.id)}
-                        className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 rounded-lg cursor-pointer transition-all"
-                        title="Delete Instructor"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                  <div className="space-y-4 relative z-10">
+
+                    {/* Header: Name, Dept, Status */}
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex items-start gap-3">
+                        {f.profile_picture ? (
+                          <img src={f.profile_picture} alt={name} className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-[#5A1220]/10 border border-[#5A1220]/20 text-[#5A1220] flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                            {f.first_name.charAt(0)}{f.last_name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
+                            {f.department?.department_code && (
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${getDepartmentColor(f.department.department_code || f.department.department_name)}`}>
+                                {f.department.department_code}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-gray-500 font-semibold block">
+                            {f.department?.department_name || 'No Department'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${statusDetails.color}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusDetails.dot}`} />
+                        {statusDetails.label}
+                      </span>
                     </div>
-                  )}
+
+                    {/* Progress bar info */}
+                    <div className="space-y-1.5 font-sans pt-1">
+                      <div className="flex justify-between text-xs font-semibold text-gray-500">
+                        <span>Workload Progress</span>
+                        <span className="text-gray-700">{f.assigned_units} / {required} Units ({pct}%)</span>
+                      </div>
+                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${progressColor}`}
+                          style={{ width: `${Math.min(pct, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Card stats / details */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
+                      <div>
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Employment</span>
+                        <span className="font-bold text-gray-700 capitalize">{f.employment_type}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Remaining Units</span>
+                        <span className="font-bold text-gray-700">{remaining} Units</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Assigned Subjects</span>
+                        <span className="font-bold text-gray-700">{f.assigned_subjects.length} Subjects</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Assigned Classes</span>
+                        <span className="font-bold text-gray-700">{f.assigned_classes.length} Classes</span>
+                      </div>
+                    </div>
+
+                    {/* Tags summary */}
+                    {(f.assigned_subjects.length > 0 || f.assigned_classes.length > 0) && (
+                      <div className="space-y-2 pt-2 border-t border-gray-50 font-sans">
+                        {f.assigned_subjects.length > 0 && (
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
+                            {f.assigned_subjects.slice(0, 3).map(sub => (
+                              <span key={sub.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
+                                {sub.course_code || sub.subject_code}
+                              </span>
+                            ))}
+                            {f.assigned_subjects.length > 3 && (
+                              <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_subjects.length - 3} more</span>
+                            )}
+                          </div>
+                        )}
+                        {f.assigned_classes.length > 0 && (
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Classes:</span>
+                            {f.assigned_classes.slice(0, 3).map(c => (
+                              <span key={c.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
+                                {c.section_name}
+                              </span>
+                            ))}
+                            {f.assigned_classes.length > 3 && (
+                              <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_classes.length - 3} more</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Actions Footer */}
+                  <div className="flex items-center justify-between gap-2 pt-4 border-t border-gray-100 mt-4 relative z-10">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleViewDetails(f)}
+                        className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
+                      >
+                        View Details
+                      </button>
+                      <InstructorTimetableButton
+                        facultyId={f.id}
+                        facultyName={name}
+                        departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
+                      />
+                    </div>
+                    {canManageFaculty && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEditClick(f)}
+                          className="p-1.5 text-gray-500 hover:text-[#C9952A] hover:bg-amber-50 border border-transparent hover:border-amber-100 rounded-lg cursor-pointer transition-all"
+                          title="Edit Instructor"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => triggerDeleteConfirmation(f.id)}
+                          className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 rounded-lg cursor-pointer transition-all"
+                          title="Delete Instructor"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        /* List View Table */
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden font-sans">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3.5">Instructor Name</th>
+                  <th className="px-4 py-3.5">Department</th>
+                  <th className="px-4 py-3.5">Employment</th>
+                  <th className="px-4 py-3.5">Workload Units</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5 text-center">Teaching Load & Schedule</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-xs font-semibold text-gray-700">
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, idx) => (
+                    <tr key={idx} className="animate-pulse">
+                      <td className="px-5 py-4"><Skeleton className="h-4 w-36" /></td>
+                      <td className="px-4 py-4"><Skeleton className="h-4 w-16" /></td>
+                      <td className="px-4 py-4"><Skeleton className="h-4 w-20" /></td>
+                      <td className="px-4 py-4"><Skeleton className="h-4 w-28" /></td>
+                      <td className="px-4 py-4"><Skeleton className="h-4 w-20" /></td>
+                      <td className="px-4 py-4 text-center"><Skeleton className="h-8 w-44 mx-auto rounded-lg" /></td>
+                      <td className="px-5 py-4 text-right"><Skeleton className="h-8 w-20 ml-auto rounded-lg" /></td>
+                    </tr>
+                  ))
+                ) : sortedFaculties.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                      <p className="text-base font-semibold">No instructors found.</p>
+                      <p className="text-xs">Try adjusting search parameters or add a new record.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedFaculties.map((f, index) => {
+                    const statusDetails = getWorkloadStatus(f);
+                    const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
+                    const required = f.max_units - f.deload_units;
+                    const pct = required > 0 ? Math.round((f.assigned_units / required) * 100) : 0;
+                    const deptColorClass = getDepartmentColor(f.department?.department_code || f.department?.department_name);
+
+                    let progressColor = 'bg-[#F5A623]';
+                    if (f.assigned_units > required) {
+                      progressColor = f.probono_units > 0 ? 'bg-purple-500' : 'bg-red-500';
+                    } else if (f.assigned_units === required) {
+                      progressColor = 'bg-blue-500';
+                    }
+
+                    return (
+                      <tr key={f.id} className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'}`}>
+                        <td className="px-5 py-3.5 font-bold text-gray-900 whitespace-nowrap border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all">
+                          <div className="flex items-center gap-3">
+                            {f.profile_picture ? (
+                              <img src={f.profile_picture} alt={name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-[#5A1220]/10 border border-[#5A1220]/20 text-[#5A1220] flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                                {f.first_name.charAt(0)}{f.last_name.charAt(0)}
+                              </div>
+                            )}
+                            <div>
+                              <div className="text-xs font-extrabold text-gray-900">{name}</div>
+                              <div className="text-[10px] text-gray-400 font-medium">ID: #{f.id}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {f.department?.department_code ? (
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${deptColorClass}`}>
+                              {f.department.department_code}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold capitalize ${
+                            f.employment_type === 'full-time'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {f.employment_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="space-y-1 max-w-[140px]">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-gray-900">{f.assigned_units} / {required}</span>
+                              <span className="text-gray-400 text-[10px]">({pct}%)</span>
+                            </div>
+                            <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${progressColor}`}
+                                style={{ width: `${Math.min(100, pct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 w-fit ${statusDetails.color}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusDetails.dot}`} />
+                            {statusDetails.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                          <div className="inline-flex items-center justify-center gap-3">
+                            <button
+                              onClick={() => handleViewDetails(f)}
+                              className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
+                            >
+                              View Details
+                            </button>
+                            <InstructorTimetableButton
+                              facultyId={f.id}
+                              facultyName={name}
+                              departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {canManageFaculty && (
+                              <>
+                                <div className="relative group/tooltip">
+                                  <button
+                                    onClick={() => handleEditClick(f)}
+                                    className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <Pencil size={17} />
+                                  </button>
+                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                                    Edit
+                                  </span>
+                                </div>
+                                <div className="relative group/tooltip">
+                                  <button
+                                    onClick={() => triggerDeleteConfirmation(f.id)}
+                                    className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 size={17} />
+                                  </button>
+                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                                    Delete
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Pagination Section */}
       {totalItems > 0 && (
@@ -858,13 +1143,22 @@ export default function DeanFaculty() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-              <div>
-                <h2 className="text-base font-bold text-[#1A1410] font-sans">
-                  {detailsFaculty.first_name} {detailsFaculty.last_name}
-                </h2>
-                <span className="text-[10px] text-gray-500 font-semibold block mt-0.5 font-sans">
-                  {detailsFaculty.department ? `${detailsFaculty.department.department_code} - ${detailsFaculty.department.department_name}` : 'No Department'}
-                </span>
+              <div className="flex items-center gap-3.5">
+                {detailsFaculty.profile_picture ? (
+                  <img src={detailsFaculty.profile_picture} alt={detailsFaculty.first_name} className="w-12 h-12 rounded-full object-cover border-2 border-[#5A1220]/30 shadow-md shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-[#5A1220]/10 border border-[#5A1220]/20 text-[#5A1220] flex items-center justify-center font-bold text-sm uppercase shrink-0">
+                    {detailsFaculty.first_name.charAt(0)}{detailsFaculty.last_name.charAt(0)}
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-base font-bold text-[#1A1410] font-sans">
+                    {detailsFaculty.first_name} {detailsFaculty.last_name}
+                  </h2>
+                  <span className="text-[10px] text-gray-500 font-semibold block mt-0.5 font-sans">
+                    {detailsFaculty.department ? `${detailsFaculty.department.department_code} - ${detailsFaculty.department.department_name}` : 'No Department'}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -980,6 +1274,50 @@ export default function DeanFaculty() {
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
+              {/* Photo Upload Section */}
+              <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
+                <div className="relative group">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
+                    title="Click to upload picture"
+                  >
+                    {profilePicture ? (
+                      <img src={profilePicture} alt="Faculty Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
+                        <Camera size={26} />
+                        <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Upload</span>
+                      </div>
+                    )}
+                  </div>
+                  {profilePicture && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setProfilePicture(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
+                      title="Remove Photo"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+                <p className="text-[10px] font-semibold text-gray-500 font-sans">
+                  {profilePicture ? 'Click photo to change' : 'Click to upload profile photo'}
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
