@@ -250,6 +250,7 @@ export interface ApiRoomRecord {
   room_code: string;
   building?: string | null;
   room_type: RoomType;
+  allow_lecture_usage?: boolean;
   status: RoomStatus;
   department_id: number | null;
   max_concurrent_classes?: number | string | null;

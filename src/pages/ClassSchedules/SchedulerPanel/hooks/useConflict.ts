@@ -49,7 +49,6 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
 };
 
 const getRoomCapacity = (room: Room | undefined): number => {
-  if (room?.roomType === "field" || room?.roomType === "online") return 3;
   return Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
 };
 
@@ -208,7 +207,7 @@ export const getConflictedScheduleMap = (
           const room = resolveRoom(rooms, s1.roomId);
           const isSharedField = room?.roomType === "field" || s1.roomId === "field" || s1.mode === "field" || s2.mode === "field";
           const isSharedCapacityRoom = isSharedField;
-          const sharedCapacity = isSharedCapacityRoom ? 3 : getRoomCapacity(room);
+          const sharedCapacity = getRoomCapacity(room);
           const sameRoomSchedules = isSharedCapacityRoom
             ? schedules.filter((item) =>
                 item.departmentId === s1.departmentId
@@ -367,7 +366,7 @@ export const useConflict = ({
           const isSharedField = room?.roomType === "field" || roomId === "field" || subjectRequiresField;
           const isSharedOnline = room?.roomType === "online" || roomId === "online";
           const isSharedCapacityRoom = isSharedField || isSharedOnline;
-          const sharedCapacity = isSharedCapacityRoom ? 3 : getRoomCapacity(room);
+          const sharedCapacity = getRoomCapacity(room);
           const sameRoomSchedules = isSharedCapacityRoom
             ? schedules.filter((item) =>
                 item.departmentId === candidateDepartmentId

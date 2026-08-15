@@ -98,7 +98,7 @@ export default function RoomViewModal({
   }, [roomClasses]);
 
   const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
-  const sharedRoomCapacity = isSharedRoom ? 3 : Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
+  const sharedRoomCapacity = Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
   const peakSharedOccupancy = useMemo(() => {
     if (!isSharedRoom) return 0;
 
@@ -201,7 +201,7 @@ export default function RoomViewModal({
                 ? "bg-red-50 text-red-700 border-red-200"
                 : "bg-emerald-50 text-emerald-700 border-emerald-200"
             }`}>
-              Shared capacity {peakSharedOccupancy}/{sharedRoomCapacity}
+              Department capacity {peakSharedOccupancy}/{sharedRoomCapacity}
             </span>
           )}
         </div>

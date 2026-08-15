@@ -56,6 +56,7 @@ interface Department {
   facultyCount: number;  // number
   sectionsCount: number; // number
   createdAt: string;     // ISO date string
+  schedulingProfile: 'standard' | 'laboratory_enabled';
 }
 
 interface ApiDepartment {
@@ -68,6 +69,7 @@ interface ApiDepartment {
   users?: Array<{
     name?: string;
   }>;
+  scheduling_profile?: 'standard' | 'laboratory_enabled';
 }
 
 interface DepartmentsPageData {
@@ -99,6 +101,7 @@ export default function Departments() {
   // Form state
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const [schedulingProfile, setSchedulingProfile] = useState<'standard' | 'laboratory_enabled'>('standard');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [codeError, setCodeError] = useState('');
   const [nameError, setNameError] = useState('');
@@ -119,6 +122,7 @@ export default function Departments() {
     facultyCount: department.faculties_count ?? 0,
     sectionsCount: department.sections_count ?? 0,
     createdAt: department.created_at,
+    schedulingProfile: department.scheduling_profile ?? 'standard',
   });
 
   const fetchDepartments = async (forceRefresh = false) => {
@@ -179,6 +183,7 @@ export default function Departments() {
       const payload = {
         department_name: trimmedName,
         department_code: trimmedCode,
+        scheduling_profile: schedulingProfile,
       };
 
       if (isEditMode && editingId !== null) {
@@ -203,6 +208,7 @@ export default function Departments() {
 
       setName('');
       setCode('');
+      setSchedulingProfile('standard');
       setCodeError('');
       setNameError('');
       setIsModalOpen(false);
@@ -218,6 +224,7 @@ export default function Departments() {
   const handleEditClick = (dept: Department) => {
     setName(dept.name);
     setCode(dept.code);
+    setSchedulingProfile(dept.schedulingProfile);
     setEditingId(dept.id);
     setCodeError('');
     setNameError('');
@@ -268,6 +275,20 @@ export default function Departments() {
         accessorKey: 'name',
         header: 'Department Name',
         cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
+      },
+      {
+        accessorKey: 'schedulingProfile',
+        header: 'Scheduling Profile',
+        cell: info => {
+          const profile = info.getValue() as Department['schedulingProfile'];
+          return (
+            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${profile === 'laboratory_enabled'
+              ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+              {profile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard'}
+            </span>
+          );
+        },
       },
       {
         accessorKey: 'dean',
@@ -377,6 +398,7 @@ export default function Departments() {
             setEditingId(null);
             setName('');
             setCode('');
+            setSchedulingProfile('standard');
             setCodeError('');
             setNameError('');
             setIsModalOpen(true);
@@ -618,6 +640,19 @@ export default function Departments() {
                   }`}
                 />
                 {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                  Scheduling Profile <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={schedulingProfile}
+                  onChange={(e) => setSchedulingProfile(e.target.value as Department['schedulingProfile'])}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                >
+                  <option value="standard">Standard (no laboratories)</option>
+                  <option value="laboratory_enabled">Laboratory-enabled</option>
+                </select>
               </div>
               <div className="flex gap-3 pt-3">
                 <button 

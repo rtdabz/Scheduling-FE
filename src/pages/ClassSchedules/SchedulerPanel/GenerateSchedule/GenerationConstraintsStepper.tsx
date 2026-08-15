@@ -8,14 +8,10 @@ import {
   ChevronRight,
   Clock,
   Loader2,
-  Pencil,
   Plus,
   Search,
-  Scissors,
   Sun,
   Sunset,
-  Trash2,
-  TreePine,
   Moon,
 } from "lucide-react";
 import api from "../../../../lib/api";
@@ -23,6 +19,7 @@ import { useToast } from "../../../../context/ToastContext";
 import type { TimeBlockOption } from "./useGenerateSchedule";
 import type { Course } from "../types";
 import { ReviewGroup } from "./WizardReviewComponents";
+import SchedulingRuleEditor from "./SchedulingRuleEditor";
 
 interface ConstraintCourse {
   id: number;
@@ -153,6 +150,12 @@ export default function GenerationConstraintsStepper({
   const availableFieldCourses = fieldCourseOptions.filter(
     (course) => !fieldCourseCodes.includes(course.code),
   );
+  const effectiveForcedCourseId = availableForcedDayCourses.some((course) => String(course.id) === selectedForcedCourseId)
+    ? selectedForcedCourseId
+    : String(availableForcedDayCourses[0]?.id ?? "");
+  const effectiveFieldCourseCode = availableFieldCourses.some((course) => course.code === selectedFieldCourseCode)
+    ? selectedFieldCourseCode
+    : (availableFieldCourses[0]?.code ?? "");
 
   const filteredForcedDayCourses = filterCourses(availableForcedDayCourses, courseDaySearch);
   const filteredFieldCourses = filterCourses(availableFieldCourses, fieldCourseSearch);
@@ -164,20 +167,6 @@ export default function GenerationConstraintsStepper({
   const affectedSplitCount =
     (effectiveSplitGecEnabled ? selectedGecCourseIds.length : 0)
     + (splitSessionAvailable ? selectedSplitSessionCourseIds.length : 0);
-
-  useEffect(() => {
-    const exists = availableForcedDayCourses.some((course) => String(course.id) === selectedForcedCourseId);
-    if (!exists) {
-      setSelectedForcedCourseId(String(availableForcedDayCourses[0]?.id ?? ""));
-    }
-  }, [availableForcedDayCourses, selectedForcedCourseId]);
-
-  useEffect(() => {
-    const exists = availableFieldCourses.some((course) => course.code === selectedFieldCourseCode);
-    if (!exists) {
-      setSelectedFieldCourseCode(availableFieldCourses[0]?.code ?? "");
-    }
-  }, [availableFieldCourses, selectedFieldCourseCode]);
 
   const patchSettings = async (patch: Partial<SchedulingSettings>) => {
     if (!settings) return false;
@@ -203,7 +192,7 @@ export default function GenerationConstraintsStepper({
   };
 
   const addForcedDayRule = async () => {
-    const courseId = Number(selectedForcedCourseId);
+    const courseId = Number(effectiveForcedCourseId);
     if (!Number.isFinite(courseId) || courseId <= 0) return;
 
     const saved = await patchSettings({
@@ -216,11 +205,11 @@ export default function GenerationConstraintsStepper({
   };
 
   const addFieldCourseRule = async () => {
-    if (!selectedFieldCourseCode) return;
+    if (!effectiveFieldCourseCode) return;
 
     const saved = await patchSettings({
       field_course_assignment_enabled: true,
-      field_course_codes: [...fieldCourseCodes, selectedFieldCourseCode],
+      field_course_codes: [...fieldCourseCodes, effectiveFieldCourseCode],
     });
     if (saved) {
       setSelectedFieldCourseCode("");
@@ -424,19 +413,38 @@ export default function GenerationConstraintsStepper({
                   description="Add specific rules for course days and field resources."
                 >
                   <div className="grid min-h-0 gap-3 xl:grid-cols-2">
-                    <section className="space-y-2 border border-slate-200 bg-white p-2.5" style={{ borderRadius: 8 }}>
-                      <h6 className="text-xs font-black uppercase tracking-wide text-slate-500">Force Course Day</h6>
-                      <SearchBox
-                        value={courseDaySearch}
-                        onChange={setCourseDaySearch}
-                        placeholder="Search current-semester courses"
-                        disabled={busy}
-                      />
-                      <div
-                        className="grid w-full items-end gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 sm:grid-cols-[minmax(0,1fr)_140px_112px]"
-                      >
+                    <SchedulingRuleEditor
+                      title="Configure Subject Day Rules"
+                      description="Choose subjects that must be fixed to a required day."
+                      rows={forcedDayRules.map((rule) => {
+                        const course = forcedCourseMap.get(rule.course_id);
+                        return {
+                          key: String(rule.course_id),
+                          label: course?.code ?? `Course #${rule.course_id}`,
+                          value: rule.day,
+                          detail: course?.name ?? "Saved course rule",
+                          onEdit: () => {
+                            setSelectedForcedCourseId(String(rule.course_id));
+                            setSelectedForcedDay(rule.day);
+                            patchSettings({ forced_day_rules: forcedDayRules.filter((item) => item.course_id !== rule.course_id) });
+                          },
+                          onRemove: () => patchSettings({ forced_day_rules: forcedDayRules.filter((item) => item.course_id !== rule.course_id) }),
+                        };
+                      })}
+                      emptyText="No subject day rules configured."
+                      disabled={busy}
+                      saving={isSaving}
+                    >
+                      <div className="space-y-2">
+                        <SearchBox
+                          value={courseDaySearch}
+                          onChange={setCourseDaySearch}
+                          placeholder="Search current-semester courses"
+                          disabled={busy}
+                        />
+                        <div className="grid w-full items-end gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 sm:grid-cols-[minmax(0,1fr)_140px_112px]">
                         <CourseSelect
-                          value={selectedForcedCourseId}
+                          value={effectiveForcedCourseId}
                           onChange={setSelectedForcedCourseId}
                           courses={filteredForcedDayCourses}
                           disabled={busy || filteredForcedDayCourses.length === 0}
@@ -445,7 +453,7 @@ export default function GenerationConstraintsStepper({
                         <DaySelect value={selectedForcedDay} onChange={setSelectedForcedDay} disabled={busy} />
                         <button
                           type="button"
-                          disabled={busy || !selectedForcedCourseId}
+                          disabled={busy || !effectiveForcedCourseId}
                           onClick={addForcedDayRule}
                           className="inline-flex h-9 w-full items-center justify-center gap-2 bg-[#4e0a10] px-3 text-xs font-bold text-white hover:bg-[#6b0e17] disabled:cursor-not-allowed disabled:opacity-60"
                           style={{ borderRadius: 8 }}
@@ -453,40 +461,41 @@ export default function GenerationConstraintsStepper({
                           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                           Add
                         </button>
+                        </div>
                       </div>
-                      <RuleList
-                        title="Selected Course Day Rules"
-                        emptyText="No course day rules selected for this semester."
-                        rows={forcedDayRules.map((rule) => {
-                          const course = forcedCourseMap.get(rule.course_id);
-                          return {
-                            key: String(rule.course_id),
-                            label: course?.code ?? `Course #${rule.course_id}`,
-                            value: rule.day,
-                            detail: course?.name ?? "Saved course rule",
-                            onEdit: () => {
-                              setSelectedForcedCourseId(String(rule.course_id));
-                              setSelectedForcedDay(rule.day);
-                              patchSettings({ forced_day_rules: forcedDayRules.filter((item) => item.course_id !== rule.course_id) });
-                            },
-                            onRemove: () => patchSettings({ forced_day_rules: forcedDayRules.filter((item) => item.course_id !== rule.course_id) }),
-                          };
-                        })}
-                        disabled={busy}
-                      />
-                    </section>
+                    </SchedulingRuleEditor>
 
-                    <section className="space-y-2 border border-slate-200 bg-white p-2.5" style={{ borderRadius: 8 }}>
-                      <h6 className="text-xs font-black uppercase tracking-wide text-slate-500">Force Course Field</h6>
-                      <SearchBox
-                        value={fieldCourseSearch}
-                        onChange={setFieldCourseSearch}
-                        placeholder="Search current-semester courses"
-                        disabled={busy}
-                      />
-                      <div className="grid w-full items-end gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 sm:grid-cols-[minmax(0,1fr)_112px]">
+                    <SchedulingRuleEditor
+                      title="Configure Field Subjects"
+                      description="Mark subjects that must use field resources."
+                      rows={fieldCourseCodes.map((courseCode) => {
+                        const course = fieldCourseMap.get(courseCode);
+                        return {
+                          key: courseCode,
+                          label: courseCode,
+                          value: "Field",
+                          detail: course?.name ?? "Saved field rule",
+                          onEdit: () => {
+                            setSelectedFieldCourseCode(courseCode);
+                            patchSettings({ field_course_codes: fieldCourseCodes.filter((item) => item !== courseCode) });
+                          },
+                          onRemove: () => patchSettings({ field_course_codes: fieldCourseCodes.filter((item) => item !== courseCode) }),
+                        };
+                      })}
+                      emptyText="No field subjects configured."
+                      disabled={busy}
+                      saving={isSaving}
+                    >
+                      <div className="space-y-2">
+                        <SearchBox
+                          value={fieldCourseSearch}
+                          onChange={setFieldCourseSearch}
+                          placeholder="Search current-semester courses"
+                          disabled={busy}
+                        />
+                        <div className="grid w-full items-end gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2 sm:grid-cols-[minmax(0,1fr)_112px]">
                         <CourseSelect
-                          value={selectedFieldCourseCode}
+                          value={effectiveFieldCourseCode}
                           onChange={setSelectedFieldCourseCode}
                           courses={filteredFieldCourses}
                           valueKey="code"
@@ -495,7 +504,7 @@ export default function GenerationConstraintsStepper({
                         />
                         <button
                           type="button"
-                          disabled={busy || !selectedFieldCourseCode}
+                          disabled={busy || !effectiveFieldCourseCode}
                           onClick={addFieldCourseRule}
                           className="inline-flex h-9 items-center justify-center gap-2 bg-[#4e0a10] px-3 text-xs font-bold text-white hover:bg-[#6b0e17] disabled:cursor-not-allowed disabled:opacity-60"
                           style={{ borderRadius: 8 }}
@@ -503,27 +512,9 @@ export default function GenerationConstraintsStepper({
                           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                           Add
                         </button>
+                        </div>
                       </div>
-                      <RuleList
-                        title="Selected Course Field Rules"
-                        emptyText="No course field rules selected for this semester."
-                        rows={fieldCourseCodes.map((courseCode) => {
-                          const course = fieldCourseMap.get(courseCode);
-                          return {
-                            key: courseCode,
-                            label: courseCode,
-                            value: "Field",
-                            detail: course?.name ?? "Saved field rule",
-                            onEdit: () => {
-                              setSelectedFieldCourseCode(courseCode);
-                              patchSettings({ field_course_codes: fieldCourseCodes.filter((item) => item !== courseCode) });
-                            },
-                            onRemove: () => patchSettings({ field_course_codes: fieldCourseCodes.filter((item) => item !== courseCode) }),
-                          };
-                        })}
-                        disabled={busy}
-                      />
-                    </section>
+                    </SchedulingRuleEditor>
                   </div>
                 </ConstraintStep>
               )}
@@ -828,65 +819,6 @@ function SelectableCourseList({
   );
 }
 
-function RuleList({
-  title,
-  rows,
-  emptyText,
-  disabled,
-}: {
-  title: string;
-  rows: { key: string; label: string; value: string; detail: string; onEdit: () => void; onRemove: () => void }[];
-  emptyText: string;
-  disabled: boolean;
-}) {
-  return (
-    <section className="space-y-2">
-      <h6 className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</h6>
-      {rows.length === 0 ? (
-        <div className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs font-semibold text-slate-500" style={{ borderRadius: 8 }}>
-          {emptyText}
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {rows.map((row) => (
-            <div key={row.key} className="grid gap-2 border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_96px_68px]" style={{ borderRadius: 8 }}>
-              <div className="min-w-0">
-                <div className="truncate text-xs font-black text-slate-900">{row.label}</div>
-                <div className="truncate text-[11px] font-medium text-slate-500">{row.detail}</div>
-              </div>
-              <div className="inline-flex h-7 items-center justify-center bg-slate-100 px-2 text-xs font-black text-slate-700" style={{ borderRadius: 8 }}>
-                {row.value}
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={row.onEdit}
-                  className="flex h-7 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ borderRadius: 8 }}
-                  aria-label="Edit rule"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={row.onRemove}
-                  className="flex h-7 items-center justify-center border border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ borderRadius: 8 }}
-                  aria-label="Remove rule"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
 function ReviewStep({
   forcedDayRules,
   forcedCourseMap,
@@ -990,54 +922,6 @@ function ReviewStep({
         </button>
       </div>
     </section>
-  );
-}
-
-function ReviewPanel({
-  forcedDayRules,
-  forcedCourseMap,
-  fieldCourseCodes,
-}: {
-  forcedDayRules: ForcedDayRule[];
-  forcedCourseMap: Map<number, ConstraintCourse>;
-  fieldCourseCodes: string[];
-}) {
-  return (
-    <section className="border border-slate-200 bg-white p-4 shadow-sm" style={{ borderRadius: 8 }}>
-      <h6 className="text-xs font-black uppercase tracking-wide text-slate-500">Live Summary</h6>
-      <div className="mt-3 space-y-4">
-        <SummaryBlock
-          title="Course Day Rules"
-          emptyText="None selected"
-          rows={forcedDayRules.map((rule) => {
-            const course = forcedCourseMap.get(rule.course_id);
-            return `${course?.code ?? `Course #${rule.course_id}`} -> ${rule.day}`;
-          })}
-        />
-        <SummaryBlock
-          title="Course Field Rules"
-          emptyText="None selected"
-          rows={fieldCourseCodes.map((courseCode) => `${courseCode} -> Field`)}
-        />
-      </div>
-    </section>
-  );
-}
-
-function SummaryBlock({ title, rows, emptyText }: { title: string; rows: string[]; emptyText: string }) {
-  return (
-    <div>
-      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{title}</p>
-      {rows.length === 0 ? (
-        <p className="mt-1 text-xs font-semibold text-slate-400">{emptyText}</p>
-      ) : (
-        <ul className="mt-1 space-y-1 text-xs font-bold text-slate-800">
-          {rows.map((row) => (
-            <li key={row}>- {row}</li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }
 

@@ -37,6 +37,7 @@ interface Room {
   room_code: string;
   building: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
+  allow_lecture_usage: boolean;
   status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
@@ -48,6 +49,7 @@ interface ApiRoom {
   room_code: string;
   building: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
+  allow_lecture_usage?: boolean;
   status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
@@ -97,6 +99,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
   room_code: r.room_code,
   building: r.building || '',
   room_type: r.room_type,
+  allow_lecture_usage: !!r.allow_lecture_usage,
   status: r.status,
   department_id: r.department_id,
   department: r.department,
@@ -149,6 +152,7 @@ export default function DeanRooms() {
   const [roomCode, setRoomCode] = useState('');
   const [building, setBuilding] = useState('');
   const [roomType, setRoomType] = useState<'lecture' | 'laboratory' | 'online' | 'field'>('lecture');
+  const [allowLectureUsage, setAllowLectureUsage] = useState(false);
   const [status, setStatus] = useState<'available' | 'not available'>('available');
   const [departmentId, setDepartmentId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -226,6 +230,7 @@ export default function DeanRooms() {
         room_code: trimmedCode,
         building: trimmedBuilding,
         room_type: (!selectedBuilding && !isEditMode) ? 'lecture' : roomType,
+        allow_lecture_usage: (selectedBuilding || isEditMode) && roomType === 'laboratory' && allowLectureUsage,
         status,
         department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (departmentId ? parseInt(departmentId) : (user?.department_id ? Number(user.department_id) : null))
       };
@@ -255,6 +260,7 @@ export default function DeanRooms() {
       setRoomCode('');
       setBuilding('');
       setRoomType('lecture');
+      setAllowLectureUsage(false);
       setStatus('available');
       setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
       setIsModalOpen(false);
@@ -273,6 +279,7 @@ export default function DeanRooms() {
     setRoomCode(room.room_code);
     setBuilding(room.building || '');
     setRoomType(room.room_type);
+    setAllowLectureUsage(room.room_type === 'laboratory' && room.allow_lecture_usage);
     setStatus(room.status);
     setDepartmentId(room.department_id ? room.department_id.toString() : '');
     setCodeError('');
@@ -510,6 +517,7 @@ export default function DeanRooms() {
                 setRoomCode('');
                 setBuilding(selectedBuilding || '');
                 setRoomType('lecture');
+                setAllowLectureUsage(false);
                 setStatus('available');
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
                 setCodeError('');
@@ -978,7 +986,13 @@ export default function DeanRooms() {
                     </label>
                     <select
                       value={roomType}
-                      onChange={(e) => setRoomType(e.target.value as 'lecture' | 'laboratory' | 'online' | 'field')}
+                      onChange={(e) => {
+                        const nextRoomType = e.target.value as 'lecture' | 'laboratory' | 'online' | 'field';
+                        setRoomType(nextRoomType);
+                        if (nextRoomType !== 'laboratory') {
+                          setAllowLectureUsage(false);
+                        }
+                      }}
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
                     >
                       <option value="lecture">Lecture</option>
@@ -1001,6 +1015,23 @@ export default function DeanRooms() {
                   </select>
                 </div>
               </div>
+
+              {(selectedBuilding || isEditMode) && roomType === 'laboratory' && (
+                <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allowLectureUsage}
+                    onChange={(e) => setAllowLectureUsage(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#5A1220] focus:ring-[#C9952A]"
+                  />
+                  <span>
+                    <span className="block text-xs font-bold uppercase tracking-wider text-gray-600">Lecture fallback capable</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-gray-500">
+                      Allows major full-lecture courses to use this lab only when it is vacant.
+                    </span>
+                  </span>
+                </label>
+              )}
 
               {isVpaa ? (
                 <div>

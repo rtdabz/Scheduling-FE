@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, CalendarDays, ChevronDown, FlaskConical, Loader2, SlidersHorizontal, SplitSquareVertical, TreePine } from 'lucide-react';
+import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, Loader2, SlidersHorizontal, SplitSquareVertical, TreePine, Wifi } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -9,6 +9,7 @@ import AccountSettingsPanel from '../../components/settings/AccountSettingsPanel
 
 interface SchedulingSettings {
   department_id: number;
+  scheduling_profile: 'standard' | 'laboratory_enabled';
   lecture_lab_schedule_override_enabled: boolean;
   split_units_schedule_override_enabled: boolean;
   custom_lab_duration_override_enabled: boolean;
@@ -20,6 +21,8 @@ interface SchedulingSettings {
   force_schedule_reuse_enabled: boolean;
   field_evening_schedule_enabled: boolean;
   sunday_online_only_enabled: boolean;
+  online_slot_limit: number;
+  field_slot_limit: number;
   lecture_lab_available: boolean;
 }
 
@@ -43,6 +46,7 @@ interface SettingToggleCardProps {
   icon: LucideIcon;
   onToggle: () => void;
   children?: React.ReactNode;
+  recommendation?: 'recommended' | 'optional' | 'not-applicable';
 }
 
 interface SettingsDropdownProps {
@@ -116,16 +120,39 @@ function SettingToggleCard({
   icon: Icon,
   onToggle,
   children,
+  recommendation = 'optional',
 }: SettingToggleCardProps) {
+  const recommendationStyles = {
+    recommended: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    optional: 'border-slate-200 bg-slate-50 text-slate-600',
+    'not-applicable': 'border-amber-200 bg-amber-50 text-amber-700',
+  };
+  const recommendationLabels = {
+    recommended: 'Recommended',
+    optional: 'Optional',
+    'not-applicable': 'Not for this profile',
+  };
+
   return (
-    <section className="border border-slate-200 bg-white shadow-sm" style={{ borderRadius: 10 }}>
+    <section
+      className={`border bg-white shadow-sm ${
+        recommendation === 'recommended' ? 'border-l-4 border-l-emerald-500 border-y-slate-200 border-r-slate-200' : 'border-slate-200'
+      }`}
+      style={{ borderRadius: 8 }}
+    >
       <div className="flex items-start justify-between gap-4 px-5 py-4">
         <div className="flex min-w-0 gap-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#6b0f1a]/10 text-[#6b0f1a]" style={{ borderRadius: 8 }}>
             <Icon size={16} />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+              <span className={`inline-flex items-center border px-2 py-0.5 text-[10px] font-bold uppercase ${recommendationStyles[recommendation]}`} style={{ borderRadius: 6 }}>
+                {recommendation === 'recommended' && <CheckCircle2 className="mr-1 h-3 w-3" />}
+                {recommendationLabels[recommendation]}
+              </span>
+            </div>
             <p className="mt-0.5 max-w-4xl text-xs leading-5 text-slate-600">
               {description}
             </p>
@@ -198,7 +225,7 @@ export default function SecretarySettings() {
     };
   }, [toast]);
 
-  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'split_units_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'force_schedule_reuse_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled'>>) => {
+  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'split_units_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'force_schedule_reuse_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled' | 'online_slot_limit' | 'field_slot_limit'>>) => {
     if (!settings) {
       return;
     }
@@ -211,9 +238,10 @@ export default function SecretarySettings() {
       const response = await api.patch<SchedulingSettings>('/scheduling-settings', patch);
       setSettings(response.data);
       toast.success('Settings saved', 'Scheduling settings updated.');
-    } catch {
+    } catch (error) {
       setSettings(previous);
-      toast.error('Error', 'Failed to save scheduling settings.');
+      const apiError = error as { response?: { data?: { message?: string } } };
+      toast.error('Error', apiError.response?.data?.message ?? 'Failed to save scheduling settings.');
     } finally {
       setIsSaving(false);
     }
@@ -230,6 +258,14 @@ export default function SecretarySettings() {
   const fieldEveningEnabled = !!settings?.field_evening_schedule_enabled;
   const sundayOnlineOnlyEnabled = settings?.sunday_online_only_enabled ?? true;
   const lectureLabAvailable = !!settings?.lecture_lab_available;
+  const isLaboratoryProfile = settings?.scheduling_profile === 'laboratory_enabled';
+  const profileLabel = isLaboratoryProfile ? 'Laboratory-enabled department' : 'Standard department';
+  const profileDescription = isLaboratoryProfile
+    ? 'Use lecture + laboratory controls for departments with practical and laboratory courses.'
+    : 'Use standard lecture, online, and field controls. Laboratory overrides stay disabled for this profile.';
+  const profileRecommendations = isLaboratoryProfile
+    ? ['Lecture + Laboratory Override', 'Online and field slot limits', 'Sunday Online Only']
+    : ['Online and field slot limits', 'Sunday Online Only', 'Split Units or GEC Split'];
   const handleDropdownToggle = (id: string) => {
     setOpenDropdown((current) => (current === id ? null : id));
   };
@@ -242,11 +278,43 @@ export default function SecretarySettings() {
     action?.();
   };
   return (
-    <div className="p-1">
+    <div className="min-h-full bg-[#f7f8fa] p-1">
       <div className="mb-3">
         <AccountSettingsPanel />
       </div>
-      <div className="grid max-w-8xl items-start gap-3 rounded-xl shadow-sm lg:grid-cols-2">
+      <section className="mb-3 border border-slate-200 bg-white px-5 py-5 shadow-sm" style={{ borderRadius: 10 }}>
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-[#6b0f1a] text-white" style={{ borderRadius: 8 }}>
+              <Building2 size={19} />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-bold text-slate-950">Department scheduling configuration</h1>
+                <span className="inline-flex items-center gap-1 border border-[#6b0f1a]/20 bg-[#6b0f1a]/5 px-2 py-1 text-[10px] font-bold uppercase text-[#6b0f1a]" style={{ borderRadius: 6 }}>
+                  <Info className="h-3 w-3" />
+                  {profileLabel}
+                </span>
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{profileDescription}</p>
+            </div>
+          </div>
+          <div className="min-w-[260px] border-l-2 border-emerald-400 pl-4">
+            <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Recommended for this department
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {profileRecommendations.map((item) => (
+                <span key={item} className="border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800" style={{ borderRadius: 6 }}>
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+      <div className="grid max-w-8xl items-start gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.6fr)]">
         <div className="space-y-3">
           <SettingsDropdown
           id="configuration-override"
@@ -258,6 +326,7 @@ export default function SecretarySettings() {
         >
           <SettingToggleCard
             title="Lecture + Laboratory Override"
+            recommendation={isLaboratoryProfile ? 'recommended' : 'not-applicable'}
             description="Split selected lecture + lab courses into separate lecture and laboratory meetings."
             note={lectureLabAvailable
               ? "Example: 2 Lecture + 1 Laboratory becomes 2 hrs lecture + 3 hrs laboratory."
@@ -266,7 +335,7 @@ export default function SecretarySettings() {
             enabled={lectureLabEnabled}
             isLoading={isLoading}
             isSaving={isSaving}
-            disabled={!lectureLabAvailable}
+            disabled={!lectureLabAvailable || !isLaboratoryProfile}
             icon={FlaskConical}
             onToggle={() => {
               if (!lectureLabAvailable) return;
@@ -291,6 +360,7 @@ export default function SecretarySettings() {
           />
           <SettingToggleCard
             title="Split Units Override"
+            recommendation={isLaboratoryProfile ? 'optional' : 'recommended'}
             description="Split selected courses into unit-based sessions."
             note="Example: 3 units becomes two 1.5-hour meetings."
             enabled={splitUnitsEnabled}
@@ -324,6 +394,7 @@ export default function SecretarySettings() {
           />
           <SettingToggleCard
             title="GEC Split Override"
+            recommendation="optional"
             description="Allow selected GEC courses to split into shorter meetings."
             note="Example: 3 units becomes two 1.5-hour sessions."
             enabled={gecSplitEnabled}
@@ -357,6 +428,7 @@ export default function SecretarySettings() {
           />
           <SettingToggleCard
             title="Allow Field Subjects in Evening"
+            recommendation="optional"
             description="Allow field subjects to use the 5 PM to 7 PM range when daytime capacity is not enough."
             note="Disabled: field subjects are limited to 7 AM-5 PM. Enabled: 5 PM-7 PM is allowed but not preferred."
             enabled={fieldEveningEnabled}
@@ -385,6 +457,7 @@ export default function SecretarySettings() {
           />
           <SettingToggleCard
             title="Sunday Online Only"
+            recommendation="recommended"
             description="Require Sunday major-course meetings to use online delivery."
             note="Enabled by default: Sunday schedules are online. Turn off only if your department allows physical Sunday classes."
             enabled={sundayOnlineOnlyEnabled}
@@ -411,8 +484,72 @@ export default function SecretarySettings() {
               });
             }}
           />
+          <section className="border border-slate-200 bg-white px-5 py-4 shadow-sm" style={{ borderRadius: 10 }}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-950">Resource slot limits</h2>
+                  <span className="border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700" style={{ borderRadius: 6 }}>Recommended</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Set how many sections from this department may share an ONLINE or FIELD time slot.</p>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-4">
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#6b0f1a]/10 text-[#6b0f1a]" style={{ borderRadius: 8 }}>
+                    <Wifi size={16} />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">Online slot limit</span>
+                    <span className="block text-xs leading-5 text-slate-600">Concurrent online sections per time slot.</span>
+                  </span>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  disabled={isLoading || isSaving || !settings}
+                  value={settings?.online_slot_limit ?? 3}
+                  onChange={(event) => {
+                    const value = Math.max(1, Math.min(100, Number(event.target.value) || 1));
+                    setSettings((current) => current ? { ...current, online_slot_limit: value } : current);
+                  }}
+                  onBlur={(event) => updateSetting({ online_slot_limit: Math.max(1, Math.min(100, Number(event.target.value) || 1)) })}
+                  className="h-9 w-20 border border-slate-300 px-2 text-center text-sm font-semibold text-slate-900 outline-none focus:border-[#6b0f1a]"
+                  style={{ borderRadius: 8 }}
+                />
+              </label>
+              <label className="flex items-center justify-between gap-4">
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center bg-emerald-50 text-emerald-700" style={{ borderRadius: 8 }}>
+                    <TreePine size={16} />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">Field slot limit</span>
+                    <span className="block text-xs leading-5 text-slate-600">Concurrent field sections per time slot.</span>
+                  </span>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  disabled={isLoading || isSaving || !settings}
+                  value={settings?.field_slot_limit ?? 3}
+                  onChange={(event) => {
+                    const value = Math.max(1, Math.min(100, Number(event.target.value) || 1));
+                    setSettings((current) => current ? { ...current, field_slot_limit: value } : current);
+                  }}
+                  onBlur={(event) => updateSetting({ field_slot_limit: Math.max(1, Math.min(100, Number(event.target.value) || 1)) })}
+                  className="h-9 w-20 border border-slate-300 px-2 text-center text-sm font-semibold text-slate-900 outline-none focus:border-[#6b0f1a]"
+                  style={{ borderRadius: 8 }}
+                />
+              </label>
+            </div>
+          </section>
           <SettingToggleCard
             title="Custom Lab Duration"
+            recommendation={isLaboratoryProfile ? 'optional' : 'not-applicable'}
             description="Allow selected lab courses to use custom lab meeting lengths."
             note="If Lecture + Lab is already active, use this only when the lab needs longer time."
             noteTone="danger"
@@ -420,7 +557,9 @@ export default function SecretarySettings() {
             isLoading={isLoading}
             isSaving={isSaving}
             icon={SlidersHorizontal}
+            disabled={!isLaboratoryProfile}
             onToggle={() => {
+              if (!isLaboratoryProfile) return;
               if (!customLabEnabled) {
                 requestConfirmation({
                   title: 'Enable Custom Lab Duration?',
@@ -512,6 +651,55 @@ export default function SecretarySettings() {
           </SettingToggleCard>
           </SettingsDropdown>
         </div>
+        <aside className="space-y-3 lg:sticky lg:top-3">
+          <section className="border border-slate-200 bg-white p-4 shadow-sm" style={{ borderRadius: 8 }}>
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center bg-slate-900 text-white" style={{ borderRadius: 7 }}>
+                <Gauge size={16} />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold text-slate-950">Current capacity</h2>
+                <p className="text-xs text-slate-500">Applied independently to this department.</p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="border border-sky-200 bg-sky-50 p-3" style={{ borderRadius: 7 }}>
+                <div className="text-[10px] font-bold uppercase text-sky-700">Online</div>
+                <div className="mt-1 text-2xl font-bold text-slate-950">{settings?.online_slot_limit ?? 3}</div>
+                <div className="text-[11px] text-slate-600">sections per slot</div>
+              </div>
+              <div className="border border-emerald-200 bg-emerald-50 p-3" style={{ borderRadius: 7 }}>
+                <div className="text-[10px] font-bold uppercase text-emerald-700">Field</div>
+                <div className="mt-1 text-2xl font-bold text-slate-950">{settings?.field_slot_limit ?? 3}</div>
+                <div className="text-[11px] text-slate-600">sections per slot</div>
+              </div>
+            </div>
+          </section>
+          <section className="border border-slate-200 bg-white p-4 shadow-sm" style={{ borderRadius: 8 }}>
+            <h2 className="text-sm font-bold text-slate-950">Profile guide</h2>
+            <div className="mt-3 space-y-3">
+              {(isLaboratoryProfile ? [
+                ['Lecture + Laboratory', 'Enable when courses contain both lecture and laboratory hours.'],
+                ['Custom Lab Duration', 'Use only for exceptional five-hour, six-hour, or custom sessions.'],
+                ['Split Units / GEC', 'Optional for courses that need shorter recurring meetings.'],
+              ] : [
+                ['Laboratory controls', 'Keep disabled. Standard departments do not require laboratory resources.'],
+                ['Split Units / GEC', 'Choose one when shorter recurring meetings improve the timetable.'],
+                ['Online / Field capacity', 'Set limits based on this department’s actual section volume.'],
+              ]).map(([label, detail], index) => (
+                <div key={label} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700" style={{ borderRadius: 6 }}>
+                    {index + 1}
+                  </span>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">{label}</div>
+                    <div className="mt-0.5 text-[11px] leading-4 text-slate-500">{detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </aside>
       </div>
       <ConfirmModal
         isOpen={!!pendingConfirmation}

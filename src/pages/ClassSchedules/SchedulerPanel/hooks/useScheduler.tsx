@@ -186,6 +186,7 @@ interface InitialDataResponse {
   users: UserSummary[];
   field_course_assignment_enabled?: boolean;
   field_course_codes?: string[];
+  resource_slot_limits?: { online: number; field: number } | null;
 }
 
 interface TargetScheduleDay {
@@ -214,6 +215,18 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   const startSlot = timeStrToSlot(item.start_time);
   const endSlot = timeStrToSlot(item.end_time);
   const durationSlots = endSlot - startSlot;
+  const courseId = item.course_id?.toString() ?? item.subject_id?.toString() ?? "";
+  const sectionId = item.section_id?.toString() ?? "";
+  const fallbackId = [
+    item.term_id ?? "term",
+    sectionId || "section",
+    courseId || "course",
+    item.day ?? "day",
+    item.start_time ?? "start",
+    item.end_time ?? "end",
+    item.meeting_type ?? "meeting",
+    item.meeting_index ?? "index",
+  ].join(":");
 
   let roomName = "";
   if (item.room) {
@@ -228,13 +241,12 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   if (item.room?.room_code === "ONLINE" || (item.room_id == null && item.mode === "online")) roomIdStr = "online";
   else if (item.room?.room_code === "FIELD") roomIdStr = "field";
 
-  const courseId = item.course_id?.toString() ?? item.subject_id?.toString() ?? "";
   const courseCode = item.course?.course_code ?? item.subject?.course_code ?? item.subject?.subject_code ?? "";
   const courseName = item.course?.course_name ?? item.subject?.course_name ?? item.subject?.subject_name ?? "";
   const courseType = item.course?.course_category ?? item.subject?.course_category ?? item.subject?.subject_category ?? "major";
 
   return {
-    id: item.id.toString(),
+    id: item.id?.toString() ?? fallbackId,
     termId: Number(item.term_id),
     departmentId: Number(item.department_id),
     courseId,
@@ -260,7 +272,7 @@ const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     dayIndex,
     startSlot,
     durationSlots,
-    sectionId: item.section_id.toString(),
+    sectionId,
     roomId: roomIdStr,
     isHybrid: !!item.is_hybrid,
     preferredPattern: item.preferred_pattern ?? null,
@@ -319,7 +331,7 @@ export const useScheduler = () => {
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const canWithdrawSubmission = ['secretary', 'program_head'].includes(user?.role?.toLowerCase() ?? '');
-  const schedulerCacheKey = `scheduler:v9:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v10:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -402,14 +414,17 @@ export const useScheduler = () => {
       if (!isVpaa && user?.department_id) {
         apiRooms = apiRooms.filter((r) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
       }
+      const resourceSlotLimits = initialData.resource_slot_limits;
       const mappedRooms = apiRooms.map((r): Room => ({
         id: r.id.toString(),
         name: r.room_code,
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status,
-        maxConcurrentClasses: r.room_type === "field" || r.room_type === "online"
-          ? 3
+        maxConcurrentClasses: r.room_type === "field"
+          ? Math.max(1, Number(resourceSlotLimits?.field ?? r.max_concurrent_classes ?? 1) || 1)
+          : r.room_type === "online"
+            ? Math.max(1, Number(resourceSlotLimits?.online ?? r.max_concurrent_classes ?? 1) || 1)
           : Number(r.max_concurrent_classes ?? 1) || 1
       }));
 
@@ -603,14 +618,17 @@ export const useScheduler = () => {
       if (!isVpaa && user?.department_id) {
         apiRooms = apiRooms.filter((r) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
       }
+      const resourceSlotLimits = initialData.resource_slot_limits;
       const mappedRooms = apiRooms.map((r): Room => ({
         id: r.id.toString(),
         name: r.room_code,
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status,
-        maxConcurrentClasses: r.room_type === "field" || r.room_type === "online"
-          ? 3
+        maxConcurrentClasses: r.room_type === "field"
+          ? Math.max(1, Number(resourceSlotLimits?.field ?? r.max_concurrent_classes ?? 1) || 1)
+          : r.room_type === "online"
+            ? Math.max(1, Number(resourceSlotLimits?.online ?? r.max_concurrent_classes ?? 1) || 1)
           : Number(r.max_concurrent_classes ?? 1) || 1
       }));
 
