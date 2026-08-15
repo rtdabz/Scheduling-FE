@@ -131,6 +131,12 @@ const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['st
   return 'approved';
 };
 
+const parseApiDate = (value: string): Date => {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  return new Date(hasTimezone ? normalized : `${normalized}Z`);
+};
+
 interface ScheduleApprovalPageData {
   schedules: ScheduleApproval[];
   rawSchedules: RawSchedule[];
@@ -474,12 +480,14 @@ export default function VpaaScheduleApprovalPage() {
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '—';
     try {
-      const d = new Date(dateStr);
+      const d = parseApiDate(dateStr);
       return d.toLocaleDateString('en-US', { 
+        timeZone: 'Asia/Manila',
         month: 'short', 
         day: '2-digit', 
         year: 'numeric' 
       }) + ' ' + d.toLocaleTimeString('en-US', { 
+        timeZone: 'Asia/Manila',
         hour: '2-digit', 
         minute: '2-digit' 
       });
@@ -523,6 +531,8 @@ export default function VpaaScheduleApprovalPage() {
   };
 
   const getRoomName = (item: RawSchedule) => {
+    if (item.mode === 'online') return 'Online';
+    if (item.mode === 'field') return 'Field';
     if (!item.room) return 'Unassigned';
     if (item.room.room_code === 'ONLINE') return 'Online';
     if (item.room.room_code === 'FIELD') return 'Field';
@@ -669,30 +679,11 @@ export default function VpaaScheduleApprovalPage() {
         }
       },
       {
-        accessorKey: 'mode',
-        header: 'Mode',
-        cell: info => {
-          const mode = info.getValue() as 'on-site' | 'online' | 'field';
-          return (
-            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${
-              mode === 'on-site'
-                ? 'bg-blue-100 text-blue-850 border-blue-200/60'
-                : mode === 'online'
-                ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60'
-                : 'bg-amber-100 text-amber-850 border-amber-200/60'
-            }`}>
-              {mode === 'on-site' ? 'On-Site' : mode === 'online' ? 'Online' : 'Field'}
-            </span>
-          );
-        }
-      },
-      {
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
         enableSorting: false,
         cell: ({ row }) => {
           const sched = row.original;
-          const isActable = sched.status === 'approved_by_dean';
           return (
             <div className="flex justify-end gap-1.5">
               {/* View Schedule Timetable */}
@@ -707,36 +698,6 @@ export default function VpaaScheduleApprovalPage() {
                   View
                 </span>
               </div>
-
-              {isActable && (
-                <>
-                  {/* Approve */}
-                  <div className="relative group">
-                    <button 
-                      onClick={() => handleApprove(sched)}
-                      className="p-1.5 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Check size={17} />
-                    </button>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                      Approve
-                    </span>
-                  </div>
-
-                  {/* Reject */}
-                  <div className="relative group">
-                    <button 
-                      onClick={() => handleReject(sched)}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <X size={17} />
-                    </button>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                      Reject
-                    </span>
-                  </div>
-                </>
-              )}
             </div>
           );
         }

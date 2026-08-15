@@ -29,6 +29,10 @@ interface JsPdfDocumentWithPageInfo extends jsPDF {
 const ACADEMIC_YEAR = "2025-2026";
 const TERM = "2nd";
 const COLLEGE_OF = "INFORMATION TECHNOLOGY";
+const PAGE_TOP_Y = 15;
+const PAGE_FOOTER_Y = 192;
+const CONTENT_BOTTOM_Y = 185;
+const MIN_SECTION_START_SPACE = 28;
 
 const SIGNATORIES = {
   preparedBy: { name: "(NAME)", role: "Program Head" },
@@ -254,10 +258,10 @@ export default function PrintSchedule({
     });
 
     targetSections.forEach((section) => {
-      // Prevent orphaned header bar at page bottom
-      if (currentY > 145) {
+      // Keep a section title with at least its table header and first rows.
+      if (currentY + MIN_SECTION_START_SPACE > CONTENT_BOTTOM_Y) {
         doc.addPage();
-        currentY = 15;
+        currentY = PAGE_TOP_Y;
       }
 
       // Draw Section Bar
@@ -356,7 +360,7 @@ export default function PrintSchedule({
 
       autoTable(doc, {
         startY: currentY,
-        margin: { left: 15, right: 15, top: 15, bottom: 25 },
+        margin: { left: 15, right: 15, top: PAGE_TOP_Y, bottom: 25 },
         tableWidth: 267,
         theme: 'grid',
         head: head,
@@ -397,9 +401,9 @@ export default function PrintSchedule({
 
     // ── 4. Signature Block ──
     const sigHeight = 22;
-    if (currentY + sigHeight > 185) {
+    if (currentY + sigHeight > CONTENT_BOTTOM_Y) {
       doc.addPage();
-      currentY = 15;
+      currentY = PAGE_TOP_Y;
     }
 
     const sigWidth = 267 / 4;
@@ -438,7 +442,7 @@ export default function PrintSchedule({
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
       
-      const footerY = 192;
+      const footerY = PAGE_FOOTER_Y;
       doc.setFillColor(123, 12, 23); // #7b0c17
       doc.rect(15, footerY, 267, 1.5, "F");
 

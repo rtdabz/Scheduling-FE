@@ -90,6 +90,24 @@ const getPreferredPatternDayIndexes = (preferredPattern?: string | null): [numbe
 
 const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DAYS.length;
 
+const sortSplitMeetingsForEdit = (items: ScheduleItem[], subject?: Subject | null): ScheduleItem[] => {
+  const lectureSlots = Number(subject?.lectureHours ?? 0) * 2;
+  const labSlots = Number(subject?.labHours ?? 0) * 6;
+  const meetingRank = (item: ScheduleItem): number => {
+    if (item.meetingType === "lecture") return 0;
+    if (item.meetingType === "laboratory") return 1;
+    if (lectureSlots > 0 && item.durationSlots === lectureSlots) return 0;
+    if (labSlots > 0 && item.durationSlots === labSlots) return 1;
+    return 2;
+  };
+
+  return [...items].sort((a, b) =>
+    meetingRank(a) - meetingRank(b)
+    || a.dayIndex - b.dayIndex
+    || a.startSlot - b.startSlot
+  );
+};
+
 const departmentReadyStatuses: ScheduleItem["status"][] = [
   "completed",
   "submitted",
@@ -300,7 +318,8 @@ export const useScheduler = () => {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const schedulerCacheKey = `scheduler:v8:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const canWithdrawSubmission = ['secretary', 'program_head'].includes(user?.role?.toLowerCase() ?? '');
+  const schedulerCacheKey = `scheduler:v9:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -389,7 +408,9 @@ export const useScheduler = () => {
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status,
-        maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1
+        maxConcurrentClasses: r.room_type === "field" || r.room_type === "online"
+          ? 3
+          : Number(r.max_concurrent_classes ?? 1) || 1
       }));
 
       const rawCourses = initialData.courses ?? initialData.subjects ?? [];
@@ -403,6 +424,10 @@ export const useScheduler = () => {
         category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
         semester: s.semester,
         departmentId: s.department_id ?? null,
+        teachingDepartmentId: s.teaching_assignment?.department_id ?? null,
+        teachingDepartmentCode: s.teaching_assignment?.department?.department_code,
+        teachingDepartmentName: s.teaching_assignment?.department?.department_name,
+        categories: s.categories ?? [],
         yearLevel: normalizeYearLevel(s.year_level),
         roomTypeRequired: s.room_type_required,
         status: s.status ?? "active"
@@ -584,7 +609,9 @@ export const useScheduler = () => {
         departmentId: r.department_id,
         roomType: r.room_type,
         status: r.status,
-        maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1
+        maxConcurrentClasses: r.room_type === "field" || r.room_type === "online"
+          ? 3
+          : Number(r.max_concurrent_classes ?? 1) || 1
       }));
 
       const rawCourses = initialData.courses ?? initialData.subjects ?? [];
@@ -598,6 +625,10 @@ export const useScheduler = () => {
         category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
         semester: s.semester,
         departmentId: s.department_id ?? null,
+        teachingDepartmentId: s.teaching_assignment?.department_id ?? null,
+        teachingDepartmentCode: s.teaching_assignment?.department?.department_code,
+        teachingDepartmentName: s.teaching_assignment?.department?.department_name,
+        categories: s.categories ?? [],
         yearLevel: normalizeYearLevel(s.year_level),
         roomTypeRequired: s.room_type_required,
         status: s.status ?? "active"
@@ -723,7 +754,9 @@ export const useScheduler = () => {
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isSubmitApprovalModalOpen, setIsSubmitApprovalModalOpen] = useState(false);
+  const [isWithdrawSubmissionModalOpen, setIsWithdrawSubmissionModalOpen] = useState(false);
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+  const [isWithdrawingSubmission, setIsWithdrawingSubmission] = useState(false);
   const [isRoomViewOpen, setIsRoomViewOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [roomViewRoomId, setRoomViewRoomId] = useState<string>("");
@@ -815,8 +848,18 @@ export const useScheduler = () => {
     [sections, selectedSectionId]
   );
 
+  const normalizeSemester = useCallback((sem?: string | null): string => {
+    if (!sem) return "";
+    const s = String(sem).toLowerCase().trim();
+    if (s === "1" || s === "1st" || s.includes("first") || s.includes("1st")) return "1st";
+    if (s === "2" || s === "2nd" || s.includes("second") || s.includes("2nd")) return "2nd";
+    if (s.includes("summer")) return "summer";
+    return s;
+  }, []);
+
   const sectionCourses = useMemo(() => {
     if (!selectedSection) return subjects;
+    const selectedSemester = normalizeSemester(selectedSection.semester);
     return subjects.filter((s) => {
       const isMinor = s.category === "minor";
       const matchesDept =
@@ -824,19 +867,13 @@ export const useScheduler = () => {
         s.departmentId === null ||
         Number(s.departmentId) === Number(selectedSection.departmentId);
       const matchesYear = Number(s.yearLevel) === Number(selectedSection.yearLevel);
-      const matchesSem = !selectedSection.semester || s.semester === selectedSection.semester;
+      const matchesSem =
+        !selectedSemester ||
+        !s.semester ||
+        normalizeSemester(s.semester) === selectedSemester;
       return matchesDept && matchesYear && matchesSem;
     });
-  }, [subjects, selectedSection]);
-
-const normalizeSemester = (sem?: string | null): string => {
-  if (!sem) return "";
-  const s = String(sem).toLowerCase().trim();
-  if (s === "1" || s === "1st" || s.includes("first") || s.includes("1st")) return "1st";
-  if (s === "2" || s === "2nd" || s.includes("second") || s.includes("2nd")) return "2nd";
-  if (s.includes("summer")) return "summer";
-  return s;
-};
+  }, [subjects, selectedSection, normalizeSemester]);
 
   const semesterSubjects = useMemo(() => {
     if (subjects.length === 0) return [];
@@ -847,7 +884,7 @@ const normalizeSemester = (sem?: string | null): string => {
       const subSem = normalizeSemester(s.semester);
       return subSem === activeSem;
     });
-  }, [subjects, activeTerm]);
+  }, [subjects, activeTerm, normalizeSemester]);
 
   const totalSubjects = useMemo(() => {
     if (!selectedSection) return semesterSubjects.length;
@@ -914,6 +951,9 @@ const normalizeSemester = (sem?: string | null): string => {
   const departmentHasSubmittedSchedule = departmentSectionProgress.some((section) =>
     departmentSubmittedStatuses.includes(section.status)
   );
+  const departmentHasPendingDeanSubmission = departmentSectionProgress.some((section) =>
+    section.status === "submitted"
+  );
   const departmentReadyToSubmit =
     departmentTotalSections > 0 &&
     departmentRemainingSections === 0 &&
@@ -961,21 +1001,32 @@ departmentSectionProgress.every((section) => section.status === "completed");
     draggedScheduleId,
     rooms,
     subjects,
-    faculties
+    faculties,
+    fieldCourseAssignmentEnabled,
+    fieldCourseCodes
   });
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
-    if (subject?.category !== "minor") {
+    const assignedDepartmentId = subject?.teachingDepartmentId ?? null;
+    if (assignedDepartmentId === null) {
       return true;
     }
 
     return Boolean(
       user?.department_id &&
-      subject.departmentId &&
-      Number(user.department_id) === Number(subject.departmentId)
+      Number(user.department_id) === Number(assignedDepartmentId)
     );
   }, [subjects, user?.department_id]);
+
+  const getFacultyRestrictionMessage = useCallback((schedule: ScheduleItem): string => {
+    const subject = subjects.find((item) => item.id === schedule.subjectId);
+    const assignedDepartment = subject?.teachingDepartmentCode
+      ? `${subject.teachingDepartmentCode} Department`
+      : subject?.teachingDepartmentName ?? "the assigned teaching department";
+
+    return `Only ${assignedDepartment} can assign instructors for this course.`;
+  }, [subjects]);
 
   // Derive placed map from schedules — no extra state or render cycle needed
   const placed = useMemo(() => {
@@ -1036,16 +1087,18 @@ departmentSectionProgress.every((section) => section.status === "completed");
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
           );
-          const sorted = [...existing].sort((a, b) => a.dayIndex - b.dayIndex);
+          const sorted = sortSplitMeetingsForEdit(existing, subject);
 
           if (sorted.length >= 2) {
+            const firstIsLecture = sorted[0].meetingType === "lecture"
+              || (Number(subject?.lectureHours ?? 0) > 0 && sorted[0].durationSlots === Number(subject?.lectureHours ?? 0) * 2);
             // Always initialize Meeting 1 from the earliest-day record (sorted[0])
             // and Meeting 2 from sorted[1] — regardless of which card was clicked.
-            setModalRoomId(sorted[0].roomId);
-            setModalClassMode(sorted[0].mode ?? "on-site");
-            setModalDay1Index(patternDays?.[0] ?? sorted[0].dayIndex);
-            setModalDay2Index(patternDays?.[1] ?? sorted[1].dayIndex);
-            setModalPreferredPattern(targetSched.preferredPattern ?? buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex));
+            setModalRoomId(firstIsLecture ? "online" : sorted[0].roomId);
+            setModalClassMode(firstIsLecture ? "online" : (sorted[0].mode ?? "on-site"));
+            setModalDay1Index(sorted[0].dayIndex);
+            setModalDay2Index(sorted[1].dayIndex);
+            setModalPreferredPattern(buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex));
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[1].startSlot);
@@ -1489,7 +1542,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     let shouldCloseModal = true;
     try {
       const existingRecords = dropContext.isRescheduling
-        ? schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId))
+        ? sortSplitMeetingsForEdit(schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)), subject)
         : [];
 
       const sharedSplitGroupId = targetDays.length > 1
@@ -1578,8 +1631,16 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
       setSchedules((previousSchedules) => {
         const savedScheduleIds = new Set(savedScheduleItems.map((item) => item.id));
+        const savedScheduleKeys = new Set(
+          savedScheduleItems.map((item) => `${item.termId}:${item.sectionId}:${item.courseId || item.subjectId}`)
+        );
         return [
-          ...previousSchedules.filter((item) => !savedScheduleIds.has(item.id) && !deletedScheduleIds.has(item.id)),
+          ...previousSchedules.filter((item) => {
+            const itemKey = `${item.termId}:${item.sectionId}:${item.courseId || item.subjectId}`;
+            return !savedScheduleIds.has(item.id)
+              && !deletedScheduleIds.has(item.id)
+              && !savedScheduleKeys.has(itemKey);
+          }),
           ...savedScheduleItems
         ];
       });
@@ -1683,26 +1744,39 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
   const handleClearAll = () => {
     if (!isEditable || isClearingAll) return;
-    const currentSectionSchedules = schedules.filter((s) => s.sectionId === selectedSectionId);
-    if (currentSectionSchedules.length === 0) return;
+    if (schedules.length === 0) return;
     setIsClearAllModalOpen(true);
   };
 
-  const confirmClearAll = async () => {
+  const confirmClearAll = async (scope: "section" | "all" = "section") => {
     if (!isEditable || isClearingAll) {
       setIsClearAllModalOpen(false);
       return;
     }
-    setIsClearingAll(true);
     const targetSecId = selectedSectionId;
-    const currentSectionSchedules = schedules.filter((s) => s.sectionId === targetSecId);
-    const clearedCount = currentSectionSchedules.length;
+    const departmentSectionIds = new Set(
+      sections
+        .filter((section) => selectedDepartmentId === null || Number(section.departmentId) === Number(selectedDepartmentId))
+        .map((section) => section.id)
+    );
+    const targetSchedules = scope === "all"
+      ? schedules.filter((s) => departmentSectionIds.has(s.sectionId))
+      : schedules.filter((s) => s.sectionId === targetSecId);
+    if (targetSchedules.length === 0) {
+      setIsClearAllModalOpen(false);
+      return;
+    }
+
+    setIsClearingAll(true);
+    const clearedCount = targetSchedules.length;
     const sectionName = sections.find((s) => s.id === targetSecId)?.name ?? "the section";
-    const validSchedules = currentSectionSchedules.filter((s) => !isNaN(Number(s.id)));
+    const validSchedules = targetSchedules.filter((s) => !isNaN(Number(s.id)));
 
     // Optimistic UI update: immediately clear local state & update local storage cache
     setSchedules((prev) => {
-      const updated = prev.filter((s) => s.sectionId !== targetSecId);
+      const updated = scope === "all"
+        ? prev.filter((s) => !departmentSectionIds.has(s.sectionId))
+        : prev.filter((s) => s.sectionId !== targetSecId);
       const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
       if (cachedData) {
         setCachedData<SchedulerCacheData>(schedulerCacheKey, {
@@ -1717,11 +1791,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
     setPlacementSubjectId(null);
     setMovingScheduleId(null);
     setIsClearAllModalOpen(false);
-    setIsClearingAll(false);
 
     toast.success(
       "Schedule Cleared",
-      `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
+      scope === "all"
+        ? `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from the schedule.`
+        : `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
     );
 
     try {
@@ -1788,6 +1863,61 @@ departmentSectionProgress.every((section) => section.status === "completed");
   };
 
   const cancelSubmitForApproval = () => setIsSubmitApprovalModalOpen(false);
+
+  const handleWithdrawSubmission = async () => {
+    if (!selectedSectionId || isWithdrawingSubmission) return;
+    setIsWithdrawSubmissionModalOpen(true);
+  };
+
+  const confirmWithdrawSubmission = async (sectionIds: string[]) => {
+    if (!selectedSectionId || isWithdrawingSubmission) return;
+    const section = sections.find((s) => s.id === selectedSectionId);
+    if (!section?.departmentId) {
+      toast.error("Unable to Withdraw", "The selected section is not linked to a department.");
+      setIsWithdrawSubmissionModalOpen(false);
+      return;
+    }
+
+    if (sectionIds.length === 0) {
+      toast.error("Select Sections", "Choose at least one section to unlock for revision.");
+      return;
+    }
+
+    try {
+      setIsWithdrawingSubmission(true);
+      await api.post(`/departments/${section.departmentId}/withdraw-submission`, {
+        section_ids: sectionIds.map((id) => Number(id)),
+      });
+
+      const deptSectionIds = new Set(
+        sections
+          .filter((s) => s.departmentId === section.departmentId)
+          .map((s) => s.id)
+      );
+      const selectedRevisionSectionIds = new Set(sectionIds);
+      setSchedules((prev) =>
+        prev.map((item) =>
+          deptSectionIds.has(item.sectionId) && item.status === "submitted"
+            ? { ...item, status: selectedRevisionSectionIds.has(item.sectionId) ? "revision" : "completed" }
+            : item
+        )
+      );
+
+      toast.success("Submission Withdrawn", "Only the selected sections were unlocked for revision.");
+      refreshSchedules().catch(() => {});
+      setIsWithdrawSubmissionModalOpen(false);
+    } catch (err) {
+      toast.error("Failed to withdraw", getApiErrorMessage(err) ?? "An error occurred.");
+    } finally {
+      setIsWithdrawingSubmission(false);
+    }
+  };
+
+  const cancelWithdrawSubmission = () => {
+    if (!isWithdrawingSubmission) {
+      setIsWithdrawSubmissionModalOpen(false);
+    }
+  };
 
   const resolveRoomId = (s: ScheduleItem) => {
     if (s.roomId === "online" || s.mode === "online") {
@@ -1928,7 +2058,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (facultyActionSlotId === scheduleId) return;
     const targetSchedule = schedules.find((schedule) => schedule.id === scheduleId);
     if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      setPopupValidationError("Only the CAS Department can assign instructors for GEC subjects.");
+      setPopupValidationError(targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot assign instructors for this course.");
       return;
     }
     const fac = faculties.find((f) => f.id === facultyId);
@@ -1962,7 +2092,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (facultyActionSlotId === scheduleId) return;
     const targetSchedule = schedules.find((schedule) => schedule.id === scheduleId);
     if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      setPopupValidationError("Only the CAS Department can remove instructors from GEC subjects.");
+      setPopupValidationError(targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot remove instructors for this course.");
       return;
     }
     setFacultyActionSlotId(scheduleId);
@@ -1993,7 +2123,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (facultyActionSlotId === slotId) return;
     const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
     if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      toast.error("Assignment Restricted", "Only the CAS Department can assign instructors for GEC subjects.");
+      toast.error("Assignment Restricted", targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot assign instructors for this course.");
       return;
     }
     const fac = faculties.find((f) => f.id === facId);
@@ -2024,7 +2154,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (facultyActionSlotId === slotId) return;
     const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
     if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      toast.error("Assignment Restricted", "Only the CAS Department can remove instructors from GEC subjects.");
+      toast.error("Assignment Restricted", targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot remove instructors for this course.");
       return;
     }
     setFacultyActionSlotId(slotId);
@@ -2275,8 +2405,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
     isClearAllModalOpen,
     isClearingAll,
     isSubmitApprovalModalOpen,
+    isWithdrawSubmissionModalOpen,
     isSubmittingSchedule,
+    isWithdrawingSubmission,
     confirmSubmitForApproval,
+    confirmWithdrawSubmission,
+    cancelWithdrawSubmission,
     cancelSubmitForApproval,
     confirmClearAll,
     cancelClearAll,
@@ -2312,6 +2446,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     departmentRemainingSections,
     departmentReadyToSubmit,
     departmentHasSubmittedSchedule,
+    departmentHasPendingDeanSubmission,
     dropSubject,
     dropSubjectIsField,
     listCategories,
@@ -2321,12 +2456,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
     conflictedMap,
     checkFacultyConflict,
     canManageScheduleFaculty,
+    getFacultyRestrictionMessage,
     getDragOverConflict,
     handleConfirmSchedule,
     handleModalConfirm,
     handleRemoveSchedule,
     handleClearAll,
     handleSubmitForApproval,
+    handleWithdrawSubmission,
+    canWithdrawSubmission,
     handleResubmit,
     handleFinalize,
     handleMarkSectionDone,

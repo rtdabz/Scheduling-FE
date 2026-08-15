@@ -6,8 +6,7 @@ import logo from '../../assets/logo.jpg';
 import campusBg from '../../assets/campus-bg.jpg';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, LogOut, RefreshCw, Settings, User, X } from 'lucide-react';
 import api from '../../lib/api';
-import { useToast } from '../../context/ToastContext';
-import { clearDataCache } from '../../lib/dataCache';
+import { useToast } from '../ui/Toast';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -71,6 +70,9 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
   const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
+  const [showProfile, setShowProfile] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
   const user = currentUser ?? getStoredUser();
   const role = user?.role?.toLowerCase() ?? '';
   const userPhoto = user?.profile_picture || user?.photo || user?.avatar || null;
@@ -81,9 +83,33 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [showProfile, setShowProfile] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setShowProfile(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await api.post('/logout');
+    } catch {
+      // ignore
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      setIsLoggingOut(false);
+      toast.success('Logged Out', 'You have been successfully logged out.');
+      navigate('/login');
+    }
+  };
 
   useEffect(() => {
     api.get<StoredUser>('/me')
@@ -137,17 +163,6 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
     };
   }, [role]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setShowProfile(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const toggleExpand = (label: string) => {
     setExpandedItems((prev) => ({
       ...prev,
@@ -165,26 +180,6 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
       return expandedItems[item.label];
     }
     return isChildActive(item);
-  };
-
-  const handleLogout = async () => {
-    if (isLoggingOut) return;
-
-    setIsLoggingOut(true);
-    try {
-      await api.post('/logout');
-    } catch {
-      setShowProfile(false);
-    } finally {
-      clearDataCache();
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('user');
-      toast.success('Logged Out', 'You have been successfully signed out.');
-      navigate('/');
-      setIsLoggingOut(false);
-    }
   };
 
   return (
@@ -373,8 +368,6 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
         ))}
       </nav>
 
-
-
       <div className="relative z-10 flex-shrink-0 border-t border-white/10 p-3">
         <div className="relative" ref={profileRef} id="sidebar-profile">
           <button
@@ -385,9 +378,7 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
             title="Open user profile menu"
             className={`flex w-full items-center rounded-xl border border-transparent p-1 transition-all duration-300 hover:border-white/5 hover:bg-white/10 ${
               isOpen ? 'gap-3 pr-3' : 'justify-center'
-            } ${showProfile ? 'border-white/10 bg-white/10' : ''}`}
-            aria-label="Open user menu"
-            aria-expanded={showProfile}
+            }`}
           >
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7B1113] to-[#C9952A] shadow-sm ring-2 ring-white/10 overflow-hidden">
               {userPhoto ? (

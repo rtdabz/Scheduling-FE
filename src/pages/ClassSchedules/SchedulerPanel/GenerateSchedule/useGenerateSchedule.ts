@@ -6,7 +6,6 @@ import type { ApiScheduleRecord, ScheduleItem } from "../types";
 export type ProgressStep = "generating" | "constraints" | "finalizing" | "complete" | "error";
 export type TimeBlockOption = "flexible" | "morning" | "afternoon" | "evening";
 export type DeliveryModeOption = "on-site" | "online" | "field";
-export type SplitUnitsDeliveryOption = "follow" | "on-site" | "online";
 
 interface UseGenerateScheduleOptions {
   onAccepted?: (schedules?: ApiScheduleRecord[]) => void;
@@ -75,6 +74,17 @@ const getReplacementDeleteIds = (
   ));
 };
 
+type PreviewResponse = {
+  message?: string;
+  recommendations?: { rank: number; score: number; schedules: ApiScheduleRecord[] }[];
+  schedules?: ApiScheduleRecord[];
+};
+
+const schedulesFromPreview = (data: PreviewResponse): ApiScheduleRecord[] =>
+  data.recommendations?.[0]?.schedules ||
+  data.schedules ||
+  [];
+
 export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
   const [isOpen, setIsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -87,10 +97,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
   const [preferredTimeBlock, setPreferredTimeBlock] = useState<TimeBlockOption>("flexible");
   const [splitSessionEnabled, setSplitSessionEnabled] = useState(false);
   const [selectedSplitSessionCourseIds, setSelectedSplitSessionCourseIds] = useState<string[]>([]);
-  const [splitUnitsEnabled, setSplitUnitsEnabled] = useState(false);
-  const [selectedSplitUnitCourseIds, setSelectedSplitUnitCourseIds] = useState<string[]>([]);
-  const [splitUnitsDelivery, setSplitUnitsDelivery] = useState<SplitUnitsDeliveryOption>("follow");
-  const [splitGecEnabled, setSplitGecEnabled] = useState(false);
   const [selectedGecCourseIds, setSelectedGecCourseIds] = useState<string[]>([]);
 
   const { toast } = useToast();
@@ -103,10 +109,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
     setPreferredTimeBlock("flexible");
     setSplitSessionEnabled(false);
     setSelectedSplitSessionCourseIds([]);
-    setSplitUnitsEnabled(false);
-    setSelectedSplitUnitCourseIds([]);
-    setSplitUnitsDelivery("follow");
-    setSplitGecEnabled(false);
     setSelectedGecCourseIds([]);
   }, []);
 
@@ -125,8 +127,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
         preferredTimeBlock?: TimeBlockOption;
         splitSessionEnabled?: boolean;
         selectedSplitSessionCourseIds?: string[];
-        splitUnitsEnabled?: boolean;
-        selectedSplitUnitCourseIds?: string[];
         splitGecEnabled?: boolean;
         selectedGecCourseIds?: string[];
         mode?: DeliveryModeOption;
@@ -160,8 +160,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           preferred_time_block?: TimeBlockOption;
           split_session_enabled?: boolean;
           selected_split_session_course_ids?: string[];
-          split_units_enabled?: boolean;
-          selected_split_unit_course_ids?: string[];
           split_gec_enabled?: boolean;
           selected_gec_course_ids?: string[];
           max_solutions?: number;
@@ -172,8 +170,8 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           section_id: Number(sectionId),
           seed: Math.floor(Math.random() * 1000000),
           max_solutions: 1,
-          max_iterations: 60000,
-          timeout_seconds: 3,
+          max_iterations: 120000,
+          timeout_seconds: 5,
         };
         if (courseIds && courseIds.length > 0) {
           payload.course_ids = courseIds;
@@ -204,12 +202,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
           if (options.selectedSplitSessionCourseIds) {
             payload.selected_split_session_course_ids = options.selectedSplitSessionCourseIds;
           }
-          if (options.splitUnitsEnabled !== undefined) {
-            payload.split_units_enabled = options.splitUnitsEnabled;
-          }
-          if (options.selectedSplitUnitCourseIds) {
-            payload.selected_split_unit_course_ids = options.selectedSplitUnitCourseIds;
-          }
           if (options.splitGecEnabled !== undefined) {
             payload.split_gec_enabled = options.splitGecEnabled;
           }
@@ -223,20 +215,27 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
 
         // Call preview endpoint to generate schedule candidate preview in-memory
         // without persisting anything to the database until Apply is clicked.
-        const response = await api.post<{
-          message?: string;
-          recommendations?: { rank: number; score: number; schedules: ApiScheduleRecord[] }[];
-          schedules?: ApiScheduleRecord[];
-        }>("/schedule-recommendations/preview", payload);
+        let response = await api.post<PreviewResponse>("/schedule-recommendations/preview", payload);
+        let schedules = schedulesFromPreview(response.data);
+
+        if (schedules.length === 0) {
+          response = await api.post<PreviewResponse>("/schedule-recommendations/preview", {
+            ...payload,
+            max_iterations: 250000,
+            timeout_seconds: 5,
+          });
+          schedules = schedulesFromPreview(response.data);
+        }
 
         clearTimeout(timer1);
         clearTimeout(timer2);
         setProgressStep("complete");
 
-        const schedules =
-          response.data.recommendations?.[0]?.schedules ||
-          response.data.schedules ||
-          [];
+        if (schedules.length === 0) {
+          setProgressStep("error");
+          setErrorMessage(response.data.message || "No valid schedule could be generated for this section. Please check the section curriculum and room availability.");
+          return;
+        }
         if (courseIds && courseIds.length > 0 && baseSchedules.length > 0) {
           const replacementCourseIds = new Set(courseIds.map(Number));
           setBaseSchedules((previous) => [
@@ -448,14 +447,6 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
     setSplitSessionEnabled,
     selectedSplitSessionCourseIds,
     setSelectedSplitSessionCourseIds,
-    splitUnitsEnabled,
-    setSplitUnitsEnabled,
-    selectedSplitUnitCourseIds,
-    setSelectedSplitUnitCourseIds,
-    splitUnitsDelivery,
-    setSplitUnitsDelivery,
-    splitGecEnabled,
-    setSplitGecEnabled,
     selectedGecCourseIds,
     setSelectedGecCourseIds,
     openModal,

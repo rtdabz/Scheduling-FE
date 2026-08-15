@@ -10,11 +10,7 @@ import {
   ArrowUp,
   ArrowDown,
   X,
-  Loader2,
-  LayoutGrid,
-  List,
-  Camera,
-  Plus
+  Loader2
 } from 'lucide-react';
 import {
   useReactTable,
@@ -35,7 +31,6 @@ interface User {
   role: string;
   department: string | null;
   department_id: number | null;
-  department_logo?: string | null;
   status: 'Active' | 'Inactive';
   profile_picture?: string | null;
   createdAt: string;
@@ -55,6 +50,14 @@ interface ApiDepartment {
   logo?: string | null;
 }
 
+interface Program {
+  id: number;
+  department_id: number;
+  cluster: string | null;
+  code: string;
+  name: string;
+}
+
 interface ApiUser {
   id: number;
   name: string;
@@ -62,13 +65,13 @@ interface ApiUser {
   role: string;
   department_id: number | null;
   department: ApiDepartment | null;
-  profile_picture?: string | null;
   created_at: string;
 }
 
 interface UsersPageData {
   users: User[];
   departments: Department[];
+  programs: Program[];
 }
 
 const DISPLAY_ROLE_MAP: Record<string, string> = {
@@ -90,7 +93,6 @@ const mapApiUser = (u: ApiUser): User => ({
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
   department: u.department ? u.department.department_name : null,
   department_id: u.department_id,
-  department_logo: u.department?.logo || null,
   status: 'Active',
   profile_picture: u.profile_picture || null,
   createdAt: u.created_at,
@@ -102,6 +104,7 @@ export default function VpaaUsers() {
   const cachedUsersData = getCachedData<UsersPageData>(usersCacheKey);
   const [users, setUsers] = useState<User[]>(cachedUsersData?.users ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedUsersData?.departments ?? []);
+  const [programs, setPrograms] = useState<Program[]>(cachedUsersData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(usersCacheKey));
 
   const [globalFilter, setGlobalFilter] = useState('');
@@ -127,11 +130,20 @@ export default function VpaaUsers() {
     password: '',
     role: 'Secretary',
     department_id: '',
+    program_id: '',
     status: 'Active' as 'Active' | 'Inactive'
   });
 
   const [nameError, setNameError] = useState('');
   const [deptError, setDeptError] = useState('');
+  const [programError, setProgramError] = useState('');
+  const [newProgram, setNewProgram] = useState({
+    cluster: '',
+    code: '',
+    name: '',
+  });
+  const [programFormError, setProgramFormError] = useState('');
+  const [isCreatingProgram, setIsCreatingProgram] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -206,21 +218,81 @@ export default function VpaaUsers() {
     }
   }, [formData.role, formData.department_id, departments, isEditMode]);
 
+  const isProgramHeadRole = formData.role === 'Program Head';
+  const selectedDepartmentPrograms = useMemo(
+    () => programs.filter((program) => String(program.department_id) === String(formData.department_id)),
+    [programs, formData.department_id]
+  );
+
+  const resetForm = () => {
+    setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
+    setNewProgram({ cluster: '', code: '', name: '' });
+    setNameError('');
+    setDeptError('');
+    setProgramError('');
+    setProgramFormError('');
+  };
+
+  const createProgram = async () => {
+    if (!formData.department_id) {
+      setProgramFormError('Select a department before adding a program.');
+      return;
+    }
+
+    const code = newProgram.code.trim();
+    const name = newProgram.name.trim();
+    if (!code || !name) {
+      setProgramFormError('Program code and name are required.');
+      return;
+    }
+
+    setIsCreatingProgram(true);
+    setProgramFormError('');
+    try {
+      const response = await api.post<{ data: Program }>('/programs', {
+        department_id: parseInt(formData.department_id),
+        cluster: newProgram.cluster.trim() || null,
+        code,
+        name,
+      });
+      const createdProgram = response.data.data;
+      setPrograms((prev) => {
+        const nextPrograms = [...prev, createdProgram].sort((a, b) =>
+          (a.cluster ?? '').localeCompare(b.cluster ?? '') || a.code.localeCompare(b.code)
+        );
+        setCachedData<UsersPageData>(usersCacheKey, { users, departments, programs: nextPrograms });
+        return nextPrograms;
+      });
+      setFormData((prev) => ({ ...prev, program_id: String(createdProgram.id) }));
+      setNewProgram({ cluster: '', code: '', name: '' });
+      setProgramError('');
+      toast.success('Program Added', 'Program assignment option is now available.');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      setProgramFormError(err?.response?.data?.message || 'Failed to add program.');
+    } finally {
+      setIsCreatingProgram(false);
+    }
+  };
+
   const fetchData = async (forceRefresh = false) => {
     setIsLoading(forceRefresh || !hasCachedData(usersCacheKey));
     try {
       const data = await loadCachedData<UsersPageData>(usersCacheKey, async () => {
-        const [usersRes, deptsRes] = await Promise.all([
+        const [usersRes, deptsRes, programsRes] = await Promise.all([
           api.get<ApiUser[]>('/user'),
           api.get<ApiDepartment[]>('/departments'),
+          api.get<Program[]>('/programs').catch(() => ({ data: [] as Program[] })),
         ]);
         return {
           users: usersRes.data.map(mapApiUser),
           departments: deptsRes.data,
+          programs: programsRes.data,
         };
       }, forceRefresh);
       setUsers(data.users);
       setDepartments(data.departments);
+      setPrograms(data.programs);
     } catch {
       toast.error('Error', 'Failed to load user data.');
     } finally {
@@ -249,6 +321,13 @@ export default function VpaaUsers() {
       setDeptError('');
     }
 
+    if (isProgramHeadRole && !formData.program_id) {
+      setProgramError('Program assignment is required for Program Head');
+      hasError = true;
+    } else {
+      setProgramError('');
+    }
+
     if (hasError) return;
 
     setIsSubmitting(true);
@@ -261,12 +340,11 @@ export default function VpaaUsers() {
           name: formData.name.trim(),
           role: apiRole,
           department_id: parseInt(formData.department_id),
-          profile_picture: profilePicture,
         });
         const updatedUser = mapApiUser(res.data.data);
         setUsers(prev => {
           const nextUsers = prev.map(u => u.id === editingId ? updatedUser : u);
-          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments });
+          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
         toast.success('Success', 'User account updated successfully');
@@ -277,19 +355,17 @@ export default function VpaaUsers() {
           password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
-          profile_picture: profilePicture,
         });
         const createdUser = mapApiUser(res.data.data);
         setUsers(prev => {
           const nextUsers = [createdUser, ...prev];
-          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments });
+          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
         toast.success('Success', 'User account created successfully');
       }
 
       setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
-      setProfilePicture(null);
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
@@ -309,11 +385,15 @@ export default function VpaaUsers() {
       password: '••••••••',
       role: user.role,
       department_id: user.department_id ? user.department_id.toString() : '',
+      program_id: user.program_id ? user.program_id.toString() : '',
       status: user.status
     });
     setProfilePicture(user.profile_picture || null);
     setNameError('');
     setDeptError('');
+    setProgramError('');
+    setProgramFormError('');
+    setNewProgram({ cluster: '', code: '', name: '' });
     setEditingId(user.id);
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -330,7 +410,7 @@ export default function VpaaUsers() {
         await api.delete(`/user/${idToDelete}`);
         setUsers(prev => {
           const nextUsers = prev.filter(user => user.id !== idToDelete);
-          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments });
+          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
         toast.success('Deleted', 'User removed successfully');
@@ -406,6 +486,20 @@ export default function VpaaUsers() {
         cell: info => {
           const deptVal = info.getValue();
           return <span className="text-gray-600 text-sm">{deptVal ? (deptVal as string) : '—'}</span>;
+        }
+      },
+      {
+        accessorKey: 'program',
+        header: 'Program / Major',
+        cell: info => {
+          const program = info.getValue() as Program | null;
+          if (!program) return <span className="text-gray-400 text-sm">-</span>;
+          return (
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-700">{program.code}</p>
+              <p className="max-w-44 truncate text-[11px] text-gray-500">{program.name}</p>
+            </div>
+          );
         }
       },
       {
@@ -501,52 +595,19 @@ export default function VpaaUsers() {
             className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
-
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {/* View Mode Toggle (Grid / List) */}
-          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="Grid View"
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="List View"
-            >
-              <List size={15} />
-            </button>
-          </div>
-
-          <button
-            onClick={() => {
-              setIsEditMode(false);
-              setEditingId(null);
-              setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
-              setNameError('');
-              setDeptError('');
-              setProfilePicture(null);
-              setIsModalOpen(true);
-            }}
-            className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-          >
-            <Plus size={15} />
-            <span>Add User</span>
-          </button>
-        </div>
+        <button
+          onClick={() => {
+            setIsEditMode(false);
+            setEditingId(null);
+            setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
+            setNameError('');
+            setDeptError('');
+            setIsModalOpen(true);
+          }}
+          className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
+        >
+          <span className="text-lg leading-none">+</span> Add User
+        </button>
       </div>
 
       {viewMode === 'grid' ? (
@@ -730,6 +791,9 @@ export default function VpaaUsers() {
                       <Skeleton className="h-4 w-28" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-4 py-2.5 align-middle text-xs">
                       <Skeleton className="h-4 w-16 rounded-full" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
@@ -745,9 +809,11 @@ export default function VpaaUsers() {
                 ))
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-400 font-sans">
-                    <p className="text-base font-semibold font-sans">No users found.</p>
-                    <p className="text-xs font-sans">Try adjusting your search criteria or add a new user.</p>
+                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <p className="text-base font-semibold">No users found.</p>
+                      <p className="text-xs">Try adjusting your search criteria or add a new user.</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -838,7 +904,7 @@ export default function VpaaUsers() {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className={`bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 ${isProgramHeadRole ? 'max-w-2xl' : 'max-w-md'}`}>
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode ? 'Edit User Account' : 'Create New Account'}
@@ -948,7 +1014,15 @@ export default function VpaaUsers() {
                   </label>
                   <select
                     value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      setFormData({
+                        ...formData,
+                        role: nextRole,
+                        program_id: nextRole === 'Program Head' ? formData.program_id : '',
+                      });
+                      setProgramError('');
+                    }}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
                   >
                     <option value="Dean">Dean</option>
@@ -980,8 +1054,10 @@ export default function VpaaUsers() {
                 <select
                   value={formData.department_id}
                   onChange={(e) => {
-                    setFormData({ ...formData, department_id: e.target.value });
+                    setFormData({ ...formData, department_id: e.target.value, program_id: '' });
                     setDeptError('');
+                    setProgramError('');
+                    setProgramFormError('');
                   }}
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm cursor-pointer transition-all ${
                     deptError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
@@ -994,6 +1070,98 @@ export default function VpaaUsers() {
                 </select>
                 {deptError && <p className="text-xs text-red-500 mt-1 font-semibold">{deptError}</p>}
               </div>
+
+              {isProgramHeadRole && (
+                <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-bold text-[#4e0a10]">Program Assignment</h3>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Assign this Program Head to a specific program or major within the selected department.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Program / Major <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.program_id}
+                      disabled={!formData.department_id}
+                      onChange={(e) => {
+                        setFormData({ ...formData, program_id: e.target.value });
+                        setProgramError('');
+                      }}
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
+                        programError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                      }`}
+                    >
+                      <option value="">
+                        {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
+                      </option>
+                      {selectedDepartmentPrograms.map((program) => (
+                        <option key={program.id} value={program.id}>
+                          {program.code} - {program.name}{program.cluster ? ` (${program.cluster})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {programError && <p className="text-xs text-red-500 mt-1 font-semibold">{programError}</p>}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-[1fr_0.8fr]">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Program Cluster
+                      </label>
+                      <input
+                        type="text"
+                        value={newProgram.cluster}
+                        onChange={(e) => setNewProgram({ ...newProgram, cluster: e.target.value })}
+                        placeholder="e.g. Teacher Education"
+                        disabled={!formData.department_id}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Code
+                      </label>
+                      <input
+                        type="text"
+                        value={newProgram.code}
+                        onChange={(e) => setNewProgram({ ...newProgram, code: e.target.value.toUpperCase() })}
+                        placeholder="e.g. BSED-ENG"
+                        disabled={!formData.department_id}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm font-mono outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Program / Major Name
+                      </label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="text"
+                          value={newProgram.name}
+                          onChange={(e) => setNewProgram({ ...newProgram, name: e.target.value })}
+                          placeholder="e.g. BSED Major in English"
+                          disabled={!formData.department_id}
+                          className="min-w-0 flex-1 px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+                        />
+                        <button
+                          type="button"
+                          disabled={isCreatingProgram || !formData.department_id}
+                          onClick={createProgram}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#4e0a10]/20 bg-[#4e0a10] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isCreatingProgram ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                          Add Program
+                        </button>
+                      </div>
+                      {programFormError && <p className="text-xs text-red-500 mt-1 font-semibold">{programFormError}</p>}
+                    </div>
+                  </div>
+                </section>
+              )}
 
               <div className="flex gap-3 pt-3">
                 <button

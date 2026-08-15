@@ -2,8 +2,6 @@ import { useEffect, useMemo } from "react";
 import { CalendarClock, ChevronDown, DoorOpen, MapPin, X } from "lucide-react";
 import {
   DAYS,
-  GRID_HEADER_HEIGHT_PX,
-  SLOT_HEIGHT_PX,
   getGridCardStyles,
   slotToTimeStr
 } from "../constants";
@@ -19,6 +17,8 @@ interface RoomViewModalProps {
 }
 
 const SLOT_COUNT = 24;
+const ROOM_VIEW_GRID_HEADER_HEIGHT_PX = 44;
+const ROOM_VIEW_SLOT_HEIGHT_PX = 20;
 
 export default function RoomViewModal({
   rooms,
@@ -43,8 +43,25 @@ export default function RoomViewModal({
     [rooms, roomViewRoomId]
   );
 
+  const currentDepartmentId = useMemo(() => {
+    const userJson = localStorage.getItem("user") || sessionStorage.getItem("user");
+    if (!userJson) return null;
+
+    try {
+      const user = JSON.parse(userJson) as { department_id?: number | string | null };
+      return user.department_id == null ? null : Number(user.department_id);
+    } catch {
+      return null;
+    }
+  }, []);
+
   const roomClasses = useMemo(() => {
     return schedules.filter((s) => {
+      const isSharedRoom = room?.roomType === "online" || room?.roomType === "field";
+      if (isSharedRoom && currentDepartmentId !== null && Number(s.departmentId) !== currentDepartmentId) {
+        return false;
+      }
+
       if (room?.roomType === "online") {
         return s.roomId === "online" || s.mode === "online";
       }
@@ -53,7 +70,7 @@ export default function RoomViewModal({
       }
       return s.roomId === roomViewRoomId;
     });
-  }, [schedules, roomViewRoomId, room]);
+  }, [schedules, roomViewRoomId, room, currentDepartmentId]);
 
   const groupedRoomClasses = useMemo(() => {
     const groups: Record<string, ScheduleItem[]> = {};
@@ -80,10 +97,10 @@ export default function RoomViewModal({
     });
   }, [roomClasses]);
 
-  const isSharedField = room?.roomType === "field";
-  const fieldCapacity = Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
-  const peakFieldOccupancy = useMemo(() => {
-    if (!isSharedField) return 0;
+  const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
+  const sharedRoomCapacity = isSharedRoom ? 3 : Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
+  const peakSharedOccupancy = useMemo(() => {
+    if (!isSharedRoom) return 0;
 
     let peak = 0;
     DAYS.forEach((_, dayIndex) => {
@@ -104,7 +121,7 @@ export default function RoomViewModal({
     });
 
     return peak;
-  }, [isSharedField, roomClasses]);
+  }, [isSharedRoom, roomClasses]);
 
   const slotIndexes = useMemo(
     () => Array.from({ length: SLOT_COUNT }, (_, index) => index),
@@ -115,17 +132,17 @@ export default function RoomViewModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-2 sm:p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setIsRoomViewOpen(false); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="room-view-title"
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
       >
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-3 border-b border-slate-200 bg-slate-50/50 shrink-0">
           <div className="flex items-start gap-3">
             <DoorOpen className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
             <div>
@@ -133,18 +150,18 @@ export default function RoomViewModal({
                 Room Schedule
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Weekly occupancy across all sections
+                Weekly occupancy for your department
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="relative">
+            <div className="relative w-full sm:w-64">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
               <select
                 value={roomViewRoomId}
                 onChange={(e) => setRoomViewRoomId(e.target.value)}
-                className="appearance-none border border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10] min-w-[180px]"
+                className="w-full appearance-none border border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
               >
                 {rooms.map((r) => {
                   const isUnavailable = r.status === "not available";
@@ -169,7 +186,7 @@ export default function RoomViewModal({
         </div>
 
         {/* Summary strip */}
-        <div className="px-6 py-3 border-b border-slate-100 flex items-center gap-2 shrink-0">
+        <div className="px-6 py-2.5 border-b border-slate-100 flex items-center gap-2 shrink-0">
           <span className="flex items-center gap-1.5 bg-[#4e0a10]/10 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-1 rounded-lg text-xs font-bold">
             <DoorOpen className="w-3.5 h-3.5" />
             {room?.name ?? "Room"}
@@ -178,30 +195,30 @@ export default function RoomViewModal({
             <CalendarClock className="w-3.5 h-3.5" />
             {roomClasses.length} class{roomClasses.length !== 1 ? "es" : ""} booked
           </span>
-          {isSharedField && (
+          {isSharedRoom && (
             <span className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-lg text-xs font-bold ${
-              peakFieldOccupancy > fieldCapacity
+              peakSharedOccupancy > sharedRoomCapacity
                 ? "bg-red-50 text-red-700 border-red-200"
                 : "bg-emerald-50 text-emerald-700 border-emerald-200"
             }`}>
-              Shared capacity {peakFieldOccupancy}/{fieldCapacity}
+              Shared capacity {peakSharedOccupancy}/{sharedRoomCapacity}
             </span>
           )}
         </div>
 
         {/* Grid */}
-        <div className="flex-1 overflow-auto overscroll-contain p-4 bg-slate-50/30 [contain:layout_paint]">
+        <div className="flex-1 overflow-x-auto overflow-y-hidden overscroll-contain p-3 bg-slate-50/30 [contain:layout_paint]">
           {roomClasses.length === 0 && (
-            <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">
+            <div className="mb-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800">
               This room is fully available - no classes are booked this week.
             </div>
           )}
           <div
-            className="min-w-[720px] border border-slate-200 rounded-xl overflow-hidden bg-white select-none"
+            className="min-w-[980px] border border-slate-200 rounded-xl overflow-hidden bg-white select-none"
             style={{
               display: "grid",
-              gridTemplateColumns: "70px repeat(7, minmax(0, 1fr))",
-              gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(${SLOT_COUNT}, ${SLOT_HEIGHT_PX}px)`
+              gridTemplateColumns: "78px repeat(7, minmax(128px, 1fr))",
+              gridTemplateRows: `${ROOM_VIEW_GRID_HEADER_HEIGHT_PX}px repeat(${SLOT_COUNT}, ${ROOM_VIEW_SLOT_HEIGHT_PX}px)`
             }}
           >
             {/* Corner */}
@@ -247,7 +264,7 @@ export default function RoomViewModal({
             {/* Booked class blocks */}
             {groupedRoomClasses.map((cellGroup) => {
               const groupEndSlot = cellGroup.startSlot + cellGroup.durationSlots;
-              const groupOverlapCount = isSharedField
+              const groupOverlapCount = isSharedRoom
                 ? roomClasses.filter((item) => {
                   const itemEndSlot = item.startSlot + item.durationSlots;
                   return item.dayIndex === cellGroup.dayIndex
@@ -255,7 +272,7 @@ export default function RoomViewModal({
                     && item.startSlot < groupEndSlot;
                 }).length
                 : cellGroup.items.length;
-              const exceedsCapacity = isSharedField && groupOverlapCount > fieldCapacity;
+              const exceedsCapacity = isSharedRoom && groupOverlapCount > sharedRoomCapacity;
 
               // Group items by courseCode
               const subgroups: { courseCode: string; sectionName: string; courseType: ScheduleItem["courseType"] }[] = [];
@@ -297,11 +314,11 @@ export default function RoomViewModal({
                   title={tooltipTitle}
                 >
                   <div className="flex flex-col gap-1 overflow-hidden">
-                    {isSharedField && (
+                    {isSharedRoom && (
                       <div className={`self-start rounded px-1.5 py-0.5 text-[8px] font-black uppercase ${
                         exceedsCapacity ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
                       }`}>
-                        {groupOverlapCount}/{fieldCapacity}
+                        {groupOverlapCount}/{sharedRoomCapacity}
                       </div>
                     )}
                     {subgroups.map((sub) => (

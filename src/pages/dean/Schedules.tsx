@@ -21,6 +21,7 @@ interface Schedule {
   subjectCode: string;
   subjectName: string;
   subjectCategory: SubjectCategory;
+  meetingType?: "lecture" | "laboratory" | null;
   facultyId: string;
   facultyName: string | null;
   roomId: string;
@@ -64,6 +65,7 @@ interface RawSchedule {
   start_time: string;
   end_time: string;
   mode?: Schedule["mode"];
+  meeting_type?: "lecture" | "laboratory" | null;
   section?: {
     section_name?: string;
   } | null;
@@ -426,6 +428,7 @@ export default function DeanScheduleViewer() {
             subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
             subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
             subjectCategory: (item.course?.course_category ?? item.subject?.subject_category ?? "major") as SubjectCategory,
+            meetingType: item.meeting_type ?? null,
             facultyId: item.faculty_id ? item.faculty_id.toString() : "",
             facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
             roomId: item.room_id ? item.room_id.toString() : "",
@@ -669,6 +672,11 @@ export default function DeanScheduleViewer() {
                             const showMiddleDetails = height >= 72;
                             const gridStyles = getDepartmentCardStyles(schedule.departmentCode, schedule.departmentName, schedule.subjectCategory);
                             const modeBadgeClass = getGridModeBadgeClass(schedule.mode);
+                            const shouldShowMeetingType = schedule.subjectCategory === "major" && !!schedule.meetingType;
+                            const meetingTypeLabel = schedule.meetingType === "laboratory" ? "Lab" : "Lec";
+                            const meetingTypeBadgeClass = schedule.meetingType === "laboratory"
+                              ? "bg-violet-50 text-violet-700 border-violet-200"
+                              : "bg-sky-50 text-sky-700 border-sky-200";
 
                             return (
                               <button
@@ -689,8 +697,15 @@ export default function DeanScheduleViewer() {
                                   <div className="min-w-0">
                                     <div className="flex items-start justify-between gap-1">
                                       <span className={`text-xs font-bold uppercase tracking-wide truncate ${conflicts.length > 0 ? "text-red-700" : gridStyles.text}`}>{schedule.subjectCode}</span>
-                                      <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-bold shrink-0 ${conflicts.length > 0 ? "bg-red-100 text-red-700 border border-red-200" : modeBadgeClass}`}>
-                                        {getModeLabel(schedule.mode)}
+                                      <span className="flex shrink-0 items-center gap-1">
+                                        {shouldShowMeetingType && (
+                                          <span className={`text-[9px] rounded-full border px-1.5 py-0.5 font-bold ${conflicts.length > 0 ? "bg-red-100 text-red-700 border-red-200" : meetingTypeBadgeClass}`}>
+                                            {meetingTypeLabel}
+                                          </span>
+                                        )}
+                                        <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-bold ${conflicts.length > 0 ? "bg-red-100 text-red-700 border border-red-200" : modeBadgeClass}`}>
+                                          {getModeLabel(schedule.mode)}
+                                        </span>
                                       </span>
                                     </div>
                                     <div className="text-[10px] font-semibold truncate mt-0.5">{schedule.sectionName}</div>
@@ -776,10 +791,18 @@ export default function DeanScheduleViewer() {
             <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto">
               {selectedOverflowGroup.schedules.map((schedule) => {
                 const conflicts = getConflictLabels(conflictMap.get(schedule.id));
+                const showMeetingType = schedule.subjectCategory === "major" && !!schedule.meetingType;
                 return (
                   <button key={schedule.id} type="button" onClick={() => { setSelectedSchedule(schedule); setSelectedOverflowGroup(null); }} className="grid w-full grid-cols-1 gap-2 px-4 py-3 text-left text-xs transition-colors hover:bg-slate-50 md:grid-cols-[1fr_0.7fr_1fr_1fr]">
                     <div className="min-w-0">
-                      <p className="font-black text-slate-800">{schedule.subjectCode}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-black text-slate-800">{schedule.subjectCode}</p>
+                        {showMeetingType && (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-600">
+                            {schedule.meetingType === "laboratory" ? "Lab" : "Lec"}
+                          </span>
+                        )}
+                      </div>
                       <p className="truncate text-slate-500">{schedule.subjectName}</p>
                     </div>
                     <p className="font-semibold text-slate-700">{schedule.sectionName}</p>
@@ -803,7 +826,18 @@ export default function DeanScheduleViewer() {
           <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-[#F7F4F0] p-4">
               <div>
-                <p className="text-xs font-black uppercase tracking-wider text-[#C9952A]">{selectedSchedule.subjectCode}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-black uppercase tracking-wider text-[#C9952A]">{selectedSchedule.subjectCode}</p>
+                  {selectedSchedule.subjectCategory === "major" && selectedSchedule.meetingType && (
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${
+                      selectedSchedule.meetingType === "laboratory"
+                        ? "border-violet-200 bg-violet-50 text-violet-700"
+                        : "border-sky-200 bg-sky-50 text-sky-700"
+                    }`}>
+                      {selectedSchedule.meetingType === "laboratory" ? "Lab" : "Lec"}
+                    </span>
+                  )}
+                </div>
                 <h3 className="text-lg font-black leading-tight text-[#4e0a10]">{selectedSchedule.subjectName}</h3>
               </div>
               <button type="button" onClick={() => setSelectedSchedule(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700">

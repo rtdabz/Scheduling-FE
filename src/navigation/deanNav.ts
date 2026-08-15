@@ -5,7 +5,8 @@ import {
   DoorOpen,
   FileBarChart,
   Calendar,
-  ClipboardCheck
+  ClipboardCheck,
+  Settings
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -41,6 +42,7 @@ export const deanNav: NavSection[] = [
     section: 'SYSTEM',
     items: [
       { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports' },
+      { label: 'Settings', path: '/dean/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }
 ]

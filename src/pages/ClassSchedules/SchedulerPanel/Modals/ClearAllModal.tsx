@@ -7,8 +7,10 @@ interface ClearAllModalProps {
   isClearAllModalOpen: boolean;
   isClearingAll?: boolean;
   selectedSectionId: string;
+  schedules: ScheduleItem[];
   sectionSchedules: ScheduleItem[];
-  confirmClearAll: () => void;
+  activeTermText: string;
+  confirmClearAll: (scope?: "section" | "all") => void;
   cancelClearAll: () => void;
 }
 
@@ -17,7 +19,9 @@ export default function ClearAllModal({
   isClearAllModalOpen,
   isClearingAll = false,
   selectedSectionId,
+  schedules,
   sectionSchedules,
+  activeTermText,
   confirmClearAll,
   cancelClearAll
 }: ClearAllModalProps) {
@@ -37,7 +41,14 @@ export default function ClearAllModal({
   if (!isClearAllModalOpen) return null;
 
   const sectionName = sections.find((s) => s.id === selectedSectionId)?.name ?? "this section";
-  const classCount = sectionSchedules.length;
+  const selectedDepartmentId = sections.find((s) => s.id === selectedSectionId)?.departmentId ?? null;
+  const departmentSectionIds = new Set(
+    sections
+      .filter((section) => selectedDepartmentId === null || Number(section.departmentId) === Number(selectedDepartmentId))
+      .map((section) => section.id)
+  );
+  const sectionClassCount = sectionSchedules.length;
+  const allClassCount = schedules.filter((schedule) => departmentSectionIds.has(schedule.sectionId)).length;
 
   return (
     <div
@@ -71,26 +82,50 @@ export default function ClearAllModal({
             </div>
             <div className="pt-0.5">
               <h3 id="clear-all-title" className="text-lg font-bold text-gray-900 leading-tight">
-                Clear entire schedule?
+                Clear schedules?
               </h3>
               <p id="clear-all-desc" className="text-sm text-gray-600 mt-1">
-                You're about to remove{" "}
-                <span className="font-bold text-rose-700">
-                  {classCount} class{classCount !== 1 ? "es" : ""}
-                </span>{" "}
-                from{" "}
-                <span className="font-bold text-gray-900">{sectionName}</span>.
+                Choose whether to clear only{" "}
+                <span className="font-bold text-gray-900">{sectionName}</span>{" "}
+                or the entire loaded schedule{activeTermText ? ` for ${activeTermText}` : ""}.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-5">
+        <div className="space-y-3 px-6 py-5">
+          <button
+            type="button"
+            onClick={() => confirmClearAll("section")}
+            disabled={isClearingAll || sectionClassCount === 0}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-rose-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span>
+              <span className="block text-sm font-bold text-slate-900">Clear current section</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                Remove {sectionClassCount} class{sectionClassCount !== 1 ? "es" : ""} from {sectionName}.
+              </span>
+            </span>
+            <Trash2 className="h-4 w-4 shrink-0 text-rose-600" />
+          </button>
+          <button
+            type="button"
+            onClick={() => confirmClearAll("all")}
+            disabled={isClearingAll || allClassCount === 0}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span>
+                <span className="block text-sm font-bold text-rose-800">Clear entire schedule</span>
+                <span className="mt-0.5 block text-xs font-medium text-rose-700">
+                Remove all {allClassCount} loaded class{allClassCount !== 1 ? "es" : ""} for this department.
+              </span>
+            </span>
+            {isClearingAll ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-rose-600" /> : <Trash2 className="h-4 w-4 shrink-0 text-rose-600" />}
+          </button>
           <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
             <p className="text-xs font-medium text-amber-800">
-              This action cannot be undone. Every placed class for this section will be
-              permanently removed from the timetable.
+              This action cannot be undone. Cleared classes will be permanently removed from the timetable.
             </p>
           </div>
         </div>
@@ -104,19 +139,6 @@ export default function ClearAllModal({
             className="border border-gray-300 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
           >
             Keep Schedule
-          </button>
-          <button
-            type="button"
-            onClick={confirmClearAll}
-            disabled={isClearingAll}
-            className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isClearingAll ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Trash2 className="w-4 h-4" />
-            )}
-            {isClearingAll ? "Clearing..." : "Yes, Clear All"}
           </button>
         </div>
       </div>

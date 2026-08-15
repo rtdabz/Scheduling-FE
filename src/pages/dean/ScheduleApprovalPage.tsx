@@ -32,8 +32,10 @@ interface ScheduleApproval {
   submittedBy: string;
   submittedAt: string;
   deanReviewedAt: string | null;
-  status: 'submitted' | 'approved_by_dean' | 'rejected_by_dean' | 'approved' | 'rejected';
+  status: 'submitted' | 'approved_by_dean' | 'rejected_by_dean' | 'approved' | 'rejected' | 'revision';
   mode: 'on-site' | 'online' | 'field';
+  requestType: 'approval' | 'withdrawal' | 'revision';
+  withdrawnSectionIds?: string[];
 }
 
 interface StoredUser {
@@ -118,6 +120,7 @@ const APPROVAL_SLOT_HEIGHT_PX = 24;
 const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['status'] => {
   const statuses = items.map((item) => item.status);
   if (statuses.includes('submitted')) return 'submitted';
+  if (statuses.includes('revision')) return 'revision';
   if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
   if (statuses.includes('approved_by_dean')) return 'approved_by_dean';
   if (statuses.includes('rejected')) return 'rejected';
@@ -128,6 +131,24 @@ interface ScheduleApprovalPageData {
   schedules: ScheduleApproval[];
   rawSchedules: RawSchedule[];
   rawSections: RawSection[];
+  withdrawalDepartmentIds: number[];
+}
+
+interface NotificationResponse {
+  data: Array<{
+    id: number;
+    type: string;
+    department_id: number | null;
+    title: string;
+    created_at: string;
+    actor?: {
+      name?: string;
+    } | null;
+    department?: {
+      department_name?: string;
+    } | null;
+    metadata?: Record<string, unknown> | null;
+  }>;
 }
 
 const normalizeDepartmentKey = (dept: string) => {
@@ -141,6 +162,48 @@ const normalizeDepartmentKey = (dept: string) => {
   if (value.includes('criminal')) return 'CRIM';
   if (value.includes('library')) return 'LIS';
   return '';
+};
+
+const readMetadataSectionIds = (metadata?: Record<string, unknown> | null): string[] => {
+  const value = metadata?.selected_section_ids;
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((id) => String(id))
+    .filter((id) => id.length > 0);
+};
+
+const formatSectionSummary = (sections: RawSection[], sectionIds?: string[]): string => {
+  const selectedIds = new Set(sectionIds ?? []);
+  const visibleSections = selectedIds.size > 0
+    ? sections.filter((section) => selectedIds.has(String(section.id)))
+    : sections;
+
+  if (visibleSections.length === 0) {
+    return selectedIds.size > 0
+      ? `${selectedIds.size} selected section${selectedIds.size !== 1 ? 's' : ''}`
+      : 'No sections';
+  }
+
+  if (selectedIds.size === 0) {
+    return `${visibleSections.length} section${visibleSections.length !== 1 ? 's' : ''}`;
+  }
+
+  return visibleSections.map((section) => section.section_name).join(', ');
+};
+
+const isNewerWorkflowNotification = (
+  next: { created_at: string },
+  current?: { created_at: string }
+): boolean => {
+  if (!current) return true;
+  return new Date(next.created_at).getTime() > new Date(current.created_at).getTime();
+};
+
+const parseApiDate = (value: string): Date => {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  return new Date(hasTimezone ? normalized : `${normalized}Z`);
 };
 
 const getDeptColorClasses = (dept: string) => {
@@ -238,7 +301,7 @@ export default function DeanScheduleApprovalPage() {
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name;
   const userId = user?.id;
-  const approvalCacheKey = `page:dean-schedule-approval:${userDeptId ?? 'all'}`;
+  const approvalCacheKey = `page:dean-schedule-approval:v2:${userDeptId ?? 'all'}`;
   const cachedApprovalData = getCachedData<ScheduleApprovalPageData>(approvalCacheKey);
   const [schedules, setSchedules] = useState<ScheduleApproval[]>(cachedApprovalData?.schedules ?? []);
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>(cachedApprovalData?.rawSchedules ?? []);
@@ -246,6 +309,7 @@ export default function DeanScheduleApprovalPage() {
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(approvalCacheKey));
   
   // Filters
+  const [selectedRequestType, setSelectedRequestType] = useState<'approval' | 'withdrawal' | 'revision'>('approval');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [selectedMode, setSelectedMode] = useState('All Modes');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -268,12 +332,36 @@ export default function DeanScheduleApprovalPage() {
       try {
         setIsLoading(!hasCachedData(approvalCacheKey));
         const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
-          const response = await api.get<{
+          const [response, notificationResponse] = await Promise.all([
+            api.get<{
             active_term: { id: number | string } | null;
             sections: RawSection[];
             schedules: RawSchedule[];
-          }>('/initial-data');
+            }>('/initial-data'),
+            api.get<NotificationResponse>('/notifications', { params: { limit: 50 } }).catch(() => ({ data: { data: [] } })),
+          ]);
           const term = response.data.active_term;
+          const withdrawalDepartmentIds = notificationResponse.data.data
+            .filter((notification) => notification.type === 'schedule_withdrawn' && notification.department_id !== null)
+            .map((notification) => Number(notification.department_id));
+          const withdrawalDepartmentSet = new Set(withdrawalDepartmentIds);
+          const workflowNotifications = notificationResponse.data.data.filter((notification) =>
+            notification.department_id !== null &&
+            ['schedule_submitted', 'schedule_withdrawn', 'schedule_returned_by_dean', 'schedule_returned_by_vpaa'].includes(notification.type)
+          );
+          const latestWorkflowByDepartmentAndType = new Map<string, (typeof workflowNotifications)[number]>();
+          workflowNotifications.forEach((notification) => {
+            const requestType: ScheduleApproval['requestType'] =
+              notification.type === 'schedule_submitted'
+                ? 'approval'
+                : notification.type === 'schedule_withdrawn'
+                ? 'withdrawal'
+                : 'revision';
+            const key = `${notification.department_id}:${requestType}`;
+            if (isNewerWorkflowNotification(notification, latestWorkflowByDepartmentAndType.get(key))) {
+              latestWorkflowByDepartmentAndType.set(key, notification);
+            }
+          });
 
           let filteredSections = response.data.sections;
           if (term) {
@@ -319,17 +407,77 @@ export default function DeanScheduleApprovalPage() {
             const firstSched = deptSchedules[0];
             const status = getDepartmentApprovalStatus(deptSchedules);
             if (status === 'approved') return;
+            const requestType: ScheduleApproval['requestType'] = withdrawalDepartmentSet.has(Number(departmentId))
+              && status === 'revision'
+              ? 'withdrawal'
+              : status === 'submitted'
+              ? 'approval'
+              : 'revision';
+            const workflowNotification = latestWorkflowByDepartmentAndType.get(`${departmentId}:${requestType}`);
+            const withdrawnSectionIds = requestType === 'withdrawal'
+              ? readMetadataSectionIds(workflowNotification?.metadata)
+              : [];
             const departmentSections = sectionsByDepartment[departmentId] ?? [];
+            const visibleDeptSchedules = withdrawnSectionIds.length > 0
+              ? deptSchedules.filter((schedule) => withdrawnSectionIds.includes(String(schedule.section_id)))
+              : deptSchedules;
             mappedApprovals.push({
               id: Number(departmentId),
               department: firstSched.department?.department_name ?? userDeptName ?? "",
-              section: `${departmentSections.length} section${departmentSections.length !== 1 ? 's' : ''}`,
-              subjectsScheduled: new Set(deptSchedules.map((s) => getScheduleCourseId(s))).size,
-              submittedBy: "Coordinator",
-              submittedAt: firstSched.created_at ?? "",
+              section: formatSectionSummary(departmentSections, withdrawnSectionIds),
+              subjectsScheduled: new Set(visibleDeptSchedules.map((s) => getScheduleCourseId(s))).size,
+              submittedBy: workflowNotification?.actor?.name ?? "Secretary",
+              submittedAt: workflowNotification?.created_at ?? firstSched.created_at ?? "",
               deanReviewedAt: firstSched.reviewed_at_dean ?? null,
               status: status,
-              mode: firstSched.mode ?? "on-site"
+              mode: firstSched.mode ?? "on-site",
+              requestType,
+              withdrawnSectionIds,
+            });
+          });
+
+          latestWorkflowByDepartmentAndType.forEach((notification, key) => {
+            const [departmentIdValue, requestTypeValue] = key.split(':');
+            const departmentId = Number(departmentIdValue);
+            const requestType = requestTypeValue as ScheduleApproval['requestType'];
+            const latestWithdrawal = latestWorkflowByDepartmentAndType.get(`${departmentId}:withdrawal`);
+            if (
+              requestType === 'approval'
+              && latestWithdrawal
+              && isNewerWorkflowNotification(latestWithdrawal, notification)
+            ) {
+              return;
+            }
+            const alreadyMapped = mappedApprovals.some(
+              (approval) => approval.id === departmentId && approval.requestType === requestType
+            );
+            if (alreadyMapped) return;
+
+            const deptSchedules = schedulesByDepartment[String(departmentId)] ?? [];
+            const departmentSections = sectionsByDepartment[String(departmentId)] ?? [];
+            const firstSched = deptSchedules[0];
+            const currentStatus = deptSchedules.length > 0 ? getDepartmentApprovalStatus(deptSchedules) : 'revision';
+            const withdrawnSectionIds = requestType === 'withdrawal'
+              ? readMetadataSectionIds(notification.metadata)
+              : [];
+            const visibleDeptSchedules = withdrawnSectionIds.length > 0
+              ? deptSchedules.filter((schedule) => withdrawnSectionIds.includes(String(schedule.section_id)))
+              : deptSchedules;
+
+            mappedApprovals.push({
+              id: departmentId,
+              department: notification.department?.department_name ?? firstSched?.department?.department_name ?? userDeptName ?? '',
+              section: formatSectionSummary(departmentSections, withdrawnSectionIds),
+              subjectsScheduled: firstSched
+                ? new Set(visibleDeptSchedules.map((s) => getScheduleCourseId(s))).size
+                : Number(notification.metadata?.schedules_updated ?? 0),
+              submittedBy: notification.actor?.name ?? 'Secretary',
+              submittedAt: notification.created_at,
+              deanReviewedAt: firstSched?.reviewed_at_dean ?? null,
+              status: currentStatus,
+              mode: firstSched?.mode ?? 'on-site',
+              requestType,
+              withdrawnSectionIds,
             });
           });
 
@@ -337,6 +485,7 @@ export default function DeanScheduleApprovalPage() {
             schedules: mappedApprovals,
             rawSchedules: dbSchedules,
             rawSections: filteredSections,
+            withdrawalDepartmentIds,
           };
         });
 
@@ -354,6 +503,7 @@ export default function DeanScheduleApprovalPage() {
   }, [approvalCacheKey, userDeptId, userDeptName]);
 
   const resetFilters = () => {
+    setSelectedRequestType('approval');
     setSelectedStatus('All Status');
     setSelectedMode('All Modes');
   };
@@ -440,12 +590,16 @@ export default function DeanScheduleApprovalPage() {
   // Filter schedules
   const filteredData = useMemo(() => {
     return schedules.filter(s => {
+      if (s.requestType !== selectedRequestType) {
+        return false;
+      }
+
       let matchStatus = true;
       if (selectedStatus !== 'All Status') {
         if (selectedStatus === 'Pending Dean Approval') matchStatus = s.status === 'submitted';
         else if (selectedStatus === 'Pending VPAA Approval') matchStatus = s.status === 'approved_by_dean';
         else if (selectedStatus === 'Approved') matchStatus = s.status === 'approved';
-        else if (selectedStatus === 'Rejected') matchStatus = s.status === 'rejected' || s.status === 'rejected_by_dean';
+        else if (selectedStatus === 'Rejected') matchStatus = s.status === 'rejected' || s.status === 'rejected_by_dean' || s.status === 'revision';
       }
 
       let matchMode = true;
@@ -455,18 +609,20 @@ export default function DeanScheduleApprovalPage() {
       
       return matchStatus && matchMode;
     });
-  }, [schedules, selectedStatus, selectedMode]);
+  }, [schedules, selectedRequestType, selectedStatus, selectedMode]);
 
   // Format date helper
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '—';
     try {
-      const d = new Date(dateStr);
+      const d = parseApiDate(dateStr);
       return d.toLocaleDateString('en-US', { 
+        timeZone: 'Asia/Manila',
         month: 'short', 
         day: '2-digit', 
         year: 'numeric' 
       }) + ' ' + d.toLocaleTimeString('en-US', { 
+        timeZone: 'Asia/Manila',
         hour: '2-digit', 
         minute: '2-digit' 
       });
@@ -485,6 +641,8 @@ export default function DeanScheduleApprovalPage() {
         return 'bg-rose-100 text-rose-805 border-rose-200/60';
       case 'approved':
         return 'bg-emerald-100 text-emerald-850 border-emerald-200/60';
+      case 'revision':
+        return 'bg-orange-100 text-orange-800 border-orange-200/60';
       case 'rejected':
         return 'bg-red-100 text-red-800 border-red-200/60';
       default:
@@ -498,6 +656,7 @@ export default function DeanScheduleApprovalPage() {
       case 'approved_by_dean': return 'Pending VPAA Approval';
       case 'rejected_by_dean': return 'Rejected by Dean';
       case 'approved': return 'Approved';
+      case 'revision': return 'Under Revision';
       case 'rejected': return 'Rejected';
       default: return 'UNKNOWN';
     }
@@ -510,6 +669,8 @@ export default function DeanScheduleApprovalPage() {
   };
 
   const getRoomName = (item: RawSchedule) => {
+    if (item.mode === 'online') return 'Online';
+    if (item.mode === 'field') return 'Field';
     if (!item.room) return 'Unassigned';
     if (item.room.room_code === 'ONLINE') return 'Online';
     if (item.room.room_code === 'FIELD') return 'Field';
@@ -548,8 +709,16 @@ export default function DeanScheduleApprovalPage() {
 
   const modalSchedules = useMemo(() => {
     if (!viewSchedule) return [];
+    const withdrawnSectionIds = new Set(viewSchedule.withdrawnSectionIds ?? []);
     return rawSchedules
-      .filter((schedule) => Number(schedule.department_id) === Number(viewSchedule.id))
+      .filter((schedule) => (
+        Number(schedule.department_id) === Number(viewSchedule.id)
+        && (
+          viewSchedule.requestType !== 'withdrawal'
+          || withdrawnSectionIds.size === 0
+          || withdrawnSectionIds.has(String(schedule.section_id))
+        )
+      ))
       .sort((left, right) => (
         getSectionName(left).localeCompare(getSectionName(right))
         || (dayOrder[left.day] ?? 99) - (dayOrder[right.day] ?? 99)
@@ -560,9 +729,17 @@ export default function DeanScheduleApprovalPage() {
   const modalSections = useMemo<ScheduleSectionOption[]>(() => {
     if (!viewSchedule) return [];
     const sectionMap = new Map<string, string>();
+    const withdrawnSectionIds = new Set(viewSchedule.withdrawnSectionIds ?? []);
 
     rawSections
-      .filter((section) => Number(section.department_id) === Number(viewSchedule.id))
+      .filter((section) => (
+        Number(section.department_id) === Number(viewSchedule.id)
+        && (
+          viewSchedule.requestType !== 'withdrawal'
+          || withdrawnSectionIds.size === 0
+          || withdrawnSectionIds.has(String(section.id))
+        )
+      ))
       .forEach((section) => sectionMap.set(String(section.id), section.section_name));
 
     modalSchedules.forEach((schedule) => {
@@ -656,30 +833,11 @@ export default function DeanScheduleApprovalPage() {
         }
       },
       {
-        accessorKey: 'mode',
-        header: 'Mode',
-        cell: info => {
-          const mode = info.getValue() as 'on-site' | 'online' | 'field';
-          return (
-            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${
-              mode === 'on-site'
-                ? 'bg-blue-100 text-blue-850 border-blue-200/60'
-                : mode === 'online'
-                ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60'
-                : 'bg-amber-100 text-amber-850 border-amber-200/60'
-            }`}>
-              {mode === 'on-site' ? 'On-Site' : mode === 'online' ? 'Online' : 'Field'}
-            </span>
-          );
-        }
-      },
-      {
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
         enableSorting: false,
         cell: ({ row }) => {
           const sched = row.original;
-          const isActable = sched.status === 'submitted';
           return (
             <div className="flex justify-end gap-1.5">
               {/* View Schedule Timetable */}
@@ -694,36 +852,6 @@ export default function DeanScheduleApprovalPage() {
                   View
                 </span>
               </div>
-
-              {isActable && (
-                <>
-                  {/* Approve */}
-                  <div className="relative group">
-                    <button 
-                      onClick={() => handleApprove(sched)}
-                      className="p-1.5 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Check size={17} />
-                    </button>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                      Approve
-                    </span>
-                  </div>
-
-                  {/* Reject */}
-                  <div className="relative group">
-                    <button 
-                      onClick={() => handleReject(sched)}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <X size={17} />
-                    </button>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
-                      Reject
-                    </span>
-                  </div>
-                </>
-              )}
             </div>
           );
         }
@@ -748,10 +876,44 @@ export default function DeanScheduleApprovalPage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
+  const requestTabs = [
+    { id: 'approval' as const, label: 'Approval Requests' },
+    { id: 'withdrawal' as const, label: 'Withdrawal Schedule' },
+    { id: 'revision' as const, label: 'Rejected/Revision Requests' },
+  ];
 
+  const requestCounts = requestTabs.reduce<Record<ScheduleApproval['requestType'], number>>((counts, tab) => {
+    counts[tab.id] = schedules.filter((schedule) => schedule.requestType === tab.id).length;
+    return counts;
+  }, { approval: 0, withdrawal: 0, revision: 0 });
 
   return (
-    <div className="relative">
+    <div className="p-6 relative">
+      <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
+        {requestTabs.map((tab) => {
+          const active = selectedRequestType === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setSelectedRequestType(tab.id);
+                setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+              }}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold uppercase tracking-wide transition-colors ${
+                active
+                  ? 'bg-[#4e0a10] text-white shadow-sm'
+                  : 'bg-gray-50 text-gray-600 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10]'
+              }`}
+            >
+              {tab.label}
+              <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-white text-gray-500'}`}>
+                {requestCounts[tab.id]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
       {/* Filter Row */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">
@@ -1136,7 +1298,7 @@ export default function DeanScheduleApprovalPage() {
 
             <div className="p-3 bg-gray-50/80 border-t border-gray-200/80 flex justify-between items-center">
               <div className="flex gap-2">
-                {viewSchedule.status === 'submitted' && (
+                {viewSchedule.status === 'submitted' && viewSchedule.requestType === 'approval' && (
                   <>
                     <button 
                       onClick={() => {

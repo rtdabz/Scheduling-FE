@@ -50,6 +50,10 @@ export interface Course {
   category: CourseCategory;
   semester: Semester;
   departmentId: number | null;
+  teachingDepartmentId?: number | null;
+  teachingDepartmentCode?: string;
+  teachingDepartmentName?: string;
+  categories?: { id: number | string; name: string; description?: string | null }[];
   yearLevel: YearLevel;
   roomTypeRequired: RoomType;
   status: "active" | "inactive";
@@ -201,6 +205,14 @@ export interface ApiCourseRecord {
   subject_category?: CourseCategory;
   semester: Semester;
   department_id: number | null;
+  teaching_assignment?: {
+    department_id?: number | null;
+    department?: {
+      department_code?: string;
+      department_name?: string;
+    } | null;
+  } | null;
+  categories?: { id: number | string; name: string; description?: string | null }[];
   year_level: string | number;
   room_type_required: RoomType;
   status?: "active" | "inactive";
@@ -272,6 +284,7 @@ export interface ApiScheduleRecord {
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
     units?: number | string | null;
+    categories?: { id: number | string; name: string; description?: string | null }[];
   } | null;
   subject?: {
     course_code?: string;
@@ -283,6 +296,7 @@ export interface ApiScheduleRecord {
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
     units?: number | string | null;
+    categories?: { id: number | string; name: string; description?: string | null }[];
   } | null;
   section?: {
     section_name?: string;

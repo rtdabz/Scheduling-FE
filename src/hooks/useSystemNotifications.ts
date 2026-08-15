@@ -27,6 +27,7 @@ interface SystemNotification {
   title: string;
   message: string;
   remarks?: string | null;
+  metadata?: Record<string, unknown> | null;
   read_at?: string | null;
   created_at: string;
   actor?: NotificationUser | null;
@@ -60,15 +61,34 @@ const formatTimestamp = (value: string): string => {
 };
 
 const buildActionText = (notification: SystemNotification): string => {
-  const department = notification.department
-    ? `${notification.department.department_code} - ${notification.department.department_name}`
-    : 'System-wide';
+  const departmentName = notification.department?.department_name ?? 'the department schedule';
+  const departmentCode = notification.department?.department_code;
+  const department = departmentCode ? `${departmentCode} - ${departmentName}` : departmentName;
   const term = notification.term
     ? `${notification.term.semester.toUpperCase()} semester, AY ${notification.term.academic_year}`
     : 'Active term';
   const actor = notification.actor?.name ?? 'System';
+  const schedulesUpdated = Number(notification.metadata?.schedules_updated ?? 0);
+  const scheduleText = schedulesUpdated > 0
+    ? `${schedulesUpdated} schedule${schedulesUpdated === 1 ? '' : 's'}`
+    : 'the schedule';
 
-  return `${notification.message} Department: ${department}. Term: ${term}. Initiated by: ${actor}.`;
+  switch (notification.type) {
+    case 'schedule_submitted':
+      return `${actor} submitted ${departmentName} for ${term}. ${scheduleText} sent for Dean review.`;
+    case 'schedule_withdrawn':
+      return `${actor} withdrew selected section${Number(notification.metadata?.sections_unlocked ?? 0) === 1 ? '' : 's'} from ${departmentName} for revision.`;
+    case 'schedule_approved_by_dean':
+      return `${actor} approved and forwarded ${departmentName} for ${term}. ${scheduleText} sent to VPAA review.`;
+    case 'schedule_returned_by_dean':
+      return `${actor} returned ${departmentName} for revision.`;
+    case 'schedule_returned_by_vpaa':
+      return `${actor} returned ${departmentName} from VPAA review.`;
+    case 'schedule_approved_by_vpaa':
+      return `${actor} approved ${departmentName} for ${term}.`;
+    default:
+      return `${notification.message} Department: ${department}. Term: ${term}. Initiated by: ${actor}.`;
+  }
 };
 
 export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNotificationsResult {
@@ -124,6 +144,7 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
 
   const feedItems = useMemo<ActivityFeedItem[]>(() => notifications.map((notification) => ({
     id: notification.id,
+    type: notification.type,
     title: notification.title,
     action: buildActionText(notification),
     timestamp: formatTimestamp(notification.created_at),

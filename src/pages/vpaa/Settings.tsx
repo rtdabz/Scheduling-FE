@@ -4,7 +4,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  CheckCircle2
+  CheckCircle2,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -17,6 +17,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import AccountSettingsPanel from '../../components/settings/AccountSettingsPanel';
 
 interface Term {
   id: number;
@@ -83,14 +84,14 @@ export default function Settings() {
     setIsLoading(forceRefresh || !hasCachedData(settingsCacheKey));
     try {
       const data = await loadCachedData<SettingsPageData>(settingsCacheKey, async () => {
-        const res = await api.get<ApiTerm[]>('/terms');
+        const termsRes = await api.get<ApiTerm[]>('/terms');
         return {
-          terms: res.data ? res.data.map(mapApiTerm) : [],
+          terms: termsRes.data ? termsRes.data.map(mapApiTerm) : [],
         };
       }, forceRefresh);
       setTerms(data.terms);
     } catch {
-      toast.error('Error', 'Failed to load academic terms.');
+      toast.error('Error', 'Failed to load settings data.');
     } finally {
       setIsLoading(false);
     }
@@ -252,7 +253,8 @@ export default function Settings() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="p-6">
+      <div className="space-y-6">
         {/* Three Term Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {sortedTerms.map((term) => {

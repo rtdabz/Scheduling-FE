@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
-import Skeleton from '../../components/ui/Skeleton';
+import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
-import { ActivityFeed } from '../../components/overview';
+import { ActivityFeed, DashboardNotificationBanner } from '../../components/overview';
 import {
   Building2,
   Users,
@@ -22,7 +22,6 @@ import {
   Download,
   CheckSquare,
   AlertCircle,
-  Bell,
   ClipboardList,
   ChevronDown,
   ChevronUp,
@@ -133,14 +132,6 @@ interface Term {
   is_active: boolean;
 }
 
-interface ApprovalItem {
-  id: number;
-  section_name: string;
-  department_code: string;
-  department_name: string;
-  semester: string;
-  submission_date: string;
-}
 
 interface StoredUser {
   id?: number;
@@ -763,28 +754,6 @@ export default function VpaaDashboardPage() {
     return { total, available, fullyLoaded, overloaded, probono };
   }, [faculties]);
 
-  // ── 6. Schedule Approval Queue ──
-  const approvalQueue = useMemo(() => {
-    const queue: ApprovalItem[] = [];
-    sections.forEach(sec => {
-      const val = scheduleStatusMap.get(sec.id);
-      if (val && val.status === 'approved_by_dean') {
-        const submissionDate = val.updated_at
-          ? new Date(val.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-          : 'Just now';
-
-        queue.push({
-          id: sec.id,
-          section_name: sec.section_name,
-          department_code: sec.department?.department_code || 'N/A',
-          department_name: sec.department?.department_name || 'N/A',
-          semester: activeTerm?.semester ? `${activeTerm.semester.toUpperCase()} SEM` : '1st Sem',
-          submission_date: submissionDate
-        });
-      }
-    });
-    return queue;
-  }, [sections, scheduleStatusMap, activeTerm]);
 
   // ── Export Mock Event Handlers ──
   const handleExportSchedules = () => {
@@ -812,97 +781,29 @@ export default function VpaaDashboardPage() {
         )}
       </div>
 
-      {/* Notice Banner */}
-      <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
-        approvalQueue.length > 0
-          ? 'border-amber-200 bg-amber-50 text-amber-800'
-          : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      }`}>
-        <Bell className={`h-5 w-5 flex-shrink-0 ${approvalQueue.length > 0 ? 'text-amber-600' : 'text-emerald-500'}`} />
-        <span>
-          {approvalQueue.length > 0
-            ? `${approvalQueue.length} schedule${approvalQueue.length === 1 ? '' : 's'} awaiting VPAA attention.`
-            : 'All clear — no action items require attention right now.'}
-        </span>
-      </div>
+      <DashboardNotificationBanner
+        items={notificationItems}
+        unreadCount={unreadCount}
+        actionLabel="Open VPAA Reviews"
+        onAction={() => navigate('/schedules/approval')}
+        onMarkAllRead={markAllAsRead}
+      />
 
       {isLoading ? (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch animate-pulse">
-          {/* Left Column Skeleton */}
-          <div className="xl:col-span-6 space-y-4 flex flex-col h-full">
-            {/* 2x2 Metric Cards Grid */}
-            <div className="grid grid-cols-2 gap-3.5">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm min-h-[88px] flex flex-col justify-between">
-                  <Skeleton className="h-3 w-20" />
-                  <div className="flex justify-between items-center mt-2">
-                    <Skeleton className="h-7 w-10" />
-                    <Skeleton className="h-4 w-4 rounded-md" />
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Timetable / Section Summary Skeleton Card */}
-            <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 flex-1 min-h-[380px] space-y-4">
-              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-6 w-24 rounded-lg" />
+        <div className="space-y-5">
+          {/* Skeleton Metrics Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-7 w-8" />
               </div>
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-11 w-full rounded-xl" />
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
-
-          {/* Right Column Skeleton */}
-          <div className="xl:col-span-6 space-y-4 flex flex-col h-full">
-            {/* 2 Separate Cards Side-by-Side: Schedule Status & Faculty Load */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Schedule Status Card Skeleton */}
-              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 space-y-4 min-h-[240px]">
-                <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-                  <Skeleton className="h-4 w-28" />
-                  <Skeleton className="h-4 w-12 rounded-full" />
-                </div>
-                <div className="flex items-center justify-center py-2">
-                  <Skeleton className="h-28 w-28 rounded-full" />
-                </div>
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-3/4" />
-                </div>
-              </div>
-
-              {/* Faculty Load Card Skeleton */}
-              <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 space-y-4 min-h-[240px]">
-                <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-                  <Skeleton className="h-4 w-28" />
-                  <Skeleton className="h-4 w-12 rounded-full" />
-                </div>
-                <div className="flex items-center justify-center py-2">
-                  <Skeleton className="h-28 w-28 rounded-full" />
-                </div>
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-3/4" />
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Room Usage Card Skeleton */}
-            <div className="bg-white rounded-2xl border border-gray-150 shadow-sm p-5 flex-1 min-h-[260px] space-y-4">
-              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-                <Skeleton className="h-5 w-36" />
-                <Skeleton className="h-6 w-24 rounded-lg" />
-              </div>
-              <div className="space-y-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-11 w-full rounded-xl" />
-                ))}
-              </div>
-            </div>
+          {/* Skeleton Widgets */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-[400px] rounded-2xl" />
+            <Skeleton className="h-[400px] rounded-2xl" />
           </div>
         </div>
       ) : (

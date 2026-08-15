@@ -10,7 +10,7 @@ interface DropRecommendationRow {
   section_id: number;
   course_id: number;
   faculty_id: number | null;
-  room_id: number;
+  room_id: number | null;
   department_id: number;
   day: string;
   start_time: string;
@@ -56,6 +56,12 @@ interface SplitRecommendResponse {
   message?: string;
   recommendations: SplitSlotRecommendation[];
 }
+
+const recommendationRoomId = (row: DropRecommendationRow): string => {
+  if (row.mode === "online") return "online";
+  if (row.mode === "field") return "field";
+  return row.room_id == null ? "" : String(row.room_id);
+};
 
 interface DropModalProps {
   rooms: Room[];
@@ -356,7 +362,7 @@ export default function DropModal({
           ): Promise<SplitSlotRecommendation[]> => {
             const cleanRoomId = roomIdVal && !isNaN(Number(roomIdVal)) ? Number(roomIdVal) : null;
             const meetingType = dropSubject.labHours > 0
-              ? (duration === dropSubject.labHours * 2 ? "laboratory" : "lecture")
+              ? (duration === dropSubject.labHours * 6 ? "laboratory" : "lecture")
               : "lecture";
 
             const response = await api.post<SplitRecommendResponse>(
@@ -648,7 +654,7 @@ export default function DropModal({
         const firstStartSlot = timeToSlot(firstRow.start_time);
         const firstEndSlot = timeToSlot(firstRow.end_time);
 
-        setModalRoomId(String(firstRow.room_id));
+        setModalRoomId(recommendationRoomId(firstRow));
         setModalClassMode(firstRow.mode);
         setModalIsHybrid(firstRow.is_hybrid);
 
@@ -662,7 +668,7 @@ export default function DropModal({
           setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
           setModalDay2StartSlot(timeToSlot(secondRow.start_time));
           setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
-          setModalDay2RoomId(String(secondRow.room_id));
+          setModalDay2RoomId(recommendationRoomId(secondRow));
           setModalDay2ClassMode(secondRow.mode);
           setIsDay2ModifiedByUser(true);
         } else {
@@ -720,7 +726,7 @@ export default function DropModal({
       const firstStartSlot = timeToSlot(firstRow.start_time);
       const firstEndSlot = timeToSlot(firstRow.end_time);
 
-      setModalRoomId(String(firstRow.room_id));
+      setModalRoomId(recommendationRoomId(firstRow));
       setModalClassMode(firstRow.mode);
       setModalIsHybrid(firstRow.is_hybrid);
 
@@ -734,7 +740,7 @@ export default function DropModal({
         setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
         setModalDay2StartSlot(timeToSlot(secondRow.start_time));
         setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
-        setModalDay2RoomId(String(secondRow.room_id));
+        setModalDay2RoomId(recommendationRoomId(secondRow));
         setModalDay2ClassMode(secondRow.mode);
         setIsDay2ModifiedByUser(true);
       } else {
@@ -1329,10 +1335,6 @@ export default function DropModal({
                   hasConflict ? "text-red-700" : "text-emerald-800"
                 }`}>
                   {hasConflict ? "Resolve Conflicts First" : "Placement is ready to be added"}
-                </p>
-                <p className="text-xs text-gray-500 font-bold mt-0.5 uppercase tracking-wide">
-                  Total Contact Hours: {totalContactHours} hrs ({totalSlots} slots) · {dropSubject ? dropSubject.units : 3} Units
-                  {isTwoMeetingPattern && ` · Selected: ${((modalDay1Duration + modalDay2Duration) / 2).toFixed(1)} hrs`}
                 </p>
               </div>
             </div>
