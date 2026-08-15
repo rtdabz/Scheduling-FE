@@ -10,7 +10,9 @@ import {
   ArrowUp,
   ArrowDown,
   X,
-  Loader2
+  Loader2,
+  Camera,
+  Plus
 } from 'lucide-react';
 import {
   useReactTable,
@@ -31,6 +33,8 @@ interface User {
   role: string;
   department: string | null;
   department_id: number | null;
+  program_id?: number | string | null;
+  department_logo?: string | null;
   status: 'Active' | 'Inactive';
   profile_picture?: string | null;
   createdAt: string;
@@ -64,7 +68,9 @@ interface ApiUser {
   username: string;
   role: string;
   department_id: number | null;
+  program_id?: number | null;
   department: ApiDepartment | null;
+  profile_picture?: string | null;
   created_at: string;
 }
 
@@ -93,8 +99,10 @@ const mapApiUser = (u: ApiUser): User => ({
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
   department: u.department ? u.department.department_name : null,
   department_id: u.department_id,
+  program_id: u.program_id ?? null,
   status: 'Active',
   profile_picture: u.profile_picture || null,
+  department_logo: u.department?.logo || null,
   createdAt: u.created_at,
 });
 
@@ -365,7 +373,7 @@ export default function VpaaUsers() {
         toast.success('Success', 'User account created successfully');
       }
 
-      setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
+      setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
@@ -599,7 +607,7 @@ export default function VpaaUsers() {
           onClick={() => {
             setIsEditMode(false);
             setEditingId(null);
-            setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', status: 'Active' });
+            setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
             setNameError('');
             setDeptError('');
             setIsModalOpen(true);

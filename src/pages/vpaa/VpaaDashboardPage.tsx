@@ -790,22 +790,7 @@ export default function VpaaDashboardPage() {
       />
 
       {isLoading ? (
-        <div className="space-y-5">
-          {/* Skeleton Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm animate-pulse h-[84px] flex flex-col justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-7 w-8" />
-              </div>
-            ))}
-          </div>
-          {/* Skeleton Widgets */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Skeleton className="h-[400px] rounded-2xl" />
-            <Skeleton className="h-[400px] rounded-2xl" />
-          </div>
-        </div>
+        <DashboardSkeleton />
       ) : (
         /* Main Dashboard Grid matching layout diagram */
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">

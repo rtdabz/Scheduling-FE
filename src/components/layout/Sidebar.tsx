@@ -6,7 +6,7 @@ import logo from '../../assets/logo.jpg';
 import campusBg from '../../assets/campus-bg.jpg';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, LogOut, RefreshCw, Settings, User, X } from 'lucide-react';
 import api from '../../lib/api';
-import { useToast } from '../ui/Toast';
+import { useToast } from '../../context/ToastContext';
 
 interface SidebarProps {
   isOpen: boolean;
