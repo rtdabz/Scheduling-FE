@@ -135,7 +135,7 @@ export default function ProgramHeadRooms() {
   const [globalFilter, setGlobalFilter] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const location = useLocation();
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
     location.state?.selectedBuilding ?? null
@@ -442,7 +442,7 @@ export default function ProgramHeadRooms() {
       {/* Search and Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         {/* Search */}
-        <div className="relative flex-1 max-w-lg">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
@@ -487,11 +487,11 @@ export default function ProgramHeadRooms() {
           </div>
 
           {/* View Mode Toggle */}
-          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-355 shadow-sm">
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               onClick={() => setViewMode('grid')}
               className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'grid' ? 'bg-white text-[#5A1220] shadow-sm scale-105' : 'text-gray-400 hover:text-gray-600'
+                viewMode === 'grid' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
             >
@@ -500,7 +500,7 @@ export default function ProgramHeadRooms() {
             <button
               onClick={() => setViewMode('list')}
               className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'list' ? 'bg-white text-[#5A1220] shadow-sm scale-105' : 'text-gray-400 hover:text-gray-600'
+                viewMode === 'list' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="List View"
             >
@@ -524,7 +524,7 @@ export default function ProgramHeadRooms() {
                 setBuildingError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-full hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
             >
               <Plus size={15} />
               <span>{selectedBuilding ? 'Add Room' : 'Add Building'}</span>
@@ -534,33 +534,52 @@ export default function ProgramHeadRooms() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-10 w-10 rounded-xl" />
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-3 w-20" />
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4 shadow-sm animate-pulse">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-xl" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+                <Skeleton className="h-1.5 w-full rounded" />
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-3 w-16" />
                 </div>
               </div>
-              <Skeleton className="h-1.5 w-full rounded" />
-              <div className="flex justify-between items-center">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-3 w-16" />
-              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden font-sans">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-5 w-24" />
             </div>
-          ))}
-        </div>
+            <div className="divide-y divide-gray-100">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="p-4 flex items-center justify-between gap-4 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-9 w-9 rounded-xl flex-shrink-0" />
+                    <div className="space-y-1.5">
+                      <Skeleton className="h-4 w-36" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-6 w-20 rounded-full" />
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-8 w-24 rounded-lg" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )
       ) : selectedBuilding === null ? (
         /* Buildings Selection View */
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-[#1A1410] font-sans uppercase tracking-wider text-gray-500">
-              Buildings Overview ({buildings.length})
-            </h2>
-          </div>
-
           {buildings.length === 0 ? (
             <div className="py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white font-sans">
               <p className="text-base font-semibold">No buildings found.</p>
@@ -631,14 +650,14 @@ export default function ProgramHeadRooms() {
                         <tr
                           key={building.name}
                           onClick={() => setSelectedBuilding(building.name)}
-                          className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                          className="group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer"
                         >
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
+                              <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] group-hover:bg-[#C9952A]/15 group-hover:text-[#C9952A] flex items-center justify-center transition-colors">
                                 <Building2 size={16} />
                               </div>
-                              <span className="text-sm font-bold text-gray-800 hover:text-[#C9952A] transition-colors">
+                              <span className="text-sm font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">
                                 {building.name}
                               </span>
                             </div>
@@ -841,10 +860,10 @@ export default function ProgramHeadRooms() {
                             setSelectedRoomIdForDetail(room.id);
                             setIsDetailModalOpen(true);
                           }}
-                          className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                          className="group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer"
                         >
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-xs font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg border border-[#C9952A]/20">
+                          <td className="px-6 py-4 whitespace-nowrap border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all">
+                            <span className="text-xs font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] group-hover:bg-[#C9952A] group-hover:text-white px-2.5 py-1 rounded-lg border border-[#C9952A]/20 transition-all">
                               {room.room_code}
                             </span>
                           </td>

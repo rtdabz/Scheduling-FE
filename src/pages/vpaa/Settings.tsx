@@ -255,8 +255,6 @@ export default function Settings() {
   return (
     <div className="p-6">
       <div className="space-y-6">
-        <AccountSettingsPanel />
-
         {/* Three Term Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {sortedTerms.map((term) => {
@@ -524,7 +522,6 @@ export default function Settings() {
             </div>
           )}
         </div>
-      </div>
 
       {/* Activate Confirmation Modal */}
       {isActivateModalOpen && (
@@ -558,6 +555,7 @@ export default function Settings() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

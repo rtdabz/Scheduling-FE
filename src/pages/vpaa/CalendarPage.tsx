@@ -1,0 +1,766 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Calendar as CalendarIcon,
+  CalendarDays,
+  Clock,
+  MapPin,
+  User,
+  Building2,
+  Filter,
+  Search,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
+  Layers,
+  Printer,
+  X,
+  RotateCcw,
+  Maximize2,
+  Minimize2
+} from 'lucide-react';
+import api from '../../lib/api';
+import Skeleton from '../../components/ui/Skeleton';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import { useToast } from '../../context/ToastContext';
+
+interface Department {
+  id: number;
+  department_name: string;
+  department_code: string;
+  logo?: string | null;
+}
+
+interface Room {
+  id: number;
+  room_code: string;
+  building?: string | null;
+}
+
+interface Faculty {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
+
+interface Section {
+  id: number;
+  section_name: string;
+  department_id?: number | null;
+}
+
+interface ScheduleItem {
+  id: number;
+  day: string;
+  start_time: string;
+  end_time: string;
+  meeting_type?: string | null;
+  mode?: 'on-site' | 'online' | 'field';
+  department_id?: number | null;
+  department?: Department | null;
+  room_id?: number | null;
+  room?: Room | null;
+  faculty_id?: number | null;
+  faculty?: Faculty | null;
+  section_id?: number | null;
+  section?: Section | null;
+  course?: { course_code?: string; course_name?: string } | null;
+  subject?: { subject_code?: string; subject_name?: string } | null;
+}
+
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const timeSlots = Array.from({ length: 26 }, (_, i) => {
+  const totalMinutes = 7 * 60 + i * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHour = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+  const displayMinutes = minutes === 0 ? '00' : '30';
+  return {
+    label: `${displayHour}:${displayMinutes} ${period}`,
+    minutes: totalMinutes
+  };
+});
+
+const parseTimeToSlotIndex = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const match12 = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+  if (match12) {
+    let hour = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const ampm = match12[3].toUpperCase();
+    if (ampm === "PM" && hour !== 12) hour += 12;
+    if (ampm === "AM" && hour === 12) hour = 0;
+    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
+    return Math.max(0, totalHalfHours - 14);
+  }
+  const parts = timeStr.split(':');
+  if (parts.length >= 2) {
+    const hour = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
+    return Math.max(0, totalHalfHours - 14);
+  }
+  return 0;
+};
+
+const getShortDay = (day: string): string => {
+  const normalized = (day || '').trim().toLowerCase();
+  if (normalized.startsWith("mon")) return "Mon";
+  if (normalized.startsWith("tue")) return "Tue";
+  if (normalized.startsWith("wed")) return "Wed";
+  if (normalized.startsWith("thu")) return "Thu";
+  if (normalized.startsWith("fri")) return "Fri";
+  if (normalized.startsWith("sat")) return "Sat";
+  if (normalized.startsWith("sun")) return "Sun";
+  return "Mon";
+};
+
+const normalizeDepartmentKey = (code: string, name = "") => {
+  const normalizedCode = (code || '').trim().toUpperCase();
+  const value = name.toLowerCase();
+  if (["IT", "CIT", "BSIT"].includes(normalizedCode) || value.includes("information technology") || value.includes("computing")) return "IT";
+  if (["AS", "CAS"].includes(normalizedCode) || value.includes("arts and sciences")) return "AS";
+  if (["EDUC", "CED", "COE"].includes(normalizedCode) || value.includes("education")) return "EDUC";
+  if (["BA", "CBA", "CBM"].includes(normalizedCode) || value.includes("business")) return "BA";
+  if (["HM", "CHM"].includes(normalizedCode) || value.includes("hospitality")) return "HM";
+  if (["CM", "MID"].includes(normalizedCode) || value.includes("midwifery")) return "MID";
+  if (["CRIM", "CCJ", "CCJPS"].includes(normalizedCode) || value.includes("criminal")) return "CRIM";
+  if (["LIS", "CLIS"].includes(normalizedCode) || value.includes("library")) return "LIS";
+  return "";
+};
+
+const getDeptStyles = (code: string) => {
+  switch (normalizeDepartmentKey(code)) {
+    case "IT": return "bg-blue-50 text-blue-800 border-blue-200 border-l-blue-600 hover:bg-blue-100/60";
+    case "AS": return "bg-purple-50 text-purple-800 border-purple-200 border-l-purple-600 hover:bg-purple-100/60";
+    case "EDUC": return "bg-orange-50 text-orange-850 border-orange-250 border-l-orange-500 hover:bg-orange-100/60";
+    case "BA": return "bg-yellow-50/50 text-yellow-850 border-yellow-300 border-l-yellow-600 hover:bg-yellow-100/60";
+    case "HM": return "bg-lime-50 text-lime-850 border-lime-300 border-l-lime-600 hover:bg-lime-100/60";
+    case "MID": return "bg-emerald-50 text-emerald-850 border-emerald-300 border-l-emerald-600 hover:bg-emerald-100/60";
+    case "CRIM": return "bg-[#5A1220]/5 text-[#5A1220] border-[#5A1220]/20 border-l-[#5A1220] hover:bg-[#5A1220]/10";
+    case "LIS": return "bg-pink-50 text-pink-850 border-pink-300 border-l-pink-600 hover:bg-pink-100/60";
+    default: return "bg-gray-50 text-gray-800 border-gray-300 border-l-gray-500 hover:bg-gray-100/60";
+  }
+};
+
+const getDepartmentColor = (codeOrName?: string) => {
+  const code = (codeOrName || '').toUpperCase();
+  if (code.includes('CS') || code.includes('COMPUTING') || code.includes('BSIT') || code.includes('IT')) {
+    return {
+      bg: 'bg-blue-500/10',
+      border: 'border-blue-500/30',
+      text: 'text-blue-700',
+      badge: 'bg-blue-600 text-white',
+    };
+  }
+  if (code.includes('ARTS') || code.includes('CAS') || code.includes('SCIENCE') || code.includes('AS')) {
+    return {
+      bg: 'bg-purple-500/10',
+      border: 'border-purple-500/30',
+      text: 'text-purple-700',
+      badge: 'bg-purple-600 text-white',
+    };
+  }
+  if (code.includes('EDU') || code.includes('CED') || code.includes('COE')) {
+    return {
+      bg: 'bg-orange-500/10',
+      border: 'border-orange-500/30',
+      text: 'text-orange-700',
+      badge: 'bg-orange-600 text-white',
+    };
+  }
+  if (code.includes('BUS') || code.includes('CBM') || code.includes('BA')) {
+    return {
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500/30',
+      text: 'text-amber-700',
+      badge: 'bg-amber-600 text-white',
+    };
+  }
+  return {
+    bg: 'bg-[#5A1220]/10',
+    border: 'border-[#5A1220]/30',
+    text: 'text-[#5A1220]',
+    badge: 'bg-[#5A1220] text-white',
+  };
+};
+
+interface LayoutItem {
+  schedule: ScheduleItem;
+  leftPct: number;
+  widthPct: number;
+}
+
+const getDayLayouts = (daySchedules: ScheduleItem[]): LayoutItem[] => {
+  const sorted = [...daySchedules].sort((a, b) => {
+    const aStart = parseTimeToSlotIndex(a.start_time);
+    const bStart = parseTimeToSlotIndex(b.start_time);
+    if (aStart !== bStart) return aStart - bStart;
+    return (parseTimeToSlotIndex(b.end_time) - parseTimeToSlotIndex(b.start_time)) -
+           (parseTimeToSlotIndex(a.end_time) - parseTimeToSlotIndex(a.start_time));
+  });
+
+  const clusters: ScheduleItem[][] = [];
+  for (const s of sorted) {
+    let placed = false;
+    for (const cluster of clusters) {
+      const overlaps = cluster.some((c) => {
+        const sStart = parseTimeToSlotIndex(s.start_time);
+        const sEnd = parseTimeToSlotIndex(s.end_time);
+        const cStart = parseTimeToSlotIndex(c.start_time);
+        const cEnd = parseTimeToSlotIndex(c.end_time);
+        return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
+      });
+      if (overlaps) { cluster.push(s); placed = true; break; }
+    }
+    if (!placed) clusters.push([s]);
+  }
+
+  const layouts: LayoutItem[] = [];
+  for (const cluster of clusters) {
+    const columns: ScheduleItem[][] = [];
+    for (const s of cluster) {
+      let colIdx = 0;
+      while (true) {
+        if (!columns[colIdx]) { columns[colIdx] = [s]; break; }
+        const overlapsCol = columns[colIdx].some((c) => {
+          const sStart = parseTimeToSlotIndex(s.start_time);
+          const sEnd = parseTimeToSlotIndex(s.end_time);
+          const cStart = parseTimeToSlotIndex(c.start_time);
+          const cEnd = parseTimeToSlotIndex(c.end_time);
+          return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
+        });
+        if (!overlapsCol) { columns[colIdx].push(s); break; }
+        colIdx++;
+      }
+    }
+    const numCols = columns.length;
+    columns.forEach((col, colIdx) => {
+      col.forEach((s) => {
+        layouts.push({ schedule: s, leftPct: (colIdx / numCols) * 100, widthPct: 100 / numCols });
+      });
+    });
+  }
+  return layouts;
+};
+
+export default function VpaaCalendarPage() {
+  const { toast } = useToast();
+  const cacheKey = 'page:vpaa-calendar:schedules';
+  const cachedData = getCachedData<{ schedules: ScheduleItem[]; departments: Department[]; rooms: Room[] }>(cacheKey);
+
+  const [schedules, setSchedules] = useState<ScheduleItem[]>(cachedData?.schedules ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedData?.departments ?? []);
+  const [rooms, setRooms] = useState<Room[]>(cachedData?.rooms ?? []);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(cacheKey));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
+  const [selectedDay, setSelectedDay] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleItem | null>(null);
+  const [dayModalInfo, setDayModalInfo] = useState<{ dayName: string; date: number; schedules: ScheduleItem[] } | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  };
+
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape' && isFullscreen) setIsFullscreen(false); };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  const fetchData = async (force = false) => {
+    if (force || !hasCachedData(cacheKey)) setIsLoading(true);
+    try {
+      const [schedRes, deptRes, roomRes] = await Promise.all([
+        api.get<ScheduleItem[]>('/schedules'),
+        api.get<Department[]>('/departments'),
+        api.get<Room[]>('/rooms')
+      ]);
+      const schedData = Array.isArray(schedRes.data) ? schedRes.data : [];
+      const deptData = Array.isArray(deptRes.data) ? deptRes.data : [];
+      const roomData = Array.isArray(roomRes.data) ? roomRes.data : [];
+      setSchedules(schedData);
+      setDepartments(deptData);
+      setRooms(roomData);
+      setCachedData(cacheKey, { schedules: schedData, departments: deptData, rooms: roomData });
+    } catch (err) {
+      console.error('Error loading calendar data:', err);
+      toast.error('Error', 'Failed to load schedules calendar data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const filteredSchedules = useMemo(() => {
+    return schedules.filter((item) => {
+      if (selectedDeptId !== 'all') {
+        const itemDeptId = item.department_id || item.department?.id || item.section?.department_id;
+        if (itemDeptId?.toString() !== selectedDeptId) return false;
+      }
+      if (selectedDay !== 'all') {
+        const itemDay = (item.day || '').toLowerCase();
+        if (!itemDay.includes(selectedDay.toLowerCase().substring(0, 3))) return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const code = (item.course?.course_code || item.subject?.subject_code || '').toLowerCase();
+        const name = (item.course?.course_name || item.subject?.subject_name || '').toLowerCase();
+        const faculty = item.faculty ? `${item.faculty.first_name} ${item.faculty.last_name}`.toLowerCase() : '';
+        const room = (item.room?.room_code || '').toLowerCase();
+        const section = (item.section?.section_name || '').toLowerCase();
+
+        return code.includes(q) || name.includes(q) || faculty.includes(q) || room.includes(q) || section.includes(q);
+      }
+      return true;
+    });
+  }, [schedules, selectedDeptId, selectedDay, searchQuery]);
+
+  const metrics = useMemo(() => {
+    const totalClasses = filteredSchedules.length;
+    const assignedFaculties = new Set(filteredSchedules.map(s => s.faculty_id || s.faculty?.id).filter(Boolean)).size;
+    const roomsUsedSet = new Set(filteredSchedules.map(s => s.room_id || s.room?.id).filter(Boolean));
+    const roomsUsed = roomsUsedSet.size;
+    const deptsCount = new Set(filteredSchedules.map(s => s.department_id || s.department?.id || s.section?.department_id).filter(Boolean)).size;
+    return { totalClasses, assignedFaculties, roomsUsed, deptsCount };
+  }, [filteredSchedules]);
+
+  const monthCalendarCells = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+    const prevMonthDays = new Date(year, month, 0).getDate();
+
+    const cells: Array<{ date: number; isCurrentMonth: boolean; dateObj: Date | null }> = [];
+
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const d = prevMonthDays - i;
+      cells.push({ date: d, isCurrentMonth: false, dateObj: new Date(year, month - 1, d) });
+    }
+
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      cells.push({ date: d, isCurrentMonth: true, dateObj: new Date(year, month, d) });
+    }
+
+    const remaining = (7 - (cells.length % 7)) % 7;
+    for (let d = 1; d <= remaining; d++) {
+      cells.push({ date: d, isCurrentMonth: false, dateObj: new Date(year, month + 1, d) });
+    }
+
+    return cells;
+  }, [currentDate]);
+
+  const now = new Date();
+  const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentDayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+
+  const currentDayTimeTop = useMemo(() => {
+    if (currentTotalMinutes < 7 * 60 || currentTotalMinutes > 19 * 60 + 30) return null;
+    return ((currentTotalMinutes - 7 * 60) / 30) * 24 + 36;
+  }, [currentTotalMinutes]);
+
+  const handlePrint = () => { window.print(); };
+
+  const timetableContent = (
+    <div className={`${isFullscreen ? 'fixed inset-0 z-[999999] bg-white p-4 sm:p-6 flex flex-col w-screen h-screen m-0' : 'bg-white p-5 rounded-2xl border border-gray-300 shadow-md font-sans flex-1 flex flex-col'}`}>
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3 flex-shrink-0">
+        <div className="space-y-2 flex-1">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="w-5 h-5 text-[#5A1220]" />
+            <h2 className="text-gray-900 font-extrabold text-base tracking-tight">Institutional Timetable Calendar</h2>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 lg:w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 py-2 border border-gray-300 rounded-xl text-xs font-semibold shadow-xs outline-none" />
+          </div>
+          {(selectedDeptId !== 'all' || selectedDay !== 'all' || searchQuery !== '') && (
+            <button onClick={() => { setSelectedDeptId('all'); setSelectedDay('all'); setSearchQuery(''); }} className="p-2 border border-gray-200 bg-white rounded-xl shadow-xs text-gray-600 hover:text-[#5A1220]">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
+          <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 border border-gray-200 bg-white rounded-xl shadow-xs">
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 flex-1 overflow-auto rounded-xl border border-gray-200">
+        <div className="min-w-[850px] relative flex">
+          <div className="w-16 shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-200">
+            <div className="h-9 border-b border-gray-200 flex items-center justify-center font-bold text-[9px] uppercase bg-gray-100 text-gray-500">Time</div>
+            {timeSlots.map((slot, i) => <div key={i} className="h-6 border-b text-[8px] flex items-center justify-center text-gray-400 font-mono">{slot.label}</div>)}
+          </div>
+          <div className="flex-1 flex relative">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay).map((day) => {
+              const daySchedules = filteredSchedules.filter(s => getShortDay(s.day) === day);
+              const isToday = day === currentDayName;
+              const layouts = getDayLayouts(daySchedules);
+              return (
+                <div key={day} className={`flex-1 border-r border-gray-200 relative min-w-[130px] ${isToday ? 'bg-red-500/[0.015]' : ''}`}>
+                  <div className={`sticky top-0 z-10 h-9 border-b flex flex-col items-center justify-center ${isToday ? 'bg-red-50 text-[#5A1220] font-black border-b-2 border-b-red-500' : 'bg-gray-50 text-gray-700'}`}>
+                    <span className="font-bold text-xs uppercase">{day}</span>
+                    <span className="text-[8px] font-extrabold opacity-75">{daySchedules.length} {daySchedules.length === 1 ? 'Class' : 'Classes'}</span>
+                  </div>
+                  <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
+                    {timeSlots.map((_, i) => <div key={i} className="h-6 border-b border-gray-100" />)}
+                    {isToday && currentDayTimeTop !== null && (
+                      <div className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center" style={{ top: `${currentDayTimeTop}px` }}>
+                        <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-xs" />
+                      </div>
+                    )}
+                    {daySchedules.map((schedule) => {
+                      const startIdx = parseTimeToSlotIndex(schedule.start_time);
+                      const endIdx = parseTimeToSlotIndex(schedule.end_time);
+                      const top = startIdx * 24;
+                      const height = (endIdx - startIdx) * 24;
+                      if (height <= 0) return null;
+                      const layout = layouts.find(item => item.schedule.id === schedule.id);
+                      const deptCode = schedule.department?.department_code || schedule.section?.department_id?.toString() || 'GEN';
+                      return (
+                        <div key={schedule.id} onClick={() => setSelectedSchedule(schedule)} style={{ top: `${top + 1}px`, height: `${height - 2}px`, left: `calc(${layout?.leftPct}% + 2px)`, width: `calc(${layout?.widthPct}% - 4px)` }} className={`group absolute rounded-lg border border-l-4 p-1.5 cursor-pointer text-left overflow-hidden shadow-2xs transition-all hover:scale-[1.02] hover:z-25 ${getDeptStyles(deptCode)}`}>
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-extrabold text-[10px] truncate">{schedule.course?.course_code || schedule.subject?.subject_code || 'CLASS'}</span>
+                              <span className="text-[7.5px] font-black uppercase px-1 py-0.2 rounded bg-black/5 shrink-0">{schedule.section?.section_name || 'Sec'}</span>
+                            </div>
+                            <p className="text-[8.5px] font-semibold opacity-90 truncate leading-tight">{schedule.course?.course_name || schedule.subject?.subject_name || ''}</p>
+                          </div>
+                          <div className="border-t border-black/5 pt-0.5 mt-auto flex items-center justify-between text-[7.5px] font-bold opacity-80">
+                            <span className="truncate max-w-[60%]">{schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}</span>
+                            <span className="truncate">{schedule.room?.room_code || 'TBD'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 font-sans pb-12">
+      <div className="bg-gradient-to-r from-[#5A1220] via-[#7B1113] to-[#410b15] rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#C9952A]/30">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-[#C9952A]/20 rounded-xl border border-[#C9952A]/40 text-[#C9952A]">
+              <CalendarIcon size={22} />
+            </div>
+            <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">
+              Academic Schedules Master Calendar
+            </h1>
+          </div>
+          <p className="text-xs text-[#E8D5C4]/80 font-medium max-w-xl leading-relaxed">
+            Real-time interactive master calendar displaying all academic schedules across college departments, instructors, sections, and room allocations.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button onClick={() => fetchData(true)} className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-xs" title="Refresh Schedules Data">
+            <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+          <button onClick={handlePrint} className="px-4 py-2.5 bg-[#C9952A] hover:bg-[#b08123] text-[#4e0a10] rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 shadow-md hover:scale-[1.02]">
+            <Printer size={15} />
+            <span>Print Timetable</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs flex items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-[#5A1220]/10 text-[#5A1220] border border-[#5A1220]/20">
+            <BookOpen size={18} />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Scheduled</span>
+            {isLoading ? <Skeleton className="h-6 w-12 mt-1" /> : <span className="text-xl font-extrabold text-gray-900">{metrics.totalClasses} Classes</span>}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs flex items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20">
+            <User size={18} />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Active Faculty</span>
+            {isLoading ? <Skeleton className="h-6 w-12 mt-1" /> : <span className="text-xl font-extrabold text-gray-900">{metrics.assignedFaculties} Instructors</span>}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs flex items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+            <MapPin size={18} />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Rooms Occupied</span>
+            {isLoading ? <Skeleton className="h-6 w-12 mt-1" /> : <span className="text-xl font-extrabold text-gray-900">{metrics.roomsUsed} Rooms</span>}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs flex items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20">
+            <Building2 size={18} />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Departments</span>
+            {isLoading ? <Skeleton className="h-6 w-12 mt-1" /> : <span className="text-xl font-extrabold text-gray-900">{metrics.deptsCount} Depts</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search class, instructor, room, section..." className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800" />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
+            <select value={selectedDeptId} onChange={(e) => setSelectedDeptId(e.target.value)} className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors">
+              <option value="all">All Departments</option>
+              {departments.map((d) => <option key={d.id} value={d.id.toString()}>{d.department_code} - {d.department_name}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <CalendarDays size={13} className="text-gray-400" />
+            <select value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors">
+              <option value="all">All Days</option>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <option key={day} value={day}>{day}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200 ml-auto lg:ml-0">
+            <button onClick={() => setViewMode('weekly')} className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${viewMode === 'weekly' ? 'bg-[#5A1220] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'}`}>Weekly Grid</button>
+            <button onClick={() => setViewMode('monthly')} className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${viewMode === 'monthly' ? 'bg-[#5A1220] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'}`}>Monthly Master</button>
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm animate-pulse">
+          <Skeleton className="h-6 w-48" />
+          <div className="grid grid-cols-7 gap-3">{Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-xl" />)}</div>
+        </div>
+      ) : viewMode === 'weekly' ? (
+        isFullscreen ? createPortal(timetableContent, document.body) : timetableContent
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 font-sans">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-150 pb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-black text-gray-900 tracking-tight">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                <button onClick={handlePrevMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-2xs text-gray-700 transition-all cursor-pointer" title="Previous Month"><ChevronLeft size={16} /></button>
+                <button onClick={handleToday} className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-[#5A1220] shadow-2xs hover:bg-[#5A1220] hover:text-white transition-all cursor-pointer">Today</button>
+                <button onClick={handleNextMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-2xs text-gray-700 transition-all cursor-pointer" title="Next Month"><ChevronRight size={16} /></button>
+              </div>
+            </div>
+            <span className="text-xs font-extrabold bg-[#5A1220]/10 text-[#5A1220] px-3 py-1.5 rounded-full border border-[#5A1220]/20">{filteredSchedules.length} Total Weekly Classes</span>
+          </div>
+          <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50/80 rounded-t-xl text-center py-2.5 text-xs font-black uppercase tracking-wider text-gray-700 divide-x divide-gray-200">
+            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+          </div>
+          <div className="grid grid-cols-7 border-l border-t border-gray-200 divide-x divide-y divide-gray-200 rounded-b-xl overflow-hidden bg-white">
+            {monthCalendarCells.map((cell, idx) => {
+              const dayName = cell.dateObj ? cell.dateObj.toLocaleString('en-US', { weekday: 'long' }) : '';
+              const daySchedules = cell.isCurrentMonth ? filteredSchedules.filter((s) => (s.day || '').toLowerCase().includes(dayName.substring(0, 3).toLowerCase())) : [];
+              return (
+                <div key={idx} className={`min-h-[120px] p-2 flex flex-col justify-between transition-colors ${cell.isCurrentMonth ? 'bg-white hover:bg-slate-50/50' : 'bg-gray-50/40 text-gray-300'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs font-black w-6 h-6 flex items-center justify-center rounded-full ${cell.isCurrentMonth ? 'text-gray-800' : 'text-gray-400'}`}>{cell.date}</span>
+                    {cell.isCurrentMonth && daySchedules.length > 0 && <span className="text-[9px] font-extrabold text-[#5A1220] bg-[#5A1220]/10 px-1.5 py-0.5 rounded-full">{daySchedules.length}</span>}
+                  </div>
+                  <div className="space-y-1 overflow-hidden flex-1">
+                    {daySchedules.slice(0, 2).map((s) => {
+                      const colors = getDepartmentColor(s.department?.department_code);
+                      return (
+                        <div key={s.id} onClick={() => setSelectedSchedule(s)} className={`px-1.5 py-1 rounded text-[10px] font-bold border ${colors.bg} ${colors.border} ${colors.text} truncate cursor-pointer hover:opacity-90 transition-all`}>
+                          <span className="font-mono">{s.start_time}</span> {s.course?.course_code || s.subject?.subject_code} ({s.room?.room_code})
+                        </div>
+                      );
+                    })}
+                    {daySchedules.length > 2 && (
+                      <button onClick={() => setDayModalInfo({ dayName, date: cell.date, schedules: daySchedules })} className="text-[9px] font-bold text-[#5A1220] hover:underline cursor-pointer block pt-0.5">+{daySchedules.length - 2} more</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {/* Schedule Item Detail Modal */}
+      {selectedSchedule && (
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in duration-200">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#5A1220] to-[#7B1113] p-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <BookOpen size={20} className="text-[#C9952A]" />
+                <h3 className="text-sm font-black tracking-tight">Class Schedule Details</h3>
+              </div>
+              <button
+                onClick={() => setSelectedSchedule(null)}
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 font-sans text-xs">
+              <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-1">
+                <span className="text-[10px] font-bold text-[#C9952A] uppercase tracking-wider block">
+                  {selectedSchedule.department?.department_name || 'Academic Department'}
+                </span>
+                <h4 className="text-base font-extrabold text-gray-900">
+                  {selectedSchedule.course?.course_code || selectedSchedule.subject?.subject_code}
+                </h4>
+                {(selectedSchedule.course?.course_name || selectedSchedule.subject?.subject_name) && (
+                  <p className="text-xs text-gray-600 font-medium">
+                    {selectedSchedule.course?.course_name || selectedSchedule.subject?.subject_name}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 font-semibold">
+                <div className="p-3 bg-gray-50 rounded-xl border border-gray-150 space-y-1">
+                  <span className="text-[10px] text-gray-400 uppercase font-bold block">Day & Time</span>
+                  <div className="text-gray-900 font-bold flex items-center gap-1">
+                    <Clock size={12} className="text-[#5A1220]" />
+                    <span>{selectedSchedule.day} ({selectedSchedule.start_time} - {selectedSchedule.end_time})</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-xl border border-gray-150 space-y-1">
+                  <span className="text-[10px] text-gray-400 uppercase font-bold block">Section</span>
+                  <div className="text-gray-900 font-bold flex items-center gap-1">
+                    <Layers size={12} className="text-blue-600" />
+                    <span>{selectedSchedule.section?.section_name || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-xl border border-gray-150 space-y-1">
+                  <span className="text-[10px] text-gray-400 uppercase font-bold block">Instructor</span>
+                  <div className="text-gray-900 font-bold flex items-center gap-1">
+                    <User size={12} className="text-emerald-600" />
+                    <span>
+                      {selectedSchedule.faculty
+                        ? `${selectedSchedule.faculty.first_name} ${selectedSchedule.faculty.last_name}`
+                        : 'Unassigned'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-xl border border-gray-150 space-y-1">
+                  <span className="text-[10px] text-gray-400 uppercase font-bold block">Assigned Room</span>
+                  <div className="text-gray-900 font-bold flex items-center gap-1">
+                    <MapPin size={12} className="text-purple-600" />
+                    <span>{selectedSchedule.room?.room_code || 'TBD'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-gray-50 border-t border-gray-150 flex justify-end">
+              <button
+                onClick={() => setSelectedSchedule(null)}
+                className="px-4 py-2 bg-[#5A1220] hover:bg-[#410b15] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day Schedule Overview Modal */}
+      {dayModalInfo && (
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-gradient-to-r from-[#5A1220] to-[#7B1113] p-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <CalendarIcon size={20} className="text-[#C9952A]" />
+                <h3 className="text-sm font-black tracking-tight">
+                  {dayModalInfo.dayName} (Date {dayModalInfo.date}) - {dayModalInfo.schedules.length} Classes
+                </h3>
+              </div>
+              <button
+                onClick={() => setDayModalInfo(null)}
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-2.5 max-h-[60vh] overflow-y-auto font-sans">
+              {dayModalInfo.schedules.map((s) => {
+                const deptCode = s.department?.department_code || 'DEPT';
+                const colors = getDepartmentColor(deptCode);
+                const courseCode = s.course?.course_code || s.subject?.subject_code || 'CLASS';
+                const courseName = s.course?.course_name || s.subject?.subject_name || '';
+
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => {
+                      setDayModalInfo(null);
+                      setSelectedSchedule(s);
+                    }}
+                    className={`p-3 rounded-xl border ${colors.bg} ${colors.border} shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-3`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${colors.badge}`}>
+                          {deptCode}
+                        </span>
+                        <h4 className="text-xs font-extrabold text-gray-900">{courseCode}</h4>
+                      </div>
+                      {courseName && <p className="text-[10px] text-gray-600 font-semibold mt-0.5">{courseName}</p>}
+                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-500 font-medium">
+                        <span><User size={10} className="inline mr-1 text-gray-400" />{s.faculty ? `${s.faculty.first_name} ${s.faculty.last_name}` : 'Unassigned'}</span>
+                        <span><MapPin size={10} className="inline mr-1 text-gray-400" />{s.room?.room_code || 'TBD'}</span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-bold bg-white/80 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-800 shrink-0">
+                      {s.start_time} - {s.end_time}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-150 flex justify-end">
+              <button
+                onClick={() => setDayModalInfo(null)}
+                className="px-4 py-2 bg-[#5A1220] hover:bg-[#410b15] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

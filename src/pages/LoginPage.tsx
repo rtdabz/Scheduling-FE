@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/logo.jpg';
+import campusBg from '../assets/campus-bg.jpg';
+import loginPattern from '../assets/login-pattern.jpg';
 import { useToast } from '../context/ToastContext';
 import api from '../lib/api';
 import { clearDataCache } from '../lib/dataCache';
@@ -72,30 +74,41 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex w-full relative">
+    <div className="min-h-screen flex w-full relative font-sans">
       {/* Left Panel */}
       <div className="hidden md:flex flex-1 relative bg-[#4e0a10] overflow-hidden items-center justify-center p-12">
-        {/* Animated Background Shapes */}
+        {/* Campus Background Image with Maroon Overlay */}
         <div className="absolute inset-0 z-0">
-          <div className="absolute top-[10%] left-[20%] w-64 h-64 rounded-full border border-accent/20 animate-float opacity-20" />
-          <div className="absolute bottom-[20%] right-[10%] w-48 h-48 rounded-[2rem] border border-primary-light/10 animate-float-slow rotate-45 opacity-20" />
-          <div className="absolute bottom-[10%] left-[30%] w-32 h-32 rounded-full bg-primary-light/5 animate-float blur-3xl" />
+          <img
+            src={campusBg}
+            alt="Tagoloan Community College Campus"
+            className="w-full h-full object-cover opacity-45 filter contrast-105 saturate-110 object-center"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#36060b] via-[#4e0a10]/75 to-[#5A1220]/65 mix-blend-multiply" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/55" />
         </div>
 
         {/* Content */}
         <div className="relative z-20 flex flex-col items-center text-center max-w-lg">
-          <img src={logo} alt="TCC Logo" className="w-28 h-28 object-contain rounded-full mb-6" />
-          <h1 className="font-display text-4xl text-white font-bold mb-2">Tagoloan Community College</h1>
-          <p className="text-sidebar-text text-sm tracking-widest uppercase opacity-80">
+          <img src={logo} alt="TCC Logo" className="w-28 h-28 object-contain rounded-full mb-6 shadow-2xl ring-4 ring-[#C9952A]/40 bg-white/10 p-1 backdrop-blur-xs" />
+          <h1 className="font-display text-4xl text-white font-bold mb-2 drop-shadow-md">Tagoloan Community College</h1>
+          <p className="text-[#E8D5C4] text-xs font-bold tracking-widest uppercase opacity-95 drop-shadow-sm bg-[#5A1220]/60 px-4 py-1.5 rounded-full border border-[#C9952A]/30 backdrop-blur-xs">
             Academic Scheduling System
           </p>
         </div>
       </div>
 
       {/* Right Panel */}
-      <div className="flex-1 flex items-center justify-center bg-parchment p-6">
+      <div className="flex-1 flex items-center justify-center p-6 relative overflow-hidden bg-white">
+        {/* Perspective Grid Background Overlay */}
+        <img
+          src={loginPattern}
+          alt="Grid Background"
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-90"
+        />
+
         <div 
-          className="w-full max-w-md bg-surface p-10 sm:p-12 rounded-2xl shadow-2xl border border-border glass"
+          className="w-full max-w-md bg-white/75 backdrop-blur-xl p-10 sm:p-12 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.22)] border-2 border-gray-300/90 transition-all relative z-10"
         >
           <h2 
             className="text-primary font-display text-2xl mb-2" 
@@ -117,53 +130,59 @@ export default function LoginPage() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
-            {/* Username */}
-            <div className="space-y-2">
-              <label htmlFor="username" className="block text-sm font-medium text-text">
+            {/* Username Floating Label Input */}
+            <div className="relative pt-1">
+              <input
+                id="username"
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder=" "
+                className="peer block w-full h-12 pl-11 pr-4 bg-white/60 border border-gray-300 rounded-xl text-sm text-text focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 outline-none"
+              />
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted peer-focus:text-primary transition-colors">
+                <Mail className="h-5 w-5" />
+              </div>
+              <label
+                htmlFor="username"
+                className="absolute left-9 -top-1.5 bg-white px-1.5 text-xs text-primary font-semibold transition-all duration-200 pointer-events-none rounded
+                  peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:text-sm peer-placeholder-shown:text-muted peer-placeholder-shown:font-normal peer-placeholder-shown:bg-transparent
+                  peer-focus:-top-1.5 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-primary peer-focus:font-semibold peer-focus:bg-white"
+              >
                 Username
               </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-muted" />
-                </div>
-                <input
-                  id="username"
-                  type="text"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="block w-full h-12 pl-11 pr-4 bg-transparent border border-border rounded-xl text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all duration-300 outline-none"
-                  placeholder="vpaa"
-                />
-              </div>
             </div>
 
-            {/* Password */}
-            <div className="space-y-2">
-              <label htmlFor="password" className="block text-sm font-medium text-text">
+            {/* Password Floating Label Input */}
+            <div className="relative pt-1">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder=" "
+                className="peer block w-full h-12 pl-11 pr-11 bg-white/60 border border-gray-300 rounded-xl text-sm text-text focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 outline-none"
+              />
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted peer-focus:text-primary transition-colors">
+                <Lock className="h-5 w-5" />
+              </div>
+              <label
+                htmlFor="password"
+                className="absolute left-9 -top-1.5 bg-white px-1.5 text-xs text-primary font-semibold transition-all duration-200 pointer-events-none rounded
+                  peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:text-sm peer-placeholder-shown:text-muted peer-placeholder-shown:font-normal peer-placeholder-shown:bg-transparent
+                  peer-focus:-top-1.5 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-primary peer-focus:font-semibold peer-focus:bg-white"
+              >
                 Password
               </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-muted" />
-                </div>
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full h-12 pl-11 pr-11 bg-transparent border border-border rounded-xl text-sm focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all duration-300 outline-none"
-                  placeholder="Enter your password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-muted hover:text-text transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-muted hover:text-text transition-colors"
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
             </div>
 
             {/* Remember Me */}

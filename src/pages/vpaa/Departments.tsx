@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -11,7 +11,14 @@ import {
   ArrowUp, 
   ArrowDown,
   X,
-  Loader2
+  Loader2,
+  LayoutGrid,
+  Building2,
+  List,
+  Users as UsersIcon,
+  Layers,
+  Plus,
+  Camera
 } from 'lucide-react';
 import {
   useReactTable,
@@ -55,21 +62,23 @@ interface Department {
   dean: string | null;   // e.g. "Dr. Juan dela Cruz" or null
   facultyCount: number;  // number
   sectionsCount: number; // number
-  createdAt: string;     // ISO date string
+  logo?: string | null;
   schedulingProfile: 'standard' | 'laboratory_enabled';
+  createdAt: string;     // ISO date string
 }
 
 interface ApiDepartment {
   id: number;
   department_code: string;
   department_name: string;
+  logo?: string | null;
+  scheduling_profile?: 'standard' | 'laboratory_enabled';
   created_at: string;
   faculties_count?: number;
   sections_count?: number;
   users?: Array<{
     name?: string;
   }>;
-  scheduling_profile?: 'standard' | 'laboratory_enabled';
 }
 
 interface DepartmentsPageData {
@@ -83,8 +92,9 @@ export default function Departments() {
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
   
-  // Table States
+  // Table & View States
   const [globalFilter, setGlobalFilter] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({
     pageIndex: 0,
@@ -101,14 +111,65 @@ export default function Departments() {
   // Form state
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const [logo, setLogo] = useState<string | null>(null);
   const [schedulingProfile, setSchedulingProfile] = useState<'standard' | 'laboratory_enabled'>('standard');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [codeError, setCodeError] = useState('');
   const [nameError, setNameError] = useState('');
 
-  const activeColors = useMemo(() => {
-    return getDepartmentColor(name);
-  }, [name]);
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Invalid File', 'Please select a valid image file (JPEG, PNG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 300;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            setLogo(dataUrl);
+          }
+        } catch (err) {
+          console.error('Error processing logo:', err);
+          toast.error('Error', 'Failed to process image');
+        }
+      };
+      img.onerror = () => {
+        toast.error('Error', 'Failed to load image file');
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const [selectedDeptForDetail, setSelectedDeptForDetail] = useState<Department | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   useEffect(() => {
     fetchDepartments();
@@ -121,8 +182,9 @@ export default function Departments() {
     dean: department.users?.[0]?.name ?? null,
     facultyCount: department.faculties_count ?? 0,
     sectionsCount: department.sections_count ?? 0,
-    createdAt: department.created_at,
+    logo: department.logo || null,
     schedulingProfile: department.scheduling_profile ?? 'standard',
+    createdAt: department.created_at,
   });
 
   const fetchDepartments = async (forceRefresh = false) => {
@@ -183,6 +245,7 @@ export default function Departments() {
       const payload = {
         department_name: trimmedName,
         department_code: trimmedCode,
+        logo: logo,
         scheduling_profile: schedulingProfile,
       };
 
@@ -208,6 +271,7 @@ export default function Departments() {
 
       setName('');
       setCode('');
+      setLogo(null);
       setSchedulingProfile('standard');
       setCodeError('');
       setNameError('');
@@ -224,6 +288,7 @@ export default function Departments() {
   const handleEditClick = (dept: Department) => {
     setName(dept.name);
     setCode(dept.code);
+    setLogo(dept.logo || null);
     setSchedulingProfile(dept.schedulingProfile);
     setEditingId(dept.id);
     setCodeError('');
@@ -262,19 +327,24 @@ export default function Departments() {
         accessorKey: 'code',
         header: 'Code',
         cell: info => {
-          const deptName = info.row.original.name || '';
-          const colors = getDepartmentColor(deptName);
+          const dept = info.row.original;
+          const colors = getDepartmentColor(dept.name || '');
           return (
-            <span className={`px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border ${colors.bg}`}>
-              {info.getValue() as string}
-            </span>
+            <div className="flex items-center gap-2.5">
+              {dept.logo ? (
+                <img src={dept.logo} alt={dept.name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
+              ) : null}
+              <span className={`px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border ${colors.bg}`}>
+                {info.getValue() as string}
+              </span>
+            </div>
           );
         }
       },
       {
         accessorKey: 'name',
         header: 'Department Name',
-        cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
+        cell: info => <span className="font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">{info.getValue() as string}</span>
       },
       {
         accessorKey: 'schedulingProfile',
@@ -329,26 +399,32 @@ export default function Departments() {
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
             {/* Edit Button */}
-            <div className="relative group">
+            <div className="relative group/tooltip">
               <button 
-                onClick={() => handleEditClick(row.original)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditClick(row.original);
+                }}
                 className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Pencil size={17} />
               </button>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Edit
               </span>
             </div>
             {/* Delete Button */}
-            <div className="relative group">
+            <div className="relative group/tooltip">
               <button 
-                onClick={() => triggerDeleteConfirmation(row.original.id)}
-                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerDeleteConfirmation(row.original.id);
+                }}
+                className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={17} />
               </button>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Delete
               </span>
             </div>
@@ -380,142 +456,345 @@ export default function Departments() {
 
   return (
     <div>
-      {/* Top Bar Section */}
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
-        <div className="relative flex-1 sm:max-w-md">
+      {/* Search and Actions Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
+        {/* Search */}
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input 
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder="Search department name or code..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
+            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
-        <button 
-          onClick={() => {
-            setIsEditMode(false);
-            setEditingId(null);
-            setName('');
-            setCode('');
-            setSchedulingProfile('standard');
-            setCodeError('');
-            setNameError('');
-            setIsModalOpen(true);
-          }}
-          className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
-        >
-          <span className="text-lg leading-none">+</span> Add Department
-        </button>
+
+        {/* Action Group: View Mode Toggle + Add Department */}
+        <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
+          {/* View Mode Toggle (Grid / List) */}
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="List View"
+            >
+              <List size={15} />
+            </button>
+          </div>
+
+          <button 
+            onClick={() => {
+              setIsEditMode(false);
+              setEditingId(null);
+              setName('');
+              setCode('');
+              setLogo(null);
+              setSchedulingProfile('standard');
+              setCodeError('');
+              setNameError('');
+              setIsModalOpen(true);
+            }}
+            className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+          >
+            <Plus size={15} />
+            <span>Add Department</span>
+          </button>
+        </div>
       </div>
 
-      {/* Table Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                  {headerGroup.headers.map(header => (
-                    <th 
-                      key={header.id} 
-                      className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr 
-                    key={`skeleton-row-${index}`} 
-                    className={`h-12 border-b border-gray-100 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
+      {viewMode === 'grid' ? (
+        /* Grid View Cards */
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
+            {isLoading ? (
+              Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 shadow-sm animate-pulse">
+                  <div className="flex justify-between items-start">
+                    <Skeleton className="h-6 w-16 rounded-full" />
+                    <Skeleton className="h-8 w-16 rounded-lg" />
+                  </div>
+                  <Skeleton className="h-5 w-44" />
+                  <Skeleton className="h-4 w-32" />
+                  <div className="pt-4 border-t border-gray-100 flex justify-between">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                </div>
+              ))
+            ) : table.getRowModel().rows.length === 0 ? (
+              <div className="col-span-full py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white">
+                <p className="text-base font-semibold font-sans">No departments found.</p>
+                <p className="text-xs font-sans">Try adjusting search parameters or add a new record.</p>
+              </div>
+            ) : (
+              table.getRowModel().rows.map(row => {
+                const dept = row.original;
+                const colors = getDepartmentColor(dept.name);
+                return (
+                  <div
+                    key={dept.id}
+                    onClick={() => {
+                      setSelectedDeptForDetail(dept);
+                      setIsDetailModalOpen(true);
+                    }}
+                    className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 font-sans relative group cursor-pointer hover:border-[#C9952A]/40"
                   >
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-5 w-12 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-48" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-32" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-8 mx-auto" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-8 mx-auto" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-20" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                      <div className="flex justify-end gap-2">
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
+                    <div>
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2.5">
+                          {dept.logo && (
+                            <img src={dept.logo} alt={dept.name} className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
+                          )}
+                          <span className={`px-3 py-1 text-xs font-extrabold rounded-full border shadow-2xs ${colors.bg}`}>
+                            {dept.code}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditClick(dept);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-[#C9952A] hover:bg-amber-50 rounded-lg transition-all cursor-pointer"
+                            title="Edit Department"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerDeleteConfirmation(dept.id);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                            title="Delete Department"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <h3 className="text-base font-bold text-gray-900 leading-snug group-hover:text-[#5A1220] transition-colors">
+                        {dept.name}
+                      </h3>
+                      <p className="text-xs font-medium text-gray-500 mt-1">
+                        Dean: <span className="font-semibold text-gray-700">{dept.dean || 'Not assigned'}</span>
+                      </p>
+                    </div>
+
+                    <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600 font-semibold">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5" title="Instructors">
+                          <UsersIcon size={14} className="text-gray-400" />
+                          <span>{dept.facultyCount} Faculty</span>
+                        </div>
+                        <div className="flex items-center gap-1.5" title="Sections">
+                          <Layers size={14} className="text-gray-400" />
+                          <span>{dept.sectionsCount} Sections</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Pagination Section for Grid View */}
+          {table.getFilteredRowModel().rows.length > 0 && (
+            <div className="px-6 py-4 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="text-xs font-semibold text-gray-500">
+                  Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
+                  {Math.min(
+                    (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+                    table.getFilteredRowModel().rows.length
+                  )} of {table.getFilteredRowModel().rows.length} departments
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 font-semibold">Show</span>
+                  <select
+                    value={table.getState().pagination.pageSize}
+                    onChange={e => {
+                      table.setPageSize(Number(e.target.value));
+                    }}
+                    className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
+                  >
+                    {[10, 25, 50].map(pageSize => (
+                      <option key={pageSize} value={pageSize}>
+                        {pageSize}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => table.setPageIndex(0)}
+                  disabled={!table.getCanPreviousPage()}
+                  className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+                >
+                  First
+                </button>
+                <button
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                  className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+                >
+                  Prev
+                </button>
+                <span className="text-xs font-bold text-gray-500 px-1">
+                  Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
+                </span>
+                <button
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                  className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+                >
+                  Next
+                </button>
+                <button
+                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                  disabled={!table.getCanNextPage()}
+                  className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+                >
+                  Last
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Table Section */
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                {table.getHeaderGroups().map(headerGroup => (
+                  <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
+                    {headerGroup.headers.map(header => (
+                      <th 
+                        key={header.id} 
+                        className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
+                      >
+                        {header.isPlaceholder ? null : (
+                          <div className="flex items-center">
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {header.column.getCanSort() && (
+                              <button
+                                onClick={header.column.getToggleSortingHandler()}
+                                className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
+                              >
+                                {header.column.getIsSorted() === 'asc' ? (
+                                  <ArrowUp size={13} className="text-[#C9952A]" />
+                                ) : header.column.getIsSorted() === 'desc' ? (
+                                  <ArrowDown size={13} className="text-[#C9952A]" />
+                                ) : (
+                                  <ArrowUpDown size={13} />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, index) => (
+                    <tr 
+                      key={`skeleton-row-${index}`} 
+                      className={`h-12 border-b border-gray-100 ${
+                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
+                      }`}
+                    >
+                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                        <Skeleton className="h-5 w-12 rounded-full" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs">
+                        <Skeleton className="h-4 w-48" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs">
+                        <Skeleton className="h-4 w-32" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs">
+                        <Skeleton className="h-4 w-8 mx-auto" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs">
+                        <Skeleton className="h-4 w-8 mx-auto" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                        <Skeleton className="h-4 w-20" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
+                        <div className="flex justify-end gap-2">
+                          <Skeleton className="h-8 w-8 rounded-lg" />
+                          <Skeleton className="h-8 w-8 rounded-lg" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : table.getRowModel().rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <p className="text-base font-semibold">No departments found.</p>
+                        <p className="text-xs">Try adjusting your search criteria or add a new department.</p>
                       </div>
                     </td>
                   </tr>
-                ))
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No departments found.</p>
-                      <p className="text-xs">Try adjusting your search criteria or add a new department.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr 
-                    key={row.id} 
-                    className={`transition-colors h-12 hover:bg-gray-50/70 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['code', 'createdAt', 'actions'].includes(cell.column.id);
-                      return (
-                        <td 
-                          key={cell.id} 
-                          className={`px-4 py-2.5 align-middle text-xs ${
-                            isNoWrap ? 'whitespace-nowrap' : ''
-                          }`}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  table.getRowModel().rows.map((row, index) => (
+                    <tr 
+                      key={row.id} 
+                      onClick={() => {
+                        setSelectedDeptForDetail(row.original);
+                        setIsDetailModalOpen(true);
+                      }}
+                      className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${
+                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
+                      }`}
+                    >
+                      {row.getVisibleCells().map((cell, cellIdx) => {
+                        const isNoWrap = ['code', 'createdAt', 'actions'].includes(cell.column.id);
+                        return (
+                          <td 
+                            key={cell.id} 
+                            className={`px-4 py-2.5 align-middle text-xs ${
+                              isNoWrap ? 'whitespace-nowrap' : ''
+                            } ${cellIdx === 0 ? 'border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all' : ''}`}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
         {/* Pagination Section */}
         {table.getFilteredRowModel().rows.length > 0 && (
@@ -583,6 +862,7 @@ export default function Departments() {
           </div>
         )}
       </div>
+      )}
 
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
@@ -601,6 +881,51 @@ export default function Departments() {
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
+              {/* Photo / Logo Upload Picker */}
+              <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
+                <div className="relative">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
+                    title="Click to upload department logo"
+                  >
+                    {logo ? (
+                      <img src={logo} alt="Department Logo Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
+                        <Camera size={26} />
+                        <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Upload</span>
+                      </div>
+                    )}
+                  </div>
+                  {logo && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLogo(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
+                      title="Remove Logo"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                  className="hidden"
+                />
+                <p className="text-[10px] font-semibold text-gray-500 font-sans">
+                  {logo ? 'Click logo to change' : 'Click to upload department logo'}
+                </p>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                   Department Code <span className="text-red-500">*</span>
@@ -643,16 +968,19 @@ export default function Departments() {
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Scheduling Profile <span className="text-red-500">*</span>
+                  Scheduling Profile
                 </label>
                 <select
                   value={schedulingProfile}
-                  onChange={(e) => setSchedulingProfile(e.target.value as Department['schedulingProfile'])}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                  onChange={(event) => setSchedulingProfile(event.target.value as 'standard' | 'laboratory_enabled')}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white transition-all"
                 >
-                  <option value="standard">Standard (no laboratories)</option>
+                  <option value="standard">Standard</option>
                   <option value="laboratory_enabled">Laboratory-enabled</option>
                 </select>
+                <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
+                  Choose Laboratory-enabled for departments whose active curriculum contains laboratory courses.
+                </p>
               </div>
               <div className="flex gap-3 pt-3">
                 <button 
@@ -665,9 +993,7 @@ export default function Departments() {
                 <button 
                   type="submit"
                   disabled={isSubmitting}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-white rounded-xl transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer ${
-                    name ? `${activeColors.modal} hover:opacity-90` : 'bg-[#4e0a10] hover:bg-[#C9952A]'
-                  }`}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] hover:bg-[#C9952A] text-white rounded-xl transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting 
@@ -714,6 +1040,89 @@ export default function Departments() {
           </div>
         </div>,
         document.body
+      )}
+      {/* Department Detail Modal */}
+      {isDetailModalOpen && selectedDeptForDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
+            {/* Header Banner */}
+            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                {selectedDeptForDetail.logo ? (
+                  <img
+                    src={selectedDeptForDetail.logo}
+                    alt={selectedDeptForDetail.name}
+                    className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0 bg-white"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
+                    <Building2 size={20} />
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-base font-bold text-[#1A1410] font-display break-words leading-tight">{selectedDeptForDetail.name}</h2>
+                  <p className="text-xs text-gray-500 font-medium">Dean: {selectedDeptForDetail.dean || 'Not Assigned'}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDetailModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Faculty Count</p>
+                  <p className="text-xs font-bold text-gray-800">{selectedDeptForDetail.facultyCount ?? 0} Instructors</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Sections Count</p>
+                  <p className="text-xs font-bold text-gray-800">{selectedDeptForDetail.sectionsCount ?? 0} Sections</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Department Code</p>
+                  <p className="text-xs font-mono font-bold text-gray-800">{selectedDeptForDetail.code}</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date Created</p>
+                  <p className="text-xs font-bold text-gray-700">
+                    {selectedDeptForDetail.createdAt
+                      ? new Date(selectedDeptForDetail.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-gray-200/80 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setIsDetailModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    handleEditClick(selectedDeptForDetail);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Pencil size={14} />
+                  <span>Edit Department</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

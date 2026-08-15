@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import {
@@ -11,6 +11,7 @@ import {
   ArrowDown,
   X,
   Loader2,
+  Camera,
   Plus
 } from 'lucide-react';
 import {
@@ -32,9 +33,10 @@ interface User {
   role: string;
   department: string | null;
   department_id: number | null;
-  program: Program | null;
-  program_id: number | null;
+  program_id?: number | string | null;
+  department_logo?: string | null;
   status: 'Active' | 'Inactive';
+  profile_picture?: string | null;
   createdAt: string;
 }
 
@@ -42,12 +44,14 @@ interface Department {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
 }
 
 interface ApiDepartment {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
 }
 
 interface Program {
@@ -64,9 +68,9 @@ interface ApiUser {
   username: string;
   role: string;
   department_id: number | null;
+  program_id?: number | null;
   department: ApiDepartment | null;
-  program_id: number | null;
-  program: Program | null;
+  profile_picture?: string | null;
   created_at: string;
 }
 
@@ -95,9 +99,10 @@ const mapApiUser = (u: ApiUser): User => ({
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
   department: u.department ? u.department.department_name : null,
   department_id: u.department_id,
-  program: u.program,
-  program_id: u.program_id,
+  program_id: u.program_id ?? null,
   status: 'Active',
+  profile_picture: u.profile_picture || null,
+  department_logo: u.department?.logo || null,
   createdAt: u.created_at,
 });
 
@@ -112,7 +117,16 @@ export default function VpaaUsers() {
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 6 });
+
+  useEffect(() => {
+    setPagination(prev => ({
+      ...prev,
+      pageSize: viewMode === 'grid' ? 6 : 10,
+      pageIndex: 0
+    }));
+  }, [viewMode]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -139,9 +153,56 @@ export default function VpaaUsers() {
   const [programFormError, setProgramFormError] = useState('');
   const [isCreatingProgram, setIsCreatingProgram] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Invalid File', 'Please select a valid image file (JPEG, PNG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 300;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setProfilePicture(dataUrl);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
+
+  const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -287,7 +348,6 @@ export default function VpaaUsers() {
           name: formData.name.trim(),
           role: apiRole,
           department_id: parseInt(formData.department_id),
-          program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
         });
         const updatedUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -303,7 +363,6 @@ export default function VpaaUsers() {
           password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
-          program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
         });
         const createdUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -314,7 +373,7 @@ export default function VpaaUsers() {
         toast.success('Success', 'User account created successfully');
       }
 
-      resetForm();
+      setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
@@ -337,6 +396,7 @@ export default function VpaaUsers() {
       program_id: user.program_id ? user.program_id.toString() : '',
       status: user.status
     });
+    setProfilePicture(user.profile_picture || null);
     setNameError('');
     setDeptError('');
     setProgramError('');
@@ -385,13 +445,18 @@ export default function VpaaUsers() {
         header: 'Name',
         cell: info => {
           const nameStr = info.getValue() as string;
+          const userObj = info.row.original;
           const initials = getInitials(nameStr);
           return (
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-xs shadow-sm flex-shrink-0">
-                {initials}
-              </div>
-              <span className="font-bold text-gray-800">{nameStr}</span>
+              {userObj.profile_picture ? (
+                <img src={userObj.profile_picture} alt={nameStr} className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-sm shrink-0" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-xs shadow-sm flex-shrink-0">
+                  {initials}
+                </div>
+              )}
+              <span className="font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">{nameStr}</span>
             </div>
           );
         }
@@ -482,25 +547,25 @@ export default function VpaaUsers() {
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
-            <div className="relative group">
+            <div className="relative group/tooltip">
               <button
                 onClick={() => handleEditClick(row.original)}
                 className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Pencil size={17} />
               </button>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Edit
               </span>
             </div>
-            <div className="relative group">
+            <div className="relative group/tooltip">
               <button
                 onClick={() => triggerDeleteConfirmation(row.original.id)}
-                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={17} />
               </button>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Delete
               </span>
             </div>
@@ -527,22 +592,24 @@ export default function VpaaUsers() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
-        <div className="relative flex-1 sm:max-w-md">
+      <div className="bg-white border border-gray-200/80 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm font-sans mb-6">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder="Search name, username, or role..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
+            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
         <button
           onClick={() => {
             setIsEditMode(false);
             setEditingId(null);
-            resetForm();
+            setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
+            setNameError('');
+            setDeptError('');
             setIsModalOpen(true);
           }}
           className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
@@ -551,7 +618,128 @@ export default function VpaaUsers() {
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, idx) => (
+              <div key={idx} className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 animate-pulse">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="w-11 h-11 rounded-full" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+                <Skeleton className="h-4 w-full" />
+              </div>
+            ))
+          ) : table.getRowModel().rows.length === 0 ? (
+            <div className="col-span-full py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white font-sans">
+              <p className="text-base font-semibold font-sans">No users found.</p>
+              <p className="text-xs font-sans">Try adjusting your search criteria or add a new user.</p>
+            </div>
+          ) : (
+            table.getRowModel().rows.map(row => {
+              const u = row.original;
+              const initials = getInitials(u.name);
+              const deptLogo = u.department_logo || departments.find(d => d.id === u.department_id)?.logo || null;
+              let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200/50';
+              if (u.role.toLowerCase() === 'secretary') {
+                badgeColor = 'bg-green-100 text-green-800 border border-green-200/50';
+              } else if (u.role.toLowerCase() === 'program head') {
+                badgeColor = 'bg-purple-100 text-purple-800 border border-purple-200/50';
+              }
+
+              return (
+                <div
+                  key={u.id}
+                  onClick={() => {
+                    setSelectedUserForDetail(u);
+                    setIsDetailModalOpen(true);
+                  }}
+                  className="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group hover:border-[#C9952A]/40 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden cursor-pointer"
+                >
+                  {/* Centered Background Department Watermark Logo */}
+                  {deptLogo && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                      <img
+                        src={deptLogo}
+                        alt="Department Watermark"
+                        className="w-44 h-44 object-contain opacity-[0.09]"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-3 relative z-10">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {u.profile_picture ? (
+                          <img src={u.profile_picture} alt={u.name} className="w-11 h-11 rounded-full object-cover border border-gray-200 shadow-sm shrink-0" />
+                        ) : (
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
+                            {initials}
+                          </div>
+                        )}
+                        <div>
+                          <h3 className="font-bold text-gray-800 text-sm leading-snug group-hover:text-[#C9952A] transition-colors">{u.name}</h3>
+                          <span className="font-mono text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200/60 inline-block mt-0.5">
+                            @{u.username}
+                          </span>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeColor} shrink-0`}>
+                        {u.role}
+                      </span>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100 space-y-1.5 text-xs text-gray-600">
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-gray-400 font-semibold shrink-0">Department:</span>
+                        <span className="font-bold text-gray-700 text-right break-words max-w-[200px] leading-tight">{u.department || '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400 font-semibold">Status:</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-850 border border-emerald-200/60">
+                          {u.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-gray-100 flex items-center justify-between relative z-10">
+                    <span className="text-[10px] text-gray-400 font-medium">
+                      Added {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : '—'}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditClick(u);
+                        }}
+                        className="p-1.5 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
+                        title="Edit User"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerDeleteConfirmation(u.id);
+                        }}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Delete User"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -629,7 +817,7 @@ export default function VpaaUsers() {
                 ))
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-base font-semibold">No users found.</p>
                       <p className="text-xs">Try adjusting your search criteria or add a new user.</p>
@@ -638,89 +826,89 @@ export default function VpaaUsers() {
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row, index) => (
-                  <tr
-                    key={row.id}
-                    className={`transition-colors h-12 hover:bg-gray-50/70 ${
+                  <tr 
+                    key={row.id} 
+                    onClick={() => {
+                      setSelectedUserForDetail(row.original);
+                      setIsDetailModalOpen(true);
+                    }}
+                    className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                     }`}
                   >
-                    {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['username', 'role', 'status', 'createdAt', 'actions'].includes(cell.column.id);
-                      return (
-                        <td
-                          key={cell.id}
-                          className={`px-4 py-2.5 align-middle text-xs ${isNoWrap ? 'whitespace-nowrap' : ''}`}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      );
-                    })}
+                    {row.getVisibleCells().map((cell, cellIdx) => (
+                      <td key={cell.id} className={`px-4 py-3 text-xs font-semibold text-gray-700 font-sans align-middle ${cellIdx === 0 ? 'border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all' : ''}`}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+      </div>
+      )}
 
-        {table.getFilteredRowModel().rows.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-gray-500">
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-                {Math.min(
-                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                  table.getFilteredRowModel().rows.length
-                )} of {table.getFilteredRowModel().rows.length} users
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-semibold">Show</span>
-                <select
-                  value={table.getState().pagination.pageSize}
-                  onChange={e => table.setPageSize(Number(e.target.value))}
-                  className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-                >
-                  {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>{pageSize}</option>
-                  ))}
-                </select>
-              </div>
+      {/* Pagination (shared for both Grid and List views) */}
+      {table.getFilteredRowModel().rows.length > 0 && (
+        <div className="px-6 py-4 border border-gray-100 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 bg-white shadow-sm font-sans mb-6">
+          <div className="flex items-center gap-4">
+            <div className="text-xs font-semibold text-gray-500">
+              Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
+              {Math.min(
+                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+                table.getFilteredRowModel().rows.length
+              )} of {table.getFilteredRowModel().rows.length} users
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+              <span className="text-xs text-gray-500 font-semibold">Show</span>
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={e => table.setPageSize(Number(e.target.value))}
+                className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
               >
-                First
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold text-gray-500 px-1">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Last
-              </button>
+                {[10, 25, 50].map(pageSize => (
+                  <option key={pageSize} value={pageSize}>{pageSize}</option>
+                ))}
+              </select>
             </div>
           </div>
-        )}
-      </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => table.setPageIndex(0)}
+              disabled={!table.getCanPreviousPage()}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              First
+            </button>
+            <button
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              Prev
+            </button>
+            <span className="text-xs font-bold text-gray-500 px-1">
+              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
+            </span>
+            <button
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              Next
+            </button>
+            <button
+              onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+              disabled={!table.getCanNextPage()}
+              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
+            >
+              Last
+            </button>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -738,6 +926,49 @@ export default function VpaaUsers() {
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
+              {/* Photo Upload Section */}
+              <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
+                <div className="relative group">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
+                    title="Click to upload picture"
+                  >
+                    {profilePicture ? (
+                      <img src={profilePicture} alt="User Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
+                        <Camera size={26} />
+                        <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Upload</span>
+                      </div>
+                    )}
+                  </div>
+                  {profilePicture && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setProfilePicture(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
+                      title="Remove Photo"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+                <p className="text-[10px] font-semibold text-gray-500 font-sans">
+                  {profilePicture ? 'Click photo to change' : 'Click to upload user profile photo'}
+                </p>
+              </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                   Full Name <span className="text-red-500">*</span>
@@ -990,6 +1221,97 @@ export default function VpaaUsers() {
                   className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
                 >
                   Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* User Detail Modal */}
+      {isDetailModalOpen && selectedUserForDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
+            {/* Header Banner */}
+            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                {selectedUserForDetail.profile_picture ? (
+                  <img
+                    src={selectedUserForDetail.profile_picture}
+                    alt={selectedUserForDetail.name}
+                    className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-sm shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
+                    {getInitials(selectedUserForDetail.name)}
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-base font-bold text-[#1A1410] font-display">{selectedUserForDetail.name}</h2>
+                  <p className="text-xs text-gray-500 font-mono">@{selectedUserForDetail.username}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#C9952A] text-white shadow-2xs">
+                  {selectedUserForDetail.role}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsDetailModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Department</p>
+                  <p className="text-xs font-bold text-gray-800 break-words leading-relaxed">{selectedUserForDetail.department || '—'}</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-emerald-700 capitalize">{selectedUserForDetail.status}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">User ID</p>
+                  <p className="text-xs font-mono font-bold text-gray-700">#{selectedUserForDetail.id}</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date Created</p>
+                  <p className="text-xs font-bold text-gray-700">
+                    {selectedUserForDetail.createdAt
+                      ? new Date(selectedUserForDetail.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-gray-200/80 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setIsDetailModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    handleEditClick(selectedUserForDetail);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Pencil size={14} />
+                  <span>Edit User</span>
                 </button>
               </div>
             </div>

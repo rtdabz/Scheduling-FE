@@ -211,7 +211,6 @@ export function HelperBuddy({ message }: { message: HelperMessage | null }) {
               width: 320,
               background: "#FFFFFF",
               borderRadius: 16,
-              boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1), 0 0 1px 1px rgba(0,0,0,0.05)",
               borderLeft: `4px solid ${config.borderColor}`,
               padding: "16px",
               fontFamily: "Inter, system-ui, -apple-system, sans-serif",

@@ -881,6 +881,7 @@ export default function DeanScheduleApprovalPage() {
     { id: 'withdrawal' as const, label: 'Withdrawal Schedule' },
     { id: 'revision' as const, label: 'Rejected/Revision Requests' },
   ];
+
   const requestCounts = requestTabs.reduce<Record<ScheduleApproval['requestType'], number>>((counts, tab) => {
     counts[tab.id] = schedules.filter((schedule) => schedule.requestType === tab.id).length;
     return counts;
@@ -913,9 +914,8 @@ export default function DeanScheduleApprovalPage() {
           );
         })}
       </div>
-
       {/* Filter Row */}
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-gray-150/70 mb-6">
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">
           <select 
             value={selectedStatus}
@@ -923,7 +923,7 @@ export default function DeanScheduleApprovalPage() {
               setSelectedStatus(e.target.value);
               setPagination(prev => ({ ...prev, pageIndex: 0 }));
             }}
-            className="px-3.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-xs bg-white text-gray-700 font-semibold cursor-pointer"
+            className="px-3.5 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
           >
             <option value="All Status">All Status</option>
             <option value="Pending Dean Approval">Pending Dean Approval</option>
@@ -938,7 +938,7 @@ export default function DeanScheduleApprovalPage() {
               setSelectedMode(e.target.value);
               setPagination(prev => ({ ...prev, pageIndex: 0 }));
             }}
-            className="px-3.5 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-xs bg-white text-gray-700 font-semibold cursor-pointer"
+            className="px-3.5 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
           >
             <option value="All Modes">All Modes</option>
             <option value="On-Site">On-Site</option>
@@ -949,23 +949,23 @@ export default function DeanScheduleApprovalPage() {
 
         <button 
           onClick={resetFilters}
-          className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 text-xs font-bold transition-all duration-200 cursor-pointer"
+          className="px-4 py-2.5 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 text-xs font-bold transition-all duration-200 cursor-pointer"
         >
           Reset Filters
         </button>
       </div>
 
       {/* Table Card wrapper */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               {table.getHeaderGroups().map(headerGroup => (
                 <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                  {headerGroup.headers.map(header => (
+                  {headerGroup.headers.map((header, idx) => (
                     <th 
                       key={header.id} 
-                      className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
+                      className={`py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none ${idx === 0 ? 'pl-6 pr-4' : 'px-4'}`}
                     >
                       {header.isPlaceholder ? null : (
                         <div className="flex items-center">
@@ -1000,7 +1000,7 @@ export default function DeanScheduleApprovalPage() {
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                     }`}
                   >
-                    <td className="px-4 py-2.5 align-middle text-xs">
+                    <td className="pl-6 pr-4 py-2.5 align-middle text-xs">
                       <Skeleton className="h-4 w-32" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs">
@@ -1034,7 +1034,7 @@ export default function DeanScheduleApprovalPage() {
                 ))
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-base font-semibold">No schedules found.</p>
                       <p className="text-xs">Adjust your status or mode filters and try again.</p>

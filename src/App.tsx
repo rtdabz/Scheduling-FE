@@ -10,6 +10,7 @@ import { clearDataCache } from './lib/dataCache';
 import Dashboard from './pages/Dashboard';
 const VpaaSchedules = lazy(() => import('./pages/vpaa/Schedules'));
 const VpaaScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
+const VpaaCalendarPage = lazy(() => import('./pages/vpaa/CalendarPage'));
 const VpaaFaculty = lazy(() => import('./pages/vpaa/Faculty'));
 const VpaaRooms = lazy(() => import('./pages/vpaa/Rooms'));
 const VpaaUsers = lazy(() => import('./pages/vpaa/Users'));
@@ -123,6 +124,8 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardRoute />} />
             <Route path="/schedules" element={<VpaaSchedules />} />
             <Route path="/schedules/approval" element={<VpaaScheduleApprovalPage />} />
+            <Route path="/calendar" element={<VpaaCalendarPage />} />
+            <Route path="/vpaa/calendar" element={<VpaaCalendarPage />} />
             <Route path="/faculty" element={<VpaaFaculty />} />
             <Route path="/rooms" element={<VpaaRooms />} />
 
