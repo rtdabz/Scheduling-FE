@@ -1,5 +1,4 @@
 import TopBar from "./TopBar";
-import FacultyPanel from "./FacultyPanel";
 import CourseBank from "./CourseBank";
 import TimetableGrid from "./TimetableGrid";
 import WideTimetableGrid from "./TimetableGrid/WideTimetableGrid";
@@ -13,6 +12,7 @@ import PrintSchedule from "./PrintSchedule";
 import ScheduleImportModal from "./Modals/ScheduleImportModal";
 import GenerateScheduleModal from "./GenerateSchedule/GenerateScheduleModal";
 import YearLevelGenerateScheduleModal from "./GenerateSchedule/YearLevelGenerateScheduleModal";
+import AutoAssignModal from "./Modals/AutoAssignModal";
 import { useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
 import { useGenerateSchedule } from "./GenerateSchedule/useGenerateSchedule";
@@ -21,6 +21,7 @@ export default function SchedulerPanel() {
   const scheduler = useScheduler();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isYearLevelGenerateOpen, setIsYearLevelGenerateOpen] = useState(false);
+  const [isAutoAssignOpen, setIsAutoAssignOpen] = useState(false);
 
   const generateSchedule = useGenerateSchedule({
     onAccepted: scheduler.handleAcceptedRecommendation,
@@ -39,10 +40,10 @@ export default function SchedulerPanel() {
         onGenerateYearLevel={() => setIsYearLevelGenerateOpen(true)}
         isGenerateDisabled={!scheduler.isEditable}
         isSectionGenerateDisabled={!scheduler.selectedSectionId}
+        onAutoAssign={() => setIsAutoAssignOpen(true)}
       />
 
       <div className="flex flex-col lg:flex-row gap-4 w-full min-h-[560px] lg:h-[calc(100vh-180px)] lg:min-h-[560px] overflow-hidden">
-        <FacultyPanel {...scheduler} />
         {!scheduler.isWideView && <CourseBank {...scheduler} />}
         {scheduler.isWideView ? (
           <WideTimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
@@ -53,11 +54,24 @@ export default function SchedulerPanel() {
 
       <DropModal {...scheduler} />
       <FacultyModal {...scheduler} />
+      <AutoAssignModal
+        isOpen={isAutoAssignOpen}
+        onClose={() => setIsAutoAssignOpen(false)}
+        schedules={scheduler.schedules}
+        subjects={scheduler.subjects}
+        faculties={scheduler.faculties}
+        departmentId={selectedSection?.departmentId ?? null}
+        facultyActionSlotId={scheduler.facultyActionSlotId}
+        canManageScheduleFaculty={scheduler.canManageScheduleFaculty}
+        checkFacultyConflict={scheduler.checkFacultyConflict}
+        onAssign={scheduler.handleBulkFacultyAssign}
+      />
       <SubmitApprovalModal {...scheduler} />
       <WithdrawSubmissionModal
         isOpen={scheduler.isWithdrawSubmissionModalOpen}
         sections={scheduler.departmentSectionProgress}
         selectedSectionId={scheduler.selectedSectionId}
+        withdrawalStage={scheduler.departmentWithdrawalStage}
         isWithdrawing={scheduler.isWithdrawingSubmission}
         onConfirm={scheduler.confirmWithdrawSubmission}
         onCancel={scheduler.cancelWithdrawSubmission}
@@ -109,6 +123,7 @@ export default function SchedulerPanel() {
       <ClearAllModal {...scheduler} />
       <PrintSchedule
         sections={scheduler.sections}
+        departments={scheduler.departments}
         isPrintModalOpen={scheduler.isPrintModalOpen}
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}

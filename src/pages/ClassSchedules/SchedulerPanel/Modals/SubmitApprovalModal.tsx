@@ -97,7 +97,7 @@ export default function SubmitApprovalModal({
             </div>
             <div className="pt-0.5">
               <h3 id="submit-approval-title" className="text-lg font-bold text-gray-900 leading-tight">
-                Submit department schedule?
+                Submit schedule?
               </h3>
               <p id="submit-approval-desc" className="text-sm text-gray-600 mt-1">
                 You are about to send the complete department schedule to the Dean for review.

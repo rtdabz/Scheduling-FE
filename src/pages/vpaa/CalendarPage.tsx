@@ -24,6 +24,7 @@ import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
+import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
 
 interface Department {
   id: number;
@@ -405,39 +406,41 @@ export default function VpaaCalendarPage() {
         </div>
       </div>
       <div className="mt-3 flex-1 overflow-auto rounded-xl border border-gray-200">
-        <div className="min-w-[850px] relative flex">
-          <div className="w-16 shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-200">
-            <div className="h-9 border-b border-gray-200 flex items-center justify-center font-bold text-[9px] uppercase bg-gray-100 text-gray-500">Time</div>
-            {timeSlots.map((slot, i) => <div key={i} className="h-6 border-b text-[8px] flex items-center justify-center text-gray-400 font-mono">{slot.label}</div>)}
-          </div>
-          <div className="flex-1 flex relative">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay).map((day) => {
+        <WeeklyTimetableGrid
+          days={['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay)}
+          slotCount={timeSlots.length}
+          headerHeight={36}
+          timeColumnWidth={64}
+          minWidth={850}
+          slotHeight={24}
+          getTimeLabel={(slot) => timeSlots[slot]?.label ?? ''}
+          getDayCount={(dayIndex) => {
+            const visibleDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay);
+            return filteredSchedules.filter(s => getShortDay(s.day) === visibleDays[dayIndex]).length;
+          }}
+        >
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay).map((day, dayIndex) => {
               const daySchedules = filteredSchedules.filter(s => getShortDay(s.day) === day);
               const isToday = day === currentDayName;
               const layouts = getDayLayouts(daySchedules);
               return (
-                <div key={day} className={`flex-1 border-r border-gray-200 relative min-w-[130px] ${isToday ? 'bg-red-500/[0.015]' : ''}`}>
-                  <div className={`sticky top-0 z-10 h-9 border-b flex flex-col items-center justify-center ${isToday ? 'bg-red-50 text-[#5A1220] font-black border-b-2 border-b-red-500' : 'bg-gray-50 text-gray-700'}`}>
-                    <span className="font-bold text-xs uppercase">{day}</span>
-                    <span className="text-[8px] font-extrabold opacity-75">{daySchedules.length} {daySchedules.length === 1 ? 'Class' : 'Classes'}</span>
-                  </div>
-                  <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
-                    {timeSlots.map((_, i) => <div key={i} className="h-6 border-b border-gray-100" />)}
+                <React.Fragment key={day}>
                     {isToday && currentDayTimeTop !== null && (
-                      <div className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center" style={{ top: `${currentDayTimeTop}px` }}>
-                        <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-xs" />
+                      <div className="relative z-20 pointer-events-none" style={{ gridColumn: dayIndex + 2, gridRow: `2 / span ${timeSlots.length}` }}>
+                        <div className="absolute left-0 right-0 border-t-2 border-red-500 flex items-center" style={{ top: `${currentDayTimeTop - 36}px` }}>
+                          <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-xs" />
+                        </div>
                       </div>
                     )}
                     {daySchedules.map((schedule) => {
                       const startIdx = parseTimeToSlotIndex(schedule.start_time);
                       const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                      const top = startIdx * 24;
                       const height = (endIdx - startIdx) * 24;
                       if (height <= 0) return null;
                       const layout = layouts.find(item => item.schedule.id === schedule.id);
                       const deptCode = schedule.department?.department_code || schedule.section?.department_id?.toString() || 'GEN';
                       return (
-                        <div key={schedule.id} onClick={() => setSelectedSchedule(schedule)} style={{ top: `${top + 1}px`, height: `${height - 2}px`, left: `calc(${layout?.leftPct}% + 2px)`, width: `calc(${layout?.widthPct}% - 4px)` }} className={`group absolute rounded-lg border border-l-4 p-1.5 cursor-pointer text-left overflow-hidden shadow-2xs transition-all hover:scale-[1.02] hover:z-25 ${getDeptStyles(deptCode)}`}>
+                        <div key={schedule.id} onClick={() => setSelectedSchedule(schedule)} style={{ gridColumn: dayIndex + 2, gridRow: `${startIdx + 2} / span ${endIdx - startIdx}`, height: `${height - 2}px`, marginTop: '1px', marginLeft: `calc(${layout?.leftPct ?? 0}% + 2px)`, width: `calc(${layout?.widthPct ?? 100}% - 4px)` }} className={`group z-10 rounded-lg border border-l-4 p-1.5 cursor-pointer text-left overflow-hidden shadow-2xs transition-all hover:scale-[1.02] hover:z-25 ${getDeptStyles(deptCode)}`}>
                           <div className="space-y-0.5 min-w-0">
                             <div className="flex items-center justify-between gap-1">
                               <span className="font-extrabold text-[10px] truncate">{schedule.course?.course_code || schedule.subject?.subject_code || 'CLASS'}</span>
@@ -452,12 +455,10 @@ export default function VpaaCalendarPage() {
                         </div>
                       );
                     })}
-                  </div>
-                </div>
+                </React.Fragment>
               );
             })}
-          </div>
-        </div>
+        </WeeklyTimetableGrid>
       </div>
     </div>
   );

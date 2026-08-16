@@ -1,8 +1,8 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Loader2, Printer, RotateCcw, Send, Upload, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Loader2, Printer, RotateCcw, Send, Upload, UserCheck, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
-import type { DepartmentSectionProgress, ScheduleItem, Section } from "./types";
+import type { DepartmentSectionProgress, ScheduleItem, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
 import SearchField from "./components/SearchField";
 import GenerateScheduleButton from "./GenerateSchedule/GenerateScheduleButton";
@@ -34,7 +34,8 @@ interface TopBarProps {
   departmentRemainingSections: number;
   departmentReadyToSubmit: boolean;
   departmentHasSubmittedSchedule: boolean;
-  departmentHasPendingDeanSubmission: boolean;
+  departmentHasWithdrawableSubmission: boolean;
+  departmentWithdrawalStage: WithdrawalStage;
   handleSubmitForApproval: () => void;
   handleWithdrawSubmission: () => void;
   canWithdrawSubmission: boolean;
@@ -43,6 +44,7 @@ interface TopBarProps {
   onImport: () => void;
   onGenerate?: (sectionId: string) => void;
   onGenerateYearLevel?: () => void;
+  onAutoAssign?: () => void;
   isGenerateDisabled?: boolean;
   isSectionGenerateDisabled?: boolean;
   isLoading?: boolean;
@@ -224,7 +226,8 @@ export default function TopBar({
   departmentRemainingSections,
   departmentReadyToSubmit,
   departmentHasSubmittedSchedule,
-  departmentHasPendingDeanSubmission,
+  departmentHasWithdrawableSubmission,
+  departmentWithdrawalStage,
   handleSubmitForApproval,
   handleWithdrawSubmission,
   canWithdrawSubmission,
@@ -233,6 +236,7 @@ export default function TopBar({
   onImport,
   onGenerate,
   onGenerateYearLevel,
+  onAutoAssign,
   isGenerateDisabled,
   isSectionGenerateDisabled,
   isLoading = false,
@@ -353,7 +357,7 @@ export default function TopBar({
   const departmentSubmitLabel = departmentHasSubmittedSchedule
     ? "Already submitted"
     : departmentReadyToSubmit
-    ? "Submit Department Schedule"
+    ? "Submit Schedule"
     : `${departmentRemainingSections} section${departmentRemainingSections !== 1 ? "s" : ""} remaining`;
 
   const getDepartmentStatusLabel = (section: DepartmentSectionProgress) => {
@@ -548,7 +552,16 @@ export default function TopBar({
         </div>
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
-          {onGenerate && (
+          {onAutoAssign && ["approved", "faculty_assignment"].includes(currentStatus) ? (
+            <button
+              type="button"
+              onClick={onAutoAssign}
+              className="flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+            >
+              <UserCheck className="h-3.5 w-3.5" />
+              <span>Auto-Assign</span>
+            </button>
+          ) : onGenerate && (
             <GenerateScheduleButton
               disabled={Boolean(isGenerateDisabled)}
               sectionDisabled={Boolean(isSectionGenerateDisabled)}
@@ -661,12 +674,14 @@ export default function TopBar({
                         Submitted
                       </span>
                     )}
-                    {departmentHasPendingDeanSubmission && canWithdrawSubmission ? (
+                    {departmentHasWithdrawableSubmission && canWithdrawSubmission ? (
                       <button
                         type="button"
                         onClick={handleWithdrawSubmission}
                         disabled={isWithdrawingSubmission}
-                        title="Withdraw the pending submission for revisions"
+                        title={departmentWithdrawalStage === "vpaa_approved"
+                          ? "Revoke VPAA approval and withdraw selected sections for revision"
+                          : `Withdraw selected sections from ${departmentWithdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review`}
                         className="flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition-all hover:bg-orange-100 disabled:cursor-wait disabled:opacity-70 xl:min-w-[190px]"
                       >
                         {isWithdrawingSubmission ? (
@@ -674,7 +689,11 @@ export default function TopBar({
                         ) : (
                           <RotateCcw className="w-4 h-4" />
                         )}
-                        {isWithdrawingSubmission ? "Withdrawing..." : "Withdraw Submission"}
+                        {isWithdrawingSubmission
+                          ? "Withdrawing..."
+                          : departmentWithdrawalStage === "vpaa_approved"
+                            ? "Withdraw Schedule"
+                            : "Withdraw Submission"}
                       </button>
                     ) : (
                       <button

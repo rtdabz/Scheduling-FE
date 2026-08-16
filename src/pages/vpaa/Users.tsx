@@ -12,7 +12,8 @@ import {
   X,
   Loader2,
   Camera,
-  Plus
+  Plus,
+  Link2Off
 } from 'lucide-react';
 import {
   useReactTable,
@@ -30,6 +31,7 @@ interface User {
   id: number;
   name: string;
   username: string;
+  email: string;
   role: string;
   department: string | null;
   department_id: number | null;
@@ -37,6 +39,9 @@ interface User {
   department_logo?: string | null;
   status: 'Active' | 'Inactive';
   profile_picture?: string | null;
+  allowGoogleLogin: boolean;
+  googleLinked: boolean;
+  facultyProfileId?: number | null;
   createdAt: string;
 }
 
@@ -66,11 +71,16 @@ interface ApiUser {
   id: number;
   name: string;
   username: string;
+  email: string | null;
   role: string;
   department_id: number | null;
   program_id?: number | null;
   department: ApiDepartment | null;
   profile_picture?: string | null;
+  is_active: boolean;
+  allow_google_login: boolean;
+  google_id?: string | null;
+  faculty_profile?: { id: number; administrative_role?: string | null } | null;
   created_at: string;
 }
 
@@ -96,13 +106,17 @@ const mapApiUser = (u: ApiUser): User => ({
   id: u.id,
   name: u.name,
   username: u.username,
+  email: u.email || '',
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
   department: u.department ? u.department.department_name : null,
   department_id: u.department_id,
   program_id: u.program_id ?? null,
-  status: 'Active',
+  status: u.is_active ? 'Active' : 'Inactive',
   profile_picture: u.profile_picture || null,
   department_logo: u.department?.logo || null,
+  allowGoogleLogin: u.allow_google_login,
+  googleLinked: Boolean(u.google_id),
+  facultyProfileId: u.faculty_profile?.id ?? null,
   createdAt: u.created_at,
 });
 
@@ -117,7 +131,7 @@ export default function VpaaUsers() {
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode] = useState<'grid' | 'list'>('list');
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 6 });
 
   useEffect(() => {
@@ -135,11 +149,13 @@ export default function VpaaUsers() {
   const [formData, setFormData] = useState({
     name: '',
     username: '',
+    email: '',
     password: '',
     role: 'Secretary',
     department_id: '',
     program_id: '',
-    status: 'Active' as 'Active' | 'Inactive'
+    status: 'Active' as 'Active' | 'Inactive',
+    allow_google_login: false,
   });
 
   const [nameError, setNameError] = useState('');
@@ -200,9 +216,18 @@ export default function VpaaUsers() {
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
+  const [removeFacultyProfile, setRemoveFacultyProfile] = useState(false);
 
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+
+  // Keep modal states mutually exclusive so dialogs can never stack over one another.
+  const openDetailModal = (user: User) => {
+    setSelectedUserForDetail(user);
+    setIsModalOpen(false);
+    setIsDeleteModalOpen(false);
+    setIsDetailModalOpen(true);
+  };
 
   useEffect(() => {
     fetchData();
@@ -217,10 +242,12 @@ export default function VpaaUsers() {
           .map(word => word.charAt(0).toUpperCase() + word.slice(1))
           .join('');
         const generatedUser = `${dept.department_code}${roleName}`;
+        const bytes = crypto.getRandomValues(new Uint8Array(6));
+        const temporaryPassword = `Wi${Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')}A9`;
         setFormData(prev => ({
           ...prev,
           username: generatedUser.toLowerCase(),
-          password: `${dept.department_code.toLowerCase()}12345`
+          password: temporaryPassword,
         }));
       }
     }
@@ -231,15 +258,6 @@ export default function VpaaUsers() {
     () => programs.filter((program) => String(program.department_id) === String(formData.department_id)),
     [programs, formData.department_id]
   );
-
-  const resetForm = () => {
-    setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
-    setNewProgram({ cluster: '', code: '', name: '' });
-    setNameError('');
-    setDeptError('');
-    setProgramError('');
-    setProgramFormError('');
-  };
 
   const createProgram = async () => {
     if (!formData.department_id) {
@@ -312,6 +330,10 @@ export default function VpaaUsers() {
     e.preventDefault();
 
     let hasError = false;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      toast.error('Email required', 'Enter a valid institutional email address.');
+      hasError = true;
+    }
     if (!formData.name.trim()) {
       setNameError('Full name is required');
       hasError = true;
@@ -346,8 +368,13 @@ export default function VpaaUsers() {
       if (isEditMode && editingId !== null) {
         const res = await api.put<{ data: ApiUser }>(`/user/${editingId}`, {
           name: formData.name.trim(),
+          email: formData.email.trim(),
           role: apiRole,
           department_id: parseInt(formData.department_id),
+          program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
+          is_active: formData.status === 'Active',
+          allow_google_login: formData.allow_google_login,
+          profile_picture: profilePicture,
         });
         const updatedUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -360,9 +387,14 @@ export default function VpaaUsers() {
         const res = await api.post<{ data: ApiUser }>('/user', {
           name: formData.name.trim(),
           username: formData.username,
+          email: formData.email.trim(),
           password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
+          program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
+          is_active: formData.status === 'Active',
+          allow_google_login: formData.allow_google_login,
+          profile_picture: profilePicture,
         });
         const createdUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -373,7 +405,7 @@ export default function VpaaUsers() {
         toast.success('Success', 'User account created successfully');
       }
 
-      setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
+      setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
@@ -387,14 +419,18 @@ export default function VpaaUsers() {
   };
 
   const handleEditClick = (user: User) => {
+    setIsDetailModalOpen(false);
+    setIsDeleteModalOpen(false);
     setFormData({
       name: user.name,
       username: user.username,
+      email: user.email,
       password: '••••••••',
       role: user.role,
       department_id: user.department_id ? user.department_id.toString() : '',
       program_id: user.program_id ? user.program_id.toString() : '',
-      status: user.status
+      status: user.status,
+      allow_google_login: user.allowGoogleLogin,
     });
     setProfilePicture(user.profile_picture || null);
     setNameError('');
@@ -409,13 +445,16 @@ export default function VpaaUsers() {
 
   const triggerDeleteConfirmation = (id: number) => {
     setIdToDelete(id);
+    setIsModalOpen(false);
+    setIsDetailModalOpen(false);
     setIsDeleteModalOpen(true);
+    setRemoveFacultyProfile(false);
   };
 
   const confirmDeleteUser = async () => {
     if (idToDelete !== null) {
       try {
-        await api.delete(`/user/${idToDelete}`);
+        await api.delete(`/user/${idToDelete}`, { data: { remove_faculty_profile: removeFacultyProfile } });
         setUsers(prev => {
           const nextUsers = prev.filter(user => user.id !== idToDelete);
           setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
@@ -427,7 +466,21 @@ export default function VpaaUsers() {
       } finally {
         setIsDeleteModalOpen(false);
         setIdToDelete(null);
+        setRemoveFacultyProfile(false);
       }
+    }
+  };
+
+  const unlinkGoogle = async (user: User) => {
+    try {
+      const response = await api.delete<{ data: ApiUser }>(`/user/${user.id}/google-link`);
+      const updated = mapApiUser(response.data.data);
+      setUsers((previous) => previous.map((item) => item.id === user.id ? updated : item));
+      setSelectedUserForDetail(updated);
+      toast.success('Google unlinked', 'The user must link Google again before using Google login.');
+    } catch (error) {
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      toast.error('Unable to unlink Google', axiosError.response?.data?.message || 'Please try again.');
     }
   };
 
@@ -549,7 +602,10 @@ export default function VpaaUsers() {
           <div className="flex justify-end gap-1.5">
             <div className="relative group/tooltip">
               <button
-                onClick={() => handleEditClick(row.original)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleEditClick(row.original);
+                }}
                 className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Pencil size={17} />
@@ -560,7 +616,10 @@ export default function VpaaUsers() {
             </div>
             <div className="relative group/tooltip">
               <button
-                onClick={() => triggerDeleteConfirmation(row.original.id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  triggerDeleteConfirmation(row.original.id);
+                }}
                 className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={17} />
@@ -607,7 +666,9 @@ export default function VpaaUsers() {
           onClick={() => {
             setIsEditMode(false);
             setEditingId(null);
-            setFormData({ name: '', username: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
+            setIsDetailModalOpen(false);
+            setIsDeleteModalOpen(false);
+            setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
             setNameError('');
             setDeptError('');
             setIsModalOpen(true);
@@ -654,8 +715,7 @@ export default function VpaaUsers() {
                 <div
                   key={u.id}
                   onClick={() => {
-                    setSelectedUserForDetail(u);
-                    setIsDetailModalOpen(true);
+                    openDetailModal(u);
                   }}
                   className="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group hover:border-[#C9952A]/40 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden cursor-pointer"
                 >
@@ -829,8 +889,7 @@ export default function VpaaUsers() {
                   <tr 
                     key={row.id} 
                     onClick={() => {
-                      setSelectedUserForDetail(row.original);
-                      setIsDetailModalOpen(true);
+                      openDetailModal(row.original);
                     }}
                     className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
@@ -912,7 +971,7 @@ export default function VpaaUsers() {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 ${isProgramHeadRole ? 'max-w-2xl' : 'max-w-md'}`}>
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode ? 'Edit User Account' : 'Create New Account'}
@@ -988,6 +1047,21 @@ export default function VpaaUsers() {
                 {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
               </div>
 
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                  Institutional Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="name@school.edu.ph"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">Google sign-in will only accept this exact verified email.</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -1038,8 +1112,7 @@ export default function VpaaUsers() {
                     <option value="Secretary">Secretary</option>
                   </select>
                 </div>
-                {isEditMode && (
-                  <div>
+                <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                       Status
                     </label>
@@ -1051,9 +1124,13 @@ export default function VpaaUsers() {
                       <option value="Active">Active</option>
                       <option value="Inactive">Inactive</option>
                     </select>
-                  </div>
-                )}
+                </div>
               </div>
+
+              <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 cursor-pointer">
+                <input type="checkbox" checked={formData.allow_google_login} onChange={(e) => setFormData({ ...formData, allow_google_login: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[#5A1220]" />
+                <span><span className="block text-sm font-bold text-gray-800">Allow Google login</span><span className="block text-xs text-gray-500 mt-0.5">The user links their own Google account during first sign-in.</span></span>
+              </label>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -1209,6 +1286,16 @@ export default function VpaaUsers() {
                   Are you sure you want to delete this user account? This action is permanent and cannot be undone.
                 </p>
               </div>
+              <div className="space-y-2 text-left">
+                <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-3 cursor-pointer">
+                  <input type="radio" name="faculty-delete-choice" checked={!removeFacultyProfile} onChange={() => setRemoveFacultyProfile(false)} className="mt-0.5 accent-[#5A1220]" />
+                  <span><span className="block text-xs font-bold text-gray-800">Keep as regular faculty</span><span className="block text-[11px] text-gray-500">Remove the login and role indicator, but keep the faculty record.</span></span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/50 p-3 cursor-pointer">
+                  <input type="radio" name="faculty-delete-choice" checked={removeFacultyProfile} onChange={() => setRemoveFacultyProfile(true)} className="mt-0.5 accent-red-600" />
+                  <span><span className="block text-xs font-bold text-red-700">Remove faculty profile too</span><span className="block text-[11px] text-red-600/80">The linked faculty record will be deleted.</span></span>
+                </label>
+              </div>
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setIsDeleteModalOpen(false)}
@@ -1230,7 +1317,7 @@ export default function VpaaUsers() {
       {/* User Detail Modal */}
       {isDetailModalOpen && selectedUserForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
             {/* Header Banner */}
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div className="flex items-center gap-3">
@@ -1267,9 +1354,18 @@ export default function VpaaUsers() {
             {/* Modal Body */}
             <div className="p-6 space-y-5">
               <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs col-span-2">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email</p>
+                  <p className="text-xs font-bold text-gray-700 break-all">{selectedUserForDetail.email || '—'}</p>
+                </div>
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
                   <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Department</p>
                   <p className="text-xs font-bold text-gray-800 break-words leading-relaxed">{selectedUserForDetail.department || '—'}</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Google login</p>
+                  <p className="text-xs font-bold text-gray-700">{selectedUserForDetail.googleLinked ? 'Linked' : selectedUserForDetail.allowGoogleLogin ? 'Approved, not linked' : 'Disabled'}</p>
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
@@ -1296,7 +1392,14 @@ export default function VpaaUsers() {
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-3 border-t border-gray-200/80 flex items-center justify-end gap-3">
+              <div className="pt-3 border-t border-gray-200/80 flex flex-wrap items-center justify-end gap-3">
+                <button
+                  disabled={!selectedUserForDetail.googleLinked}
+                  onClick={() => unlinkGoogle(selectedUserForDetail)}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Link2Off size={14} /> Unlink Google
+                </button>
                 <button
                   onClick={() => setIsDetailModalOpen(false)}
                   className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"

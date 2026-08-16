@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Faculty, Room, ScheduleItem, Subject } from "../types";
+import type { Department, Faculty, Room, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
@@ -21,6 +21,8 @@ interface UseConflictParams {
   dragSubjectId: string | null;
   draggedScheduleId: string | null;
   rooms: Room[];
+  sections: Section[];
+  departments: Department[];
   subjects: Subject[];
   faculties: Faculty[];
   fieldCourseAssignmentEnabled?: boolean;
@@ -50,6 +52,23 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
 
 const getRoomCapacity = (room: Room | undefined): number => {
   return Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
+};
+
+const getDepartmentRoomCapacity = (
+  room: Room | undefined,
+  departmentId: number | null,
+  departments: Department[]
+): number => {
+  const department = departments.find((item) => Number(item.id) === Number(departmentId));
+  const configuredLimit = room?.roomType === "field"
+    ? department?.field_slot_limit
+    : room?.roomType === "online"
+      ? department?.online_slot_limit
+      : null;
+
+  return configuredLimit == null
+    ? getRoomCapacity(room)
+    : Math.max(1, Number(configuredLimit) || 1);
 };
 
 const resolveRoom = (rooms: Room[], roomId: string): Room | undefined => {
@@ -144,7 +163,8 @@ export const getConflictedScheduleMap = (
   schedules: ScheduleItem[],
   subjects: Subject[],
   rooms: Room[],
-  faculties: Faculty[]
+  faculties: Faculty[],
+  departments: Department[] = []
 ): Record<string, NonNullable<ConflictResult>> => {
   const conflictMap: Record<string, NonNullable<ConflictResult>> = {};
 
@@ -206,31 +226,36 @@ export const getConflictedScheduleMap = (
         ) {
           const room = resolveRoom(rooms, s1.roomId);
           const isSharedField = room?.roomType === "field" || s1.roomId === "field" || s1.mode === "field" || s2.mode === "field";
-          const isSharedCapacityRoom = isSharedField;
-          const sharedCapacity = getRoomCapacity(room);
-          const sameRoomSchedules = isSharedCapacityRoom
-            ? schedules.filter((item) =>
-                item.departmentId === s1.departmentId
-                && item.roomId
-                && samePhysicalRoom(item.roomId, s1.roomId, rooms)
-              )
-            : schedules;
-          if (isSharedCapacityRoom && !exceedsSharedRoomCapacity(
-            sameRoomSchedules,
-            day,
-            start,
-            end,
-            sharedCapacity,
-            [],
-            false
-          )) {
-            continue;
+          const isDifferentFieldDepartment = isSharedField
+            && Number(s1.departmentId) !== Number(s2.departmentId);
+
+          if (!isDifferentFieldDepartment) {
+            const isSharedCapacityRoom = isSharedField;
+            const sharedCapacity = getDepartmentRoomCapacity(room, s1.departmentId, departments);
+            const sameRoomSchedules = isSharedCapacityRoom
+              ? schedules.filter((item) =>
+                  Number(item.departmentId) === Number(s1.departmentId)
+                  && item.roomId
+                  && samePhysicalRoom(item.roomId, s1.roomId, rooms)
+                )
+              : schedules;
+            const hasRoomConflict = !isSharedCapacityRoom || exceedsSharedRoomCapacity(
+              sameRoomSchedules,
+              day,
+              start,
+              end,
+              sharedCapacity,
+              [],
+              false
+            );
+            if (hasRoomConflict) {
+              const roomName = room?.name ?? (isSharedField ? "FIELD" : "Selected room");
+              const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+              const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+              if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
+              if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
+            }
           }
-          const roomName = room?.name ?? (isSharedField ? "FIELD" : "Selected room");
-          const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-          const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
-          if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
-          if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
         }
 
         // 3. Faculty conflict
@@ -255,14 +280,16 @@ export const useConflict = ({
   dragSubjectId,
   draggedScheduleId,
   rooms,
+  sections,
+  departments,
   subjects,
   faculties,
   fieldCourseAssignmentEnabled = false,
   fieldCourseCodes = []
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
-    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
-    [schedules, subjects, rooms, faculties]
+    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties, departments),
+    [schedules, subjects, rooms, faculties, departments]
   );
 
   const checkConflict = (
@@ -304,7 +331,10 @@ export const useConflict = ({
 
     // Room-type compatibility check
     const subject = subjects.find((s) => String(s.id) === String(subjectId));
-    const candidateDepartmentId = subject?.departmentId ?? null;
+    const candidateDepartmentId = sections.find((section) => String(section.id) === String(sectionId))?.departmentId
+      ?? schedules.find((schedule) => String(schedule.sectionId) === String(sectionId))?.departmentId
+      ?? subject?.departmentId
+      ?? null;
     const configuredFieldCourseCodes = new Set(
       fieldCourseCodes.map((code) => code.trim().toUpperCase()).filter(Boolean)
     );
@@ -366,30 +396,36 @@ export const useConflict = ({
           const isSharedField = room?.roomType === "field" || roomId === "field" || subjectRequiresField;
           const isSharedOnline = room?.roomType === "online" || roomId === "online";
           const isSharedCapacityRoom = isSharedField || isSharedOnline;
-          const sharedCapacity = getRoomCapacity(room);
-          const sameRoomSchedules = isSharedCapacityRoom
-            ? schedules.filter((item) =>
-                item.departmentId === candidateDepartmentId
-                && item.roomId
-                && samePhysicalRoom(item.roomId, roomId, rooms)
-              )
-            : schedules;
-          if (isSharedCapacityRoom && !exceedsSharedRoomCapacity(
-            sameRoomSchedules,
-            dayIndex,
-            startSlot,
-            endSlot,
-            sharedCapacity,
-            excludeScheduleId ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId]) : []
-          )) {
-            continue;
+          const isDifferentFieldDepartment = isSharedField
+            && candidateDepartmentId !== null
+            && Number(s.departmentId) !== Number(candidateDepartmentId);
+
+          if (!isDifferentFieldDepartment) {
+            const sharedCapacity = getDepartmentRoomCapacity(room, candidateDepartmentId, departments);
+            const sameRoomSchedules = isSharedCapacityRoom
+              ? schedules.filter((item) =>
+                  Number(item.departmentId) === Number(candidateDepartmentId)
+                  && item.roomId
+                  && samePhysicalRoom(item.roomId, roomId, rooms)
+                )
+              : schedules;
+            const hasRoomConflict = !isSharedCapacityRoom || exceedsSharedRoomCapacity(
+              sameRoomSchedules,
+              dayIndex,
+              startSlot,
+              endSlot,
+              sharedCapacity,
+              excludeScheduleId ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId]) : []
+            );
+            if (hasRoomConflict) {
+              return {
+                conflictType: "room",
+                message: isSharedCapacityRoom
+                  ? `Room capacity conflict: ${room?.name ?? "Selected room"} is already at this department's shared capacity (${sharedCapacity} concurrent classes).`
+                  : `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
+              };
+            }
           }
-          return {
-            conflictType: "room",
-            message: isSharedCapacityRoom
-              ? `Room capacity conflict: ${room?.name ?? "Selected room"} is already at this department's shared capacity (${sharedCapacity} concurrent classes).`
-              : `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
-          };
         }
         if (facultyId && s.facultyId === facultyId) {
           const faculty = faculties.find((f) => String(f.id) === String(facultyId));

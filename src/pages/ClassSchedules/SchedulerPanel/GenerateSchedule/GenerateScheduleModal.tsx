@@ -19,6 +19,7 @@ import { getCleanScheduleId, isValidPatternForApi } from "./useGenerateSchedule"
 import type { ApiScheduleRecord, Course, Room, ScheduleItem } from "../types";
 import { DAYS, GRID_HEADER_HEIGHT_PX, slotToTimeStr } from "../constants";
 import GenerationConstraintsStepper from "./GenerationConstraintsStepper";
+import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 
 interface SplitOperation {
   term_id: number;
@@ -1035,48 +1036,17 @@ export default function GenerateScheduleModal({
               <div className="flex-1 overflow-hidden p-3">
                 {previewLoading ? (
                   <div className="h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none">
-                    <div
-                      className="h-full grid"
-                      style={{
-                        gridTemplateColumns: "62px repeat(7, minmax(0, 1fr))",
-                        gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(24, minmax(0, 1fr))`,
-                      }}
+                    <WeeklyTimetableGrid
+                      days={DAYS}
+                      slotCount={24}
+                      headerHeight={GRID_HEADER_HEIGHT_PX}
+                      timeColumnWidth={62}
+                      minWidth={0}
+                      rowTemplate="repeat(24, minmax(0, 1fr))"
+                      className="h-full rounded-none border-0 shadow-none"
+                      getTimeLabel={slotToTimeStr}
                     >
-                      <div className="bg-gradient-to-b from-[#4e0a10] to-[#3d080c] border-r border-b border-[#c9952a]/30 p-1 font-black text-[9px] text-[#c9952a] text-center uppercase tracking-wider flex items-center justify-center">
-                        <Clock className="w-3 h-3 mr-1" />
-                        Time
-                      </div>
-                      {DAYS.map((day) => (
-                        <div
-                          key={day}
-                          className="border-r border-b p-1 font-bold text-[10px] text-center uppercase tracking-wider flex flex-col justify-center items-center bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
-                        >
-                          <span className="font-extrabold tracking-widest">
-                            {day}
-                          </span>
-                        </div>
-                      ))}
-                      {Array.from({ length: 24 }).map((_, slot) => (
-                        <div key={`loading-row-${slot}`} className="contents">
-                          {slot % 2 === 0 && (
-                            <div
-                              className="bg-slate-50/90 border-r border-b border-slate-200 text-[8px] font-bold text-slate-500 flex justify-center items-center px-1"
-                              style={{ gridColumn: 1, gridRow: `${slot + 2} / span 2` }}
-                            >
-                              <span className="font-extrabold text-slate-600 whitespace-nowrap">
-                                {slotToTimeStr(slot)}
-                              </span>
-                            </div>
-                          )}
-                          {DAYS.map((_, dayIndex) => (
-                            <div
-                              key={`loading-cell-${dayIndex}-${slot}`}
-                              className="border-r border-b border-slate-200 bg-white/80"
-                            />
-                          ))}
-                        </div>
-                      ))}
-                    </div>
+                    </WeeklyTimetableGrid>
 
                     <div className="absolute left-0 right-0 top-[48px] z-20 h-1 bg-slate-100">
                       <div
@@ -1131,63 +1101,17 @@ export default function GenerateScheduleModal({
                     </p>
                   </div>
                 ) : (
-                  <div
-                    className={`h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none ${splitValidating ? "opacity-70" : ""}`}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "62px repeat(7, minmax(0, 1fr))",
-                      gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(24, minmax(0, 1fr))`,
-                    }}
+                  <WeeklyTimetableGrid
+                    days={DAYS}
+                    slotCount={24}
+                    headerHeight={GRID_HEADER_HEIGHT_PX}
+                    timeColumnWidth={62}
+                    minWidth={0}
+                    rowTemplate="repeat(24, minmax(0, 1fr))"
+                    className={`h-full ${splitValidating ? "opacity-70" : ""}`}
+                    getTimeLabel={slotToTimeStr}
+                    getDayCount={(dayIndex) => previewGridSessions.filter((session) => session.dayIndex === dayIndex).length}
                   >
-                    <div
-                      className="bg-gradient-to-b from-[#4e0a10] to-[#3d080c] border-r border-b border-[#c9952a]/30 p-1 font-black text-[9px] text-[#c9952a] text-center uppercase tracking-wider select-none flex items-center justify-center"
-                      style={{ gridColumn: 1, gridRow: 1 }}
-                    >
-                      <Clock className="w-3 h-3 mr-1" />
-                      Time
-                    </div>
-
-                    {DAYS.map((day, dayIndex) => (
-                      <div
-                        key={day}
-                        className="border-r border-b p-1 font-bold text-[10px] text-center uppercase tracking-wider select-none flex flex-col justify-center items-center bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
-                        style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                      >
-                        <span className="font-extrabold tracking-widest">
-                          {day}
-                        </span>
-                        <span className="text-[8px] text-[#c9952a] font-extrabold mt-0.5 bg-[#c9952a]/15 border border-[#c9952a]/30 px-1.5 py-0.5 rounded-full">
-                          {previewGridSessions.filter((s) => s.dayIndex === dayIndex).length}
-                        </span>
-                      </div>
-                    ))}
-
-                    {Array.from({ length: 24 }).map((_, slot) => (
-                      <div key={`preview-row-${slot}`} className="contents">
-                        {slot % 2 === 0 && (
-                          <div
-                            className="bg-slate-50/90 border-r border-b border-slate-200 text-[8px] font-bold text-slate-500 flex justify-center items-center select-none px-1"
-                            style={{
-                              gridColumn: 1,
-                              gridRow: `${slot + 2} / span 2`,
-                            }}
-                          >
-                            <span className="font-extrabold text-slate-600 whitespace-nowrap">
-                              {slotToTimeStr(slot)}
-                            </span>
-                          </div>
-                        )}
-
-                        {DAYS.map((_, dayIndex) => (
-                          <div
-                            key={`preview-cell-${dayIndex}-${slot}`}
-                            className="border-r border-b border-slate-200 bg-white"
-                            style={{ gridColumn: dayIndex + 2, gridRow: slot + 2 }}
-                          />
-                        ))}
-                      </div>
-                    ))}
-
                     {previewGridSessions.map((session) => {
                       const inferredMeetingType = session.meetingType
                         ?? (Number(session.labHours ?? 0) > 0 ? "laboratory" : "lecture");
@@ -1255,7 +1179,7 @@ export default function GenerateScheduleModal({
                         </div>
                       );
                     })}
-                  </div>
+                  </WeeklyTimetableGrid>
                 )}
               </div>
 

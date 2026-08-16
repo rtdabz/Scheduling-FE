@@ -26,6 +26,7 @@ interface StoredUser {
   id?: number;
   name?: string;
   username?: string;
+  email?: string | null;
   role?: string;
   profile_picture?: string | null;
   photo?: string | null;
@@ -186,14 +187,14 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
     <div
       className={`
         fixed left-0 top-0 z-40 h-screen
-        bg-[#4e0a10] border-r border-white/5
+        bg-[#4e0a10]
         flex flex-col
         transition-all duration-300 ease-in-out
         ${isOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
       `}
     >
       {/* Background Campus Image with Maroon Overlay (reused from LoginPage) */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-y-0 left-0 w-[calc(100%+3rem)] pointer-events-none overflow-hidden [clip-path:polygon(0_0,100%_0,calc(100%_-_3rem)_4rem,calc(100%_-_3rem)_100%,0_100%)]">
         <img
           src={campusBg}
           alt="Campus Background"
@@ -207,7 +208,7 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
         type="button"
         onClick={onToggleSidebar}
         title={isOpen ? 'Collapse navigation menu' : 'Expand navigation menu'}
-        className="absolute -right-12 top-0 z-20 hidden h-16 w-12 items-start justify-start pt-3 pl-2.5 bg-[#4e0a10] text-[#E8D5C4] transition-all duration-200 hover:bg-[#C9952A] hover:text-white md:flex cursor-pointer [clip-path:polygon(0_0,_100%_0,_0_100%)] drop-shadow-lg"
+        className="absolute -right-12 top-0 z-20 hidden h-16 w-12 items-start justify-start pt-3 pl-2.5 bg-transparent text-[#E8D5C4] transition-all duration-200 hover:bg-[#C9952A]/90 hover:text-white md:flex cursor-pointer [clip-path:polygon(0_0,_100%_0,_0_100%)] drop-shadow-lg"
         aria-label={isOpen ? 'Collapse navigation menu' : 'Expand navigation menu'}
         aria-expanded={isOpen}
         aria-controls="primary-navigation"
@@ -424,7 +425,9 @@ export default function Sidebar({ isOpen, onClose, onToggleSidebar, navItems }: 
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <p className="text-sm font-bold leading-tight text-gray-800 truncate">{user?.name || 'Administrator'}</p>
-                  <p className="truncate text-xs font-medium text-gray-500">{user?.username || 'admin'}@tcc.edu.ph</p>
+                  <p className="truncate text-xs font-medium text-gray-500">
+                    {user?.email?.trim() || (user?.username?.includes('@') ? user.username : '')}
+                  </p>
                   <span className="mt-1 inline-flex w-fit rounded-full border border-[#4e0a10]/10 bg-[#4e0a10]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#7B1113]">
                     {formatRole(user?.role)}
                   </span>

@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ScheduleItem, Section } from "./types";
+import type { ApiDepartmentRecord, ScheduleItem, Section } from "./types";
 
 interface PrintScheduleProps {
   sections: Section[];
@@ -12,6 +12,7 @@ interface PrintScheduleProps {
   setIsPrintModalOpen: (value: boolean) => void;
   allSchedules: ScheduleItem[];
   selectedSectionId: string;
+  departments: ApiDepartmentRecord[];
 }
 
 interface AutoTableDocument extends jsPDF {
@@ -28,7 +29,6 @@ interface JsPdfDocumentWithPageInfo extends jsPDF {
 
 const ACADEMIC_YEAR = "2025-2026";
 const TERM = "2nd";
-const COLLEGE_OF = "INFORMATION TECHNOLOGY";
 const PAGE_TOP_Y = 15;
 const PAGE_FOOTER_Y = 192;
 const CONTENT_BOTTOM_Y = 185;
@@ -81,7 +81,16 @@ export default function PrintSchedule({
   setIsPrintModalOpen,
   allSchedules,
   selectedSectionId,
+  departments,
 }: PrintScheduleProps) {
+
+  const activeSection = sections.find((section) => section.id === selectedSectionId);
+  const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
+  const departmentLogoUrl = activeDepartment?.logo || null;
+  const departmentTitle = (() => {
+    const name = activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY";
+    return /^college\s+of\s+/i.test(name) ? name.toUpperCase() : `COLLEGE OF ${name.toUpperCase()}`;
+  })();
 
   let logoUrl = tccLogo;
   if (!tccLogo.startsWith("data:") && !tccLogo.startsWith("http:") && !tccLogo.startsWith("https:")) {
@@ -113,15 +122,14 @@ export default function PrintSchedule({
       });
     };
 
-    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl)])
-      .then(([logoImg, muniImg]) => {
-        generatePdf(logoImg, muniImg);
+    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl), departmentLogoUrl ? loadImgSafe(departmentLogoUrl) : Promise.resolve(null)])
+      .then(([logoImg, muniImg, departmentImg]) => {
+        generatePdf(logoImg, muniImg, departmentImg);
       });
   };
 
-  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null) => {
+  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, departmentImg: HTMLImageElement | null) => {
     const doc = new jsPDF({ orientation: "landscape", format: "a4" });
-
     // ── 1. Letterhead ──
     let logoWidth = 22;
     let logoHeight = 22;
@@ -194,17 +202,30 @@ export default function PrintSchedule({
     doc.setLineWidth(0.2);
     doc.line(underlineStartX, 43.7, underlineStartX + underlineWidth, 43.7);
 
-    // Dept Logo Placeholder Circle
-    doc.setDrawColor(204, 204, 204);
-    doc.setLineWidth(0.4);
-    doc.setLineDashPattern([2, 2], 0);
-    doc.ellipse(261, 24, 11, 11, "S");
-    doc.setLineDashPattern([], 0);
-
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(187, 187, 187);
-    doc.text("Dept\nLogo", 261, 22.5, { align: "center" });
+    if (departmentImg) {
+      const maxSize = 24;
+      const aspectRatio = departmentImg.naturalWidth / departmentImg.naturalHeight;
+      const departmentWidth = aspectRatio >= 1 ? maxSize : maxSize * aspectRatio;
+      const departmentHeight = aspectRatio >= 1 ? maxSize / aspectRatio : maxSize;
+      doc.addImage(
+        departmentImg,
+        departmentLogoUrl?.match(/image\/jpe?g|\.jpe?g(?:$|\?)/i) ? "JPEG" : "PNG",
+        261 - departmentWidth / 2,
+        24 - departmentHeight / 2,
+        departmentWidth,
+        departmentHeight,
+      );
+    } else {
+      doc.setDrawColor(204, 204, 204);
+      doc.setLineWidth(0.4);
+      doc.setLineDashPattern([2, 2], 0);
+      doc.ellipse(261, 24, 11, 11, "S");
+      doc.setLineDashPattern([], 0);
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(187, 187, 187);
+      doc.text("Dept\nLogo", 261, 22.5, { align: "center" });
+    }
 
     // Red line under letterhead
     doc.setDrawColor(123, 12, 23);
@@ -228,7 +249,7 @@ export default function PrintSchedule({
     doc.setTextColor(255, 255, 255);
     doc.setDrawColor(201, 149, 42);
     doc.setLineWidth(0.15);
-    doc.text(`COLLEGE OF ${COLLEGE_OF}`, 148.5, currentY + 5, { align: "center" });
+    doc.text(departmentTitle, 148.5, currentY + 5, { align: "center" });
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.4);
 
@@ -243,7 +264,6 @@ export default function PrintSchedule({
     currentY += 13;
 
     // Determine target sections belonging to the same department as the active section
-    const activeSection = sections.find((s) => s.id === selectedSectionId);
     const unfilteredSections = activeSection
       ? sections.filter((s) => s.departmentId === activeSection.departmentId)
       : sections;
@@ -331,10 +351,6 @@ export default function PrintSchedule({
         const isAdditionalMeeting = prevKey === itemKey;
         const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
 
-        const meetingBadge = subjectMeetingCount > 1
-          ? ` [Split ${item.meetingIndex ?? (isAdditionalMeeting ? 2 : 1)}]`
-          : "";
-
         return [
         ...(isAdditionalMeeting ? [] : [
           {
@@ -386,10 +402,10 @@ export default function PrintSchedule({
         },
         columnStyles: {
           0: { cellWidth: 267 * 0.11 },
-          1: { cellWidth: 267 * 0.31 },
+          1: { cellWidth: 267 * 0.295 },
           2: { cellWidth: 267 * 0.045, halign: 'center' },
           3: { cellWidth: 267 * 0.045, halign: 'center' },
-          4: { cellWidth: 267 * 0.045, halign: 'center' },
+          4: { cellWidth: 267 * 0.06, halign: 'center' },
           5: { cellWidth: 267 * 0.11, halign: 'center' },
           6: { cellWidth: 267 * 0.20, halign: 'center' },
           7: { cellWidth: 267 * 0.135, halign: 'center' }

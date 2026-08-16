@@ -27,7 +27,8 @@ import type {
   Section,
   Subject,
   Term,
-  UserSummary
+  UserSummary,
+  WithdrawalStage
 } from "../types";
 import { getSubjectTotalSlots } from "../types";
 
@@ -123,6 +124,13 @@ const departmentSubmittedStatuses: ScheduleItem["status"][] = [
   "approved",
   "faculty_assignment",
   "finalized"
+];
+
+const departmentWithdrawableStatuses: ScheduleItem["status"][] = [
+  "submitted",
+  "approved_by_dean",
+  "approved",
+  "faculty_assignment"
 ];
 
 
@@ -331,7 +339,7 @@ export const useScheduler = () => {
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const canWithdrawSubmission = ['secretary', 'program_head'].includes(user?.role?.toLowerCase() ?? '');
-  const schedulerCacheKey = `scheduler:v10:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v12:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -449,10 +457,10 @@ export const useScheduler = () => {
       }));
 
       const mappedFaculties = initialData.faculties
-        .filter((f) => isVpaa || !user?.department_id || Number(f.department_id) === Number(user.department_id))
         .map((f): Faculty => ({
         id: f.id.toString(),
         name: `${f.first_name} ${f.last_name}`,
+        profilePicture: f.profile_picture ?? null,
         employmentType: f.employment_type,
         departmentId: f.department_id,
         departmentCode: f.department?.department_code,
@@ -653,10 +661,10 @@ export const useScheduler = () => {
       }));
 
       const mappedFaculties = initialData.faculties
-        .filter((f) => isVpaa || !user?.department_id || Number(f.department_id) === Number(user.department_id))
         .map((f): Faculty => ({
           id: f.id.toString(),
           name: `${f.first_name} ${f.last_name}`,
+          profilePicture: f.profile_picture ?? null,
           employmentType: f.employment_type,
           departmentId: f.department_id,
           departmentCode: f.department?.department_code,
@@ -969,9 +977,16 @@ export const useScheduler = () => {
   const departmentHasSubmittedSchedule = departmentSectionProgress.some((section) =>
     departmentSubmittedStatuses.includes(section.status)
   );
-  const departmentHasPendingDeanSubmission = departmentSectionProgress.some((section) =>
-    section.status === "submitted"
+  const departmentHasWithdrawableSubmission = departmentSectionProgress.some((section) =>
+    departmentWithdrawableStatuses.includes(section.status)
   );
+  const departmentWithdrawalStage: WithdrawalStage = departmentSectionProgress.some((section) =>
+    section.status === "approved" || section.status === "faculty_assignment"
+  )
+    ? "vpaa_approved"
+    : departmentSectionProgress.some((section) => section.status === "approved_by_dean")
+      ? "vpaa_review"
+      : "dean_review";
   const departmentReadyToSubmit =
     departmentTotalSections > 0 &&
     departmentRemainingSections === 0 &&
@@ -1018,6 +1033,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     dragSubjectId,
     draggedScheduleId,
     rooms,
+    sections,
+    departments,
     subjects,
     faculties,
     fieldCourseAssignmentEnabled,
@@ -1915,13 +1932,18 @@ departmentSectionProgress.every((section) => section.status === "completed");
       const selectedRevisionSectionIds = new Set(sectionIds);
       setSchedules((prev) =>
         prev.map((item) =>
-          deptSectionIds.has(item.sectionId) && item.status === "submitted"
+          deptSectionIds.has(item.sectionId) && departmentWithdrawableStatuses.includes(item.status)
             ? { ...item, status: selectedRevisionSectionIds.has(item.sectionId) ? "revision" : "completed" }
             : item
         )
       );
 
-      toast.success("Submission Withdrawn", "Only the selected sections were unlocked for revision.");
+      toast.success(
+        "Submission Withdrawn",
+        departmentWithdrawalStage === "vpaa_approved"
+          ? "VPAA approval was revoked and only the selected sections were unlocked for revision."
+          : "Only the selected sections were unlocked for revision."
+      );
       refreshSchedules().catch(() => {});
       setIsWithdrawSubmissionModalOpen(false);
     } catch (err) {
@@ -2163,6 +2185,47 @@ departmentSectionProgress.every((section) => section.status === "completed");
       }
       const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
       toast.error("Failed to assign faculty", errMsg);
+    } finally {
+      setFacultyActionSlotId(null);
+    }
+  };
+
+  const handleBulkFacultyAssign = async (assignments: { scheduleIds: string[]; facultyId: string }[]): Promise<boolean> => {
+    if (assignments.length === 0 || facultyActionSlotId !== null) return false;
+
+    setFacultyActionSlotId("bulk");
+    try {
+      const updatedSchedules: ScheduleItem[] = [];
+      let assignedCount = 0;
+      for (const assignment of assignments) {
+        const faculty = faculties.find((item) => item.id === assignment.facultyId);
+        if (!faculty || assignment.scheduleIds.length === 0) {
+          throw new Error("An instructor or selected schedule is no longer available.");
+        }
+        for (const slotId of assignment.scheduleIds) {
+          const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
+          if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
+            throw new Error(targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "A selected schedule is no longer available.");
+          }
+
+          const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, {
+            faculty_id: Number(assignment.facultyId)
+          });
+          const data = response.data;
+          const rawList: ApiScheduleRecord[] = data.schedules ?? (data.schedule ? [data.schedule] : (data.id ? [data as ApiScheduleRecord] : []));
+          updatedSchedules.push(...rawList.map(mapApiScheduleToItem));
+          assignedCount += 1;
+        }
+      }
+
+      applyUpdatedSchedules(updatedSchedules);
+      toast.success("Auto-Assign Complete", `${assignedCount} schedule${assignedCount === 1 ? "" : "s"} assigned successfully.`);
+      void refreshSchedules();
+      return true;
+    } catch (err: unknown) {
+      toast.error("Auto-Assign Failed", getApiErrorMessage(err) || (err instanceof Error ? err.message : "The assignments could not be completed."));
+      void refreshSchedules();
+      return false;
     } finally {
       setFacultyActionSlotId(null);
     }
@@ -2464,7 +2527,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
     departmentRemainingSections,
     departmentReadyToSubmit,
     departmentHasSubmittedSchedule,
-    departmentHasPendingDeanSubmission,
+    departmentHasWithdrawableSubmission,
+    departmentWithdrawalStage,
     dropSubject,
     dropSubjectIsField,
     listCategories,
@@ -2495,6 +2559,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     handleAssignFaculty,
     handleRemoveFaculty,
     handleInlineFacultyAssign,
+    handleBulkFacultyAssign,
     handleRemoveInlineFaculty,
     handleAcceptedRecommendation,
     refreshSchedules,

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, CircleUserRound, KeyRound } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import campusBg from '../assets/campus-bg.jpg';
 import loginPattern from '../assets/login-pattern.jpg';
@@ -28,6 +28,55 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetToken, setResetToken] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmation, setResetConfirmation] = useState('');
+  const [isResetMode, setIsResetMode] = useState(false);
+
+  const navigateAfterLogin = (user: LoginResponse['user']) => {
+    const roleNames: Record<string, string> = { vpaa: 'VPAA', dean: 'Dean', secretary: 'Secretary', program_head: 'Program Head' };
+    toast.success('Login Successful', `Welcome back ${roleNames[user.role] || 'User'}!`);
+    navigate(user.role === 'dean' ? '/dean/dashboard' : user.role === 'secretary' ? '/secretary/dashboard' : user.role === 'program_head' ? '/program_head/dashboard' : '/dashboard');
+  };
+
+  const storeLogin = (response: LoginResponse) => {
+    clearDataCache();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
+    const storage = rememberMe ? localStorage : sessionStorage;
+    storage.setItem('token', response.token);
+    storage.setItem('user', JSON.stringify(response.user));
+    navigateAfterLogin(response.user);
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const googleCode = params.get('google_code');
+    const googleState = params.get('google_state');
+    const googleError = params.get('google_error');
+    const token = params.get('reset_token');
+    const email = params.get('email');
+    if (googleError) toast.error('Google Login Failed', googleError);
+    if (token && email) {
+      setResetToken(token);
+      setUsername(email);
+      setIsResetMode(true);
+    }
+    const expectedGoogleState = sessionStorage.getItem('google_oauth_state');
+    if (googleCode && googleState && expectedGoogleState && googleState === expectedGoogleState) {
+      api.post<LoginResponse>('/auth/google/exchange', { code: googleCode, state: googleState })
+        .then(({ data }) => storeLogin(data))
+        .catch((error: AxiosError<ApiErrorResponse>) => toast.error('Google Login Failed', error.response?.data?.message || 'The Google login request expired.'))
+        .finally(() => sessionStorage.removeItem('google_oauth_state'));
+    } else if (googleCode) {
+      toast.error('Google Login Failed', 'The Google login request did not originate from this browser.');
+    }
+    if (googleCode || googleState || googleError || token) window.history.replaceState({}, document.title, window.location.pathname);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,34 +84,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const res = await api.post<LoginResponse>('/login', { username: username.trim(), password });
-      clearDataCache();
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('user');
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem('token', res.data.token);
-      storage.setItem('user', JSON.stringify(res.data.user));
-      const roleNames: Record<string, string> = {
-        'vpaa': 'VPAA',
-        'dean': 'Dean',
-        'secretary': 'Secretary',
-        'program_head': 'Program Head',
-      };
-      const role = roleNames[res.data.user.role] || 'User';
-      toast.success('Login Successful', `Welcome back ${role}!`);
-
-      if (res.data.user.role === 'vpaa') {
-        navigate('/dashboard');
-      } else if (res.data.user.role === 'dean') {
-        navigate('/dean/dashboard');
-      } else if (res.data.user.role === 'secretary') {
-        navigate('/secretary/dashboard');
-      } else if (res.data.user.role === 'program_head') {
-        navigate('/program_head/dashboard');
-      } else {
-        navigate('/dashboard');
-      }
+      storeLogin(res.data);
     } catch (error) {
       const axiosError = error as AxiosError<ApiErrorResponse>;
       const message = axiosError.response?.data?.message
@@ -70,6 +92,42 @@ export default function LoginPage() {
       toast.error('Login Failed', message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const { data } = await api.get<{ url: string; state: string }>('/auth/google/redirect');
+      sessionStorage.setItem('google_oauth_state', data.state);
+      window.location.assign(data.url);
+    } catch (error) {
+      const axiosError = error as AxiosError<ApiErrorResponse>;
+      toast.error('Google Login Unavailable', axiosError.response?.data?.message || 'Google login is not configured.');
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { data } = await api.post<{ message: string }>('/forgot-password', { email: forgotEmail.trim() });
+      toast.success('Check your email', data.message);
+      setShowForgot(false);
+    } catch (error) {
+      const axiosError = error as AxiosError<ApiErrorResponse>;
+      toast.error('Unable to send reset link', axiosError.response?.data?.message || 'Enter a valid email address.');
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { data } = await api.post<{ message: string }>('/reset-password', { token: resetToken, email: username, password: resetPassword, password_confirmation: resetConfirmation });
+      toast.success('Password updated', data.message);
+      setIsResetMode(false);
+      setPassword('');
+    } catch (error) {
+      const axiosError = error as AxiosError<ApiErrorResponse>;
+      toast.error('Password reset failed', axiosError.response?.data?.message || 'Use a stronger password and try again.');
     }
   };
 
@@ -120,16 +178,22 @@ export default function LoginPage() {
             className="text-text font-display text-3xl font-bold mb-2"
             style={{ animationDelay: '0.1s' }}
           >
-            Welcome back
+            {isResetMode ? 'Reset your password' : 'Welcome back'}
           </h3>
           <p 
             className="text-muted text-sm mb-8"
             style={{ animationDelay: '0.2s' }}
           >
-            Sign in to your administrator account
+            {isResetMode ? 'Choose a new password for your WICARS account' : 'Sign in to your administrator account'}
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
+          {isResetMode ? (
+            <form onSubmit={handleResetPassword} className="space-y-5">
+              <input type="password" required minLength={10} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="New password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
+              <input type="password" required minLength={10} value={resetConfirmation} onChange={(e) => setResetConfirmation(e.target.value)} placeholder="Confirm new password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
+              <button type="submit" className="w-full h-12 bg-primary text-white font-semibold rounded-xl">Update password</button>
+            </form>
+          ) : <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
             {/* Username Floating Label Input */}
             <div className="relative pt-1">
               <input
@@ -187,7 +251,7 @@ export default function LoginPage() {
 
             {/* Remember Me */}
             <div className="flex items-center justify-between mt-5 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-text">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-text">
                 <input
                   type="checkbox"
                   checked={rememberMe}
@@ -198,6 +262,7 @@ export default function LoginPage() {
               </label>
             </div>
 
+            <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-primary hover:underline flex items-center gap-1"><KeyRound className="h-4 w-4" /> Forgot password?</button>
             <div className="pt-2">
               <button
                 type="submit"
@@ -217,7 +282,9 @@ export default function LoginPage() {
                 <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent,rgba(255,255,255,0.1),transparent)] bg-[length:200%_100%] animate-shimmer opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
             </div>
-          </form>
+            <div className="relative flex items-center py-2"><div className="grow border-t border-gray-300" /><span className="px-3 text-xs text-muted">OR</span><div className="grow border-t border-gray-300" /></div>
+            <button type="button" onClick={handleGoogleLogin} className="w-full h-12 bg-white border border-gray-300 text-text font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50"><CircleUserRound className="h-5 w-5" /> Continue with Google</button>
+          </form>}
 
           <div 
             className="mt-8 flex items-center justify-center gap-2 text-xs text-muted"
@@ -227,6 +294,7 @@ export default function LoginPage() {
             <span>Authorized personnel only</span>
           </div>
         </div>
+        {showForgot && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={handleForgotPassword} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"><h4 className="text-xl font-bold text-text">Reset password</h4><p className="text-sm text-muted">Enter the email assigned by VPAA.</p><input type="email" required value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Institutional email" className="w-full h-12 px-4 border border-gray-300 rounded-xl" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowForgot(false)} className="px-4 py-2 text-sm">Cancel</button><button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg text-sm">Send link</button></div></form></div>}
       </div>
     </div>
   );

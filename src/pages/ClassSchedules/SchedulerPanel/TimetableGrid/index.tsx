@@ -1,15 +1,15 @@
 import React, { useState } from "react";
-import { AlertTriangle, BookOpen, Calendar, Clock, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
-  SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
 import type { ConflictInfo, ScheduleItem, Room, Section, Subject, Term } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 import Skeleton from "../../../../components/ui/Skeleton";
+import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 
 interface TimetableGridProps {
   sections: Section[];
@@ -199,90 +199,40 @@ export default function TimetableGrid({
           </div>
         ) : (
           <div className="overflow-x-auto overflow-y-hidden p-4 flex-1 min-h-0 flex flex-col">
-            <div
-              className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none flex-1 min-w-[900px]"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "80px repeat(7, minmax(0, 1fr))",
-                gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(24, minmax(0, 1fr))`
+            <WeeklyTimetableGrid
+              days={DAYS}
+              slotCount={24}
+              headerHeight={GRID_HEADER_HEIGHT_PX}
+              rowTemplate="repeat(24, minmax(0, 1fr))"
+              minWidth={900}
+              className="flex-1"
+              disabledDayIndexes={isSummerTerm ? [5, 6] : []}
+              getTimeLabel={slotToTimeStr}
+              getDayCount={getClassesCountForDay}
+              renderCell={(d, t) => {
+                const cellKey = `${d}-${t}`;
+                const isHovered = hoveredCell === cellKey;
+                const hasConflict = isHovered && getDragOverConflict(d, t);
+
+                return (
+                  <GridCell
+                    key={`cell-${d}-${t}`}
+                    dayIndex={d}
+                    timeIndex={t}
+                    isHovered={isHovered}
+                    hasConflict={hasConflict}
+                    isEditable={isEditable}
+                    isPhase2Active={isPhase2Active}
+                    isPlacementMode={isPlacementMode}
+                    isSummerDisabled={isSummerTerm && d >= 5}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onCellClick={handleCellClick}
+                  />
+                );
               }}
             >
-              <div
-                className="bg-gradient-to-b from-[#4e0a10] to-[#3d080c] border-r border-b border-[#c9952a]/30 p-2 font-black text-[10px] text-[#c9952a] text-center uppercase tracking-wider select-none flex items-center justify-center sticky top-0 left-0 z-30"
-                style={{ gridColumn: 1, gridRow: 1 }}
-              >
-                <Clock className="w-3.5 h-3.5 mr-1" />
-                Time
-              </div>
-
-              {DAYS.map((day, dIdx) => {
-                const isWeekend = dIdx >= 5;
-                const isDisabledDay = isSummerTerm && isWeekend;
-                return (
-                  <div
-                    key={day}
-                    className={`border-r border-b p-1.5 font-bold text-xs text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20 ${isDisabledDay
-                        ? "bg-slate-800/90 text-slate-500 border-slate-700/30"
-                        : "bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white border-[#c9952a]/20 border-b-[#c9952a]/30"
-                      }`}
-                    style={{ gridColumn: dIdx + 2, gridRow: 1 }}
-                  >
-                    <span className={`font-extrabold tracking-widest ${isDisabledDay ? "text-slate-500" : "text-white"}`}>{day}</span>
-                    {isDisabledDay ? (
-                      <span className="text-[8px] font-black mt-0.5 bg-slate-900/60 text-slate-400 px-1.5 py-0.5 rounded-full border border-slate-800/40">
-                        N/A
-                      </span>
-                    ) : (
-                      <span className="text-[8.5px] text-[#c9952a] font-extrabold mt-0.5 bg-[#c9952a]/15 border border-[#c9952a]/30 px-2 py-0.5 rounded-full shadow-sm">
-                        {getClassesCountForDay(dIdx)} {getClassesCountForDay(dIdx) === 1 ? "Class" : "Classes"}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-
-              {Array.from({ length: 24 }).map((_, t) => (
-                <React.Fragment key={`row-${t}`}>
-                  {t % 2 === 0 && (
-                    <div
-                      className="bg-slate-50/90 border-r border-b border-slate-200 text-[9px] font-bold text-slate-500 flex flex-col justify-center items-center select-none sticky left-0 z-10 px-1"
-                      style={{
-                        gridColumn: 1,
-                        gridRow: `${t + 2} / span 2`
-                      }}
-                    >
-                      <span className="font-extrabold text-slate-600 whitespace-nowrap">
-                        {slotToTimeStr(t)}
-                      </span>
-                    </div>
-                  )}
-
-                  {DAYS.map((_, d) => {
-                    const cellKey = `${d}-${t}`;
-                    const isHovered = hoveredCell === cellKey;
-                    const hasConflict = isHovered && getDragOverConflict(d, t);
-
-                    return (
-                      <GridCell
-                        key={`cell-${d}-${t}`}
-                        dayIndex={d}
-                        timeIndex={t}
-                        isHovered={isHovered}
-                        hasConflict={hasConflict}
-                        isEditable={isEditable}
-                        isPhase2Active={isPhase2Active}
-                        isPlacementMode={isPlacementMode}
-                        isSummerDisabled={isSummerTerm && d >= 5}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onCellClick={handleCellClick}
-                      />
-                    );
-                  })}
-                </React.Fragment>
-              ))}
-
               {isLoading ? (
                 [
                   { id: 'sk-grid-1', dayIndex: 0, startSlot: 2, durationSlots: 4 },
@@ -336,7 +286,7 @@ export default function TimetableGrid({
                   );
                 })
               )}
-            </div>
+            </WeeklyTimetableGrid>
           </div>
         )}
       </div>

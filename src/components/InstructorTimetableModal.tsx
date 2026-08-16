@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Calendar, Clock, Loader2, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react";
+import { Calendar, Loader2, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react";
 import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
 import { getCachedData, loadCachedData } from "../lib/dataCache";
+import WeeklyTimetableGrid from "./scheduling/WeeklyTimetableGrid";
 
 interface ApiScheduleRecord {
   id: number;
@@ -120,16 +121,6 @@ const getGridCardStyles = (category: "major" | "minor") => {
   };
 };
 
-const STATIC_TIME_LABELS: string[] = Array.from({ length: 24 }, (_, slotIndex) => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  let hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const ampm = hours >= 12 ? "PM" : "AM";
-  if (hours > 12) hours -= 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
-});
-
 export default function InstructorTimetableModal({
   facultyId,
   facultyName,
@@ -143,26 +134,6 @@ export default function InstructorTimetableModal({
   const [schedules, setSchedules] = useState<TimetableSlotItem[]>([]);
 
   const slotHeight = isComfortView ? 34 : 26;
-
-  const memoizedGridCells = useMemo(() => (
-    Array.from({ length: 24 }).map((_, slotIdx) => (
-      <React.Fragment key={slotIdx}>
-        <div
-          className="bg-slate-50/90 border-r border-b border-slate-200 text-[10px] font-bold text-slate-400 text-right select-none flex items-center justify-end pr-2 sticky left-0 z-10"
-          style={{ gridColumn: 1, gridRow: slotIdx + 2 }}
-        >
-          {STATIC_TIME_LABELS[slotIdx]}
-        </div>
-        {DAYS.map((_, dIdx) => (
-          <div
-            key={dIdx}
-            className="border-r border-b border-slate-100 bg-white pointer-events-none"
-            style={{ gridColumn: dIdx + 2, gridRow: slotIdx + 2 }}
-          />
-        ))}
-      </React.Fragment>
-    ))
-  ), []);
 
   useEffect(() => {
     if (!isOpen || !facultyId) return;
@@ -496,40 +467,15 @@ export default function InstructorTimetableModal({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <div
-                className="min-w-[900px] border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "80px repeat(7, minmax(0, 1fr))",
-                  gridTemplateRows: `40px repeat(24, ${slotHeight}px)`
-                }}
+              <WeeklyTimetableGrid
+                days={DAYS}
+                slotCount={24}
+                slotHeight={slotHeight}
+                headerHeight={40}
+                minWidth={900}
+                getTimeLabel={slotToTimeStr12h}
+                getDayCount={getClassesCountForDay}
               >
-                {/* Time Header */}
-                <div
-                  className="bg-[#4e0a10]/5 border-r border-b border-slate-200 p-2 font-bold text-[10px] text-[#4e0a10] text-center uppercase tracking-wider select-none flex items-center justify-center sticky top-0 left-0 z-30"
-                  style={{ gridColumn: 1, gridRow: 1 }}
-                >
-                  <Clock className="w-3.5 h-3.5 mr-1" />
-                  Time
-                </div>
-
-                {/* Day Column Headers */}
-                {DAYS.map((day, dIdx) => (
-                  <div
-                    key={day}
-                    className="bg-[#4e0a10]/5 border-r border-b border-slate-200 p-1.5 font-bold text-xs text-slate-700 text-center uppercase tracking-wider select-none flex flex-col justify-center items-center sticky top-0 z-20"
-                    style={{ gridColumn: dIdx + 2, gridRow: 1 }}
-                  >
-                    <span className="text-slate-800 font-extrabold">{day}</span>
-                    <span className="text-[9px] text-slate-500 font-bold mt-0.5 bg-white/60 px-1.5 py-0.5 rounded-full border border-slate-100">
-                      {getClassesCountForDay(dIdx)} {getClassesCountForDay(dIdx) === 1 ? "Class" : "Classes"}
-                    </span>
-                  </div>
-                ))}
-
-                {/* Empty Grid Cells */}
-                {memoizedGridCells}
-
                 {/* Schedule Cards placed using CSS Grid matching Schedule Builder ScheduleCard */}
                 {schedules.map((schedule) => {
                   const cardStyles = getGridCardStyles(schedule.category);
@@ -573,7 +519,7 @@ export default function InstructorTimetableModal({
                     </div>
                   );
                 })}
-              </div>
+              </WeeklyTimetableGrid>
             </div>
           )}
         </div>

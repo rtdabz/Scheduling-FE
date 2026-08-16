@@ -94,7 +94,7 @@ const ScheduleCard = memo(function ScheduleCard({
         onClick={() => onCardClick(schedule.id)}
         className={`w-full rounded-xl border-2 border-l-4 box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible p-2.5 px-3 ${
           slotHeight ? "" : "h-full"
-        } ${gridStyles.container} ${
+        } ${isAwaitingFaculty ? "pb-8" : ""} ${gridStyles.container} ${
           isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
         } ${
           conflict
@@ -258,9 +258,12 @@ const ScheduleCard = memo(function ScheduleCard({
         </div>
 
         {isAwaitingFaculty && (
-          <div className="absolute left-0 right-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-b-xl py-1 shadow-sm text-[10px]">
-            <UserPlus className="w-3 h-3" />
-            <span>Tap to Assign Faculty</span>
+          <div
+            className="absolute bottom-1.5 right-1.5 flex h-6 items-center gap-1 rounded-lg border border-orange-600/20 bg-orange-500 px-2 text-[9px] font-bold text-white shadow-sm transition-colors group-hover:bg-orange-600"
+            title="Assign faculty"
+          >
+            <UserPlus className="h-3 w-3 shrink-0" />
+            <span>Assign Faculty</span>
           </div>
         )}
       </div>
@@ -276,7 +279,11 @@ const ScheduleCard = memo(function ScheduleCard({
       className={`w-full rounded-xl border-2 border-l-4 box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible ${
         slotHeight ? "" : "h-full"
       } ${
-        isCompact ? "p-1 px-1.5" : isMedium ? "p-1.5 px-2" : "p-2 px-2.5"
+        isCompact
+          ? `p-1 px-1.5 ${isAwaitingFaculty ? "pr-7" : ""}`
+          : isMedium
+          ? `p-1.5 px-2 ${isAwaitingFaculty ? "pb-7" : ""}`
+          : `p-2 px-2.5 ${isAwaitingFaculty ? "pb-7" : ""}`
       } ${gridStyles.container} ${
         isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
       } ${
@@ -474,15 +481,14 @@ const ScheduleCard = memo(function ScheduleCard({
       </div>
 
       {isAwaitingFaculty && (
-        <div className={`absolute left-0 right-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-b-xl py-1 shadow-sm ${
-          isCompact ? "h-1 py-0 overflow-hidden" : "text-[10px] py-1"
-        }`}>
-          {!isCompact && (
-            <>
-              <UserPlus className="w-3 h-3" />
-              <span>Tap to Assign Faculty</span>
-            </>
-          )}
+        <div
+          className={`absolute bottom-1 right-1 flex items-center justify-center rounded-lg border border-orange-600/20 bg-orange-500 font-bold text-white shadow-sm transition-colors group-hover:bg-orange-600 ${
+            isCompact ? "h-5 w-5" : "h-5 gap-1 px-1.5 text-[8.5px]"
+          }`}
+          title="Assign faculty"
+        >
+          <UserPlus className="h-3 w-3 shrink-0" />
+          {!isCompact && <span>Assign Faculty</span>}
         </div>
       )}
     </div>

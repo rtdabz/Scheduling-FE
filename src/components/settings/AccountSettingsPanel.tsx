@@ -8,6 +8,7 @@ import { clearDataCache } from '../../lib/dataCache';
 interface StoredUser {
   name?: string;
   username?: string;
+  email?: string | null;
   role?: string;
 }
 
@@ -68,7 +69,9 @@ export default function AccountSettingsPanel() {
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-slate-900">{user?.name || 'Administrator'}</h2>
-            <p className="truncate text-xs leading-5 text-slate-600">{user?.username || 'admin'}@tcc.edu.ph</p>
+            <p className="truncate text-xs leading-5 text-slate-600">
+              {user?.email?.trim() || (user?.username?.includes('@') ? user.username : '')}
+            </p>
             <span className="mt-1 inline-flex w-fit rounded-full border border-[#4e0a10]/10 bg-[#4e0a10]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#7B1113]">
               {formatRole(user?.role)}
             </span>

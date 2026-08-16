@@ -8,6 +8,8 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import Skeleton from './Skeleton';
+import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
+import TimetableCardTooltip from '../scheduling/TimetableCardTooltip';
 
 interface Department {
   id: number;
@@ -60,6 +62,8 @@ interface RoomDetailContentProps {
   schedules: Schedule[];
   isLoading: boolean;
 }
+
+const ROOM_WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 
 const formatTime = (timeStr: string) => {
   if (!timeStr) return '';
@@ -387,30 +391,17 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
         {viewMode === 'grid' ? (
           <div className="flex-1 flex flex-col min-h-0 p-6">
             <div className="flex-1 overflow-x-auto rounded-2xl border border-gray-200 shadow-inner min-h-0">
-              <div className="min-w-[1000px] h-full bg-white relative flex flex-row overflow-y-auto scrollbar-thin">
-                
-                {/* Sticky Left Corner & Time Column */}
-                <div className="w-20 shrink-0 sticky left-0 z-20 bg-gray-50 select-none border-r border-gray-200">
-                  <div className="sticky top-0 left-0 z-40 h-10 border-b border-gray-200 bg-gray-100 flex items-center justify-center font-extrabold text-[9px] uppercase tracking-wider text-gray-500">
-                    Time
-                  </div>
-                  {timeSlots.map((slot, index) => (
-                    <div
-                      key={index}
-                      className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[9px] font-semibold text-gray-400 bg-gray-50/90"
-                    >
-                      {slot.label.includes(":00") ? (
-                        <span className="font-bold text-gray-600">{slot.label}</span>
-                      ) : (
-                        <span className="text-gray-400 font-medium text-[8px]">{slot.label}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Days Columns */}
-                <div className="flex-1 flex flex-row relative">
-                  {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day) => {
+              <WeeklyTimetableGrid
+                days={ROOM_WEEK_DAYS}
+                slotCount={timeSlots.length}
+                headerHeight={48}
+                timeColumnWidth={80}
+                slotHeight={24}
+                minWidth={1000}
+                getTimeLabel={(slot) => timeSlots[slot]?.label ?? ''}
+                getDayCount={(dayIndex) => schedules.filter((schedule) => schedule.room_id === room.id && schedule.day === ROOM_WEEK_DAYS[dayIndex]).length}
+              >
+                  {ROOM_WEEK_DAYS.map((day, dayIndex) => {
                     const daySchedules = schedules.filter(
                       (s) => s.room_id === room.id && s.day === day
                     );
@@ -420,39 +411,16 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
                     const isCurrentDay = shortDayName === currentDayName;
 
                     return (
-                      <div
-                        key={day}
-                        className={`flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[130px] transition-colors duration-250 ${
-                          isCurrentDay ? 'bg-red-500/[0.015]' : ''
-                        }`}
-                      >
-                        {/* Sticky Day Column Header */}
-                        <div
-                          className={`sticky top-0 z-10 h-10 border-b border-gray-200 flex flex-col items-center justify-center select-none ${
-                            isCurrentDay
-                              ? 'bg-red-50/95 text-[#5A1220] font-black border-b-2 border-b-red-500 shadow-sm'
-                              : 'bg-gray-50 text-gray-700 font-bold'
-                          }`}
-                        >
-                          <span className="font-bold text-xs uppercase tracking-wider">{shortDayName}</span>
-                          <span className="text-[8px] font-extrabold opacity-75">
-                            {daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}
-                          </span>
-                        </div>
-
-                        {/* Column Body Grid */}
-                        <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
-                          {timeSlots.map((_, index) => (
-                            <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />
-                          ))}
-
+                      <React.Fragment key={day}>
                           {/* Google Calendar Time Indicator Line */}
                           {isCurrentDay && currentDayTimeTop !== null && (
                             <div
-                              className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center"
-                              style={{ top: `${currentDayTimeTop}px` }}
+                              className="relative z-20 pointer-events-none"
+                              style={{ gridColumn: dayIndex + 2, gridRow: `2 / span ${timeSlots.length}` }}
                             >
-                              <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
+                              <div className="absolute left-0 right-0 border-t-2 border-red-500 flex items-center" style={{ top: `${currentDayTimeTop}px` }}>
+                                <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
+                              </div>
                             </div>
                           )}
 
@@ -460,7 +428,6 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
                           {daySchedules.map((schedule) => {
                             const startIdx = parseTimeToSlotIndex(schedule.start_time);
                             const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                            const top = startIdx * 24;
                             const height = (endIdx - startIdx) * 24;
                             const layout = layouts.find((item) => item.schedule.id === schedule.id);
                             
@@ -472,12 +439,13 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
                             return (
                               <div
                                 key={schedule.id}
-                                className={`group absolute rounded-xl border border-l-4 p-2 overflow-hidden text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all duration-200 hover:scale-[1.02] hover:shadow-md hover:z-25 border-l-600 ${getDeptStyles(deptCode)}`}
+                                className={`group z-10 m-0.5 rounded-xl border-2 border-l-4 p-2 overflow-visible text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all duration-150 hover:scale-[1.02] hover:shadow-md hover:z-30 ${getDeptStyles(deptCode)}`}
                                 style={{
-                                  top: `${top + 1}px`,
-                                  height: `${height - 2}px`,
-                                  left: left,
-                                  width: `calc(${width} - 2px)`,
+                                  gridColumn: dayIndex + 2,
+                                  gridRow: `${startIdx + 2} / span ${Math.max(1, endIdx - startIdx)}`,
+                                  height: `${Math.max(24, height) - 4}px`,
+                                  marginLeft: `calc(${left} + 2px)`,
+                                  width: `calc(${width} - 4px)`,
                                   fontSize: '9px',
                                   lineHeight: '1.2'
                                 }}
@@ -497,7 +465,7 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
                                 </div>
 
                                 {/* Details Body */}
-                                <div className="mt-1 flex-1 flex flex-col justify-end opacity-85 text-[8px] font-bold text-gray-500 space-y-0.5">
+                                <div className="mt-1 flex-1 flex flex-col justify-end text-[8px] font-bold text-slate-600 space-y-0.5 min-w-0">
                                   <p className="truncate font-black text-[#5A1220]">{schedule.section?.section_name}</p>
                                   <p className="truncate text-slate-800">
                                     👤 {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
@@ -507,60 +475,22 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
                                   </p>
                                 </div>
 
-                                {/* Interactive Hover Popover Tooltip */}
-                                <div className={`absolute hidden group-hover:flex flex-col gap-2.5 z-40 w-72 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 font-sans text-xs text-gray-705 pointer-events-none select-none animate-in fade-in zoom-in-95 duration-150 border-l-4 ${getDeptStyles(deptCode)} ${
-                                  ['Thursday', 'Friday', 'Saturday'].includes(day) ? 'right-full mr-2.5 top-0' : 'left-full ml-2.5 top-0'
-                                }`}>
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-extrabold text-sm text-gray-900">
-                                      {schedule.course?.course_code || 'Subject'}
-                                    </span>
-                                    <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider ${
-                                      isLab
-                                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                                        : 'bg-slate-100 text-slate-850 border border-slate-200'
-                                    }`}>
-                                      {isLab ? 'Laboratory' : 'Lecture'}
-                                    </span>
-                                  </div>
-                                  
-                                  <p className="font-bold text-gray-800 text-xs">
-                                    {schedule.course?.course_name || 'No course name'}
-                                  </p>
-
-                                  <div className="border-t border-gray-100 pt-2 space-y-1.5 text-gray-500">
-                                    <div className="flex justify-between">
-                                      <span className="font-semibold">Instructor:</span>
-                                      <span className="font-bold text-gray-800">
-                                        {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="font-semibold">Section:</span>
-                                      <span className="font-bold text-gray-800">{schedule.section?.section_name}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="font-semibold">Building/Room:</span>
-                                      <span className="font-bold text-gray-800">
-                                        {room.building || 'Main'} &bull; {room.room_code}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="font-semibold">Schedule Time:</span>
-                                      <span className="font-bold text-[#5A1220]">{formatTime(schedule.start_time)} - {formatTime(schedule.end_time)}</span>
-                                    </div>
-                                  </div>
-                                </div>
+                                <TimetableCardTooltip
+                                  code={schedule.course?.course_code || 'Subject'}
+                                  name={`${schedule.course?.course_name || 'No course name'} (${schedule.section?.section_name || 'Unassigned section'})`}
+                                  instructor={schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
+                                  location={`${room.building || 'Main'} - ${room.room_code}`}
+                                  time={`${formatTime(schedule.start_time)} - ${formatTime(schedule.end_time)}`}
+                                  badge={isLab ? 'Laboratory' : 'Lecture'}
+                                  align={['Thursday', 'Friday', 'Saturday'].includes(day) ? 'right' : 'left'}
+                                />
                               </div>
                             );
                           })}
-                        </div>
-                      </div>
+                      </React.Fragment>
                     );
                   })}
-                </div>
-
-              </div>
+              </WeeklyTimetableGrid>
             </div>
           </div>
         ) : (

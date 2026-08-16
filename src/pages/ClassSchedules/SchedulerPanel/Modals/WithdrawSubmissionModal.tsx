@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, X } from "lucide-react";
-import type { DepartmentSectionProgress } from "../types";
+import type { DepartmentSectionProgress, WithdrawalStage } from "../types";
 
 interface WithdrawSubmissionModalProps {
   isOpen: boolean;
   sections: DepartmentSectionProgress[];
   selectedSectionId: string;
+  withdrawalStage: WithdrawalStage;
   isWithdrawing: boolean;
   onConfirm: (sectionIds: string[]) => void;
   onCancel: () => void;
@@ -15,29 +16,48 @@ export default function WithdrawSubmissionModal({
   isOpen,
   sections,
   selectedSectionId,
+  withdrawalStage,
   isWithdrawing,
   onConfirm,
   onCancel,
 }: WithdrawSubmissionModalProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setSelectedIds(selectedSectionId ? [selectedSectionId] : []);
-  }, [isOpen, selectedSectionId]);
-
   const selectableSections = useMemo(
-    () => sections.filter((section) => section.status === "submitted"),
+    () => sections.filter((section) => ["submitted", "approved_by_dean", "approved", "faculty_assignment"].includes(section.status)),
     [sections]
   );
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const selectedSectionIsWithdrawable = selectableSections.some(
+      (section) => section.sectionId === selectedSectionId
+    );
+    setSelectedIds(selectedSectionIsWithdrawable ? [selectedSectionId] : []);
+  }, [isOpen, selectedSectionId, selectableSections]);
+
   if (!isOpen) return null;
+
+  const withdrawalDescription = withdrawalStage === "vpaa_approved"
+    ? "VPAA approval will be revoked. Sections you select below will be unlocked for revision; unselected sections will return to Done."
+    : `The department submission will be pulled back from ${withdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review. Sections you select below will be unlocked for revision; unselected sections remain Done.`;
 
   const toggleSection = (sectionId: string) => {
     setSelectedIds((current) =>
       current.includes(sectionId)
         ? current.filter((id) => id !== sectionId)
         : [...current, sectionId]
+    );
+  };
+
+  const allSectionsSelected = selectableSections.length > 0
+    && selectableSections.every((section) => selectedIds.includes(section.sectionId));
+
+  const toggleAllSections = () => {
+    setSelectedIds(
+      allSectionsSelected
+        ? []
+        : selectableSections.map((section) => section.sectionId)
     );
   };
 
@@ -52,7 +72,7 @@ export default function WithdrawSubmissionModal({
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b0f1a]">Schedule Submission</p>
             <h3 className="mt-1 text-base font-bold leading-6 text-slate-950">Withdraw Selected Sections?</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              The department submission will be pulled back from Dean review. Sections you select below will be unlocked for revision; unselected sections remain Done.
+              {withdrawalDescription}
             </p>
           </div>
           <button
@@ -72,32 +92,51 @@ export default function WithdrawSubmissionModal({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             Select only the sections that need changes. All other sections will stay completed.
           </div>
-          <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
-            {selectableSections.map((section) => {
-              const checked = selectedIds.includes(section.sectionId);
-              return (
-                <button
-                  key={section.sectionId}
-                  type="button"
-                  onClick={() => toggleSection(section.sectionId)}
-                  className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 transition-colors ${
-                    checked ? "bg-[#4e0a10]/5" : "bg-white hover:bg-slate-50"
-                  }`}
-                >
-                  <span>
-                    <span className="block text-sm font-bold text-slate-800">{section.sectionName}</span>
-                    <span className="mt-0.5 block text-xs font-medium text-slate-500">
-                      {section.plottedSubjects}/{section.requiredSubjects} subjects plotted
+          <div className="overflow-hidden rounded-xl border border-slate-200">
+            <label className="flex cursor-pointer items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+              <span className="text-xs font-bold text-slate-700">
+                {allSectionsSelected ? "Clear all" : "Select all"}
+              </span>
+              <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                {selectedIds.length} of {selectableSections.length} selected
+                <input
+                  type="checkbox"
+                  checked={allSectionsSelected}
+                  onChange={toggleAllSections}
+                  disabled={isWithdrawing || selectableSections.length === 0}
+                  className="h-4 w-4 cursor-pointer accent-[#4e0a10] disabled:cursor-not-allowed"
+                  aria-label={allSectionsSelected ? "Clear all sections" : "Select all sections"}
+                />
+              </span>
+            </label>
+            <div className="max-h-72 overflow-y-auto">
+              {selectableSections.map((section) => {
+                const checked = selectedIds.includes(section.sectionId);
+                return (
+                  <button
+                    key={section.sectionId}
+                    type="button"
+                    onClick={() => toggleSection(section.sectionId)}
+                    disabled={isWithdrawing}
+                    className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      checked ? "bg-[#4e0a10]/5" : "bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <span>
+                      <span className="block text-sm font-bold text-slate-800">{section.sectionName}</span>
+                      <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                        {section.plottedSubjects}/{section.requiredSubjects} subjects plotted
+                      </span>
                     </span>
-                  </span>
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${
-                    checked ? "border-[#4e0a10] bg-[#4e0a10] text-white" : "border-slate-300 bg-white text-transparent"
-                  }`}>
-                    <CheckCircle2 size={15} />
-                  </span>
-                </button>
-              );
-            })}
+                    <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${
+                      checked ? "border-[#4e0a10] bg-[#4e0a10] text-white" : "border-slate-300 bg-white text-transparent"
+                    }`}>
+                      <CheckCircle2 size={15} />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -109,7 +148,7 @@ export default function WithdrawSubmissionModal({
             className="border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50"
             style={{ borderRadius: 8 }}
           >
-            Keep Submitted
+            {withdrawalStage === "vpaa_approved" ? "Keep VPAA Approval" : "Keep Submitted"}
           </button>
           <button
             type="button"

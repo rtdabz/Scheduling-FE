@@ -5,7 +5,6 @@ import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConi
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
-import AccountSettingsPanel from '../../components/settings/AccountSettingsPanel';
 
 interface SchedulingSettings {
   department_id: number;
@@ -279,9 +278,6 @@ export default function SecretarySettings() {
   };
   return (
     <div className="min-h-full bg-[#f7f8fa] p-1">
-      <div className="mb-3">
-        <AccountSettingsPanel />
-      </div>
       <section className="mb-3 border border-slate-200 bg-white px-5 py-5 shadow-sm" style={{ borderRadius: 10 }}>
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div className="flex min-w-0 items-start gap-3">

@@ -23,6 +23,7 @@ import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
+import WeeklyTimetableGrid, { WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
 
 interface ScheduleApproval {
   id: number;
@@ -1061,39 +1062,20 @@ export default function VpaaScheduleApprovalPage() {
                   The selected section has no schedule entries.
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 flex flex-col border border-gray-200 rounded-xl overflow-hidden w-full overflow-x-auto overscroll-contain">
-                  <div className="grid grid-cols-[80px_repeat(7,1fr)] bg-gray-50 border-b border-gray-200 text-xs text-center font-bold text-gray-500 min-w-[750px] shrink-0">
-                    <div className="bg-gray-50 border-r border-gray-200 p-2.5 sticky left-0 z-20 text-right pr-3">Time</div>
-                    <div className="border-r border-gray-200 p-2.5">Mon</div>
-                    <div className="border-r border-gray-200 p-2.5">Tue</div>
-                    <div className="border-r border-gray-200 p-2.5">Wed</div>
-                    <div className="border-r border-gray-200 p-2.5">Thu</div>
-                    <div className="border-r border-gray-200 p-2.5">Fri</div>
-                    <div className="border-r border-gray-200 p-2.5">Sat</div>
-                    <div className="p-2.5">Sun</div>
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-white min-w-[750px] relative">
-                    <div className="grid grid-cols-[80px_repeat(7,1fr)] text-xs relative" style={{ gridTemplateRows: `repeat(${timeSlots.length}, ${APPROVAL_SLOT_HEIGHT_PX}px)` }}>
-                      {timeSlots.map((slot, rowIndex) => {
-                        const gridRow = rowIndex + 1;
-                        return (
-                          <React.Fragment key={rowIndex}>
-                            {rowIndex % 2 === 0 && (
-                              <div className="bg-gray-50 border-b border-r border-gray-200 p-1.5 text-[10px] font-bold text-gray-400 text-right sticky left-0 z-10 flex items-center justify-end pr-3" style={{ gridColumn: 1, gridRow: `${gridRow} / span 2`, height: `${APPROVAL_SLOT_HEIGHT_PX * 2}px` }}>
-                                {slot}
-                              </div>
-                            )}
-                            {Array.from({ length: 7 }).map((_, colIndex) => (
-                              <div key={colIndex} className="border-b border-r border-gray-200 bg-white h-6" style={{ gridColumn: colIndex + 2, gridRowStart: gridRow, gridRowEnd: gridRow + 1 }} />
-                            ))}
-                          </React.Fragment>
-                        );
-                      })}
+                <div className="flex-1 min-h-0 overflow-auto overscroll-contain w-full">
+                    <WeeklyTimetableGrid
+                      days={WEEK_DAYS}
+                      slotCount={timeSlots.length}
+                      slotHeight={APPROVAL_SLOT_HEIGHT_PX}
+                      minWidth={750}
+                      getTimeLabel={(slot) => timeSlots[slot] ?? ''}
+                      getDayCount={(dayIndex) => selectedSectionSchedules.filter((item) => item.day === WEEK_DAYS[dayIndex]).length}
+                    >
                       {selectedSectionSchedules.map((item) => {
                         const colMap: Record<string, number> = { Monday: 2, Tuesday: 3, Wednesday: 4, Thursday: 5, Friday: 6, Saturday: 7, Sunday: 8 };
                         const colIndex = colMap[item.day] ?? 2;
-                        const startRow = getSlotIndexFrom24h(item.start_time) + 1;
-                        const endRow = getSlotIndexFrom24h(item.end_time) + 1;
+                        const startRow = getSlotIndexFrom24h(item.start_time) + 2;
+                        const endRow = getSlotIndexFrom24h(item.end_time) + 2;
                         const cardHeight = (endRow - startRow) * APPROVAL_SLOT_HEIGHT_PX;
                         const showBottomRow = cardHeight > 80;
                         const colors = getDeptColorClasses(viewSchedule.department);
@@ -1116,8 +1098,7 @@ export default function VpaaScheduleApprovalPage() {
                           </div>
                         );
                       })}
-                    </div>
-                  </div>
+                    </WeeklyTimetableGrid>
                 </div>
               )}
             </div>

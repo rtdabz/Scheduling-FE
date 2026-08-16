@@ -3,6 +3,7 @@ import { AlertTriangle, Calendar, Clock, Info, Layers, MapPin, RefreshCw, User, 
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
+import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
 
 interface Section {
   id: string;
@@ -588,45 +589,16 @@ export default function DeanScheduleViewer() {
               <p className="text-xs font-medium text-slate-400 mt-1">Try another section or class mode.</p>
             </div>
           ) : (
-            <div className="min-w-[1100px] bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-              <div className="grid grid-cols-[88px_repeat(7,minmax(0,1fr))]">
-                <div className="sticky top-0 left-0 z-30 h-12 border-r border-b border-slate-200 bg-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-500 uppercase">
-                  Time
-                </div>
-                {DAYS.map((day) => (
-                  <div key={day} className="sticky top-0 z-20 h-12 border-r last:border-r-0 border-b border-slate-200 bg-slate-50 flex flex-col items-center justify-center">
-                    <span className="font-bold text-xs text-slate-700 uppercase">{day}</span>
-                    <span className="text-[9px] font-bold text-slate-400">
-                      {filteredSchedules.filter((schedule) => schedule.day === day).length} Classes
-                    </span>
-                  </div>
-                ))}
-
-                <div
-                  className="col-span-8 grid relative"
-                  style={{
-                    gridTemplateColumns: "88px repeat(7, minmax(0, 1fr))",
-                    gridTemplateRows: `repeat(${timeSlots.length}, ${SLOT_HEIGHT_PX}px)`
-                  }}
-                >
-                  {timeSlots.map((slot, rowIndex) => (
-                    <div key={`time-${slot}`} className="contents">
-                      <div
-                        className="sticky left-0 z-10 border-r border-b border-slate-100 bg-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-500"
-                        style={{ gridColumn: 1, gridRow: rowIndex + 1 }}
-                      >
-                        {slot.includes(":00") ? slot : ""}
-                      </div>
-                      {DAYS.map((day, dayIndex) => (
-                        <div
-                          key={`${day}-${slot}`}
-                          className="border-r last:border-r-0 border-b border-slate-100 bg-white"
-                          style={{ gridColumn: dayIndex + 2, gridRow: rowIndex + 1 }}
-                        />
-                      ))}
-                    </div>
-                  ))}
-
+            <WeeklyTimetableGrid
+              days={DAYS}
+              slotCount={timeSlots.length}
+              startSlot={gridRange.start}
+              slotHeight={SLOT_HEIGHT_PX}
+              timeColumnWidth={88}
+              minWidth={1100}
+              getTimeLabel={(slot) => slotToTime(slot)}
+              getDayCount={(dayIndex) => filteredSchedules.filter((schedule) => schedule.day === DAYS[dayIndex]).length}
+            >
                   {isLoading ? (
                     [
                       { id: 'sk-1', dayIndex: 0, startSlot: 2, height: 4 * SLOT_HEIGHT_PX, durationSlots: 4 },
@@ -637,7 +609,7 @@ export default function DeanScheduleViewer() {
                       <div
                         key={sk.id}
                         className="rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between"
-                        style={{ gridColumn: sk.dayIndex + 2, gridRow: `${sk.startSlot + 1} / span ${sk.durationSlots}`, height: `${sk.height}px` }}
+                        style={{ gridColumn: sk.dayIndex + 2, gridRow: `${sk.startSlot + 2} / span ${sk.durationSlots}`, height: `${sk.height}px` }}
                       >
                         <div className="flex flex-col h-full justify-between">
                           <div className="min-w-0">
@@ -687,7 +659,7 @@ export default function DeanScheduleViewer() {
                                 className={`rounded-xl border-2 border-l-4 p-2 box-border overflow-hidden shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-150 text-left ${conflicts.length > 0 ? "bg-red-50 text-red-800 border-red-300 border-l-red-600 ring-2 ring-red-200" : gridStyles.container}`}
                                 style={{
                                   gridColumn: dayIndex + 2,
-                                  gridRow: `${startSlot - gridRange.start + 1} / span ${durationSlots}`,
+                                  gridRow: `${startSlot - gridRange.start + 2} / span ${durationSlots}`,
                                   height: `${height}px`,
                                   width: `calc(${laneWidth}% - 4px)`,
                                   marginLeft: `calc(${layout.lane * laneWidth}% + 2px)`,
@@ -743,7 +715,7 @@ export default function DeanScheduleViewer() {
                                 className="rounded-lg border border-[#C9952A]/40 bg-[#C9952A]/10 px-2 text-center text-[10px] font-black text-[#4e0a10] shadow-sm hover:bg-[#C9952A]/20 transition-colors"
                                 style={{
                                   gridColumn: dayIndex + 2,
-                                  gridRow: group.topSlot - gridRange.start + 1,
+                                  gridRow: group.topSlot - gridRange.start + 2,
                                   height: "22px",
                                   width: "calc(25% - 4px)",
                                   marginLeft: "calc(75% + 2px)",
@@ -757,9 +729,7 @@ export default function DeanScheduleViewer() {
                       );
                     })
                   )}
-                </div>
-              </div>
-            </div>
+            </WeeklyTimetableGrid>
           )}
         </div>
         )}

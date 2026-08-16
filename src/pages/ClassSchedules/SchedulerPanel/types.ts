@@ -5,6 +5,7 @@ export type YearLevel = 1 | 2 | 3 | 4;
 export type RoomType = "lecture" | "laboratory" | "field" | "online";
 export type RoomStatus = "available" | "not available";
 export type DeliveryMode = "on-site" | "online" | "field";
+export type WithdrawalStage = "dean_review" | "vpaa_review" | "vpaa_approved";
 export type ScheduleStatus =
   | "draft"
   | "completed"
@@ -21,6 +22,8 @@ export interface Department {
   id: number;
   department_name: string;
   department_code: string;
+  online_slot_limit?: number;
+  field_slot_limit?: number;
 }
 
 export interface Term {
@@ -90,6 +93,7 @@ export interface FacultyAvailability {
 export interface Faculty {
   id: string;
   name: string;
+  profilePicture?: string | null;
   employmentType?: "full-time" | "part-time";
   departmentId?: number;
   departmentCode?: string;
@@ -182,6 +186,9 @@ export interface ApiDepartmentRecord {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
+  online_slot_limit?: number;
+  field_slot_limit?: number;
 }
 
 export interface ApiTermRecord {
@@ -238,6 +245,7 @@ export interface ApiFacultyRecord {
   max_units?: number | string | null;
   department_id?: number;
   status?: "active" | "inactive";
+  profile_picture?: string | null;
   department?: {
     department_code?: string;
     department_name?: string;

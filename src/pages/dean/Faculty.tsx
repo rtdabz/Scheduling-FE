@@ -21,12 +21,14 @@ import {
   Info,
   LayoutGrid,
   List,
-  Camera
+  Camera,
+  UserRound
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
+import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
 
 const DEPARTMENT_COLORS: Record<string, string> = {
   'INFORMATION TECHNOLOGY':      'bg-blue-100 border-blue-400 text-blue-900',
@@ -97,6 +99,7 @@ interface FacultyMember {
   department: Department | null;
   status: 'active' | 'inactive';
   profile_picture?: string | null;
+  administrative_role?: FacultyAdministrativeRole | null;
   createdAt?: string;
 }
 
@@ -117,6 +120,7 @@ interface ApiFacultyMember {
   department?: Department | null;
   status: 'active' | 'inactive';
   profile_picture?: string | null;
+  administrative_role?: FacultyAdministrativeRole | null;
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +147,7 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   department: f.department || null,
   status: f.status || 'active',
   profile_picture: f.profile_picture || null,
+  administrative_role: f.administrative_role || null,
   createdAt: f.created_at
 });
 
@@ -783,8 +788,8 @@ export default function DeanFaculty() {
                         {f.profile_picture ? (
                           <img src={f.profile_picture} alt={name} className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
                         ) : (
-                          <div className="w-10 h-10 rounded-full bg-[#5A1220]/10 border border-[#5A1220]/20 text-[#5A1220] flex items-center justify-center font-bold text-xs uppercase shrink-0">
-                            {f.first_name.charAt(0)}{f.last_name.charAt(0)}
+                          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
+                            <UserRound className="w-5 h-5" aria-hidden="true" />
                           </div>
                         )}
                         <div className="space-y-1">
@@ -799,6 +804,7 @@ export default function DeanFaculty() {
                           <span className="text-[10px] text-gray-500 font-semibold block">
                             {f.department?.department_name || 'No Department'}
                           </span>
+                          <FacultyRoleBadge role={f.administrative_role} />
                         </div>
                       </div>
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${statusDetails.color}`}>
@@ -971,13 +977,14 @@ export default function DeanFaculty() {
                             {f.profile_picture ? (
                               <img src={f.profile_picture} alt={name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
                             ) : (
-                              <div className="w-8 h-8 rounded-full bg-[#5A1220]/10 border border-[#5A1220]/20 text-[#5A1220] flex items-center justify-center font-bold text-xs uppercase shrink-0">
-                                {f.first_name.charAt(0)}{f.last_name.charAt(0)}
+                              <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
+                                <UserRound className="w-4 h-4" aria-hidden="true" />
                               </div>
                             )}
                             <div>
                               <div className="text-xs font-extrabold text-gray-900">{name}</div>
                               <div className="text-[10px] text-gray-400 font-medium">ID: #{f.id}</div>
+                              <FacultyRoleBadge role={f.administrative_role} />
                             </div>
                           </div>
                         </td>
@@ -1147,8 +1154,8 @@ export default function DeanFaculty() {
                 {detailsFaculty.profile_picture ? (
                   <img src={detailsFaculty.profile_picture} alt={detailsFaculty.first_name} className="w-12 h-12 rounded-full object-cover border-2 border-[#5A1220]/30 shadow-md shrink-0" />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-[#5A1220]/10 border border-[#5A1220]/20 text-[#5A1220] flex items-center justify-center font-bold text-sm uppercase shrink-0">
-                    {detailsFaculty.first_name.charAt(0)}{detailsFaculty.last_name.charAt(0)}
+                  <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
+                    <UserRound className="w-6 h-6" aria-hidden="true" />
                   </div>
                 )}
                 <div>

@@ -36,6 +36,7 @@ import type { ApiRoomRecord, ApiScheduleRecord, Course, ScheduleItem, Section, T
 import { DAYS, GRID_HEADER_HEIGHT_PX, slotToTimeStr } from "../constants";
 import SchedulingRuleEditor from "./SchedulingRuleEditor";
 import type { DeliveryModeOption, TimeBlockOption } from "./useGenerateSchedule";
+import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 
 type Step = 1 | 2 | 3 | 4;
 type CourseMode = DeliveryModeOption | "automatic";
@@ -1971,40 +1972,17 @@ function SchedulePreviewGrid({ rows, courseById, roomCodeById }: { rows: ApiSche
 
   return (
     <div className="h-full min-h-[360px] rounded-xl border border-slate-200 bg-white p-2">
-      <div
-        className="relative grid h-full select-none overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-        style={{
-          gridTemplateColumns: "62px repeat(7, minmax(0, 1fr))",
-          gridTemplateRows: `${GRID_HEADER_HEIGHT_PX}px repeat(${totalSlots}, minmax(0, 1fr))`,
-        }}
+      <WeeklyTimetableGrid
+        days={DAYS}
+        slotCount={totalSlots}
+        headerHeight={GRID_HEADER_HEIGHT_PX}
+        timeColumnWidth={62}
+        minWidth={0}
+        rowTemplate={`repeat(${totalSlots}, minmax(0, 1fr))`}
+        className="h-full"
+        getTimeLabel={slotToTimeStr}
+        getDayCount={(dayIndex) => daySessionCounts[dayIndex]}
       >
-        <div className="flex items-center justify-center border-b border-r border-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] p-1 text-center text-[9px] font-black uppercase tracking-wider text-[#c9952a]" style={{ gridColumn: 1, gridRow: 1 }}>
-          <Clock3 className="mr-1 h-3 w-3" />
-          Time
-        </div>
-        {DAYS.map((day, index) => (
-          <div key={day} className="flex flex-col items-center justify-center border-b border-r border-[#c9952a]/20 border-b-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] p-1 text-center text-[10px] font-bold uppercase tracking-wider text-white last:border-r-0" style={{ gridColumn: index + 2, gridRow: 1 }}>
-            <span className="font-extrabold tracking-widest">{day}</span>
-            <span className="mt-0.5 rounded-full border border-[#c9952a]/30 bg-[#c9952a]/15 px-1.5 py-0.5 text-[8px] font-extrabold text-[#c9952a]">
-              {daySessionCounts[index]}
-            </span>
-          </div>
-        ))}
-        {Array.from({ length: totalSlots }).map((_, slot) => (
-          <div key={`preview-row-${slot}`} className="contents">
-            {slot % 2 === 0 && (
-              <div
-                className="flex items-center justify-center border-b border-r border-slate-200 bg-slate-50/90 px-1 text-[8px] font-bold text-slate-500"
-                style={{ gridColumn: 1, gridRow: `${slot + 2} / span 2` }}
-              >
-                <span className="whitespace-nowrap font-extrabold text-slate-600">{slotToTimeStr(slot)}</span>
-              </div>
-            )}
-            {DAYS.map((_, dayIdx) => (
-              <div key={`preview-cell-${dayIdx}-${slot}`} className="border-b border-r border-slate-200 bg-white last:border-r-0" style={{ gridColumn: dayIdx + 2, gridRow: slot + 2 }} />
-            ))}
-          </div>
-        ))}
         {rows.map((row, index) => {
           const start = timeToSlot(row.start_time);
           const end = timeToSlot(row.end_time);
@@ -2055,7 +2033,7 @@ function SchedulePreviewGrid({ rows, courseById, roomCodeById }: { rows: ApiSche
             </div>
           );
         })}
-      </div>
+      </WeeklyTimetableGrid>
       {rows.length === 0 && (
         <div className="mt-3 rounded-lg border border-dashed border-slate-200 px-4 py-5 text-center text-sm font-semibold text-slate-500">
           No generated schedules for this section.

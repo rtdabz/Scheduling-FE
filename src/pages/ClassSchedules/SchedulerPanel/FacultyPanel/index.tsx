@@ -1,7 +1,6 @@
 import {
   CheckCircle2,
   Users,
-  MousePointerClick,
   Sparkles,
   CalendarCheck,
   AlertCircle
@@ -104,16 +103,6 @@ export default function FacultyPanel({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3.5 bg-gradient-to-br from-amber-50/80 to-orange-50/50 border border-amber-200 rounded-2xl">
-              <MousePointerClick className="w-5 h-5 text-[#4e0a10] shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-xs font-bold text-[#4e0a10]">Grid Assignment Mode</h4>
-                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                  Click any course card directly on the <strong className="text-slate-900">Timetable Grid</strong> to select and assign an available instructor.
-                </p>
-              </div>
-            </div>
-
             <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
                 <Sparkles className="w-4 h-4 text-amber-500" />
