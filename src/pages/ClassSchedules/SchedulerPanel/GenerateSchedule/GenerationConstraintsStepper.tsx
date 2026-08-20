@@ -181,7 +181,7 @@ export default function GenerationConstraintsStepper({
         params: { section_id: sectionId },
       });
       setSettings(response.data);
-      toast.success("Constraints saved", "Generation constraints updated for this semester.");
+      toast.success("Department rule saved", "This is a department-wide rule and applies to every section and term until you remove it.");
       return true;
     } catch {
       setSettings(previous);
@@ -209,7 +209,6 @@ export default function GenerationConstraintsStepper({
     if (!effectiveFieldCourseCode) return;
 
     const saved = await patchSettings({
-      field_course_assignment_enabled: true,
       field_course_codes: [...fieldCourseCodes, effectiveFieldCourseCode],
     });
     if (saved) {
@@ -262,7 +261,8 @@ export default function GenerationConstraintsStepper({
             </p>
             <h4 className="mt-1 text-lg font-black text-slate-950">Generation Constraints</h4>
             <p className="mt-1 text-xs font-medium text-slate-500">
-              Course options are filtered at the server for {periodLabel}.
+              Course options are filtered at the server for {periodLabel}. Day and
+              field rules below save immediately and apply department-wide.
             </p>
           </div>
           <div className="border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700" style={{ borderRadius: 8 }}>
@@ -411,7 +411,7 @@ export default function GenerationConstraintsStepper({
                 <ConstraintStep
                   icon={<CalendarDays className="h-5 w-5" />}
                   title="Course Constraints"
-                  description="Add specific rules for course days and field resources."
+                  description="Department-wide rules. Saved as soon as you add or remove one, and they apply to every section and term until changed."
                 >
                   <div className="grid min-h-0 gap-3 xl:grid-cols-2">
                     <SchedulingRuleEditor

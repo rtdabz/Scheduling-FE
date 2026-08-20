@@ -1,4 +1,5 @@
 import type React from "react";
+import { useCallback } from "react";
 import { DAYS, slotToTimeStr } from "../constants";
 import type { ConflictInfo, DropContext, ScheduleItem, Subject, Term } from "../types";
 
@@ -16,7 +17,6 @@ type CheckConflict = (
 
 interface UseDragDropParams {
   schedules: ScheduleItem[];
-  selectedSectionId: string;
   dragSubjectId: string | null;
   draggedScheduleId: string | null;
   hoveredCell: string | null;
@@ -33,12 +33,21 @@ interface UseDragDropParams {
   activeTerm: Term | null;
 }
 
+/**
+ * Drag-and-drop handlers for the timetable grid.
+ *
+ * Every handler is memoized: handleDragOver and handleDrop are passed to all 168
+ * memoized GridCells, so an unstable identity here re-renders the entire grid on
+ * each cell the pointer crosses.
+ *
+ * handleDragOver deliberately excludes `hoveredCell` from its dependencies and
+ * reads it through a functional setState instead — depending on it would rebuild
+ * the callback on every hover, which is the problem being fixed.
+ */
 export const useDragDrop = ({
   schedules,
-  selectedSectionId,
   dragSubjectId,
   draggedScheduleId,
-  hoveredCell,
   subjects,
   setDragSubjectId,
   setDraggedScheduleId,
@@ -51,48 +60,48 @@ export const useDragDrop = ({
   onScheduleRelocated,
   activeTerm
 }: UseDragDropParams) => {
-  const handleDragStartFromBank = (e: React.DragEvent, subjectId: string) => {
+  const isSummerTerm = activeTerm?.semester === "summer";
+
+  const handleDragStartFromBank = useCallback((e: React.DragEvent, subjectId: string) => {
     setDragSubjectId(subjectId);
     setDraggedScheduleId(null);
     setDragFromCell(null);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", subjectId);
-  };
+  }, [setDragSubjectId, setDraggedScheduleId, setDragFromCell]);
 
-  const handleDragStartFromCell = (e: React.DragEvent, schedule: ScheduleItem) => {
+  const handleDragStartFromCell = useCallback((e: React.DragEvent, schedule: ScheduleItem) => {
     setDraggedScheduleId(schedule.id);
     setDragSubjectId(null);
     setDragFromCell(`${schedule.dayIndex}-${schedule.startSlot}`);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", schedule.courseId ?? schedule.subjectId ?? "");
-  };
+  }, [setDraggedScheduleId, setDragSubjectId, setDragFromCell]);
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setDragSubjectId(null);
     setDraggedScheduleId(null);
     setDragFromCell(null);
     setHoveredCell(null);
-  };
+  }, [setDragSubjectId, setDraggedScheduleId, setDragFromCell, setHoveredCell]);
 
-  const handleDragOver = (e: React.DragEvent, dayIndex: number, timeIndex: number) => {
+  const handleDragOver = useCallback((e: React.DragEvent, dayIndex: number, timeIndex: number) => {
     e.preventDefault();
-    const isSummerTerm = activeTerm?.semester === "summer";
     if (isSummerTerm && dayIndex >= 5) {
       e.dataTransfer.dropEffect = "none";
       return;
     }
     const key = `${dayIndex}-${timeIndex}`;
-    if (hoveredCell !== key) setHoveredCell(key);
-  };
+    setHoveredCell((current) => (current === key ? current : key));
+  }, [isSummerTerm, setHoveredCell]);
 
-  const handleDragLeave = () => setHoveredCell(null);
+  const handleDragLeave = useCallback(() => setHoveredCell(null), [setHoveredCell]);
 
-  const handleDrop = (e: React.DragEvent, dayIndex: number, timeIndex: number) => {
+  const handleDrop = useCallback((e: React.DragEvent, dayIndex: number, timeIndex: number) => {
     e.preventDefault();
     setHoveredCell(null);
     setConflictInfo(null);
 
-    const isSummerTerm = activeTerm?.semester === "summer";
     if (isSummerTerm && dayIndex >= 5) return;
 
     if (draggedScheduleId) {
@@ -146,7 +155,22 @@ export const useDragDrop = ({
       setDropContext({ courseId: subjectId, subjectId, dayIndex, startSlot: timeIndex, isRescheduling: false });
       setDragSubjectId(null);
     }
-  };
+  }, [
+    isSummerTerm,
+    draggedScheduleId,
+    dragSubjectId,
+    schedules,
+    subjects,
+    checkConflict,
+    onScheduleRelocated,
+    setHoveredCell,
+    setConflictInfo,
+    setDraggedScheduleId,
+    setDragFromCell,
+    setSchedules,
+    setDropContext,
+    setDragSubjectId
+  ]);
 
   return {
     handleDragStartFromBank,

@@ -8,6 +8,7 @@ import {
 } from "../constants";
 import type { ScheduleItem, Room } from "../types";
 import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
+import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
 
 interface RoomViewModalProps {
   rooms: Room[];
@@ -45,17 +46,7 @@ export default function RoomViewModal({
     [rooms, roomViewRoomId]
   );
 
-  const currentDepartmentId = useMemo(() => {
-    const userJson = localStorage.getItem("user") || sessionStorage.getItem("user");
-    if (!userJson) return null;
-
-    try {
-      const user = JSON.parse(userJson) as { department_id?: number | string | null };
-      return user.department_id == null ? null : Number(user.department_id);
-    } catch {
-      return null;
-    }
-  }, []);
+  const currentDepartmentId = useMemo(() => getStoredUserDepartmentId(), []);
 
   const roomClasses = useMemo(() => {
     return schedules.filter((s) => {
@@ -415,17 +406,17 @@ export default function RoomViewModal({
                     )}
                     {subgroups.map((sub) => (
                       <div key={`${cellGroup.id}-${sub.courseCode}-${sub.sectionName}`} className="flex flex-col mb-1 last:mb-0 border-b border-dashed border-slate-100/30 last:border-b-0 pb-0.5 last:pb-0">
-                        <div className={`text-[11px] font-black uppercase leading-tight break-words ${getGridCardStyles(sub.courseType).text}`}>
+                        <div className={`text-xs font-black uppercase leading-tight break-words ${getGridCardStyles(sub.courseType).text}`}>
                           {sub.courseCode}
                         </div>
-                        <div className="text-[10px] font-bold leading-tight text-slate-700 break-words" title={sub.sectionName}>
+                        <div className="text-[11px] font-bold leading-tight text-slate-700 break-words" title={sub.sectionName}>
                           {sub.sectionName}
                         </div>
                       </div>
                     ))}
                   </div>
                   {cellGroup.durationSlots > 3 && (
-                    <div className="text-[9.5px] text-slate-500 font-bold truncate mt-auto pt-0.5 border-t border-slate-100/30">
+                    <div className="text-[10px] text-slate-500 font-bold truncate mt-auto pt-0.5 border-t border-slate-100/30">
                       {cellGroup.startTime} - {cellGroup.endTime}
                     </div>
                   )}

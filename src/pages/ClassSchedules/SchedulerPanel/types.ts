@@ -1,3 +1,5 @@
+import { getCourseSlotPlan } from "./courseSlotPlan";
+
 export type CourseCategory = "major" | "minor";
 export type SubjectCategory = CourseCategory; // Legacy alias
 export type Semester = "1st" | "2nd" | "summer";
@@ -24,6 +26,8 @@ export interface Department {
   department_code: string;
   online_slot_limit?: number;
   field_slot_limit?: number;
+  /** Defaults to true server-side when null; mirrors RuleEngine's Sunday rule. */
+  sunday_online_only_enabled?: boolean | number | null;
 }
 
 export interface Term {
@@ -56,6 +60,12 @@ export interface Course {
   teachingDepartmentId?: number | null;
   teachingDepartmentCode?: string;
   teachingDepartmentName?: string;
+  /**
+   * Program (major) that owns this course. When set on a major, only instructors
+   * of that program may be assigned to it.
+   */
+  programId?: number | null;
+  programCode?: string | null;
   categories?: { id: number | string; name: string; description?: string | null }[];
   yearLevel: YearLevel;
   roomTypeRequired: RoomType;
@@ -63,14 +73,14 @@ export interface Course {
 }
 export type Subject = Course; // Legacy alias
 
-export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
-  if (!subject) return 0;
-  return Math.round(Number(subject.units ?? 3) * 2);
-};
-
-export const getSubjectContactHours = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number => {
-  return getSubjectTotalSlots(subject) * 0.5;
-};
+/**
+ * Slots a single meeting covering the whole course occupies — the server's
+ * `units * 2`. For the lecture/laboratory split convention use
+ * `getCourseSlotPlan` from ./courseSlotPlan; conflating the two was audit
+ * finding #19.
+ */
+export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number =>
+  getCourseSlotPlan(subject).singleBlockSlots;
 
 export interface Section {
   id: string;
@@ -98,7 +108,22 @@ export interface Faculty {
   departmentId?: number;
   departmentCode?: string;
   departmentName?: string;
+  /** Program (major) the instructor belongs to, when recorded. */
+  programId?: number | null;
+  programCode?: string | null;
   maxUnits?: number;
+  /** Units subtracted from maxUnits by an administrative role. */
+  deloadUnits?: number;
+  /** Allowance the instructor may teach past their Basic Load. */
+  overloadUnits?: number;
+  /** Further allowance past the overload one, taught unpaid. */
+  probonoUnits?: number;
+  /** Units already assigned this term, deduped so a split course counts once. */
+  assignedUnits?: number;
+  /** Basic Load as the server computes it: maxUnits - deloadUnits. */
+  requiredUnits?: number;
+  /** Basic Load plus both allowances. */
+  unitCeiling?: number;
   status?: "active" | "inactive";
   availabilities?: FacultyAvailability[];
 }
@@ -159,6 +184,8 @@ export interface DepartmentSectionProgress {
   status: ScheduleItem["status"];
   isDone: boolean;
   isSelected: boolean;
+  /** Meeting blocks in this section that currently have an instructor. */
+  assignedInstructorBlocks: number;
 }
 
 export interface DropContext {
@@ -189,6 +216,7 @@ export interface ApiDepartmentRecord {
   logo?: string | null;
   online_slot_limit?: number;
   field_slot_limit?: number;
+  sunday_online_only_enabled?: boolean | number | null;
 }
 
 export interface ApiTermRecord {
@@ -212,6 +240,12 @@ export interface ApiCourseRecord {
   subject_category?: CourseCategory;
   semester: Semester;
   department_id: number | null;
+  program_id?: number | null;
+  program?: {
+    id?: number | string;
+    code?: string;
+    name?: string;
+  } | null;
   teaching_assignment?: {
     department_id?: number | null;
     department?: {
@@ -243,7 +277,21 @@ export interface ApiFacultyRecord {
   last_name: string;
   employment_type?: "full-time" | "part-time";
   max_units?: number | string | null;
+  // The load fields /initial-data adds via FacultyLoadService::get(); raw
+  // columns arrive as strings from some drivers, hence the union.
+  deload_units?: number | string | null;
+  overload_units?: number | string | null;
+  probono_units?: number | string | null;
+  assigned_units?: number | string | null;
+  required_units?: number | string | null;
+  unit_ceiling?: number | string | null;
   department_id?: number;
+  program_id?: number | null;
+  program?: {
+    id?: number | string;
+    code?: string;
+    name?: string;
+  } | null;
   status?: "active" | "inactive";
   profile_picture?: string | null;
   department?: {
@@ -293,6 +341,7 @@ export interface ApiScheduleRecord {
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
     units?: number | string | null;
+    room_type_required?: RoomType;
     categories?: { id: number | string; name: string; description?: string | null }[];
   } | null;
   subject?: {
@@ -305,6 +354,7 @@ export interface ApiScheduleRecord {
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
     units?: number | string | null;
+    room_type_required?: RoomType;
     categories?: { id: number | string; name: string; description?: string | null }[];
   } | null;
   section?: {

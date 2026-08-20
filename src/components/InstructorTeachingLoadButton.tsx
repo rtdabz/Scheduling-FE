@@ -4,6 +4,7 @@ import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
 import TeachingLoad from "../pages/ClassSchedules/SchedulerPanel/TeachingLoad";
 import type {
+  ApiCourseRecord,
   ApiDepartmentRecord,
   ApiFacultyRecord,
   ApiScheduleRecord,
@@ -26,7 +27,8 @@ interface InitialTeachingLoadData {
   faculties: ApiFacultyRecord[];
   schedules: ApiScheduleRecord[];
   sections: ApiSectionRecord[];
-  subjects: ApiSubjectRecord[];
+  courses?: ApiCourseRecord[];
+  subjects?: ApiSubjectRecord[];
   users: UserSummary[];
 }
 
@@ -78,7 +80,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     maxUnits: faculty.max_units ? Number(faculty.max_units) : undefined,
     status: faculty.status,
   })),
-  subjects: data.subjects.map((subject) => ({
+  subjects: (data.courses ?? data.subjects ?? []).map((subject: ApiCourseRecord) => ({
     id: String(subject.id),
     code: subject.course_code ?? subject.subject_code ?? "",
     name: subject.course_name ?? subject.subject_name ?? "",

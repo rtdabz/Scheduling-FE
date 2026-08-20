@@ -1,6 +1,7 @@
 import type React from "react";
 import { CheckCircle2, FlaskConical, LayoutGrid, Radio } from "lucide-react";
 import type { Course } from "../types";
+import { isLaboratorySubject } from "../hooks/useConflict";
 
 interface CourseCardProps {
   course: Course;
@@ -26,7 +27,9 @@ export default function CourseCard({
   const isMajor = course.category === "major";
 
   let roomBadge = null;
-  if (course.roomTypeRequired === "laboratory") {
+  // Derived like RuleEngine does: any laboratory component means a lab room is
+  // required, whatever room_type_required says.
+  if (isLaboratorySubject(course)) {
     roomBadge = (
       <span className="flex items-center gap-1 bg-[#4e0a10]/5 text-[#4e0a10] border border-[#4e0a10]/15 rounded-full px-2 py-0.5 text-[10px] font-semibold">
         <FlaskConical className="w-2.5 h-2.5" />

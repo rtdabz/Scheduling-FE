@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useRef } from "react";
 import { AlertTriangle, CalendarDays, ChevronDown, Clock, Loader2, MapPin, User, UserCheck, X } from "lucide-react";
 import { getCategoryStyles } from "../constants";
+import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "../facultyEligibility";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
@@ -70,6 +71,15 @@ export default function FacultyModal({
     ? `${subject.teachingDepartmentName} Only`
     : "Assigned Department Only";
   const hasAssignedTeachingDepartment = Boolean(subject?.teachingDepartmentId);
+  // Only instructors the save would accept are offered. A major is taught by its
+  // own department and, when the course names one, its own program.
+  const eligibleFaculties = eligibleFacultiesForSubject(faculties, subject, schedule.departmentId ?? null);
+  const requiredProgramId = requiredTeachingProgramId(subject);
+  const programRestrictionNote = requiredProgramId === null
+    ? null
+    : eligibleFaculties.length === 0
+      ? `No instructor in the ${subject?.programCode ?? "assigned"} program is available for this major yet — set the program on the instructor's profile first.`
+      : `Only ${subject?.programCode ?? "the assigned"} program instructors can teach this major.`;
   const isSameAssignedFaculty = Boolean(schedule.facultyId && facultyAssignmentPopup.facultyId === schedule.facultyId);
   const meetingSchedules = schedules
     .filter((item) =>
@@ -184,7 +194,7 @@ export default function FacultyModal({
                 }`}
               >
                 <option value="">{canManageFaculty ? "Select an instructor" : restrictionMessage}</option>
-                {faculties.map((faculty) => {
+                {eligibleFaculties.map((faculty) => {
                   const conflict = checkFacultyConflict(faculty.id, schedule.id);
                   return (
                     <option key={faculty.id} value={faculty.id} disabled={Boolean(conflict)}>
@@ -195,6 +205,10 @@ export default function FacultyModal({
               </select>
               <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
+
+            {canManageFaculty && programRestrictionNote && (
+              <p className="text-xs font-semibold text-[#7a4c08]">{programRestrictionNote}</p>
+            )}
 
             <div className="grid grid-cols-1 gap-2 text-xs text-gray-500">
               {meetingSchedules.map((meeting) => (

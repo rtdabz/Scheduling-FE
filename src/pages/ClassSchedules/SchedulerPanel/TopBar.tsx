@@ -371,7 +371,10 @@ export default function TopBar({
   };
 
   useEffect(() => {
-    if (!isSectionDropdownOpen) return;
+    // Gated on either menu: the handlers close both, so registering only while
+    // the section dropdown was open left the Print menu undismissable by an
+    // outside click or Escape.
+    if (!isSectionDropdownOpen && !isPrintDropdownOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
       if (!dropdownRef.current?.contains(event.target as Node)) {
@@ -396,7 +399,7 @@ export default function TopBar({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isSectionDropdownOpen, setIsSectionDropdownOpen]);
+  }, [isSectionDropdownOpen, isPrintDropdownOpen, setIsSectionDropdownOpen, setIsPrintDropdownOpen]);
 
   useEffect(() => {
     if (!isSectionDropdownOpen || !listboxRef.current) return;
@@ -463,7 +466,7 @@ export default function TopBar({
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500 font-medium whitespace-nowrap">Section:</span>
             <div className="relative" ref={dropdownRef}>
-              <button
+              {isLoading ? <Skeleton className="h-[38px] w-[220px] rounded-lg" /> : <><button
                 type="button"
                 aria-haspopup="listbox"
                 aria-expanded={isSectionDropdownOpen}
@@ -472,9 +475,7 @@ export default function TopBar({
               >
                 <span className="flex min-w-0 items-center gap-2 overflow-hidden text-gray-800">
                   <GraduationCap className="w-4 h-4 shrink-0 text-[#4e0a10]" />
-                  {isLoading ? (
-                    <Skeleton className="h-4 w-32" />
-                  ) : selectedSection ? (
+                  {selectedSection ? (
                     `${selectedSection.name} — ${yearLevelLabel(selectedSection.yearLevel)}`
                   ) : (
                     "Select a Section"
@@ -529,7 +530,7 @@ export default function TopBar({
                   )}
                   </div>
                 </div>
-              )}
+              )}</>}
             </div>
           </div>
 
@@ -548,11 +549,11 @@ export default function TopBar({
         </div>
 
         <div className="flex min-w-0 justify-start xl:justify-center">
-          {phasePipeline}
+          {isLoading ? <div className="grid w-full max-w-2xl grid-cols-[1fr_32px_1fr] items-center"><Skeleton className="h-9 w-full rounded-xl" /><div className="px-1"><Skeleton className="h-1 w-full rounded-full" /></div><Skeleton className="h-9 w-full rounded-xl" /></div> : phasePipeline}
         </div>
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
-          {onAutoAssign && ["approved", "faculty_assignment"].includes(currentStatus) ? (
+          {isLoading ? <><Skeleton className="h-8 w-28 rounded-xl" /><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>{onAutoAssign && ["approved", "faculty_assignment"].includes(currentStatus) ? (
             <button
               type="button"
               onClick={onAutoAssign}
@@ -568,8 +569,8 @@ export default function TopBar({
               onClick={() => selectedSectionId && onGenerate(selectedSectionId)}
               onYearLevelClick={onGenerateYearLevel}
             />
-          )}
-          <button
+          )}</>}
+          {isLoading ? <><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <><button
             type="button"
             onClick={onImport}
             title="Import Schedule"
@@ -604,7 +605,7 @@ export default function TopBar({
                 </button>
               </div>
             )}
-          </div>
+          </div></>}
         </div>
       </div>
 
@@ -613,11 +614,9 @@ export default function TopBar({
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p>
-                    {!isLoading && <StatusBadge status={currentStatus} />}
+                    {isLoading ? <><Skeleton className="h-2.5 w-14" /><Skeleton className="h-5 w-16 rounded-full" /></> : <><p className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p><StatusBadge status={currentStatus} /></>}
                   </div>
-                  <p className="text-sm font-bold text-gray-800 mt-0.5">{nextStep.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{nextStep.description}</p>
+                  {isLoading ? <><Skeleton className="mt-1 h-4 w-40" /><Skeleton className="mt-1 h-3 w-64 max-w-full" /></> : <><p className="text-sm font-bold text-gray-800 mt-0.5">{nextStep.title}</p><p className="text-xs text-gray-500 mt-0.5">{nextStep.description}</p></>}
                 </div>
                 {selectedSectionId && (
                   <div className="flex flex-wrap gap-2 sm:ml-auto">
@@ -633,7 +632,19 @@ export default function TopBar({
                 )}
               </div>
 
-              {selectedSectionId && departmentTotalSections > 0 && (
+              {isLoading ? (
+                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Skeleton className="h-2.5 w-32" />
+                      <div className="mt-1 flex items-center gap-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-5 w-20 rounded-full" /></div>
+                      <Skeleton className="mt-2 h-1.5 w-full max-w-xs rounded-full" />
+                    </div>
+                    <Skeleton className="h-9 w-24 rounded-lg" />
+                    <Skeleton className="h-9 w-[190px] rounded-lg" />
+                  </div>
+                </div>
+              ) : selectedSectionId && departmentTotalSections > 0 && (
                 <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="min-w-0 mr-auto">

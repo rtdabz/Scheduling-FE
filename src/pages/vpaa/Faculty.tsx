@@ -26,9 +26,12 @@ import {
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { apiErrorMessage } from '../../lib/apiError';
 import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
+import FacultyAvailabilityPanel from '../../components/faculty/FacultyAvailabilityPanel';
+import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
 
 const DEPARTMENT_COLORS: Record<string, string> = {
   'INFORMATION TECHNOLOGY':      'bg-blue-100 border-blue-400 text-blue-900',
@@ -69,6 +72,13 @@ interface Department {
   logo?: string | null;
 }
 
+interface Program {
+  id: number;
+  code: string;
+  name: string;
+  department_id: number;
+}
+
 interface AssignedSubject {
   id: number;
   course_code?: string;
@@ -95,8 +105,14 @@ interface FacultyMember {
   assigned_units: number;
   assigned_subjects: AssignedSubject[];
   assigned_classes: AssignedClass[];
+  /** Approved meetings that would lose their instructor if this record went away. */
+  live_schedule_count: number;
+  required_units: number;
+  unit_ceiling: number;
   department_id: number;
   department: Department | null;
+  program_id: number | null;
+  program: Program | null;
   status: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
@@ -116,8 +132,13 @@ interface ApiFacultyMember {
   assigned_units?: number | null;
   assigned_subjects?: AssignedSubject[] | null;
   assigned_classes?: AssignedClass[] | null;
+  live_schedule_count?: number | null;
+  required_units?: number | null;
+  unit_ceiling?: number | null;
   department_id: number;
   department?: Department | null;
+  program_id?: number | null;
+  program?: Program | null;
   status: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
@@ -128,6 +149,7 @@ interface ApiFacultyMember {
 interface FacultyPageData {
   faculties: FacultyMember[];
   departments: Department[];
+  programs: Program[];
 }
 
 const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
@@ -143,8 +165,17 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   assigned_units: f.assigned_units || 0,
   assigned_subjects: f.assigned_subjects || [],
   assigned_classes: f.assigned_classes || [],
+  live_schedule_count: f.live_schedule_count ?? 0,
+  required_units: f.required_units ?? Math.max(0, (f.max_units || 21) - (f.deload_units || 0)),
+  unit_ceiling:
+    f.unit_ceiling ??
+    Math.max(0, (f.max_units || 21) - (f.deload_units || 0)) +
+      (f.overload_units || 0) +
+      (f.probono_units || 0),
   department_id: f.department_id,
   department: f.department || null,
+  program_id: f.program_id ?? null,
+  program: f.program || null,
   status: f.status || 'active',
   profile_picture: f.profile_picture || null,
   administrative_role: f.administrative_role || null,
@@ -189,6 +220,7 @@ export default function VpaaFaculty() {
   const cachedFacultyData = getCachedData<FacultyPageData>(facultyCacheKey);
   const [faculties, setFaculties] = useState<FacultyMember[]>(cachedFacultyData?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedFacultyData?.departments ?? []);
+  const [programs, setPrograms] = useState<Program[]>(cachedFacultyData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(facultyCacheKey));
 
   // Filters & Sorting states
@@ -210,6 +242,10 @@ export default function VpaaFaculty() {
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageFaculty = isVpaa;
+  // The secretary owns the unit allowances and the weekly availability windows;
+  // the roster itself (identity, department, program, status) is the VPAA's.
+  const canEditLoad = isVpaa || isSecretary;
+  const canEditAvailability = isVpaa || isSecretary;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -220,8 +256,10 @@ export default function VpaaFaculty() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [detailsFaculty, setDetailsFaculty] = useState<FacultyMember | null>(null);
+  const [loadEditorFaculty, setLoadEditorFaculty] = useState<FacultyMember | null>(null);
 
   // Form states
   const [firstName, setFirstName] = useState('');
@@ -233,6 +271,12 @@ export default function VpaaFaculty() {
   const [deloadUnits, setDeloadUnits] = useState<number>(0);
   const [probonoUnits, setProbonoUnits] = useState<number>(0);
   const [departmentId, setDepartmentId] = useState('');
+  const [programId, setProgramId] = useState('');
+  // An instructor's program has to belong to their own department: it exists to
+  // say which majors of that department they are eligible to teach.
+  const formPrograms = programs.filter(program =>
+    Number(program.department_id) === Number(isVpaa ? departmentId : user?.department_id)
+  );
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -302,9 +346,10 @@ export default function VpaaFaculty() {
     setIsLoading(forceRefresh || !hasCachedData(facultyCacheKey));
     try {
       const data = await loadCachedData<FacultyPageData>(facultyCacheKey, async () => {
-        const [facultiesRes, deptsRes] = await Promise.all([
+        const [facultiesRes, deptsRes, programsRes] = await Promise.all([
           api.get<ApiFacultyMember[]>('/faculties'),
-          api.get<Department[]>('/departments')
+          api.get<Department[]>('/departments'),
+          api.get<Program[]>('/programs')
         ]);
         const rawFaculties = Array.isArray(facultiesRes.data)
           ? facultiesRes.data
@@ -313,15 +358,21 @@ export default function VpaaFaculty() {
           ? deptsRes.data
           : ((deptsRes.data as any)?.data || []);
 
+        const rawPrograms = Array.isArray(programsRes.data)
+          ? programsRes.data
+          : ((programsRes.data as any)?.data || []);
+
         return {
           faculties: rawFaculties.map(mapApiFaculty),
           departments: rawDepts,
+          programs: rawPrograms,
         };
       }, forceRefresh);
       setFaculties(data.faculties);
       setDepartments(data.departments);
-    } catch {
-      toast.error('Error', 'Failed to load faculties and departments.');
+      setPrograms(data.programs ?? []);
+    } catch (err) {
+      toast.error('Error', apiErrorMessage(err, 'Failed to load faculties and departments.'));
     } finally {
       setIsLoading(false);
     }
@@ -337,6 +388,7 @@ export default function VpaaFaculty() {
     setDeloadUnits(faculty.deload_units);
     setProbonoUnits(faculty.probono_units);
     setDepartmentId(faculty.department_id ? faculty.department_id.toString() : '');
+    setProgramId(faculty.program_id ? faculty.program_id.toString() : '');
     setStatus(faculty.status);
     setProfilePicture(faculty.profile_picture || null);
 
@@ -355,28 +407,64 @@ export default function VpaaFaculty() {
     setIsDeleteModalOpen(true);
   };
 
+  const facultyToDelete =
+    idToDelete === null ? null : faculties.find(f => f.id === idToDelete) ?? null;
+
   const confirmDeleteFaculty = async () => {
-    if (idToDelete !== null) {
-      try {
-        await api.delete(`/faculties/${idToDelete}`);
-        setFaculties(prev => {
-          const nextFaculties = prev.filter(f => f.id !== idToDelete);
-          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments });
-          return nextFaculties;
-        });
+    if (idToDelete === null) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await api.delete<{ released_schedule_count?: number }>(`/faculties/${idToDelete}`);
+      setFaculties(prev => {
+        const nextFaculties = prev.filter(f => f.id !== idToDelete);
+        setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
+        return nextFaculties;
+      });
+
+      // Deleting an instructor nulls the faculty_id on their approved meetings
+      // instead of removing them, so say how many now need a new instructor.
+      const released = res.data?.released_schedule_count ?? 0;
+      if (released > 0) {
+        toast.warning(
+          'Deleted',
+          `Instructor removed. ${released} approved meeting${released === 1 ? '' : 's'} `
+            + `${released === 1 ? 'is' : 'are'} now unassigned and need${released === 1 ? 's' : ''} a new instructor.`
+        );
+      } else {
         toast.success('Deleted', 'Instructor removed successfully');
-      } catch {
-        toast.error('Error', 'Failed to delete instructor');
-      } finally {
-        setIsDeleteModalOpen(false);
-        setIdToDelete(null);
       }
+
+      setIsDeleteModalOpen(false);
+      setIdToDelete(null);
+    } catch (err) {
+      // Leave the dialog open on failure so the reason stays on screen.
+      toast.error('Error', apiErrorMessage(err, 'Failed to delete instructor'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleViewDetails = (faculty: FacultyMember) => {
+  const handleViewDetails = async (faculty: FacultyMember) => {
     setDetailsFaculty(faculty);
     setIsDetailsModalOpen(true);
+
+    // The row came from a cached list payload, but this panel is where assigned
+    // load and classes are actually read, so refresh the record behind the
+    // already-open modal rather than making the user wait for it.
+    try {
+      const res = await api.get<ApiFacultyMember>(`/faculties/${faculty.id}`);
+      const fresh = mapApiFaculty(res.data);
+      setDetailsFaculty(current => (current && current.id === fresh.id ? fresh : current));
+      setFaculties(prev => {
+        const nextFaculties = prev.map(f => (f.id === fresh.id ? fresh : f));
+        setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
+        return nextFaculties;
+      });
+    } catch {
+      // The cached record is already on screen; a failed refresh is not worth
+      // interrupting the user over.
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -429,6 +517,7 @@ export default function VpaaFaculty() {
       deload_units: deloadUnits,
       probono_units: probonoUnits,
       department_id: Number(deptVal),
+      program_id: programId ? Number(programId) : null,
       status,
       profile_picture: profilePicture
     };
@@ -439,7 +528,7 @@ export default function VpaaFaculty() {
         const updatedFaculty = mapApiFaculty(res.data);
         setFaculties(prev => {
           const nextFaculties = prev.map(f => f.id === editingId ? updatedFaculty : f);
-          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments });
+          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
           return nextFaculties;
         });
         toast.success('Updated', 'Instructor updated successfully');
@@ -448,14 +537,17 @@ export default function VpaaFaculty() {
         const createdFaculty = mapApiFaculty(res.data);
         setFaculties(prev => {
           const nextFaculties = [createdFaculty, ...prev];
-          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments });
+          setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
           return nextFaculties;
         });
         toast.success('Created', 'Instructor created successfully');
       }
       setIsModalOpen(false);
-    } catch {
-      toast.error('Error', isEditMode ? 'Failed to update instructor' : 'Failed to create instructor');
+    } catch (err) {
+      toast.error(
+        'Error',
+        apiErrorMessage(err, isEditMode ? 'Failed to update instructor' : 'Failed to create instructor')
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -715,6 +807,7 @@ export default function VpaaFaculty() {
                 setDeloadUnits(0);
                 setProbonoUnits(0);
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
+                setProgramId('');
                 setStatus('active');
                 setProfilePicture(null);
 
@@ -1208,16 +1301,36 @@ export default function VpaaFaculty() {
                   </div>
                 </div>
 
-                <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-xs font-sans">
+                <div className="border-t border-gray-100 pt-3 grid grid-cols-3 gap-3 text-xs font-sans">
                   <div>
                     <span className="text-gray-400 block font-semibold">Assigned Load</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.assigned_units} Units</span>
+                    <span
+                      className={`font-bold ${
+                        detailsFaculty.unit_ceiling > 0 && detailsFaculty.assigned_units > detailsFaculty.unit_ceiling
+                          ? 'text-red-600'
+                          : 'text-gray-800'
+                      }`}
+                    >
+                      {detailsFaculty.assigned_units} Units
+                    </span>
                   </div>
                   <div>
                     <span className="text-gray-400 block font-semibold">Net Required Load</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.max_units - detailsFaculty.deload_units} Units</span>
+                    <span className="font-bold text-gray-800">{detailsFaculty.required_units} Units</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-semibold">Ceiling</span>
+                    <span className="font-bold text-gray-800">{detailsFaculty.unit_ceiling} Units</span>
                   </div>
                 </div>
+
+                {detailsFaculty.unit_ceiling > 0
+                  && detailsFaculty.assigned_units > detailsFaculty.unit_ceiling && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-semibold text-amber-800 font-sans">
+                    Above the {detailsFaculty.unit_ceiling}-unit ceiling. Assignment still goes
+                    through, but the scheduler flags it as an overload warning.
+                  </p>
+                )}
               </div>
 
               {/* Assigned Subjects Panel */}
@@ -1262,9 +1375,30 @@ export default function VpaaFaculty() {
                   </div>
                 )}
               </div>
+
+              {/* Weekly teaching windows the scheduler honours (faculty_availabilities) */}
+              <FacultyAvailabilityPanel
+                facultyId={detailsFaculty.id}
+                facultyName={`${detailsFaculty.first_name} ${detailsFaculty.last_name}`}
+                employmentType={detailsFaculty.employment_type}
+                canEdit={canEditAvailability}
+                onNotify={(kind, title, message) =>
+                  kind === 'success' ? toast.success(title, message) : toast.error(title, message)
+                }
+              />
             </div>
 
-            <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex justify-end">
+            <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex justify-end gap-3">
+              {canEditLoad && !canManageFaculty && (
+                <button
+                  type="button"
+                  onClick={() => setLoadEditorFaculty(detailsFaculty)}
+                  className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 cursor-pointer font-sans"
+                >
+                  <Pencil size={14} />
+                  <span>Edit Load</span>
+                </button>
+              )}
               <InstructorTeachingLoadButton facultyId={detailsFaculty.id} />
             </div>
           </div>
@@ -1473,6 +1607,9 @@ export default function VpaaFaculty() {
                     onChange={(e) => {
                       setDepartmentId(e.target.value);
                       setDepartmentError('');
+                      // A program only belongs to one department, so the previous
+                      // pick is never valid for the newly chosen one.
+                      setProgramId('');
                     }}
                     className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${departmentError
                         ? 'border-red-500 focus:ring-red-500'
@@ -1505,6 +1642,27 @@ export default function VpaaFaculty() {
                   />
                 </div>
               )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  Program / Major
+                </label>
+                <select
+                  value={programId}
+                  onChange={(e) => setProgramId(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                >
+                  <option value="">Not program-specific</option>
+                  {formPrograms.map(program => (
+                    <option key={program.id} value={program.id.toString()}>
+                      {program.code} - {program.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1 font-sans">
+                  Major subjects tied to a program can only be assigned to instructors of that program.
+                </p>
+              </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
@@ -1552,28 +1710,66 @@ export default function VpaaFaculty() {
               <AlertTriangle size={24} />
             </div>
             <h3 className="text-base font-bold text-gray-800 mb-2 font-sans">Delete Instructor</h3>
-            <p className="text-gray-500 text-sm mb-6 font-sans">
-              Are you sure you want to delete this instructor? This action cannot be undone and will permanently remove this record from the database.
+            <p className="text-gray-500 text-sm mb-4 font-sans">
+              {facultyToDelete
+                ? `Delete ${facultyToDelete.first_name} ${facultyToDelete.last_name}? `
+                : 'Delete this instructor? '}
+              This cannot be undone and permanently removes the record from the database.
             </p>
+            {facultyToDelete && facultyToDelete.live_schedule_count > 0 && (
+              <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 font-sans">
+                {facultyToDelete.live_schedule_count} approved meeting
+                {facultyToDelete.live_schedule_count === 1 ? '' : 's'} on the timetable
+                {facultyToDelete.live_schedule_count === 1 ? ' is' : ' are'} assigned to this
+                instructor. The meeting{facultyToDelete.live_schedule_count === 1 ? '' : 's'} will
+                stay on the timetable with no instructor and will need reassigning.
+              </p>
+            )}
             <div className="flex justify-end gap-3 font-sans">
               <button
                 type="button"
                 onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer font-sans"
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer disabled:opacity-50 font-sans"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmDeleteFaculty}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm font-sans"
+                disabled={isDeleting}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed font-sans"
               >
-                Confirm Delete
+                {isDeleting && <Loader2 size={14} className="animate-spin" />}
+                <span>Confirm Delete</span>
               </button>
             </div>
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Load-only editor: the secretary's write path into an instructor record. */}
+      {loadEditorFaculty && (
+        <FacultyLoadEditorModal
+          faculty={loadEditorFaculty}
+          onClose={() => setLoadEditorFaculty(null)}
+          onSaved={(updated) => {
+            const fresh = mapApiFaculty(updated as ApiFacultyMember);
+            setFaculties(prev => {
+              const nextFaculties = prev.map(f => (f.id === fresh.id ? fresh : f));
+              setCachedData<FacultyPageData>(facultyCacheKey, {
+                faculties: nextFaculties,
+                departments,
+                programs,
+              });
+              return nextFaculties;
+            });
+            setDetailsFaculty(current => (current && current.id === fresh.id ? fresh : current));
+            toast.success('Updated', 'Teaching load updated successfully');
+          }}
+          onError={(message) => toast.error('Error', message)}
+        />
       )}
     </div>
   );

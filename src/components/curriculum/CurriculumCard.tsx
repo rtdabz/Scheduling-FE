@@ -61,14 +61,6 @@ export default function CurriculumCard({
             <p className="text-xs font-semibold text-gray-700 truncate">{curriculum.department?.department_code || 'N/A'}</p>
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Version</p>
-            <p className="text-xs font-semibold text-gray-700">{curriculum.curriculum_version || 'N/A'}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Academic Year</p>
-            <p className="text-xs font-semibold text-gray-700">{curriculum.academic_year || 'N/A'}</p>
-          </div>
-          <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Effective Year</p>
             <p className="text-xs font-semibold text-gray-700">{curriculum.effective_school_year}</p>
           </div>
@@ -117,7 +109,7 @@ export default function CurriculumCard({
             </button>
             <button
               onClick={handleStatusToggle}
-              title={curriculum.status === 'active' ? 'Set status to draft' : 'Set status to active (deactivates other curricula in same department)'}
+              title={curriculum.status === 'active' ? 'Set status to draft' : 'Set status to active (deactivates the other curriculum in the same department)'}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
                 curriculum.status === 'active'
                   ? 'text-gray-600 hover:bg-gray-100'

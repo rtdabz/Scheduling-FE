@@ -5,6 +5,7 @@ import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
 import type { ApiDepartmentRecord, ScheduleItem, Section } from "./types";
+import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 
 interface PrintScheduleProps {
   sections: Section[];
@@ -38,8 +39,15 @@ const SIGNATORIES = {
   preparedBy: { name: "(NAME)", role: "Program Head" },
   reviewedBy: { name: "(NAME)", role: "Dean" },
   recommendedBy: { name: "KHAREN JANE S. UNGAB, DM", role: "Vice-President for Academic Affairs" },
-  approvedBy: { name: "ATTY. NADYA B. EMANO-ELIPE", role: "OIC-College President" },
 };
+
+/** The approving signatory is whatever the VPAA saved in Settings. */
+const buildSignatories = (settings: InstitutionSettings) => [
+  { label: "Prepared by:", ...SIGNATORIES.preparedBy },
+  { label: "Reviewed by:", ...SIGNATORIES.reviewedBy },
+  { label: "Recommended by:", ...SIGNATORIES.recommendedBy },
+  { label: "Approved by:", name: settings.president_name, role: settings.president_title },
+];
 
 const formatPrintTime = (timeStr: string): string => {
   if (!timeStr) return "";
@@ -104,13 +112,6 @@ export default function PrintSchedule({
     municipalLogoUrl = `${logoOrigin}${municipalLogo.startsWith("/") ? "" : "/"}${municipalLogo}`;
   }
 
-  const signatories = [
-    { label: "Prepared by:", ...SIGNATORIES.preparedBy },
-    { label: "Reviewed by:", ...SIGNATORIES.reviewedBy },
-    { label: "Recommended by:", ...SIGNATORIES.recommendedBy },
-    { label: "Approved by:", ...SIGNATORIES.approvedBy },
-  ];
-
   const handlePrint = () => {
     const loadImgSafe = (url: string): Promise<HTMLImageElement | null> => {
       return new Promise((resolve) => {
@@ -122,13 +123,16 @@ export default function PrintSchedule({
       });
     };
 
-    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl), departmentLogoUrl ? loadImgSafe(departmentLogoUrl) : Promise.resolve(null)])
-      .then(([logoImg, muniImg, departmentImg]) => {
-        generatePdf(logoImg, muniImg, departmentImg);
+    // fetchInstitutionSettings never rejects, so a signatory lookup failure
+    // still prints -- with the standing names.
+    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl), departmentLogoUrl ? loadImgSafe(departmentLogoUrl) : Promise.resolve(null), fetchInstitutionSettings()])
+      .then(([logoImg, muniImg, departmentImg, settings]) => {
+        generatePdf(logoImg, muniImg, departmentImg, settings);
       });
   };
 
-  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, departmentImg: HTMLImageElement | null) => {
+  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, departmentImg: HTMLImageElement | null, settings: InstitutionSettings) => {
+    const signatories = buildSignatories(settings);
     const doc = new jsPDF({ orientation: "landscape", format: "a4" });
     // ── 1. Letterhead ──
     let logoWidth = 22;
@@ -352,24 +356,36 @@ export default function PrintSchedule({
         const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
 
         return [
-        ...(isAdditionalMeeting ? [] : [
-          {
-            content: item.subjectCode,
-            rowSpan: subjectMeetingCount,
-            styles: { halign: "center" as const, valign: "middle" as const }
-          },
-          {
-            content: item.subjectName,
-            rowSpan: subjectMeetingCount,
-            styles: { halign: "center" as const, valign: "middle" as const }
-          }
-        ]),
-        item.lectureUnits.toString(),
-        item.laboratoryUnits.toString(),
-        item.totalUnits.toString(),
-        getFullDayName(item.day),
-        `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
-        item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "")
+          ...(isAdditionalMeeting ? [] : [
+            {
+              content: item.subjectCode,
+              rowSpan: subjectMeetingCount,
+              styles: { halign: "center" as const, valign: "middle" as const }
+            },
+            {
+              content: item.subjectName,
+              rowSpan: subjectMeetingCount,
+              styles: { halign: "center" as const, valign: "middle" as const }
+            },
+            {
+              content: item.lectureUnits.toString(),
+              rowSpan: subjectMeetingCount,
+              styles: { halign: "center" as const, valign: "middle" as const }
+            },
+            {
+              content: item.laboratoryUnits.toString(),
+              rowSpan: subjectMeetingCount,
+              styles: { halign: "center" as const, valign: "middle" as const }
+            },
+            {
+              content: item.totalUnits.toString(),
+              rowSpan: subjectMeetingCount,
+              styles: { halign: "center" as const, valign: "middle" as const }
+            }
+          ]),
+          getFullDayName(item.day),
+          `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
+          item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "")
         ];
       });
 

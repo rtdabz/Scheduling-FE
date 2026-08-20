@@ -26,7 +26,10 @@ export interface DepartmentScheduleStatusData {
 }
 
 interface StageCounts {
+  /** draft + revision — sections that still need drafting work */
   draft: number;
+  /** returned by the dean for revision (subset of `draft`) */
+  revision: number;
   completed: number;
   submitted: number;
   approved_by_dean: number;
@@ -112,6 +115,7 @@ export function useDepartmentScheduleStatus(
 
   const stageCounts: StageCounts = useMemo(() => ({
     draft: sections.filter(s => s.status === 'draft' || s.status === 'revision').length,
+    revision: sections.filter(s => s.status === 'revision').length,
     completed: sections.filter(s => s.status === 'completed').length,
     submitted: sections.filter(s => s.status === 'submitted').length,
     approved_by_dean: sections.filter(s => s.status === 'approved_by_dean').length,

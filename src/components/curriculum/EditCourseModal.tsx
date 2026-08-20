@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Pencil, Loader2, BookOpen, AlertCircle } from 'lucide-react';
-import type { CurriculumCourse } from '../../types/curriculum';
+import type { CurriculumCourse, Program } from '../../types/curriculum';
 import { formatCourseName } from '../../lib/formatters';
 
 export interface EditCourseFormData {
@@ -11,12 +11,14 @@ export interface EditCourseFormData {
   courseCategory: 'major' | 'minor';
   lecUnits: number;
   labUnits: number;
+  programId: number | null;
 }
 
 interface EditCourseModalProps {
   isOpen: boolean;
   course: CurriculumCourse | null;
   isSubmitting: boolean;
+  programs?: Program[];
   onClose: () => void;
   onSave: (data: EditCourseFormData) => Promise<void>;
 }
@@ -25,6 +27,7 @@ export default function EditCourseModal({
   isOpen,
   course,
   isSubmitting,
+  programs = [],
   onClose,
   onSave,
 }: EditCourseModalProps) {
@@ -33,6 +36,7 @@ export default function EditCourseModal({
   const [courseCategory, setCourseCategory] = useState<'major' | 'minor'>('major');
   const [lecUnits, setLecUnits] = useState('');
   const [labUnits, setLabUnits] = useState('');
+  const [programId, setProgramId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,6 +47,7 @@ export default function EditCourseModal({
       setCourseCategory(cat === 'minor' ? 'minor' : 'major');
       setLecUnits(course.lec_units == null ? '' : String(course.lec_units).padStart(2, '0'));
       setLabUnits(course.lab_units == null ? '' : String(course.lab_units).padStart(2, '0'));
+      setProgramId(course.program_id ? String(course.program_id) : '');
       setError(null);
     }
   }, [course, isOpen]);
@@ -77,6 +82,8 @@ export default function EditCourseModal({
       courseCategory,
       lecUnits: Number(lecUnits),
       labUnits: Number(labUnits),
+      // Only a major is program-bound; a minor is taught across programs.
+      programId: courseCategory === 'major' && programId ? Number(programId) : null,
     });
 
     onClose();
@@ -161,6 +168,30 @@ export default function EditCourseModal({
               <option value="minor">Minor Course</option>
             </select>
           </div>
+
+          {/* Program — decides which instructors may teach this major */}
+          {courseCategory === 'major' && (
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
+                Program / Major
+              </label>
+              <select
+                value={programId}
+                onChange={(e) => setProgramId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm cursor-pointer"
+              >
+                <option value="">Not program-specific</option>
+                {programs.map((program) => (
+                  <option key={program.id} value={String(program.id)}>
+                    {program.code} - {program.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Once set, only instructors belonging to this program can be assigned to teach it.
+              </p>
+            </div>
+          )}
 
           {/* Units Inputs */}
           <div className="grid grid-cols-3 gap-3 pt-1">

@@ -129,8 +129,8 @@ export default function App() {
             <Route path="/faculty" element={<VpaaFaculty />} />
             <Route path="/rooms" element={<VpaaRooms />} />
 
-            <Route path="/curricula" element={<CurriculumListPage />} />
-            <Route path="/curricula/:id" element={<CurriculumDetailPage />} />
+            <Route path="/curriculum" element={<CurriculumListPage />} />
+            <Route path="/curriculum/:id" element={<CurriculumDetailPage />} />
             <Route path="/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
@@ -145,8 +145,8 @@ export default function App() {
             <Route path="/dean/faculty" element={<DeanFaculty />} />
             <Route path="/dean/rooms" element={<DeanRooms />} />
 
-            <Route path="/dean/curricula" element={<CurriculumListPage />} />
-            <Route path="/dean/curricula/:id" element={<CurriculumDetailPage />} />
+            <Route path="/dean/curriculum" element={<CurriculumListPage />} />
+            <Route path="/dean/curriculum/:id" element={<CurriculumDetailPage />} />
             <Route path="/dean/reports" element={<DeanReports />} />
             <Route path="/dean/settings" element={<AccountSettingsPage />} />
 
@@ -156,8 +156,8 @@ export default function App() {
             <Route path="/secretary/rooms" element={<SecretaryRooms />} />
 
             <Route path="/secretary/courses" element={<SecretaryCourses />} />
-            <Route path="/secretary/curricula" element={<CurriculumListPage />} />
-            <Route path="/secretary/curricula/:id" element={<CurriculumDetailPage />} />
+            <Route path="/secretary/curriculum" element={<CurriculumListPage />} />
+            <Route path="/secretary/curriculum/:id" element={<CurriculumDetailPage />} />
             <Route path="/secretary/subjects" element={<SecretaryCourses />} />
             <Route path="/secretary/sections" element={<SecretarySections />} />
             <Route path="/secretary/instructors" element={<SecretaryFaculty />} />
@@ -170,8 +170,8 @@ export default function App() {
             <Route path="/program_head/faculty" element={<ProgramHeadFaculty />} />
             <Route path="/program_head/rooms" element={<ProgramHeadRooms />} />
 
-            <Route path="/program_head/curricula" element={<CurriculumListPage />} />
-            <Route path="/program_head/curricula/:id" element={<CurriculumDetailPage />} />
+            <Route path="/program_head/curriculum" element={<CurriculumListPage />} />
+            <Route path="/program_head/curriculum/:id" element={<CurriculumDetailPage />} />
             <Route path="/program_head/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />
             <Route path="/program_head/settings" element={<AccountSettingsPage />} />

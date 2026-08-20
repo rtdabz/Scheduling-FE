@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, UserMinus, X } from "lucide-react";
 import type { DepartmentSectionProgress, WithdrawalStage } from "../types";
 
 interface WithdrawSubmissionModalProps {
@@ -26,6 +26,16 @@ export default function WithdrawSubmissionModal({
   const selectableSections = useMemo(
     () => sections.filter((section) => ["submitted", "approved_by_dean", "approved", "faculty_assignment"].includes(section.status)),
     [sections]
+  );
+
+  // Unlocking a section for revision releases its instructor assignments: the
+  // schedule they were made against is about to change, and assignment is only
+  // valid once the schedule is VPAA-approved again.
+  const releasedInstructorBlocks = useMemo(
+    () => selectableSections
+      .filter((section) => selectedIds.includes(section.sectionId))
+      .reduce((total, section) => total + (section.assignedInstructorBlocks ?? 0), 0),
+    [selectableSections, selectedIds]
   );
 
   useEffect(() => {
@@ -92,6 +102,14 @@ export default function WithdrawSubmissionModal({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             Select only the sections that need changes. All other sections will stay completed.
           </div>
+          {releasedInstructorBlocks > 0 && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-800">
+              <UserMinus className="mt-0.5 h-4 w-4 shrink-0" />
+              {releasedInstructorBlocks === 1
+                ? "1 instructor assignment in the selected sections will be released and must be made again after re-approval."
+                : `${releasedInstructorBlocks} instructor assignments in the selected sections will be released and must be made again after re-approval.`}
+            </div>
+          )}
           <div className="overflow-hidden rounded-xl border border-slate-200">
             <label className="flex cursor-pointer items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
               <span className="text-xs font-bold text-slate-700">
@@ -126,6 +144,12 @@ export default function WithdrawSubmissionModal({
                       <span className="block text-sm font-bold text-slate-800">{section.sectionName}</span>
                       <span className="mt-0.5 block text-xs font-medium text-slate-500">
                         {section.plottedSubjects}/{section.requiredSubjects} subjects plotted
+                        {(section.assignedInstructorBlocks ?? 0) > 0 && (
+                          <span className="text-orange-600">
+                            {" · "}
+                            {section.assignedInstructorBlocks} with instructors
+                          </span>
+                        )}
                       </span>
                     </span>
                     <span className={`flex h-6 w-6 items-center justify-center rounded-full border ${

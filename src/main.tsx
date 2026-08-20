@@ -4,11 +4,14 @@ import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './context/ToastContext'
 import { ToastContainer } from './components/ui/Toast'
+import SingleClickGuard from './components/ui/SingleClickGuard'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ToastProvider>
-      <App />
+      <SingleClickGuard>
+        <App />
+      </SingleClickGuard>
       <ToastContainer />
     </ToastProvider>
   </StrictMode>,

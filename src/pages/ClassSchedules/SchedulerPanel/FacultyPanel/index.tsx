@@ -87,9 +87,14 @@ export default function FacultyPanel({
       {/* Guidance Overview & Status Card */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {isLoading ? (
-          <div className="space-y-3 animate-pulse">
-            <Skeleton className="h-20 w-full rounded-xl" />
-            <Skeleton className="h-16 w-full rounded-xl" />
+          <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4">
+            <div className="flex items-center gap-2"><Skeleton className="h-4 w-4" /><Skeleton className="h-3 w-36" /></div>
+            <div className="mt-3 space-y-2 pl-5">
+              <Skeleton className="h-2.5 w-full" />
+              <Skeleton className="h-2.5 w-11/12" />
+              <Skeleton className="h-2.5 w-full" />
+              <Skeleton className="h-2.5 w-4/5" />
+            </div>
           </div>
         ) : isComplete ? (
           <div className="flex flex-col items-center justify-center text-center p-5 bg-emerald-50/80 border border-emerald-200 rounded-2xl">

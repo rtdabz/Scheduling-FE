@@ -5,7 +5,10 @@ import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
 import type { Department, Faculty, ScheduleItem, Section, Subject, Term, UserSummary } from "./types";
+import { INSTRUCTOR_ASSIGNED_STATUSES } from "./constants";
 import { useToast } from "../../../context/ToastContext";
+import { getStoredUserDepartmentId, getStoredUserRole } from "../../../lib/storedUser";
+import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -19,11 +22,6 @@ interface TeachingLoadProps {
   departments: Department[];
   selectedSectionId: string;
   selectedFacultyId?: string;
-}
-
-interface StoredUser {
-  role?: string;
-  department_id?: number | string | null;
 }
 
 interface TeachingLoadRow {
@@ -145,27 +143,27 @@ export default function TeachingLoad({
       });
     };
 
-    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl)])
-      .then(([logoImg, muniImg]) => {
-        generatePdf(logoImg, muniImg);
+    // fetchInstitutionSettings never rejects, so a signatory lookup failure
+    // still prints -- with the standing names.
+    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl), fetchInstitutionSettings()])
+      .then(([logoImg, muniImg, settings]) => {
+        generatePdf(logoImg, muniImg, settings);
       })
       .finally(() => {
         isPrintingRef.current = false;
       });
   };
 
-  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null) => {
-    const userJson = localStorage.getItem("user") || sessionStorage.getItem("user");
-    let user: StoredUser | null = null;
-    if (userJson) {
-      try {
-        user = JSON.parse(userJson) as StoredUser;
-      } catch {
-        user = null;
-      }
-    }
-    const isVpaa = user?.role?.toLowerCase() === "vpaa";
-    const userDeptId = user?.department_id;
+  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, settings: InstitutionSettings) => {
+    const isVpaa = getStoredUserRole() === "vpaa";
+    const userDeptId = getStoredUserDepartmentId();
+
+    // The printed form is an official record of load, so it lists the same
+    // assignments the load figures count: approved ones only. A withdrawn row
+    // keeps neither its instructor nor a place on this form.
+    const assignedSchedules = allSchedules.filter((s) =>
+      INSTRUCTOR_ASSIGNED_STATUSES.includes(s.status)
+    );
 
     let targetDeptId: number | null = null;
     if (!isVpaa && userDeptId) {
@@ -180,7 +178,7 @@ export default function TeachingLoad({
     const targetFaculties = faculties.filter((f) => {
       const matchesDept = !targetDeptId || Number(f.departmentId) === Number(targetDeptId);
       const matchesFaculty = !selectedFacultyId || f.id === selectedFacultyId;
-      const hasSchedules = allSchedules.some((s) => s.facultyId === f.id);
+      const hasSchedules = assignedSchedules.some((s) => s.facultyId === f.id);
       return matchesDept && matchesFaculty && hasSchedules;
     });
 
@@ -345,7 +343,7 @@ export default function TeachingLoad({
       drawCheckbox(145, 69.5, "Contractual", false);
       drawCheckbox(145, 74.5, "Part-Time", empStatus === "Part-Time");
 
-      const facultySchedules = allSchedules.filter((s) => s.facultyId === faculty.id);
+      const facultySchedules = assignedSchedules.filter((s) => s.facultyId === faculty.id);
 
       const getTableData = (type: "Basic" | "Overload", targetRows: number): TeachingLoadRow[] => {
         const filtered = facultySchedules.filter((s) => {
@@ -590,8 +588,8 @@ export default function TeachingLoad({
         verifiedTitle: "College Dean",
         recommendingName: "DR. KHAREN JANE S. UNGAB",
         recommendingTitle: "Vice President for Academic Affairs",
-        approvedName: "ATTY. NADYA B. EMANO-ELIPE",
-        approvedTitle: "OIC - College President",
+        approvedName: settings.president_name,
+        approvedTitle: settings.president_title,
       };
 
       doc.line(centerMargin, currentY, centerMargin, currentY + 18.5);

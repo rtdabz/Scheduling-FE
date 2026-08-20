@@ -1,19 +1,11 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { CheckCircle2, LayoutGrid, Loader2, Users } from "lucide-react";
 import {
   DAYS,
   getSubjectClassification,
   slotToTimeStr
 } from "../constants";
 import type {
-  ApiCourseRecord,
-  ApiDepartmentRecord,
-  ApiFacultyRecord,
-  ApiRoomRecord,
   ApiScheduleRecord,
-  ApiSectionRecord,
-  ApiSubjectRecord,
-  ApiTermRecord,
   ApiViolation,
   ConflictInfo,
   DeliveryMode,
@@ -30,42 +22,27 @@ import type {
   UserSummary,
   WithdrawalStage
 } from "../types";
+import { getCourseSlotPlan } from "../courseSlotPlan";
 import { getSubjectTotalSlots } from "../types";
+import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
 
 import type { SubjectClassification } from "../constants";
-import { useConflict } from "./useConflict";
+import type { InitialDataResponse, SchedulerCacheData } from "./initialDataMapper";
+import {
+  hasUsableSchedulerCache,
+  mapApiScheduleToItem,
+  mapInitialData,
+  slotToTime24h
+} from "./initialDataMapper";
+import { buildPlacementSessionKey } from "./placementSession";
+import { requiredRoomTypeForMeeting, useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
 import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
-
-const dayMapToIndex: Record<string, number> = {
-  "Monday": 0, "Mon": 0,
-  "Tuesday": 1, "Tue": 1,
-  "Wednesday": 2, "Wed": 2,
-  "Thursday": 3, "Thu": 3,
-  "Friday": 4, "Fri": 4,
-  "Saturday": 5, "Sat": 5,
-  "Sunday": 6, "Sun": 6
-};
-
-const fullDayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-const timeStrToSlot = (timeStr: string): number => {
-  const parts = timeStr.split(':');
-  if (parts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  const totalMinutes = hours * 60 + minutes;
-  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
-};
-
-const slotToTime24h = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-};
+import { getStoredUser } from "../../../../lib/storedUser";
+import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
+import { buildPreferredPattern, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 
 const isNotFoundError = (err: unknown): boolean => {
   return (
@@ -74,19 +51,6 @@ const isNotFoundError = (err: unknown): boolean => {
     "response" in err &&
     (err as any).response?.status === 404
   );
-};
-
-const buildPreferredPattern = (day1Index: number, day2Index: number): string => `days:${day1Index}-${day2Index}`;
-
-const getPreferredPatternDayIndexes = (preferredPattern?: string | null): [number, number] | null => {
-  if (!preferredPattern) return null;
-  if (preferredPattern === "MW") return [0, 2];
-  if (preferredPattern === "TTh") return [1, 3];
-
-  const customMatch = preferredPattern.match(/^days:([0-6])-([0-6])$/);
-  if (!customMatch) return null;
-
-  return [Number(customMatch[1]), Number(customMatch[2])];
 };
 
 const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DAYS.length;
@@ -134,35 +98,6 @@ const departmentWithdrawableStatuses: ScheduleItem["status"][] = [
 ];
 
 
-interface StoredUser {
-  id?: number;
-  department_id?: number;
-  role?: string;
-}
-
-const normalizeYearLevel = (yearLevel: string | number): Section["yearLevel"] => {
-  const year = Number(yearLevel);
-  return year === 1 || year === 2 || year === 3 || year === 4 ? year : 1;
-};
-
-const toNumber = (value: number | string | null | undefined): number => {
-  const parsedValue = Number(value);
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
-};
-
-interface SchedulerCacheData {
-  rooms: Room[];
-  sections: Section[];
-  subjects: Subject[];
-  faculties: Faculty[];
-  activeTerm: Term | null;
-  departments: Department[];
-  users: UserSummary[];
-  schedules: ScheduleItem[];
-  fieldCourseAssignmentEnabled: boolean;
-  fieldCourseCodes: string[];
-}
-
 interface AtomicScheduleResponse {
   schedules: ApiScheduleRecord[];
   deleted_schedule_ids: number[];
@@ -172,30 +107,11 @@ interface AcceptedRecommendationResponse {
   schedules: ApiScheduleRecord[];
 }
 
-interface ScheduleUpdateResponse {
-  schedule: ApiScheduleRecord;
-  schedules?: ApiScheduleRecord[];
-}
-
 interface FacultyAssignResponse extends Partial<ApiScheduleRecord> {
   schedule?: ApiScheduleRecord;
   schedules?: ApiScheduleRecord[];
 }
 
-interface InitialDataResponse {
-  active_term: ApiTermRecord | null;
-  rooms: ApiRoomRecord[];
-  courses?: ApiCourseRecord[];
-  subjects: ApiSubjectRecord[];
-  faculties: ApiFacultyRecord[];
-  sections: ApiSectionRecord[];
-  schedules: ApiScheduleRecord[];
-  departments: ApiDepartmentRecord[];
-  users: UserSummary[];
-  field_course_assignment_enabled?: boolean;
-  field_course_codes?: string[];
-  resource_slot_limits?: { online: number; field: number } | null;
-}
 
 interface TargetScheduleDay {
   day: string;
@@ -203,92 +119,6 @@ interface TargetScheduleDay {
   duration: number;
 }
 
-const hasUsableSchedulerCache = (data: SchedulerCacheData | undefined): data is SchedulerCacheData => {
-  return Boolean(
-    data
-      && Array.isArray(data.rooms)
-      && Array.isArray(data.sections)
-      && Array.isArray(data.subjects)
-      && Array.isArray(data.faculties)
-      && Array.isArray(data.departments)
-      && Array.isArray(data.users)
-      && Array.isArray(data.schedules)
-      && typeof data.fieldCourseAssignmentEnabled === "boolean"
-      && Array.isArray(data.fieldCourseCodes)
-  );
-};
-
-const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
-  const dayIndex = dayMapToIndex[item.day] ?? 0;
-  const startSlot = timeStrToSlot(item.start_time);
-  const endSlot = timeStrToSlot(item.end_time);
-  const durationSlots = endSlot - startSlot;
-  const courseId = item.course_id?.toString() ?? item.subject_id?.toString() ?? "";
-  const sectionId = item.section_id?.toString() ?? "";
-  const fallbackId = [
-    item.term_id ?? "term",
-    sectionId || "section",
-    courseId || "course",
-    item.day ?? "day",
-    item.start_time ?? "start",
-    item.end_time ?? "end",
-    item.meeting_type ?? "meeting",
-    item.meeting_index ?? "index",
-  ].join(":");
-
-  let roomName = "";
-  if (item.room) {
-    if (item.room.room_code === "ONLINE") roomName = "Online";
-    else if (item.room.room_code === "FIELD") roomName = "Field";
-    else roomName = item.room.room_code ?? "";
-  }
-  if (!roomName && item.mode === "online") roomName = "Online";
-  if (!roomName && item.mode === "field") roomName = "Field";
-
-  let roomIdStr = item.room_id == null ? "" : item.room_id.toString();
-  if (item.room?.room_code === "ONLINE" || (item.room_id == null && item.mode === "online")) roomIdStr = "online";
-  else if (item.room?.room_code === "FIELD") roomIdStr = "field";
-
-  const courseCode = item.course?.course_code ?? item.subject?.course_code ?? item.subject?.subject_code ?? "";
-  const courseName = item.course?.course_name ?? item.subject?.course_name ?? item.subject?.subject_name ?? "";
-  const courseType = item.course?.course_category ?? item.subject?.course_category ?? item.subject?.subject_category ?? "major";
-
-  return {
-    id: item.id?.toString() ?? fallbackId,
-    termId: Number(item.term_id),
-    departmentId: Number(item.department_id),
-    courseId,
-    subjectId: courseId,
-    courseCode,
-    subjectCode: courseCode,
-    courseName,
-    subjectName: courseName,
-    courseType,
-    subjectType: courseType,
-    lectureUnits: toNumber(item.course?.lecture_hours ?? item.subject?.lecture_hours),
-    laboratoryUnits: toNumber(item.course?.lab_hours ?? item.subject?.lab_hours),
-    totalUnits: toNumber(item.course?.units ?? item.subject?.units),
-    sectionName: item.section?.section_name ?? "",
-    roomName,
-    day: DAYS[dayIndex] || "Mon",
-    startTime: slotToTimeStr(startSlot),
-    endTime: slotToTimeStr(endSlot),
-    mode: item.mode ?? "on-site",
-    facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
-    facultyId: item.faculty_id ? item.faculty_id.toString() : null,
-    status: item.status,
-    dayIndex,
-    startSlot,
-    durationSlots,
-    sectionId,
-    roomId: roomIdStr,
-    isHybrid: !!item.is_hybrid,
-    preferredPattern: item.preferred_pattern ?? null,
-    splitGroupId: item.split_group_id ?? null,
-    meetingType: item.meeting_type ?? null,
-    meetingIndex: item.meeting_index ?? 1
-  };
-};
 
 const getApiViolations = (error: unknown): ApiViolation[] => {
   if (
@@ -335,8 +165,7 @@ const getApiErrorMessage = (error: unknown): string | null => {
 
 export const useScheduler = () => {
   const { toast } = useToast();
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  const user = getStoredUser();
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const canWithdrawSubmission = ['secretary', 'program_head'].includes(user?.role?.toLowerCase() ?? '');
   const schedulerCacheKey = `scheduler:v12:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
@@ -372,13 +201,13 @@ export const useScheduler = () => {
     return saved === null ? true : saved === "true";
   });
 
-  const handleToggleWideView = () => {
+  const handleToggleWideView = useCallback(() => {
     setIsWideView((prev) => {
       const next = !prev;
       localStorage.setItem("timetable_wide_view", String(next));
       return next;
     });
-  };
+  }, []);
 
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
@@ -417,96 +246,7 @@ export const useScheduler = () => {
 
     loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
       const response = await fetchInitialData;
-      const initialData = response.data;
-      let apiRooms = initialData.rooms;
-      if (!isVpaa && user?.department_id) {
-        apiRooms = apiRooms.filter((r) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
-      }
-      const resourceSlotLimits = initialData.resource_slot_limits;
-      const mappedRooms = apiRooms.map((r): Room => ({
-        id: r.id.toString(),
-        name: r.room_code,
-        departmentId: r.department_id,
-        roomType: r.room_type,
-        status: r.status,
-        maxConcurrentClasses: r.room_type === "field"
-          ? Math.max(1, Number(resourceSlotLimits?.field ?? r.max_concurrent_classes ?? 1) || 1)
-          : r.room_type === "online"
-            ? Math.max(1, Number(resourceSlotLimits?.online ?? r.max_concurrent_classes ?? 1) || 1)
-          : Number(r.max_concurrent_classes ?? 1) || 1
-      }));
-
-      const rawCourses = initialData.courses ?? initialData.subjects ?? [];
-      const mappedSubjects = rawCourses.map((s): Subject => ({
-        id: s.id.toString(),
-        code: s.course_code ?? s.subject_code ?? "",
-        name: s.course_name ?? s.subject_name ?? "",
-        units: toNumber(s.units),
-        lectureHours: toNumber(s.lecture_hours),
-        labHours: toNumber(s.lab_hours),
-        category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
-        semester: s.semester,
-        departmentId: s.department_id ?? null,
-        teachingDepartmentId: s.teaching_assignment?.department_id ?? null,
-        teachingDepartmentCode: s.teaching_assignment?.department?.department_code,
-        teachingDepartmentName: s.teaching_assignment?.department?.department_name,
-        categories: s.categories ?? [],
-        yearLevel: normalizeYearLevel(s.year_level),
-        roomTypeRequired: s.room_type_required,
-        status: s.status ?? "active"
-      }));
-
-      const mappedFaculties = initialData.faculties
-        .map((f): Faculty => ({
-        id: f.id.toString(),
-        name: `${f.first_name} ${f.last_name}`,
-        profilePicture: f.profile_picture ?? null,
-        employmentType: f.employment_type,
-        departmentId: f.department_id,
-        departmentCode: f.department?.department_code,
-        departmentName: f.department?.department_name,
-        maxUnits: f.max_units ? Number(f.max_units) : undefined,
-        status: f.status,
-        availabilities: f.availabilities
-      }))
-      const term = initialData.active_term;
-      const rawSections = initialData.sections;
-      const rawSchedules = initialData.schedules;
-
-      // Filter sections by term_id or semester alignment (requiring academic year match)
-      const filteredSections = rawSections
-        .filter((s) => {
-          if (!term) return true;
-          if (s.term_id && Number(s.term_id) === Number(term.id)) return true;
-          return !!(term.semester && s.semester === term.semester && s.term?.academic_year === term.academic_year);
-        })
-        .map((s): Section => ({
-          id: s.id.toString(),
-          name: s.section_name,
-          yearLevel: normalizeYearLevel(s.year_level),
-          semester: s.semester,
-          departmentId: s.department_id,
-          termId: Number(s.term_id),
-          status: s.status ?? "active"
-        }));
-
-      // Filter and map schedules by term_id immediately once loaded
-      const filteredSchedules = rawSchedules
-        .filter((item) => !term || Number(item.term_id) === Number(term.id))
-        .map(mapApiScheduleToItem);
-
-      return {
-        rooms: mappedRooms,
-        subjects: mappedSubjects,
-        faculties: mappedFaculties,
-        activeTerm: term,
-        departments: initialData.departments,
-        users: initialData.users,
-        sections: filteredSections,
-        schedules: filteredSchedules,
-        fieldCourseAssignmentEnabled: !!initialData.field_course_assignment_enabled,
-        fieldCourseCodes: initialData.field_course_codes ?? [],
-      };
+      return mapInitialData(response.data, { isVpaa, userDepartmentId: user?.department_id });
     }, !canUseCachedData)
       .then((data) => {
         if (!active) return;
@@ -561,6 +301,15 @@ export const useScheduler = () => {
   }, [sections, selectedSectionId]);
 
 
+  /**
+   * Summer terms run Monday–Friday. useDragDrop enforces this on the drag path;
+   * this is the same rule for the click-to-place and relocate paths.
+   */
+  const isSummerWeekendBlocked = useCallback(
+    (dayIndex: number) => activeTerm?.semester === "summer" && dayIndex >= 5,
+    [activeTerm?.semester],
+  );
+
   const refreshSchedules = useCallback(async () => {
     try {
       const url = activeTerm ? `/schedules/term/${activeTerm.id}` : '/schedules';
@@ -579,7 +328,10 @@ export const useScheduler = () => {
         });
       }
     } catch {
-      // silently fail
+      // A failed refresh used to be swallowed entirely, leaving the grid showing
+      // stale rows with no indication. It is not fatal — the local state is still
+      // usable — so it surfaces as a warning rather than an error.
+      toast.error("Timetable Not Refreshed", "The timetable could not be refreshed. What you see may be out of date; reload to try again.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTerm, schedulerCacheKey]);
@@ -621,101 +373,19 @@ export const useScheduler = () => {
     try {
       clearCachedKey(schedulerCacheKey);
       const response = await api.get<InitialDataResponse>('/initial-data');
-      const initialData = response.data;
-      let apiRooms = initialData.rooms;
-      if (!isVpaa && user?.department_id) {
-        apiRooms = apiRooms.filter((r) => r.department_id === null || Number(r.department_id) === Number(user.department_id));
-      }
-      const resourceSlotLimits = initialData.resource_slot_limits;
-      const mappedRooms = apiRooms.map((r): Room => ({
-        id: r.id.toString(),
-        name: r.room_code,
-        departmentId: r.department_id,
-        roomType: r.room_type,
-        status: r.status,
-        maxConcurrentClasses: r.room_type === "field"
-          ? Math.max(1, Number(resourceSlotLimits?.field ?? r.max_concurrent_classes ?? 1) || 1)
-          : r.room_type === "online"
-            ? Math.max(1, Number(resourceSlotLimits?.online ?? r.max_concurrent_classes ?? 1) || 1)
-          : Number(r.max_concurrent_classes ?? 1) || 1
-      }));
-
-      const rawCourses = initialData.courses ?? initialData.subjects ?? [];
-      const mappedSubjects = rawCourses.map((s): Subject => ({
-        id: s.id.toString(),
-        code: s.course_code ?? s.subject_code ?? "",
-        name: s.course_name ?? s.subject_name ?? "",
-        units: s.units,
-        lectureHours: s.lecture_hours ?? 0,
-        labHours: s.lab_hours ?? 0,
-        category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
-        semester: s.semester,
-        departmentId: s.department_id ?? null,
-        teachingDepartmentId: s.teaching_assignment?.department_id ?? null,
-        teachingDepartmentCode: s.teaching_assignment?.department?.department_code,
-        teachingDepartmentName: s.teaching_assignment?.department?.department_name,
-        categories: s.categories ?? [],
-        yearLevel: normalizeYearLevel(s.year_level),
-        roomTypeRequired: s.room_type_required,
-        status: s.status ?? "active"
-      }));
-
-      const mappedFaculties = initialData.faculties
-        .map((f): Faculty => ({
-          id: f.id.toString(),
-          name: `${f.first_name} ${f.last_name}`,
-          profilePicture: f.profile_picture ?? null,
-          employmentType: f.employment_type,
-          departmentId: f.department_id,
-          departmentCode: f.department?.department_code,
-          departmentName: f.department?.department_name,
-          maxUnits: f.max_units ? Number(f.max_units) : undefined,
-          status: f.status
-        }));
-      const term = initialData.active_term;
-      const rawSections = initialData.sections;
-      const rawSchedules = initialData.schedules;
-
-      const filteredSections = rawSections
-        .filter((s) => !term || !s.term_id || Number(s.term_id) === Number(term.id) || (term.semester && s.semester === term.semester))
-        .map((s): Section => ({
-          id: s.id.toString(),
-          name: s.section_name,
-          yearLevel: normalizeYearLevel(s.year_level),
-          semester: s.semester,
-          departmentId: s.department_id,
-          termId: Number(s.term_id),
-          status: s.status ?? "active"
-        }));
-
-      const filteredSchedules = rawSchedules
-        .filter((item) => !term || Number(item.term_id) === Number(term.id))
-        .map(mapApiScheduleToItem);
-
-      const freshData = {
-        rooms: mappedRooms,
-        subjects: mappedSubjects,
-        faculties: mappedFaculties,
-        activeTerm: term,
-        departments: initialData.departments,
-        users: initialData.users,
-        sections: filteredSections,
-        schedules: filteredSchedules,
-        fieldCourseAssignmentEnabled: !!initialData.field_course_assignment_enabled,
-        fieldCourseCodes: initialData.field_course_codes ?? [],
-      };
+      const freshData = mapInitialData(response.data, { isVpaa, userDepartmentId: user?.department_id });
 
       setCachedData<SchedulerCacheData>(schedulerCacheKey, freshData);
-      setRooms(mappedRooms);
-      setSubjects(mappedSubjects);
-      setFaculties(mappedFaculties);
-      setActiveTerm(term);
-      setDepartments(initialData.departments);
-      setUsers(initialData.users);
-      setFieldCourseAssignmentEnabled(!!initialData.field_course_assignment_enabled);
-      setFieldCourseCodes(initialData.field_course_codes ?? []);
-      setSections(filteredSections);
-      setSchedules(filteredSchedules);
+      setRooms(freshData.rooms);
+      setSubjects(freshData.subjects);
+      setFaculties(freshData.faculties);
+      setActiveTerm(freshData.activeTerm);
+      setDepartments(freshData.departments);
+      setUsers(freshData.users);
+      setFieldCourseAssignmentEnabled(freshData.fieldCourseAssignmentEnabled);
+      setFieldCourseCodes(freshData.fieldCourseCodes);
+      setSections(freshData.sections);
+      setSchedules(freshData.schedules);
       toast.success("Synchronized", "Successfully loaded fresh sections and schedules from database.");
     } catch {
       toast.error("Synchronize Failed", "Could not load fresh data from database.");
@@ -769,13 +439,20 @@ export const useScheduler = () => {
   const [modalDay2Duration, setModalDay2Duration] = useState<number>(0);
   const [isDay2ModifiedByUser, setIsDay2ModifiedByUser] = useState<boolean>(false);
   const [modalValidationError, setModalValidationError] = useState<string>("");
-  const [modalConflict, setModalConflict] = useState<string | null>(null);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
 
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
   const [facultyActionSlotId, setFacultyActionSlotId] = useState<string | null>(null);
   const [popupValidationError, setPopupValidationError] = useState<string>("");
   const [popupConflictWarning, setPopupConflictWarning] = useState<string>("");
+  // The server decides when an assignment crosses an instructor's Basic Load, so
+  // the answer has to travel back to whichever write is waiting on it. Keeping
+  // the resolver beside the payload lets that write stay awaited across the
+  // prompt, which is what allows "No" to leave the popup as the user left it.
+  const [overloadPrompt, setOverloadPrompt] = useState<{
+    confirmation: OverloadConfirmation;
+    resolve: (proceed: boolean) => void;
+  } | null>(null);
 
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
@@ -966,7 +643,8 @@ export const useScheduler = () => {
           plottedSubjects,
           status,
           isDone: isFullyPlotted && departmentReadyStatuses.includes(status),
-          isSelected: section.id === selectedSectionId
+          isSelected: section.id === selectedSectionId,
+          assignedInstructorBlocks: sectionScheduleItems.filter((schedule) => Boolean(schedule.facultyId)).length
         };
       });
   }, [schedules, sections, selectedDepartmentId, selectedSectionId, semesterSubjects]);
@@ -1043,7 +721,13 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
-    const assignedDepartmentId = subject?.teachingDepartmentId ?? null;
+
+    // A major is assigned by the department that offers it; only service and
+    // minor courses follow the VPAA teaching assignment.
+    const assignedDepartmentId = isMajorSubject(subject)
+      ? majorTeachingDepartmentId(subject, schedule.departmentId ?? null)
+      : subject?.teachingDepartmentId ?? null;
+
     if (assignedDepartmentId === null) {
       return true;
     }
@@ -1056,6 +740,11 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
   const getFacultyRestrictionMessage = useCallback((schedule: ScheduleItem): string => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
+
+    if (isMajorSubject(subject)) {
+      return "Only the department that offers this major can assign its instructor.";
+    }
+
     const assignedDepartment = subject?.teachingDepartmentCode
       ? `${subject.teachingDepartmentCode} Department`
       : subject?.teachingDepartmentName ?? "the assigned teaching department";
@@ -1074,7 +763,16 @@ departmentSectionProgress.every((section) => section.status === "completed");
     return nextPlaced;
   }, [schedules]);
 
+  const placementSessionKey = buildPlacementSessionKey(dropContext, selectedSectionId);
+
+  // Read-only snapshot for the init effect: it needs current reference data
+  // when a session opens, but must not re-run when that data changes.
+  const placementDataRef = useRef({ schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext });
+  placementDataRef.current = { schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext };
+
   useEffect(() => {
+    const { schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext } = placementDataRef.current;
+
     if (dropContext) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
       const isFieldSubject = !!subject && (
@@ -1086,11 +784,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
       );
       const totalSlots = getSubjectTotalSlots(subject);
 
-      const isMajor = subject?.category === "major";
-      const hasBoth = subject && Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
-      const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
-      const splitDay1Slots = (isMajor && hasBoth) ? 6 : totalSlots;
-      const splitDay2Slots = (isMajor && hasBoth) ? 6 : totalSlots;
+      // A single meeting is `units * 2` slots whatever the course's components —
+      // the hardcoded 6 this replaces was a 3-unit answer applied to every major
+      // with both a lecture and a laboratory (audit finding #19).
+      const plan = getCourseSlotPlan(subject);
+      const singleSlots = plan.singleBlockSlots || totalSlots;
+      const splitDay2Slots = singleSlots;
 
 
 
@@ -1117,7 +816,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
           setModalClassMode(targetSched.mode ?? "on-site");
           setModalIsHybrid(targetSched.isHybrid ?? false);
           setModalPreferredPattern(targetSched.preferredPattern ?? null);
-          const patternDays = getPreferredPatternDayIndexes(targetSched.preferredPattern);
+          const patternDays = parsePreferredPattern(targetSched.preferredPattern);
 
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
@@ -1166,9 +865,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
       } else {
         let resolvedRoomId = "";
         if (subject && !isFieldSubject) {
-          const matchingTypeRooms = rooms.filter(r => 
+          // Derived, not subject.roomTypeRequired: an unsplit course with a
+          // laboratory component needs a laboratory room (RuleEngine parity).
+          const requiredRoomType = requiredRoomTypeForMeeting(subject);
+          const matchingTypeRooms = rooms.filter(r =>
             (r.status === "available" || !r.status) &&
-            (!subject.roomTypeRequired || r.roomType === subject.roomTypeRequired)
+            (!requiredRoomType || r.roomType === requiredRoomType)
           );
           const availableRooms = rooms.filter(r =>
             (r.status === "available" || !r.status) &&
@@ -1221,22 +923,93 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setIsDay2ModifiedByUser(false);
     }
     setModalValidationError("");
-    setModalConflict(null);
-  }, [dropContext, schedules, selectedSectionId]);
+  // Everything else is read from placementDataRef, which is deliberately not
+  // a dependency — see placementSessionKey above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placementSessionKey]);
 
-  useEffect(() => {
-    if (!dropContext || !modalPreferredPattern) return;
+  /**
+   * Default physical room for the current course, used when a meeting switches
+   * back to on-site from a virtual mode.
+   */
+  const resolveDefaultPhysicalRoomId = useCallback((): string => {
+    const subject = dropContext ? subjects.find((s) => String(s.id) === String(dropContext.subjectId)) : null;
+    const isUsable = (room: Room) => room.status === "available" || !room.status;
+    const requiredRoomType = requiredRoomTypeForMeeting(subject ?? undefined);
+    const matchingTypeRooms = rooms.filter(
+      (room) => isUsable(room) && (!requiredRoomType || room.roomType === requiredRoomType)
+    );
+    if (matchingTypeRooms.length > 0) return matchingTypeRooms[0].id;
 
-    const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
+    const physicalRooms = rooms.filter(
+      (room) => isUsable(room) && (room.roomType === "lecture" || room.roomType === "laboratory")
+    );
 
+    return physicalRooms.length > 0 ? physicalRooms[0].id : "";
+  }, [dropContext, subjects, rooms]);
+
+  /**
+   * Mode and pattern changes below are handled in the setters rather than in
+   * effects that watch the resulting state.
+   *
+   * Three effects used to do this work, each firing an extra render pass, and
+   * two of them read the very field they were correcting without depending on
+   * it — so they acted on a stale value (audit finding #13).
+   */
+  const applyModalClassMode = useCallback((mode: DeliveryMode) => {
+    setModalClassMode(mode);
+    if (mode === "online") {
+      setModalIsHybrid(false);
+      setModalRoomId("online");
+      return;
+    }
+    if (mode === "field") {
+      setModalIsHybrid(false);
+      setModalRoomId("field");
+      return;
+    }
+    setModalRoomId((current) => (
+      current === "online" || current === "field" || !current
+        ? resolveDefaultPhysicalRoomId()
+        : current
+    ));
+  }, [resolveDefaultPhysicalRoomId]);
+
+  const applyModalDay2ClassMode = useCallback((mode: DeliveryMode) => {
+    setModalDay2ClassMode(mode);
+    if (mode === "online") {
+      setModalDay2RoomId("online");
+      return;
+    }
+    if (mode === "field") {
+      setModalDay2RoomId("field");
+      return;
+    }
+    setModalDay2RoomId((current) => (
+      current === "online" || current === "field" || !current
+        ? resolveDefaultPhysicalRoomId()
+        : current
+    ));
+  }, [resolveDefaultPhysicalRoomId]);
+
+  const applyModalPreferredPattern = useCallback((pattern: string | null) => {
+    setModalPreferredPattern(pattern);
+
+    const patternDays = parsePreferredPattern(pattern);
     if (patternDays) {
       setModalDay1Index(patternDays[0]);
       setModalDay2Index(patternDays[1]);
     }
-    if (!isDay2ModifiedByUser) {
-      setModalDay2StartSlot(modalDay1StartSlot);
-    }
-  }, [dropContext, modalPreferredPattern, modalDay1StartSlot, isDay2ModifiedByUser]);
+  }, []);
+
+  const applyModalDay1StartSlot = useCallback((startSlot: number) => {
+    setModalDay1StartSlot(startSlot);
+    // Meeting 2 mirrors meeting 1 until the user moves it themselves.
+    setIsDay2ModifiedByUser((modified) => {
+      if (!modified) setModalDay2StartSlot(startSlot);
+      return modified;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isDay2ModifiedByUser) {
@@ -1244,113 +1017,79 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   }, [modalDay1StartSlot, isDay2ModifiedByUser]);
 
-  useEffect(() => {
-    if (modalClassMode === "online") {
-      setModalIsHybrid(false);
-      setModalRoomId("online");
-    } else if (modalClassMode === "field") {
-      setModalIsHybrid(false);
-      setModalRoomId("field");
-    } else if (modalClassMode === "on-site" && (modalRoomId === "online" || modalRoomId === "field")) {
-      if (!modalRoomId || modalRoomId === "online" || modalRoomId === "field") {
-        const subject = dropContext ? subjects.find((s) => s.id === dropContext.subjectId) : null;
-        const matchingTypeRooms = rooms.filter(r => 
-          (r.status === "available" || !r.status) &&
-          (!subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired)
-        );
-        const availableRooms = rooms.filter(r =>
-          (r.status === "available" || !r.status) &&
-          (r.roomType === "lecture" || r.roomType === "laboratory")
-        );
-        const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : "");
-        setModalRoomId(defaultRoomId);
-      }
+  /**
+   * Conflict message for the placement currently described by the modal.
+   *
+   * Derived, not stored. This used to be an effect that wrote the message into
+   * state, so every field change cost a second render pass, and its dependency
+   * list was missing checkConflict, schedules, selectedSectionId and subjects.
+   */
+  const modalConflict = useMemo<string | null>(() => {
+    if (!dropContext || !modalRoomId) return null;
+
+    const subject = subjects.find((s) => String(s.id) === String(dropContext.subjectId));
+    if (!subject) return null;
+
+    const excludeIds = dropContext.isRescheduling
+      ? schedules
+          .filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId))
+          .map((s) => s.id)
+      : [];
+
+    const totalSlots = getSubjectTotalSlots(subject);
+    const singleSlots = getCourseSlotPlan(subject).singleBlockSlots || totalSlots;
+    const courseId = dropContext.courseId ?? dropContext.subjectId ?? "";
+    const patternDays = parsePreferredPattern(modalPreferredPattern);
+
+    if (!patternDays) {
+      return checkConflict(
+        courseId, selectedSectionId, null, modalRoomId,
+        modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern
+      )?.message ?? null;
     }
-  }, [modalClassMode, dropContext, subjects, rooms]);
 
-  useEffect(() => {
-    if (modalDay2ClassMode === "online") {
-      setModalDay2RoomId("online");
-    } else if (modalDay2ClassMode === "field") {
-      setModalDay2RoomId("field");
-    } else if (modalDay2ClassMode === "on-site" && (modalDay2RoomId === "online" || modalDay2RoomId === "field")) {
-      if (!modalDay2RoomId || modalDay2RoomId === "online" || modalDay2RoomId === "field") {
-        const subject = dropContext ? subjects.find((s) => String(s.id) === String(dropContext.subjectId)) : null;
-        const matchingTypeRooms = rooms.filter(r => 
-          (r.status === "available" || !r.status) &&
-          (!subject?.roomTypeRequired || r.roomType === subject.roomTypeRequired)
-        );
-        const availableRooms = rooms.filter(r =>
-          (r.status === "available" || !r.status) &&
-          (r.roomType === "lecture" || r.roomType === "laboratory")
-        );
-        const defaultRoomId = matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : "");
-        setModalDay2RoomId(defaultRoomId);
-      }
-    }
-  }, [modalDay2ClassMode, dropContext, subjects, rooms]);
+    const meeting1 = modalDay1Duration > 0
+      ? checkConflict(
+          courseId, selectedSectionId, null, modalRoomId,
+          patternDays[0], modalDay1StartSlot, modalDay1Duration, excludeIds, modalPreferredPattern
+        )
+      : null;
+    if (meeting1) return meeting1.message;
 
-  useEffect(() => {
-    if (dropContext && modalRoomId) {
-      const subject = subjects.find((s) => String(s.id) === String(dropContext.subjectId));
-      if (subject) {
-        const excludeIds = dropContext.isRescheduling
-          ? schedules.filter(s => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)).map(s => s.id)
-          : [];
+    const meeting2 = modalDay2Duration > 0
+      ? checkConflict(
+          courseId, selectedSectionId, null, modalDay2RoomId,
+          patternDays[1], modalDay2StartSlot, modalDay2Duration, excludeIds, modalPreferredPattern
+        )
+      : null;
 
-        const totalSlots = getSubjectTotalSlots(subject);
-        const isMajor = subject?.category === "major";
-        const hasBoth = Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
-        const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
-
-        const d1 = modalDay1Duration;
-        const d2 = modalDay2Duration;
-        const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
-
-        let conflict: { message: string } | null = null;
-
-        if (patternDays) {
-          if (d1 > 0) {
-            conflict = checkConflict(
-              dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalRoomId,
-              patternDays[0], modalDay1StartSlot, d1, excludeIds, modalPreferredPattern
-            );
-          }
-          if (!conflict && d2 > 0) {
-            conflict = checkConflict(
-              dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalDay2RoomId,
-              patternDays[1], modalDay2StartSlot, d2, excludeIds, modalPreferredPattern
-            );
-          }
-        } else {
-          conflict = checkConflict(
-            dropContext.courseId ?? dropContext.subjectId ?? "", selectedSectionId, null, modalRoomId,
-            modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern
-          );
-        }
-
-        setModalConflict(conflict ? conflict.message : null);
-      }
-    } else {
-      setModalConflict(null);
-    }
+    return meeting2?.message ?? null;
   }, [
+    dropContext,
     modalRoomId,
     modalDay2RoomId,
-    dropContext,
     modalPreferredPattern,
     modalDay1Index,
-    modalDay2Index,
     modalDay1StartSlot,
     modalDay1Duration,
     modalDay2StartSlot,
-    modalDay2Duration
+    modalDay2Duration,
+    schedules,
+    selectedSectionId,
+    subjects,
+    checkConflict
   ]);
 
   const onScheduleRelocated = useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
     const sched = schedules.find((s) => s.id === scheduleId);
     if (!sched) return;
-    const dayName = fullDayNames[dayIndex];
+    // Mirrors the drag path's guard (useDragDrop.handleDragOver/handleDrop).
+    // GridCell already blocks the interaction; this closes the code path.
+    if (isSummerWeekendBlocked(dayIndex)) {
+      toast.error("Weekend Not Available", "Summer term classes are scheduled Monday through Friday.");
+      return;
+    }
+    const dayName = FULL_DAY_NAMES[dayIndex];
     const startTime24h = slotToTime24h(startSlot);
     const endTime24h = slotToTime24h(startSlot + sched.durationSlots);
 
@@ -1360,7 +1099,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
           schedule.id === scheduleId
-            ? { ...schedule, dayIndex, day: fullDayNames[dayIndex], startSlot }
+            ? { ...schedule, dayIndex, day: FULL_DAY_NAMES[dayIndex], startSlot }
             : schedule
         )
       );
@@ -1405,7 +1144,6 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
   const dragDrop = useDragDrop({
     schedules,
-    selectedSectionId,
     dragSubjectId,
     draggedScheduleId,
     hoveredCell,
@@ -1433,13 +1171,11 @@ departmentSectionProgress.every((section) => section.status === "completed");
     if (!subject) return;
 
     const totalSlots = getSubjectTotalSlots(subject);
-    const isMajor = subject?.category === "major";
-    const hasBoth = Number(subject.lectureHours ?? 0) > 0 && Number(subject.labHours ?? 0) > 0;
-    const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
+    const singleSlots = getCourseSlotPlan(subject).singleBlockSlots || totalSlots;
 
     const d1 = modalDay1Duration;
     const d2 = modalPreferredPattern ? modalDay2Duration : 0;
-    const patternDays = getPreferredPatternDayIndexes(modalPreferredPattern);
+    const patternDays = parsePreferredPattern(modalPreferredPattern);
 
     if (patternDays && (d1 <= 0 || d2 <= 0)) {
       setModalValidationError("Each meeting must have a duration greater than zero.");
@@ -1475,7 +1211,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? modalDay2StartSlot : -1;
     } else {
       // Slot search resolution: look circularly for a slot where both segments fit
-      const maxSlots = 24;
+      const maxSlots = slotCount();
       if (patternDays) {
         if (maxSlots - d1 + 1 <= 0 || maxSlots - d2 + 1 <= 0) {
           resolvedDay1StartSlot = -1;
@@ -1567,10 +1303,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     const targetDays: TargetScheduleDay[] = [];
     if (patternDays) {
-      if (d1 > 0) targetDays.push({ day: fullDayNames[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
-      if (d2 > 0) targetDays.push({ day: fullDayNames[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
+      if (d1 > 0) targetDays.push({ day: FULL_DAY_NAMES[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
+      if (d2 > 0) targetDays.push({ day: FULL_DAY_NAMES[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
     } else {
-      targetDays.push({ day: fullDayNames[modalDay1Index], startSlot: resolvedDay1StartSlot, duration: singleSlots });
+      targetDays.push({ day: FULL_DAY_NAMES[modalDay1Index], startSlot: resolvedDay1StartSlot, duration: singleSlots });
     }
 
     setIsModalLoading(true);
@@ -1710,6 +1446,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   };
 
+  // Left unmemoized on purpose: it delegates to handleConfirmSchedule, which
+  // closes over ~20 pieces of modal state. Memoizing this wrapper would pin a
+  // stale handleConfirmSchedule, and neither function reaches a memoized child,
+  // so there is nothing to gain.
   const handleModalConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalRoomId) {
@@ -1720,7 +1460,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     handleConfirmSchedule(e);
   };
 
-  const handleRemoveSchedule = async (scheduleId: string) => {
+  const handleRemoveSchedule = useCallback(async (scheduleId: string) => {
     if (!isEditable) return;
     const target = schedules.find(s => s.id === scheduleId);
     try {
@@ -1773,15 +1513,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setConflictInfo(null);
       setMovingScheduleId((prev) => (prev === scheduleId ? null : prev));
     }
-  };
+  }, [isEditable, schedules, refreshSchedules, refreshData, schedulerCacheKey, toast]);
 
   const [isClearingAll, setIsClearingAll] = useState(false);
 
-  const handleClearAll = () => {
+  const handleClearAll = useCallback(() => {
     if (!isEditable || isClearingAll) return;
     if (schedules.length === 0) return;
     setIsClearAllModalOpen(true);
-  };
+  }, [isEditable, isClearingAll, schedules]);
 
   const confirmClearAll = async (scope: "section" | "all" = "section") => {
     if (!isEditable || isClearingAll) {
@@ -1850,12 +1590,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   };
 
-  const cancelClearAll = () => setIsClearAllModalOpen(false);
+  const cancelClearAll = useCallback(() => setIsClearAllModalOpen(false), []);
 
-  const handleSubmitForApproval = async () => {
+  const handleSubmitForApproval = useCallback(async () => {
     if (!selectedSectionId) return;
     setIsSubmitApprovalModalOpen(true);
-  };
+  }, [selectedSectionId]);
 
   const confirmSubmitForApproval = async () => {
     if (!selectedSectionId || isSubmittingSchedule) return;
@@ -1897,12 +1637,12 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   };
 
-  const cancelSubmitForApproval = () => setIsSubmitApprovalModalOpen(false);
+  const cancelSubmitForApproval = useCallback(() => setIsSubmitApprovalModalOpen(false), []);
 
-  const handleWithdrawSubmission = async () => {
+  const handleWithdrawSubmission = useCallback(async () => {
     if (!selectedSectionId || isWithdrawingSubmission) return;
     setIsWithdrawSubmissionModalOpen(true);
-  };
+  }, [selectedSectionId, isWithdrawingSubmission]);
 
   const confirmWithdrawSubmission = async (sectionIds: string[]) => {
     if (!selectedSectionId || isWithdrawingSubmission) return;
@@ -1920,9 +1660,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     try {
       setIsWithdrawingSubmission(true);
-      await api.post(`/departments/${section.departmentId}/withdraw-submission`, {
-        section_ids: sectionIds.map((id) => Number(id)),
-      });
+      const response = await api.post<{ instructors_released?: number }>(
+        `/departments/${section.departmentId}/withdraw-submission`,
+        { section_ids: sectionIds.map((id) => Number(id)) }
+      );
 
       const deptSectionIds = new Set(
         sections
@@ -1931,18 +1672,32 @@ departmentSectionProgress.every((section) => section.status === "completed");
       );
       const selectedRevisionSectionIds = new Set(sectionIds);
       setSchedules((prev) =>
-        prev.map((item) =>
-          deptSectionIds.has(item.sectionId) && departmentWithdrawableStatuses.includes(item.status)
-            ? { ...item, status: selectedRevisionSectionIds.has(item.sectionId) ? "revision" : "completed" }
-            : item
-        )
+        prev.map((item) => {
+          if (!deptSectionIds.has(item.sectionId) || !departmentWithdrawableStatuses.includes(item.status)) {
+            return item;
+          }
+
+          const isUnlocked = selectedRevisionSectionIds.has(item.sectionId);
+
+          // Sections unlocked for revision lose their instructor server-side —
+          // the assignment is remade after re-approval — so drop it here too
+          // instead of showing one the backend has already released.
+          return isUnlocked
+            ? { ...item, status: "revision", facultyId: null, facultyName: null }
+            : { ...item, status: "completed" };
+        })
       );
+
+      const releasedInstructors = Number(response.data?.instructors_released ?? 0);
+      const releasedNote = releasedInstructors > 0
+        ? ` ${releasedInstructors} instructor ${releasedInstructors === 1 ? "assignment was" : "assignments were"} released and must be made again after re-approval.`
+        : "";
 
       toast.success(
         "Submission Withdrawn",
-        departmentWithdrawalStage === "vpaa_approved"
+        (departmentWithdrawalStage === "vpaa_approved"
           ? "VPAA approval was revoked and only the selected sections were unlocked for revision."
-          : "Only the selected sections were unlocked for revision."
+          : "Only the selected sections were unlocked for revision.") + releasedNote
       );
       refreshSchedules().catch(() => {});
       setIsWithdrawSubmissionModalOpen(false);
@@ -1953,25 +1708,13 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   };
 
-  const cancelWithdrawSubmission = () => {
+  const cancelWithdrawSubmission = useCallback(() => {
     if (!isWithdrawingSubmission) {
       setIsWithdrawSubmissionModalOpen(false);
     }
-  };
+  }, [isWithdrawingSubmission]);
 
-  const resolveRoomId = (s: ScheduleItem) => {
-    if (s.roomId === "online" || s.mode === "online") {
-      const onlineRoom = rooms.find((r) => r.roomType === "online");
-      return onlineRoom ? Number(onlineRoom.id) : 99998;
-    }
-    if (s.roomId === "field" || s.mode === "field") {
-      const fieldRoom = rooms.find((r) => r.roomType === "field");
-      return fieldRoom ? Number(fieldRoom.id) : 99999;
-    }
-    return Number(s.roomId);
-  };
-
-  const handleMarkSectionDone = async () => {
+  const handleMarkSectionDone = useCallback(async () => {
     if (!selectedSectionId) return;
     if (isMarkingSectionDone) return;
     if (sectionSchedules.length === 0) {
@@ -1999,9 +1742,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
     } finally {
       setIsMarkingSectionDone(false);
     }
-  };
+  }, [selectedSectionId, isMarkingSectionDone, sectionSchedules, refreshSchedules, toast]);
 
-  const handleEditSection = async () => {
+  const handleEditSection = useCallback(async () => {
     if (!selectedSectionId || isEditingSection) return;
 
     try {
@@ -2024,9 +1767,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
     } finally {
       setIsEditingSection(false);
     }
-  };
+  }, [selectedSectionId, isEditingSection, sectionSchedules, refreshSchedules, toast]);
 
-  const handleResubmit = async () => {
+  const handleResubmit = useCallback(async () => {
     if (!selectedSectionId || isResubmittingSection) return;
     try {
       setIsResubmittingSection(true);
@@ -2048,9 +1791,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
     } finally {
       setIsResubmittingSection(false);
     }
-  };
+  }, [selectedSectionId, isResubmittingSection, sectionSchedules, refreshSchedules, toast]);
 
-  const handleFinalize = async () => {
+  const handleFinalize = useCallback(async () => {
     if (!selectedSectionId) return;
     if (isFinalizing) return;
     try {
@@ -2073,9 +1816,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
     } finally {
       setIsFinalizing(false);
     }
-  };
+  }, [selectedSectionId, isFinalizing, sectionSchedules, refreshSchedules, toast]);
 
-  const handlePopupFacultyChange = (fId: string) => {
+  const handlePopupFacultyChange = useCallback((fId: string) => {
     if (!facultyAssignmentPopup) return;
     setFacultyAssignmentPopup((prev) => (prev ? { ...prev, facultyId: fId } : null));
     setPopupValidationError("");
@@ -2084,6 +1827,168 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setPopupConflictWarning(conflict ?? "");
     } else {
       setPopupConflictWarning("");
+    }
+  }, [facultyAssignmentPopup, checkFacultyConflict]);
+
+  /**
+   * Puts the server's overload question to the user and resolves with their
+   * answer. The caller stays awaited across the prompt, so one assignment —
+   * ask, then retry — reads as a single operation from its own point of view.
+   */
+  const askOverloadConfirmation = (confirmation: OverloadConfirmation): Promise<boolean> =>
+    new Promise<boolean>((resolve) => {
+      setOverloadPrompt({ confirmation, resolve });
+    });
+
+  const confirmOverloadPrompt = () => {
+    overloadPrompt?.resolve(true);
+    setOverloadPrompt(null);
+  };
+
+  const cancelOverloadPrompt = () => {
+    overloadPrompt?.resolve(false);
+    setOverloadPrompt(null);
+  };
+
+  /**
+   * Outcome of one faculty write, so the five entry points below can share the
+   * request, the response unwrapping, the 404 resync and the overload question
+   * while each still renders failures where its own UI expects them (popup text
+   * vs toast).
+   */
+  type FacultyMutationOutcome =
+    | { status: "ok"; schedules: ScheduleItem[] }
+    | { status: "restricted"; message: string }
+    | { status: "resynced" }
+    | { status: "needs_overload_confirmation"; confirmation: OverloadConfirmation }
+    | { status: "failed"; message: string };
+
+  /**
+   * PUT /schedules/{id} with a faculty id, or null to clear it.
+   *
+   * Callers apply the returned schedules themselves: the bulk path collects
+   * every result and applies them in one state update.
+   */
+  const mutateScheduleFaculty = async (
+    slotId: string,
+    facultyId: string | null,
+    confirmOverload = false
+  ): Promise<FacultyMutationOutcome> => {
+    const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
+    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
+      return {
+        status: "restricted",
+        message: targetSchedule
+          ? getFacultyRestrictionMessage(targetSchedule)
+          : facultyId === null
+            ? "You cannot remove instructors for this course."
+            : "You cannot assign instructors for this course."
+      };
+    }
+
+    try {
+      const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, {
+        faculty_id: facultyId === null ? null : Number(facultyId),
+        ...(confirmOverload ? { confirm_overload: true } : {})
+      });
+      const resData = response.data;
+      const rawList: ApiScheduleRecord[] = resData.schedules
+        ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
+
+      return { status: "ok", schedules: rawList.map(mapApiScheduleToItem) };
+    } catch (err: unknown) {
+      if (isNotFoundError(err)) {
+        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
+        clearCachedKey(schedulerCacheKey);
+        void refreshData();
+
+        return { status: "resynced" };
+      }
+
+      // 409 means the write was withheld pending an answer, not refused, so it
+      // must never reach the failure toast.
+      const confirmation = overloadConfirmationFrom(err);
+      if (confirmation) {
+        return { status: "needs_overload_confirmation", confirmation };
+      }
+
+      return {
+        status: "failed",
+        message: getApiErrorMessage(err)
+          || (facultyId === null
+            ? "Failed to remove faculty. Please try again."
+            : "Failed to assign faculty. Please try again.")
+      };
+    }
+  };
+
+  const facultySuccessToast = (facultyId: string | null) => {
+    if (facultyId === null) {
+      toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
+      return;
+    }
+    const fac = faculties.find((f) => f.id === facultyId);
+    toast.success("Faculty Assigned", `Successfully assigned ${fac?.name ?? "instructor"}.`);
+  };
+
+  const facultyFailureTitle = (facultyId: string | null) =>
+    facultyId === null ? "Failed to remove faculty" : "Failed to assign faculty";
+
+  const handlePopupFacultyMutation = async (slotId: string, facultyId: string | null) => {
+    if (facultyActionSlotId === slotId) return;
+    setFacultyActionSlotId(slotId);
+    try {
+      let outcome = await mutateScheduleFaculty(slotId, facultyId);
+
+      // Answering No returns from inside the try, so the popup below is left
+      // open with the instructor still selected — nothing was written.
+      if (outcome.status === "needs_overload_confirmation") {
+        const proceed = await askOverloadConfirmation(outcome.confirmation);
+        if (!proceed) return;
+        outcome = await mutateScheduleFaculty(slotId, facultyId, true);
+      }
+      if (outcome.status === "needs_overload_confirmation") return;
+
+      if (outcome.status === "restricted") {
+        setPopupValidationError(outcome.message);
+        return;
+      }
+      if (outcome.status === "resynced") return;
+      if (outcome.status === "failed") {
+        toast.error(facultyFailureTitle(facultyId), outcome.message);
+      } else {
+        applyUpdatedSchedules(outcome.schedules);
+        facultySuccessToast(facultyId);
+      }
+    } finally {
+      setFacultyActionSlotId(null);
+    }
+    setFacultyAssignmentPopup(null);
+  };
+
+  const handleInlineFacultyMutation = async (slotId: string, facultyId: string | null) => {
+    if (facultyActionSlotId === slotId) return;
+    setFacultyActionSlotId(slotId);
+    try {
+      let outcome = await mutateScheduleFaculty(slotId, facultyId);
+
+      if (outcome.status === "needs_overload_confirmation") {
+        const proceed = await askOverloadConfirmation(outcome.confirmation);
+        if (!proceed) return;
+        outcome = await mutateScheduleFaculty(slotId, facultyId, true);
+      }
+      if (outcome.status === "needs_overload_confirmation") return;
+
+      if (outcome.status === "restricted") {
+        toast.error("Assignment Restricted", outcome.message);
+      } else if (outcome.status === "failed") {
+        toast.error(facultyFailureTitle(facultyId), outcome.message);
+      } else if (outcome.status === "ok") {
+        applyUpdatedSchedules(outcome.schedules);
+        facultySuccessToast(facultyId);
+      }
+    } finally {
+      setFacultyActionSlotId(null);
     }
   };
 
@@ -2095,98 +2000,59 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setPopupValidationError("Please select a faculty member first.");
       return;
     }
-    if (facultyActionSlotId === scheduleId) return;
-    const targetSchedule = schedules.find((schedule) => schedule.id === scheduleId);
-    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      setPopupValidationError(targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot assign instructors for this course.");
-      return;
-    }
-    const fac = faculties.find((f) => f.id === facultyId);
-    if (!fac) return;
-    setFacultyActionSlotId(scheduleId);
-    try {
-      const response = await api.put<FacultyAssignResponse>(`/schedules/${scheduleId}`, { faculty_id: Number(facultyId) });
-      const resData = response.data;
-      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
-      const updatedSchedules = rawList.map(mapApiScheduleToItem);
-      applyUpdatedSchedules(updatedSchedules);
-      toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
-    } catch (err: unknown) {
-      if (isNotFoundError(err)) {
-        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
-        clearCachedKey(schedulerCacheKey);
-        void refreshData();
-        return;
-      }
-      const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
-      toast.error("Failed to assign faculty", errMsg);
-    } finally {
-      setFacultyActionSlotId(null);
-    }
-    setFacultyAssignmentPopup(null);
+    if (!faculties.some((f) => f.id === facultyId)) return;
+    await handlePopupFacultyMutation(scheduleId, facultyId);
   };
 
   const handleRemoveFaculty = async () => {
     if (!facultyAssignmentPopup) return;
-    const { scheduleId } = facultyAssignmentPopup;
-    if (facultyActionSlotId === scheduleId) return;
-    const targetSchedule = schedules.find((schedule) => schedule.id === scheduleId);
-    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      setPopupValidationError(targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot remove instructors for this course.");
-      return;
-    }
-    setFacultyActionSlotId(scheduleId);
-    try {
-      const response = await api.put<FacultyAssignResponse>(`/schedules/${scheduleId}`, { faculty_id: null });
-      const resData = response.data;
-      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
-      const updatedSchedules = rawList.map(mapApiScheduleToItem);
-      applyUpdatedSchedules(updatedSchedules);
-      toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
-    } catch (err: unknown) {
-      if (isNotFoundError(err)) {
-        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
-        clearCachedKey(schedulerCacheKey);
-        void refreshData();
-        return;
-      }
-      const errMsg = getApiErrorMessage(err) || "Failed to remove faculty. Please try again.";
-      toast.error("Failed to remove faculty", errMsg);
-    } finally {
-      setFacultyActionSlotId(null);
-    }
-    setFacultyAssignmentPopup(null);
+    await handlePopupFacultyMutation(facultyAssignmentPopup.scheduleId, null);
   };
 
   const handleInlineFacultyAssign = async (slotId: string, facId: string) => {
     if (!facId) return;
-    if (facultyActionSlotId === slotId) return;
-    const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
-    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      toast.error("Assignment Restricted", targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot assign instructors for this course.");
-      return;
-    }
-    const fac = faculties.find((f) => f.id === facId);
-    if (!fac) return;
-    setFacultyActionSlotId(slotId);
+    if (!faculties.some((f) => f.id === facId)) return;
+    await handleInlineFacultyMutation(slotId, facId);
+  };
+
+  const handleRemoveInlineFaculty = async (slotId: string) => {
+    await handleInlineFacultyMutation(slotId, null);
+  };
+
+  /**
+   * The batch request on its own: no toasts, no loading flag, and it reports the
+   * overload question rather than mistaking it for a failure. Separate from the
+   * handler so the confirmed retry can reuse it without re-entering the guard
+   * the outer call already holds.
+   */
+  const submitBulkFacultyAssign = async (
+    assignments: { scheduleIds: string[]; facultyId: string }[],
+    confirmOverload: boolean
+  ): Promise<
+    | { status: "ok"; schedules: ScheduleItem[] }
+    | { status: "needs_overload_confirmation"; confirmation: OverloadConfirmation }
+    | { status: "failed"; error: unknown }
+  > => {
     try {
-      const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, { faculty_id: Number(facId) });
-      const resData = response.data;
-      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
-      const updatedSchedules = rawList.map(mapApiScheduleToItem);
-      applyUpdatedSchedules(updatedSchedules);
-      toast.success("Faculty Assigned", `Successfully assigned ${fac.name}.`);
+      // One transaction server-side: a partial failure rolls the whole set back,
+      // so the "Auto-Assign Failed" toast can no longer coexist with committed
+      // assignments.
+      const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-faculty", {
+        assignments: assignments.map((assignment) => ({
+          schedule_ids: assignment.scheduleIds.map(Number),
+          faculty_id: Number(assignment.facultyId),
+        })),
+        ...(confirmOverload ? { confirm_overload: true } : {}),
+      });
+
+      return { status: "ok", schedules: (response.data.schedules ?? []).map(mapApiScheduleToItem) };
     } catch (err: unknown) {
-      if (isNotFoundError(err)) {
-        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
-        clearCachedKey(schedulerCacheKey);
-        void refreshData();
-        return;
+      const confirmation = overloadConfirmationFrom(err);
+      if (confirmation) {
+        return { status: "needs_overload_confirmation", confirmation };
       }
-      const errMsg = getApiErrorMessage(err) || "Failed to assign faculty. Please try again.";
-      toast.error("Failed to assign faculty", errMsg);
-    } finally {
-      setFacultyActionSlotId(null);
+
+      return { status: "failed", error: err };
     }
   };
 
@@ -2195,30 +2061,44 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     setFacultyActionSlotId("bulk");
     try {
-      const updatedSchedules: ScheduleItem[] = [];
-      let assignedCount = 0;
       for (const assignment of assignments) {
         const faculty = faculties.find((item) => item.id === assignment.facultyId);
         if (!faculty || assignment.scheduleIds.length === 0) {
           throw new Error("An instructor or selected schedule is no longer available.");
         }
-        for (const slotId of assignment.scheduleIds) {
-          const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
-          if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-            throw new Error(targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "A selected schedule is no longer available.");
-          }
 
-          const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, {
-            faculty_id: Number(assignment.facultyId)
-          });
-          const data = response.data;
-          const rawList: ApiScheduleRecord[] = data.schedules ?? (data.schedule ? [data.schedule] : (data.id ? [data as ApiScheduleRecord] : []));
-          updatedSchedules.push(...rawList.map(mapApiScheduleToItem));
-          assignedCount += 1;
+        for (const slotId of assignment.scheduleIds) {
+          const target = schedules.find((schedule) => schedule.id === slotId);
+          if (!target || !canManageScheduleFaculty(target)) {
+            throw new Error(target
+              ? getFacultyRestrictionMessage(target)
+              : "A selected schedule is no longer available.");
+          }
         }
       }
 
-      applyUpdatedSchedules(updatedSchedules);
+      let outcome = await submitBulkFacultyAssign(assignments, false);
+
+      // The batch is confirmed once, not per class: the server names every
+      // instructor who ends up overloaded in a single payload. Answering No
+      // returns from inside the try, so nothing is written, the modal keeps its
+      // selection and neither the failure toast nor a refresh fires.
+      if (outcome.status === "needs_overload_confirmation") {
+        const proceed = await askOverloadConfirmation(outcome.confirmation);
+        if (!proceed) return false;
+        outcome = await submitBulkFacultyAssign(assignments, true);
+      }
+      if (outcome.status !== "ok") {
+        // "failed" carries the original error so getApiErrorMessage() still
+        // reads the server's own message below.
+        throw outcome.status === "failed"
+          ? outcome.error
+          : new Error("The assignments could not be confirmed.");
+      }
+
+      const assignedCount = assignments.reduce((total, assignment) => total + assignment.scheduleIds.length, 0);
+
+      applyUpdatedSchedules(outcome.schedules);
       toast.success("Auto-Assign Complete", `${assignedCount} schedule${assignedCount === 1 ? "" : "s"} assigned successfully.`);
       void refreshSchedules();
       return true;
@@ -2231,50 +2111,21 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   };
 
-  const handleRemoveInlineFaculty = async (slotId: string) => {
-    if (facultyActionSlotId === slotId) return;
-    const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
-    if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
-      toast.error("Assignment Restricted", targetSchedule ? getFacultyRestrictionMessage(targetSchedule) : "You cannot remove instructors for this course.");
-      return;
-    }
-    setFacultyActionSlotId(slotId);
-    try {
-      const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, { faculty_id: null });
-      const resData = response.data;
-      const rawList: ApiScheduleRecord[] = resData.schedules ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));
-      const updatedSchedules = rawList.map(mapApiScheduleToItem);
-      applyUpdatedSchedules(updatedSchedules);
-      toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
-    } catch (err: unknown) {
-      if (isNotFoundError(err)) {
-        toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
-        clearCachedKey(schedulerCacheKey);
-        void refreshData();
-        return;
-      }
-      const errMsg = getApiErrorMessage(err) || "Failed to remove faculty. Please try again.";
-      toast.error("Failed to remove faculty", errMsg);
-    } finally {
-      setFacultyActionSlotId(null);
-    }
-  };
+  const getClassesCountForDay = useCallback((dayIdx: number) =>
+    sectionSchedules.filter((s) => s.dayIndex === dayIdx).length, [sectionSchedules]);
 
-  const getClassesCountForDay = (dayIdx: number) =>
-    sectionSchedules.filter((s) => s.dayIndex === dayIdx).length;
+  const toggleCategory = useCallback((category: string) =>
+    setCollapsedCategories((prev) => ({ ...prev, [category]: !prev[category] })), []);
 
-  const toggleCategory = (category: string) =>
-    setCollapsedCategories((prev) => ({ ...prev, [category]: !prev[category] }));
-
-  const handleSectionSelect = (sectionId: string) => {
+  const handleSectionSelect = useCallback((sectionId: string) => {
     setSelectedSectionId(sectionId);
     setIsSectionDropdownOpen(false);
     setConflictInfo(null);
     setPlacementSubjectId(null);
     setMovingScheduleId(null);
-  };
+  }, []);
 
-  const handleEditMovingSchedule = () => {
+  const handleEditMovingSchedule = useCallback(() => {
     if (!movingScheduleId) return;
     const sched = schedules.find((s) => s.id === movingScheduleId);
     if (!sched) return;
@@ -2288,9 +2139,9 @@ departmentSectionProgress.every((section) => section.status === "completed");
       scheduleId: sched.id
     });
     setMovingScheduleId(null);
-  };
+  }, [movingScheduleId, schedules]);
 
-  const handleScheduleCardClick = (scheduleId: string) => {
+  const handleScheduleCardClick = useCallback((scheduleId: string) => {
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
     const canAssignFaculty = isPhase2Active && currentStatus !== "finalized";
@@ -2309,24 +2160,28 @@ departmentSectionProgress.every((section) => section.status === "completed");
       setConflictInfo(null);
       setMovingScheduleId((prev) => (prev === scheduleId ? null : scheduleId));
     }
-  };
+  }, [schedules, isPhase2Active, currentStatus, isEditable]);
 
   // Arm a subject from the bank for click-to-place
-  const handleSubjectCardClick = (subjectId: string) => {
+  const handleSubjectCardClick = useCallback((subjectId: string) => {
     if (!isEditable) return;
     setMovingScheduleId(null);
     setConflictInfo(null);
     setPlacementSubjectId((prev) => (prev === subjectId ? null : subjectId));
-  };
+  }, [isEditable]);
 
   // Cancel any armed placement/move
-  const cancelPlacement = () => {
+  const cancelPlacement = useCallback(() => {
     setPlacementSubjectId(null);
     setMovingScheduleId(null);
-  };
+  }, []);
 
-  const handleCellClick = async (dayIndex: number, timeIndex: number) => {
+  const handleCellClick = useCallback(async (dayIndex: number, timeIndex: number) => {
     if (!isEditable) return;
+    if (isSummerWeekendBlocked(dayIndex)) {
+      toast.error("Weekend Not Available", "Summer term classes are scheduled Monday through Friday.");
+      return;
+    }
 
     if (placementSubjectId) {
       setDropContext({
@@ -2367,7 +2222,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         });
         return;
       }
-      const dayName = fullDayNames[dayIndex];
+      const dayName = FULL_DAY_NAMES[dayIndex];
       const startTime24h = slotToTime24h(timeIndex);
       const endTime24h = slotToTime24h(timeIndex + sched.durationSlots);
 
@@ -2400,7 +2255,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         setConflictInfo(null);
       }
     }
-  };
+  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkConflict, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast]);
 
 
   const activeTermText = useMemo(() => {
@@ -2447,21 +2302,21 @@ departmentSectionProgress.every((section) => section.status === "completed");
     modalRoomId,
     setModalRoomId,
     modalClassMode,
-    setModalClassMode,
+    setModalClassMode: applyModalClassMode,
     modalDay2RoomId,
     setModalDay2RoomId,
     modalDay2ClassMode,
-    setModalDay2ClassMode,
+    setModalDay2ClassMode: applyModalDay2ClassMode,
     modalIsHybrid,
     setModalIsHybrid,
     modalPreferredPattern,
-    setModalPreferredPattern,
+    setModalPreferredPattern: applyModalPreferredPattern,
     modalDay1Index,
     setModalDay1Index,
     modalDay2Index,
     setModalDay2Index,
     modalDay1StartSlot,
-    setModalDay1StartSlot,
+    setModalDay1StartSlot: applyModalDay1StartSlot,
     modalDay1Duration,
     setModalDay1Duration,
     modalDay2StartSlot,
@@ -2481,6 +2336,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
     setFacultyAssignmentPopup,
     popupValidationError,
     popupConflictWarning,
+    // One prompt for all three faculty entry points; the panel renders it once.
+    overloadPrompt,
+    confirmOverloadPrompt,
+    cancelOverloadPrompt,
     isSectionDropdownOpen,
     setIsSectionDropdownOpen,
     isClearAllModalOpen,

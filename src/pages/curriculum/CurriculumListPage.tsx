@@ -44,8 +44,8 @@ const statusColors: Record<string, string> = {
 export default function CurriculumListPage() {
   const navigate = useNavigate();
   const {
-    curricula,
-    rawCurricula,
+    curriculumList,
+    rawCurriculumList,
     departments,
     isLoading,
     userRole,
@@ -65,9 +65,6 @@ export default function CurriculumListPage() {
   // View mode
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
-
-  // Academic year filter
-  const [academicYearFilter, setAcademicYearFilter] = useState<string>('all');
 
   // Table states
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -97,7 +94,7 @@ export default function CurriculumListPage() {
   });
 
   const triggerArchiveConfirmation = (id: number) => {
-    const target = rawCurricula.find((c) => c.id === id);
+    const target = rawCurriculumList.find((c) => c.id === id);
     if (!target) return;
 
     setConfirmModal({
@@ -111,23 +108,8 @@ export default function CurriculumListPage() {
     });
   };
 
-  const academicYears = useMemo(() => {
-    const set = new Set<string>();
-    curricula.forEach((c) => {
-      if (c.academic_year) set.add(c.academic_year);
-    });
-    return Array.from(set).sort().reverse();
-  }, [curricula]);
-
-  const filteredCurriculaList = useMemo(() => {
-    return curricula.filter((c) => {
-      const matchYear = academicYearFilter === 'all' || c.academic_year === academicYearFilter;
-      return matchYear;
-    });
-  }, [curricula, academicYearFilter]);
-
-  const gridFilteredCurricula = useMemo(() => {
-    let result = [...filteredCurriculaList];
+  const gridFilteredCurriculumList = useMemo(() => {
+    let result = [...curriculumList];
 
     result.sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name);
@@ -137,13 +119,13 @@ export default function CurriculumListPage() {
     });
 
     return result;
-  }, [filteredCurriculaList, sortBy]);
+  }, [curriculumList, sortBy]);
 
-  const gridTotalPages = Math.ceil(gridFilteredCurricula.length / gridPageSize) || 1;
-  const gridPaginatedCurricula = useMemo(() => {
+  const gridTotalPages = Math.ceil(gridFilteredCurriculumList.length / gridPageSize) || 1;
+  const gridPaginatedCurriculumList = useMemo(() => {
     const start = (gridPage - 1) * gridPageSize;
-    return gridFilteredCurricula.slice(start, start + gridPageSize);
-  }, [gridFilteredCurricula, gridPage, gridPageSize]);
+    return gridFilteredCurriculumList.slice(start, start + gridPageSize);
+  }, [gridFilteredCurriculumList, gridPage, gridPageSize]);
 
   const columns = useMemo<ColumnDef<Curriculum>[]>(
     () => [
@@ -160,24 +142,6 @@ export default function CurriculumListPage() {
         accessorKey: 'name',
         header: 'Curriculum Name',
         cell: (info) => <span className="font-bold text-gray-800">{info.getValue() as string}</span>,
-      },
-      {
-        accessorKey: 'curriculum_version',
-        header: 'Version',
-        cell: (info) => (
-          <span className="text-gray-600 font-medium text-xs">
-            {(info.getValue() as string) || 'N/A'}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'academic_year',
-        header: 'Academic Year',
-        cell: (info) => (
-          <span className="text-gray-600 font-medium text-xs">
-            {(info.getValue() as string) || 'N/A'}
-          </span>
-        ),
       },
       {
         accessorKey: 'effective_school_year',
@@ -218,21 +182,34 @@ export default function CurriculumListPage() {
         header: 'Actions',
         cell: ({ row }) => {
           const item = row.original;
+          const curriculumPath = userRole === 'vpaa' ? `/curriculum/${item.id}` : `/${userRole}/curriculum/${item.id}`;
           return (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              {canManageCurriculum && (
+                <button
+                  type="button"
+                  onClick={() => navigate(curriculumPath)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-[#6b1018]"
+                  title="Open this curriculum and add a course"
+                  aria-label={`Add course to ${item.name}`}
+                >
+                  <Plus size={14} />
+                  Add Course
+                </button>
+              )}
               <button
-                onClick={() => {
-                  const path = userRole === 'vpaa' ? `/curricula/${item.id}` : `/${userRole}/curricula/${item.id}`;
-                  navigate(path);
-                }}
+                type="button"
+                onClick={() => navigate(curriculumPath)}
                 className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                 title="View Curriculum"
+                aria-label={`View ${item.name}`}
               >
                 <Eye size={15} />
               </button>
               {canManageCurriculum && (
                 <>
                   <button
+                    type="button"
                     onClick={() => {
                       setEditingCurriculum(item);
                       setIsEditMode(true);
@@ -240,17 +217,21 @@ export default function CurriculumListPage() {
                     }}
                     className="p-1.5 text-gray-500 hover:text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                     title="Edit Curriculum"
+                    aria-label={`Edit ${item.name}`}
                   >
                     <Pencil size={15} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDuplicate(item.id)}
                     className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                     title="Duplicate Curriculum"
+                    aria-label={`Duplicate ${item.name}`}
                   >
                     <Copy size={15} />
                   </button>
                       <button
+                        type="button"
                         onClick={() =>
                           handleStatusChange(item.id, item.status === 'active' ? 'draft' : 'active')
                         }
@@ -260,14 +241,17 @@ export default function CurriculumListPage() {
                             : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
                         }`}
                         title={item.status === 'active' ? 'Deactivate' : 'Activate'}
+                        aria-label={`${item.status === 'active' ? 'Deactivate' : 'Activate'} ${item.name}`}
                       >
                         <CheckCircle2 size={15} />
                       </button>
                       {item.status !== 'active' && (
                         <button
+                          type="button"
                           onClick={() => triggerArchiveConfirmation(item.id)}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Archive Curriculum"
+                          aria-label={`Archive ${item.name}`}
                         >
                           <Archive size={15} />
                         </button>
@@ -283,7 +267,7 @@ export default function CurriculumListPage() {
   );
 
   const table = useReactTable({
-    data: filteredCurriculaList,
+    data: curriculumList,
     columns,
     state: {
       globalFilter: searchQuery,
@@ -306,7 +290,7 @@ export default function CurriculumListPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#1A1410] font-display">Curriculum Management</h1>
           <p className="text-xs text-gray-500 mt-1">
-            Manage academic curricula, course structures, and active program frameworks.
+            Manage academic curriculum, course structures, and active program frameworks.
           </p>
         </div>
 
@@ -323,7 +307,7 @@ export default function CurriculumListPage() {
             <button
               onClick={() => setIsArchiveOpen(true)}
               className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-xs shadow-sm cursor-pointer"
-              title="View Archived Curricula"
+              title="View Archived Curriculum"
             >
               <Archive size={16} />
               <span>Archive</span>
@@ -471,7 +455,7 @@ export default function CurriculumListPage() {
                   <tr>
                     <td colSpan={columns.length} className="px-5 py-12 text-center text-gray-400">
                       <BookOpen size={36} className="mx-auto text-gray-300 mb-2" />
-                      <p className="font-semibold text-gray-600">No curricula found</p>
+                      <p className="font-semibold text-gray-600">No curriculum found</p>
                       <p className="text-xs text-gray-400 mt-1">Try adjusting your filters or search criteria.</p>
                     </td>
                   </tr>
@@ -493,19 +477,19 @@ export default function CurriculumListPage() {
       ) : (
         /* Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {gridPaginatedCurricula.length === 0 ? (
+          {gridPaginatedCurriculumList.length === 0 ? (
             <div className="col-span-full bg-white rounded-2xl p-12 border border-gray-100 text-center text-gray-400">
               <BookOpen size={36} className="mx-auto text-gray-300 mb-2" />
-              <p className="font-semibold text-gray-600">No curricula found</p>
+              <p className="font-semibold text-gray-600">No curriculum found</p>
             </div>
           ) : (
-            gridPaginatedCurricula.map((item) => (
+            gridPaginatedCurriculumList.map((item) => (
               <CurriculumCard
                 key={item.id}
                 curriculum={item}
                 canEdit={canManageCurriculum}
                 onView={(id) => {
-                  const path = userRole === 'vpaa' ? `/curricula/${id}` : `/${userRole}/curricula/${id}`;
+                  const path = userRole === 'vpaa' ? `/curriculum/${id}` : `/${userRole}/curriculum/${id}`;
                   navigate(path);
                 }}
                 onEdit={(c) => {
@@ -538,7 +522,7 @@ export default function CurriculumListPage() {
       <CurriculumArchiveModal
         isOpen={isArchiveOpen}
         onClose={() => setIsArchiveOpen(false)}
-        curricula={rawCurricula}
+        curriculumList={rawCurriculumList}
         onRestore={handleStatusChange}
       />
 

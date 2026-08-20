@@ -3,14 +3,20 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   AlertTriangle,
   BookOpen,
+  Building2,
+  CalendarDays,
   CheckCircle2,
   Clock,
   Cpu,
+  Download,
   Layers,
+  List,
   Loader2,
   RefreshCw,
   Scissors,
+  ShieldCheck,
   Sparkles,
+  Users,
   X,
 } from "lucide-react";
 import api from "../../../../lib/api";
@@ -20,6 +26,7 @@ import type { ApiScheduleRecord, Course, Room, ScheduleItem } from "../types";
 import { DAYS, GRID_HEADER_HEIGHT_PX, slotToTimeStr } from "../constants";
 import GenerationConstraintsStepper from "./GenerationConstraintsStepper";
 import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
+import { slotCount, slotToTime24h, timeToSlot as timeStrToSlot } from "../../../../lib/timeGrid";
 
 interface SplitOperation {
   term_id: number;
@@ -38,6 +45,40 @@ interface SplitOperation {
   split_group_id?: string | null;
   meeting_type?: "lecture" | "laboratory" | null;
   meeting_index?: number;
+}
+
+function SingleGenerationDashboard({ isGenerating, progressStep, sectionName, courseCount, roomCount, preferredTimeBlock, onClose }: { isGenerating: boolean; progressStep: ProgressStep; sectionName: string; courseCount: number; roomCount: number; preferredTimeBlock: TimeBlockOption; onClose: () => void }) {
+  const steps = [
+    ["Loading subjects", "Prepare and validate subject data", BookOpen],
+    ["Creating scheduling options", "Build feasible time-slot combinations", Layers],
+    ["Allocating rooms", "Assign rooms based on availability", Building2],
+  ] as const;
+  const activeIndex = progressStep === "generating" ? 0 : progressStep === "constraints" ? 1 : 2;
+  const progress = progressStep === "generating" ? 25 : progressStep === "constraints" ? 52 : progressStep === "finalizing" ? 78 : progressStep === "complete" ? 100 : 12;
+  const statusTitle = isGenerating ? steps[activeIndex][0] : "Preparing generation";
+  const statusText = isGenerating ? "The scheduler is building and validating your timetable preview." : "Loading settings before starting the scheduling sequence.";
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-slate-50/70 p-4">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase text-[#7a121c]">Ready to Generate Timetable</p><h3 className="mt-1 text-2xl font-black text-slate-950">Generate Timetable</h3><p className="mt-1 text-sm font-semibold text-slate-600">Run the scheduling algorithm for the selected section and review the preview before saving.</p></div><button type="button" onClick={onClose} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">Cancel</button></div><div className="mt-4 flex flex-wrap gap-2.5 text-xs font-black text-slate-800"><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><CalendarDays className="h-4 w-4 text-[#7a121c]" /> Selected section</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Users className="h-4 w-4 text-[#7a121c]" /> {sectionName || "Current section"}</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><BookOpen className="h-4 w-4 text-[#7a121c]" /> {courseCount} Courses</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Building2 className="h-4 w-4 text-[#7a121c]" /> {roomCount} Rooms Available</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Clock className="h-4 w-4 text-[#7a121c]" /> {preferredTimeBlock} preference</span></div></section>
+      <div className="mt-3 grid min-h-0 flex-1 gap-3 xl:grid-cols-[0.82fr_1.18fr]"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-base font-black text-slate-950">Generation Steps</h4><div className="mt-4 space-y-2">{steps.map(([label, description, Icon], index) => { const complete = isGenerating ? index < activeIndex : false; const current = isGenerating && index === activeIndex; return <div key={label} className="grid grid-cols-[2rem_2.5rem_1fr_auto] items-center gap-2 py-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black ${complete ? "border-emerald-300 bg-emerald-50 text-emerald-700" : current ? "border-[#7a121c] bg-[#7a121c] text-white" : "border-slate-200 text-slate-400"}`}>{index + 1}</span><span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-700"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-xs font-black text-slate-900">{label}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{description}</span></span>{current ? <Clock className="h-4 w-4 text-amber-600" /> : complete ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <span className="h-4 w-4" />}</div>; })}</div></section><section className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700"><Clock className="h-3.5 w-3.5" /> Processing</span></div><div className="flex flex-1 flex-col items-center justify-center py-8 text-center"><span className="flex h-20 w-20 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700"><Clock className="h-9 w-9" /></span><h4 className="mt-4 text-xl font-black text-slate-950">{statusTitle}</h4><p className="mt-1 max-w-lg text-sm font-semibold leading-6 text-slate-600">{statusText}</p></div><div className="flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#7a121c] transition-all duration-500" style={{ width: `${progress}%` }} /></div><span className="text-xs font-black text-slate-600">{progress}%</span></div><div className="mt-4 grid grid-cols-3 gap-2"><SingleGenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><SingleGenerationMetric icon={Building2} label="Rooms" value={roomCount} tone="emerald" /><SingleGenerationMetric icon={ShieldCheck} label="Mode" value={preferredTimeBlock === "flexible" ? "Flex" : preferredTimeBlock} tone="violet" /></div></section></div>
+      <section className="mt-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-base font-black text-slate-950">What happens next</h4><div className="mt-3 grid gap-3 md:grid-cols-3"><SingleGenerationNextStep icon={CalendarDays} number={1} title="Generate preview" text="Create a timetable preview from the selected settings." /><SingleGenerationNextStep icon={List} number={2} title="Review the preview" text="Check subjects, room allocations, and conflicts." /><SingleGenerationNextStep icon={Download} number={3} title="Save as draft" text="Apply the result to the timetable when satisfied." /></div><div className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-600"><AlertTriangle className="h-4 w-4 shrink-0 text-slate-700" /> Nothing is saved until you review the preview and choose to apply it.</div></section>
+    </div>
+  );
+}
+
+function SingleGenerationMetric({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number | string; tone: "blue" | "emerald" | "violet" }) {
+  const colors = { blue: "bg-blue-50 text-blue-600", emerald: "bg-emerald-50 text-emerald-600", violet: "bg-violet-50 text-violet-600" };
+  return <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 p-3"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${colors[tone]}`}><Icon className="h-5 w-5" /></span><span className="min-w-0"><span className="block truncate text-[11px] font-bold text-slate-500">{label}</span><span className="block truncate text-xl font-black text-slate-950">{value}</span></span></div>;
+}
+
+function SingleGenerationNextStep({ icon: Icon, number, title, text }: { icon: React.ComponentType<{ className?: string }>; number: number; title: string; text: string }) {
+  return <div className="flex items-start gap-3 md:border-r md:border-slate-200 md:pr-3 last:border-r-0"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#7a121c] text-[#7a121c]"><Icon className="h-5 w-5" /></span><span><span className="text-xs font-black text-slate-900">{number}. {title}</span><span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-600">{text}</span></span></div>;
+}
+
+function PreviewMetric({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number | string; tone: "blue" | "green" | "violet" }) {
+  const colors = { blue: "bg-blue-50 text-blue-600", green: "bg-emerald-50 text-emerald-600", violet: "bg-violet-50 text-violet-600" };
+  return <div className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${colors[tone]}`}><Icon className="h-5 w-5" /></span><span className="min-w-0"><span className="block truncate text-xl font-black text-slate-950">{value}</span><span className="block truncate text-[11px] font-bold text-slate-500">{label}</span></span></div>;
 }
 
 interface ResolvedSplitState {
@@ -87,22 +128,6 @@ interface GenerateScheduleModalProps {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const timeStrToSlot = (timeStr: string): number => {
-  if (!timeStr) return 0;
-  const parts = timeStr.split(":");
-  if (parts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  return Math.max(0, Math.floor((hours * 60 + minutes - 420) / 30));
-};
-
-const slotToTime24h = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-};
-
 const formatTimeDisplay = (time24: string): string => {
   if (!time24) return "";
   const parts = time24.split(":");
@@ -142,16 +167,6 @@ const isGecCourse = (course: { code?: string; name?: string; categories?: { name
   return code.startsWith("GEC");
 };
 
-const PREVIEW_DAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
-
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function GenerateScheduleModal({
@@ -186,6 +201,7 @@ export default function GenerateScheduleModal({
   const [gecSplitSettingEnabled, setGecSplitSettingEnabled] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [constraintsConfirmed, setConstraintsConfirmed] = useState(false);
+  const [previewView, setPreviewView] = useState<"list" | "grid">("grid");
   /** Abort controller ref so we can cancel stale validation requests. */
   const abortRef = useRef<AbortController | null>(null);
   const hasMissingPhysicalRoomError = !!errorMessage
@@ -268,19 +284,27 @@ export default function GenerateScheduleModal({
         bs.subject?.course_category ||
         "minor"
       ) as "major" | "minor";
+      const labHours = Number(bs.course?.lab_hours ?? bs.subject?.lab_hours ?? 0);
+      // Prefer the course's own requirement. When the payload omits it, infer the
+      // same way RuleEngine does rather than assuming "lecture": a laboratory
+      // component means a laboratory room is required.
+      const roomTypeRequired = bs.course?.room_type_required
+        ?? bs.subject?.room_type_required
+        ?? (labHours > 0 ? "laboratory" : "lecture");
+
       map.set(cId, {
         id: cId,
         code,
         name,
         units: Number(bs.course?.units ?? bs.subject?.units ?? 0) || 3,
         lectureHours: Number(bs.course?.lecture_hours ?? bs.subject?.lecture_hours ?? 3),
-        labHours: Number(bs.course?.lab_hours ?? bs.subject?.lab_hours ?? 0),
+        labHours,
         category,
         categories: bs.course?.categories ?? bs.subject?.categories ?? [],
         semester: "1st",
         departmentId: Number(bs.department_id) || null,
         yearLevel: 1,
-        roomTypeRequired: "lecture",
+        roomTypeRequired,
         status: "active",
       });
     });
@@ -290,13 +314,6 @@ export default function GenerateScheduleModal({
   const eligibleGecCourses = useMemo(
     () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) =>
       c.category === "minor" && !isPathfitOrNstp(c) && isGecCourse(c)
-    ),
-    [availableCourses, allSectionCourses]
-  );
-
-  const eligibleSplitUnitCourses = useMemo(
-    () => (availableCourses.length > 0 ? availableCourses : allSectionCourses).filter((c) =>
-      Number(c.units ?? 0) > 1 && !isPathfitOrNstp(c)
     ),
     [availableCourses, allSectionCourses]
   );
@@ -644,86 +661,6 @@ export default function GenerateScheduleModal({
     return Object.values(groups);
   }, [previewSchedules, allSectionCourses]);
 
-  const previewSchedulesByDay = useMemo(() => {
-    const dayMap = new Map<
-      string,
-      {
-        id: string | number;
-        code: string;
-        name: string;
-        category: string;
-        isMajor: boolean;
-        day: string;
-        start_time: string;
-        end_time: string;
-        room: string;
-        mode: string;
-        meetingType?: "lecture" | "laboratory" | null;
-      }[]
-    >();
-
-    PREVIEW_DAYS.forEach((day) => dayMap.set(day, []));
-
-    previewSchedules.forEach((item) => {
-      const courseIdStr = (item.course_id ?? item.subject_id)?.toString() ?? "";
-      const foundCourse = allSectionCourses.find(
-        (c) =>
-          c.id === courseIdStr ||
-          (c.code &&
-            (item.course?.course_code || item.subject?.course_code || "") &&
-            c.code.toLowerCase() ===
-              (item.course?.course_code || item.subject?.course_code || "").toLowerCase())
-      );
-
-      const code =
-        foundCourse?.code ||
-        item.course?.course_code ||
-        item.subject?.course_code ||
-        item.subject?.subject_code ||
-        "COURSE";
-      const name =
-        foundCourse?.name ||
-        item.course?.course_name ||
-        item.subject?.course_name ||
-        item.subject?.subject_name ||
-        "Course Session";
-      const category =
-        foundCourse?.category ||
-        item.course?.course_category ||
-        item.subject?.course_category ||
-        "minor";
-      const mode = item.mode || "on-site";
-      const room =
-        mode === "online"
-          ? "Online"
-          : item.room?.room_code ||
-            rooms.find((r) => String(r.id) === String(item.room_id))?.name ||
-            "Room TBA";
-
-      const targetDay = PREVIEW_DAYS.includes(item.day) ? item.day : "Monday";
-      dayMap.get(targetDay)?.push({
-        id: item.id,
-        code,
-        name,
-        category,
-        isMajor: category === "major",
-        day: targetDay,
-        start_time: item.start_time,
-        end_time: item.end_time,
-        room,
-        mode,
-        meetingType: item.meeting_type,
-      });
-    });
-
-    return PREVIEW_DAYS.map((day) => ({
-      day,
-      sessions: (dayMap.get(day) ?? []).sort((a, b) =>
-        a.start_time.localeCompare(b.start_time)
-      ),
-    }));
-  }, [previewSchedules, allSectionCourses, rooms]);
-
   const previewGridSessions = useMemo(() => {
     return previewSchedules
       .map((item) => {
@@ -824,6 +761,24 @@ export default function GenerateScheduleModal({
     !errorMessage;
   const previewLoading = isGenerating || waitingForInitialGeneration;
   const showConstraintStepper = !constraintsConfirmed && baseSchedules.length === 0 && !errorMessage;
+  const exportPreview = () => {
+    const rows = previewSchedules.map((schedule) => [
+      schedule.course?.course_code ?? schedule.subject?.subject_code ?? schedule.course_id,
+      schedule.course?.course_name ?? schedule.subject?.subject_name ?? "",
+      schedule.room?.room_code ?? "Unassigned",
+      schedule.day,
+      `${schedule.start_time}-${schedule.end_time}`,
+      schedule.mode ?? "on-site",
+    ]);
+    const csv = [["Course", "Name", "Room", "Day", "Time", "Mode"], ...rows]
+      .map((values) => values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    link.download = `${sectionName || "schedule"}-preview.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -964,12 +919,24 @@ export default function GenerateScheduleModal({
               </button>
             </div>
           </div>
+        ) : previewLoading ? (
+          <SingleGenerationDashboard
+            isGenerating={isGenerating}
+            progressStep={progressStep}
+            sectionName={sectionName}
+            courseCount={availableCourses.length || allCourses.length}
+            roomCount={rooms.length}
+            preferredTimeBlock={preferredTimeBlock}
+            onClose={onClose}
+          />
         ) : (
           <div className="flex-1 grid grid-cols-1 overflow-hidden bg-slate-100">
             {/* Left Panel: Preview */}
             <div className="flex-1 flex flex-col min-w-0 bg-white border-r border-slate-200 overflow-hidden">
+              <section className="shrink-0 border-b border-slate-200 bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><h3 className="text-xl font-black text-slate-950">Generated Schedule Preview</h3><p className="mt-1 text-xs font-semibold text-slate-500">Review the generated timetable and regenerate if you need different options.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => onApplySchedule(previewSchedules)} disabled={applyDisabled} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-black text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"><CheckCircle2 className="h-4 w-4" /> View Timetable</button><button type="button" onClick={exportPreview} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4" /> Export Schedule</button><button type="button" onClick={() => onGenerate(sectionId, regenerateCourseIds, currentGenerateOptions())} disabled={isGenerating || isApplying} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className="h-4 w-4" /> Regenerate</button></div></div><div className="mt-3 grid grid-cols-2 gap-2.5 xl:grid-cols-4"><PreviewMetric icon={Users} label="Sections" value={1} tone="blue" /><PreviewMetric icon={BookOpen} label="Courses" value={uniqueCoursesCount} tone="green" /><PreviewMetric icon={CalendarDays} label="Scheduled Sessions" value={previewSchedules.length} tone="violet" /><PreviewMetric icon={ShieldCheck} label="Status" value={hasUnresolvableConflict ? "Conflict" : "No Conflicts"} tone="green" /></div></section>
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2"><span className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-black text-white">{sectionName || "Selected Section"}</span><div className="inline-flex rounded-lg border border-slate-200 bg-white p-1"><button type="button" onClick={() => setPreviewView("list")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-black ${previewView === "list" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}><List className="h-3.5 w-3.5" /> List</button><button type="button" onClick={() => setPreviewView("grid")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-black ${previewView === "grid" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}><Layers className="h-3.5 w-3.5" /> Grid</button></div></div>
               {/* Summary Stats Header */}
-              <div className="p-3.5 bg-slate-50/90 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="hidden p-3.5 bg-slate-50/90 border-b border-slate-200 flex-wrap items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <BookOpen className="w-4 h-4 text-[#4e0a10]" />
@@ -1033,16 +1000,16 @@ export default function GenerateScheduleModal({
               )}
 
               {/* Preview Board */}
-              <div className="flex-1 overflow-hidden p-3">
+              <div className={`${previewView === "grid" ? "flex-1" : "hidden"} overflow-hidden p-3`}>
                 {previewLoading ? (
                   <div className="h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white relative select-none">
                     <WeeklyTimetableGrid
                       days={DAYS}
-                      slotCount={24}
+                      slotCount={slotCount()}
                       headerHeight={GRID_HEADER_HEIGHT_PX}
                       timeColumnWidth={62}
                       minWidth={0}
-                      rowTemplate="repeat(24, minmax(0, 1fr))"
+                      rowTemplate={`repeat(${slotCount()}, minmax(0, 1fr))`}
                       className="h-full rounded-none border-0 shadow-none"
                       getTimeLabel={slotToTimeStr}
                     >
@@ -1103,11 +1070,11 @@ export default function GenerateScheduleModal({
                 ) : (
                   <WeeklyTimetableGrid
                     days={DAYS}
-                    slotCount={24}
+                    slotCount={slotCount()}
                     headerHeight={GRID_HEADER_HEIGHT_PX}
                     timeColumnWidth={62}
                     minWidth={0}
-                    rowTemplate="repeat(24, minmax(0, 1fr))"
+                    rowTemplate={`repeat(${slotCount()}, minmax(0, 1fr))`}
                     className={`h-full ${splitValidating ? "opacity-70" : ""}`}
                     getTimeLabel={slotToTimeStr}
                     getDayCount={(dayIndex) => previewGridSessions.filter((session) => session.dayIndex === dayIndex).length}
@@ -1183,7 +1150,7 @@ export default function GenerateScheduleModal({
                 )}
               </div>
 
-              <div className="hidden">
+              <div className={`${previewView === "list" ? "flex-1 overflow-hidden p-3" : "hidden"} space-y-2`}>
                 {previewSchedules.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
                     <Layers className="w-10 h-10 mb-2 opacity-50 text-slate-300" />
@@ -1306,6 +1273,8 @@ export default function GenerateScheduleModal({
                   })
                 )}
               </div>
+
+              <div className="mx-4 mb-3 flex shrink-0 items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2.5 text-[11px] font-semibold text-slate-600"><CheckCircle2 className="h-4 w-4 shrink-0 text-blue-600" /> Review the generated timetable above. You can export it, regenerate different options, or apply it to the timetable when satisfied.</div>
 
               {/* Left Panel Footer */}
               <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">

@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, Loader2, SlidersHorizontal, SplitSquareVertical, TreePine, Wifi } from 'lucide-react';
+import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, Loader2, SlidersHorizontal, TreePine, Wifi } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -10,14 +10,12 @@ interface SchedulingSettings {
   department_id: number;
   scheduling_profile: 'standard' | 'laboratory_enabled';
   lecture_lab_schedule_override_enabled: boolean;
-  split_units_schedule_override_enabled: boolean;
   custom_lab_duration_override_enabled: boolean;
   custom_lab_duration_minutes: number | null;
   custom_lab_duration_6_hours_enabled: boolean;
   custom_lab_duration_5_hours_enabled: boolean;
   custom_lab_duration_other_enabled: boolean;
   gec_split_schedule_override_enabled: boolean;
-  force_schedule_reuse_enabled: boolean;
   field_evening_schedule_enabled: boolean;
   sunday_online_only_enabled: boolean;
   online_slot_limit: number;
@@ -224,7 +222,7 @@ export default function SecretarySettings() {
     };
   }, [toast]);
 
-  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'split_units_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'force_schedule_reuse_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled' | 'online_slot_limit' | 'field_slot_limit'>>) => {
+  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled' | 'online_slot_limit' | 'field_slot_limit'>>) => {
     if (!settings) {
       return;
     }
@@ -247,7 +245,6 @@ export default function SecretarySettings() {
   };
 
   const lectureLabEnabled = !!settings?.lecture_lab_schedule_override_enabled;
-  const splitUnitsEnabled = !!settings?.split_units_schedule_override_enabled;
   const customLabEnabled = !!settings?.custom_lab_duration_override_enabled;
   const customLabMinutes = settings?.custom_lab_duration_minutes ?? 360;
   const customLab6HoursEnabled = !!settings?.custom_lab_duration_6_hours_enabled;
@@ -263,7 +260,7 @@ export default function SecretarySettings() {
     ? 'Use lecture + laboratory controls for departments with practical and laboratory courses.'
     : 'Use standard lecture, online, and field controls. Laboratory overrides stay disabled for this profile.';
   const profileRecommendations = isLaboratoryProfile
-    ? ['Lecture + Laboratory Override', 'Online and field slot limits', 'Sunday Online Only']
+    ? ['Apply Hybrid', 'Online and field slot limits', 'Sunday Online Only']
     : ['Online and field slot limits', 'Sunday Online Only', 'Split Units or GEC Split'];
   const handleDropdownToggle = (id: string) => {
     setOpenDropdown((current) => (current === id ? null : id));
@@ -321,7 +318,7 @@ export default function SecretarySettings() {
           onToggle={handleDropdownToggle}
         >
           <SettingToggleCard
-            title="Lecture + Laboratory Override"
+            title="Apply Hybrid"
             recommendation={isLaboratoryProfile ? 'recommended' : 'not-applicable'}
             description="Split selected lecture + lab courses into separate lecture and laboratory meetings."
             note={lectureLabAvailable
@@ -337,54 +334,20 @@ export default function SecretarySettings() {
               if (!lectureLabAvailable) return;
               if (!lectureLabEnabled) {
                 requestConfirmation({
-                  title: 'Enable Lecture + Laboratory Override?',
+                  title: 'Enable Apply Hybrid?',
                   message: 'Only selected courses with both lecture and lab units will split.\n\nLab time may become longer, but curriculum units will not change.',
-                  confirmLabel: 'Enable Override',
+                  confirmLabel: 'Enable Hybrid',
                   variant: 'warning',
                   onConfirm: () => updateSetting({ lecture_lab_schedule_override_enabled: true }),
                 });
                 return;
               }
               requestConfirmation({
-                title: 'Turn off Lecture + Laboratory Override?',
+                title: 'Turn off Apply Hybrid?',
                 message: 'Selected lecture + lab courses will no longer split into separate lecture and laboratory meetings during generation.\n\nCurriculum units remain unchanged.',
                 confirmLabel: 'Turn Off',
                 variant: 'maroon',
                 onConfirm: () => updateSetting({ lecture_lab_schedule_override_enabled: false }),
-              });
-            }}
-          />
-          <SettingToggleCard
-            title="Split Units Override"
-            recommendation={isLaboratoryProfile ? 'optional' : 'recommended'}
-            description="Split selected courses into unit-based sessions."
-            note="Example: 3 units becomes two 1.5-hour meetings."
-            enabled={splitUnitsEnabled}
-            isLoading={isLoading}
-            isSaving={isSaving}
-            icon={SplitSquareVertical}
-            onToggle={() => {
-              if (!splitUnitsEnabled) {
-                requestConfirmation({
-                  title: 'Enable Split Units Override?',
-                  message: 'Selected courses can be divided into unit-based meetings during generation.\n\nThis will replace GEC Split because Split Units already covers that behavior.',
-                  confirmLabel: 'Enable Split Units',
-                  variant: 'warning',
-                  onConfirm: () => updateSetting({
-                    split_units_schedule_override_enabled: true,
-                    gec_split_schedule_override_enabled: false,
-                  }),
-                });
-                return;
-              }
-              requestConfirmation({
-                title: 'Turn off Split Units Override?',
-                message: 'Selected courses will stop splitting into unit-based meetings during generation.\n\nExisting curriculum units remain unchanged.',
-                confirmLabel: 'Turn Off',
-                variant: 'maroon',
-                onConfirm: () => updateSetting({
-                  split_units_schedule_override_enabled: false,
-                }),
               });
             }}
           />
@@ -401,12 +364,11 @@ export default function SecretarySettings() {
               if (!gecSplitEnabled) {
                 requestConfirmation({
                   title: 'Enable GEC Split Override?',
-                  message: 'Only selected GEC courses can split into shorter meetings.\n\nThis will replace Split Units to avoid duplicate split rules.',
+                  message: 'Only selected GEC courses can split into shorter meetings.\n\nOnly the GEC courses you select are affected.',
                   confirmLabel: 'Enable GEC Split',
                   variant: 'warning',
                   onConfirm: () => updateSetting({
                     gec_split_schedule_override_enabled: true,
-                    split_units_schedule_override_enabled: false,
                   }),
                 });
                 return;
@@ -547,7 +509,7 @@ export default function SecretarySettings() {
             title="Custom Lab Duration"
             recommendation={isLaboratoryProfile ? 'optional' : 'not-applicable'}
             description="Allow selected lab courses to use custom lab meeting lengths."
-            note="If Lecture + Lab is already active, use this only when the lab needs longer time."
+            note="If Apply Hybrid is already active, use this only when the lab needs longer time."
             noteTone="danger"
             enabled={customLabEnabled}
             isLoading={isLoading}
@@ -559,7 +521,7 @@ export default function SecretarySettings() {
               if (!customLabEnabled) {
                 requestConfirmation({
                   title: 'Enable Custom Lab Duration?',
-                  message: 'Use this only when selected lab courses need 5, 6, or custom-hour sessions.\n\nIt can increase lab time beyond the normal Lecture + Lab override.',
+                  message: 'Use this only when selected lab courses need 5, 6, or custom-hour sessions.\n\nIt can increase lab time beyond the normal Apply Hybrid override.',
                   confirmLabel: 'Enable Custom Lab',
                   variant: 'danger',
                   onConfirm: () => updateSetting({ custom_lab_duration_override_enabled: true }),
@@ -675,7 +637,7 @@ export default function SecretarySettings() {
             <h2 className="text-sm font-bold text-slate-950">Profile guide</h2>
             <div className="mt-3 space-y-3">
               {(isLaboratoryProfile ? [
-                ['Lecture + Laboratory', 'Enable when courses contain both lecture and laboratory hours.'],
+                ['Apply Hybrid', 'Enable when courses contain both lecture and laboratory hours.'],
                 ['Custom Lab Duration', 'Use only for exceptional five-hour, six-hour, or custom sessions.'],
                 ['Split Units / GEC', 'Optional for courses that need shorter recurring meetings.'],
               ] : [

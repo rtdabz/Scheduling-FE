@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData } from '../../lib/dataCache';
 import RoomDetailContent from './RoomDetailContent';
+import Modal from './Modal';
 
 interface Department {
   id: number;
@@ -130,32 +129,18 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl border border-gray-100 flex flex-col animate-in zoom-in-95 duration-200 max-h-[95vh] overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <div>
-            <h3 className="text-base font-bold text-gray-900 leading-6 font-sans">Classroom Details</h3>
-            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed font-sans font-semibold">Weekly schedule and room information</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-8 h-8 rounded-xl bg-white hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 border border-gray-200 transition-colors cursor-pointer shadow-sm"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Body Content */}
-        <div className="flex-1 flex flex-col overflow-hidden p-6">
-          <RoomDetailContent room={room} schedules={schedules} isLoading={isLoading} />
-        </div>
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Classroom Details"
+      description="Weekly schedule and room information"
+      size="xl"
+      className="max-h-[95vh]"
+    >
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+        <RoomDetailContent room={room} schedules={schedules} isLoading={isLoading} />
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

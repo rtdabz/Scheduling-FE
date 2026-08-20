@@ -4,9 +4,11 @@ import { useToast } from '../../context/ToastContext';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { termLabel } from '../../lib/termLabel';
 import { useNavigate } from 'react-router-dom';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import { ActivityFeed, DashboardNotificationBanner } from '../../components/overview';
+import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
 import {
   Building2,
   Users,
@@ -29,7 +31,8 @@ import {
   Filter,
   SlidersHorizontal,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Plus
 } from 'lucide-react';
 
 interface Schedule {
@@ -126,7 +129,6 @@ interface Subject {
 
 interface Term {
   id: number;
-  term_name: string;
   academic_year: string;
   semester: '1st' | '2nd' | 'summer';
   is_active: boolean;
@@ -444,9 +446,14 @@ export default function VpaaDashboardPage() {
   const daysOfWeek = useMemo(() => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], []);
   const todayShort = useMemo(() => daysOfWeek[new Date().getDay()], [daysOfWeek]);
   const [filterDept, setFilterDept] = useState<string>('all');
-  const [filterDay, setFilterDay] = useState<string>(todayShort);
+  const filterDay = todayShort;
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [visibleCardsBySlot, setVisibleCardsBySlot] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setVisibleCardsBySlot({});
+  }, [filterDept, searchQuery, activeTerm?.id]);
 
   // Lock background body scroll when fullscreen calendar is open
   useEffect(() => {
@@ -776,7 +783,7 @@ export default function VpaaDashboardPage() {
         {activeTerm && (
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Active Term: {activeTerm.term_name}
+            Active Term: {termLabel(activeTerm)}
           </div>
         )}
       </div>
@@ -889,24 +896,9 @@ export default function VpaaDashboardPage() {
                           </select>
                         </div>
 
-                        {/* Day Filter */}
-                        <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
-                          <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Day</span>
-                          <select
-                            value={filterDay}
-                            onChange={(e) => setFilterDay(e.target.value)}
-                            className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
-                          >
-                            <option value="all">All Days</option>
-                            <option value="Sun">Sunday</option>
-                            <option value="Mon">Monday</option>
-                            <option value="Tue">Tuesday</option>
-                            <option value="Wed">Wednesday</option>
-                            <option value="Thu">Thursday</option>
-                            <option value="Fri">Friday</option>
-                            <option value="Sat">Saturday</option>
-                          </select>
-                        </div>
+                        <span className="inline-flex items-center rounded-xl border border-[#5A1220]/15 bg-[#5A1220]/5 px-2.5 py-1 text-xs font-bold text-[#5A1220]">
+                          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]}
+                        </span>
                       </div>
                     </div>
 
@@ -933,11 +925,10 @@ export default function VpaaDashboardPage() {
                       </button>
 
                       {/* Reset Button */}
-                      {(filterDept !== 'all' || filterDay !== todayShort || searchQuery !== '') && (
+                      {(filterDept !== 'all' || searchQuery !== '') && (
                         <button
                           onClick={() => {
                             setFilterDept('all');
-                            setFilterDay(todayShort);
                             setSearchQuery('');
                           }}
                           className="p-1.5 text-gray-555 hover:text-[#5A1220] hover:bg-red-50 hover:border-red-200 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
@@ -959,173 +950,132 @@ export default function VpaaDashboardPage() {
                     <span className="text-[10px] text-gray-400">7:00 AM &ndash; 7:00 PM</span>
                   </div>
 
-                  {/* Timetable Grid (Sunday to Saturday, 7:00 AM - 7:00 PM, 30-min slots) */}
-                  <div className="mt-3 flex-1 min-h-0 flex flex-col overflow-hidden">
-                    <div className="overflow-x-auto overflow-y-auto rounded-xl border border-gray-200 shadow-inner flex-1 flex flex-col h-full bg-white relative scrollbar-thin">
-                      <div className="min-w-[850px] bg-white relative flex flex-row flex-1">
-                        {/* Time Column */}
-                        <div className="w-16 shrink-0 sticky left-0 z-20 bg-gray-50 select-none border-r border-gray-200">
-                          <div className="sticky top-0 left-0 z-40 h-9 border-b border-gray-200 bg-gray-100 flex items-center justify-center font-extrabold text-[9px] uppercase tracking-wider text-gray-500">
-                            Time
-                          </div>
-                          {timeSlots.map((slot, index) => (
-                            <div
-                              key={index}
-                              className="h-6 border-b border-gray-100 last:border-b-0 flex items-center justify-center text-[8px] font-semibold text-gray-400 bg-gray-50/90"
-                            >
-                              {slot.label.includes(":00") ? (
-                                <span className="font-bold text-gray-600">{slot.label}</span>
-                              ) : (
-                                <span className="text-gray-400 font-medium">{slot.label}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                  {/* Timetable Grid (selected day, 7:00 AM - 7:00 PM, 30-min slots) */}
+                  <div className="mt-3 flex flex-col">
+                    {(() => {
+                      const selectedDay = filterDay === 'all' ? todayShort : filterDay;
+                      const daySchedules = calendarFilteredSchedules
+                        .filter((schedule) => getShortDay(schedule.day) === selectedDay)
+                        .sort((a, b) => parseTimeToSlotIndex(a.start_time) - parseTimeToSlotIndex(b.start_time));
+                      const schedulesBySlot = new Map<number, Schedule[]>();
 
-                        {/* Day Columns (Sunday to Saturday) */}
-                        <div className="flex-1 flex flex-row relative">
-                          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-                            .filter(day => filterDay === 'all' || getShortDay(day) === filterDay)
-                            .map((day) => {
-                              const daySchedules = calendarFilteredSchedules.filter(
-                                (schedule) => getShortDay(schedule.day) === day
-                              );
-                              const isToday = day === currentDayName;
-                              const layouts = getDayLayouts(daySchedules);
+                      daySchedules.forEach((schedule) => {
+                        const slot = parseTimeToSlotIndex(schedule.start_time);
+                        schedulesBySlot.set(slot, [...(schedulesBySlot.get(slot) ?? []), schedule]);
+                      });
+
+                      const visibleSchedules = daySchedules.filter((schedule) => {
+                        const slot = parseTimeToSlotIndex(schedule.start_time);
+                        const slotKey = `${selectedDay}-${slot}`;
+                        const slotSchedules = schedulesBySlot.get(slot) ?? [];
+                        return slotSchedules.indexOf(schedule) < (visibleCardsBySlot[slotKey] ?? 5);
+                      });
+                      const layouts = getDayLayouts(visibleSchedules);
+                      const isToday = selectedDay === currentDayName;
+
+                      return (
+                        <div className="rounded-xl bg-white relative">
+                          <WeeklyTimetableGrid
+                            days={[selectedDay]}
+                            slotCount={timeSlots.length}
+                            headerHeight={36}
+                            timeColumnWidth={64}
+                            slotHeight={24}
+                            minWidth={0}
+                            getTimeLabel={(slot) => timeSlots[slot]?.label ?? ''}
+                            getDayCount={() => daySchedules.length}
+                            renderCell={(_, slot) => (
+                              <div
+                                key={`dashboard-cell-${selectedDay}-${slot}`}
+                                className={`border-b border-r border-gray-100 ${isToday ? 'bg-red-500/[0.015]' : 'bg-white'}`}
+                                style={{ gridColumn: 2, gridRow: slot + 2 }}
+                              />
+                            )}
+                          >
+                            {isToday && currentDayTimeTop !== null && (
+                              <div
+                                className="absolute left-16 right-0 z-30 flex items-center border-t-2 border-red-500 pointer-events-none"
+                                style={{ top: `${36 + currentDayTimeTop}px` }}
+                              >
+                                <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
+                              </div>
+                            )}
+
+                            {visibleSchedules.map((schedule) => {
+                              const startIdx = parseTimeToSlotIndex(schedule.start_time);
+                              const endIdx = parseTimeToSlotIndex(schedule.end_time);
+                              const durationSlots = Math.max(1, endIdx - startIdx);
+                              const height = durationSlots * 24;
+                              const layout = layouts.find((item) => item.schedule.id === schedule.id);
+                              const left = layout ? `${layout.leftPct}%` : '0%';
+                              const width = layout ? `${layout.widthPct}%` : '100%';
+                              const deptCode = schedule.section?.department?.department_code || (schedule as unknown as { department?: { department_code?: string } })?.department?.department_code || 'GEN';
 
                               return (
                                 <div
-                                  key={day}
-                                  className={`flex-1 border-r border-gray-200 last:border-r-0 relative min-w-[130px] transition-colors duration-250 ${
-                                    isToday ? 'bg-red-500/[0.015]' : ''
-                                  }`}
+                                  key={schedule.id}
+                                  title={`${schedule.course?.course_code || schedule.subject?.subject_code || 'Subject'}\n${schedule.course?.course_name || schedule.subject?.subject_name || 'No title'}\n${schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}\n${schedule.room?.room_code || 'Room TBA'}\n${schedule.start_time} - ${schedule.end_time}`}
+                                  style={{
+                                    gridColumn: 2,
+                                    gridRow: `${startIdx + 2} / span ${durationSlots}`,
+                                    height: `${height - 2}px`,
+                                    marginTop: '1px',
+                                    marginLeft: `calc(${left} + 2px)`,
+                                    width: `calc(${width} - 4px)`,
+                                  }}
+                                  className={`group z-10 rounded-lg border border-l-4 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-xs select-none transition-all duration-150 hover:scale-[1.02] hover:shadow-md hover:z-30 ${getDeptStyles(deptCode)}`}
                                 >
-                                  {/* Sticky Day Column Header */}
-                                  <div
-                                    className={`sticky top-0 z-10 h-9 border-b border-gray-200 flex flex-col items-center justify-center select-none ${
-                                      isToday
-                                        ? 'bg-red-50/95 text-[#5A1220] font-black border-b-2 border-b-red-500 shadow-sm'
-                                        : 'bg-gray-50 text-gray-700'
-                                    }`}
-                                  >
-                                    <span className="font-bold text-xs uppercase tracking-wider">{day}</span>
-                                    <span className="text-[7.5px] font-extrabold opacity-75">
-                                      {daySchedules.length} {daySchedules.length === 1 ? "Class" : "Classes"}
-                                    </span>
+                                  <div className="space-y-0.5 min-w-0">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-extrabold text-[10px] leading-tight truncate">
+                                        {schedule.course?.course_code || schedule.subject?.subject_code || 'N/A'}
+                                      </span>
+                                      <span className="text-[7.5px] font-black uppercase px-1 py-0.5 rounded bg-black/5 shrink-0 truncate max-w-[50%]">
+                                        {schedule.section?.section_name || 'Sec'}
+                                      </span>
+                                    </div>
+                                    <p className="text-[8.5px] font-semibold opacity-90 truncate leading-tight">
+                                      {schedule.course?.course_name || schedule.subject?.subject_name || 'No title'}
+                                    </p>
                                   </div>
-
-                                  {/* Column Body Grid */}
-                                  <div className="relative" style={{ height: `${timeSlots.length * 24}px` }}>
-                                    {timeSlots.map((_, index) => (
-                                      <div key={index} className="h-6 border-b border-gray-100 last:border-b-0" />
-                                    ))}
-
-                                    {/* Google Calendar Time Indicator Line */}
-                                    {isToday && currentDayTimeTop !== null && (
-                                      <div
-                                        className="absolute left-0 right-0 border-t-2 border-red-500 z-15 pointer-events-none flex items-center"
-                                        style={{ top: `${currentDayTimeTop}px` }}
-                                      >
-                                        <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
-                                      </div>
-                                    )}
-
-                                    {/* Rendering Schedule Cards */}
-                                    {daySchedules.map((schedule) => {
-                                      const startIdx = parseTimeToSlotIndex(schedule.start_time);
-                                      const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                                      const top = startIdx * 24;
-                                      const height = (endIdx - startIdx) * 24;
-
-                                      if (height <= 0) return null;
-
-                                      const layout = layouts.find(item => item.schedule.id === schedule.id);
-                                      const left = layout ? `${layout.leftPct}%` : '0%';
-                                      const width = layout ? `${layout.widthPct}%` : '100%';
-                                      const deptCode = schedule.section?.department?.department_code || (schedule as unknown as { department?: { department_code?: string } })?.department?.department_code || 'GEN';
-
-                                      return (
-                                        <div
-                                          key={schedule.id}
-                                          style={{
-                                            top: `${top + 1}px`,
-                                            height: `${height - 2}px`,
-                                            left: `calc(${left} + 2px)`,
-                                            width: `calc(${width} - 4px)`,
-                                          }}
-                                          className={`group absolute rounded-lg border border-l-4 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-xs select-none transition-all duration-150 hover:scale-[1.02] hover:shadow-md hover:z-25 ${getDeptStyles(deptCode)}`}
-                                        >
-                                          <div className="space-y-0.5 min-w-0">
-                                            <div className="flex items-center justify-between gap-1">
-                                              <span className="font-extrabold text-[10px] leading-tight truncate">
-                                                {schedule.course?.course_code || schedule.subject?.subject_code || 'N/A'}
-                                              </span>
-                                              <span className="text-[7.5px] font-black uppercase px-1 py-0.2 rounded bg-black/5 shrink-0">
-                                                {schedule.section?.section_name || 'Sec'}
-                                              </span>
-                                            </div>
-                                            <p className="text-[8.5px] font-semibold opacity-90 truncate leading-tight">
-                                              {schedule.course?.course_name || schedule.subject?.subject_name || 'No title'}
-                                            </p>
-                                          </div>
-
-                                          <div className="border-t border-black/5 pt-0.5 mt-auto flex items-center justify-between text-[7.5px] font-bold opacity-80">
-                                            <span className="truncate max-w-[60%]">
-                                              {schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}
-                                            </span>
-                                            <span className="truncate">
-                                              {schedule.room?.room_code || 'Room TBA'}
-                                            </span>
-                                          </div>
-
-                                          {/* Hover Details Popover */}
-                                          <div className={`opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none absolute w-60 p-2.5 bg-slate-900 text-white rounded-xl shadow-2xl backdrop-blur-md z-50 border border-slate-700 text-xs space-y-1.5 leading-snug ${
-                                            ['Thu', 'Fri', 'Sat'].includes(day) ? 'right-full mr-2 top-0' : 'left-full ml-2 top-0'
-                                          }`}>
-                                            <div className="flex items-center justify-between border-b border-gray-700 pb-1">
-                                              <span className="font-bold text-[#F5A623]">
-                                                {schedule.course?.course_code || schedule.subject?.subject_code}
-                                              </span>
-                                              <span className="text-[9px] px-1.5 py-0.5 bg-white/10 rounded font-semibold uppercase">
-                                                {schedule.mode || 'Lecture'}
-                                              </span>
-                                            </div>
-                                            <p className="font-bold text-gray-100 text-xs">
-                                              {schedule.course?.course_name || schedule.subject?.subject_name || 'Subject'}
-                                            </p>
-                                            <div className="space-y-1 text-gray-300 text-[10px] border-t border-gray-700 pt-1.5">
-                                              <div className="flex justify-between">
-                                                <span className="text-gray-400">Instructor:</span>
-                                                <span className="font-bold text-white">
-                                                  {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
-                                                </span>
-                                              </div>
-                                              <div className="flex justify-between">
-                                                <span className="text-gray-400">Section:</span>
-                                                <span className="font-bold text-white">{schedule.section?.section_name}</span>
-                                              </div>
-                                              <div className="flex justify-between">
-                                                <span className="text-gray-400">Room:</span>
-                                                <span className="font-bold text-white">
-                                                  {schedule.room?.building || 'Main'} &bull; {schedule.room?.room_code || 'TBA'}
-                                                </span>
-                                              </div>
-                                              <div className="flex justify-between">
-                                                <span className="text-gray-400">Time:</span>
-                                                <span className="font-bold text-[#F5A623]">{schedule.start_time} - {schedule.end_time}</span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
+                                  <div className="border-t border-black/5 pt-0.5 mt-auto flex items-center justify-between text-[7.5px] font-bold opacity-80 gap-1">
+                                    <span className="truncate">
+                                      {schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}
+                                    </span>
+                                    <span className="truncate shrink-0">{schedule.room?.room_code || 'Room TBA'}</span>
                                   </div>
                                 </div>
                               );
                             })}
+
+                            {Array.from(schedulesBySlot.entries()).map(([slot, slotSchedules]) => {
+                              const slotKey = `${selectedDay}-${slot}`;
+                              const visibleCount = visibleCardsBySlot[slotKey] ?? 5;
+                              const remainingCount = Math.max(0, slotSchedules.length - visibleCount);
+                              if (remainingCount === 0) return null;
+                              const nextCount = Math.min(5, remainingCount);
+
+                              return (
+                                <button
+                                  key={`more-${slotKey}`}
+                                  type="button"
+                                  onClick={() => setVisibleCardsBySlot((current) => ({
+                                    ...current,
+                                    [slotKey]: visibleCount + 5,
+                                  }))}
+                                  aria-label={`Show ${nextCount} more classes at ${timeSlots[slot]?.label ?? 'this time'}`}
+                                  title={`Show ${nextCount} more classes in this time slot`}
+                                  className="z-40 mt-1 mr-1 h-5 min-w-7 justify-self-end self-start rounded-md border border-[#5A1220]/20 bg-[#5A1220] px-1.5 text-[9px] font-black text-white shadow-md hover:bg-[#741827] focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
+                                  style={{ gridColumn: 2, gridRow: slot + 2 }}
+                                >
+                                  <span className="flex items-center justify-center gap-0.5"><Plus className="h-3 w-3" />{nextCount}</span>
+                                </button>
+                              );
+                            })}
+                          </WeeklyTimetableGrid>
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Timetable Footer */}

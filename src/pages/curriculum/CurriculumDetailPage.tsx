@@ -21,6 +21,7 @@ export default function CurriculumDetailPage() {
     isLoading,
     isActivating,
     availableCourses,
+    programs,
     selectedYear,
     setSelectedYear,
     removingCourseId,
@@ -72,7 +73,7 @@ export default function CurriculumDetailPage() {
             overallStats={overallStats}
             isActivating={isActivating}
             canActivate={canManageCurriculum}
-            onBack={() => navigate(userRole === 'vpaa' ? '/curricula' : `/${userRole}/curricula`)}
+            onBack={() => navigate(userRole === 'vpaa' ? '/curriculum' : `/${userRole}/curriculum`)}
             onActivate={handleActivate}
           />
 
@@ -97,6 +98,7 @@ export default function CurriculumDetailPage() {
                   removingCourseId={removingCourseId}
                   isRemoving={isRemoving}
                   canEdit={canManageCurriculum}
+                  programs={programs}
                   onInitiateRemove={(cId) => setRemovingCourseId(cId)}
                   onCancelRemove={() => setRemovingCourseId(null)}
                   onConfirmRemove={handleRemoveCourse}

@@ -20,8 +20,6 @@ export default function CurriculumFormModal({
 }: CurriculumFormModalProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
-  const [curriculumVersion, setCurriculumVersion] = useState('');
-  const [academicYear, setAcademicYear] = useState('');
   const [effectiveSchoolYear, setEffectiveSchoolYear] = useState('');
   const [status, setStatus] = useState<'draft' | 'active' | 'archived'>('draft');
   const [description, setDescription] = useState('');
@@ -35,16 +33,12 @@ export default function CurriculumFormModal({
       if (isEditMode && curriculum) {
         setName(curriculum.name);
         setCode(curriculum.code);
-        setCurriculumVersion(curriculum.curriculum_version || '');
-        setAcademicYear(curriculum.academic_year || '');
         setEffectiveSchoolYear(curriculum.effective_school_year);
         setStatus(curriculum.status);
         setDescription(curriculum.description || '');
       } else {
         setName('');
         setCode('');
-        setCurriculumVersion('');
-        setAcademicYear('');
         setEffectiveSchoolYear('');
         setStatus('draft');
         setDescription('');
@@ -87,8 +81,6 @@ export default function CurriculumFormModal({
       await onSubmit({
         name: name.trim(),
         code: code.trim().toUpperCase(),
-        curriculum_version: curriculumVersion.trim() || null,
-        academic_year: academicYear.trim() || null,
         effective_school_year: effectiveSchoolYear.trim(),
         status,
         description: description.trim() || null,
@@ -147,34 +139,6 @@ export default function CurriculumFormModal({
                 }`}
               />
               {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Version
-              </label>
-              <input
-                type="text"
-                value={curriculumVersion}
-                onChange={(e) => setCurriculumVersion(e.target.value)}
-                placeholder="e.g. v1.0"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Academic Year
-              </label>
-              <input
-                type="text"
-                value={academicYear}
-                onChange={(e) => setAcademicYear(e.target.value)}
-                placeholder="e.g. 2024-2025"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-              />
             </div>
           </div>
 

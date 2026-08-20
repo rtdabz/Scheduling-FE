@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { termLabel } from '../../lib/termLabel';
 import { useNavigate } from 'react-router-dom';
 import {
   BookOpen,
@@ -119,7 +120,6 @@ interface Schedule {
 
 interface Term {
   id: number;
-  term_name: string;
   academic_year: string;
   semester: '1st' | '2nd' | 'summer';
   is_active: boolean;
@@ -514,7 +514,7 @@ export default function DeanDashboardPage() {
         {activeTerm && (
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Active Term: {activeTerm.term_name}
+            Active Term: {termLabel(activeTerm)}
           </div>
         )}
       </div>
@@ -545,7 +545,7 @@ export default function DeanDashboardPage() {
                 onClick={() => navigate('/dean/schedules')}
                 className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
               >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Sections</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider break-words leading-tight">Sections</span>
                 <div className="flex items-baseline justify-between mt-2">
                   <span className="text-2xl font-black text-gray-900">{deptSections.length}</span>
                   <Layers className="w-4.5 h-4.5 text-[#5A1220]/70" />
@@ -557,7 +557,7 @@ export default function DeanDashboardPage() {
                 onClick={() => navigate('/dean/faculty')}
                 className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
               >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Total Faculty</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider break-words leading-tight">Total Faculty</span>
                 <div className="flex items-baseline justify-between mt-2">
                   <span className="text-2xl font-black text-gray-900">{facultyStats.total}</span>
                   <GraduationCap className="w-4.5 h-4.5 text-[#5A1220]/70" />
@@ -566,10 +566,10 @@ export default function DeanDashboardPage() {
 
               {/* Card 3: Courses */}
               <div
-                onClick={() => navigate('/dean/curricula')}
+                onClick={() => navigate('/dean/curriculum')}
                 className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
               >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Curriculum Courses</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider break-words leading-tight">Curriculum Courses</span>
                 <div className="flex items-baseline justify-between mt-2">
                   <span className="text-2xl font-black text-gray-900">{deptSubjects.length}</span>
                   <BookOpen className="w-4.5 h-4.5 text-[#5A1220]/70" />
@@ -581,7 +581,7 @@ export default function DeanDashboardPage() {
                 onClick={() => navigate('/dean/rooms')}
                 className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
               >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Classrooms</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider break-words leading-tight">Classrooms</span>
                 <div className="flex items-baseline justify-between mt-2">
                   <span className="text-2xl font-black text-gray-900">{rooms.length}</span>
                   <DoorOpen className="w-4.5 h-4.5 text-[#5A1220]/70" />

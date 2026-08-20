@@ -6,14 +6,14 @@ import type { Curriculum } from '../../types/curriculum';
 interface CurriculumArchiveModalProps {
   isOpen: boolean;
   onClose: () => void;
-  curricula: Curriculum[];
+  curriculumList: Curriculum[];
   onRestore: (id: number, status: 'draft') => Promise<void>;
 }
 
 export default function CurriculumArchiveModal({
   isOpen,
   onClose,
-  curricula,
+  curriculumList,
   onRestore,
 }: CurriculumArchiveModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,8 +26,8 @@ export default function CurriculumArchiveModal({
     }
   }, [isOpen]);
 
-  const archivedCurricula = useMemo(() => {
-    return curricula.filter((c) => {
+  const archivedCurriculumList = useMemo(() => {
+    return curriculumList.filter((c) => {
       const isArchived = c.status === 'archived' && !hiddenIds.includes(c.id);
       const matchSearch =
         searchQuery === '' ||
@@ -35,7 +35,7 @@ export default function CurriculumArchiveModal({
         c.code.toLowerCase().includes(searchQuery.toLowerCase());
       return isArchived && matchSearch;
     });
-  }, [curricula, searchQuery, hiddenIds]);
+  }, [curriculumList, searchQuery, hiddenIds]);
 
   if (!isOpen) return null;
 
@@ -58,9 +58,9 @@ export default function CurriculumArchiveModal({
               <Archive size={20} />
             </div>
             <div>
-              <h2 className="text-base font-extrabold tracking-wide uppercase">Archived Curricula</h2>
+              <h2 className="text-base font-extrabold tracking-wide uppercase">Archived Curriculum</h2>
               <p className="text-xs text-gray-300 mt-0.5">
-                View and restore previously archived curricula frameworks.
+                View and restore previously archived curriculum frameworks.
               </p>
             </div>
           </div>
@@ -88,14 +88,14 @@ export default function CurriculumArchiveModal({
             />
           </div>
 
-          {/* Curricula List */}
+          {/* Curriculum List */}
           <div className="flex-1 overflow-y-auto min-h-0 border border-gray-100 rounded-xl bg-gray-50/20">
-            {archivedCurricula.length === 0 ? (
+            {archivedCurriculumList.length === 0 ? (
               <div className="py-16 text-center">
                 <BookOpen size={44} className="mx-auto text-gray-300 mb-3 animate-pulse" />
-                <p className="text-sm font-bold text-gray-700 mb-1">No archived curricula found</p>
+                <p className="text-sm font-bold text-gray-700 mb-1">No archived curriculum found</p>
                 <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                  {searchQuery ? 'Try searching for a different term or keyword.' : 'Curricula that you archive will appear here.'}
+                  {searchQuery ? 'Try searching for a different term or keyword.' : 'Curriculum records that you archive will appear here.'}
                 </p>
               </div>
             ) : (
@@ -104,13 +104,11 @@ export default function CurriculumArchiveModal({
                   <tr className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                     <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">Code</th>
                     <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">Curriculum Name</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">Version</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">Academic Year</th>
                     <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {archivedCurricula.map((item) => {
+                  {archivedCurriculumList.map((item) => {
                     const isRestoring = hiddenIds.includes(item.id);
                     return (
                       <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
@@ -120,12 +118,6 @@ export default function CurriculumArchiveModal({
                           </span>
                         </td>
                         <td className="px-5 py-3.5 font-bold text-gray-700 text-xs">{item.name}</td>
-                        <td className="px-5 py-3.5 text-gray-500 font-medium text-xs">
-                          {item.curriculum_version || 'N/A'}
-                        </td>
-                        <td className="px-5 py-3.5 text-gray-500 font-medium text-xs">
-                          {item.academic_year || 'N/A'}
-                        </td>
                         <td className="px-5 py-3.5 whitespace-nowrap text-right">
                           <button
                             type="button"

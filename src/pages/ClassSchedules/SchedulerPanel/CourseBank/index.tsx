@@ -89,15 +89,15 @@ export default function CourseBank({
       </div>
 
       <div className="px-4 py-3 border-b border-gray-100 shrink-0">
-        <SearchField
+        {isLoading ? <Skeleton className="h-[34px] w-full rounded-lg" /> : <SearchField
           value={searchQuery}
           onChange={setSearchQuery}
           placeholder="Search courses..."
           clearLabel="Clear course search"
-        />
+        />}
 
         <div className="flex items-center gap-1 mt-2.5 bg-gray-100 rounded-lg p-0.5" role="group" aria-label="Filter courses by type">
-          {classFilters.map(({ value, label }) => (
+          {isLoading ? Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-7 flex-1 rounded-md" />) : classFilters.map(({ value, label }) => (
             <button
               key={value}
               type="button"
@@ -116,18 +116,31 @@ export default function CourseBank({
 
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {isLoading ? (
-          Array.from({ length: 5 }).map((_, idx) => (
-            <div key={`sk-course-${idx}`} className="bg-white border border-gray-200 border-l-4 border-l-gray-300 rounded-xl p-3 mb-2 animate-pulse">
-              <div className="flex justify-between items-start gap-1">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-4 w-8 rounded-full" />
-              </div>
-              <Skeleton className="h-3 w-full mt-2" />
-              <div className="mt-2.5 flex items-center justify-between">
-                <Skeleton className="h-5 w-16 rounded-full" />
-              </div>
+          <div className="mb-2">
+            <div className="flex h-[30px] items-center gap-1.5 px-1 py-1.5">
+              <Skeleton className="h-3.5 w-3.5" />
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-2.5 w-8" />
             </div>
-          ))
+            <div className="mt-1 space-y-2">
+              {Array.from({ length: 5 }).map((_, idx) => (
+                <div key={`sk-course-${idx}`} className="rounded-xl border border-l-4 border-gray-200 border-l-gray-300 bg-white p-3 text-xs">
+                  <div className="flex items-start justify-between gap-1">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-14 rounded-full" />
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-4/5" />
+                  </div>
+                  <div className="mt-2.5 flex min-h-5 flex-wrap items-center justify-between gap-1">
+                    <Skeleton className="h-5 w-24 rounded-full" />
+                    <Skeleton className="h-2.5 w-12" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : sections.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
             <AlertTriangle className="w-8 h-8 text-amber-400 mb-2 stroke-[1.5]" />

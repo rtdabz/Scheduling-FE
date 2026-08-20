@@ -3,7 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearDataCache } from '../../lib/dataCache';
-import type { Curriculum, CurriculumTerm, CurriculumCourse } from '../../types/curriculum';
+import type { Curriculum, CurriculumTerm, CurriculumCourse, Program } from '../../types/curriculum';
 import type { CourseOption } from '../../components/curriculum/AddCourseForm';
 
 type FullCurriculum = Curriculum & {
@@ -43,6 +43,7 @@ export function useCurriculumDetail(id: string | undefined) {
   const [isActivating, setIsActivating] = useState(false);
 
   const [allCourses, setAllCourses] = useState<CourseOption[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(1);
   const [removingCourseId, setRemovingCourseId] = useState<number | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -92,6 +93,19 @@ export function useCurriculumDetail(id: string | undefined) {
     }
   }, []);
 
+  // A major's program decides which instructors may teach it, so the course
+  // editor needs the department's programs to choose from.
+  const fetchPrograms = useCallback(async (departmentId?: number | null) => {
+    try {
+      const params = departmentId ? `?department_id=${departmentId}` : '';
+      const res = await api.get(`/programs${params}`);
+      const data = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      setPrograms(data);
+    } catch {
+      setPrograms([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (id) {
       fetchCurriculum();
@@ -101,8 +115,9 @@ export function useCurriculumDetail(id: string | undefined) {
   useEffect(() => {
     if (curriculum) {
       fetchCourses(curriculum.department_id);
+      fetchPrograms(curriculum.department_id);
     }
-  }, [curriculum, fetchCourses]);
+  }, [curriculum, fetchCourses, fetchPrograms]);
 
   useEffect(() => {
     if (highlightedCourseId) {
@@ -234,7 +249,7 @@ export function useCurriculumDetail(id: string | undefined) {
           semester: semester,
         }));
 
-        const res = await api.post(`/curricula/${id}/courses/batch-create`, {
+        const res = await api.post(`/curriculum/${id}/courses/batch-create`, {
           courses: payload,
         });
 
@@ -391,9 +406,11 @@ export function useCurriculumDetail(id: string | undefined) {
       courseCategory: 'major' | 'minor';
       lecUnits: number;
       labUnits: number;
+      programId?: number | null;
     }) => {
       if (!id) return;
       const { courseId, courseCode, courseName, courseCategory, lecUnits, labUnits } = data;
+      const programId = data.programId ?? null;
       // Curriculum total units are academic units. Do not use laboratory
       // scheduling/contact hours here.
       const totalUnits = lecUnits + labUnits;
@@ -476,6 +493,7 @@ export function useCurriculumDetail(id: string | undefined) {
                     lec_units: lecUnits,
                     lab_units: labUnits,
                     total_units: totalUnits,
+                    program_id: programId,
                   }
                 : c
             );
@@ -522,6 +540,7 @@ export function useCurriculumDetail(id: string | undefined) {
           lab_hours: labUnits,
           units: totalUnits,
           room_type_required: labUnits > 0 ? 'laboratory' : 'lecture',
+          program_id: programId,
         });
         clearDataCache();
         toast.success('Course Updated', `${courseCode} updated successfully.`);
@@ -539,6 +558,7 @@ export function useCurriculumDetail(id: string | undefined) {
     isLoading,
     isActivating,
     availableCourses,
+    programs,
     selectedYear,
     setSelectedYear,
     removingCourseId,

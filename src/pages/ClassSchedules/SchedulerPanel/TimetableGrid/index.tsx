@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
@@ -10,6 +10,8 @@ import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 import Skeleton from "../../../../components/ui/Skeleton";
 import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
+import { slotCount } from "../../../../lib/timeGrid";
+import { buildSubjectIndex, resolveScheduleSubject } from "./subjectResolution";
 
 interface TimetableGridProps {
   sections: Section[];
@@ -53,6 +55,14 @@ interface TimetableGridProps {
   handleToggleWideView?: () => void;
 }
 
+/**
+ * Timetable grid, in both layouts.
+ *
+ * `isWideView` used to select between this component and a 323-line copy in
+ * WideTimetableGrid.tsx that differed in five places: the scroll container, the
+ * grid's minimum width, the course-bank toggle's label and styling, and whether
+ * ScheduleCard rendered its wide variant. Those five are now derived here.
+ */
 export default function TimetableGrid({
   sections,
   rooms,
@@ -96,8 +106,9 @@ export default function TimetableGrid({
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerTerm = activeTerm?.semester === "summer";
+  const subjectsById = React.useMemo(() => buildSubjectIndex(subjects), [subjects]);
   const placementLabel = placementSubjectId
-    ? subjects.find((s) => s.id === placementSubjectId)?.code ?? "subject"
+    ? subjectsById.get(String(placementSubjectId))?.code ?? "subject"
     : movingScheduleId
       ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
       : "";
@@ -110,41 +121,49 @@ export default function TimetableGrid({
             Timetable Grid
           </h2>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className="bg-gradient-to-r from-[#4e0a10] to-[#70121a] text-white px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">
-              {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
-            </span>
-            <span className="bg-[#c9952a]/10 text-amber-950 border border-[#c9952a]/20 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider">
-              {activeTermText}
-            </span>
+            {isLoading ? <><Skeleton className="h-5 w-20 rounded-md" /><Skeleton className="h-5 w-28 rounded-md" /></> : <>
+              <span className="bg-gradient-to-r from-[#4e0a10] to-[#70121a] text-white px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">
+                {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
+              </span>
+              <span className="bg-[#c9952a]/10 text-amber-950 border border-[#c9952a]/20 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider">
+                {activeTermText}
+              </span>
+            </>}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold select-none text-slate-500">
-            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-sm">
-              {totalScheduled} Subjects Placed
-            </span>
-            <span className="bg-slate-50 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-full shadow-sm">
-              {Math.max(0, totalSubjects - totalScheduled)} Unplaced
-            </span>
+            {isLoading ? <><Skeleton className="h-5 w-28 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></> : <>
+              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-sm">
+                {totalScheduled} Subjects Placed
+              </span>
+              <span className="bg-slate-50 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-full shadow-sm">
+                {Math.max(0, totalSubjects - totalScheduled)} Unplaced
+              </span>
+            </>}
           </div>
-          <button
+          {isLoading ? <Skeleton className="h-8 w-36 rounded-xl" /> : <button
             type="button"
             onClick={handleToggleWideView}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border cursor-pointer bg-[#4e0a10] border-[#4e0a10] text-white hover:bg-[#6b0e17] hover:border-[#6b0e17]"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border cursor-pointer ${
+              isWideView
+                ? "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300"
+                : "bg-[#4e0a10] border-[#4e0a10] text-white hover:bg-[#6b0e17] hover:border-[#6b0e17]"
+            }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            Hide Course Bank
-          </button>
+            {isWideView ? "Show Course Bank" : "Hide Course Bank"}
+          </button>}
 
-          <button
+          {isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
             type="button"
             onClick={() => setIsRoomViewOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
           >
             <DoorOpen className="w-3.5 h-3.5" />
             Room View
-          </button>
-          <button
+          </button>}
+          {isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
             type="button"
             onClick={handleClearAll}
             disabled={!isEditable || schedules.length === 0}
@@ -155,7 +174,7 @@ export default function TimetableGrid({
           >
             <Trash2 className="w-3.5 h-3.5" />
             Clear All
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -189,7 +208,7 @@ export default function TimetableGrid({
             </div>
           </div>
         )}
-        {!selectedSectionId ? (
+        {!selectedSectionId && !isLoading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-20">
             <AlertTriangle className="w-12 h-12 text-amber-500 mb-3 animate-bounce" />
             <h3 className="text-sm font-bold text-slate-800">No Section Selected</h3>
@@ -198,18 +217,19 @@ export default function TimetableGrid({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto overflow-y-hidden p-4 flex-1 min-h-0 flex flex-col">
+          <div className={`${isWideView ? "overflow-hidden" : "overflow-x-auto overflow-y-hidden"} p-4 flex-1 min-h-0 flex flex-col`}>
             <WeeklyTimetableGrid
               days={DAYS}
-              slotCount={24}
+              slotCount={slotCount()}
               headerHeight={GRID_HEADER_HEIGHT_PX}
-              rowTemplate="repeat(24, minmax(0, 1fr))"
-              minWidth={900}
+              rowTemplate={`repeat(${slotCount()}, minmax(0, 1fr))`}
+              minWidth={isWideView ? 0 : 900}
               className="flex-1"
+              isLoading={isLoading}
               disabledDayIndexes={isSummerTerm ? [5, 6] : []}
               getTimeLabel={slotToTimeStr}
               getDayCount={getClassesCountForDay}
-              renderCell={(d, t) => {
+              renderCell={isLoading ? undefined : (d, t) => {
                 const cellKey = `${d}-${t}`;
                 const isHovered = hoveredCell === cellKey;
                 const hasConflict = isHovered && getDragOverConflict(d, t);
@@ -262,8 +282,9 @@ export default function TimetableGrid({
                 ))
               ) : (
                 sectionSchedules.map((schedule) => {
-                  const subject = subjects.find((s) => s.id === schedule.subjectId);
-                  if (!subject) return null;
+                  // A course missing from `subjects` still holds its slot, so the
+                  // card is rendered degraded rather than dropped.
+                  const { subject } = resolveScheduleSubject(schedule, subjectsById);
                   return (
                     <ScheduleCard
                       key={schedule.id}
@@ -282,6 +303,7 @@ export default function TimetableGrid({
                       onDragEnd={handleDragEnd}
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
+                      isWideView={isWideView}
                     />
                   );
                 })

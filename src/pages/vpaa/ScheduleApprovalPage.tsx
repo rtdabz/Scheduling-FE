@@ -24,6 +24,8 @@ import Skeleton from '../../components/ui/Skeleton';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid, { WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
+import ScheduleApprovalList from '../../components/scheduling/ScheduleApprovalList';
+import type { ApprovalScheduleItem } from '../../components/scheduling/ScheduleApprovalList';
 
 interface ScheduleApproval {
   id: number;
@@ -58,7 +60,7 @@ interface RawSection {
   term_id: number | string;
 }
 
-interface RawSchedule {
+interface RawSchedule extends ApprovalScheduleItem {
   id: number | string;
   department_id: number | string;
   section_id: number | string;
@@ -1031,29 +1033,17 @@ export default function VpaaScheduleApprovalPage() {
                 <div className="flex-1 overflow-y-auto rounded-xl border border-gray-200 bg-white">
                   <div className="divide-y divide-gray-100">
                     {groupedModalSchedules.map(([sectionName, sectionSchedules]) => (
-                      <div key={sectionName}>
-                        <div className="sticky top-0 z-10 bg-gray-50 px-3 py-2 border-b border-gray-100">
-                          <p className="text-xs font-black text-[#4e0a10]">{sectionName}</p>
-                        </div>
-                        <div className="divide-y divide-gray-100">
-                          {sectionSchedules.map((item) => (
-                            <div key={item.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_0.8fr_1fr_0.7fr] gap-2 px-3 py-2.5 text-xs">
-                              <div className="min-w-0">
-                                <p className="font-black text-gray-800 truncate">{getScheduleCourseCode(item)}</p>
-                                <p className="text-gray-500 truncate">{getScheduleCourseName(item)}</p>
-                              </div>
-                              <div className="font-semibold text-gray-700">{item.day}, {formatTime24hTo12h(item.start_time)} - {formatTime24hTo12h(item.end_time)}</div>
-                              <div className="text-gray-600 truncate">{getRoomName(item)}</div>
-                              <div className={`truncate ${item.faculty_id ? 'text-gray-600' : 'text-red-500 font-semibold'}`}>{getInstructorName(item)}</div>
-                              <div>
-                                <span className="inline-flex rounded-full border border-[#C9952A]/30 bg-[#C9952A]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#4e0a10]">
-                                  {getModeLabel(item.mode)}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <ScheduleApprovalList
+                        key={sectionName}
+                        sectionName={sectionName}
+                        schedules={sectionSchedules}
+                        getCourseCode={getScheduleCourseCode}
+                        getCourseName={getScheduleCourseName}
+                        getRoomName={getRoomName}
+                        getInstructorName={getInstructorName}
+                        getModeLabel={getModeLabel}
+                        formatTime={formatTime24hTo12h}
+                      />
                     ))}
                   </div>
                 </div>

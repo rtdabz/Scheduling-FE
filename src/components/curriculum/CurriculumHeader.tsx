@@ -37,7 +37,7 @@ export default function CurriculumHeader({
         className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#4e0a10] transition-colors cursor-pointer"
       >
         <ArrowLeft size={16} />
-        Back to Curricula
+        Back to Curriculum
       </button>
 
       {/* Main Header Card */}
@@ -72,18 +72,10 @@ export default function CurriculumHeader({
         </div>
 
         {/* Metadata Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-gray-50/80 rounded-xl px-3.5 py-2.5 border border-gray-100">
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Department</p>
             <p className="text-xs font-bold text-gray-800">{curriculum.department?.department_code || 'N/A'}</p>
-          </div>
-          <div className="bg-gray-50/80 rounded-xl px-3.5 py-2.5 border border-gray-100">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Version</p>
-            <p className="text-xs font-bold text-gray-800">{curriculum.curriculum_version || 'N/A'}</p>
-          </div>
-          <div className="bg-gray-50/80 rounded-xl px-3.5 py-2.5 border border-gray-100">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Academic Year</p>
-            <p className="text-xs font-bold text-gray-800">{curriculum.academic_year || 'N/A'}</p>
           </div>
           <div className="bg-gray-50/80 rounded-xl px-3.5 py-2.5 border border-gray-100">
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Effective Year</p>

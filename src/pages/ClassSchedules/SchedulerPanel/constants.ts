@@ -1,6 +1,19 @@
 import type { ScheduleItem, Subject } from "./types";
+import { FULL_DAY_NAMES, slotToTimeLabel } from "../../../lib/timeGrid";
 
-export const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+export const DAYS: string[] = [...FULL_DAY_NAMES];
+
+/**
+ * Statuses at which an instructor assignment counts as real — the client half of
+ * `SchedulingPolicy::INSTRUCTOR_ASSIGNED_STATUSES`. A row that fell back to
+ * draft, completed or revision is no longer an approved assignment, so it must
+ * not appear as teaching load.
+ */
+export const INSTRUCTOR_ASSIGNED_STATUSES: ScheduleItem["status"][] = [
+  "approved",
+  "faculty_assignment",
+  "finalized"
+];
 
 export const yearLevelLabel = (year: number): string => {
   switch (year) {
@@ -21,15 +34,8 @@ export const getSubjectClassification = (
 export const SLOT_HEIGHT_PX = 24;
 export const GRID_HEADER_HEIGHT_PX = 48;
 
-export const slotToTimeStr = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  let hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  return minutes === 0 ? `${hours} ${ampm}` : `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
-};
+/** @deprecated Prefer importing slotToTimeLabel from lib/timeGrid directly. */
+export const slotToTimeStr = slotToTimeLabel;
 
 export const getCategoryStyles = (category: Subject["category"]) => {
   switch (category) {

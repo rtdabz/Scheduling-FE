@@ -45,6 +45,7 @@ interface UseSystemNotificationsResult {
   unreadCount: number;
   isLoading: boolean;
   refresh: () => Promise<void>;
+  markAsRead: (id: number) => Promise<void>;
   markAllAsRead: () => Promise<void>;
 }
 
@@ -106,6 +107,11 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
     setIsLoading(false);
   }, [limit]);
 
+  const markAsRead = useCallback(async (id: number) => {
+    await api.patch(`/notifications/${id}/read`);
+    await refresh();
+  }, [refresh]);
+
   const markAllAsRead = useCallback(async () => {
     await api.patch('/notifications/read-all');
     await refresh();
@@ -157,6 +163,7 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
     unreadCount,
     isLoading,
     refresh,
+    markAsRead,
     markAllAsRead,
   };
 }

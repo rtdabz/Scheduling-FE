@@ -10,8 +10,6 @@ export interface Curriculum {
   code: string;
   department_id: number | null;
   program_id: number | null;
-  curriculum_version: string | null;
-  academic_year: string | null;
   effective_school_year: string;
   status: 'draft' | 'active' | 'archived';
   description: string | null;
@@ -27,8 +25,6 @@ export interface ApiCurriculum {
   code: string;
   department_id: number | null;
   program_id: number | null;
-  curriculum_version: string | null;
-  academic_year: string | null;
   effective_school_year: string;
   status: 'draft' | 'active' | 'archived';
   description: string | null;
@@ -46,6 +42,15 @@ export interface CurriculumCourse {
   lec_units: number;
   lab_units: number;
   total_units: number;
+  /** Program (major) that owns this course; only instructors of it may teach it. */
+  program_id?: number | null;
+}
+
+export interface Program {
+  id: number;
+  code: string;
+  name: string;
+  department_id: number;
 }
 
 export interface CurriculumTerm {
@@ -70,8 +75,6 @@ export const mapApiCurriculum = (c: ApiCurriculum): Curriculum => ({
   code: c.code,
   department_id: c.department_id,
   program_id: c.program_id,
-  curriculum_version: c.curriculum_version,
-  academic_year: c.academic_year,
   effective_school_year: c.effective_school_year,
   status: c.status,
   description: c.description,

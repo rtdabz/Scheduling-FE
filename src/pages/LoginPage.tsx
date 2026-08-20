@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, CircleUserRound, KeyRound } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import campusBg from '../assets/campus-bg.jpg';
 import loginPattern from '../assets/login-pattern.jpg';
+import googleLogo from '../assets/google-logo.svg';
 import { useToast } from '../context/ToastContext';
 import api from '../lib/api';
 import { clearDataCache } from '../lib/dataCache';
@@ -30,10 +31,12 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [showForgot, setShowForgot] = useState(false);
+  const [isSendingResetLink, setIsSendingResetLink] = useState(false);
   const [resetToken, setResetToken] = useState('');
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirmation, setResetConfirmation] = useState('');
   const [isResetMode, setIsResetMode] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const navigateAfterLogin = (user: LoginResponse['user']) => {
     const roleNames: Record<string, string> = { vpaa: 'VPAA', dean: 'Dean', secretary: 'Secretary', program_head: 'Program Head' };
@@ -108,6 +111,8 @@ export default function LoginPage() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSendingResetLink) return;
+    setIsSendingResetLink(true);
     try {
       const { data } = await api.post<{ message: string }>('/forgot-password', { email: forgotEmail.trim() });
       toast.success('Check your email', data.message);
@@ -115,11 +120,15 @@ export default function LoginPage() {
     } catch (error) {
       const axiosError = error as AxiosError<ApiErrorResponse>;
       toast.error('Unable to send reset link', axiosError.response?.data?.message || 'Enter a valid email address.');
+    } finally {
+      setIsSendingResetLink(false);
     }
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUpdatingPassword) return;
+    setIsUpdatingPassword(true);
     try {
       const { data } = await api.post<{ message: string }>('/reset-password', { token: resetToken, email: username, password: resetPassword, password_confirmation: resetConfirmation });
       toast.success('Password updated', data.message);
@@ -128,6 +137,8 @@ export default function LoginPage() {
     } catch (error) {
       const axiosError = error as AxiosError<ApiErrorResponse>;
       toast.error('Password reset failed', axiosError.response?.data?.message || 'Use a stronger password and try again.');
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -191,7 +202,9 @@ export default function LoginPage() {
             <form onSubmit={handleResetPassword} className="space-y-5">
               <input type="password" required minLength={10} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="New password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
               <input type="password" required minLength={10} value={resetConfirmation} onChange={(e) => setResetConfirmation(e.target.value)} placeholder="Confirm new password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
-              <button type="submit" className="w-full h-12 bg-primary text-white font-semibold rounded-xl">Update password</button>
+              <button type="submit" disabled={isUpdatingPassword} className="w-full h-12 bg-primary text-white font-semibold rounded-xl disabled:opacity-50 disabled:pointer-events-none">
+                {isUpdatingPassword ? 'Updating...' : 'Update password'}
+              </button>
             </form>
           ) : <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
             {/* Username Floating Label Input */}
@@ -249,9 +262,9 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {/* Remember Me */}
+            {/* Remember Me and Forgot Password */}
             <div className="flex items-center justify-between mt-5 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-text">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-text">
                 <input
                   type="checkbox"
                   checked={rememberMe}
@@ -260,9 +273,11 @@ export default function LoginPage() {
                 />
                 <span className="text-sm font-medium">Remember Me</span>
               </label>
+              <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-primary hover:underline flex items-center gap-1">
+                <KeyRound className="h-4 w-4" /> Forgot password?
+              </button>
             </div>
 
-            <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-primary hover:underline flex items-center gap-1"><KeyRound className="h-4 w-4" /> Forgot password?</button>
             <div className="pt-2">
               <button
                 type="submit"
@@ -283,7 +298,7 @@ export default function LoginPage() {
               </button>
             </div>
             <div className="relative flex items-center py-2"><div className="grow border-t border-gray-300" /><span className="px-3 text-xs text-muted">OR</span><div className="grow border-t border-gray-300" /></div>
-            <button type="button" onClick={handleGoogleLogin} className="w-full h-12 bg-white border border-gray-300 text-text font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50"><CircleUserRound className="h-5 w-5" /> Continue with Google</button>
+            <button type="button" onClick={handleGoogleLogin} className="w-full h-12 bg-white border border-gray-300 text-text font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50"><img src={googleLogo} alt="" className="h-5 w-5" /> Continue with Google</button>
           </form>}
 
           <div 
@@ -294,7 +309,7 @@ export default function LoginPage() {
             <span>Authorized personnel only</span>
           </div>
         </div>
-        {showForgot && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={handleForgotPassword} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"><h4 className="text-xl font-bold text-text">Reset password</h4><p className="text-sm text-muted">Enter the email assigned by VPAA.</p><input type="email" required value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Institutional email" className="w-full h-12 px-4 border border-gray-300 rounded-xl" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowForgot(false)} className="px-4 py-2 text-sm">Cancel</button><button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg text-sm">Send link</button></div></form></div>}
+        {showForgot && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={handleForgotPassword} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"><h4 className="text-xl font-bold text-text">Reset password</h4><p className="text-sm text-muted">Enter the email assigned by VPAA.</p><input type="email" required value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Institutional email" className="w-full h-12 px-4 border border-gray-300 rounded-xl" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowForgot(false)} className="px-4 py-2 text-sm">Cancel</button><button type="submit" disabled={isSendingResetLink} className="min-w-24 px-4 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50 disabled:pointer-events-none">{isSendingResetLink ? 'Sending...' : 'Send link'}</button></div></form></div>}
       </div>
     </div>
   );

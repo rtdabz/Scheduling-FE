@@ -18,6 +18,15 @@ export const secretaryNav: NavSection[] = [
     items: [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       {
+        label: 'Courses',
+        icon: BookOpen,
+        id: 'sidebar-courses',
+        children: [
+          { label: 'Course List', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses-list' },
+          { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum' },
+        ],
+      },
+      {
         label: 'Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
@@ -29,15 +38,6 @@ export const secretaryNav: NavSection[] = [
       { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections' },
       { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors' },
       { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
-      {
-        label: 'Courses',
-        icon: BookOpen,
-        id: 'sidebar-courses',
-        children: [
-          { label: 'Course List', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses-list' },
-          { label: 'Curricula', path: '/secretary/curricula', icon: Layers, id: 'sidebar-curricula' },
-        ],
-      },
     ]
   },
   {

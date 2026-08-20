@@ -13,6 +13,11 @@ import axios from "axios";
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
+import { apiErrorMessage } from "../../lib/apiError";
+import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
+import type { LoadTier, OverloadConfirmation } from "../../lib/overloadConfirmation";
+import { LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits } from "../../lib/facultyLoad";
+import OverloadConfirmationModal from "../../components/faculty/OverloadConfirmationModal";
 
 interface StoredUser {
   department_id?: number | null;
@@ -41,6 +46,8 @@ interface ApiSubject {
   subject_name: string;
   subject_category: string;
   department_id: number | null;
+  program_id?: number | null;
+  program?: { id?: number; code?: string; name?: string } | null;
 }
 
 interface ApiFaculty {
@@ -48,8 +55,18 @@ interface ApiFaculty {
   first_name: string;
   last_name: string;
   department_id: number;
+  program_id?: number | null;
   employment_type?: "full-time" | "part-time";
   status?: "active" | "inactive";
+  // Live load, decorated by the API so the picker reads the same numbers the
+  // overload gate projects from rather than guessing at a ceiling.
+  max_units?: number | null;
+  deload_units?: number | null;
+  overload_units?: number | null;
+  probono_units?: number | null;
+  assigned_units?: number | null;
+  required_units?: number | null;
+  unit_ceiling?: number | null;
   availabilities?: Array<{
     day_index: number;
     start_time: string;
@@ -81,9 +98,28 @@ interface AssignmentResponse {
   schedules: ApiSchedule[];
 }
 
+interface AssignmentWarning {
+  rule: string;
+  severity: string;
+  message: string;
+}
+
+/** The load the instructor carries now that the assignment is committed. */
+interface AssignmentLoad {
+  faculty_id: number;
+  projected_units: number;
+  basic_load: number;
+  unit_ceiling: number;
+  tier: LoadTier;
+  tier_label: string;
+}
+
 interface AssignmentUpdateResponse {
   schedule: ApiSchedule;
   schedules?: ApiSchedule[];
+  /** Soft rules the assignment broke without being refused, e.g. a unit ceiling. */
+  warnings?: AssignmentWarning[];
+  load?: AssignmentLoad;
 }
 
 interface AssignmentSchedule extends ApiSchedule {
@@ -121,7 +157,6 @@ const timeToMinutes = (value: string): number => {
 const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean => {
   if (faculty.employment_type !== "part-time") return false;
 
-  const list = faculty.availabilities ?? [];
   const dayIndexMap: Record<string, number> = {
     Monday: 0,
     Tuesday: 1,
@@ -133,16 +168,13 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
   };
   const dayIndex = dayIndexMap[schedule.day] ?? -1;
 
-  if (list.length === 0) {
-    // Fallback: old hardcoded rule if no availabilities are configured in DB
-    return (
-      schedule.day !== "Saturday" &&
-      schedule.day !== "Sunday" &&
-      timeToMinutes(schedule.start_time) < 17 * 60
-    );
-  }
-
-  const dayAvailabilities = list.filter((a) => Number(a.day_index) === dayIndex);
+  // Mirrors RuleEngine's part_time_faculty_availability: the meeting has to fit
+  // inside a recorded window for that day, and no window for the day - including
+  // no windows at all - counts as outside availability. The old guess of
+  // "weekday mornings only" disagreed with the server in both directions.
+  const dayAvailabilities = (faculty.availabilities ?? []).filter(
+    (a) => Number(a.day_index) === dayIndex
+  );
   if (dayAvailabilities.length === 0) return true;
 
   const attemptStart = timeToMinutes(schedule.start_time);
@@ -153,6 +185,45 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
     const windowEnd = timeToMinutes(window.end_time);
     return attemptStart >= windowStart && attemptEnd <= windowEnd;
   });
+};
+
+/** Why a part-timer is unselectable for this meeting, in their own recorded terms. */
+const availabilityHint = (faculty: ApiFaculty, schedule: ApiSchedule): string => {
+  const windows = (faculty.availabilities ?? []).filter(
+    (a) => Number(a.day_index) === DAYS.indexOf(schedule.day)
+  );
+
+  if (windows.length === 0) {
+    return " - no availability recorded for " + schedule.day;
+  }
+
+  const hours = windows
+    .map((w) => `${formatTime(w.start_time)}-${formatTime(w.end_time)}`)
+    .join(", ");
+
+  return ` - available ${hours}`;
+};
+
+/**
+ * The instructor's live load beside their name, so an overload is visible while
+ * choosing rather than only once the confirmation appears. Advisory only — the
+ * server decides what gets confirmed.
+ */
+const facultyLoadHint = (faculty: ApiFaculty): string => {
+  const basic = faculty.required_units ?? basicLoadOf(faculty.max_units, faculty.deload_units);
+  if (basic <= 0) return "";
+
+  const assigned = faculty.assigned_units ?? 0;
+  const tier = loadTierForUnits(
+    {
+      basicLoad: basic,
+      overloadUnits: faculty.overload_units ?? 0,
+      probonoUnits: faculty.probono_units ?? 0,
+    },
+    assigned
+  );
+
+  return ` · ${assigned}/${basic} units${tier === "basic" ? "" : ` · ${LOAD_TIER_LABELS[tier]}`}`;
 };
 
 const getRoomName = (schedule: ApiSchedule): string =>
@@ -177,9 +248,17 @@ export default function InstructorAssignment() {
   const [selectedSection, setSelectedSection] = useState("all");
   const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null);
   const [selectedFacultyId, setSelectedFacultyId] = useState("");
+  // The assignment the server is asking about, kept whole so confirming replays
+  // exactly what the user reviewed.
+  const [overloadPrompt, setOverloadPrompt] = useState<{
+    confirmation: OverloadConfirmation;
+    schedule: AssignmentSchedule;
+    facultyId: number;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(assignmentsCacheKey));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [warnings, setWarnings] = useState<AssignmentWarning[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -307,9 +386,22 @@ export default function InstructorAssignment() {
   const selectedSchedule = assignmentSchedules.find(
     (schedule) => schedule.id === selectedScheduleId,
   ) ?? null;
+  // A major tied to a program is taught only by instructors of that program, so
+  // the picker offers nobody the save would refuse.
+  const requiredProgramId = selectedSchedule
+    && (selectedSchedule.subject.subject_category ?? "major") === "major"
+    ? selectedSchedule.subject.program_id ?? null
+    : null;
   const eligibleFaculty = faculties.filter((faculty) =>
-    Number(faculty.department_id) === Number(currentDepartmentId) && faculty.status !== "inactive",
+    Number(faculty.department_id) === Number(currentDepartmentId)
+    && faculty.status !== "inactive"
+    && (requiredProgramId === null || Number(faculty.program_id ?? 0) === Number(requiredProgramId)),
   );
+  const programRestrictionNote = requiredProgramId === null
+    ? null
+    : eligibleFaculty.length === 0
+      ? `No instructor in the ${selectedSchedule?.subject.program?.code ?? "assigned"} program is available for this major yet — set the program on the instructor's profile first.`
+      : `Only ${selectedSchedule?.subject.program?.code ?? "assigned"} program instructors can teach this major.`;
 
   const openDepartment = (departmentId: number) => {
     setSelectedDepartmentId(departmentId);
@@ -321,6 +413,7 @@ export default function InstructorAssignment() {
     setSelectedScheduleId(schedule.id);
     setSelectedFacultyId(schedule.faculty_id ? String(schedule.faculty_id) : "");
     setError("");
+    setWarnings([]);
   };
 
   const closeAssignment = () => {
@@ -329,39 +422,79 @@ export default function InstructorAssignment() {
     setSelectedFacultyId("");
   };
 
-  const saveAssignment = async () => {
+  /**
+   * The one request path. An overload is confirmed by replaying the same call with
+   * the flag set, so the assignment that gets written is the one the confirmation
+   * described.
+   */
+  const submitAssignment = async (
+    schedule: AssignmentSchedule,
+    facultyId: number,
+    confirmOverload: boolean
+  ) => {
+    setIsSaving(true);
+    setError("");
+    try {
+      const response = await api.patch<AssignmentUpdateResponse>(`/instructor-assignments/${schedule.id}`, {
+        faculty_id: facultyId,
+        ...(confirmOverload ? { confirm_overload: true } : {}),
+      });
+      // Soft rules do not refuse the assignment, so the reason has to be shown
+      // after the save rather than blocking it.
+      setWarnings(response.data.warnings ?? []);
+
+      const load = response.data.load;
+      // The picker's load hint is now a save behind, so move it forward here
+      // instead of refetching the whole page payload.
+      const nextFaculties = load
+        ? faculties.map((faculty) =>
+            faculty.id === load.faculty_id
+              ? { ...faculty, assigned_units: load.projected_units }
+              : faculty
+          )
+        : faculties;
+
+      const updatedSchedules = response.data.schedules ?? [response.data.schedule];
+      const updatedScheduleMap = new Map(updatedSchedules.map((updated) => [updated.id, updated]));
+      const nextSchedules = schedules.map((current) => updatedScheduleMap.get(current.id) ?? current);
+
+      setFaculties(nextFaculties);
+      setSchedules(nextSchedules);
+      setCachedData<AssignmentResponse>(assignmentsCacheKey, {
+        active_term: activeTerm,
+        current_department_id: currentDepartmentId,
+        departments,
+        subjects,
+        faculties: nextFaculties,
+        schedules: nextSchedules,
+      });
+
+      setOverloadPrompt(null);
+      setSelectedScheduleId(null);
+      setSelectedFacultyId("");
+    } catch (err) {
+      // Past the Basic Load the server asks rather than refuses, so this is a
+      // question to put to the user — not an error to report.
+      const confirmation = overloadConfirmationFrom(err);
+      if (confirmation) {
+        setOverloadPrompt({ confirmation, schedule, facultyId });
+        return;
+      }
+
+      setOverloadPrompt(null);
+      setError(apiErrorMessage(err, "Unable to assign the instructor. Please try again."));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveAssignment = () => {
     if (!selectedSchedule || !selectedFacultyId) {
       setError("Select an instructor before saving.");
       return;
     }
 
-    setIsSaving(true);
-    setError("");
-    try {
-      const response = await api.patch<AssignmentUpdateResponse>(`/instructor-assignments/${selectedSchedule.id}`, {
-        faculty_id: Number(selectedFacultyId),
-      });
-      setSchedules((current) => {
-        const updatedSchedules = response.data.schedules ?? [response.data.schedule];
-        const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));
-        const nextSchedules = current.map((schedule) => updatedScheduleMap.get(schedule.id) ?? schedule);
-        setCachedData<AssignmentResponse>(assignmentsCacheKey, {
-          active_term: activeTerm,
-          current_department_id: currentDepartmentId,
-          departments,
-          subjects,
-          faculties,
-          schedules: nextSchedules,
-        });
-        return nextSchedules;
-      });
-      setSelectedScheduleId(null);
-      setSelectedFacultyId("");
-    } catch {
-      setError("Unable to assign the instructor. Please try again.");
-    } finally {
-      setIsSaving(false);
-    }
+    void submitAssignment(selectedSchedule, Number(selectedFacultyId), false);
   };
 
   if (isLoading) {
@@ -465,6 +598,28 @@ export default function InstructorAssignment() {
       {error && !selectedSchedule && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
           {error}
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-bold">Assignment saved with a warning</p>
+              {warnings.map((warning) => (
+                <p key={warning.rule + warning.message} className="text-xs font-semibold">
+                  {warning.message}
+                </p>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setWarnings([])}
+              className="text-xs font-bold text-amber-700 hover:text-amber-900"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
@@ -690,11 +845,17 @@ export default function InstructorAssignment() {
                       disabled={selectedSchedule ? isPartTimeOutsideAvailability(faculty, selectedSchedule) : false}
                     >
                       {faculty.first_name} {faculty.last_name}
-                      {selectedSchedule && isPartTimeOutsideAvailability(faculty, selectedSchedule) ? " - Available after 5 PM or Saturday/Sunday" : ""}
+                      {facultyLoadHint(faculty)}
+                      {selectedSchedule && isPartTimeOutsideAvailability(faculty, selectedSchedule)
+                        ? availabilityHint(faculty, selectedSchedule)
+                        : ""}
                     </option>
                   ))}
                 </select>
               </label>
+              {programRestrictionNote && (
+                <p className="text-xs font-semibold text-[#7a4c08]">{programRestrictionNote}</p>
+              )}
               {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={closeAssignment} disabled={isSaving} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
@@ -706,6 +867,19 @@ export default function InstructorAssignment() {
             </div>
           </div>
         </div>
+      )}
+
+      {overloadPrompt && (
+        <OverloadConfirmationModal
+          confirmation={overloadPrompt.confirmation}
+          isSaving={isSaving}
+          onConfirm={() =>
+            void submitAssignment(overloadPrompt.schedule, overloadPrompt.facultyId, true)
+          }
+          // "No" sends nothing, so the drawer is left exactly as the user had it:
+          // the instructor is still only selected, never assigned.
+          onCancel={() => setOverloadPrompt(null)}
+        />
       )}
     </div>
   );

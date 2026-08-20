@@ -260,7 +260,10 @@ export function useGenerateSchedule(options?: UseGenerateScheduleOptions) {
         setIsGenerating(false);
       }
     },
-    [baseSchedules.length]
+    // The body reads `baseSchedules` itself to build `anchored_schedules`, so the
+    // dependency has to be the array. Depending on its length left a regeneration
+    // that replaced rows without changing the count anchoring to superseded times.
+    [baseSchedules]
   );
 
   const applySchedule = useCallback(

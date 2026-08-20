@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Calendar, Plus } from 'lucide-react';
-import type { CurriculumCourse, CurriculumTerm } from '../../types/curriculum';
+import type { CurriculumCourse, CurriculumTerm, Program } from '../../types/curriculum';
 import CourseTable from './CourseTable';
 import AddCourseModal from './AddCourseModal';
 import EditCourseModal, { type EditCourseFormData } from './EditCourseModal';
@@ -13,6 +13,7 @@ interface SemesterCardProps {
   removingCourseId: number | null;
   isRemoving: boolean;
   canEdit?: boolean;
+  programs?: Program[];
   onInitiateRemove: (courseId: number) => void;
   onCancelRemove: () => void;
   onConfirmRemove: (courseId: number, courseCode: string) => void;
@@ -45,6 +46,7 @@ export default function SemesterCard({
   removingCourseId,
   isRemoving,
   canEdit = true,
+  programs = [],
   onInitiateRemove,
   onCancelRemove,
   onConfirmRemove,
@@ -149,6 +151,7 @@ export default function SemesterCard({
           isOpen={Boolean(editingCourse)}
           course={editingCourse}
           isSubmitting={isEditing}
+          programs={programs}
           onClose={() => setEditingCourse(null)}
           onSave={handleSaveEditedCourse}
         />

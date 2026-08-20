@@ -1,7 +1,6 @@
 import TopBar from "./TopBar";
 import CourseBank from "./CourseBank";
 import TimetableGrid from "./TimetableGrid";
-import WideTimetableGrid from "./TimetableGrid/WideTimetableGrid";
 import DropModal from "./Modals/DropModal";
 import FacultyModal from "./Modals/FacultyModal";
 import ClearAllModal from "./Modals/ClearAllModal";
@@ -13,6 +12,7 @@ import ScheduleImportModal from "./Modals/ScheduleImportModal";
 import GenerateScheduleModal from "./GenerateSchedule/GenerateScheduleModal";
 import YearLevelGenerateScheduleModal from "./GenerateSchedule/YearLevelGenerateScheduleModal";
 import AutoAssignModal from "./Modals/AutoAssignModal";
+import OverloadConfirmationModal from "../../../components/faculty/OverloadConfirmationModal";
 import { useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
 import { useGenerateSchedule } from "./GenerateSchedule/useGenerateSchedule";
@@ -45,11 +45,7 @@ export default function SchedulerPanel() {
 
       <div className="flex flex-col lg:flex-row gap-4 w-full min-h-[560px] lg:h-[calc(100vh-180px)] lg:min-h-[560px] overflow-hidden">
         {!scheduler.isWideView && <CourseBank {...scheduler} />}
-        {scheduler.isWideView ? (
-          <WideTimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
-        ) : (
-          <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
-        )}
+        <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
       </div>
 
       <DropModal {...scheduler} />
@@ -129,6 +125,15 @@ export default function SchedulerPanel() {
         allSchedules={scheduler.schedules}
         selectedSectionId={scheduler.selectedSectionId}
       />
+      {/* One overload confirmation for all three faculty paths: the slot popup,
+          the inline picker and Auto-Assign each await this same answer. */}
+      {scheduler.overloadPrompt && (
+        <OverloadConfirmationModal
+          confirmation={scheduler.overloadPrompt.confirmation}
+          onConfirm={scheduler.confirmOverloadPrompt}
+          onCancel={scheduler.cancelOverloadPrompt}
+        />
+      )}
     </div>
   );
 }

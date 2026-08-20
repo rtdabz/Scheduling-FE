@@ -90,18 +90,10 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
               </div>
 
               {/* Metadata Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-white rounded-xl p-3 border border-gray-100">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Department</p>
                   <p className="text-sm font-semibold text-gray-800">{curriculum.department?.department_code || 'N/A'}</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Version</p>
-                  <p className="text-sm font-semibold text-gray-800">{curriculum.curriculum_version || 'N/A'}</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Academic Year</p>
-                  <p className="text-sm font-semibold text-gray-800">{curriculum.academic_year || 'N/A'}</p>
                 </div>
                 <div className="bg-white rounded-xl p-3 border border-gray-100">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Effective Year</p>
