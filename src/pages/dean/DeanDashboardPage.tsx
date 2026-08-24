@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { termLabel } from '../../lib/termLabel';
 import { useNavigate } from 'react-router-dom';
 import {
   BookOpen,
@@ -16,11 +15,9 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
-import { DashboardNotificationBanner } from '../../components/overview';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
-import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import { useToast } from '../../context/ToastContext';
 
 interface Faculty {
@@ -169,7 +166,6 @@ export default function DeanDashboardPage() {
   const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedDashboardData?.schedules ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
-  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   // Timetable Calendar Filters and state for Dean's Department
   const daysOfWeek = useMemo(() => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], []);
@@ -504,29 +500,6 @@ export default function DeanDashboardPage() {
 
   return (
     <div className="space-y-5 pb-8 transition-opacity duration-200 font-sans">
-      {/* ── Top Header Section (Clean without banner) ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <p className="text-muted text-xs tracking-wider uppercase">Home / Dashboard</p>
-          <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-[#1f2937]">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">Department scheduling activity, room assignments, and faculty workloads.</p>
-        </div>
-        {activeTerm && (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Active Term: {termLabel(activeTerm)}
-          </div>
-        )}
-      </div>
-
-      <DashboardNotificationBanner
-        items={notificationItems}
-        unreadCount={unreadCount}
-        actionLabel="Open Approval Requests"
-        onAction={() => navigate('/dean/schedules/approval')}
-        onMarkAllRead={markAllAsRead}
-      />
-
       {isLoading ? (
         <DashboardSkeleton />
       ) : (

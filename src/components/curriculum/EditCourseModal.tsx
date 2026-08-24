@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Pencil, Loader2, BookOpen, AlertCircle } from 'lucide-react';
+import { X, Pencil, BookOpen, AlertCircle } from 'lucide-react';
 import type { CurriculumCourse, Program } from '../../types/curriculum';
 import { formatCourseName } from '../../lib/formatters';
 
@@ -254,7 +254,7 @@ export default function EditCourseModal({
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 size={14} className="animate-spin" />
+                  <LoadingSpinner size={14} className="animate-spin" />
                   <span>Saving...</span>
                 </>
               ) : (
@@ -268,3 +268,4 @@ export default function EditCourseModal({
     document.body
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

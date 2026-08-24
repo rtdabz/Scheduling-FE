@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Calendar, Loader2, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react";
+import { Calendar, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react";
 import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
 import { getCachedData, loadCachedData } from "../lib/dataCache";
@@ -462,7 +462,7 @@ export default function InstructorTimetableModal({
         <div className="flex-1 overflow-auto bg-slate-50/20 p-4 font-sans relative [transform:translateZ(0)] will-change-scroll">
           {loading ? (
             <div className="py-24 text-center space-y-3">
-              <Loader2 className="w-8 h-8 animate-spin text-[#4e0a10] mx-auto" />
+              <LoadingSpinner className="w-8 h-8 text-[#4e0a10] mx-auto" />
               <p className="text-xs font-bold text-slate-500">Loading instructor timetable grid...</p>
             </div>
           ) : (
@@ -543,3 +543,4 @@ export default function InstructorTimetableModal({
     document.body
   );
 }
+import LoadingSpinner from "./ui/LoadingSpinner";

@@ -35,7 +35,7 @@ interface ScheduleApproval {
   submittedBy: string;
   submittedAt: string;
   deanReviewedAt: string | null;
-  status: 'submitted' | 'approved_by_dean' | 'rejected_by_dean' | 'approved' | 'rejected';
+  status: 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'rejected_by_dean' | 'approved' | 'rejected';
   mode: 'on-site' | 'online' | 'field';
 }
 
@@ -127,6 +127,7 @@ const APPROVAL_SLOT_HEIGHT_PX = 24;
 
 const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['status'] => {
   const statuses = items.map((item) => item.status);
+  if (statuses.includes('conditionally_approved')) return 'conditionally_approved';
   if (statuses.includes('approved_by_dean')) return 'approved_by_dean';
   if (statuses.includes('submitted')) return 'submitted';
   if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
@@ -505,6 +506,8 @@ export default function VpaaScheduleApprovalPage() {
         return 'bg-amber-100 text-amber-800 border-amber-200/60';
       case 'approved_by_dean':
         return 'bg-blue-100 text-blue-800 border-blue-200/60';
+      case 'conditionally_approved':
+        return 'bg-amber-100 text-amber-800 border-amber-200/60';
       case 'rejected_by_dean':
         return 'bg-rose-100 text-rose-805 border-rose-200/60';
       case 'approved':
@@ -520,6 +523,7 @@ export default function VpaaScheduleApprovalPage() {
     switch (status) {
       case 'submitted': return 'Pending Dean Approval';
       case 'approved_by_dean': return 'Pending VPAA Approval';
+      case 'conditionally_approved': return 'Conditional Approval — Room TBA';
       case 'rejected_by_dean': return 'Rejected by Dean';
       case 'approved': return 'Approved';
       case 'rejected': return 'Rejected';
@@ -1095,7 +1099,7 @@ export default function VpaaScheduleApprovalPage() {
 
             <div className="p-3 bg-gray-50/80 border-t border-gray-200/80 flex justify-between items-center">
               <div className="flex gap-2">
-                {viewSchedule.status === 'approved_by_dean' && (
+                {(viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved') && (
                   <>
                     <button 
                       onClick={() => {

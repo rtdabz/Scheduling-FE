@@ -6,6 +6,7 @@ import {
   FileBarChart,
   Calendar,
   ClipboardCheck,
+  History,
   Settings
 } from 'lucide-react'
 import type { NavSection } from './types'
@@ -42,6 +43,7 @@ export const deanNav: NavSection[] = [
     section: 'SYSTEM',
     items: [
       { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports' },
+      { label: 'Schedule History', path: '/dean/schedule-history', icon: History, id: 'sidebar-schedule-history' },
       { label: 'Settings', path: '/dean/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

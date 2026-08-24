@@ -8,7 +8,6 @@ import {
   CalendarRange,
   CheckCircle2,
   History,
-  Loader2,
   Save,
   Signature,
   TriangleAlert,
@@ -528,7 +527,7 @@ export default function Settings() {
                       disabled={isSaving}
                       className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] py-2 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:opacity-60"
                     >
-                      {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      {isSaving ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
                       {isSaving ? 'Saving' : 'Save academic year'}
                     </button>
                   )}
@@ -613,7 +612,7 @@ export default function Settings() {
                 disabled={!signatoryDirty || !signatoryComplete || isSavingSignatory}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-[#4e0a10] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSavingSignatory ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                {isSavingSignatory ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
                 {isSavingSignatory ? 'Saving' : 'Save signatory'}
               </button>
               {signatoryDirty && !isSavingSignatory && (
@@ -784,3 +783,4 @@ export default function Settings() {
     </div>
   );
 }
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

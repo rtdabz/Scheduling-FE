@@ -27,7 +27,7 @@ export const majorTeachingDepartmentId = (
 
 /** The program an instructor must belong to, or null when the course has none. */
 export const requiredTeachingProgramId = (subject?: Subject | null): number | null =>
-  isMajorSubject(subject) ? subject?.programId ?? null : null;
+  isMajorSubject(subject) ? subject?.programId ?? null : subject?.teachingProgramId ?? null;
 
 export const facultyEligibilityForSubject = (
   faculty: Faculty,
@@ -59,16 +59,22 @@ export const facultyEligibilityForSubject = (
     return ELIGIBLE;
   }
 
-  // A minor or service course is only tied to a department when the VPAA assigned
-  // one. Otherwise it is open to every department — shared minors are taught by
-  // external instructors, so the section's department is not a restriction here.
+  // A minor or service course is only tied to a department when it is a GEC
+  // subject owned by a college. Otherwise it is open to every department — shared
+  // minors are taught by external instructors, so the section's department is not
+  // a restriction here.
   const assignedTeachingDepartmentId = subject?.teachingDepartmentId ?? null;
 
   if (
     assignedTeachingDepartmentId !== null
     && Number(facultyDepartmentId) !== Number(assignedTeachingDepartmentId)
   ) {
-    return { eligible: false, reason: "Outside the assigned teaching department" };
+    return { eligible: false, reason: "Outside the teaching college for this course" };
+  }
+
+  const requiredProgramId = requiredTeachingProgramId(subject);
+  if (requiredProgramId !== null && Number(faculty.programId ?? 0) !== Number(requiredProgramId)) {
+    return { eligible: false, reason: "Outside the teaching program for this course" };
   }
 
   return ELIGIBLE;

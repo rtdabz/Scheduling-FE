@@ -275,6 +275,11 @@ const ScheduleCard = memo(function ScheduleCard({
           </div>
 
           <div className={`text-[9.5px] text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "leading-none" : "whitespace-normal leading-tight"}`}>
+            {hasFaculty && schedule.facultyName && (
+              <div className="truncate font-bold text-emerald-800" title={schedule.facultyName}>
+                {schedule.facultyName}
+              </div>
+            )}
             {schedule.startTime} – {schedule.endTime}
           </div>
         </div>

@@ -1,11 +1,12 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Loader2, Printer, RotateCcw, Send, Upload, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, RotateCcw, Send, UserCheck, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
 import SearchField from "./components/SearchField";
 import GenerateScheduleButton from "./GenerateSchedule/GenerateScheduleButton";
+import WorkflowGuideButton from "../../../components/help/WorkflowGuideButton";
 
 interface GroupedYear {
   yearLevel: number;
@@ -41,7 +42,6 @@ interface TopBarProps {
   canWithdrawSubmission: boolean;
   isWithdrawingSubmission: boolean;
   onPrint: () => void;
-  onImport: () => void;
   onGenerate?: (sectionId: string) => void;
   onGenerateYearLevel?: () => void;
   onAutoAssign?: () => void;
@@ -65,6 +65,7 @@ const statusBadgeConfigs: Record<string, { cls: string; label: string }> = {
   completed: { cls: "bg-[#4e0a10] text-white", label: "Done" },
   submitted: { cls: "bg-yellow-500 text-white", label: "Pending Dean Approval" },
   approved_by_dean: { cls: "bg-blue-600 text-white", label: "Pending VPAA Approval" },
+  conditionally_approved: { cls: "bg-amber-500 text-white", label: "Conditionally Approved" },
   rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
   approved: { cls: "bg-green-600 text-white", label: "Approved" },
   faculty_assignment: { cls: "bg-purple-600 text-white", label: "Faculty Assignment" },
@@ -135,7 +136,7 @@ function ActionButton({
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
         >
-          {isMarkingSectionDone && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isMarkingSectionDone && <LoadingSpinner className="h-4 w-4" />}
           {canMarkDone ? (isMarkingSectionDone ? "Marking..." : "Done") : `${remaining} unplaced`}
         </button>
       );
@@ -151,12 +152,14 @@ function ActionButton({
               : "bg-[#C9952A] hover:bg-[#b8841f] text-white cursor-pointer"
           }`}
         >
-          {isEditingSection && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isEditingSection && <LoadingSpinner className="h-4 w-4" />}
           {isEditingSection ? "Unlocking..." : "Edit"}
         </button>
       );
     case "submitted":
       return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
+    case "conditionally_approved":
+      return <button disabled className="px-4 py-2 bg-amber-100 text-amber-700 text-sm font-semibold rounded-lg cursor-not-allowed">Conditionally Approved</button>;
     case "approved_by_dean":
       return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending VPAA Approval</button>;
     case "rejected_by_dean":
@@ -171,7 +174,7 @@ function ActionButton({
               : "bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
           }`}
         >
-          {isResubmittingSection && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isResubmittingSection && <LoadingSpinner className="h-4 w-4" />}
           {isResubmittingSection ? "Resubmitting..." : "Resubmit"}
         </button>
       );
@@ -192,7 +195,7 @@ function ActionButton({
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
         >
-          {isFinalizing && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isFinalizing && <LoadingSpinner className="h-4 w-4" />}
           {allAssigned ? (isFinalizing ? "Finalizing..." : "Mark as Finalized") : `${unassigned} slots still need faculty`}
         </button>
       );
@@ -233,7 +236,6 @@ export default function TopBar({
   canWithdrawSubmission,
   isWithdrawingSubmission,
   onPrint,
-  onImport,
   onGenerate,
   onGenerateYearLevel,
   onAutoAssign,
@@ -318,7 +320,7 @@ export default function TopBar({
       };
     }
 
-    if (currentStatus === "approved_by_dean") {
+    if (currentStatus === "approved_by_dean" || currentStatus === "conditionally_approved") {
       return {
         title: "Waiting for VPAA review",
         description: "No edits are available until the review is completed.",
@@ -460,18 +462,18 @@ export default function TopBar({
   );
 
   return (
-    <div className="flex flex-col gap-3 bg-white px-5 py-4 border-b border-gray-200 rounded-t-2xl shadow-sm">
-      <div className="grid grid-cols-1 gap-3 border-b border-gray-100 pb-3 xl:grid-cols-[minmax(330px,auto)_minmax(300px,1fr)_auto] xl:items-center">
+    <div className="flex flex-col gap-3 rounded-t-2xl border-b border-gray-200 bg-white px-4 py-3 shadow-sm sm:px-5">
+      <div className="grid grid-cols-1 gap-3 border-b border-gray-100 pb-3 xl:grid-cols-[minmax(360px,1fr)_minmax(340px,0.85fr)_auto] xl:items-center">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500 font-medium whitespace-nowrap">Section:</span>
-            <div className="relative" ref={dropdownRef}>
+            <div id="schedule-builder-section" className="relative" ref={dropdownRef}>
               {isLoading ? <Skeleton className="h-[38px] w-[220px] rounded-lg" /> : <><button
                 type="button"
                 aria-haspopup="listbox"
                 aria-expanded={isSectionDropdownOpen}
                 onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
-                className="flex min-w-[220px] max-w-[280px] items-center justify-between gap-2 overflow-hidden rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium outline-none transition-colors hover:border-gray-400 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
+                className="flex min-w-0 w-full max-w-[280px] items-center justify-between gap-2 overflow-hidden rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium outline-none transition-colors hover:border-gray-400 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20 sm:min-w-[220px]"
               >
                 <span className="flex min-w-0 items-center gap-2 overflow-hidden text-gray-800">
                   <GraduationCap className="w-4 h-4 shrink-0 text-[#4e0a10]" />
@@ -484,7 +486,7 @@ export default function TopBar({
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isSectionDropdownOpen ? "rotate-180" : ""}`} />
               </button>
               {isSectionDropdownOpen && (
-                <div className="absolute left-0 mt-1.5 w-full min-w-[300px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-top-1 duration-150 overflow-hidden">
+                <div className="absolute left-0 z-50 mt-1.5 w-[min(100vw-1rem,22rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg animate-in fade-in slide-in-from-top-1 duration-150 sm:min-w-[300px]">
                   <div className="p-2 border-b border-gray-100">
                     <SearchField
                       value={sectionSearch}
@@ -548,13 +550,25 @@ export default function TopBar({
           )}
         </div>
 
-        <div className="flex min-w-0 justify-start xl:justify-center">
+        <div id="schedule-builder-workflow" className="flex min-w-0 justify-start xl:justify-center">
           {isLoading ? <div className="grid w-full max-w-2xl grid-cols-[1fr_32px_1fr] items-center"><Skeleton className="h-9 w-full rounded-xl" /><div className="px-1"><Skeleton className="h-1 w-full rounded-full" /></div><Skeleton className="h-9 w-full rounded-xl" /></div> : phasePipeline}
         </div>
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+          {!isLoading && (
+            <WorkflowGuideButton
+              guideId={
+                ["draft", "revision"].includes(currentStatus)
+                  ? "schedule-builder-plotting"
+                  : ["approved", "faculty_assignment"].includes(currentStatus)
+                    ? "schedule-builder-faculty-assignment"
+                    : "schedule-builder-review"
+              }
+            />
+          )}
           {isLoading ? <><Skeleton className="h-8 w-28 rounded-xl" /><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>{onAutoAssign && ["approved", "faculty_assignment"].includes(currentStatus) ? (
             <button
+              id="schedule-builder-auto-assign"
               type="button"
               onClick={onAutoAssign}
               className="flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
@@ -563,23 +577,16 @@ export default function TopBar({
               <span>Auto-Assign</span>
             </button>
           ) : onGenerate && (
-            <GenerateScheduleButton
-              disabled={Boolean(isGenerateDisabled)}
-              sectionDisabled={Boolean(isSectionGenerateDisabled)}
-              onClick={() => selectedSectionId && onGenerate(selectedSectionId)}
-              onYearLevelClick={onGenerateYearLevel}
-            />
+            <div id="schedule-builder-generate">
+              <GenerateScheduleButton
+                disabled={Boolean(isGenerateDisabled)}
+                sectionDisabled={Boolean(isSectionGenerateDisabled)}
+                onClick={() => selectedSectionId && onGenerate(selectedSectionId)}
+                onYearLevelClick={onGenerateYearLevel}
+              />
+            </div>
           )}</>}
-          {isLoading ? <><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <><button
-            type="button"
-            onClick={onImport}
-            title="Import Schedule"
-            className="flex items-center gap-1.5 rounded-lg border border-[#4e0a10]/30 bg-white px-3 py-2 text-sm font-semibold text-[#4e0a10] transition-colors hover:border-[#4e0a10] hover:bg-[#4e0a10]/5"
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden 2xl:inline">Import Schedule</span>
-            <span className="2xl:hidden">Import</span>
-          </button>
+          {isLoading ? <><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>
           <div className="relative" ref={printDropdownRef}>
             <button
               type="button"
@@ -609,9 +616,9 @@ export default function TopBar({
         </div>
       </div>
 
-      <div className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)_auto] items-center">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
+        <div id="schedule-builder-next-step" className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+        <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(300px,0.85fr)_minmax(420px,1.15fr)_auto] xl:items-center">
+              <div className="flex min-w-0 flex-col gap-3 rounded-lg px-1 py-1 sm:flex-row sm:items-center">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     {isLoading ? <><Skeleton className="h-2.5 w-14" /><Skeleton className="h-5 w-16 rounded-full" /></> : <><p className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p><StatusBadge status={currentStatus} /></>}
@@ -633,7 +640,7 @@ export default function TopBar({
               </div>
 
               {isLoading ? (
-                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <Skeleton className="h-2.5 w-32" />
@@ -645,7 +652,7 @@ export default function TopBar({
                   </div>
                 </div>
               ) : selectedSectionId && departmentTotalSections > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="min-w-0 mr-auto">
                       <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Department readiness</p>
@@ -696,7 +703,7 @@ export default function TopBar({
                         className="flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition-all hover:bg-orange-100 disabled:cursor-wait disabled:opacity-70 xl:min-w-[190px]"
                       >
                         {isWithdrawingSubmission ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <LoadingSpinner className="w-4 h-4" />
                         ) : (
                           <RotateCcw className="w-4 h-4" />
                         )}
@@ -706,28 +713,17 @@ export default function TopBar({
                             ? "Withdraw Schedule"
                             : "Withdraw Submission"}
                       </button>
-                    ) : (
+                    ) : departmentReadyToSubmit ? (
                       <button
                         type="button"
                         onClick={handleSubmitForApproval}
-                        disabled={!departmentReadyToSubmit}
-                        title={
-                          departmentReadyToSubmit
-                            ? "Submit the complete department schedule to the Dean"
-                            : departmentHasSubmittedSchedule
-                            ? "Department schedule is already under review"
-                            : "All sections must be marked Done before submission"
-                        }
-                        className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all xl:min-w-[190px] ${
-                          departmentReadyToSubmit
-                            ? "bg-[#4e0a10] text-white hover:bg-[#3a0809] shadow-sm cursor-pointer"
-                            : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                        }`}
+                        title="Submit the complete department schedule to the Dean"
+                        className="flex items-center justify-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3a0809] xl:min-w-[170px]"
                       >
                         <Send className="w-4 h-4" />
                         {departmentSubmitLabel}
                       </button>
-                    )}
+                    ) : null}
                   </div>
 
                   {isReadinessOpen && (
@@ -761,10 +757,11 @@ export default function TopBar({
                 </div>
               )}
 
-        <div className="flex flex-wrap items-center justify-start xl:justify-end gap-2">
+        <div className="flex min-w-[130px] flex-col items-stretch justify-center gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm xl:items-end">
+          <span className="px-1 text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Section action</span>
           {isLoading ? (
             <Skeleton className="h-9 w-28 rounded-lg" />
-          ) : currentStatus !== "finalized" ? (
+          ) : (
             <ActionButton
               selectedSectionId={selectedSectionId}
               currentStatus={currentStatus}
@@ -780,10 +777,11 @@ export default function TopBar({
               handleFinalize={handleFinalize}
               sectionSchedules={sectionSchedules}
             />
-          ) : null}
+          )}
         </div>
       </div>
       </div>
     </div>
   );
 }
+import LoadingSpinner from "../../../components/ui/LoadingSpinner";

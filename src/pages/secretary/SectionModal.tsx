@@ -1,6 +1,7 @@
+import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Layers, Plus, Loader2 } from 'lucide-react';
+import { X, Layers, Plus, } from 'lucide-react';
 
 interface Department {
   id: number;
@@ -456,7 +457,7 @@ export default function SectionModal({
                 disabled={isSubmitting}
                 className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-6 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50 font-sans"
               >
-                {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                 <span>{isEditMode ? 'Save Changes' : 'Save Sections'}</span>
               </button>
             </div>

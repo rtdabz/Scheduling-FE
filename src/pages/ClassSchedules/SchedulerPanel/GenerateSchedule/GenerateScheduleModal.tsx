@@ -11,7 +11,6 @@ import {
   Download,
   Layers,
   List,
-  Loader2,
   RefreshCw,
   Scissors,
   ShieldCheck,
@@ -51,17 +50,28 @@ function SingleGenerationDashboard({ isGenerating, progressStep, sectionName, co
   const steps = [
     ["Loading subjects", "Prepare and validate subject data", BookOpen],
     ["Creating scheduling options", "Build feasible time-slot combinations", Layers],
-    ["Allocating rooms", "Assign rooms based on availability", Building2],
+    ["Finding available rooms", "Match rooms to course requirements", Building2],
+    ["Finalizing timetable", "Prepare the preview for your review", ShieldCheck],
   ] as const;
-  const activeIndex = progressStep === "generating" ? 0 : progressStep === "constraints" ? 1 : 2;
-  const progress = progressStep === "generating" ? 25 : progressStep === "constraints" ? 52 : progressStep === "finalizing" ? 78 : progressStep === "complete" ? 100 : 12;
+  const [activeStatusIndex, setActiveStatusIndex] = useState(0);
+  useEffect(() => {
+    if (!isGenerating) {
+      setActiveStatusIndex(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setActiveStatusIndex((current) => (current + 1) % steps.length);
+    }, 1800);
+    return () => window.clearInterval(timer);
+  }, [isGenerating, steps.length]);
+  const activeIndex = isGenerating ? activeStatusIndex : 0;
   const statusTitle = isGenerating ? steps[activeIndex][0] : "Preparing generation";
   const statusText = isGenerating ? "The scheduler is building and validating your timetable preview." : "Loading settings before starting the scheduling sequence.";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-slate-50/70 p-4">
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase text-[#7a121c]">Ready to Generate Timetable</p><h3 className="mt-1 text-2xl font-black text-slate-950">Generate Timetable</h3><p className="mt-1 text-sm font-semibold text-slate-600">Run the scheduling algorithm for the selected section and review the preview before saving.</p></div><button type="button" onClick={onClose} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">Cancel</button></div><div className="mt-4 flex flex-wrap gap-2.5 text-xs font-black text-slate-800"><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><CalendarDays className="h-4 w-4 text-[#7a121c]" /> Selected section</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Users className="h-4 w-4 text-[#7a121c]" /> {sectionName || "Current section"}</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><BookOpen className="h-4 w-4 text-[#7a121c]" /> {courseCount} Courses</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Building2 className="h-4 w-4 text-[#7a121c]" /> {roomCount} Rooms Available</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Clock className="h-4 w-4 text-[#7a121c]" /> {preferredTimeBlock} preference</span></div></section>
-      <div className="mt-3 grid min-h-0 flex-1 gap-3 xl:grid-cols-[0.82fr_1.18fr]"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-base font-black text-slate-950">Generation Steps</h4><div className="mt-4 space-y-2">{steps.map(([label, description, Icon], index) => { const complete = isGenerating ? index < activeIndex : false; const current = isGenerating && index === activeIndex; return <div key={label} className="grid grid-cols-[2rem_2.5rem_1fr_auto] items-center gap-2 py-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black ${complete ? "border-emerald-300 bg-emerald-50 text-emerald-700" : current ? "border-[#7a121c] bg-[#7a121c] text-white" : "border-slate-200 text-slate-400"}`}>{index + 1}</span><span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-700"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-xs font-black text-slate-900">{label}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{description}</span></span>{current ? <Clock className="h-4 w-4 text-amber-600" /> : complete ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <span className="h-4 w-4" />}</div>; })}</div></section><section className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700"><Clock className="h-3.5 w-3.5" /> Processing</span></div><div className="flex flex-1 flex-col items-center justify-center py-8 text-center"><span className="flex h-20 w-20 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700"><Clock className="h-9 w-9" /></span><h4 className="mt-4 text-xl font-black text-slate-950">{statusTitle}</h4><p className="mt-1 max-w-lg text-sm font-semibold leading-6 text-slate-600">{statusText}</p></div><div className="flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#7a121c] transition-all duration-500" style={{ width: `${progress}%` }} /></div><span className="text-xs font-black text-slate-600">{progress}%</span></div><div className="mt-4 grid grid-cols-3 gap-2"><SingleGenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><SingleGenerationMetric icon={Building2} label="Rooms" value={roomCount} tone="emerald" /><SingleGenerationMetric icon={ShieldCheck} label="Mode" value={preferredTimeBlock === "flexible" ? "Flex" : preferredTimeBlock} tone="violet" /></div></section></div>
+      <div className="mt-3 grid min-h-0 flex-1 gap-3 xl:grid-cols-[0.82fr_1.18fr]"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-base font-black text-slate-950">Generation Steps</h4><div className="mt-4 space-y-2">{steps.map(([label, description, Icon], index) => { const current = isGenerating && index === activeIndex; return <div key={label} className="grid grid-cols-[2rem_2.5rem_1fr_auto] items-center gap-2 py-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black ${current ? "border-[#7a121c] bg-[#7a121c] text-white" : "border-slate-200 text-slate-400"}`}>{index + 1}</span><span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-700"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-xs font-black text-slate-900">{label}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{description}</span></span>{current ? <span className="h-4 w-4" aria-hidden="true" /> : <span className="h-4 w-4" />}</div>; })}</div></section><section className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">Processing</span></div><div className="flex flex-1 flex-col items-center justify-center py-8 text-center"><span className="flex h-20 w-20 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700"><LoadingSpinner size={56} label="Generating" /></span><h4 className="mt-4 text-xl font-black text-slate-950">{statusTitle}</h4><p className="mt-1 max-w-lg text-sm font-semibold leading-6 text-slate-600">{isGenerating ? steps[activeIndex][1] : statusText}</p></div><div className="flex items-center gap-3"><div className="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-100">{isGenerating && <div className="absolute h-full w-1/3 rounded-full bg-[#7a121c] animate-indeterminate" />}</div><span className="text-xs font-black text-slate-600">{isGenerating ? "Working..." : "Ready"}</span></div><div className="mt-4 grid grid-cols-3 gap-2"><SingleGenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><SingleGenerationMetric icon={Building2} label="Rooms" value={roomCount} tone="emerald" /><SingleGenerationMetric icon={ShieldCheck} label="Mode" value={preferredTimeBlock === "flexible" ? "Flex" : preferredTimeBlock} tone="violet" /></div></section></div>
       <section className="mt-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-base font-black text-slate-950">What happens next</h4><div className="mt-3 grid gap-3 md:grid-cols-3"><SingleGenerationNextStep icon={CalendarDays} number={1} title="Generate preview" text="Create a timetable preview from the selected settings." /><SingleGenerationNextStep icon={List} number={2} title="Review the preview" text="Check subjects, room allocations, and conflicts." /><SingleGenerationNextStep icon={Download} number={3} title="Save as draft" text="Apply the result to the timetable when satisfied." /></div><div className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-600"><AlertTriangle className="h-4 w-4 shrink-0 text-slate-700" /> Nothing is saved until you review the preview and choose to apply it.</div></section>
     </div>
   );
@@ -947,12 +957,12 @@ export default function GenerateScheduleModal({
                   {/* Validation status badge */}
                   {previewLoading ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <LoadingSpinner className="w-3 h-3" />
                       {isGenerating ? "Generating preview" : "Loading settings"}
                     </span>
                   ) : splitValidating ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <LoadingSpinner className="w-3 h-3" />
                       Validating splits…
                     </span>
                   ) : hasUnresolvableConflict ? (
@@ -1305,9 +1315,9 @@ export default function GenerateScheduleModal({
                     className="px-6 py-2 bg-[#4e0a10] hover:bg-[#6b0e17] text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
                     {isApplying ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-[#C9952A]" />
+                      <LoadingSpinner className="w-4 h-4 text-[#C9952A]" />
                     ) : splitValidating ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <LoadingSpinner className="w-4 h-4 text-white" />
                     ) : (
                       <CheckCircle2 className="w-4 h-4 text-[#C9952A]" />
                     )}
@@ -1322,3 +1332,4 @@ export default function GenerateScheduleModal({
     </div>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

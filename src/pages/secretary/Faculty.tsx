@@ -2,13 +2,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   X,
-  Loader2,
   Plus,
   ArrowUpDown,
   Filter,
@@ -32,6 +31,8 @@ import InstructorTimetableButton from '../../components/InstructorTimetableButto
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
 import FacultyAvailabilityPanel from '../../components/faculty/FacultyAvailabilityPanel';
 import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 const DEPARTMENT_COLORS: Record<string, string> = {
   'INFORMATION TECHNOLOGY':      'bg-blue-100 border-blue-400 text-blue-900',
@@ -214,7 +215,10 @@ export default function SecretaryFaculty() {
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
-  const facultyCacheKey = `page:faculty:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const userDepartmentId = user?.department_id ?? null;
+  const userProgramId = user?.program_id ?? null;
+  const userRole = user?.role?.toLowerCase() ?? '';
+  const facultyCacheKey = `page:faculty:${userRole || 'user'}:${userDepartmentId ?? 'all'}:${userProgramId ?? 'all'}`;
   const cachedFacultyData = getCachedData<FacultyPageData>(facultyCacheKey);
   const [faculties, setFaculties] = useState<FacultyMember[]>(cachedFacultyData?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedFacultyData?.departments ?? []);
@@ -235,10 +239,10 @@ export default function SecretaryFaculty() {
     setCurrentPage(1);
   }, [searchQuery, departmentFilter, employmentFilter, sortBy]);
 
-  const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isDean = user?.role?.toLowerCase() === 'dean';
-  const isSecretary = user?.role?.toLowerCase() === 'secretary';
-  const isProgramHead = user?.role?.toLowerCase() === 'program_head';
+  const isVpaa = userRole === 'vpaa';
+  const isDean = userRole === 'dean';
+  const isSecretary = userRole === 'secretary';
+  const isProgramHead = userRole === 'program_head';
   const canManageFaculty = isVpaa;
   // The secretary owns the unit allowances and the weekly availability windows;
   // the roster itself (identity, department, program, status) is the VPAA's.
@@ -548,8 +552,14 @@ export default function SecretaryFaculty() {
   const filteredFaculties = useMemo(() => {
     // 1. Filter by role access/department
     let list = [...faculties];
-    if (!isVpaa && user?.department_id) {
-      list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id));
+    if (!isVpaa && userDepartmentId) {
+      list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(userDepartmentId));
+    }
+
+    // A program head owns one program roster. Keep this client-side guard in
+    // addition to the API scope so cached payloads cannot leak another program.
+    if (isProgramHead) {
+      list = list.filter(f => userProgramId !== null && Number(f.program_id) === Number(userProgramId));
     }
 
     // 2. Filter by search query
@@ -573,7 +583,7 @@ export default function SecretaryFaculty() {
     }
 
     return list;
-  }, [faculties, searchQuery, departmentFilter, employmentFilter, isVpaa, user?.department_id]);
+  }, [faculties, searchQuery, departmentFilter, employmentFilter, isProgramHead, isVpaa, userDepartmentId, userProgramId]);
 
   // Sort in-memory
   const sortedFaculties = useMemo(() => {
@@ -635,10 +645,17 @@ export default function SecretaryFaculty() {
     };
   }, [filteredFaculties]);
 
+  const instructorGuideSteps = useMemo(() => [
+    { element: '#instructors-filters', title: 'Find an instructor', description: 'Search by name, then filter by department or employment type and sort by workload.', side: 'bottom' as const },
+    { element: '#instructors-summary', title: 'Check workload status', description: 'Use the summary counts to spot available, fully loaded, overloaded, and pro bono instructors.', side: 'bottom' as const },
+    { element: '#instructors-workspace', title: 'Manage instructor records', description: 'Review the instructor list and open a row to maintain faculty details, workload, and availability.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'instructors', isReady: true, steps: instructorGuideSteps });
+
   return (
     <div className="space-y-6 font-sans pb-12">
       {/* Summary Statistics Dashboard Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
+      <div id="instructors-summary" className="grid grid-cols-2 md:grid-cols-5 gap-5">
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
           {isLoading ? (
@@ -694,7 +711,7 @@ export default function SecretaryFaculty() {
       </div>
 
       {/* Search and Filters Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+      <div id="instructors-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -817,6 +834,8 @@ export default function SecretaryFaculty() {
         </div>
       </div>
 
+      <WorkflowGuideButton guideId="instructors" />
+      <div id="instructors-workspace">
       {viewMode === 'grid' ? (
         /* Redesigned Card-based visual dashboard */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
@@ -1171,6 +1190,7 @@ export default function SecretaryFaculty() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Pagination Section */}
       {totalItems > 0 && (
@@ -1317,8 +1337,7 @@ export default function SecretaryFaculty() {
                 {detailsFaculty.unit_ceiling > 0
                   && detailsFaculty.assigned_units > detailsFaculty.unit_ceiling && (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-semibold text-amber-800 font-sans">
-                    Above the {detailsFaculty.unit_ceiling}-unit ceiling. Assignment still goes
-                    through, but the scheduler flags it as an overload warning.
+                    Above the {detailsFaculty.unit_ceiling}-unit ceiling. Further assignments are blocked.
                   </p>
                 )}
               </div>
@@ -1682,7 +1701,7 @@ export default function SecretaryFaculty() {
                   disabled={isSubmitting}
                   className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 font-sans"
                 >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                   <span>{isEditMode ? 'Save Changes' : 'Add Instructor'}</span>
                 </button>
               </div>
@@ -1692,22 +1711,19 @@ export default function SecretaryFaculty() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-in zoom-in-95 duration-200 font-sans">
-            <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-4 border border-red-100 animate-pulse font-sans">
-              <AlertTriangle size={24} />
-            </div>
-            <h3 className="text-base font-bold text-gray-800 mb-2 font-sans">Delete Instructor</h3>
-            <p className="text-gray-500 text-sm mb-4 font-sans">
-              {facultyToDelete
-                ? `Delete ${facultyToDelete.first_name} ${facultyToDelete.last_name}? `
-                : 'Delete this instructor? '}
-              This cannot be undone and permanently removes the record from the database.
-            </p>
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        eyebrow="Permanent Action"
+        title="Delete Instructor"
+        message={`${facultyToDelete ? `Delete ${facultyToDelete.first_name} ${facultyToDelete.last_name}?` : 'Delete this instructor?'}\n\nThis cannot be undone and permanently removes the record from the database.`}
+        confirmLabel="Delete"
+        variant="danger"
+        isConfirming={isDeleting}
+        onCancel={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteFaculty}
+      >
             {facultyToDelete && facultyToDelete.live_schedule_count > 0 && (
-              <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 font-sans">
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 font-sans">
                 {facultyToDelete.live_schedule_count} approved meeting
                 {facultyToDelete.live_schedule_count === 1 ? '' : 's'} on the timetable
                 {facultyToDelete.live_schedule_count === 1 ? ' is' : ' are'} assigned to this
@@ -1715,29 +1731,7 @@ export default function SecretaryFaculty() {
                 stay on the timetable with no instructor and will need reassigning.
               </p>
             )}
-            <div className="flex justify-end gap-3 font-sans">
-              <button
-                type="button"
-                onClick={() => setIsDeleteModalOpen(false)}
-                disabled={isDeleting}
-                className="px-4 py-2 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer disabled:opacity-50 font-sans"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteFaculty}
-                disabled={isDeleting}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed font-sans"
-              >
-                {isDeleting && <Loader2 size={14} className="animate-spin" />}
-                <span>Confirm Delete</span>
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      </ConfirmModal>
 
       {/* Load-only editor: the secretary's write path into an instructor record. */}
       {loadEditorFaculty && (
@@ -1764,3 +1758,4 @@ export default function SecretaryFaculty() {
     </div>
   );
 }
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

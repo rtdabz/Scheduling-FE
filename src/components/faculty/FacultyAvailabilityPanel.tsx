@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Loader2, Pencil } from 'lucide-react';
+import { CalendarClock, Pencil } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { FULL_DAY_NAMES, formatTime12h } from '../../lib/timeGrid';
@@ -96,7 +96,7 @@ export default function FacultyAvailabilityPanel({
 
       {isLoading ? (
         <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white p-3 text-xs text-gray-400">
-          <Loader2 size={13} className="animate-spin" />
+          <LoadingSpinner size={13} className="animate-spin" />
           <span>Loading availability&hellip;</span>
         </div>
       ) : loadError ? (
@@ -169,3 +169,4 @@ export default function FacultyAvailabilityPanel({
     </div>
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

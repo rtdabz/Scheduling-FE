@@ -1,5 +1,6 @@
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import { useEffect, useRef } from "react";
-import { AlertTriangle, Loader2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Trash2, X } from "lucide-react";
 import type { ScheduleItem, Section } from "../types";
 
 interface ClearAllModalProps {
@@ -120,7 +121,7 @@ export default function ClearAllModal({
                 Remove all {allClassCount} loaded class{allClassCount !== 1 ? "es" : ""} for this department.
               </span>
             </span>
-            {isClearingAll ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-rose-600" /> : <Trash2 className="h-4 w-4 shrink-0 text-rose-600" />}
+            {isClearingAll ? <LoadingSpinner className="h-4 w-4 shrink-0 text-rose-600" /> : <Trash2 className="h-4 w-4 shrink-0 text-rose-600" />}
           </button>
           <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />

@@ -8,7 +8,6 @@ import {
   Search,
   AlertTriangle,
   X,
-  Loader2,
   Plus,
   ArrowUpDown,
   Filter,
@@ -1316,8 +1315,7 @@ export default function ProgramHeadFaculty() {
                 {detailsFaculty.unit_ceiling > 0
                   && detailsFaculty.assigned_units > detailsFaculty.unit_ceiling && (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-semibold text-amber-800 font-sans">
-                    Above the {detailsFaculty.unit_ceiling}-unit ceiling. Assignment still goes
-                    through, but the scheduler flags it as an overload warning.
+                    Above the {detailsFaculty.unit_ceiling}-unit ceiling. Further assignments are blocked.
                   </p>
                 )}
               </div>
@@ -1681,7 +1679,7 @@ export default function ProgramHeadFaculty() {
                   disabled={isSubmitting}
                   className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 font-sans"
                 >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                   <span>{isEditMode ? 'Save Changes' : 'Add Instructor'}</span>
                 </button>
               </div>
@@ -1729,7 +1727,7 @@ export default function ProgramHeadFaculty() {
                 disabled={isDeleting}
                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed font-sans"
               >
-                {isDeleting && <Loader2 size={14} className="animate-spin" />}
+                {isDeleting && <LoadingSpinner size={14} className="animate-spin" />}
                 <span>Confirm Delete</span>
               </button>
             </div>
@@ -1763,3 +1761,4 @@ export default function ProgramHeadFaculty() {
     </div>
   );
 }
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

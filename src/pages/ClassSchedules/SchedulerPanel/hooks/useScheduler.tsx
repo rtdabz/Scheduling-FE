@@ -55,6 +55,8 @@ const isNotFoundError = (err: unknown): boolean => {
 
 const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DAYS.length;
 
+const ROOM_TBA = "tba";
+
 const sortSplitMeetingsForEdit = (items: ScheduleItem[], subject?: Subject | null): ScheduleItem[] => {
   const lectureSlots = Number(subject?.lectureHours ?? 0) * 2;
   const labSlots = Number(subject?.labHours ?? 0) * 6;
@@ -168,7 +170,7 @@ export const useScheduler = () => {
   const user = getStoredUser();
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const canWithdrawSubmission = ['secretary', 'program_head'].includes(user?.role?.toLowerCase() ?? '');
-  const schedulerCacheKey = `scheduler:v12:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}`;
+  const schedulerCacheKey = `scheduler:v15:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -484,13 +486,23 @@ export const useScheduler = () => {
     return sectionSchedules.length > 0 ? sectionSchedules[0].status : "draft";
   }, [sectionSchedules]);
 
+  const helperStatusContextRef = useRef<{ sectionId: string; status: ScheduleItem["status"] } | null>(null);
+
   useEffect(() => {
+    const previousContext = helperStatusContextRef.current;
+    helperStatusContextRef.current = { sectionId: selectedSectionId, status: currentStatus };
+
+    // Selecting another section changes the derived status, but it is ordinary
+    // navigation and should not force the WICARS Buddy chat open.
+    if (previousContext && previousContext.sectionId !== selectedSectionId) return;
+
     if (currentStatus === "approved" || currentStatus === "approved_by_dean") {
       window.dispatchEvent(
         new CustomEvent("show-helper-buddy", {
           detail: {
             id: crypto.randomUUID(),
             type: "approved",
+            status: currentStatus,
             text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
           },
         })
@@ -501,12 +513,13 @@ export const useScheduler = () => {
           detail: {
             id: crypto.randomUUID(),
             type: "rejected",
+            status: currentStatus,
             text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
           },
         })
       );
     }
-  }, [currentStatus]);
+  }, [currentStatus, selectedSectionId]);
 
   const triggerConflictReminder = useCallback(() => {
     window.dispatchEvent(
@@ -524,6 +537,7 @@ export const useScheduler = () => {
   const isEditable = currentStatus === "draft" || currentStatus === "revision";
   const isPhase1Completed = ["completed", "approved", "faculty_assignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
+  const facultyAssignmentDone = sectionSchedules.length > 0 && sectionSchedules.every((schedule) => schedule.facultyAssignmentDone);
 
   const scheduledSubjectIds = useMemo<Set<string>>(
     () => new Set(sectionSchedules.map((s) => s.courseId ?? s.subjectId ?? "").filter((id): id is string => Boolean(id))),
@@ -722,8 +736,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
 
-    // A major is assigned by the department that offers it; only service and
-    // minor courses follow the VPAA teaching assignment.
+    // A major is assigned by the department that offers it; a GEC service course
+    // by the college that owns it. Everything else is open to any department.
     const assignedDepartmentId = isMajorSubject(subject)
       ? majorTeachingDepartmentId(subject, schedule.departmentId ?? null)
       : subject?.teachingDepartmentId ?? null;
@@ -747,7 +761,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     const assignedDepartment = subject?.teachingDepartmentCode
       ? `${subject.teachingDepartmentCode} Department`
-      : subject?.teachingDepartmentName ?? "the assigned teaching department";
+      : subject?.teachingDepartmentName ?? "the college that offers this course";
 
     return `Only ${assignedDepartment} can assign instructors for this course.`;
   }, [subjects]);
@@ -812,7 +826,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         if (targetSched) {
           // Fallback room/mode for single-meeting path.
           // The 2-meeting path below overrides these with sorted[0] values.
-          setModalRoomId(targetSched.roomId);
+          setModalRoomId(targetSched.roomId || (targetSched.mode === "on-site" ? ROOM_TBA : targetSched.mode));
           setModalClassMode(targetSched.mode ?? "on-site");
           setModalIsHybrid(targetSched.isHybrid ?? false);
           setModalPreferredPattern(targetSched.preferredPattern ?? null);
@@ -824,12 +838,11 @@ departmentSectionProgress.every((section) => section.status === "completed");
           const sorted = sortSplitMeetingsForEdit(existing, subject);
 
           if (sorted.length >= 2) {
-            const firstIsLecture = sorted[0].meetingType === "lecture"
-              || (Number(subject?.lectureHours ?? 0) > 0 && sorted[0].durationSlots === Number(subject?.lectureHours ?? 0) * 2);
-            // Always initialize Meeting 1 from the earliest-day record (sorted[0])
-            // and Meeting 2 from sorted[1] — regardless of which card was clicked.
-            setModalRoomId(firstIsLecture ? "online" : sorted[0].roomId);
-            setModalClassMode(firstIsLecture ? "online" : (sorted[0].mode ?? "on-site"));
+            // Preserve each stored meeting exactly. Editing must not silently
+            // convert a saved on-site lecture to Online just because it is the
+            // lecture component of a split course.
+            setModalRoomId(sorted[0].roomId || (sorted[0].mode === "on-site" ? ROOM_TBA : sorted[0].mode));
+            setModalClassMode(sorted[0].mode ?? "on-site");
             setModalDay1Index(sorted[0].dayIndex);
             setModalDay2Index(sorted[1].dayIndex);
             setModalPreferredPattern(buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex));
@@ -837,7 +850,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[1].startSlot);
             setModalDay2Duration(sorted[1].durationSlots);
-            setModalDay2RoomId(sorted[1].roomId);
+            setModalDay2RoomId(sorted[1].roomId || (sorted[1].mode === "on-site" ? ROOM_TBA : sorted[1].mode));
             setModalDay2ClassMode(sorted[1].mode ?? "on-site");
             setIsDay2ModifiedByUser(true);
           } else if (sorted.length === 1) {
@@ -847,7 +860,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[0].startSlot);
             setModalDay2Duration(patternDays ? splitDay2Slots : Math.max(0, singleSlots - sorted[0].durationSlots));
-            setModalDay2RoomId("");
+            setModalDay2RoomId(ROOM_TBA);
             setModalDay2ClassMode("on-site");
             setIsDay2ModifiedByUser(false);
           } else {
@@ -893,7 +906,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
           resolvedRoomId = nonConflictingRoom?.id || (matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : ""));
         }
 
-        setModalRoomId(resolvedRoomId);
+        const requiredRoomType = requiredRoomTypeForMeeting(subject);
+        setModalRoomId(resolvedRoomId || (requiredRoomType === "laboratory" ? ROOM_TBA : ""));
         setModalClassMode("on-site");
         setModalIsHybrid(false);
         setModalPreferredPattern(null);
@@ -903,7 +917,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
         setModalDay1Duration(singleSlots);
         setModalDay2StartSlot(dropContext.startSlot);
         setModalDay2Duration(0);
-        setModalDay2RoomId(resolvedRoomId);
+        setModalDay2RoomId(resolvedRoomId || (requiredRoomType === "laboratory" ? ROOM_TBA : ""));
         setModalDay2ClassMode("on-site");
         setIsDay2ModifiedByUser(false);
       }
@@ -945,7 +959,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
       (room) => isUsable(room) && (room.roomType === "lecture" || room.roomType === "laboratory")
     );
 
-    return physicalRooms.length > 0 ? physicalRooms[0].id : "";
+    if (physicalRooms.length > 0) return physicalRooms[0].id;
+    return requiredRoomType === "laboratory" ? ROOM_TBA : "";
   }, [dropContext, subjects, rooms]);
 
   /**
@@ -1267,7 +1282,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     const section = sections.find((s) => s.id === selectedSectionId);
     if (!section) return;
 
-    let resolvedRoom1Id = modalRoomId;
+    let resolvedRoom1Id: string | null = modalRoomId === ROOM_TBA ? null : modalRoomId;
     if (modalRoomId === "online" || modalClassMode === "online") {
       const onlineRoom = rooms.find(r => r.roomType === "online");
       if (!onlineRoom) {
@@ -1284,7 +1299,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
       resolvedRoom1Id = fieldRoom.id;
     }
 
-    let resolvedRoom2Id = modalDay2RoomId;
+    let resolvedRoom2Id: string | null = modalDay2RoomId === ROOM_TBA ? null : modalDay2RoomId;
     if (modalDay2RoomId === "online" || modalDay2ClassMode === "online") {
       const onlineRoom = rooms.find(r => r.roomType === "online");
       if (!onlineRoom) {
@@ -1347,7 +1362,10 @@ departmentSectionProgress.every((section) => section.status === "completed");
           section_id: Number(selectedSectionId),
           subject_id: Number(subject.id),
           faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
-          room_id: Number(index === 0 ? resolvedRoom1Id : resolvedRoom2Id),
+          room_id: (() => {
+            const resolved = index === 0 ? resolvedRoom1Id : resolvedRoom2Id;
+            return resolved === null || resolved === "" ? null : Number(resolved);
+          })(),
           department_id: section.departmentId,
           day: targetDay.day,
           start_time: slotToTime24h(targetDay.startSlot),
@@ -1452,8 +1470,22 @@ departmentSectionProgress.every((section) => section.status === "completed");
   // so there is nothing to gain.
   const handleModalConfirm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalRoomId) {
-      setModalValidationError("Please select a room.");
+    const subject = dropContext ? subjects.find((item) => String(item.id) === String(dropContext.subjectId)) : null;
+    const isLabMeeting = (duration: number): boolean => {
+      const labSlots = Number(subject?.labHours ?? 0) * 6;
+      return labSlots > 0 && duration === labSlots;
+    };
+    const missingFirstRoom = modalClassMode === "on-site" && !modalRoomId;
+    const missingSecondRoom = modalPreferredPattern
+      && modalDay2Duration > 0
+      && modalDay2ClassMode === "on-site"
+      && !modalDay2RoomId;
+    const invalidTba = (modalRoomId === "tba" && !isLabMeeting(modalDay1Duration))
+      || (modalDay2RoomId === "tba" && !isLabMeeting(modalDay2Duration));
+    if (missingFirstRoom || missingSecondRoom || invalidTba) {
+      setModalValidationError(invalidTba
+        ? "Room TBA is allowed only for a laboratory meeting."
+        : "Please select a room for every on-site meeting.");
       return;
     }
     if (modalConflict) return;
@@ -2111,6 +2143,21 @@ departmentSectionProgress.every((section) => section.status === "completed");
     }
   };
 
+  const handleFacultyAssignmentDone = useCallback(async (done: boolean, scheduleIds?: string[]): Promise<boolean> => {
+    const ids = (scheduleIds ?? sectionSchedules.map((schedule) => schedule.id)).map(Number);
+    if (ids.length === 0) return false;
+    try {
+      const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-faculty-done", { ids, done });
+      applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
+      toast.success(done ? "Instructor Assignment Done" : "Instructor Assignment Editing", done ? "The receiving department can now view the assigned instructors." : "Instructor assignments are editable again.");
+      void refreshSchedules();
+      return true;
+    } catch (err) {
+      toast.error("Unable to update instructor assignment", getApiErrorMessage(err) ?? "Please try again.");
+      return false;
+    }
+  }, [applyUpdatedSchedules, refreshSchedules, sectionSchedules, toast]);
+
   const getClassesCountForDay = useCallback((dayIdx: number) =>
     sectionSchedules.filter((s) => s.dayIndex === dayIdx).length, [sectionSchedules]);
 
@@ -2270,6 +2317,8 @@ departmentSectionProgress.every((section) => section.status === "completed");
   }, [activeTerm]);
 
   return {
+    userDepartmentId: user?.department_id ?? null,
+    userProgramId: user?.program_id ?? null,
     placed,
     activeTermText,
     dragSubjectId,
@@ -2373,6 +2422,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     isEditable,
     isPhase1Completed,
     isPhase2Completed,
+    facultyAssignmentDone,
     sectionSchedules,
     scheduledSubjectIds,
     totalSubjects,
@@ -2419,6 +2469,7 @@ departmentSectionProgress.every((section) => section.status === "completed");
     handleRemoveFaculty,
     handleInlineFacultyAssign,
     handleBulkFacultyAssign,
+    handleFacultyAssignmentDone,
     handleRemoveInlineFaculty,
     handleAcceptedRecommendation,
     refreshSchedules,

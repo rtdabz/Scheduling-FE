@@ -471,9 +471,6 @@ export default function VpaaCalendarPage() {
             <div className="p-2 bg-[#C9952A]/20 rounded-xl border border-[#C9952A]/40 text-[#C9952A]">
               <CalendarIcon size={22} />
             </div>
-            <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">
-              Academic Schedules Master Calendar
-            </h1>
           </div>
           <p className="text-xs text-[#E8D5C4]/80 font-medium max-w-xl leading-relaxed">
             Real-time interactive master calendar displaying all academic schedules across college departments, instructors, sections, and room allocations.

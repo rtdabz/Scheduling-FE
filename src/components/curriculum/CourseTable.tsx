@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { BookOpen, Pencil, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { BookOpen, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import type { CurriculumCourse } from '../../types/curriculum';
 
 interface CourseTableProps {
@@ -93,7 +93,7 @@ export default function CourseTable({
                           title="Confirm removal of this course from the curriculum"
                           className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                         >
-                          {isRemoving ? <Loader2 size={10} className="animate-spin" /> : <AlertTriangle size={10} />}
+                          {isRemoving ? <LoadingSpinner size={10} /> : <AlertTriangle size={10} />}
                           Confirm
                         </button>
                         <button
@@ -145,3 +145,4 @@ export default function CourseTable({
     </div>
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

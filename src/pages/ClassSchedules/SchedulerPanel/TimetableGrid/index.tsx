@@ -113,7 +113,7 @@ export default function TimetableGrid({
       ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
       : "";
   return (
-    <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200/80 shadow-md flex flex-col overflow-hidden h-full">
+    <div id="schedule-builder-timetable" className="flex min-h-[36rem] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-full lg:min-h-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 shrink-0">
         <div>
           <h2 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
@@ -143,6 +143,7 @@ export default function TimetableGrid({
             </>}
           </div>
           {isLoading ? <Skeleton className="h-8 w-36 rounded-xl" /> : <button
+            id="schedule-builder-course-bank-toggle"
             type="button"
             onClick={handleToggleWideView}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border cursor-pointer ${
@@ -178,7 +179,7 @@ export default function TimetableGrid({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden bg-slate-50/80 relative flex flex-col">
+      <div className="relative flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-slate-50/80 lg:min-h-0">
         {isPlacementMode && (
           <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
             {movingScheduleId ? <Move className="w-5 h-5 text-blue-700 shrink-0" /> : <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />}
@@ -217,7 +218,7 @@ export default function TimetableGrid({
             </p>
           </div>
         ) : (
-          <div className={`${isWideView ? "overflow-hidden" : "overflow-x-auto overflow-y-hidden"} p-4 flex-1 min-h-0 flex flex-col`}>
+          <div className={`${isWideView ? "overflow-hidden" : "overflow-x-auto overflow-y-hidden"} flex min-h-0 flex-1 flex-col p-2 sm:p-4`}>
             <WeeklyTimetableGrid
               days={DAYS}
               slotCount={slotCount()}
@@ -314,7 +315,7 @@ export default function TimetableGrid({
       </div>
 
       {conflictInfo && (
-        <div className="mx-6 my-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 shrink-0 animate-in slide-in-from-bottom-2 duration-150">
+        <div className="mx-3 my-3 flex shrink-0 animate-in items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3 slide-in-from-bottom-2 duration-150 sm:mx-6">
           <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
           <div>
             <h4 className="text-xs font-bold text-rose-900">Schedule Conflict Detected</h4>
@@ -326,7 +327,7 @@ export default function TimetableGrid({
         </div>
       )}
 
-      <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500 shrink-0">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/50 px-3 py-3 text-xs font-semibold text-slate-500 sm:gap-4 sm:px-6">
         <span className="flex items-center gap-1.5">
           <Info className="w-3.5 h-3.5 text-slate-400" />
           Categories:

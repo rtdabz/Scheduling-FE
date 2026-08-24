@@ -35,7 +35,7 @@ interface ScheduleApproval {
   submittedBy: string;
   submittedAt: string;
   deanReviewedAt: string | null;
-  status: 'submitted' | 'approved_by_dean' | 'rejected_by_dean' | 'approved' | 'rejected' | 'revision';
+  status: 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'rejected_by_dean' | 'approved' | 'rejected' | 'revision';
   mode: 'on-site' | 'online' | 'field';
   requestType: 'approval' | 'withdrawal' | 'revision';
   withdrawnSectionIds?: string[];
@@ -125,6 +125,7 @@ const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['st
   if (statuses.includes('submitted')) return 'submitted';
   if (statuses.includes('revision')) return 'revision';
   if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
+  if (statuses.includes('conditionally_approved')) return 'conditionally_approved';
   if (statuses.includes('approved_by_dean')) return 'approved_by_dean';
   if (statuses.includes('rejected')) return 'rejected';
   return 'approved';
@@ -324,6 +325,8 @@ export default function DeanScheduleApprovalPage() {
   // Modals state
   const [viewSchedule, setViewSchedule] = useState<ScheduleApproval | null>(null);
   const [approveConfirm, setApproveConfirm] = useState<ScheduleApproval | null>(null);
+  const [approveWithTba, setApproveWithTba] = useState(false);
+  const [approvalOverrideReason, setApprovalOverrideReason] = useState('');
   const [rejectConfirm, setRejectConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
@@ -513,25 +516,28 @@ export default function DeanScheduleApprovalPage() {
 
   const handleApprove = (sched: ScheduleApproval) => {
     setApproveConfirm(sched);
+    const hasTba = rawSchedules.some((row) => Number(row.department_id) === Number(sched.id) && row.mode === 'on-site' && !row.room);
+    setApproveWithTba(hasTba);
+    setApprovalOverrideReason('');
   };
 
   const confirmApprove = async () => {
     if (approveConfirm) {
       try {
         const now = new Date().toISOString();
-        await api.post(`/departments/${approveConfirm.id}/approve-by-dean`);
+        await api.post(`/departments/${approveConfirm.id}/approve-by-dean`, approveWithTba ? { override_room_tba: true, override_reason: approvalOverrideReason } : {});
 
         setSchedules((prev) =>
           prev.map((s) =>
             s.id === approveConfirm.id
-              ? { ...s, status: 'approved_by_dean', deanReviewedAt: now }
+              ? { ...s, status: approveWithTba ? 'conditionally_approved' : 'approved_by_dean', deanReviewedAt: now }
               : s
           )
         );
         setRawSchedules((prev) =>
           prev.map((s) =>
             Number(s.department_id) === Number(approveConfirm.id)
-              ? { ...s, status: 'approved_by_dean', reviewed_by_dean: userId, reviewed_at_dean: now }
+              ? { ...s, status: approveWithTba ? 'conditionally_approved' : 'approved_by_dean', reviewed_by_dean: userId, reviewed_at_dean: now }
               : s
           )
         );
@@ -600,7 +606,7 @@ export default function DeanScheduleApprovalPage() {
       let matchStatus = true;
       if (selectedStatus !== 'All Status') {
         if (selectedStatus === 'Pending Dean Approval') matchStatus = s.status === 'submitted';
-        else if (selectedStatus === 'Pending VPAA Approval') matchStatus = s.status === 'approved_by_dean';
+        else if (selectedStatus === 'Pending VPAA Approval') matchStatus = s.status === 'approved_by_dean' || s.status === 'conditionally_approved';
         else if (selectedStatus === 'Approved') matchStatus = s.status === 'approved';
         else if (selectedStatus === 'Rejected') matchStatus = s.status === 'rejected' || s.status === 'rejected_by_dean' || s.status === 'revision';
       }
@@ -640,6 +646,8 @@ export default function DeanScheduleApprovalPage() {
         return 'bg-amber-100 text-amber-800 border-amber-200/60';
       case 'approved_by_dean':
         return 'bg-blue-100 text-blue-800 border-blue-200/60';
+      case 'conditionally_approved':
+        return 'bg-amber-100 text-amber-800 border-amber-200/60';
       case 'rejected_by_dean':
         return 'bg-rose-100 text-rose-805 border-rose-200/60';
       case 'approved':
@@ -657,6 +665,7 @@ export default function DeanScheduleApprovalPage() {
     switch (status) {
       case 'submitted': return 'Pending Dean Approval';
       case 'approved_by_dean': return 'Pending VPAA Approval';
+      case 'conditionally_approved': return 'Conditional Approval';
       case 'rejected_by_dean': return 'Rejected by Dean';
       case 'approved': return 'Approved';
       case 'revision': return 'Under Revision';
@@ -1317,6 +1326,7 @@ export default function DeanScheduleApprovalPage() {
                   Are you sure you want to approve the complete department schedule for <strong>{approveConfirm.department}</strong>?
                 </p>
               </div>
+              {approveWithTba && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-left"><p className="text-xs font-bold text-amber-800">Room TBA entries detected</p><p className="mt-1 text-xs text-amber-700">This will be a conditional approval. Assign all laboratory rooms before finalization.</p><textarea value={approvalOverrideReason} onChange={(e) => setApprovalOverrideReason(e.target.value)} rows={3} placeholder="Reason for approving with Room TBA" className="mt-2 w-full rounded-lg border border-amber-200 bg-white p-2 text-xs" /></div>}
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setApproveConfirm(null)}
@@ -1326,6 +1336,7 @@ export default function DeanScheduleApprovalPage() {
                 </button>
                 <button
                   onClick={confirmApprove}
+                  disabled={approveWithTba && approvalOverrideReason.trim().length < 3}
                   className="flex-1 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors text-xs font-semibold cursor-pointer"
                 >
                   Confirm Approve

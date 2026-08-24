@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutGrid, CheckCircle2, Lock, ArrowRight, Loader2, AlertTriangle } from 'lucide-react';
+import { LayoutGrid, CheckCircle2, Lock, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from './Skeleton';
 import api from '../../lib/api';
+import LoadingSpinner from './LoadingSpinner';
 
 interface DepartmentScheduleStatusProps {
   departmentId: number;
@@ -250,7 +251,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         >
           {isSubmitting ? (
             <>
-              <Loader2 size={16} className="animate-spin" />
+              <LoadingSpinner size={16} />
               Submit for dean approval
             </>
           ) : (

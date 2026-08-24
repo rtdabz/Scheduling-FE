@@ -3,13 +3,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   X,
-  Loader2,
   Building2,
   ArrowLeft,
   Clock,
@@ -1101,7 +1100,7 @@ export default function ProgramHeadRooms() {
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
@@ -1114,39 +1113,7 @@ export default function ProgramHeadRooms() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Room</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this room? This action is permanent and cannot be undone.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteRoom}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Room" message="Are you sure you want to delete this room? This action is permanent and cannot be undone." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteRoom} />
 
       {/* Classroom Detail Modal */}
       <RoomDetailModal
@@ -1160,3 +1127,4 @@ export default function ProgramHeadRooms() {
     </div>
   );
 };
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

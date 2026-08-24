@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle, } from 'lucide-react';
 import {
   LOAD_TIER_BADGE_CLASSES,
   LOAD_TIER_LABELS,
@@ -128,7 +128,7 @@ export default function OverloadConfirmationModal({
             disabled={isSaving}
             className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSaving && <Loader2 size={15} className="animate-spin" />}
+            {isSaving && <LoadingSpinner size={15} className="animate-spin" />}
             <span>Yes, Proceed</span>
           </button>
         </div>
@@ -137,3 +137,4 @@ export default function OverloadConfirmationModal({
     document.body
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

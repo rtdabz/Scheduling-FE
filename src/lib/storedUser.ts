@@ -15,6 +15,7 @@ export interface StoredUser {
   name?: string;
   email?: string;
   department_id?: number;
+  program_id?: number;
   role?: string;
 }
 

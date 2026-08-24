@@ -3,11 +3,12 @@ import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearDataCache } from '../../lib/dataCache';
-import type { Curriculum, Department } from '../../types/curriculum';
+import type { Curriculum, Department, Program } from '../../types/curriculum';
 
 interface CurriculumPageData {
   curriculumList: Curriculum[];
   departments: Department[];
+  programs: Program[];
 }
 
 export function useCurriculum() {
@@ -22,6 +23,7 @@ export function useCurriculum() {
 
   const [curriculumList, setCurriculumList] = useState<Curriculum[]>(cachedData?.curriculumList ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedData?.departments ?? []);
+  const [programs, setPrograms] = useState<Program[]>(cachedData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(curriculumCacheKey));
 
   // Role permissions
@@ -41,19 +43,22 @@ export function useCurriculum() {
         const data = await loadCachedData<CurriculumPageData>(
           curriculumCacheKey,
           async () => {
-            const [curriculumRes, deptsRes] = await Promise.all([
+            const [curriculumRes, deptsRes, programsRes] = await Promise.all([
               curriculumService.getCurriculumList(userDeptId),
               api.get<Department[]>('/departments'),
+              api.get<Program[]>('/programs'),
             ]);
             return {
               curriculumList: curriculumRes,
               departments: deptsRes.data,
+              programs: programsRes.data,
             };
           },
           forceRefresh
         );
         setCurriculumList(data.curriculumList);
         setDepartments(data.departments);
+        setPrograms(data.programs);
       } catch {
         toast.error('Error', 'Failed to load curriculum data.');
       } finally {
@@ -93,13 +98,14 @@ export function useCurriculum() {
             if (
               updated.status === 'active' &&
               c.department_id === updated.department_id &&
+              c.program_id === updated.program_id &&
               c.status === 'active'
             ) {
               return { ...c, status: 'draft' as const };
             }
             return c;
           });
-          setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments });
+          setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
           return next;
         });
         clearDataCache();
@@ -112,13 +118,14 @@ export function useCurriculum() {
               created.status === 'active' &&
               c.id !== created.id &&
               c.department_id === created.department_id &&
+              c.program_id === created.program_id &&
               c.status === 'active'
             ) {
               return { ...c, status: 'draft' as const };
             }
             return c;
           });
-          setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments });
+          setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
           return next;
         });
         clearDataCache();
@@ -143,13 +150,14 @@ export function useCurriculum() {
         if (
           status === 'active' &&
           c.department_id === targetDeptId &&
+          c.program_id === prev.find((x) => x.id === id)?.program_id &&
           c.status === 'active'
         ) {
           return { ...c, status: 'draft' as const };
         }
         return c;
       });
-      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments });
+      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
       return next;
     });
 
@@ -168,19 +176,20 @@ export function useCurriculum() {
           if (
             status === 'active' &&
             c.department_id === updated.department_id &&
+            c.program_id === updated.program_id &&
             c.status === 'active'
           ) {
             return { ...c, status: 'draft' as const };
           }
           return c;
         });
-        setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments });
+        setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
         return next;
       });
       clearDataCache();
     } catch {
       setCurriculumList(previousCurriculumList);
-      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: previousCurriculumList, departments });
+      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: previousCurriculumList, departments, programs });
       toast.error('Error', 'Failed to update curriculum status.');
     }
   };
@@ -190,7 +199,7 @@ export function useCurriculum() {
       const newCurriculum = await curriculumService.duplicateCurriculum(id);
       setCurriculumList((prev) => {
         const next = [newCurriculum, ...prev];
-        setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments });
+        setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
         return next;
       });
       clearDataCache();
@@ -211,7 +220,7 @@ export function useCurriculum() {
     setCurriculumList((prev) => {
       previousCurriculumList = prev;
       const next = prev.map((c) => (c.id === id ? { ...c, status: 'archived' as const } : c));
-      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments });
+        setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
       return next;
     });
 
@@ -222,7 +231,7 @@ export function useCurriculum() {
       clearDataCache();
     } catch (error: unknown) {
       setCurriculumList(previousCurriculumList);
-      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: previousCurriculumList, departments });
+      setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: previousCurriculumList, departments, programs });
       const err = error as { response?: { data?: { message?: string } } };
       toast.error('Error', err?.response?.data?.message || 'Failed to archive curriculum.');
     }
@@ -235,6 +244,7 @@ export function useCurriculum() {
     isLoading,
     userRole,
     canManageCurriculum,
+    programs,
     statusFilter,
     setStatusFilter,
     departmentFilter,

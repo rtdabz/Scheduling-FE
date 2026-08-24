@@ -75,6 +75,8 @@ const buildActionText = (notification: SystemNotification): string => {
     : 'the schedule';
 
   switch (notification.type) {
+    case 'incoming_cross_department_course':
+      return `${notification.message} Open Incoming Cross-Department Courses to assign instructors and schedule it.`;
     case 'schedule_submitted':
       return `${actor} submitted ${departmentName} for ${term}. ${scheduleText} sent for Dean review.`;
     case 'schedule_withdrawn':
@@ -156,6 +158,7 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
     timestamp: formatTimestamp(notification.created_at),
     remarks: notification.remarks ?? undefined,
     isUnread: notification.read_at === null || notification.read_at === undefined,
+    href: typeof notification.metadata?.link === 'string' ? notification.metadata.link : undefined,
   })), [notifications]);
 
   return {

@@ -6,6 +6,7 @@ import {
   DoorOpen,
   FileBarChart,
   ClipboardList,
+  History,
   Users,
   Settings,
   Building2,
@@ -48,7 +49,7 @@ export const vpaaNav: NavSection[] = [
       { label: 'Activity Log', path: '/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
       { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
-      { label: 'Dept. Course Assignments', path: '/department-course-assignments', icon: BookOpen, id: 'sidebar-course-assignments' },
+      { label: 'Schedule History', path: '/schedule-history', icon: History, id: 'sidebar-schedule-history' },
       { label: 'Settings', path: '/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

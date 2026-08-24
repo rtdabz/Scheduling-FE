@@ -1,16 +1,12 @@
-import type { ComponentType, FC } from 'react';
-import VpaaDashboardPage from './vpaa/VpaaDashboardPage';
-import DeanDashboardPage from './dean/DeanDashboardPage';
-import ProgramHeadDashboardPage from './program_head/ProgramHeadDashboardPage';
-import SecretaryDashboardPage from './secretary/SecretaryDashboardPage';
+import { lazy, Suspense, type FC } from 'react';
 
 export type UserRole = 'vpaa' | 'dean' | 'program_head' | 'secretary';
 
-const DashboardMap: Record<UserRole, ComponentType> = {
-  vpaa: VpaaDashboardPage,
-  dean: DeanDashboardPage,
-  program_head: ProgramHeadDashboardPage,
-  secretary: SecretaryDashboardPage,
+const DashboardMap = {
+  vpaa: lazy(() => import('./vpaa/VpaaDashboardPage')),
+  dean: lazy(() => import('./dean/DeanDashboardPage')),
+  program_head: lazy(() => import('./program_head/ProgramHeadDashboardPage')),
+  secretary: lazy(() => import('./secretary/SecretaryDashboardPage')),
 };
 
 interface DashboardProps {
@@ -26,7 +22,11 @@ const Dashboard: FC<DashboardProps> = ({ role }) => {
 
   if (!Component) return <h2>Invalid Role</h2>;
 
-  return <Component />;
+  return (
+    <Suspense fallback={<div className="min-h-[240px] animate-pulse rounded-xl bg-slate-100" />}>
+      <Component />
+    </Suspense>
+  );
 };
 
 export default Dashboard;

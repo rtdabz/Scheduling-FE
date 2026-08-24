@@ -13,6 +13,7 @@ export type ScheduleStatus =
   | "completed"
   | "submitted"
   | "approved_by_dean"
+  | "conditionally_approved"
   | "rejected_by_dean"
   | "approved"
   | "faculty_assignment"
@@ -57,9 +58,18 @@ export interface Course {
   category: CourseCategory;
   semester: Semester;
   departmentId: number | null;
+  /**
+   * College whose instructors may teach this course, mirroring the rule engine's
+   * `SchedulingPolicy::assignedTeachingDepartmentId`. A secretary may delegate a
+   * non-major to another college — IT owns GEC 101, CAS teaches it — and that
+   * override wins. With no override the owner teaches its own GEC subjects, so
+   * this is null for a major (own-department and program rules cover those) and
+   * for a shared minor open to every department.
+   */
   teachingDepartmentId?: number | null;
   teachingDepartmentCode?: string;
   teachingDepartmentName?: string;
+  teachingProgramId?: number | null;
   /**
    * Program (major) that owns this course. When set on a major, only instructors
    * of that program may be assigned to it.
@@ -100,11 +110,29 @@ export interface FacultyAvailability {
   end_time: string;
 }
 
+/**
+ * Administrative post a faculty profile holds, mirrored from its linked user
+ * account by UserFacultyProfileService. Null for a plain instructor.
+ */
+export type FacultyAdministrativePost = "dean" | "secretary" | "program_head" | "vpaa";
+
+const ADMINISTRATIVE_POSTS: readonly FacultyAdministrativePost[] = ["dean", "secretary", "program_head", "vpaa"];
+
+/** Narrows the raw `administrative_role` column, which is a free string server-side. */
+export const normalizeAdministrativePost = (
+  value: string | null | undefined,
+): FacultyAdministrativePost | null => {
+  const post = (value ?? "").toLowerCase().trim();
+  return ADMINISTRATIVE_POSTS.find((known) => known === post) ?? null;
+};
+
 export interface Faculty {
   id: string;
   name: string;
   profilePicture?: string | null;
   employmentType?: "full-time" | "part-time";
+  /** Printed as designation 1 on the Individual Faculty Load Sheet. */
+  administrativeRole?: FacultyAdministrativePost | null;
   departmentId?: number;
   departmentCode?: string;
   departmentName?: string;
@@ -160,6 +188,7 @@ export interface ScheduleItem {
   mode: DeliveryMode;
   facultyName: string | null;
   facultyId: string | null;
+  facultyAssignmentDone?: boolean;
   status: ScheduleStatus;
   dayIndex: number;
   startSlot: number;
@@ -240,18 +269,27 @@ export interface ApiCourseRecord {
   subject_category?: CourseCategory;
   semester: Semester;
   department_id: number | null;
+  /** Eager-loaded owner, used to label the college that teaches a GEC subject. */
+  department?: {
+    department_code?: string;
+    department_name?: string;
+  } | null;
+  /**
+   * College another one delegated this course to, when it is not the owner.
+   * Null on the common course — see `Course.teachingDepartmentId` for the
+   * fallback the mapper applies then.
+   */
+  teaching_department_id?: number | null;
+  teaching_department?: {
+    department_code?: string;
+    department_name?: string;
+  } | null;
+  teaching_program_id?: number | null;
   program_id?: number | null;
   program?: {
     id?: number | string;
     code?: string;
     name?: string;
-  } | null;
-  teaching_assignment?: {
-    department_id?: number | null;
-    department?: {
-      department_code?: string;
-      department_name?: string;
-    } | null;
   } | null;
   categories?: { id: number | string; name: string; description?: string | null }[];
   year_level: string | number;
@@ -276,6 +314,7 @@ export interface ApiFacultyRecord {
   first_name: string;
   last_name: string;
   employment_type?: "full-time" | "part-time";
+  administrative_role?: FacultyAdministrativePost | string | null;
   max_units?: number | string | null;
   // The load fields /initial-data adds via FacultyLoadService::get(); raw
   // columns arrive as strings from some drivers, hence the union.
@@ -321,6 +360,7 @@ export interface ApiScheduleRecord {
   section_id: number | string;
   room_id: number | string | null;
   faculty_id?: number | string | null;
+  faculty_assignment_done?: boolean | number;
   day: string;
   start_time: string;
   end_time: string;
@@ -361,6 +401,7 @@ export interface ApiScheduleRecord {
     section_name?: string;
   } | null;
   faculty?: {
+    id?: number | string;
     first_name?: string;
     last_name?: string;
   } | null;

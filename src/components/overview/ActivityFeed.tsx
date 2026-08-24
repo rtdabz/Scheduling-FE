@@ -9,6 +9,7 @@ export interface ActivityFeedItem {
   timestamp: string;
   remarks?: string;
   isUnread?: boolean;
+  href?: string;
 }
 
 interface ActivityFeedProps {

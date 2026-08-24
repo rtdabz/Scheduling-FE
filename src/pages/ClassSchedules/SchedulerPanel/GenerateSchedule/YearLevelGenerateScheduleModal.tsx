@@ -23,7 +23,6 @@ import {
   Layers,
   LayoutGrid,
   List,
-  Loader2,
   Play,
   Plus,
   RefreshCw,
@@ -733,9 +732,9 @@ function ScopeRulesStep({
 }) {
   const { toast } = useToast();
   const [savingSettings, setSavingSettings] = useState(false);
-  const [selectedForcedCourseId, setSelectedForcedCourseId] = useState("");
+  const [selectedForcedCourseIds, setSelectedForcedCourseIds] = useState<number[]>([]);
   const [selectedForcedDay, setSelectedForcedDay] = useState("Saturday");
-  const [selectedFieldCourseCode, setSelectedFieldCourseCode] = useState("");
+  const [selectedFieldCourseCodes, setSelectedFieldCourseCodes] = useState<string[]>([]);
 
   const forcedDayRules = settings?.forced_day_rules ?? [];
   const forcedDayCourses = settings?.forced_day_courses ?? [];
@@ -745,12 +744,10 @@ function ScopeRulesStep({
   const fieldCourseMap = new Map(fieldCourseOptions.map((course) => [course.code, course]));
   const availableForcedDayCourses = forcedDayCourses.filter((course) => !forcedDayRules.some((rule) => rule.course_id === course.id));
   const availableFieldCourses = fieldCourseOptions.filter((course) => !fieldCourseCodes.includes(course.code));
-  const effectiveForcedCourseId = availableForcedDayCourses.some((course) => String(course.id) === selectedForcedCourseId)
-    ? selectedForcedCourseId
-    : String(availableForcedDayCourses[0]?.id ?? "");
-  const effectiveFieldCourseCode = availableFieldCourses.some((course) => course.code === selectedFieldCourseCode)
-    ? selectedFieldCourseCode
-    : (availableFieldCourses[0]?.code ?? "");
+  const availableForcedCourseIds = new Set(availableForcedDayCourses.map((course) => course.id));
+  const availableFieldCourseCodes = new Set(availableFieldCourses.map((course) => course.code));
+  const effectiveForcedCourseIds = selectedForcedCourseIds.filter((id) => availableForcedCourseIds.has(id));
+  const effectiveFieldCourseCodes = selectedFieldCourseCodes.filter((code) => availableFieldCourseCodes.has(code));
 
   const patchSettings = async (patch: Partial<SettingsResponse>) => {
     if (!sectionId || !settings) return;
@@ -769,11 +766,11 @@ function ScopeRulesStep({
   };
 
   const addForcedDayRule = () => {
-    const courseId = Number(effectiveForcedCourseId);
-    if (!Number.isFinite(courseId) || courseId <= 0) return;
+    if (effectiveForcedCourseIds.length === 0) return;
     void patchSettings({
-      forced_day_rules: [...forcedDayRules, { course_id: courseId, day: selectedForcedDay }],
+      forced_day_rules: [...forcedDayRules, ...effectiveForcedCourseIds.map((courseId) => ({ course_id: courseId, day: selectedForcedDay }))],
     });
+    setSelectedForcedCourseIds([]);
   };
 
   const removeForcedDayRule = (courseId: number) => {
@@ -783,10 +780,11 @@ function ScopeRulesStep({
   };
 
   const addFieldCourseRule = () => {
-    if (!effectiveFieldCourseCode) return;
+    if (effectiveFieldCourseCodes.length === 0) return;
     void patchSettings({
-      field_course_codes: [...fieldCourseCodes, effectiveFieldCourseCode],
+      field_course_codes: [...fieldCourseCodes, ...effectiveFieldCourseCodes],
     });
+    setSelectedFieldCourseCodes([]);
   };
 
   const removeFieldCourseRule = (courseCode: string) => {
@@ -865,7 +863,7 @@ function ScopeRulesStep({
           <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-600">{activeRules.length} active rules</span>
         </div>
         {loadingSettings ? (
-          <div className="m-3 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Loading scheduling rules</div>
+          <div className="m-3 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-600"><LoadingSpinner className="h-4 w-4" /> Loading scheduling rules</div>
         ) : (
           <div className="grid gap-4 p-3 2xl:grid-cols-2">
               <SchedulingRuleEditor
@@ -885,14 +883,17 @@ function ScopeRulesStep({
                 disabled={actionsDisabled}
                 saving={savingSettings}
               >
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_128px_78px]">
-                  <select value={effectiveForcedCourseId} disabled={actionsDisabled || savingSettings || availableForcedDayCourses.length === 0} onChange={(event) => setSelectedForcedCourseId(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 disabled:bg-slate-100">
-                    {availableForcedDayCourses.length === 0 ? <option value="">All subjects already configured</option> : availableForcedDayCourses.map((course) => <option key={course.id} value={course.id}>{course.code} - {course.name}</option>)}
-                  </select>
-                  <select value={selectedForcedDay} disabled={actionsDisabled || savingSettings} onChange={(event) => setSelectedForcedDay(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 disabled:bg-slate-100">
-                    {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
-                  </select>
-                  <button type="button" disabled={actionsDisabled || savingSettings || !effectiveForcedCourseId} onClick={addForcedDayRule} className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" /> Add</button>
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                    {availableForcedDayCourses.length === 0 ? <p className="px-2 py-4 text-center text-xs font-semibold text-slate-400">All subjects already configured</p> : availableForcedDayCourses.map((course) => {
+                      const checked = effectiveForcedCourseIds.includes(course.id);
+                      return <label key={course.id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-white"><input type="checkbox" checked={checked} disabled={actionsDisabled || savingSettings} onChange={() => setSelectedForcedCourseIds((current) => checked ? current.filter((id) => id !== course.id) : [...current, course.id])} className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-[#4e0a10]"/><span className="min-w-0"><span className="block text-xs font-black text-slate-800">{course.code}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{course.name}</span></span></label>;
+                    })}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
+                    <select value={selectedForcedDay} disabled={actionsDisabled || savingSettings} onChange={(event) => setSelectedForcedDay(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 disabled:bg-slate-100">{DAYS.map((day) => <option key={day} value={day}>{day}</option>)}</select>
+                    <button type="button" disabled={actionsDisabled || savingSettings || effectiveForcedCourseIds.length === 0} onClick={addForcedDayRule} className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" /> Add ({effectiveForcedCourseIds.length})</button>
+                  </div>
                 </div>
               </SchedulingRuleEditor>
 
@@ -913,11 +914,14 @@ function ScopeRulesStep({
                 disabled={actionsDisabled}
                 saving={savingSettings}
               >
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_78px]">
-                  <select value={effectiveFieldCourseCode} disabled={actionsDisabled || savingSettings || availableFieldCourses.length === 0} onChange={(event) => setSelectedFieldCourseCode(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 disabled:bg-slate-100">
-                    {availableFieldCourses.length === 0 ? <option value="">All available subjects configured</option> : availableFieldCourses.map((course) => <option key={course.code} value={course.code}>{course.code} - {course.name}</option>)}
-                  </select>
-                  <button type="button" disabled={actionsDisabled || savingSettings || !effectiveFieldCourseCode} onClick={addFieldCourseRule} className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" /> Add</button>
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                    {availableFieldCourses.length === 0 ? <p className="px-2 py-4 text-center text-xs font-semibold text-slate-400">All available subjects configured</p> : availableFieldCourses.map((course) => {
+                      const checked = effectiveFieldCourseCodes.includes(course.code);
+                      return <label key={course.code} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-white"><input type="checkbox" checked={checked} disabled={actionsDisabled || savingSettings} onChange={() => setSelectedFieldCourseCodes((current) => checked ? current.filter((code) => code !== course.code) : [...current, course.code])} className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-[#4e0a10]"/><span className="min-w-0"><span className="block text-xs font-black text-slate-800">{course.code}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{course.name}</span></span></label>;
+                    })}
+                  </div>
+                  <button type="button" disabled={actionsDisabled || savingSettings || effectiveFieldCourseCodes.length === 0} onClick={addFieldCourseRule} className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-black text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" /> Add Selected ({effectiveFieldCourseCodes.length})</button>
                 </div>
               </SchedulingRuleEditor>
           </div>
@@ -1082,6 +1086,13 @@ function PreferencesStep({
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#4e0a10]/10 text-[#4e0a10]"
+                        title="Course"
+                        aria-hidden="true"
+                      >
+                        <BookOpen className="h-4 w-4" />
+                      </span>
                       <span className="text-sm font-black text-slate-950">{course.code}</span>
                       {config.locked && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-200">Locked</span>}
                     </div>
@@ -1122,7 +1133,6 @@ type GecPatternReservation = {
   pattern: FixedGecSplitPattern;
   requiredSlots: number;
 };
-type CourseConfigurationTab = "scheduling" | "sessions" | "special";
 
 function CourseInlineConfiguration({
   course,
@@ -1142,8 +1152,12 @@ function CourseInlineConfiguration({
   const lectureLabSplit = config.splitCourseIds.includes(course.id);
   const gecSplit = config.gecSplitCourseIds.includes(course.id);
   const gecPattern = config.gecSplitPatternsByCourseId[course.id] ?? "MW";
+  const gecPatternsFull = Boolean(patternAvailability?.MW.full && patternAvailability?.TTh.full);
   const toggleLectureLabSplit = () => updateConfig({ splitCourseIds: toggle(config.splitCourseIds, course.id) });
-  const toggleGecSplit = () => updateConfig({ gecSplitCourseIds: toggle(config.gecSplitCourseIds, course.id) });
+  const toggleGecSplit = () => {
+    if (gecPatternsFull) return;
+    updateConfig({ gecSplitCourseIds: toggle(config.gecSplitCourseIds, course.id) });
+  };
 
   return (
     <div className="mt-2 grid gap-2 rounded-lg border border-slate-100 bg-slate-50/70 p-2">
@@ -1172,17 +1186,28 @@ function CourseInlineConfiguration({
               tabIndex={0}
               onClick={toggleGecSplit}
               onKeyDown={(event) => {
+                if (gecPatternsFull) return;
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   toggleGecSplit();
                 }
               }}
-              className="inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100"
+              aria-disabled={gecPatternsFull}
+              className={`inline-flex min-h-9 select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-bold transition ${
+                gecPatternsFull
+                  ? "cursor-not-allowed text-slate-400 opacity-70"
+                  : "cursor-pointer text-slate-600 hover:bg-slate-100"
+              }`}
               aria-pressed={gecSplit}
             >
-              <input type="checkbox" checked={gecSplit} readOnly className="h-4 w-4 rounded border-slate-300 text-[#4e0a10]" />
+              <input type="checkbox" checked={gecSplit} disabled={gecPatternsFull} readOnly className="h-4 w-4 rounded border-slate-300 text-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-60" />
               <span>Split GEC sessions</span>
             </div>
+            {gecPatternsFull && (
+              <span className="text-[11px] font-bold text-rose-600">
+                All meetings day MW and TTh are full
+              </span>
+            )}
             {gecSplit && (
               <label className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-500" onClick={(event) => event.stopPropagation()}>
                 Meeting Days
@@ -1206,192 +1231,6 @@ function CourseInlineConfiguration({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function CourseConfigurationDrawer({
-  course,
-  config,
-  forcedDay,
-  patternAvailability,
-  updateConfig,
-  toggle,
-  onClose,
-}: {
-  course: Course;
-  config: SectionConfig;
-  forcedDay?: string;
-  patternAvailability?: GecPatternAvailability;
-  updateConfig: (change: Partial<SectionConfig>) => void;
-  toggle: (values: string[], id: string) => string[];
-  onClose: () => void;
-}) {
-  const [activeTab, setActiveTab] = useState<CourseConfigurationTab>("scheduling");
-  const preference = config.preferencesByCourseId[course.id] ?? "automatic";
-  const lectureLabSplit = config.splitCourseIds.includes(course.id);
-  const gecSplit = config.gecSplitCourseIds.includes(course.id);
-  const gecPattern = config.gecSplitPatternsByCourseId[course.id] ?? "MW";
-  const tabs: Array<{ id: CourseConfigurationTab; label: string }> = [
-    { id: "scheduling", label: "Scheduling" },
-    { id: "sessions", label: "Sessions" },
-    ...(isGec(course) ? [{ id: "special" as const, label: "Special Rules" }] : []),
-  ];
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-[70] flex justify-end bg-slate-950/45 backdrop-blur-[1px]"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="course-configuration-title"
-        className="flex h-full w-full max-w-[560px] flex-col bg-white shadow-2xl"
-      >
-        <header className="flex items-start justify-between gap-4 bg-[#4e0a10] px-5 py-4 text-white">
-          <div className="min-w-0">
-            <p className="text-xs font-black uppercase text-amber-300">Course Configuration</p>
-            <h3 id="course-configuration-title" className="mt-1 truncate text-lg font-black">{course.code}</h3>
-            <p className="mt-0.5 truncate text-sm font-semibold text-white/75">{course.name} · {courseHours(course)} hours</p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white" aria-label="Close course configuration">
-            <X className="h-5 w-5" />
-          </button>
-        </header>
-
-        <nav className="grid border-b border-slate-200 bg-slate-50 px-4 pt-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }} aria-label="Course configuration sections">
-          {tabs.map((tab) => (
-            <button
-              type="button"
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`border-b-2 px-2 py-2 text-xs font-black transition ${activeTab === tab.id ? "border-[#4e0a10] text-[#4e0a10]" : "border-transparent text-slate-500 hover:text-slate-800"}`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-          {activeTab === "scheduling" && (
-            <div>
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-black uppercase text-slate-500">Course Override</p>
-                <h4 className="mt-1 text-base font-black text-slate-950">Scheduling</h4>
-              </div>
-              <div className="grid gap-5 py-5">
-                <label className="text-xs font-black uppercase text-slate-500">
-                  Scheduling preference
-                  <select
-                    value={displayPreferenceValue(preference)}
-                    onChange={(event) => updateConfig({ preferencesByCourseId: { ...config.preferencesByCourseId, [course.id]: event.target.value as SchedulingPreference } })}
-                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-900"
-                  >
-                    {configurablePreferenceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                </label>
-                {forcedDay && (
-                  <div className="flex items-center justify-between gap-3 border-y border-slate-200 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <CalendarDays className="h-4 w-4 text-[#4e0a10]" />
-                      <span className="text-sm font-bold text-slate-700">Required day</span>
-                    </div>
-                    <span className="text-sm font-black text-slate-950">{forcedDay}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "sessions" && (
-            <div>
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-black uppercase text-slate-500">Session Components</p>
-                <h4 className="mt-1 text-base font-black text-slate-950">Lecture / Laboratory / Field</h4>
-              </div>
-              {course.labHours > 0 && (
-                <div className="border-b border-slate-200 py-4">
-                  <CheckboxLabel
-                    checked={lectureLabSplit}
-                    onChange={() => updateConfig({ splitCourseIds: toggle(config.splitCourseIds, course.id) })}
-                    label="Hybrid"
-                  />
-                </div>
-              )}
-              <div className="divide-y divide-slate-200">
-                {course.roomTypeRequired === "field" ? (
-                  <SessionComponentRow icon={<Users className="h-4 w-4" />} label="Field session" hours={courseHours(course)} />
-                ) : lectureLabSplit ? (
-                  <>
-                    <SessionComponentRow icon={<Clock3 className="h-4 w-4" />} label="Lecture session" hours={Number(course.lectureHours ?? 0)} />
-                    <SessionComponentRow icon={<FlaskConical className="h-4 w-4" />} label="Laboratory session" hours={Number(course.labHours ?? 0)} />
-                  </>
-                ) : (
-                  <SessionComponentRow icon={<Clock3 className="h-4 w-4" />} label={course.labHours > 0 ? "Combined session" : "Lecture session"} hours={courseHours(course)} />
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "special" && isGec(course) && (
-            <div>
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-black uppercase text-slate-500">Special Course Rules</p>
-                <h4 className="mt-1 text-base font-black text-slate-950">GEC Sessions</h4>
-              </div>
-              <div className="border-b border-slate-200 py-4">
-                <CheckboxLabel
-                  checked={gecSplit}
-                  onChange={() => updateConfig({ gecSplitCourseIds: toggle(config.gecSplitCourseIds, course.id) })}
-                  label="Split GEC sessions"
-                />
-              </div>
-              {gecSplit && (
-                <div className="grid gap-3 py-4">
-                  <label className="text-xs font-black uppercase text-slate-500">
-                    Meeting Days
-                    <select
-                      value={gecPattern}
-                      onChange={(event) => updateConfig({
-                        gecSplitPatternsByCourseId: {
-                          ...config.gecSplitPatternsByCourseId,
-                          [course.id]: event.target.value as GecSplitPattern,
-                        },
-                      })}
-                      className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-900"
-                    >
-                      <option value="MW" disabled={patternAvailability?.MW.full}>MW{patternAvailability?.MW.full ? " - full" : ""}</option>
-                      <option value="TTh" disabled={patternAvailability?.TTh.full}>TTh{patternAvailability?.TTh.full ? " - full" : ""}</option>
-                      {gecPattern === "auto" && <option value="auto" disabled>Generator picks the days</option>}
-                    </select>
-                  </label>
-                  <GecPatternCapacityNotice selectedPattern={gecPattern} availability={patternAvailability} />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <footer className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-3">
-          <button type="button" onClick={onClose} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-black text-white transition hover:brightness-110">
-            <Check className="h-4 w-4" />
-            Save changes
-          </button>
-        </footer>
-      </section>
     </div>
   );
 }
@@ -1735,108 +1574,6 @@ function RedesignedReviewStep({ activeTerm, sections, courses, configs, activeRu
   );
 }
 
-// Retained for compatibility with older saved wizard snapshots; the active flow uses RedesignedReviewStep.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function ReviewStep({ activeTerm, sections, courses, configs, activeRules, onEditScope, onEditPreferences }: { activeTerm: Term | null; sections: Section[]; courses: Course[]; configs: Record<string, SectionConfig>; activeRules: string[]; onEditScope: () => void; onEditPreferences: () => void }) {
-  const totalCourses = sections.reduce((sum, section) => sum + (configs[section.id]?.courseIds.length ?? 0), 0);
-  const splitCount = sections.reduce((sum, section) => sum + (configs[section.id]?.splitCourseIds.length ?? 0) + (configs[section.id]?.gecSplitCourseIds.length ?? 0), 0);
-  const totalSessions = sections.reduce((sum, section) => {
-    const config = configs[section.id];
-    const selectedCourses = config?.courseIds.length ?? 0;
-    return sum + selectedCourses + (config?.splitCourseIds.length ?? 0) + (config?.gecSplitCourseIds.length ?? 0);
-  }, 0);
-  const reviewRows = sections.map((section) => {
-    const config = configs[section.id];
-    const selectedCourses = config?.courseIds.length ?? 0;
-    const lectureLabSplits = config?.splitCourseIds.length ?? 0;
-    const gecSplits = config?.gecSplitCourseIds.length ?? 0;
-    return {
-      section,
-      selectedCourses,
-      lectureLabSplits,
-      gecSplits,
-      estimatedSessions: selectedCourses + lectureLabSplits + gecSplits,
-    };
-  });
-
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-2.5">
-      <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-black uppercase text-[#4e0a10]">Ready for final check</p>
-              <h3 className="text-base font-black text-slate-950">Review the year-level setup</h3>
-              <p className="mt-0.5 text-xs font-semibold text-slate-500">
-                {formatTerm(activeTerm)} • {sections.length} sections • {totalCourses || courses.length * sections.length} courses • {totalSessions} estimated sessions • {activeRules.length} active rules
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={onEditScope} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"><Edit3 className="h-3.5 w-3.5" /> Edit Scope</button>
-            <button type="button" onClick={onEditPreferences} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"><Edit3 className="h-3.5 w-3.5" /> Edit Preferences</button>
-          </div>
-        </div>
-      </section>
-
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <div className="px-3 py-2">
-            <h4 className="text-sm font-black text-slate-950">Section Readiness</h4>
-            <p className="text-xs font-semibold text-slate-500">All listed sections will be included when you generate the preview.</p>
-          </div>
-          <span className="mr-3 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 ring-1 ring-emerald-200">
-            {sections.length} sections locked in
-          </span>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto border-t border-slate-200">
-          <table className="min-w-full table-fixed">
-            <thead className="sticky top-0 z-10 bg-slate-50">
-              <tr>
-                <th className="px-3 py-1.5 text-left text-[11px] font-black uppercase text-slate-500">Section</th>
-                <th className="px-3 py-1.5 text-left text-[11px] font-black uppercase text-slate-500">Courses</th>
-                <th className="px-3 py-1.5 text-left text-[11px] font-black uppercase text-slate-500">Hybrid Courses</th>
-                <th className="px-3 py-1.5 text-left text-[11px] font-black uppercase text-slate-500">GEC Splits</th>
-                <th className="px-3 py-1.5 text-left text-[11px] font-black uppercase text-slate-500">Sessions</th>
-                <th className="px-3 py-1.5 text-left text-[11px] font-black uppercase text-slate-500">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reviewRows.map((row) => (
-                <tr key={row.section.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-sm font-black text-slate-950">{row.section.name}</td>
-                  <td className="px-3 py-2 text-sm font-semibold text-slate-700">{row.selectedCourses}</td>
-                  <td className="px-3 py-2 text-sm font-semibold text-slate-700">{row.lectureLabSplits}</td>
-                  <td className="px-3 py-2 text-sm font-semibold text-slate-700">{row.gecSplits}</td>
-                  <td className="px-3 py-2 text-sm font-semibold text-slate-700">{row.estimatedSessions}</td>
-                  <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-700 ring-1 ring-emerald-200">
-                      <Check className="h-3 w-3" /> Ready
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-950">
-        <div className="flex items-start gap-2">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div>
-            <p className="font-black">Nothing is saved yet.</p>
-            <p className="mt-0.5 text-xs leading-5 text-amber-900">
-              Click <span className="font-black">Next</span> to generate a preview. You can review the timetable first, then choose whether to save it as draft schedules.
-              {splitCount > 0 ? ` ${splitCount} split setting${splitCount === 1 ? "" : "s"} will be used.` : " No courses are currently marked for splitting."}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function GenerateStep({
   preview,
   sections,
@@ -1877,7 +1614,7 @@ function GenerateStep({
   const [activeTimelineIndex, setActiveTimelineIndex] = useState(0);
   const [selectedPreviewSectionId, setSelectedPreviewSectionId] = useState("");
   const [previewView, setPreviewView] = useState<"list" | "grid">("list");
-  const timeline = ["Loading subjects", "Creating scheduling options", "Allocating rooms", "Checking conflicts"];
+  const timeline = ["Loading subjects", "Finding available time slots", "Finding available rooms", "Checking conflicts", "Finalizing timetable"];
   const sectionNameById = useMemo(() => new Map(sections.map((section) => [String(section.id), section.name])), [sections]);
   const courseById = useMemo(() => new Map(courses.map((course) => [String(course.id), course])), [courses]);
   const groupedPreviewRows = useMemo(
@@ -1900,14 +1637,14 @@ function GenerateStep({
 
   useEffect(() => {
     if (!generating) {
-      setActiveTimelineIndex(hasPreview ? timeline.length : 0);
+      setActiveTimelineIndex(0);
       return;
     }
 
     setActiveTimelineIndex(0);
     const timer = window.setInterval(() => {
-      setActiveTimelineIndex((current) => Math.min(current + 1, timeline.length - 1));
-    }, 1100);
+      setActiveTimelineIndex((current) => (current + 1) % timeline.length);
+    }, 1800);
 
     return () => window.clearInterval(timer);
   }, [generating, hasPreview, timeline.length]);
@@ -1971,7 +1708,7 @@ function GenerateStep({
             <div><h4 className="text-xl font-black text-slate-950">Generated Schedule Preview</h4><p className="mt-1 text-xs font-semibold text-slate-500">Review the generated timetable, switch between sections, and export or regenerate if needed.</p></div>
             <div className="flex gap-2">
               <button type="button" onClick={apply} disabled={applying} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
-                {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {applying ? <LoadingSpinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
                 View Timetable
               </button>
               <button type="button" onClick={exportSchedule} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">
@@ -2021,9 +1758,8 @@ function PreviewSummaryMetric({ icon: Icon, label, value, tone }: { icon: typeof
 }
 
 function GenerationTimeline({ steps, activeIndex, running, activeTerm, sections, courseCount, roomCount, activeRuleCount, onGenerate }: { steps: string[]; activeIndex: number; running: boolean; activeTerm: Term | null; sections: Section[]; courseCount: number; roomCount: number; activeRuleCount: number; onGenerate: () => void }) {
-  const progress = running ? Math.max(12, Math.round(((activeIndex + 1) / steps.length) * 100)) : 100;
-  const descriptions = ["Prepare and validate subject data", "Build feasible time-slot combinations", "Assign rooms based on availability", "Check the timetable against active rules"];
-  const stepIcons = [BookOpen, SlidersHorizontal, Building2, ShieldCheck];
+  const descriptions = ["Prepare and validate subject data", "Build feasible time-slot combinations", "Match rooms to course requirements", "Check the timetable against active rules", "Prepare the preview for your review"];
+  const stepIcons = [BookOpen, SlidersHorizontal, Building2, ShieldCheck, Sparkles];
   const semesterLabel = activeTerm?.semester === "1st" ? "1st Semester" : activeTerm?.semester === "2nd" ? "2nd Semester" : "Summer";
   const yearLevel = Number(sections[0]?.yearLevel ?? 1);
 
@@ -2035,8 +1771,8 @@ function GenerationTimeline({ steps, activeIndex, running, activeTerm, sections,
         <div className="flex w-full flex-wrap gap-2.5 pt-1 text-xs font-black text-slate-800"><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><CalendarDays className="h-4 w-4 text-[#7a121c]" /> AY {activeTerm?.academic_year ?? "Not selected"}</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><BookOpen className="h-4 w-4 text-[#7a121c]" /> {semesterLabel}</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Users className="h-4 w-4 text-[#7a121c]" /> BSIT Year {yearLevel}</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Layers className="h-4 w-4 text-[#7a121c]" /> {sections.length} Sections</span><span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><BookOpen className="h-4 w-4 text-[#7a121c]" /> {courseCount} Courses</span></div>
       </section>
       <div className="mt-2 grid min-h-0 flex-1 gap-2 xl:grid-cols-[0.78fr_1.22fr]">
-        <section className="min-h-0 rounded-xl border border-slate-200 p-3"><h4 className="text-base font-black text-slate-950">Generation Steps</h4><div className="mt-2 space-y-0.5">{steps.map((step, index) => { const Icon = stepIcons[index] ?? CheckCircle2; const complete = running ? index < activeIndex : true; const current = running && index === activeIndex; return <div key={step} className="grid grid-cols-[2rem_2.25rem_1fr_auto] items-center gap-2 py-1.5"><span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black ${complete ? "border-emerald-300 bg-emerald-50 text-emerald-700" : current ? "border-[#7a121c] bg-[#7a121c] text-white" : "border-slate-200 text-slate-400"}`}>{index + 1}</span><span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-700"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-xs font-black text-slate-900">{step}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{descriptions[index]}</span></span>{current ? <Clock3 className="h-4 w-4 text-amber-600" /> : complete ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <span className="h-4 w-4" />}</div>; })}</div></section>
-        <section className="flex min-h-0 flex-col rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-black ${running ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{running ? <Clock3 className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}{running ? "Processing" : "Conflict-free"}</span></div><div className="flex flex-1 flex-col items-center justify-center py-3 text-center"><span className={`flex h-16 w-16 items-center justify-center rounded-full border ${running ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-600"}`}>{running ? <Clock3 className="h-8 w-8" /> : <Check className="h-9 w-9" strokeWidth={2.5} />}</span><h4 className="mt-2 text-xl font-black text-slate-950">{running ? steps[activeIndex] : "Ready to generate"}</h4><p className="mt-1 max-w-lg text-xs font-semibold leading-5 text-slate-600">{running ? "The scheduler is building and validating the timetable preview." : "All checks are complete and no blocking conflicts were detected. You can now generate the preview timetable."}</p></div><div className="flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#7a121c] transition-all duration-500" style={{ width: `${progress}%` }} /></div><span className="text-xs font-black text-slate-600">{progress}%</span></div><div className="mt-3 grid grid-cols-3 gap-2"><GenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><GenerationMetric icon={Building2} label="Rooms Available" value={roomCount} tone="emerald" /><GenerationMetric icon={ShieldCheck} label="Active Rules" value={activeRuleCount} tone="violet" /></div></section>
+        <section className="min-h-0 rounded-xl border border-slate-200 p-3"><h4 className="text-base font-black text-slate-950">Generation Steps</h4><div className="mt-2 space-y-0.5">{steps.map((step, index) => { const Icon = stepIcons[index] ?? CheckCircle2; const complete = !running; const current = running && index === activeIndex; return <div key={step} className="grid grid-cols-[2rem_2.25rem_1fr_auto] items-center gap-2 py-1.5"><span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black ${complete ? "border-emerald-300 bg-emerald-50 text-emerald-700" : current ? "border-[#7a121c] bg-[#7a121c] text-white" : "border-slate-200 text-slate-400"}`}>{index + 1}</span><span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-700"><Icon className="h-4 w-4" /></span><span className="min-w-0"><span className="block text-xs font-black text-slate-900">{step}</span><span className="block truncate text-[11px] font-semibold text-slate-500">{descriptions[index]}</span></span>{current ? <span className="h-4 w-4" aria-hidden="true" /> : complete ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <span className="h-4 w-4" />}</div>; })}</div></section>
+        <section className="flex min-h-0 flex-col rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-black ${running ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{running ? "Processing" : "Ready"}</span></div><div className="flex flex-1 flex-col items-center justify-center py-3 text-center"><span className="flex h-16 w-16 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700">{running ? <LoadingSpinner size={48} label="Generating" /> : <Clock3 className="h-8 w-8" />}</span><h4 className="mt-2 text-xl font-black text-slate-950">{running ? steps[activeIndex] : "Ready to generate"}</h4><p className="mt-1 max-w-lg text-xs font-semibold leading-5 text-slate-600">{running ? descriptions[activeIndex] : "Start generation when you are ready. The status will continue updating until the timetable is ready."}</p></div><div className="flex items-center gap-3"><div className="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-100">{running && <div className="absolute h-full w-1/3 rounded-full bg-[#7a121c] animate-indeterminate" />}</div><span className="text-xs font-black text-slate-600">{running ? "Working..." : "Ready"}</span></div><div className="mt-3 grid grid-cols-3 gap-2"><GenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><GenerationMetric icon={Building2} label="Rooms Available" value={roomCount} tone="emerald" /><GenerationMetric icon={ShieldCheck} label="Active Rules" value={activeRuleCount} tone="violet" /></div></section>
       </div>
       <section className="mt-2 shrink-0 rounded-xl border border-slate-200 px-3 py-2.5"><div className="flex flex-wrap items-center gap-x-5 gap-y-2"><h4 className="mr-1 text-sm font-black text-slate-950">What happens next</h4><GenerationNextStep icon={CalendarDays} number={1} title="Generate preview" text="Create a timetable preview." /><GenerationNextStep icon={List} number={2} title="Review" text="Check rooms and conflicts." /><GenerationNextStep icon={Download} number={3} title="Save as draft" text="Apply when satisfied." /></div></section>
     </div>
@@ -2050,35 +1786,6 @@ function GenerationMetric({ icon: Icon, label, value, tone }: { icon: typeof Boo
 
 function GenerationNextStep({ icon: Icon, number, title, text }: { icon: typeof BookOpen; number: number; title: string; text: string }) {
   return <div className="flex items-start gap-3 md:border-r md:border-slate-200 md:pr-3 last:border-r-0"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#7a121c] text-[#7a121c]"><Icon className="h-5 w-5" /></span><span><span className="text-xs font-black text-slate-900">{number}. {title}</span><span className="mt-1 block text-[11px] font-semibold leading-5 text-slate-600">{text}</span></span></div>;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyGenerationTimeline({ steps, activeIndex, running }: { steps: string[]; activeIndex: number; running: boolean }) {
-  return (
-    <div className="mt-3 flex min-h-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <div className="flex flex-1 flex-col items-center justify-center text-center">
-        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200">
-          {running ? <Loader2 className="h-6 w-6 animate-spin text-[#4e0a10]" /> : <Play className="h-5 w-5 text-[#4e0a10]" />}
-        </div>
-        <p className="mt-2 text-xs font-black uppercase text-[#4e0a10]">Generation Status</p>
-        <h4 className="mt-0.5 text-base font-black text-slate-950">{running ? steps[activeIndex] : "Waiting to start"}</h4>
-        <p className="mt-0.5 max-w-xl text-xs font-semibold leading-relaxed text-slate-500">
-          {running ? "The scheduler is preparing the timetable. This may take a few moments." : "Start generation to run the scheduling sequence."}
-        </p>
-        <div className="mt-3 flex flex-wrap justify-center gap-2">
-          {steps.map((step, index) => {
-            const complete = running && index < activeIndex;
-            const current = running && index === activeIndex;
-            return (
-              <span key={step} className={`rounded-full px-2.5 py-0.5 text-xs font-black ${complete ? "bg-emerald-100 text-emerald-700" : current ? "bg-[#4e0a10] text-white" : "bg-white text-slate-500 ring-1 ring-slate-200"}`}>
-                {complete ? "✓ " : current ? "● " : "○ "}{step}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function SchedulePreviewList({ rows }: { rows: GroupedPreviewRow[] }) {
@@ -2385,7 +2092,7 @@ function formatGroupedRooms(rows: ApiScheduleRecord[], roomCodeById: Map<string,
     if (mode === "online") return "Online";
     if (mode === "field") return getPreviewRoomCode(row, roomCodeById) ?? "Field";
 
-    return getPreviewRoomCode(row, roomCodeById) ?? "Unassigned";
+    return getPreviewRoomCode(row, roomCodeById) ?? "Room TBA";
   });
 
   return Array.from(new Set(labels)).join(" / ");
@@ -2427,3 +2134,4 @@ function fromSchedulingPreference(value: SchedulingPreference): TimeBlockOption 
   if (value === "morning" || value === "afternoon" || value === "flexible") return value;
   return "flexible";
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

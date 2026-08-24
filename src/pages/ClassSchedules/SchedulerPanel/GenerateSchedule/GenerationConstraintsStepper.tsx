@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  Loader2,
   Plus,
   Search,
   Sun,
@@ -275,7 +274,7 @@ export default function GenerationConstraintsStepper({
         {isLoading ? (
           <div className="flex flex-1 items-center justify-center border border-slate-200 bg-white shadow-sm" style={{ borderRadius: 8 }}>
             <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
-              <Loader2 className="h-5 w-5 animate-spin text-[#4e0a10]" />
+              <LoadingSpinner className="h-5 w-5 text-[#4e0a10]" />
               Loading semester constraints
             </div>
           </div>
@@ -459,7 +458,7 @@ export default function GenerationConstraintsStepper({
                           className="inline-flex h-9 w-full items-center justify-center gap-2 bg-[#4e0a10] px-3 text-xs font-bold text-white hover:bg-[#6b0e17] disabled:cursor-not-allowed disabled:opacity-60"
                           style={{ borderRadius: 8 }}
                         >
-                          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          {isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                           Add
                         </button>
                         </div>
@@ -510,7 +509,7 @@ export default function GenerationConstraintsStepper({
                           className="inline-flex h-9 items-center justify-center gap-2 bg-[#4e0a10] px-3 text-xs font-bold text-white hover:bg-[#6b0e17] disabled:cursor-not-allowed disabled:opacity-60"
                           style={{ borderRadius: 8 }}
                         >
-                          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          {isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                           Add
                         </button>
                         </div>
@@ -848,7 +847,7 @@ function ReviewStep({
           className="inline-flex h-10 items-center gap-2 bg-[#4e0a10] px-5 text-xs font-black text-white shadow-sm hover:bg-[#6b0e17] disabled:cursor-not-allowed disabled:opacity-60"
           style={{ borderRadius: 8 }}
         >
-          {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          {isGenerating ? <LoadingSpinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
           Generate Schedule
         </button>
       </div>
@@ -876,3 +875,4 @@ function formatTimeBlock(value: TimeBlockOption): string {
     ? "Flexible"
     : value.charAt(0).toUpperCase() + value.slice(1);
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

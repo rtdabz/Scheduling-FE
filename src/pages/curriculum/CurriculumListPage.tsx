@@ -33,6 +33,8 @@ import CurriculumFormModal from '../../components/curriculum/CurriculumFormModal
 import CurriculumCard from '../../components/curriculum/CurriculumCard';
 import CurriculumArchiveModal from '../../components/curriculum/CurriculumArchiveModal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import type { Curriculum } from '../../types/curriculum';
 
 const statusColors: Record<string, string> = {
@@ -60,6 +62,7 @@ export default function CurriculumListPage() {
     handleStatusChange,
     handleDuplicate,
     handleArchive,
+    programs,
   } = useCurriculum();
 
   // View mode
@@ -185,18 +188,6 @@ export default function CurriculumListPage() {
           const curriculumPath = userRole === 'vpaa' ? `/curriculum/${item.id}` : `/${userRole}/curriculum/${item.id}`;
           return (
             <div className="flex items-center gap-1.5 whitespace-nowrap">
-              {canManageCurriculum && (
-                <button
-                  type="button"
-                  onClick={() => navigate(curriculumPath)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-[#6b1018]"
-                  title="Open this curriculum and add a course"
-                  aria-label={`Add course to ${item.name}`}
-                >
-                  <Plus size={14} />
-                  Add Course
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => navigate(curriculumPath)}
@@ -283,19 +274,20 @@ export default function CurriculumListPage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
+  const curriculumGuideSteps = useMemo(() => [
+    { element: '#curriculum-actions', title: 'Start with the curriculum record', description: 'Create a curriculum or open the visual curriculum view when setting up a program structure.', side: 'bottom' as const },
+    { element: '#curriculum-filters', title: 'Find the right version', description: 'Search and filter by department and status to distinguish active, draft, and archived records.', side: 'bottom' as const },
+    { element: '#curriculum-list', title: 'Review curriculum structure', description: 'Open a curriculum to maintain its course structure. Publish the intended version before using teaching assignments.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps });
+
   return (
     <div className="w-full">
       {/* Top Banner */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-[#1A1410] font-display">Curriculum Management</h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Manage academic curriculum, course structures, and active program frameworks.
-          </p>
-        </div>
-
+      <div id="curriculum-actions" className="mb-6 flex flex-col items-end gap-4 sm:flex-row sm:items-center sm:justify-end">
         {canManageCurriculum && (
           <div className="flex items-center gap-2 shrink-0">
+            <WorkflowGuideButton guideId="curriculum" />
             <button
               onClick={() => navigate('/curriculum-view')}
               className="border border-[#C9952A] text-[#4e0a10] bg-amber-50/50 hover:bg-amber-100 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-bold text-xs shadow-sm cursor-pointer"
@@ -325,10 +317,11 @@ export default function CurriculumListPage() {
             </button>
           </div>
         )}
+        {!canManageCurriculum && <WorkflowGuideButton guideId="curriculum" />}
       </div>
 
       {/* Toolbar & Filters */}
-      <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+      <div id="curriculum-filters" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           {/* Search */}
           <div className="relative flex-1 max-w-md">
@@ -402,6 +395,7 @@ export default function CurriculumListPage() {
       </div>
 
       {/* Main Content Area */}
+      <div id="curriculum-list">
       {isLoading ? (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -505,6 +499,7 @@ export default function CurriculumListPage() {
           )}
         </div>
       )}
+      </div>
 
       {/* Curriculum Form Modal */}
       <CurriculumFormModal
@@ -512,6 +507,7 @@ export default function CurriculumListPage() {
         isEditMode={isEditMode}
         curriculum={editingCurriculum}
         onClose={() => setIsFormModalOpen(false)}
+        programs={programs.filter((program) => !editingCurriculum || program.department_id === editingCurriculum.department_id)}
         onSubmit={async (data) => {
           await handleCreateOrUpdate(data, editingCurriculum);
           setIsFormModalOpen(false);

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, X, Plus, Loader2 } from 'lucide-react';
+import { Search, X, Plus, } from 'lucide-react';
 
 export interface CourseOption {
   id: number;
@@ -195,7 +195,7 @@ export default function AddCourseForm({
             disabled={!selectedCourseId || isAdding}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-40 shadow-sm"
           >
-            {isAdding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            {isAdding ? <LoadingSpinner size={14} className="animate-spin" /> : <Plus size={14} />}
             Add Course
           </button>
           {onCancel && (
@@ -212,3 +212,4 @@ export default function AddCourseForm({
     </div>
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Layers3, Loader2, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
+import { BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Layers3, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Faculty, ScheduleItem, Subject } from "../types";
@@ -23,10 +23,13 @@ interface AutoAssignModalProps {
   subjects: Subject[];
   faculties: Faculty[];
   departmentId: number | null;
+  programId?: number | null;
   facultyActionSlotId: string | null;
   canManageScheduleFaculty: (schedule: ScheduleItem) => boolean;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   onAssign: (assignments: AssignmentBatch[]) => Promise<boolean>;
+  /** Cross-department assignment is restricted to the receiving department. */
+  allowExternalInstructors?: boolean;
 }
 
 interface SectionGroup {
@@ -146,13 +149,23 @@ export default function AutoAssignModal({
   onClose,
   schedules,
   subjects,
-  faculties,
+  faculties: providedFaculties,
   departmentId,
+  programId = null,
   facultyActionSlotId,
   canManageScheduleFaculty,
   checkFacultyConflict,
   onAssign,
+  allowExternalInstructors = true,
 }: AutoAssignModalProps) {
+  // The server scopes Program Heads too, but keep the modal fail-closed so a
+  // stale scheduler cache cannot expose another program's instructors.
+  const faculties = useMemo(
+    () => providedFaculties.filter((faculty) => (
+      programId === null || Number(faculty.programId ?? 0) === Number(programId)
+    )),
+    [programId, providedFaculties],
+  );
   const [step, setStep] = useState(1);
   const [facultyId, setFacultyId] = useState("");
   const [yearLevel, setYearLevel] = useState("1");
@@ -182,10 +195,19 @@ export default function AutoAssignModal({
           courseName: schedule.courseName,
           units: schedule.totalUnits,
           schedules: [schedule],
-          assignedFacultyId: schedule.facultyId,
+          assignedFacultyId: null,
         });
       });
-    return [...map.values()].sort((left, right) => left.courseCode.localeCompare(right.courseCode) || left.sectionName.localeCompare(right.sectionName));
+    return [...map.values()]
+      .map((group) => ({
+        ...group,
+        // A split class can have one meeting block saved before another. Keep it
+        // assignable until every block has an instructor.
+        assignedFacultyId: group.schedules.every((schedule) => Boolean(schedule.facultyId))
+          ? group.schedules[0]?.facultyId ?? null
+          : null,
+      }))
+      .sort((left, right) => left.courseCode.localeCompare(right.courseCode) || left.sectionName.localeCompare(right.sectionName));
   }, [schedules, subjects]);
 
   const courseOptions = useMemo(() => {
@@ -213,7 +235,7 @@ export default function AutoAssignModal({
     if (!isOpen) return;
     setStep(1);
     setAssignments([]);
-    setFacultyId(faculties.find((faculty) => faculty.departmentId === departmentId)?.id ?? faculties[0]?.id ?? "");
+    setFacultyId(faculties.find((faculty) => departmentId !== null && Number(faculty.departmentId) === Number(departmentId))?.id ?? faculties[0]?.id ?? "");
     const initialYearLevel = [1, 2, 3, 4].find((level) => groups.some((group) => group.yearLevel === level)) ?? 1;
     const initialCourseIds = new Set(groups.filter((group) => group.yearLevel === initialYearLevel).map((group) => group.courseId));
     const initialCourse = subjects.filter((subject) => initialCourseIds.has(subject.id)).sort((left, right) => left.code.localeCompare(right.code))[0];
@@ -230,8 +252,15 @@ export default function AutoAssignModal({
 
   const queuedKeys = new Set(assignments.map((assignment) => assignment.key));
   const getIssue = (group: SectionGroup, selectionKeys = selectedKeys): string | null => {
-    if (group.assignedFacultyId || queuedKeys.has(group.key)) return "Already assigned";
-    if (!group.schedules.every(canManageScheduleFaculty)) return "Assigned teaching department only";
+    if (group.assignedFacultyId) {
+      const assignedFaculty = faculties.find((faculty) => faculty.id === group.assignedFacultyId);
+      const assignedName = assignedFaculty?.name ?? group.schedules.find((schedule) => schedule.facultyId === group.assignedFacultyId)?.facultyName ?? "Instructor";
+      const assignedDepartment = assignedFaculty?.departmentName ?? assignedFaculty?.departmentCode ?? "assigned department";
+      return `Assigned Instructor: ${assignedName} from ${assignedDepartment}`;
+    }
+    if (queuedKeys.has(group.key)) return "Queued for assignment";
+    const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
+    if (!pendingSchedules.every(canManageScheduleFaculty)) return "Assigned teaching department only";
 
     // A major is taught by its own department and, when the course names one, its
     // own program — the save refuses anything else.
@@ -244,7 +273,7 @@ export default function AutoAssignModal({
       );
       if (!eligibility.eligible) return eligibility.reason;
     }
-    for (const schedule of group.schedules) {
+    for (const schedule of pendingSchedules) {
       const issue = checkFacultyConflict(facultyId, schedule.id);
       if (issue) return issue;
     }
@@ -253,7 +282,7 @@ export default function AutoAssignModal({
       .flatMap((assignment) => assignment.scheduleIds)
       .map((scheduleId) => schedules.find((schedule) => schedule.id === scheduleId))
       .filter((schedule): schedule is ScheduleItem => !!schedule);
-    if (group.schedules.some((schedule) => queuedFacultySchedules.some((queued) => overlaps(schedule, queued)))) {
+    if (pendingSchedules.some((schedule) => queuedFacultySchedules.some((queued) => overlaps(schedule, queued)))) {
       return "Conflicts with a queued assignment";
     }
     const selectedGroupsForConflict = groups.filter((selectedGroup) =>
@@ -266,6 +295,18 @@ export default function AutoAssignModal({
     // Load into the overload allowance and then pro bono, so a heavy load is
     // labelled beside the instructor and confirmed on save — only genuine
     // conflicts and eligibility still block a section.
+    const facultyCeiling = selectedFaculty?.unitCeiling
+      ?? (selectedFaculty
+        ? basicLoadOf(selectedFaculty.maxUnits, selectedFaculty.deloadUnits)
+          + Math.max(0, selectedFaculty.overloadUnits ?? 0)
+          + Math.max(0, selectedFaculty.probonoUnits ?? 0)
+        : 0);
+    const selectedUnitsForLoad = groups
+      .filter((selectedGroup) => selectionKeys.includes(selectedGroup.key))
+      .reduce((total, selectedGroup) => total + selectedGroup.units, 0);
+    if (facultyCeiling > 0 && currentLoad + selectedUnitsForLoad + group.units > facultyCeiling) {
+      return `Exceeds the ${facultyCeiling}-unit ceiling`;
+    }
     return null;
   };
 
@@ -348,7 +389,7 @@ export default function AutoAssignModal({
         units: group.units,
         schedule: scheduleLabel(group),
         mode: group.schedules[0]?.mode ?? "Lecture",
-        scheduleIds: group.schedules.map((schedule) => schedule.id),
+        scheduleIds: group.schedules.filter((schedule) => !schedule.facultyId).map((schedule) => schedule.id),
       })),
     ]);
     setSelectedKeys([]);
@@ -370,19 +411,19 @@ export default function AutoAssignModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-2" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" className="flex h-[calc(100vh-16px)] w-[calc(100vw-16px)] max-w-none flex-col overflow-hidden rounded-lg bg-slate-50 shadow-2xl">
-        <header className="flex items-center justify-between border-b border-[#3a0809] bg-[#4e0a10] px-5 py-4 text-white">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:items-center" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" className="flex min-h-[calc(100dvh-1rem)] w-full max-w-none flex-col overflow-hidden rounded-lg bg-slate-50 shadow-2xl sm:h-[calc(100vh-16px)] sm:min-h-0 sm:w-[calc(100vw-16px)]">
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[#3a0809] bg-[#4e0a10] px-4 py-3 text-white sm:px-5 sm:py-4">
           <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white"><UserCheck className="h-5 w-5" /></div><div><h2 id="auto-assign-title" className="text-base font-black text-white">Assign Instructors</h2><p className="text-xs text-white/75">Queue compatible sections, review loads, then save all assignments together.</p></div></div>
           <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="rounded-lg p-2 text-white/75 hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-2 sm:overflow-hidden sm:p-3">
           <WizardProgressStepper currentStep={step} steps={steps} ariaLabel="Auto-assign instructor steps" />
 
           {step === 1 && (
-            <div className="mt-3 grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[440px_minmax(0,1fr)]">
-              <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} />
+            <div className="mt-3 grid min-h-0 flex-1 gap-3 overflow-visible lg:overflow-hidden lg:grid-cols-[440px_minmax(0,1fr)]">
+              <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} allowExternalInstructors={allowExternalInstructors} />
               <main className="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <SelectField label="Year Level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
@@ -409,13 +450,13 @@ export default function AutoAssignModal({
           {step === 3 && <ConfirmAssignments assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} onEdit={() => setStep(2)} />}
         </div>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
           {step === 3 ? <ConfirmValidationSummary assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} /> : <span />}
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex w-full flex-wrap justify-end gap-2 sm:w-auto">
             <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : onClose()} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"><ChevronLeft className="h-4 w-4" /> {step > 1 ? "Back" : "Cancel"}</button>
             {step === 1 && assignments.length > 0 && <button type="button" onClick={() => setStep(2)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Review Assignments <ChevronRight className="h-4 w-4" /></button>}
             {step === 2 && <button type="button" onClick={() => setStep(3)} disabled={assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Continue <ChevronRight className="h-4 w-4" /></button>}
-            {step === 3 && <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} {isSaving ? "Saving..." : "Save Assignments"}</button>}
+            {step === 3 && <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} {isSaving ? "Saving..." : "Save Assignments"}</button>}
           </div>
         </footer>
       </div>
@@ -423,11 +464,21 @@ export default function AutoAssignModal({
   );
 }
 
-function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void }) {
+function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect, allowExternalInstructors = true }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void; allowExternalInstructors?: boolean }) {
   const [tab, setTab] = useState<"department" | "external">("department");
+  // Department ids arrive from the API as numbers in the type contract, but
+  // database-backed JSON responses may contain numeric strings. Normalize both
+  // sides so department instructors are not hidden by a strict type mismatch.
+  const normalizedDepartmentId = departmentId === null ? null : Number(departmentId);
   const visibleFaculties = useMemo(
-    () => faculties.filter((faculty) => tab === "department" ? faculty.departmentId === departmentId : faculty.departmentId !== departmentId),
-    [departmentId, faculties, tab],
+    () => faculties.filter((faculty) => {
+      const isDepartmentInstructor = normalizedDepartmentId !== null
+        && faculty.departmentId !== null
+        && faculty.departmentId !== undefined
+        && Number(faculty.departmentId) === normalizedDepartmentId;
+      return tab === "department" ? isDepartmentInstructor : !isDepartmentInstructor;
+    }),
+    [faculties, normalizedDepartmentId, tab],
   );
   const columns = useMemo<ColumnDef<Faculty>[]>(() => [
     {
@@ -483,7 +534,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       <div className="flex shrink-0 items-center gap-2 pb-2 text-base font-black text-slate-900">
         <Users className="h-5 w-5 text-blue-600" /> Select Instructor
       </div>
-      <div className="mb-2 flex shrink-0 border-b border-slate-200">
+      {allowExternalInstructors && <div className="mb-2 flex shrink-0 border-b border-slate-200">
         {([
           ["department", "Department Instructors"],
           ["external", "External Instructors"],
@@ -493,14 +544,20 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
             type="button"
             onClick={() => {
               setTab(value);
-              onSelect((faculties.find((faculty) => value === "department" ? faculty.departmentId === departmentId : faculty.departmentId !== departmentId)?.id) ?? "");
+              onSelect((faculties.find((faculty) => {
+                const isDepartmentInstructor = normalizedDepartmentId !== null
+                  && faculty.departmentId !== null
+                  && faculty.departmentId !== undefined
+                  && Number(faculty.departmentId) === normalizedDepartmentId;
+                return value === "department" ? isDepartmentInstructor : !isDepartmentInstructor;
+              })?.id) ?? "");
             }}
             className={`-mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${tab === value ? "border-[#4e0a10] text-[#4e0a10]" : "border-transparent text-slate-400 hover:text-slate-700"}`}
           >
             {label}
           </button>
         ))}
-      </div>
+      </div>}
       <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto overflow-x-hidden pr-1" style={{ contain: "layout paint" }}>
         <table className="w-full table-fixed border-separate border-spacing-y-2">
           <tbody>
@@ -755,3 +812,4 @@ function ConfirmMetric({ icon, value, label, detail, color }: { icon: React.Reac
 function SummaryTile({ label, value }: { label: string; value: number }) {
   return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-xl font-black text-slate-900">{value}</p></div>;
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

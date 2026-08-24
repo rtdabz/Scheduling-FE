@@ -18,6 +18,8 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 interface Department {
   id: number;
@@ -260,10 +262,16 @@ export default function CourseManager() {
     getPaginationRowModel: getPaginationRowModel()
   });
 
+  const courseGuideSteps = useMemo(() => [
+    { element: '#course-list-filters', title: 'Find a course', description: 'Search by course code or name, then narrow the list by year level, category, or semester.', side: 'bottom' as const },
+    { element: '#course-list-table', title: 'Review course details', description: 'Verify units, category, semester, and department ownership before using a course elsewhere.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'course-list', isReady: true, steps: courseGuideSteps });
+
   return (
     <div className="w-full">
       {/* Top Bar Section */}
-      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 mb-6">
+      <div id="course-list-filters" className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 mb-6">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           <div className="relative flex-1 sm:max-w-md">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -317,7 +325,8 @@ export default function CourseManager() {
       </div>
 
       {/* Table Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <WorkflowGuideButton guideId="course-list" />
+      <div id="course-list-table" className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>

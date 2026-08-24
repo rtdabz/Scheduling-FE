@@ -3,13 +3,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   X,
-  Loader2,
   Building2,
   ArrowLeft,
   Clock,
@@ -22,8 +21,9 @@ import {
   Plus
 } from 'lucide-react';
 import api from '../../lib/api';
-import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { clearDataCache, setCachedData } from '../../lib/dataCache';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
+import { useRoomsPageData } from '../../hooks/useRoomsPageData';
 
 
 interface Department {
@@ -112,12 +112,11 @@ export default function DeanRooms() {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
-  const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
-  const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
-  const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
-  const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
-  const [activeTerm, setActiveTerm] = useState<any | null>(cachedRoomsData?.activeTerm ?? null);
-  const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
+  const { rooms, departments, schedules, activeTerm, isLoading, updateRoom, addRoom, removeRoom, refresh } = useRoomsPageData(
+    user?.role,
+    user?.department_id,
+    () => toast.error('Error', 'Failed to load rooms and schedules data.'),
+  );
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
@@ -160,38 +159,6 @@ export default function DeanRooms() {
   // Error states
   const [codeError, setCodeError] = useState('');
   const [buildingError, setBuildingError] = useState('');
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
-    try {
-      const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data');
-        const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
-        const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
-        const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
-        const activeTerm = initialDataRes.data?.active_term || null;
-
-        return {
-          rooms: rawRooms.map(mapApiRoom),
-          departments: rawDepts,
-          schedules: rawSchedules,
-          activeTerm: activeTerm,
-        };
-      }, forceRefresh);
-      setRooms(data.rooms);
-      setDepartments(data.departments);
-      setSchedules(data.schedules || []);
-      setActiveTerm(data.activeTerm || null);
-    } catch {
-      toast.error('Error', 'Failed to load rooms and schedules data.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,22 +205,12 @@ export default function DeanRooms() {
       if (isEditMode && editingId !== null) {
         const res = await api.put<{ room: ApiRoom }>(`/rooms/${editingId}`, payload);
         const updatedRoom = mapApiRoom(res.data.room);
-        setRooms(prev => {
-          const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
-          clearDataCache();
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
-          return nextRooms;
-        });
+        updateRoom(updatedRoom);
         toast.success('Success', 'Room updated successfully');
       } else {
         const res = await api.post<{ room: ApiRoom }>('/rooms', payload);
         const createdRoom = mapApiRoom(res.data.room);
-        setRooms(prev => {
-          const nextRooms = [createdRoom, ...prev];
-          clearDataCache();
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
-          return nextRooms;
-        });
+        addRoom(createdRoom);
         toast.success('Success', 'Room created successfully');
       }
 
@@ -298,12 +255,7 @@ export default function DeanRooms() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/rooms/${idToDelete}`);
-        setRooms(prev => {
-          const nextRooms = prev.filter(r => r.id !== idToDelete);
-          clearDataCache();
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
-          return nextRooms;
-        });
+        removeRoom(idToDelete);
         toast.success('Deleted', 'Room removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete room');
@@ -1101,7 +1053,7 @@ export default function DeanRooms() {
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
@@ -1114,39 +1066,7 @@ export default function DeanRooms() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Room</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this room? This action is permanent and cannot be undone.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteRoom}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Room" message="Are you sure you want to delete this room? This action is permanent and cannot be undone." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteRoom} />
 
       {/* Classroom Detail Modal */}
       <RoomDetailModal
@@ -1160,3 +1080,4 @@ export default function DeanRooms() {
     </div>
   );
 };
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

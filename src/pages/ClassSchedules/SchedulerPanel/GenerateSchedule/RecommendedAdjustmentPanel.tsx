@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Ban, Check, Loader2, RefreshCw, Settings2, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, Check, RefreshCw, Settings2, Wrench } from "lucide-react";
 import {
   describeAdjustment,
   failureStageLabel,
@@ -199,7 +199,7 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
             disabled={busy || !selected}
             className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />} Apply &amp; Retry
+            {busy ? <LoadingSpinner className="h-4 w-4" /> : <Wrench className="h-4 w-4" />} Apply &amp; Retry
           </button>
         </div>
       </footer>
@@ -247,3 +247,4 @@ export function AppliedAdjustmentNotice({
     </div>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

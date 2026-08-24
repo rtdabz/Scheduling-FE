@@ -16,7 +16,6 @@ import {
   FlaskConical,
   Globe2,
   GraduationCap,
-  Loader2,
   MapPin,
   RotateCcw,
   Send,
@@ -92,12 +91,34 @@ const needsRoom = (schedule:Schedule) => deliveryOf(schedule) === 'on-site';
 const inDepartment = <T extends {department_id?:number|null}>(items:T[], departmentId?:number) =>
   items.filter(item => !departmentId || !item.department_id || Number(item.department_id) === Number(departmentId));
 
-export default function SecretaryDashboardPage() {
+interface SecretaryDashboardPageProps {
+  role?: 'secretary' | 'program_head';
+}
+
+export default function SecretaryDashboardPage({ role = 'secretary' }: SecretaryDashboardPageProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const user = useMemo(() => getStoredUser(), []);
   const departmentId = user?.department_id;
+  const isProgramHead = role === 'program_head';
+  const paths = isProgramHead
+    ? {
+        sections: '/program_head/sections',
+        schedules: '/program_head/schedules',
+        instructors: '/program_head/faculty',
+        courses: '/program_head/courses',
+        rooms: '/program_head/rooms',
+        instructorAssignment: '/program_head/instructor-assignment',
+      }
+    : {
+        sections: '/secretary/sections',
+        schedules: '/secretary/schedules',
+        instructors: '/secretary/instructors',
+        courses: '/secretary/courses',
+        rooms: '/secretary/rooms',
+        instructorAssignment: '/secretary/instructor-assignment',
+      };
   const cacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? departmentId ?? 'current'}`;
   const cached = getCachedData<Overview>(cacheKey);
 
@@ -293,22 +314,22 @@ export default function SecretaryDashboardPage() {
   };
 
   const tiles: Tile[] = [
-    { label:'Total Sections', value:visibleSections.length, detail:'Department scope', icon:Users, path:'/secretary/sections', tone:'brand' },
-    { label:'Scheduled Sections', value:scheduledSections, detail:`${sectionCoverage}% of ${visibleSections.length} sections`, icon:ShieldCheck, path:'/secretary/schedules', tone:remaining === 0 && visibleSections.length > 0 ? 'good' : 'brand' },
-    { label:'Remaining Sections', value:remaining, detail:'Still to schedule', icon:FileClock, path:'/secretary/schedules', tone:remaining ? 'warn' : 'good' },
-    { label:'Total Faculty', value:visibleFaculty.length, detail:'Active faculty', icon:GraduationCap, path:'/secretary/instructors', tone:'brand' },
-    { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:'/secretary/courses', tone:'brand' },
-    { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:'/secretary/rooms', tone:'info' },
-    { label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:'/secretary/instructor-assignment', tone:noInstructor ? 'alert' : 'good' },
-    { label:'Draft Schedules', value:draftClasses, detail:'Not yet submitted', icon:FileText, path:'/secretary/schedules', tone:draftClasses ? 'warn' : 'good' },
+    { label:'Total Sections', value:visibleSections.length, detail:'Department scope', icon:Users, path:paths.sections, tone:'brand' },
+    { label:'Scheduled Sections', value:scheduledSections, detail:`${sectionCoverage}% of ${visibleSections.length} sections`, icon:ShieldCheck, path:paths.schedules, tone:remaining === 0 && visibleSections.length > 0 ? 'good' : 'brand' },
+    { label:'Remaining Sections', value:remaining, detail:'Still to schedule', icon:FileClock, path:paths.schedules, tone:remaining ? 'warn' : 'good' },
+    { label:'Total Faculty', value:visibleFaculty.length, detail:'Active faculty', icon:GraduationCap, path:paths.instructors, tone:'brand' },
+    { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:paths.courses, tone:'brand' },
+    { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:paths.rooms, tone:'info' },
+    { label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.instructorAssignment, tone:noInstructor ? 'alert' : 'good' },
+    { label:'Draft Schedules', value:draftClasses, detail:'Not yet submitted', icon:FileText, path:paths.schedules, tone:draftClasses ? 'warn' : 'good' },
   ];
 
   const queue: QueueRow[] = [
-    { label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:'/secretary/schedules' },
-    { label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:'/secretary/instructor-assignment' },
-    { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:'/secretary/rooms' },
-    { label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:'/secretary/schedules' },
-    { label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:'/secretary/schedules' },
+    { label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules },
+    { label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.instructorAssignment },
+    { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:paths.rooms },
+    { label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules },
+    { label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules },
   ];
 
   /** Outstanding work first, biggest first; a settled row can wait at the bottom. */
@@ -323,13 +344,6 @@ export default function SecretaryDashboardPage() {
   if (loading) return <DashboardSkeleton variant="secretary" />;
 
   return <div className="space-y-4 pb-8 text-slate-800">
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-primary">Secretary Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">Prepare complete and validated department schedules for approval.</p>
-      </div>
-    </header>
-
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0"/>
       <span className="flex-1">{loadError || statusError}</span>
@@ -353,7 +367,7 @@ export default function SecretaryDashboardPage() {
     </section>
 
     <section className="grid gap-4 xl:grid-cols-12">
-      <Panel title="Scheduling Work Queue" className="xl:col-span-4" action="View all items" onAction={() => navigate('/secretary/schedules')}>
+      <Panel title="Scheduling Work Queue" className="xl:col-span-4" action="View all items" onAction={() => navigate(paths.schedules)}>
         <div className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${openItems ? 'border-amber-200 bg-amber-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
           <div className="flex min-w-0 items-center gap-2.5">
             <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${openItems ? TONES.warn : TONES.good}`}>{openItems ? <AlertTriangle className="h-4 w-4"/> : <CheckCircle2 className="h-4 w-4"/>}</span>
@@ -438,11 +452,11 @@ export default function SecretaryDashboardPage() {
             <div className="rounded-md bg-amber-50 p-2 text-center"><div className="text-lg font-bold leading-none text-amber-700">{remaining}</div><div className="mt-1 text-[9px] font-semibold text-amber-700">Remaining</div></div>
             <div className="rounded-md bg-slate-50 p-2 text-center"><div className="text-lg font-bold leading-none text-primary">{progressRows.filter(row => row.isComplete).length}/{progressRows.length}</div><div className="mt-1 text-[9px] font-semibold text-slate-600">Years Complete</div></div>
           </div>
-          <button type="button" onClick={() => navigate('/secretary/schedules')} className="mt-3 w-full rounded-md border border-primary px-3 py-2 text-[10px] font-bold text-primary transition hover:bg-primary/5">Open Department Schedule</button>
+          <button type="button" onClick={() => navigate(paths.schedules)} className="mt-3 w-full rounded-md border border-primary px-3 py-2 text-[10px] font-bold text-primary transition hover:bg-primary/5">Open Department Schedule</button>
         </div>
       </Panel>
 
-      <Panel title="Instructor Assignment" className="xl:col-span-4" action="View all" onAction={() => navigate('/secretary/instructor-assignment')}>
+      <Panel title="Instructor Assignment" className="xl:col-span-4" action="View all" onAction={() => navigate(paths.instructorAssignment)}>
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Workload Progress</span>
           <span className="text-[9px] text-slate-400">Assigned / Max units</span>
@@ -456,15 +470,15 @@ export default function SecretaryDashboardPage() {
         <DashboardTimetableGrid
           schedules={visibleSchedules}
           sectionLabel={`${visibleSections.length} Sections`}
-          onOpenSchedule={() => navigate('/secretary/schedules')}
+          onOpenSchedule={() => navigate(paths.schedules)}
         />
       </div>
 
       <div className="flex min-w-0 flex-col gap-4">
-      <Panel title="Room Assignment" action="View all" onAction={() => navigate('/secretary/rooms')}>
+      <Panel title="Room Assignment" action="View all" onAction={() => navigate(paths.rooms)}>
         <button
           type="button"
-          onClick={() => navigate('/secretary/rooms')}
+          onClick={() => navigate(paths.rooms)}
           className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition hover:shadow-sm ${noRoom ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}
         >
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${noRoom ? TONES.alert : TONES.good}`}>{noRoom ? <AlertTriangle className="h-4 w-4"/> : <CheckCircle2 className="h-4 w-4"/>}</span>
@@ -500,7 +514,7 @@ export default function SecretaryDashboardPage() {
         </div> : <p className="mt-2 py-3 text-center text-[11px] italic text-slate-400">No rooms available to this department.</p>}
 
         <div className="mt-3 flex items-baseline justify-between gap-2">
-          <button type="button" onClick={() => navigate('/secretary/rooms')} className="text-[11px] font-bold text-primary hover:underline">Go to Room Assignment <ArrowRight className="inline h-3 w-3"/></button>
+          <button type="button" onClick={() => navigate(paths.rooms)} className="text-[11px] font-bold text-primary hover:underline">Go to Room Assignment <ArrowRight className="inline h-3 w-3"/></button>
           {roomUsage.length > 5 && <span className="text-[10px] text-slate-400">+{roomUsage.length - 5} more</span>}
         </div>
       </Panel>
@@ -566,7 +580,7 @@ export default function SecretaryDashboardPage() {
 
           <button
             type="button"
-            onClick={() => navigate('/secretary/schedules')}
+            onClick={() => navigate(paths.schedules)}
             title={canSubmit ? 'Submission is done from the schedule workflow' : submitHint}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-primary-light"
           >
@@ -588,7 +602,7 @@ export default function SecretaryDashboardPage() {
         <div className="mt-2 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">
           <div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-wide text-primary">Current Status</div><div className="text-sm font-bold text-primary">{STAGES[currentStage]}</div><p className="mt-1 text-[11px] leading-4 text-slate-500">{submitHint}</p></div>
           <button type="button" onClick={submitToDean} disabled={!canSubmit || submitting || !departmentId} className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-bold text-white transition ${canSubmit && !submitting && departmentId ? 'bg-primary hover:bg-primary-light' : 'cursor-not-allowed bg-slate-300'}`}>
-            {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}{submitting ? 'Submittingâ€¦' : 'Submit to Dean'}
+            {submitting ? <LoadingSpinner size={12} /> : <Send className="h-3 w-3" />}{submitting ? 'Submittingâ€¦' : 'Submit to Dean'}
           </button>
         </div>
       </Panel>
@@ -608,7 +622,7 @@ export default function SecretaryDashboardPage() {
           <div className="text-center">
             <div className="text-3xl font-bold text-primary">{ready}%</div>
             <div className="text-[10px] text-slate-500">Ready to submit to the Dean</div>
-            <button type="button" onClick={() => navigate('/secretary/schedules')} className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-[11px] font-bold text-white transition hover:bg-primary-light">Review Details</button>
+            <button type="button" onClick={() => navigate(paths.schedules)} className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-[11px] font-bold text-white transition hover:bg-primary-light">Review Details</button>
           </div>
         </div>
       </Panel>
@@ -634,7 +648,7 @@ export default function SecretaryDashboardPage() {
             title={canSubmit ? 'Send every department schedule to the Dean' : submitHint}
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-bold text-white transition ${canSubmit && !submitting && departmentId ? 'bg-primary hover:bg-primary-light' : 'cursor-not-allowed bg-slate-300'}`}
           >
-            {submitting ? <Loader2 className="h-3 w-3 animate-spin"/> : <Send className="h-3 w-3"/>}
+            {submitting ? <LoadingSpinner size={12} /> : <Send className="h-3 w-3"/>}
             {submitting ? 'Submitting…' : 'Submit to Dean'}
           </button>
         </div>
@@ -663,3 +677,4 @@ function StatChip({icon:Icon, value, label}:{icon:LucideIcon; value:number; labe
 
 
 
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

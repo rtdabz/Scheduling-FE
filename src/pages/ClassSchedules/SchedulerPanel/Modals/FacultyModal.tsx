@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
-import { AlertTriangle, CalendarDays, ChevronDown, Clock, Loader2, MapPin, User, UserCheck, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, Clock, MapPin, User, UserCheck, X } from "lucide-react";
 import { getCategoryStyles } from "../constants";
 import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "../facultyEligibility";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
@@ -269,7 +269,7 @@ export default function FacultyModal({
             >
               {isSavingFaculty ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <LoadingSpinner className="w-3.5 h-3.5" />
                   Saving...
                 </>
               ) : (
@@ -285,7 +285,7 @@ export default function FacultyModal({
                   isSavingFaculty || !canManageFaculty ? "cursor-not-allowed opacity-70" : ""
                 }`}
               >
-                {isSavingFaculty ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Remove"}
+                {isSavingFaculty ? <LoadingSpinner className="w-3.5 h-3.5" /> : "Remove"}
               </button>
             )}
           </div>
@@ -294,3 +294,4 @@ export default function FacultyModal({
     </div>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

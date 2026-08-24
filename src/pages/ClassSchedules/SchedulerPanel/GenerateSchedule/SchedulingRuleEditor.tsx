@@ -1,4 +1,4 @@
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type SchedulingRuleRow = {
@@ -36,7 +36,7 @@ export default function SchedulingRuleEditor({
           <h4 className="text-sm font-black text-slate-950">{title}</h4>
           <p className="mt-0.5 text-xs font-semibold leading-4 text-slate-500">{description}</p>
         </div>
-        {saving && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[#4e0a10]" />}
+        {saving && <LoadingSpinner className="mt-0.5 h-4 w-4 shrink-0 text-[#4e0a10]" />}
       </div>
 
       <div className="mt-2">{children}</div>
@@ -83,3 +83,4 @@ export default function SchedulingRuleEditor({
     </section>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

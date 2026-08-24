@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../lib/dataCache';
 
-export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'approved' | 'revision';
+export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'approved' | 'revision';
 
 export interface SectionStatusItem {
   id: number;
@@ -33,6 +33,7 @@ interface StageCounts {
   completed: number;
   submitted: number;
   approved_by_dean: number;
+  conditionally_approved: number;
   approved: number;
 }
 
@@ -119,6 +120,7 @@ export function useDepartmentScheduleStatus(
     completed: sections.filter(s => s.status === 'completed').length,
     submitted: sections.filter(s => s.status === 'submitted').length,
     approved_by_dean: sections.filter(s => s.status === 'approved_by_dean').length,
+    conditionally_approved: sections.filter(s => s.status === 'conditionally_approved').length,
     approved: sections.filter(s => s.status === 'approved').length,
   }), [sections]);
 

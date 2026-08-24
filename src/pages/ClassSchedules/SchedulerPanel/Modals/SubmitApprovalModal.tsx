@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Send, X } from "lucide-react";
 import type { DepartmentSectionProgress, Section } from "../types";
 
 interface SubmitApprovalModalProps {
@@ -182,7 +182,7 @@ export default function SubmitApprovalModal({
             }`}
           >
             {isSubmittingSchedule ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <LoadingSpinner className="w-4 h-4" />
             ) : (
               <Send className="w-4 h-4" />
             )}
@@ -193,3 +193,4 @@ export default function SubmitApprovalModal({
     </div>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

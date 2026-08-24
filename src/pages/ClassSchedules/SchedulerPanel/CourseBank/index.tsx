@@ -68,7 +68,7 @@ export default function CourseBank({
   ];
 
   return (
-    <div className="w-full lg:w-1/4 min-w-[280px] shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden h-full">
+    <div id="schedule-builder-course-bank" className="flex h-[min(34rem,70vh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white lg:h-full lg:w-1/4 lg:min-w-[280px] lg:rounded-none lg:border-y-0 lg:border-l-0">
       <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
         <div className="flex items-center gap-2">
           <BookOpen className="w-5 h-5 text-[#4e0a10]" />

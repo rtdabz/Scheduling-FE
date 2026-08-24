@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, UserMinus, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, UserMinus, X } from "lucide-react";
 import type { DepartmentSectionProgress, WithdrawalStage } from "../types";
 
 interface WithdrawSubmissionModalProps {
@@ -181,7 +181,7 @@ export default function WithdrawSubmissionModal({
             className="inline-flex items-center gap-2 bg-amber-600 px-5 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
             style={{ borderRadius: 8 }}
           >
-            {isWithdrawing && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isWithdrawing && <LoadingSpinner className="h-4 w-4" />}
             {isWithdrawing ? "Withdrawing..." : "Withdraw Selected"}
           </button>
         </div>
@@ -189,3 +189,4 @@ export default function WithdrawSubmissionModal({
     </div>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

@@ -24,6 +24,7 @@ import type {
   Term,
   UserSummary
 } from "../types";
+import { normalizeAdministrativePost } from "../types";
 
 export interface SchedulerCacheData {
   rooms: Room[];
@@ -101,6 +102,16 @@ const numberOrUndefined = (value: number | string | null | undefined): number | 
  */
 const warnedUnknownDays = new Set<string>();
 
+/**
+ * Client mirror of `SchedulingPolicy::isCasServiceCourse`. A GEC subject is a
+ * service course taught by the college that owns it, which is what makes its
+ * owner the teaching department below.
+ */
+const isGecServiceCourse = (course: ApiCourseRecord | ApiSubjectRecord): boolean => (
+  (course.course_code ?? course.subject_code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith("GEC")
+  || (course.categories ?? []).some((category) => category.name.toLowerCase() === "gec")
+);
+
 export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   // An unrecognized day used to become Monday silently, which moved a class to a
   // day nobody chose. It still has to resolve to a grid row, but it says so.
@@ -135,10 +146,12 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   }
   if (!roomName && item.mode === "online") roomName = "Online";
   if (!roomName && item.mode === "field") roomName = "Field";
+  if (!roomName && item.mode === "on-site" && item.room_id == null) roomName = "Room TBA";
 
   let roomIdStr = item.room_id == null ? "" : item.room_id.toString();
   if (item.room?.room_code === "ONLINE" || (item.room_id == null && item.mode === "online")) roomIdStr = "online";
   else if (item.room?.room_code === "FIELD") roomIdStr = "field";
+  else if (item.room_id == null && item.mode === "on-site") roomIdStr = "tba";
 
   const courseCode = item.course?.course_code ?? item.subject?.course_code ?? item.subject?.subject_code ?? "";
   const courseName = item.course?.course_name ?? item.subject?.course_name ?? item.subject?.subject_name ?? "";
@@ -167,8 +180,16 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     startTime: slotToTimeStr(startSlot),
     endTime: slotToTimeStr(endSlot),
     mode: item.mode ?? "on-site",
-    facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
-    facultyId: item.faculty_id ? item.faculty_id.toString() : null,
+    // Some schedule endpoints return the eager-loaded faculty relation while
+    // omitting/normalizing the scalar foreign key. Prefer the FK, but fall back
+    // to the relation so a successful assignment is visible immediately.
+    facultyName: item.faculty
+      ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim()
+      : null,
+    facultyId: (item.faculty_id ?? item.faculty?.id) != null
+      ? String(item.faculty_id ?? item.faculty?.id)
+      : null,
+    facultyAssignmentDone: Boolean(item.faculty_assignment_done),
     status: item.status,
     dayIndex,
     startSlot,
@@ -221,32 +242,48 @@ export const mapInitialData = (
   }));
 
   const rawCourses = initialData.courses ?? initialData.subjects ?? [];
-  const mappedSubjects = rawCourses.map((s): Subject => ({
-    id: s.id.toString(),
-    code: s.course_code ?? s.subject_code ?? "",
-    name: s.course_name ?? s.subject_name ?? "",
-    units: toNumber(s.units),
-    lectureHours: toNumber(s.lecture_hours),
-    labHours: toNumber(s.lab_hours),
-    category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
-    semester: s.semester,
-    departmentId: s.department_id ?? null,
-    programId: s.program_id ?? null,
-    programCode: s.program?.code ?? null,
-    teachingDepartmentId: s.teaching_assignment?.department_id ?? null,
-    teachingDepartmentCode: s.teaching_assignment?.department?.department_code,
-    teachingDepartmentName: s.teaching_assignment?.department?.department_name,
-    categories: s.categories ?? [],
-    yearLevel: normalizeYearLevel(s.year_level),
-    roomTypeRequired: s.room_type_required,
-    status: s.status ?? "active"
-  }));
+  const mappedSubjects = rawCourses.map((s): Subject => {
+    // A secretary can delegate a non-major to another college, and that override
+    // decides who teaches it. With no override a GEC subject is taught by the
+    // college that offers it, and anything else — a major, or a shared minor such
+    // as PATH FIT — carries no teaching college: majors are held to their own
+    // department and program instead, and a shared minor is open to every
+    // department by design.
+    const delegatedTo = s.teaching_department_id ?? null;
+    const servesOwnCollege = delegatedTo === null && isGecServiceCourse(s) && s.department_id !== null;
+    // Whichever college the two branches above landed on, so the labels cannot
+    // drift from the id the eligibility check reads.
+    const teachingDepartment = delegatedTo !== null ? s.teaching_department : (servesOwnCollege ? s.department : null);
+
+    return {
+      id: s.id.toString(),
+      code: s.course_code ?? s.subject_code ?? "",
+      name: s.course_name ?? s.subject_name ?? "",
+      units: toNumber(s.units),
+      lectureHours: toNumber(s.lecture_hours),
+      labHours: toNumber(s.lab_hours),
+      category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
+      semester: s.semester,
+      departmentId: s.department_id ?? null,
+      programId: s.program_id ?? null,
+      teachingProgramId: s.teaching_program_id ?? null,
+      programCode: s.program?.code ?? null,
+      teachingDepartmentId: delegatedTo ?? (servesOwnCollege ? s.department_id : null),
+      teachingDepartmentCode: teachingDepartment?.department_code,
+      teachingDepartmentName: teachingDepartment?.department_name,
+      categories: s.categories ?? [],
+      yearLevel: normalizeYearLevel(s.year_level),
+      roomTypeRequired: s.room_type_required,
+      status: s.status ?? "active"
+    };
+  });
 
   const mappedFaculties = initialData.faculties.map((f): Faculty => ({
     id: f.id.toString(),
     name: `${f.first_name} ${f.last_name}`,
     profilePicture: f.profile_picture ?? null,
     employmentType: f.employment_type,
+    administrativeRole: normalizeAdministrativePost(f.administrative_role),
     departmentId: f.department_id,
     departmentCode: f.department?.department_code,
     departmentName: f.department?.department_name,

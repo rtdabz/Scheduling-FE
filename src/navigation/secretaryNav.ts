@@ -1,14 +1,15 @@
 import {
   LayoutDashboard,
+  Building2,
   CalendarDays,
   DoorOpen,
   BookOpen,
-  ClipboardList,
   Users,
   UserPlus,
   UserRoundCheck,
   Settings,
   Layers,
+  History,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -32,7 +33,8 @@ export const secretaryNav: NavSection[] = [
         id: 'sidebar-schedules',
         children: [
           { label: 'Schedule Builder', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-schedule-builder' },
-          { label: 'Instructor Assignment', path: '/secretary/instructor-assignment', icon: UserRoundCheck, id: 'sidebar-instructor-assignment' },
+          { label: 'Course Teaching', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments' },
+          { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments' },
         ],
       },
       { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections' },
@@ -43,6 +45,7 @@ export const secretaryNav: NavSection[] = [
   {
     section: 'SYSTEM',
     items: [
+      { label: 'Schedule History', path: '/secretary/schedule-history', icon: History, id: 'sidebar-schedule-history' },
       { label: 'Settings', path: '/secretary/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

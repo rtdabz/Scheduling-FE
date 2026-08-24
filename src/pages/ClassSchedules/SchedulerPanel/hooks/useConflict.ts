@@ -84,6 +84,8 @@ const resolveRoom = (rooms: Room[], roomId: string): Room | undefined => {
   return rooms.find((r) => String(r.id) === String(roomId));
 };
 
+const isRoomTba = (roomId: string | null | undefined): boolean => roomId === "tba" || !roomId;
+
 const samePhysicalRoom = (leftRoomId: string, rightRoomId: string, rooms: Room[]): boolean => {
   const leftRoom = resolveRoom(rooms, leftRoomId);
   const rightRoom = resolveRoom(rooms, rightRoomId);
@@ -383,7 +385,7 @@ export const getConflictedScheduleMap = (
 
   const schedulesByRoomAndDepartment = new Map<string, ScheduleItem[]>();
   schedules.forEach((item) => {
-    if (!item.roomId) return;
+    if (isRoomTba(item.roomId)) return;
     const key = `${physicalRoomKey(item.roomId)}::${Number(item.departmentId)}`;
     const bucket = schedulesByRoomAndDepartment.get(key);
     if (bucket) {
@@ -443,8 +445,8 @@ export const getConflictedScheduleMap = (
 
         // 2. Room conflict
         if (
-          s1.roomId
-          && s2.roomId
+          !isRoomTba(s1.roomId)
+          && !isRoomTba(s2.roomId)
           && s1.mode !== "online"
           && s2.mode !== "online"
           && physicalRoomKey(s1.roomId) === physicalRoomKey(s2.roomId)
@@ -572,6 +574,7 @@ export const useConflict = ({
       configuredFieldCourseCodes
     );
     const isOnlinePlacement = roomId === "online";
+    const isTbaPlacement = isRoomTba(roomId);
     const deliveryMode = resolveDeliveryMode(roomId, rooms);
     const excludeIdList = excludeScheduleId
       ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId])
@@ -600,7 +603,7 @@ export const useConflict = ({
       }
     }
 
-    if (roomId && !isOnlinePlacement) {
+    if (!isTbaPlacement && !isOnlinePlacement) {
       const room = resolveRoom(rooms, roomId);
       if (room?.roomType === "online") {
         return {
@@ -661,7 +664,7 @@ export const useConflict = ({
             message: `Section conflict: This section already has a class (${s.courseCode || s.subjectCode || "another class"}) scheduled at this time.`
           };
         }
-        if (roomId && !isOnlinePlacement && samePhysicalRoom(s.roomId, roomId, rooms)) {
+        if (!isTbaPlacement && !isOnlinePlacement && !isRoomTba(s.roomId) && samePhysicalRoom(s.roomId, roomId, rooms)) {
           const room = resolveRoom(rooms, roomId);
           // Shared capacity is a property of the room, not of the course. Keying
           // it off the subject would apply the department FIELD limit to ordinary

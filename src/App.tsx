@@ -7,7 +7,7 @@ import api from './lib/api';
 import { clearDataCache } from './lib/dataCache';
 
 // VPAA Pages
-import Dashboard from './pages/Dashboard';
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const VpaaSchedules = lazy(() => import('./pages/vpaa/Schedules'));
 const VpaaScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
 const VpaaCalendarPage = lazy(() => import('./pages/vpaa/CalendarPage'));
@@ -16,8 +16,9 @@ const VpaaRooms = lazy(() => import('./pages/vpaa/Rooms'));
 const VpaaUsers = lazy(() => import('./pages/vpaa/Users'));
 const Departments = lazy(() => import('./pages/vpaa/Departments'));
 const VpaaReports = lazy(() => import('./pages/vpaa/Reports'));
+const VpaaActivityLog = lazy(() => import('./pages/vpaa/ActivityLog'));
+const VpaaScheduleHistory = lazy(() => import('./pages/vpaa/ScheduleHistory'));
 const Settings = lazy(() => import('./pages/vpaa/Settings'));
-const DepartmentCourseAssignments = lazy(() => import('./pages/vpaa/DepartmentCourseAssignments'));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
 
 // Other Role Pages
@@ -34,6 +35,8 @@ const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules')
 const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
 const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
+const CrossDepartmentAssignments = lazy(() => import('./pages/ClassSchedules/CrossDepartmentAssignments'));
+const CourseTeachingAssignments = lazy(() => import('./pages/ClassSchedules/CourseTeachingAssignments'));
 const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
 
 const CurriculumListPage = lazy(() => import('./pages/curriculum/CurriculumListPage'));
@@ -134,8 +137,9 @@ export default function App() {
             <Route path="/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
-            <Route path="/department-course-assignments" element={<DepartmentCourseAssignments />} />
             <Route path="/reports" element={<VpaaReports />} />
+            <Route path="/activity-log" element={<VpaaActivityLog />} />
+            <Route path="/schedule-history" element={<VpaaScheduleHistory />} />
             <Route path="/settings" element={<Settings />} />
 
             {/* Dean Routes */}
@@ -148,6 +152,7 @@ export default function App() {
             <Route path="/dean/curriculum" element={<CurriculumListPage />} />
             <Route path="/dean/curriculum/:id" element={<CurriculumDetailPage />} />
             <Route path="/dean/reports" element={<DeanReports />} />
+            <Route path="/dean/schedule-history" element={<VpaaScheduleHistory />} />
             <Route path="/dean/settings" element={<AccountSettingsPage />} />
 
             {/* Secretary Routes */}
@@ -162,19 +167,30 @@ export default function App() {
             <Route path="/secretary/sections" element={<SecretarySections />} />
             <Route path="/secretary/instructors" element={<SecretaryFaculty />} />
             <Route path="/secretary/instructor-assignment" element={<InstructorAssignment />} />
+            <Route path="/secretary/schedule-history" element={<VpaaScheduleHistory />} />
+            {/* Cross-Department is the receiving-department instructor workspace;
+                keep the old URL as a compatibility alias after the menu rename. */}
+            <Route path="/secretary/cross-department-assignments" element={<CrossDepartmentAssignments />} />
+            <Route path="/secretary/course-teaching-assignments" element={<CourseTeachingAssignments />} />
             <Route path="/secretary/settings" element={<SecretarySettings />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
             <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
             <Route path="/program_head/faculty" element={<ProgramHeadFaculty />} />
+            <Route path="/program_head/instructors" element={<ProgramHeadFaculty />} />
             <Route path="/program_head/rooms" element={<ProgramHeadRooms />} />
 
+            <Route path="/program_head/courses" element={<SecretaryCourses />} />
             <Route path="/program_head/curriculum" element={<CurriculumListPage />} />
             <Route path="/program_head/curriculum/:id" element={<CurriculumDetailPage />} />
             <Route path="/program_head/curriculum-view" element={<CurriculumViewPage />} />
+            <Route path="/program_head/sections" element={<SecretarySections />} />
             <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />
-            <Route path="/program_head/settings" element={<AccountSettingsPage />} />
+            <Route path="/program_head/schedule-history" element={<VpaaScheduleHistory />} />
+            <Route path="/program_head/cross-department-assignments" element={<CrossDepartmentAssignments />} />
+            <Route path="/program_head/course-teaching-assignments" element={<CourseTeachingAssignments />} />
+            <Route path="/program_head/settings" element={<SecretarySettings />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

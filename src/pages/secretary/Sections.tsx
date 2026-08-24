@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   X,
-  Loader2,
   Plus,
   Layers
 } from 'lucide-react';
@@ -26,6 +25,8 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import SectionModal from './SectionModal';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 interface Department {
   id: number;
@@ -358,10 +359,16 @@ export default function SecretarySections() {
     getPaginationRowModel: getPaginationRowModel()
   });
 
+  const sectionGuideSteps = useMemo(() => [
+    { element: '#sections-toolbar', title: 'Find or create a section', description: 'Search existing sections or add the sections needed before starting Schedule Builder.', side: 'bottom' as const },
+    { element: '#sections-table', title: 'Review section records', description: 'Check the section name, year level, term, and status before editing or scheduling it.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps });
+
   return (
     <div>
       {/* Top Bar Section */}
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
+      <div id="sections-toolbar" className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
         <div className="relative flex-1 sm:max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
@@ -388,7 +395,8 @@ export default function SecretarySections() {
       </div>
 
       {/* Table Container */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden font-sans">
+      <WorkflowGuideButton guideId="sections" />
+      <div id="sections-table" className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden font-sans">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse font-sans">
             <thead>
@@ -578,36 +586,8 @@ export default function SecretarySections() {
         onSaveBatch={handleSaveBatch}
       />
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl p-6 animate-in zoom-in-95 duration-200 font-sans">
-            <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-4 border border-red-100 animate-pulse">
-              <AlertTriangle size={24} />
-            </div>
-            <h3 className="text-base font-bold text-gray-800 mb-2">Delete Section</h3>
-            <p className="text-gray-500 text-sm mb-6 font-sans">
-              Are you sure you want to delete this section? This action cannot be undone and will permanently remove this record from the database.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 text-sm font-semibold border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer font-sans"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteSection}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm font-sans"
-              >
-                Confirm Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Section" message="Are you sure you want to delete this section? This action cannot be undone and will permanently remove this record from the database." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteSection} />
     </div>
   );
 }
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

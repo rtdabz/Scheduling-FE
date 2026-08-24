@@ -1,19 +1,26 @@
 import { useEffect, useRef } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import type { RowInput } from "jspdf-autotable";
+import type jsPDF from "jspdf";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { Department, Faculty, ScheduleItem, Section, Subject, Term, UserSummary } from "./types";
+import type {
+  Department,
+  Faculty,
+  FacultyAdministrativePost,
+  ScheduleItem,
+  Section,
+  Term,
+  UserSummary,
+} from "./types";
 import { INSTRUCTOR_ASSIGNED_STATUSES } from "./constants";
 import { useToast } from "../../../context/ToastContext";
 import { getStoredUserDepartmentId, getStoredUserRole } from "../../../lib/storedUser";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
+import { BASIC_LINE_COUNT, OVERLOAD_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
+import { drawSheet } from "./teachingLoadSheet";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
   allSchedules: ScheduleItem[];
-  subjects: Subject[];
   isTeachingLoadOpen: boolean;
   setIsTeachingLoadOpen: (value: boolean) => void;
   sections: Section[];
@@ -24,27 +31,23 @@ interface TeachingLoadProps {
   selectedFacultyId?: string;
 }
 
-interface TeachingLoadRow {
-  code: string;
-  title: string;
-  day: string;
-  time: string;
-  section: string;
-  students: string;
-  lec: string;
-  lab: string;
-  totalUnits: string;
-  totalHours: string;
-}
-
-interface AutoTableDocument extends jsPDF {
-  lastAutoTable: {
-    finalY: number;
-  };
-}
-
 const PRINT_DEBOUNCE_MS = 1500;
 let lastTeachingLoadPrintAt = 0;
+
+/**
+ * Section C of the form asks for "Other Designation/Functions". The post itself
+ * is the designation, so it is printed as written on the appointment rather than
+ * as the short badge label the scheduler UI uses.
+ */
+const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
+  dean: "Department Dean",
+  secretary: "Department Secretary",
+  program_head: "Program Head",
+  vpaa: "Vice President for Academic Affairs",
+};
+
+/** Standing VPAA, used only when no account with that role reaches the client. */
+const FALLBACK_VPAA_NAME = "DR. KHAREN JANE S. UNGAB";
 
 const parseFacultyName = (name: string) => {
   const parts = name.trim().split(/\s+/);
@@ -69,10 +72,32 @@ const parseFacultyName = (name: string) => {
   return { surname, givenName, mi };
 };
 
+const semesterLabel = (semester?: string): string => {
+  if (semester === "1st") return "1ST";
+  if (semester === "2nd") return "2ND";
+  if (semester === "3rd") return "3RD";
+  return (semester || "SUMMER").toUpperCase();
+};
+
+/** Absolute URL for a bundled asset, so jsPDF can read it through the DOM. */
+const assetUrl = (asset: string): string => {
+  if (asset.startsWith("data:") || asset.startsWith("http:") || asset.startsWith("https:")) return asset;
+  return `${window.location.origin}${asset.startsWith("/") ? "" : "/"}${asset}`;
+};
+
+const loadImage = (url: string): Promise<HTMLImageElement | null> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = url;
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+  });
+
+
 export default function TeachingLoad({
   faculties,
   allSchedules,
-  subjects,
   isTeachingLoadOpen,
   setIsTeachingLoadOpen,
   sections,
@@ -85,94 +110,45 @@ export default function TeachingLoad({
   const { toast } = useToast();
   const isPrintingRef = useRef(false);
 
-  let logoUrl = tccLogo;
-  if (!tccLogo.startsWith("data:") && !tccLogo.startsWith("http:") && !tccLogo.startsWith("https:")) {
-    const logoOrigin = window.location.origin;
-    logoUrl = `${logoOrigin}${tccLogo.startsWith("/") ? "" : "/"}${tccLogo}`;
-  }
-
-  let municipalLogoUrl = municipalLogo;
-  if (!municipalLogo.startsWith("data:") && !municipalLogo.startsWith("http:") && !municipalLogo.startsWith("https:")) {
-    const logoOrigin = window.location.origin;
-    municipalLogoUrl = `${logoOrigin}${municipalLogo.startsWith("/") ? "" : "/"}${municipalLogo}`;
-  }
-
-  const getFacultyScheduleClassification = (
-    scheduleId: string,
-    facultySchedules: ScheduleItem[],
-    maxUnits: number
-  ): "Basic" | "Overload" => {
-    const sorted = [...facultySchedules].sort((a, b) => {
-      if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
-      return a.startSlot - b.startSlot;
-    });
-
-    let accumulatedUnits = 0;
-    let classification: "Basic" | "Overload" = "Basic";
-
-    for (const s of sorted) {
-      const sub = subjects.find((sub) => sub.id === s.subjectId);
-      const units = sub ? sub.units : 3;
-      if (accumulatedUnits + units <= maxUnits) {
-        accumulatedUnits += units;
-        if (s.id === scheduleId) {
-          classification = "Basic";
-          break;
-        }
-      } else {
-        if (s.id === scheduleId) {
-          classification = "Overload";
-          break;
-        }
-      }
-    }
-    return classification;
-  };
-
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (isPrintingRef.current) return;
     isPrintingRef.current = true;
 
-    const loadImgSafe = (url: string): Promise<HTMLImageElement | null> => {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = url;
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
-      });
-    };
+    const { default: JsPDF } = await import("jspdf");
 
     // fetchInstitutionSettings never rejects, so a signatory lookup failure
     // still prints -- with the standing names.
-    Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl), fetchInstitutionSettings()])
-      .then(([logoImg, muniImg, settings]) => {
-        generatePdf(logoImg, muniImg, settings);
-      })
+    Promise.all([
+      loadImage(assetUrl(tccLogo)),
+      loadImage(assetUrl(municipalLogo)),
+      fetchInstitutionSettings(),
+    ])
+      .then(([logoImg, muniImg, settings]) => generatePdf(JsPDF, logoImg, muniImg, settings))
       .finally(() => {
         isPrintingRef.current = false;
       });
   };
 
-  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, settings: InstitutionSettings) => {
+  const generatePdf = (
+    PdfDocument: typeof jsPDF,
+    logoImg: HTMLImageElement | null,
+    muniImg: HTMLImageElement | null,
+    settings: InstitutionSettings,
+  ) => {
     const isVpaa = getStoredUserRole() === "vpaa";
     const userDeptId = getStoredUserDepartmentId();
 
     // The printed form is an official record of load, so it lists the same
     // assignments the load figures count: approved ones only. A withdrawn row
     // keeps neither its instructor nor a place on this form.
-    const assignedSchedules = allSchedules.filter((s) =>
-      INSTRUCTOR_ASSIGNED_STATUSES.includes(s.status)
-    );
+    const assignedSchedules = allSchedules.filter((s) => INSTRUCTOR_ASSIGNED_STATUSES.includes(s.status));
 
     let targetDeptId: number | null = null;
     if (!isVpaa && userDeptId) {
       targetDeptId = Number(userDeptId);
     } else if (selectedSectionId) {
       const activeSection = sections.find((s) => s.id === selectedSectionId);
-      if (activeSection?.departmentId) {
-        targetDeptId = Number(activeSection.departmentId);
-      }
+      if (activeSection?.departmentId) targetDeptId = Number(activeSection.departmentId);
     }
 
     const targetFaculties = faculties.filter((f) => {
@@ -183,482 +159,83 @@ export default function TeachingLoad({
     });
 
     if (targetFaculties.length === 0) {
-      toast.warning("No Teaching Load Available", "No faculty members with assigned schedules were found in this department.");
+      toast.warning(
+        "No Teaching Load Available",
+        "No faculty members with assigned schedules were found in this department.",
+      );
       return;
     }
 
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "legal" });
+    // The VPAA signs every department's sheet and holds no department of their
+    // own, which is why the payload carries the account alongside the
+    // department-scoped ones.
+    const vpaaAccount = users.find((u) => u.role?.toLowerCase() === "vpaa");
 
-    targetFaculties.forEach((faculty, idx) => {
-      if (idx > 0) {
-        doc.addPage();
-      }
+    const doc = new PdfDocument({ orientation: "portrait", unit: "mm", format: "legal" });
+    let isFirstSheet = true;
 
+    targetFaculties.forEach((faculty) => {
       const { surname, givenName, mi } = parseFacultyName(faculty.name);
-      const facultyDeptId = faculty.departmentId;
-      const dept = departments.find((d) => Number(d.id) === Number(facultyDeptId)) || {
-        department_name: faculty.departmentName || "COLLEGE OF INFORMATION TECHNOLOGY",
-        department_code: faculty.departmentCode || "CIT",
-      };
-      const deptName = dept.department_name.toUpperCase();
+      const department = departments.find((d) => Number(d.id) === Number(faculty.departmentId));
+      const collegeName = (
+        department?.department_name ||
+        faculty.departmentName ||
+        "INFORMATION TECHNOLOGY"
+      )
+        .toUpperCase()
+        // The banner already reads "COLLEGE OF", so a department stored as
+        // "College of Information Technology" must not print it twice.
+        .replace(/^COLLEGE\s+OF\s+/, "");
 
-      const leftMargin = 10;
-      const rightMargin = 200;
-      const centerMargin = 105;
+      const deptId = faculty.departmentId?.toString();
+      const byRole = (role: string) =>
+        users.find((u) => u.role?.toLowerCase() === role && u.department_id?.toString() === deptId);
+      // The form's line covers both posts, so either may sign it.
+      const preparer = byRole("program_head") ?? byRole("secretary");
 
-      // ── 1. Letterhead ──
-      let logoWidth = 16;
-      let logoHeight = 16;
-      if (logoImg) {
-        const ar = logoImg.naturalWidth / logoImg.naturalHeight;
-        if (ar > 1) logoWidth = 16 * ar;
-        else logoHeight = 16 / ar;
-        doc.addImage(logoImg, "JPEG", 16, 8, logoWidth, logoHeight);
-      }
+      const load = classifyLoad(faculty, assignedSchedules.filter((s) => s.facultyId === faculty.id));
 
-      let muniWidth = 18;
-      let muniHeight = 18;
-      if (muniImg) {
-        const ar = muniImg.naturalWidth / muniImg.naturalHeight;
-        if (ar > 1) muniWidth = 18 * ar;
-        else muniHeight = 18 / ar;
-        doc.addImage(muniImg, "PNG", rightMargin - muniWidth - 6, 7, muniWidth, muniHeight);
-      }
-
-      doc.setFont("Times", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(85, 85, 85);
-      doc.text("Republic of the Philippines", centerMargin, 10, { align: "center" });
-      doc.text("Province of Misamis Oriental", centerMargin, 13, { align: "center" });
-
-      doc.setFont("Times", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(0, 0, 0);
-      doc.text("Municipality of Tagoloan", centerMargin, 16, { align: "center" });
-
-      doc.setFont("Times", "bold");
-      doc.setFontSize(10.5);
-      doc.setTextColor(123, 12, 23);
-      doc.text("TAGOLOAN COMMUNITY COLLEGE", centerMargin, 20.5, { align: "center" });
-
-      doc.setFont("Times", "bold");
-      doc.setFontSize(7.5);
-      doc.setTextColor(51, 51, 51);
-      doc.text("Baluarte, Tagoloan, Misamis Oriental", centerMargin, 24.5, { align: "center" });
-
-      doc.setFont("Times", "italic");
-      doc.setFontSize(8.5);
-      doc.setTextColor(26, 86, 219);
-      doc.text("tccadmin@tcc.edu.ph", centerMargin, 28, { align: "center" });
-
-      const linkWidth = doc.getTextWidth("tccadmin@tcc.edu.ph");
-      doc.setDrawColor(26, 86, 219);
-      doc.setLineWidth(0.15);
-      doc.line(centerMargin - linkWidth / 2, 28.5, centerMargin + linkWidth / 2, 28.5);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(85, 85, 85);
-      doc.text("Member: Association of Local Colleges & Universities (ALCU)", centerMargin, 31.5, { align: "center" });
-
-      const accreditationText = "Member: Association of Local Colleges & Universities Commission on Accreditation (ALCU-COA)";
-      doc.text(accreditationText, centerMargin, 34.5, { align: "center" });
-
-      const accreditationWidth = doc.getTextWidth(accreditationText);
-      const memberTextWidth = doc.getTextWidth("Member: ");
-      const underlineW = accreditationWidth - memberTextWidth;
-      const underlineX = centerMargin - accreditationWidth / 2 + memberTextWidth;
-      doc.setDrawColor(85, 85, 85);
-      doc.setLineWidth(0.15);
-      doc.line(underlineX, 35, underlineX + underlineW, 35);
-
-      doc.setFillColor(123, 12, 23);
-      doc.rect(leftMargin, 37.5, 190, 6, "F");
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(255, 255, 255);
-      doc.text(deptName, centerMargin, 41.5, { align: "center" });
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(26, 54, 93);
-      doc.text("INDIVIDUAL FACULTY LOAD SHEET", centerMargin, 49, { align: "center" });
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(0, 0, 0);
-
-      const activeSem = activeTerm?.semester || "2nd";
-      const activeAY = activeTerm?.academic_year || "2025-2026";
-      const semLabel = activeSem === "1st" ? "1ST Semester" : activeSem === "2nd" ? "2ND Semester" : "Summer";
-
-      doc.text(`${semLabel} Academic Year`, centerMargin - 15, 54.5, { align: "right" });
-      doc.text(activeAY, centerMargin + 10, 54.5);
-
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.2);
-      doc.line(centerMargin - 58, 55, centerMargin - 48, 55);
-      doc.line(centerMargin + 8, 55, centerMargin + 35, 55);
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text("Surname:", leftMargin, 61);
-      doc.setFont("Helvetica", "normal");
-      doc.text(surname.toUpperCase(), leftMargin + 15, 61);
-      doc.line(leftMargin + 14, 61.5, leftMargin + 65, 61.5);
-
-      doc.setFont("Helvetica", "bold");
-      doc.text("Given Name:", leftMargin + 70, 61);
-      doc.setFont("Helvetica", "normal");
-      doc.text(givenName, leftMargin + 90, 61);
-      doc.line(leftMargin + 89, 61.5, leftMargin + 150, 61.5);
-
-      doc.setFont("Helvetica", "bold");
-      doc.text("C _ MI:", leftMargin + 155, 61);
-      doc.setFont("Helvetica", "normal");
-      doc.text(mi, leftMargin + 167, 61);
-      doc.line(leftMargin + 166, 61.5, rightMargin, 61.5);
-
-      doc.setFont("Helvetica", "bold");
-      doc.text("Employment Status: (Put X)", leftMargin, 67.5);
-
-      const boxSize = 3.5;
-      const drawCheckbox = (x: number, y: number, label: string, isChecked: boolean) => {
-        doc.setDrawColor(0, 0, 0);
-        doc.setLineWidth(0.25);
-        doc.rect(x, y, boxSize, boxSize);
-        if (isChecked) {
-          doc.setFont("Helvetica", "bold");
-          doc.setFontSize(8.5);
-          doc.text("X", x + 0.8, y + 2.8);
-        }
-        doc.setFont("Helvetica", "semibold");
-        doc.setFontSize(8.5);
-        doc.text(label, x + 6, y + 2.8);
-      };
-
-      const empStatus = faculty.employmentType === "part-time" ? "Part-Time" : "Regular";
-      drawCheckbox(40, 69.5, "Regular", empStatus === "Regular");
-      drawCheckbox(40, 74.5, "Probationary", false);
-      drawCheckbox(145, 69.5, "Contractual", false);
-      drawCheckbox(145, 74.5, "Part-Time", empStatus === "Part-Time");
-
-      const facultySchedules = assignedSchedules.filter((s) => s.facultyId === faculty.id);
-
-      const getTableData = (type: "Basic" | "Overload", targetRows: number): TeachingLoadRow[] => {
-        const filtered = facultySchedules.filter((s) => {
-          const isPt = faculty.employmentType === "part-time";
-          if (isPt) {
-            return type === "Overload";
-          }
-          return getFacultyScheduleClassification(s.id, facultySchedules, faculty.maxUnits || 15) === type;
-        });
-
-        const rows = filtered.map((s) => {
-          const sub = subjects.find((sub) => sub.id === s.subjectId);
-          const hours = Math.max(1, s.durationSlots) * 0.5;
-          const lec = sub ? sub.lectureHours : 3;
-          const lab = sub ? sub.labHours : 0;
-          const totalU = sub ? sub.units : 3;
-
-          return {
-            code: s.courseCode ?? s.subjectCode ?? "",
-            title: s.courseName ?? s.subjectName ?? "",
-            day: s.day.substring(0, 3),
-            time: `${s.startTime} - ${s.endTime}`,
-            section: s.sectionName,
-            students: "",
-            lec: lec.toString(),
-            lab: lab.toString(),
-            totalUnits: totalU.toString(),
-            totalHours: hours.toFixed(1)
-          };
-        });
-
-        while (rows.length < targetRows) {
-          rows.push({
-            code: "",
-            title: "",
-            day: "",
-            time: "",
-            section: "",
-            students: "",
-            lec: "",
-            lab: "",
-            totalUnits: "",
-            totalHours: ""
-          });
-        }
-        return rows;
-      };
-
-      const calculateTotals = (type: "Basic" | "Overload") => {
-        const filtered = facultySchedules.filter((s) => {
-          const isPt = faculty.employmentType === "part-time";
-          if (isPt) {
-            return type === "Overload";
-          }
-          return getFacultyScheduleClassification(s.id, facultySchedules, faculty.maxUnits || 15) === type;
-        });
-
-        let totalUnits = 0;
-        let totalHours = 0;
-        filtered.forEach((s) => {
-          const sub = subjects.find((sub) => sub.id === s.subjectId);
-          totalUnits += sub ? sub.units : 3;
-          totalHours += Math.max(1, s.durationSlots) * 0.5;
-        });
-        return { units: totalUnits, hours: totalHours };
-      };
-
-      const basicTotals = calculateTotals("Basic");
-      const overloadTotals = calculateTotals("Overload");
-      const grandTotalUnits = basicTotals.units + overloadTotals.units;
-
-      const tableHeader: RowInput[] = [
-        [
-          { content: "Subj Code", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "Descriptive Title", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "Day", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "Time", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "Section", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "No. of\nStudents", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "Units", colSpan: 2, styles: { halign: 'center', fontStyle: 'bold' } },
-          { content: "Total\nUnits", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } },
-          { content: "Total\nHours", rowSpan: 2, styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' } }
-        ],
-        [
-          { content: "(lec)", styles: { halign: 'center', fontStyle: 'bold' } },
-          { content: "(lab)", styles: { halign: 'center', fontStyle: 'bold' } }
-        ]
-      ];
-
-      let currentY = 81.5;
-
-      // ── 2. Table A: Basic Load ──
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(10.5);
-      doc.setTextColor(0, 0, 0);
-      doc.text("TEACHING LOAD", centerMargin, currentY + 3.5, { align: "center" });
-
-      doc.setFontSize(9);
-      doc.text("A. Basic Load/Built-In", leftMargin, currentY + 7.5);
-
-      const tableABody = getTableData("Basic", 7).map((r) => [
-        r.code, r.title, r.day, r.time, r.section, r.students, r.lec, r.lab, r.totalUnits, r.totalHours
-      ]);
-
-      autoTable(doc, {
-        startY: currentY + 8.5,
-        margin: { left: leftMargin, right: leftMargin },
-        tableWidth: 190,
-        theme: 'grid',
-        head: tableHeader,
-        body: tableABody,
-        styles: {
-          font: "helvetica",
-          fontSize: 7.5,
-          textColor: [0, 0, 0],
-          lineColor: [0, 0, 0],
-          lineWidth: 0.25,
-          cellPadding: 1,
-          valign: 'middle'
-        },
-        headStyles: {
-          fillColor: [255, 255, 255],
-          textColor: [0, 0, 0],
-          lineWidth: 0.25,
-          lineColor: [0, 0, 0]
-        },
-        columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 50 },
-          2: { cellWidth: 12, halign: 'center' },
-          3: { cellWidth: 28, halign: 'center' },
-          4: { cellWidth: 20 },
-          5: { cellWidth: 16, halign: 'center' },
-          6: { cellWidth: 11, halign: 'center' },
-          7: { cellWidth: 11, halign: 'center' },
-          8: { cellWidth: 11, halign: 'center' },
-          9: { cellWidth: 11, halign: 'center' }
-        }
-      });
-
-      currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 1;
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text(`TOTAL NUMBER OF UNITS/HRS (BASIC) :`, rightMargin - 45, currentY + 3, { align: "right" });
-      doc.text(`${basicTotals.units}`, rightMargin - 15, currentY + 3, { align: "center" });
-      doc.line(rightMargin - 22, currentY + 3.5, rightMargin, currentY + 3.5);
-
-      currentY += 6.5;
-
-      // ── 3. Table B: Overload Load ──
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(9);
-      doc.text("B. Overload/Part Time Load", leftMargin, currentY);
-
-      const tableBBody = getTableData("Overload", 6).map((r) => [
-        r.code, r.title, r.day, r.time, r.section, r.students, r.lec, r.lab, r.totalUnits, r.totalHours
-      ]);
-
-      autoTable(doc, {
-        startY: currentY + 1.5,
-        margin: { left: leftMargin, right: leftMargin },
-        tableWidth: 190,
-        theme: 'grid',
-        head: tableHeader,
-        body: tableBBody,
-        styles: {
-          font: "helvetica",
-          fontSize: 7.5,
-          textColor: [0, 0, 0],
-          lineColor: [0, 0, 0],
-          lineWidth: 0.25,
-          cellPadding: 1,
-          valign: 'middle'
-        },
-        headStyles: {
-          fillColor: [255, 255, 255],
-          textColor: [0, 0, 0],
-          lineWidth: 0.25,
-          lineColor: [0, 0, 0]
-        },
-        columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 50 },
-          2: { cellWidth: 12, halign: 'center' },
-          3: { cellWidth: 28, halign: 'center' },
-          4: { cellWidth: 20 },
-          5: { cellWidth: 16, halign: 'center' },
-          6: { cellWidth: 11, halign: 'center' },
-          7: { cellWidth: 11, halign: 'center' },
-          8: { cellWidth: 11, halign: 'center' },
-          9: { cellWidth: 11, halign: 'center' }
-        }
-      });
-
-      currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 1.5;
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text(`TOTAL NUMBER OF UNITS / HRS (OVERLOAD)`, rightMargin - 45, currentY + 2.5, { align: "right" });
-      doc.text(`${overloadTotals.units}`, rightMargin - 15, currentY + 2.5, { align: "center" });
-      doc.line(rightMargin - 22, currentY + 3, rightMargin, currentY + 3);
-
-      currentY += 4.5;
-      doc.text(`GRAND TOTAL NUMBER OF UNITS/HRS`, rightMargin - 45, currentY + 2.5, { align: "right" });
-      doc.text(`${grandTotalUnits}`, rightMargin - 15, currentY + 2.5, { align: "center" });
-      doc.line(rightMargin - 22, currentY + 3, rightMargin, currentY + 3);
-
-      currentY += 6;
-
-      // ── 4. Section C: Designations ──
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(9);
-      doc.text("C. Other Designation/Functions", leftMargin, currentY);
-      doc.line(leftMargin, currentY + 1.5, rightMargin, currentY + 1.5);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.text(`1.   —`, leftMargin + 3, currentY + 6);
-      doc.line(leftMargin, currentY + 8, rightMargin, currentY + 8);
-      doc.text(`2.   —`, leftMargin + 3, currentY + 12.5);
-      doc.line(leftMargin, currentY + 14.5, rightMargin, currentY + 14.5);
-
-      currentY += 15.5;
-
-      // ── 5. Signatures Grid Block ──
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.35);
-
-      const deptIdStr = facultyDeptId?.toString();
-      const departmentDean = users.find(
-        (u) => u.role?.toLowerCase() === "dean" && u.department_id?.toString() === deptIdStr
-      );
-      const departmentProgramHead = users.find(
-        (u) => u.role?.toLowerCase() === "program_head" && u.department_id?.toString() === deptIdStr
+      // The blank form holds seven basic and six overload lines. Grouping the
+      // meetings by subject keeps almost every instructor on one sheet, but a
+      // heavy load still spills onto a continuation sheet rather than losing
+      // subjects off the bottom of the table.
+      const sheetCount = Math.max(
+        1,
+        Math.ceil(load.basic.length / BASIC_LINE_COUNT),
+        Math.ceil(load.overload.length / OVERLOAD_LINE_COUNT),
       );
 
-      const signatories = {
-        preparedBy: departmentProgramHead?.name || "_____________________",
-        preparedTitle: "Program Head/Department Secretary",
-        verifiedBy: departmentDean?.name || "_____________________",
-        verifiedTitle: "College Dean",
-        recommendingName: "DR. KHAREN JANE S. UNGAB",
-        recommendingTitle: "Vice President for Academic Affairs",
-        approvedName: settings.president_name,
-        approvedTitle: settings.president_title,
-      };
+      for (let sheet = 0; sheet < sheetCount; sheet += 1) {
+        if (!isFirstSheet) doc.addPage();
+        isFirstSheet = false;
 
-      doc.line(centerMargin, currentY, centerMargin, currentY + 18.5);
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text("Prepared :", leftMargin + 2, currentY + 3.5);
-      doc.text("Verified by:", centerMargin + 2, currentY + 3.5);
-
-      doc.text(signatories.preparedBy, leftMargin + 47.5, currentY + 9, { align: "center" });
-      doc.text(signatories.verifiedBy, centerMargin + 47.5, currentY + 9, { align: "center" });
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.text(signatories.preparedTitle, leftMargin + 47.5, currentY + 12.5, { align: "center" });
-      doc.text(signatories.verifiedTitle, centerMargin + 47.5, currentY + 12.5, { align: "center" });
-
-      doc.text("Date Signed: _____________________", leftMargin + 2, currentY + 16);
-      doc.text("Date Signed: _____________________", centerMargin + 2, currentY + 16);
-
-      currentY += 21;
-
-      doc.line(centerMargin, currentY, centerMargin, currentY + 18.5);
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text("Recommending Approval:", leftMargin + 2, currentY + 3.5);
-      doc.text("Approved:", centerMargin + 2, currentY + 3.5);
-
-      doc.text(signatories.recommendingName, leftMargin + 47.5, currentY + 9, { align: "center" });
-      doc.text(signatories.approvedName, centerMargin + 47.5, currentY + 9, { align: "center" });
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.text(signatories.recommendingTitle, leftMargin + 47.5, currentY + 12.5, { align: "center" });
-      doc.text(signatories.approvedTitle, centerMargin + 47.5, currentY + 12.5, { align: "center" });
-
-      doc.text("Date Signed: _____________________", leftMargin + 2, currentY + 16);
-      doc.text("Date Signed: _____________________", centerMargin + 2, currentY + 16);
-
-      currentY += 21;
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text("Received :", leftMargin + 2, currentY + 3.5);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.text("Instructor's Name (Signature over Printed Name)", leftMargin + 47.5, currentY + 9, { align: "center" });
-      doc.text("Date Signed: _____________________", leftMargin + 2, currentY + 12.5);
-
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(7.5);
-      doc.text("Reminder:", leftMargin, 338);
-      doc.setFont("Helvetica", "italic");
-      doc.text("Submit corrected teaching load when there is/ are changes.", leftMargin + 14, 338);
-
-      doc.setFillColor(123, 12, 23);
-      doc.rect(leftMargin, 340, 190, 1, "F");
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(6.5);
-      doc.setTextColor(85, 85, 85);
-      doc.text("Document No.\nTCC-VPAA-001", leftMargin, 346);
-      doc.text("Revision No.\n001", leftMargin + 22, 346);
+        drawSheet(doc, {
+          logoImg,
+          muniImg,
+          collegeName,
+          semester: semesterLabel(activeTerm?.semester),
+          academicYear: activeTerm?.academic_year || "",
+          surname: surname.toUpperCase(),
+          givenName,
+          middleInitial: mi,
+          isPartTime: faculty.employmentType === "part-time",
+          designation: faculty.administrativeRole ? DESIGNATION_LABELS[faculty.administrativeRole] : "",
+          instructorName: faculty.name.toUpperCase(),
+          preparedBy: preparer?.name ?? "",
+          verifiedBy: byRole("dean")?.name ?? "",
+          vpaaName: vpaaAccount?.name ?? FALLBACK_VPAA_NAME,
+          presidentName: settings.president_name,
+          presidentTitle: settings.president_title,
+          load,
+          basicLines: load.basic.slice(sheet * BASIC_LINE_COUNT, (sheet + 1) * BASIC_LINE_COUNT),
+          overloadLines: load.overload.slice(sheet * OVERLOAD_LINE_COUNT, (sheet + 1) * OVERLOAD_LINE_COUNT),
+          sheetNumber: sheet + 1,
+          sheetCount,
+        });
+      }
     });
 
-    const blob = doc.output("blob");
-    const blobUrl = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(doc.output("blob"));
     window.open(blobUrl, "_blank");
   };
 

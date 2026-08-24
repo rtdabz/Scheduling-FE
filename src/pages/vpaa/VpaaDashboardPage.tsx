@@ -4,15 +4,10 @@ import { useToast } from '../../context/ToastContext';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
-import { termLabel } from '../../lib/termLabel';
 import { useNavigate } from 'react-router-dom';
-import { useSystemNotifications } from '../../hooks/useSystemNotifications';
-import { ActivityFeed, DashboardNotificationBanner } from '../../components/overview';
 import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
 import {
   Building2,
-  Users,
-  Layers,
   BookOpen,
   DoorOpen,
   CalendarDays,
@@ -230,118 +225,6 @@ const getDeptStyles = (code: string) => {
   }
 };
 
-const getClassType = (schedule: Schedule): 'Lecture' | 'Laboratory' => {
-  // Check if room is a laboratory
-  const roomType = schedule.room?.room_type?.toLowerCase() || '';
-  if (roomType.includes('lab') || roomType.includes('laboratory')) {
-    return 'Laboratory';
-  }
-  const roomCode = schedule.room?.room_code?.toLowerCase() || '';
-  if (roomCode.includes('lab')) {
-    return 'Laboratory';
-  }
-  
-  // Check if subject code ends with 'L' or contains 'Lab'
-  const subCode = schedule.subject?.subject_code?.toUpperCase() || '';
-  if (subCode.endsWith('L') || subCode.includes('LAB') || subCode.includes('-L')) {
-    return 'Laboratory';
-  }
-  
-  const subName = schedule.subject?.subject_name?.toLowerCase() || '';
-  if (subName.includes('laboratory') || subName.includes(' lab')) {
-    return 'Laboratory';
-  }
-  
-  return 'Lecture';
-};
-
-const getBuildingColor = (buildingName: string) => {
-  const normalized = (buildingName || 'Main').trim().toUpperCase();
-  const colors: Record<string, string> = {
-    'MAIN': 'bg-rose-50 text-rose-800 border-rose-200 border-l-rose-600 hover:bg-rose-100/60',
-    'IT BUILDING': 'bg-cyan-50 text-cyan-800 border-cyan-200 border-l-cyan-600 hover:bg-cyan-100/60',
-    'ENG BUILDING': 'bg-teal-50 text-teal-800 border-teal-200 border-l-teal-600 hover:bg-teal-100/60',
-    'SCIENCE': 'bg-amber-50 text-amber-800 border-amber-200 border-l-amber-600 hover:bg-amber-100/60',
-    'ANNEX': 'bg-violet-50 text-violet-800 border-violet-200 border-l-violet-600 hover:bg-violet-100/60',
-    'GYM': 'bg-emerald-50 text-emerald-800 border-emerald-200 border-l-emerald-600 hover:bg-emerald-100/60',
-  };
-  
-  if (colors[normalized]) return colors[normalized];
-  
-  // Simple hash for dynamic fallback colors
-  const hash = normalized.split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
-  const colorKeys = Object.keys(colors);
-  const selectedKey = colorKeys[hash % colorKeys.length];
-  return colors[selectedKey];
-};
-
-interface AvailabilityBlock {
-  startSlot: number;
-  endSlot: number;
-  status: 'occupied' | 'available' | 'no-schedule';
-  schedule?: Schedule;
-}
-
-const getDayAvailabilityBlocks = (
-  daySchedules: Schedule[],
-  filterRoom: string,
-  filterBuilding: string
-): AvailabilityBlock[] => {
-  const blocks: AvailabilityBlock[] = [];
-  let currentBlock: AvailabilityBlock | null = null;
-
-  for (let t = 0; t < 25; t++) {
-    let status: 'occupied' | 'available' | 'no-schedule' = 'available';
-    let matchingSchedule: Schedule | undefined = undefined;
-
-    // Check if slot is occupied
-    const activeSchedulesInSlot = daySchedules.filter(s => {
-      const start = parseTimeToSlotIndex(s.start_time);
-      const end = parseTimeToSlotIndex(s.end_time);
-      return t >= start && t < end;
-    });
-
-    if (activeSchedulesInSlot.length > 0) {
-      status = 'occupied';
-      matchingSchedule = activeSchedulesInSlot[0];
-    } else {
-      if (filterRoom === 'all' && filterBuilding === 'all') {
-        status = 'no-schedule';
-      } else {
-        status = 'available';
-      }
-    }
-
-    if (!currentBlock) {
-      currentBlock = {
-        startSlot: t,
-        endSlot: t + 1,
-        status,
-        schedule: matchingSchedule
-      };
-    } else if (
-      currentBlock.status === status &&
-      (!matchingSchedule || currentBlock.schedule?.id === matchingSchedule.id)
-    ) {
-      currentBlock.endSlot = t + 1;
-    } else {
-      blocks.push(currentBlock);
-      currentBlock = {
-        startSlot: t,
-        endSlot: t + 1,
-        status,
-        schedule: matchingSchedule
-      };
-    }
-  }
-
-  if (currentBlock) {
-    blocks.push(currentBlock);
-  }
-
-  return blocks;
-};
-
 interface LayoutItem {
   schedule: Schedule;
   leftPct: number;
@@ -440,7 +323,6 @@ export default function VpaaDashboardPage() {
   const [departments, setDepartments] = useState<Department[]>(cachedDashboardData?.departments ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
-  const { feedItems: notificationItems, unreadCount, markAllAsRead } = useSystemNotifications();
 
   // Timetable Calendar Filters and state (Essential only)
   const daysOfWeek = useMemo(() => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], []);
@@ -621,35 +503,7 @@ export default function VpaaDashboardPage() {
     return map;
   }, [activeTerm?.id, schedules]);
 
-  const totalSchedules = useMemo(() => {
-    if (!activeTerm?.id) return schedules.length;
-    return schedules.filter(schedule => Number(schedule.term_id) === Number(activeTerm.id)).length;
-  }, [activeTerm?.id, schedules]);
-
-  // ── 2. Summary Metric Calculations ──
-  const summaryMetrics = useMemo(() => {
-    let pendingDean = 0;
-    let pendingVpaa = 0;
-    let approved = 0;
-
-    scheduleStatusMap.forEach((val) => {
-      if (val.status === 'submitted') {
-        pendingDean++;
-      } else if (val.status === 'approved_by_dean') {
-        pendingVpaa++;
-      } else if (val.status === 'approved') {
-        approved++;
-      }
-    });
-
-    return {
-      pendingDean,
-      pendingVpaa,
-      approved
-    };
-  }, [scheduleStatusMap]);
-
-  // ── 3. Department Progress Status Overview ──
+  // ── 2. Department Progress Status Overview ──
   const departmentStats = useMemo(() => {
     return departments.map(dept => {
       const deptSections = sections.filter(sec => Number(sec.department_id) === Number(dept.id));
@@ -661,7 +515,7 @@ export default function VpaaDashboardPage() {
         if (val) {
           if (val.status === 'approved') {
             completedCount++;
-          } else if (val.status === 'submitted' || val.status === 'approved_by_dean') {
+          } else if (val.status === 'submitted' || val.status === 'approved_by_dean' || val.status === 'conditionally_approved') {
             pendingCount++;
           }
         }
@@ -692,7 +546,7 @@ export default function VpaaDashboardPage() {
     });
   }, [departments, sections, scheduleStatusMap]);
 
-  // ── 4. Overall Progress Statistics ──
+  // ── 3. Overall Progress Statistics ──
   const overallStats = useMemo(() => {
     let draftCount = 0;
     let pendingCount = 0;
@@ -704,7 +558,7 @@ export default function VpaaDashboardPage() {
       if (val) {
         if (val.status === 'approved') {
           approvedCount++;
-        } else if (val.status === 'submitted' || val.status === 'approved_by_dean') {
+        } else if (val.status === 'submitted' || val.status === 'approved_by_dean' || val.status === 'conditionally_approved') {
           pendingCount++;
         } else if (val.status === 'rejected' || val.status === 'rejected_by_dean') {
           rejectedCount++;
@@ -730,9 +584,9 @@ export default function VpaaDashboardPage() {
     };
   }, [sections, scheduleStatusMap]);
 
-  // ── 5. Faculty Load Distribution Counts ──
+  // ── 4. Faculty Load Distribution Counts ──
   const facultyStats = useMemo(() => {
-    let total = faculties.length;
+    const total = faculties.length;
     let available = 0;
     let fullyLoaded = 0;
     let overloaded = 0;
@@ -762,40 +616,8 @@ export default function VpaaDashboardPage() {
   }, [faculties]);
 
 
-  // ── Export Mock Event Handlers ──
-  const handleExportSchedules = () => {
-    toast.success('Export Successful', 'Academic schedules exported successfully as CSV.');
-  };
-
-  const handleExportFacultyLoad = () => {
-    toast.success('Export Successful', 'Faculty teaching load progress report exported as PDF.');
-  };
-
   return (
     <div className="space-y-5 pb-8 font-sans min-h-screen bg-[#F7F4F0]">
-      {/* Breadcrumbs Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <p className="text-muted text-xs tracking-wider uppercase">Home / Dashboard</p>
-          <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-[#1f2937]">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">Institution-wide overview of scheduling activity and approval progress.</p>
-        </div>
-        {activeTerm && (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Active Term: {termLabel(activeTerm)}
-          </div>
-        )}
-      </div>
-
-      <DashboardNotificationBanner
-        items={notificationItems}
-        unreadCount={unreadCount}
-        actionLabel="Open VPAA Reviews"
-        onAction={() => navigate('/schedules/approval')}
-        onMarkAllRead={markAllAsRead}
-      />
-
       {isLoading ? (
         <DashboardSkeleton />
       ) : (

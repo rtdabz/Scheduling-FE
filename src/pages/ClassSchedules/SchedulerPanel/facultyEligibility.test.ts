@@ -75,7 +75,7 @@ describe("facultyEligibilityForSubject", () => {
     ).toBe(true);
   });
 
-  it("holds a minor to its assigned teaching department", () => {
+  it("holds a service course to the college that teaches it", () => {
     const result = facultyEligibilityForSubject(
       faculty({ departmentId: 1 }),
       subject({ category: "minor", teachingDepartmentId: 3 }),
@@ -83,12 +83,12 @@ describe("facultyEligibilityForSubject", () => {
     );
 
     expect(result.eligible).toBe(false);
-    expect(result.reason).toBe("Outside the assigned teaching department");
+    expect(result.reason).toBe("Outside the teaching college for this course");
   });
 
-  it("lets any department teach a shared minor with no assigned department", () => {
-    // PATH FIT and the like: nobody has been assigned to teach it, so external
-    // instructors are eligible even though the section belongs elsewhere.
+  it("lets any department teach a shared minor no college owns", () => {
+    // PATH FIT and the like: no college teaches it, so external instructors are
+    // eligible even though the section belongs elsewhere.
     expect(
       facultyEligibilityForSubject(
         faculty({ departmentId: 9 }),
@@ -96,6 +96,35 @@ describe("facultyEligibilityForSubject", () => {
         1
       ).eligible
     ).toBe(true);
+  });
+
+  it("follows a delegated course to the college it was assigned to", () => {
+    // IT (department 1) owns GEC 101 and offers the section, but a secretary
+    // assigned it to Arts and Sciences (3) — so CAS instructors teach it and IT's
+    // own no longer may, which is the whole point of the override.
+    const delegated = subject({
+      code: "GEC 101",
+      category: "minor",
+      departmentId: 1,
+      teachingDepartmentId: 3,
+      teachingDepartmentCode: "CAS"
+    });
+
+    expect(facultyEligibilityForSubject(faculty({ departmentId: 3 }), delegated, 1).eligible).toBe(true);
+
+    const owner = facultyEligibilityForSubject(faculty({ departmentId: 1 }), delegated, 1);
+    expect(owner.eligible).toBe(false);
+    expect(owner.reason).toBe("Outside the teaching college for this course");
+  });
+
+  it("refuses an inactive instructor of the delegated college", () => {
+    expect(
+      facultyEligibilityForSubject(
+        faculty({ departmentId: 3, status: "inactive" }),
+        subject({ code: "GEC 101", category: "minor", departmentId: 1, teachingDepartmentId: 3 }),
+        1
+      ).eligible
+    ).toBe(false);
   });
 
   it("falls back to the schedule department when a major has none of its own", () => {

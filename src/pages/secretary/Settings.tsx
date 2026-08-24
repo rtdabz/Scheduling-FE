@@ -1,10 +1,12 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, Loader2, SlidersHorizontal, TreePine, Wifi } from 'lucide-react';
+import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, SlidersHorizontal, TreePine, Wifi } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 interface SchedulingSettings {
   department_id: number;
@@ -66,7 +68,7 @@ function SettingsDropdown({
   children,
 }: SettingsDropdownProps) {
   return (
-    <section className="overflow-hidden bg-white" style={{ borderRadius: 10 }}>
+    <section id={id} className="overflow-hidden bg-white" style={{ borderRadius: 10 }}>
       <button
         type="button"
         onClick={() => onToggle(id)}
@@ -162,7 +164,7 @@ function SettingToggleCard({
         </div>
 
         {isLoading ? (
-          <Loader2 className="mt-1 h-5 w-5 shrink-0 animate-spin text-slate-400" />
+          <LoadingSpinner className="mt-1 h-5 w-5 shrink-0 text-slate-400" />
         ) : (
           <button
             type="button"
@@ -273,9 +275,16 @@ export default function SecretarySettings() {
     setPendingConfirmation(null);
     action?.();
   };
+  const settingsGuideSteps = useMemo(() => [
+    { element: '#secretary-settings-overview', title: 'Review the department profile', description: 'Check which scheduling profile is active and review the recommended controls for this department.', side: 'bottom' as const, align: 'start' as const },
+    { element: '#configuration-override', title: 'Configure scheduling rules', description: 'Open this section to manage course splitting, GEC split behavior, evening field scheduling, Sunday delivery, and custom lab duration.', side: 'bottom' as const },
+    { element: '#resource-slot-limits', title: 'Set resource slot limits', description: 'Review how many online and field sections may share a scheduling slot for this department.', side: 'top' as const },
+    { element: '#secretary-settings-profile-guide', title: 'Use the profile guide', description: 'Use these recommendations as a quick reference when deciding which settings to enable.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'secretary-settings', isReady: true, steps: settingsGuideSteps });
   return (
     <div className="min-h-full bg-[#f7f8fa] p-1">
-      <section className="mb-3 border border-slate-200 bg-white px-5 py-5 shadow-sm" style={{ borderRadius: 10 }}>
+      <section id="secretary-settings-overview" className="mb-3 border border-slate-200 bg-white px-5 py-5 shadow-sm" style={{ borderRadius: 10 }}>
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-[#6b0f1a] text-white" style={{ borderRadius: 8 }}>
@@ -283,7 +292,7 @@ export default function SecretarySettings() {
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold text-slate-950">Department scheduling configuration</h1>
+                <h2 className="text-lg font-bold text-slate-950">Department scheduling configuration</h2>
                 <span className="inline-flex items-center gap-1 border border-[#6b0f1a]/20 bg-[#6b0f1a]/5 px-2 py-1 text-[10px] font-bold uppercase text-[#6b0f1a]" style={{ borderRadius: 6 }}>
                   <Info className="h-3 w-3" />
                   {profileLabel}
@@ -442,7 +451,7 @@ export default function SecretarySettings() {
               });
             }}
           />
-          <section className="border border-slate-200 bg-white px-5 py-4 shadow-sm" style={{ borderRadius: 10 }}>
+          <section id="resource-slot-limits" className="border border-slate-200 bg-white px-5 py-4 shadow-sm" style={{ borderRadius: 10 }}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -610,7 +619,7 @@ export default function SecretarySettings() {
           </SettingsDropdown>
         </div>
         <aside className="space-y-3 lg:sticky lg:top-3">
-          <section className="border border-slate-200 bg-white p-4 shadow-sm" style={{ borderRadius: 8 }}>
+          <section id="secretary-settings-profile-guide" className="border border-slate-200 bg-white p-4 shadow-sm" style={{ borderRadius: 8 }}>
             <div className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center bg-slate-900 text-white" style={{ borderRadius: 7 }}>
                 <Gauge size={16} />
@@ -659,6 +668,7 @@ export default function SecretarySettings() {
           </section>
         </aside>
       </div>
+      <WorkflowGuideButton guideId="secretary-settings" />
       <ConfirmModal
         isOpen={!!pendingConfirmation}
         eyebrow="Scheduling Setting"
@@ -673,3 +683,4 @@ export default function SecretarySettings() {
     </div>
   );
 }
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

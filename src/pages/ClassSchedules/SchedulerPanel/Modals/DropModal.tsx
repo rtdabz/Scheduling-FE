@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, Loader2, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
+import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
 import { getStoredUserRole } from "../../../../lib/storedUser";
@@ -49,7 +49,7 @@ interface SplitSlotRecommendation {
   day: string;
   start_time: string;
   end_time: string;
-  room_id: number;
+  room_id: number | null;
   room_name: string;
   room_type: string;
   mode: DeliveryMode;
@@ -64,7 +64,7 @@ interface SplitRecommendResponse {
 const recommendationRoomId = (row: DropRecommendationRow): string => {
   if (row.mode === "online") return "online";
   if (row.mode === "field") return "field";
-  return row.room_id == null ? "" : String(row.room_id);
+  return row.room_id == null ? "tba" : String(row.room_id);
 };
 
 interface DropModalProps {
@@ -134,8 +134,11 @@ const getRecommendationRoomLabel = (row: DropRecommendationRow, rooms: Room[]): 
   if (room) return room.name;
   if (row.mode === "online") return "Online";
   if (row.mode === "field") return "Field";
+  if (row.room_id == null) return "Room TBA";
   return "Recommended room";
 };
+
+const ROOM_TBA = "tba";
 
 export default function DropModal({
   rooms,
@@ -577,11 +580,18 @@ export default function DropModal({
     return !requiredRoomType || r.roomType === requiredRoomType;
   });
 
+  const allowsRoomTba = modalRoomId === ROOM_TBA
+    || modalDay2RoomId === ROOM_TBA
+    || requiredRoomTypeForMeeting(dropSubject) === "laboratory"
+    || (hasBoth && !!modalPreferredPattern);
+
 
 
 
   const recommendedRoomLabel = modalClassMode === "on-site"
-    ? rooms.find((r) => r.id === modalRoomId)?.name || "Auto-assigning first available room..."
+    ? modalRoomId === ROOM_TBA
+      ? "Room TBA"
+      : rooms.find((r) => r.id === modalRoomId)?.name || "Auto-assigning first available room..."
     : modalClassMode === "online"
     ? "Online"
     : "Field";
@@ -896,6 +906,7 @@ export default function DropModal({
                       className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
                     >
                       <option value="">Select a room...</option>
+                      {allowsRoomTba && <option value={ROOM_TBA}>Room TBA (assign later)</option>}
                       {onSiteRoomOptions
                         .map((r) => {
                           const isUnavailable = r.status === "not available";
@@ -1097,7 +1108,8 @@ export default function DropModal({
                         onChange={(e) => { setModalDay2RoomId(e.target.value); setModalValidationError(""); }}
                         className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20"
                       >
-                        <option value="">Select a room...</option>
+                      <option value="">Select a room...</option>
+                      {allowsRoomTba && <option value={ROOM_TBA}>Room TBA (assign later)</option>}
                         {onSiteRoomOptions
                           .map((r) => {
                             const isUnavailable = r.status === "not available";
@@ -1283,7 +1295,7 @@ export default function DropModal({
             }`}
           >
             {isModalLoading ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Place Subject</>
+              <><LoadingSpinner className="w-4 h-4" /> Place Subject</>
             ) : hasConflict ? (
               "Resolve Conflict First"
             ) : (
@@ -1387,3 +1399,4 @@ export default function DropModal({
     </div>
   );
 }
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

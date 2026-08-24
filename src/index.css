@@ -22,12 +22,22 @@
     box-sizing: border-box;
   }
 
+  html, body, #root {
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+  }
+
   html, body {
     font-family: 'DM Sans', system-ui, sans-serif;
     background-color: var(--color-bg);
     color: var(--color-text);
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
+
+  img, svg, video, canvas { max-width: 100%; }
+  button, input, select, textarea { max-width: 100%; }
 
   h1, h2, h3 {
     font-family: 'Playfair Display', Georgia, serif;
@@ -48,6 +58,20 @@
 }
 
 @layer utilities {
+  /* Shared data-table row interaction, matching the instructor list. */
+  table tbody > tr:not(.animate-pulse):not(:has(> td[colspan])):hover {
+    background-color: rgba(90, 18, 32, 0.05) !important;
+    transition: background-color 200ms ease;
+  }
+
+  table tbody > tr:not(.animate-pulse):not(:has(> td[colspan])) > td:first-child {
+    transition: box-shadow 200ms ease;
+  }
+
+  table tbody > tr:not(.animate-pulse):not(:has(> td[colspan])):hover > td:first-child {
+    box-shadow: inset 4px 0 0 #C9952A;
+  }
+
   .sidebar-item-active {
     background: linear-gradient(90deg, rgba(201,149,42,0.15) 0%, rgba(201,149,42,0.05) 100%);
     border-left: 3px solid #C9952A;
@@ -64,6 +88,20 @@
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.3);
   }
+
+  /* Keep dense data views usable without allowing the page itself to widen. */
+  .responsive-table {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .responsive-table > table { min-width: 40rem; }
+}
+
+@media (max-width: 767px) {
+  .responsive-table > table { min-width: 36rem; }
+  .touch-target { min-height: 2.75rem; min-width: 2.75rem; }
 }
 
 @keyframes toastIn {
@@ -78,6 +116,14 @@
   from { width: 100%; }
   to   { width: 0%; }
 }
+
+@keyframes indeterminate {
+  0% { transform: translateX(-110%); }
+  50% { transform: translateX(135%); }
+  100% { transform: translateX(310%); }
+}
+
+.animate-indeterminate { animation: indeterminate 1.5s ease-in-out infinite; }
 
 .animate-toastIn  { animation: toastIn  0.4s ease-out forwards; }
 .animate-toastOut { animation: toastOut 0.3s ease-in  forwards; }

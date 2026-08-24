@@ -2,16 +2,15 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil, 
   Trash2, 
   Search, 
-  AlertTriangle, 
   ArrowUpDown, 
   ArrowUp, 
   ArrowDown,
   X,
-  Loader2,
   LayoutGrid,
   Building2,
   List,
@@ -31,6 +30,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import api from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiError';
 
 const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
   'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
@@ -65,6 +65,15 @@ interface Department {
   logo?: string | null;
   schedulingProfile: 'standard' | 'laboratory_enabled';
   createdAt: string;     // ISO date string
+  programs: Program[];
+}
+
+interface Program {
+  id: number;
+  department_id: number;
+  cluster: string | null;
+  code: string;
+  name: string | null;
 }
 
 interface ApiDepartment {
@@ -79,6 +88,7 @@ interface ApiDepartment {
   users?: Array<{
     name?: string;
   }>;
+  programs?: Program[];
 }
 
 interface DepartmentsPageData {
@@ -89,7 +99,9 @@ export default function Departments() {
   const { toast } = useToast();
   const departmentsCacheKey = 'page:departments';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
-  const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
+  const [departments, setDepartments] = useState<Department[]>(
+    (cachedDepartmentsData?.departments ?? []).map(department => ({ ...department, programs: department.programs ?? [] }))
+  );
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
   
   // Table & View States
@@ -185,13 +197,14 @@ export default function Departments() {
     logo: department.logo || null,
     schedulingProfile: department.scheduling_profile ?? 'standard',
     createdAt: department.created_at,
+    programs: department.programs ?? [],
   });
 
   const fetchDepartments = async (forceRefresh = false) => {
     const cachedData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
 
     if (!forceRefresh && cachedData && cachedData.departments.length > 0) {
-      setDepartments(cachedData.departments);
+      setDepartments(cachedData.departments.map(department => ({ ...department, programs: department.programs ?? [] })));
       setIsLoading(false);
       return;
     }
@@ -261,11 +274,14 @@ export default function Departments() {
         toast.success('Success', 'Department updated successfully');
       } else {
         const response = await api.post<ApiDepartment>('/departments', payload);
+        const createdDepartment = mapDepartment(response.data);
         setDepartments(prev => {
-          const nextDepartments = [mapDepartment(response.data), ...prev];
+          const nextDepartments = [createdDepartment, ...prev];
           setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
           return nextDepartments;
         });
+        setSelectedDeptForDetail(createdDepartment);
+        setIsDetailModalOpen(true);
         toast.success('Success', 'Department created successfully');
       }
 
@@ -320,6 +336,69 @@ export default function Departments() {
     }
   };
 
+  const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
+  const [programDepartment, setProgramDepartment] = useState<Department | null>(null);
+  const [programEditingId, setProgramEditingId] = useState<number | null>(null);
+  const [programCluster, setProgramCluster] = useState('');
+  const [programCode, setProgramCode] = useState('');
+  const [programName, setProgramName] = useState('');
+  const [isProgramSubmitting, setIsProgramSubmitting] = useState(false);
+  const [programToDelete, setProgramToDelete] = useState<{ department: Department; program: Program } | null>(null);
+
+  const openProgramModal = (department: Department, program?: Program) => {
+    setProgramDepartment(department);
+    setProgramEditingId(program?.id ?? null);
+    setProgramCluster(program?.cluster ?? '');
+    setProgramCode(program?.code ?? '');
+    setProgramName(program?.name ?? '');
+    setIsProgramModalOpen(true);
+  };
+
+  const submitProgram = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!programDepartment || !programCode.trim()) return;
+    setIsProgramSubmitting(true);
+    try {
+      const payload = { department_id: programDepartment.id, cluster: programCluster.trim() || null, code: programCode.trim(), name: programName.trim() || null };
+      const response = programEditingId
+        ? await api.patch<{ data: Program }>(`/programs/${programEditingId}`, payload)
+        : await api.post<{ data: Program }>('/programs', payload);
+      const saved = response.data.data;
+      const nextDepartments = departments.map(department => department.id !== programDepartment.id ? department : {
+        ...department,
+        programs: programEditingId
+          ? department.programs.map(program => program.id === saved.id ? saved : program)
+          : [...department.programs, saved].sort((a, b) => (a.cluster ?? '').localeCompare(b.cluster ?? '') || a.code.localeCompare(b.code)),
+      });
+      setDepartments(nextDepartments);
+      setSelectedDeptForDetail(nextDepartments.find(department => department.id === programDepartment.id) ?? null);
+      setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+      toast.success('Success', programEditingId ? 'Program updated successfully.' : 'Program added successfully.');
+      setIsProgramModalOpen(false);
+    } catch (error) {
+      toast.error('Error', apiErrorMessage(error, 'Failed to save program.'));
+    } finally {
+      setIsProgramSubmitting(false);
+    }
+  };
+
+  const deleteProgram = async () => {
+    if (!programToDelete) return;
+    const { department, program } = programToDelete;
+    setProgramToDelete(null);
+
+    try {
+      await api.delete(`/programs/${program.id}`);
+      const nextDepartments = departments.map(item => item.id === department.id ? { ...item, programs: item.programs.filter(value => value.id !== program.id) } : item);
+      setDepartments(nextDepartments);
+      setSelectedDeptForDetail(nextDepartments.find(item => item.id === department.id) ?? null);
+      setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+      toast.success('Deleted', 'Program removed.');
+    } catch (error) {
+      toast.error('Delete Failed', apiErrorMessage(error, 'Could not delete the program.'));
+    }
+  };
+
   // Define Columns for TanStack Table
   const columns = useMemo<ColumnDef<Department>[]>(
     () => [
@@ -352,9 +431,9 @@ export default function Departments() {
         cell: info => {
           const profile = info.getValue() as Department['schedulingProfile'];
           return (
-            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${profile === 'laboratory_enabled'
-              ? 'bg-amber-50 border-amber-200 text-amber-800'
-              : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border bg-transparent ${profile === 'laboratory_enabled'
+              ? 'border-amber-200 text-amber-800'
+              : 'border-slate-200 text-slate-700'}`}>
               {profile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard'}
             </span>
           );
@@ -366,6 +445,37 @@ export default function Departments() {
         cell: info => {
           const val = info.getValue();
           return <span>{val ? (val as string) : '—'}</span>;
+        }
+      },
+      {
+        id: 'programs',
+        header: 'Programs',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const programs = row.original.programs ?? [];
+          if (programs.length === 0) {
+            return <span className="text-gray-400">—</span>;
+          }
+
+          const visiblePrograms = programs.slice(0, 3);
+          const remainingCount = programs.length - visiblePrograms.length;
+
+          return (
+            <div className="flex max-w-[190px] flex-wrap items-center gap-1.5">
+              {visiblePrograms.map(program => (
+                <span
+                  key={program.id}
+                  title={`${program.cluster ? `${program.cluster}: ` : ''}${program.name || program.code}`}
+                  className="rounded-md border border-[#5A1220]/15 bg-[#5A1220]/5 px-2 py-0.5 text-[10px] font-bold font-mono text-[#5A1220]"
+                >
+                  {program.code}
+                </span>
+              ))}
+              {remainingCount > 0 && (
+                <span className="text-[10px] font-semibold text-gray-500">+{remainingCount} more</span>
+              )}
+            </div>
+          );
         }
       },
       {
@@ -398,6 +508,22 @@ export default function Departments() {
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
+            <div className="relative group/tooltip">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedDeptForDetail(row.original);
+                  setIsDetailModalOpen(true);
+                }}
+                className="p-2 text-[#5A1220] hover:bg-[#5A1220]/10 rounded-lg transition-colors cursor-pointer"
+                aria-label="Manage programs"
+              >
+                <Layers size={17} />
+              </button>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                Manage Programs
+              </span>
+            </div>
             {/* Edit Button */}
             <div className="relative group/tooltip">
               <button 
@@ -458,66 +584,78 @@ export default function Departments() {
     <div>
       {/* Search and Actions Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
-        {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input 
-            type="text"
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search department name or code..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
-          />
-        </div>
+        {isLoading ? (
+          <>
+            <Skeleton className="h-[42px] w-full max-w-sm rounded-xl" />
+            <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
+              <Skeleton className="h-[42px] w-[82px] rounded-xl" />
+              <Skeleton className="h-[42px] w-[156px] rounded-xl" />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                placeholder="Search department name or code..."
+                className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
+              />
+            </div>
 
-        {/* Action Group: View Mode Toggle + Add Department */}
-        <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
-          {/* View Mode Toggle (Grid / List) */}
-          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="Grid View"
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="List View"
-            >
-              <List size={15} />
-            </button>
-          </div>
+            {/* Action Group: View Mode Toggle + Add Department */}
+            <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
+              {/* View Mode Toggle (Grid / List) */}
+              <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                    viewMode === 'grid'
+                      ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                  title="Grid View"
+                >
+                  <LayoutGrid size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                    viewMode === 'list'
+                      ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                  title="List View"
+                >
+                  <List size={15} />
+                </button>
+              </div>
 
-          <button 
-            onClick={() => {
-              setIsEditMode(false);
-              setEditingId(null);
-              setName('');
-              setCode('');
-              setLogo(null);
-              setSchedulingProfile('standard');
-              setCodeError('');
-              setNameError('');
-              setIsModalOpen(true);
-            }}
-            className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-          >
-            <Plus size={15} />
-            <span>Add Department</span>
-          </button>
-        </div>
+              <button
+                onClick={() => {
+                  setIsEditMode(false);
+                  setEditingId(null);
+                  setName('');
+                  setCode('');
+                  setLogo(null);
+                  setSchedulingProfile('standard');
+                  setCodeError('');
+                  setNameError('');
+                  setIsModalOpen(true);
+                }}
+                className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+              >
+                <Plus size={15} />
+                <span>Add Department</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {viewMode === 'grid' ? (
@@ -722,33 +860,46 @@ export default function Departments() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {isLoading ? (
-                  Array.from({ length: 6 }).map((_, index) => (
+                  Array.from({ length: 8 }).map((_, index) => (
                     <tr 
                       key={`skeleton-row-${index}`} 
                       className={`h-12 border-b border-gray-100 ${
                         index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                       }`}
                     >
-                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                        <Skeleton className="h-5 w-12 rounded-full" />
+                      <td className="px-4 py-2.5 align-middle whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <Skeleton className="h-8 w-8 rounded-full" />
+                          <Skeleton className="h-6 w-12 rounded-full" />
+                        </div>
                       </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-48" />
+                      <td className="px-4 py-2.5 align-middle">
+                        <Skeleton className="h-4 w-44" />
                       </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-32" />
+                      <td className="px-4 py-2.5 align-middle">
+                        <Skeleton className="h-6 w-24 rounded-full" />
                       </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-8 mx-auto" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-8 mx-auto" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
+                      <td className="px-4 py-2.5 align-middle">
                         <Skeleton className="h-4 w-20" />
                       </td>
-                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                        <div className="flex justify-end gap-2">
+                      <td className="px-4 py-2.5 align-middle">
+                        <div className="flex max-w-[190px] flex-wrap gap-1.5">
+                          <Skeleton className="h-5 w-20 rounded-md" />
+                          <Skeleton className="h-5 w-20 rounded-md" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-center">
+                        <Skeleton className="h-4 w-8 mx-auto" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-center">
+                        <Skeleton className="h-4 w-8 mx-auto" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle whitespace-nowrap">
+                        <Skeleton className="h-4 w-20" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle whitespace-nowrap text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <Skeleton className="h-8 w-8 rounded-lg" />
                           <Skeleton className="h-8 w-8 rounded-lg" />
                           <Skeleton className="h-8 w-8 rounded-lg" />
                         </div>
@@ -757,7 +908,7 @@ export default function Departments() {
                   ))
                 ) : table.getRowModel().rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
+                    <td colSpan={columns.length} className="px-6 py-16 text-center text-gray-400">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <p className="text-base font-semibold">No departments found.</p>
                         <p className="text-xs">Try adjusting your search criteria or add a new department.</p>
@@ -995,7 +1146,7 @@ export default function Departments() {
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] hover:bg-[#C9952A] text-white rounded-xl transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                   {isSubmitting 
                     ? (isEditMode ? 'Saving...' : 'Creating...') 
                     : (isEditMode ? 'Save Changes' : 'Create Department')
@@ -1008,43 +1159,11 @@ export default function Departments() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Department</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this department? This action is permanent and cannot be undone.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteDepartment}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Department" message="Are you sure you want to delete this department? This action is permanent and cannot be undone." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteDepartment} />
       {/* Department Detail Modal */}
       {isDetailModalOpen && selectedDeptForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg max-h-[90vh] w-full overflow-y-auto shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
             {/* Header Banner */}
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div className="flex items-center gap-3">
@@ -1101,6 +1220,44 @@ export default function Departments() {
                 </div>
               </div>
 
+              <div className="border-t border-gray-200/80 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Programs and Majors</h3>
+                  <button
+                    type="button"
+                    onClick={() => openProgramModal(selectedDeptForDetail)}
+                    className="px-3 py-1.5 rounded-lg bg-[#5A1220] text-white text-[11px] font-bold flex items-center gap-1.5"
+                  >
+                    <Plus size={13} /> Add Program
+                  </button>
+                </div>
+                {(selectedDeptForDetail.programs ?? []).length === 0 ? (
+                  <p className="text-xs text-gray-500">No programs have been added.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {Array.from(new Set((selectedDeptForDetail.programs ?? []).map(program => program.cluster || 'Other'))).map(cluster => (
+                      <div key={cluster}>
+                        <p className="text-[11px] font-bold text-[#5A1220] mb-1">{cluster}</p>
+                        <div className="space-y-1">
+                          {(selectedDeptForDetail.programs ?? []).filter(program => (program.cluster || 'Other') === cluster).map(program => (
+                            <div key={program.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-lg px-3 py-2">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-800">{program.name || program.cluster || program.code}</p>
+                                <p className="text-[10px] font-mono text-gray-500">{program.code}</p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button type="button" onClick={() => openProgramModal(selectedDeptForDetail, program)} className="p-1.5 text-gray-400 hover:text-[#C9952A]" title="Edit program"><Pencil size={13} /></button>
+                                <button type="button" onClick={() => setProgramToDelete({ department: selectedDeptForDetail, program })} className="p-1.5 text-gray-400 hover:text-red-500" title="Delete program"><Trash2 size={13} /></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Action Buttons */}
               <div className="pt-3 border-t border-gray-200/80 flex items-center justify-end gap-3">
                 <button
@@ -1124,6 +1281,48 @@ export default function Departments() {
           </div>
         </div>
       )}
+      {isProgramModalOpen && programDepartment && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-[#1A1410]">{programEditingId ? 'Edit Program' : 'Add Program'}</h2>
+              <button type="button" onClick={() => setIsProgramModalOpen(false)} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+            </div>
+            <form onSubmit={submitProgram} className="p-6 space-y-4">
+              <p className="text-xs text-gray-500">Department: <strong>{programDepartment.name}</strong></p>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">Cluster / Degree</label>
+                <input value={programCluster} onChange={event => setProgramCluster(event.target.value)} placeholder="e.g. BSEd" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">Program Code *</label>
+                <input required value={programCode} onChange={event => setProgramCode(event.target.value.toUpperCase())} placeholder="e.g. BSED-ENG" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">Program / Major Name <span className="normal-case font-semibold text-gray-400">(optional)</span></label>
+                <input value={programName} onChange={event => setProgramName(event.target.value)} placeholder="e.g. Major in English" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setIsProgramModalOpen(false)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl text-sm font-semibold">Cancel</button>
+                <button type="submit" disabled={isProgramSubmitting} className="flex-1 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl text-sm font-semibold disabled:opacity-50">{isProgramSubmitting ? 'Saving...' : 'Save Program'}</button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+      <ConfirmModal
+        isOpen={programToDelete !== null}
+        eyebrow="Permanent Action"
+        title="Delete Program or Major"
+        message={`Are you sure you want to delete "${programToDelete?.program.name ?? ''}"?\n\nThis action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onCancel={() => setProgramToDelete(null)}
+        onConfirm={() => { void deleteProgram(); }}
+      />
     </div>
   );
 }
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

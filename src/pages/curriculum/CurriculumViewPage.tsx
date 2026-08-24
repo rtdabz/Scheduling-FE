@@ -6,7 +6,6 @@ import {
   AlertCircle,
   X,
   Layers,
-  ChevronRight,
   Info
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -152,20 +151,7 @@ export default function CurriculumViewPage() {
   return (
     <div className="space-y-6 font-sans pb-12 w-full">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-        <div>
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-xs text-gray-400 font-semibold mb-1">
-            <span>Home</span>
-            <ChevronRight size={12} />
-            <span className="text-[#4e0a10] font-bold">Curriculum View</span>
-          </div>
-          <h1 className="text-2xl font-bold text-[#1A1410] font-display">Curriculum View</h1>
-          <p className="text-xs text-gray-500 font-medium mt-0.5">
-            View program of study by year and term (CMO prescribed format)
-          </p>
-        </div>
-
+      <div className="flex flex-col items-end justify-end gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:flex-row md:items-center">
         {/* Top Right Controls */}
         <div className="flex items-center gap-3">
           {/* Program Selector Dropdown */}

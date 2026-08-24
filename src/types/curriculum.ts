@@ -4,6 +4,14 @@ export interface Department {
   department_code: string;
 }
 
+export interface Program {
+  id: number;
+  code: string;
+  name: string | null;
+  cluster?: string | null;
+  department_id: number;
+}
+
 export interface Curriculum {
   id: number;
   name: string;
@@ -44,13 +52,6 @@ export interface CurriculumCourse {
   total_units: number;
   /** Program (major) that owns this course; only instructors of it may teach it. */
   program_id?: number | null;
-}
-
-export interface Program {
-  id: number;
-  code: string;
-  name: string;
-  department_id: number;
 }
 
 export interface CurriculumTerm {

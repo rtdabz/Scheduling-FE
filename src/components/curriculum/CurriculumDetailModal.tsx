@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Loader2, BookOpen } from 'lucide-react';
+import { X, BookOpen } from 'lucide-react';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import type { CurriculumDetail, CurriculumTerm } from '../../types/curriculum';
 
@@ -68,7 +68,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
         <div className="p-6 max-h-[80vh] overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 size={24} className="animate-spin text-[#C9952A]" />
+              <LoadingSpinner size={24} className="animate-spin text-[#C9952A]" />
             </div>
           ) : !curriculum ? (
             <div className="text-center py-12 text-gray-400">
@@ -170,3 +170,4 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
     document.body
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

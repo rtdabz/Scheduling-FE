@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
 
 interface CurriculumHeaderProps {
@@ -65,7 +65,7 @@ export default function CurriculumHeader({
               disabled={isActivating}
               className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm"
             >
-              {isActivating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {isActivating ? <LoadingSpinner size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               Activate Curriculum
             </button>
           )}
@@ -106,3 +106,4 @@ export default function CurriculumHeader({
     </div>
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

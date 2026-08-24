@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
 import TeachingLoad from "../pages/ClassSchedules/SchedulerPanel/TeachingLoad";
@@ -20,6 +20,7 @@ import type {
   UserSummary,
   YearLevel,
 } from "../pages/ClassSchedules/SchedulerPanel/types";
+import { normalizeAdministrativePost } from "../pages/ClassSchedules/SchedulerPanel/types";
 
 interface InitialTeachingLoadData {
   active_term: ApiTermRecord | null;
@@ -74,6 +75,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     id: String(faculty.id),
     name: `${faculty.first_name} ${faculty.last_name}`,
     employmentType: faculty.employment_type,
+    administrativeRole: normalizeAdministrativePost(faculty.administrative_role),
     departmentId: faculty.department_id,
     departmentCode: faculty.department?.department_code,
     departmentName: faculty.department?.department_name,
@@ -175,7 +177,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
         className="inline-flex items-center gap-1.5 rounded-lg border border-[#4e0a10]/20 px-2.5 py-1.5 text-xs font-bold text-[#4e0a10] transition-colors hover:border-[#4e0a10]/40 hover:bg-[#4e0a10]/5 disabled:cursor-wait disabled:opacity-60"
         title="Print Teaching Load"
       >
-        {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+        {isLoading ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
         Print
       </button>
 
@@ -183,7 +185,6 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
         <TeachingLoad
           faculties={teachingLoadData.faculties}
           allSchedules={teachingLoadData.schedules}
-          subjects={teachingLoadData.subjects}
           isTeachingLoadOpen={isPrinting}
           setIsTeachingLoadOpen={setIsPrinting}
           sections={teachingLoadData.sections}
@@ -197,3 +198,4 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     </>
   );
 }
+import LoadingSpinner from "./ui/LoadingSpinner";

@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import type jsPDF from "jspdf";
+import type autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ApiDepartmentRecord, ScheduleItem, Section } from "./types";
+import type { ApiDepartmentRecord, ScheduleItem, Section, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 
 interface PrintScheduleProps {
@@ -14,6 +14,7 @@ interface PrintScheduleProps {
   allSchedules: ScheduleItem[];
   selectedSectionId: string;
   departments: ApiDepartmentRecord[];
+  users: UserSummary[];
 }
 
 interface AutoTableDocument extends jsPDF {
@@ -36,15 +37,15 @@ const CONTENT_BOTTOM_Y = 185;
 const MIN_SECTION_START_SPACE = 28;
 
 const SIGNATORIES = {
-  preparedBy: { name: "(NAME)", role: "Program Head" },
-  reviewedBy: { name: "(NAME)", role: "Dean" },
+  preparedBy: { name: "", role: "Program Head" },
+  reviewedBy: { name: "", role: "Dean" },
   recommendedBy: { name: "KHAREN JANE S. UNGAB, DM", role: "Vice-President for Academic Affairs" },
 };
 
 /** The approving signatory is whatever the VPAA saved in Settings. */
-const buildSignatories = (settings: InstitutionSettings) => [
-  { label: "Prepared by:", ...SIGNATORIES.preparedBy },
-  { label: "Reviewed by:", ...SIGNATORIES.reviewedBy },
+const buildSignatories = (settings: InstitutionSettings, preparedByName: string, reviewedByName: string) => [
+  { label: "Prepared by:", ...SIGNATORIES.preparedBy, name: preparedByName },
+  { label: "Reviewed by:", ...SIGNATORIES.reviewedBy, name: reviewedByName },
   { label: "Recommended by:", ...SIGNATORIES.recommendedBy },
   { label: "Approved by:", name: settings.president_name, role: settings.president_title },
 ];
@@ -90,10 +91,15 @@ export default function PrintSchedule({
   allSchedules,
   selectedSectionId,
   departments,
+  users,
 }: PrintScheduleProps) {
 
   const activeSection = sections.find((section) => section.id === selectedSectionId);
   const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
+  const departmentId = activeSection?.departmentId?.toString();
+  const byRole = (role: string) =>
+    users.find((user) => user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
+  const preparer = byRole("program_head") ?? byRole("secretary");
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {
     const name = activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY";
@@ -112,7 +118,11 @@ export default function PrintSchedule({
     municipalLogoUrl = `${logoOrigin}${municipalLogo.startsWith("/") ? "" : "/"}${municipalLogo}`;
   }
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    const [{ default: JsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const loadImgSafe = (url: string): Promise<HTMLImageElement | null> => {
       return new Promise((resolve) => {
         const img = new Image();
@@ -127,13 +137,17 @@ export default function PrintSchedule({
     // still prints -- with the standing names.
     Promise.all([loadImgSafe(logoUrl), loadImgSafe(municipalLogoUrl), departmentLogoUrl ? loadImgSafe(departmentLogoUrl) : Promise.resolve(null), fetchInstitutionSettings()])
       .then(([logoImg, muniImg, departmentImg, settings]) => {
-        generatePdf(logoImg, muniImg, departmentImg, settings);
+        generatePdf(JsPDF, autoTable, logoImg, muniImg, departmentImg, settings);
       });
   };
 
-  const generatePdf = (logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, departmentImg: HTMLImageElement | null, settings: InstitutionSettings) => {
-    const signatories = buildSignatories(settings);
-    const doc = new jsPDF({ orientation: "landscape", format: "a4" });
+  const generatePdf = (PdfDocument: typeof jsPDF, table: typeof autoTable, logoImg: HTMLImageElement | null, muniImg: HTMLImageElement | null, departmentImg: HTMLImageElement | null, settings: InstitutionSettings) => {
+    const signatories = buildSignatories(
+      settings,
+      preparer?.name?.trim().toUpperCase() ?? "",
+      byRole("dean")?.name?.trim().toUpperCase() ?? "",
+    );
+    const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
     // ── 1. Letterhead ──
     let logoWidth = 22;
     let logoHeight = 22;
@@ -354,6 +368,24 @@ export default function PrintSchedule({
         const prevKey = previousItem ? (previousItem.courseId ?? previousItem.subjectId ?? "") : "";
         const isAdditionalMeeting = prevKey === itemKey;
         const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
+        const roomLabel = item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "");
+        const previousRoomLabel = previousItem
+          ? previousItem.roomName || (previousItem.mode === "online" ? "Online" : previousItem.mode === "field" ? "Field" : "")
+          : "";
+        const sameMeetingTime = (left: typeof item, right: typeof item) =>
+          left.startTime === right.startTime && left.endTime === right.endTime;
+        const isAdditionalRoomMeeting = previousRoomLabel === roomLabel
+          && previousItem !== undefined
+          && sameMeetingTime(item, previousItem);
+        const roomMeetingCount = isAdditionalRoomMeeting
+          ? 1
+          : filledRows.slice(index).findIndex((candidate, offset) => {
+              if (offset === 0) return false;
+              const candidateRoom = candidate.roomName || (candidate.mode === "online" ? "Online" : candidate.mode === "field" ? "Field" : "");
+              return candidateRoom !== roomLabel
+                || !sameMeetingTime(candidate, item);
+            });
+        const roomRowSpan = roomMeetingCount === -1 ? filledRows.length - index : roomMeetingCount;
 
         return [
           ...(isAdditionalMeeting ? [] : [
@@ -385,12 +417,16 @@ export default function PrintSchedule({
           ]),
           getFullDayName(item.day),
           `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
-          item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "")
+          ...(isAdditionalRoomMeeting ? [] : [{
+            content: roomLabel,
+            rowSpan: roomRowSpan,
+            styles: { halign: "center" as const, valign: "middle" as const }
+          }])
         ];
       });
 
 
-      autoTable(doc, {
+      table(doc, {
         startY: currentY,
         margin: { left: 15, right: 15, top: PAGE_TOP_Y, bottom: 25 },
         tableWidth: 267,

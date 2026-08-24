@@ -69,22 +69,22 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px] animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-2 backdrop-blur-[2px] animate-in fade-in duration-200 sm:items-center sm:p-4"
       onMouseDown={handleOverlayClick}
       role="presentation"
     >
       <section
-        className={`flex max-h-[calc(100vh-2rem)] w-full ${sizeClasses[size]} flex-col overflow-hidden rounded-xl border border-slate-200 bg-white animate-in zoom-in-95 duration-200 ${className}`}
+        className={`flex max-h-[calc(100dvh-1rem)] w-full ${sizeClasses[size]} flex-col overflow-hidden rounded-xl border border-slate-200 bg-white animate-in zoom-in-95 duration-200 sm:max-h-[calc(100vh-2rem)] ${className}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         aria-describedby={description ? descriptionId : undefined}
       >
         {(title || description || showCloseButton) && (
-          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+          <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
             <div className="min-w-0">
               {title && <h2 id={titleId} className="text-base font-bold leading-6 text-slate-950">{title}</h2>}
-              {description && <p id={descriptionId} className="mt-1 text-sm leading-5 text-slate-600">{description}</p>}
+              {description && <p id={descriptionId} className="mt-1 break-words text-sm leading-5 text-slate-600">{description}</p>}
             </div>
             {showCloseButton && (
               <button
@@ -101,7 +101,7 @@ export default function Modal({
 
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
 
-        {footer && <footer className="flex shrink-0 items-center justify-end gap-2.5 border-t border-slate-100 bg-slate-50 px-5 py-4">{footer}</footer>}
+        {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5 sm:py-4">{footer}</footer>}
       </section>
     </div>,
     document.body,

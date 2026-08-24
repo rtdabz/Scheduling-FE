@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Loader2 } from 'lucide-react';
-import type { Curriculum } from '../../types/curriculum';
+import { X, } from 'lucide-react';
+import type { Curriculum, Program } from '../../types/curriculum';
 
 interface CurriculumFormModalProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface CurriculumFormModalProps {
   curriculum: Curriculum | null;
   onClose: () => void;
   onSubmit: (data: Partial<Curriculum>) => Promise<void>;
+  programs: Program[];
 }
 
 export default function CurriculumFormModal({
@@ -17,12 +18,14 @@ export default function CurriculumFormModal({
   curriculum,
   onClose,
   onSubmit,
+  programs,
 }: CurriculumFormModalProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [effectiveSchoolYear, setEffectiveSchoolYear] = useState('');
   const [status, setStatus] = useState<'draft' | 'active' | 'archived'>('draft');
   const [description, setDescription] = useState('');
+  const [programId, setProgramId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState('');
   const [codeError, setCodeError] = useState('');
@@ -36,12 +39,14 @@ export default function CurriculumFormModal({
         setEffectiveSchoolYear(curriculum.effective_school_year);
         setStatus(curriculum.status);
         setDescription(curriculum.description || '');
+        setProgramId(curriculum.program_id ? String(curriculum.program_id) : '');
       } else {
         setName('');
         setCode('');
         setEffectiveSchoolYear('');
         setStatus('draft');
         setDescription('');
+        setProgramId('');
       }
       setNameError('');
       setCodeError('');
@@ -83,6 +88,7 @@ export default function CurriculumFormModal({
         code: code.trim().toUpperCase(),
         effective_school_year: effectiveSchoolYear.trim(),
         status,
+        program_id: programId ? Number(programId) : null,
         description: description.trim() || null,
       });
     } finally {
@@ -177,6 +183,24 @@ export default function CurriculumFormModal({
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+              Program / Major <span className="text-gray-400 normal-case">(optional for shared curriculum)</span>
+            </label>
+            <select
+              value={programId}
+              onChange={(e) => setProgramId(e.target.value)}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+            >
+              <option value="">Shared / department-wide curriculum</option>
+              {programs.map((program) => (
+                <option key={program.id} value={program.id}>
+                  {program.code} - {program.name || program.cluster || 'Unnamed program'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
               Description
             </label>
             <textarea
@@ -201,7 +225,7 @@ export default function CurriculumFormModal({
               disabled={isSubmitting}
               className="px-6 py-2.5 bg-[#4e0a10] hover:bg-[#C9952A] text-white font-semibold text-sm rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isSubmitting && <LoadingSpinner className="w-4 h-4" />}
               {isEditMode ? 'Save Changes' : 'Create Curriculum'}
             </button>
           </div>
@@ -211,3 +235,4 @@ export default function CurriculumFormModal({
     document.body
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";

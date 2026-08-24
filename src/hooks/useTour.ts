@@ -153,6 +153,22 @@ export function useTour() {
     }
 
     const init = () => {
+      // Workflow pages have their own task-specific guides. Running both
+      // Driver instances on a direct visit produces competing overlays.
+      const workflowGuidePaths = [
+        '/schedules',
+        '/instructor-assignment',
+        '/cross-department-assignments',
+        '/course-teaching-assignments',
+        '/courses',
+        '/curriculum',
+        '/sections',
+        '/instructors',
+        '/rooms',
+        '/secretary/settings',
+      ]
+      if (workflowGuidePaths.some(path => window.location.pathname.endsWith(path))) return
+
       const hasSeen = localStorage.getItem(tourKey)
       if (!hasSeen && isComponentMounted) {
         startTour()

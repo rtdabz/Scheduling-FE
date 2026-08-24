@@ -3,13 +3,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   X,
-  Loader2,
   Building2,
   ArrowLeft,
   Clock,
@@ -24,6 +23,8 @@ import {
 import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 
 interface Department {
@@ -446,10 +447,16 @@ export default function SecretaryRooms() {
       .sort((a, b) => getMinutes(a.start_time) - getMinutes(b.start_time));
   }, [selectedRoom, schedules, activeTabDay]);
 
+  const roomGuideSteps = useMemo(() => [
+    { element: '#rooms-filters', title: 'Find a building or room', description: 'Search by room or building, then filter by room type when locating an available space.', side: 'bottom' as const },
+    { element: '#rooms-workspace', title: 'Review room availability', description: 'Select a building to inspect rooms, capacity, status, and current schedules.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'rooms', isReady: true, steps: roomGuideSteps });
+
   return (
     <div className="space-y-6">
       {/* Search and Filters Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
+      <div id="rooms-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -542,6 +549,8 @@ export default function SecretaryRooms() {
         </div>
       </div>
 
+      <WorkflowGuideButton guideId="rooms" />
+      <div id="rooms-workspace">
       {isLoading ? (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -940,6 +949,7 @@ export default function SecretaryRooms() {
           )}
         </div>
       )}
+      </div>
 
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
@@ -1110,7 +1120,7 @@ export default function SecretaryRooms() {
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
@@ -1123,39 +1133,16 @@ export default function SecretaryRooms() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Room</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this room? This action is permanent and cannot be undone.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteRoom}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        eyebrow="Permanent Action"
+        title="Delete Room"
+        message="Are you sure you want to delete this room? This action is permanent and cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteRoom}
+      />
 
       {/* Classroom Detail Modal */}
       <RoomDetailModal
@@ -1169,3 +1156,4 @@ export default function SecretaryRooms() {
     </div>
   );
 };
+import LoadingSpinner from "../../components/ui/LoadingSpinner";

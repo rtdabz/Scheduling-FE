@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Loader2, BookOpen, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { X, Plus, BookOpen, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { formatCourseName } from '../../lib/formatters';
 
 export interface ManualCourseRowRequest {
@@ -421,7 +421,7 @@ export default function AddCourseModal({
                     {/* Action Indicator / Remove Row Button */}
                     <div className="pt-5 shrink-0 w-8 h-8 flex items-center justify-center">
                       {row.saveStatus === 'saving' ? (
-                        <Loader2 size={16} className="animate-spin text-[#C9952A]" />
+                        <LoadingSpinner size={16} className="animate-spin text-[#C9952A]" />
                       ) : row.saveStatus === 'success' ? (
                         <CheckCircle2 size={16} className="text-emerald-500" />
                       ) : row.saveStatus === 'error' ? (
@@ -491,7 +491,7 @@ export default function AddCourseModal({
                   >
                     {isSaving ? (
                       <>
-                        <Loader2 size={14} className="animate-spin" />
+                        <LoadingSpinner size={14} className="animate-spin" />
                         <span>Saving...</span>
                       </>
                     ) : (
@@ -508,3 +508,4 @@ export default function AddCourseModal({
     document.body
   );
 }
+import LoadingSpinner from "../ui/LoadingSpinner";
