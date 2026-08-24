@@ -2,7 +2,6 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   BookOpen,
@@ -12,23 +11,18 @@ import {
   CheckCircle2,
   ChevronRight,
   DoorOpen,
-  FileText,
   Landmark,
   Maximize2,
   Minimize2,
   Minus,
   RotateCcw,
   Search,
-  Undo2,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
-import { ActivityFeed } from '../../components/overview';
-import type { ActivityFeedItem } from '../../components/overview';
-import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
@@ -133,14 +127,6 @@ interface DepartmentStat {
 }
 
 /** Icon and tint for one administrative-activity row, keyed off notification type. */
-const activityLook = (type?:string): { icon:LucideIcon; tone:string } => {
-  if (type === 'schedule_approved_by_vpaa' || type === 'schedule_approved_by_dean') return { icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' };
-  if (type === 'schedule_returned_by_vpaa' || type === 'schedule_returned_by_dean') return { icon: RotateCcw, tone: 'bg-rose-50 text-rose-600' };
-  if (type === 'schedule_submitted') return { icon: FileText, tone: 'bg-amber-50 text-amber-700' };
-  if (type === 'schedule_withdrawn') return { icon: Undo2, tone: 'bg-slate-100 text-slate-600' };
-  return { icon: Activity, tone: 'bg-primary/10 text-primary' };
-};
-
 export default function VpaaDashboardPage() {
   const navigate = useNavigate();
 
@@ -158,8 +144,6 @@ export default function VpaaDashboardPage() {
   const [departments, setDepartments] = useState<Department[]>(cached?.departments ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cached?.activeTerm ?? null);
-
-  const { feedItems: notificationItems, unreadCount } = useSystemNotifications();
 
   // ── Timetable controls ──
   const [filterDept, setFilterDept] = useState('all');
@@ -473,8 +457,6 @@ export default function VpaaDashboardPage() {
     { key: 'left', value: Math.max(0, totalSectionsCount - scheduledSectionCount), color: '#e2e8f0' },
   ].filter(slice => slice.value > 0);
 
-  const activityRows: ActivityFeedItem[] = notificationItems.slice(0, 5);
-
   /**
    * The master-timetable panel. Extracted so the same tree can be portalled to the
    * body for the full-window view without the grid remounting into a new shape.
@@ -561,28 +543,11 @@ export default function VpaaDashboardPage() {
   if (loading) return <DashboardSkeleton variant="vpaa" />;
 
   return <div className="space-y-4 pb-8 text-slate-800">
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-primary">VPAA Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">Institution-wide scheduling monitoring and final approval.</p>
-      </div>
-    </header>
-
     {loadError && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">{loadError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3" /> Retry</button>
     </div>}
-
-    <ActivityFeed
-      title="Recent Activity"
-      icon={Activity}
-      items={notificationItems}
-      unreadCount={unreadCount}
-      emptyMessage="No recent notifications."
-      actionLabel="Open VPAA Reviews"
-      onAction={openApproval}
-    />
 
     <SectionLabel>Executive Overview</SectionLabel>
 
@@ -800,30 +765,6 @@ export default function VpaaDashboardPage() {
           </div>
         </Panel>
 
-        <Panel
-          title="Recent Administrative Activity"
-          subtitle="Latest workflow events across the institution."
-          action="View all activity"
-          onAction={openApproval}
-          className="flex flex-1 flex-col"
-        >
-          {activityRows.length ? <ul className="space-y-2.5">
-            {activityRows.map(item => {
-              const { icon: Icon, tone } = activityLook(item.type);
-              return <li key={item.id} className="flex items-start gap-2.5">
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tone}`}><Icon className="h-3.5 w-3.5" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    {item.isUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
-                    <span className="truncate text-[11px] font-bold leading-tight text-slate-700" title={item.title}>{item.title ?? 'Activity'}</span>
-                  </div>
-                  <p className="mt-0.5 line-clamp-1 text-[10px] font-medium leading-tight text-slate-500" title={item.action}>{item.action}</p>
-                </div>
-                <span className="shrink-0 text-[9px] font-semibold text-slate-400">{item.timestamp}</span>
-              </li>;
-            })}
-          </ul> : <p className="py-4 text-center text-[11px] italic text-slate-400">No recent administrative activity.</p>}
-        </Panel>
       </div>
     </section>
   </div>;
