@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
 
 
@@ -593,10 +594,10 @@ export default function ProgramHeadRooms() {
                   <div
                     key={building.name}
                     onClick={() => setSelectedBuilding(building.name)}
-                    className="bg-white border border-gray-100 hover:border-[#C9952A]/40 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-4 group font-sans"
+                    className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] group-hover:bg-[#C9952A]/10 group-hover:text-[#C9952A] flex items-center justify-center transition-colors">
+                      <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
                         <Building2 size={24} />
                       </div>
                       <span className="text-[11px] font-bold uppercase tracking-wider bg-gray-50 text-gray-500 border border-gray-150 px-2 py-0.5 rounded-full">
@@ -605,7 +606,7 @@ export default function ProgramHeadRooms() {
                     </div>
 
                     <div>
-                      <h3 className="text-base font-bold text-gray-800 font-sans group-hover:text-[#C9952A] transition-colors leading-tight">
+                      <h3 className="text-base font-bold text-gray-800 font-sans leading-tight">
                         {building.name}
                       </h3>
                       <p className="text-xs text-gray-400 mt-1 font-semibold">
@@ -620,7 +621,7 @@ export default function ProgramHeadRooms() {
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-[#4e0a10] rounded-full transition-all duration-500 group-hover:bg-[#C9952A]"
+                          className="h-full bg-[#4e0a10] rounded-full transition-all duration-500"
                           style={{ width: `${percent}%` }}
                         />
                       </div>
@@ -747,7 +748,7 @@ export default function ProgramHeadRooms() {
                       setSelectedRoomIdForDetail(room.id);
                       setIsDetailModalOpen(true);
                     }}
-                    className="bg-white border border-gray-150 hover:border-[#C9952A]/40 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans"
+                    className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="space-y-1">

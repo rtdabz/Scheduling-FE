@@ -1,5 +1,6 @@
 import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 
 interface CurriculumCardProps {
   curriculum: Curriculum;
@@ -38,7 +39,7 @@ export default function CurriculumCard({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between min-h-[280px]">
+    <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative ${GRID_CARD_HOVER}`}>
       {/* Header */}
       <div>
         <div className="flex items-start justify-between mb-3">

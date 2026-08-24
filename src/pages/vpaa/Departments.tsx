@@ -30,7 +30,9 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 
 const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
   'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
@@ -55,9 +57,43 @@ const getDepartmentColor = (name: string) => {
   };
 };
 
+/**
+ * The code is no longer typed in here — the logo took its place on this page.
+ * It is still derived from the name and saved, because Faculty, Rooms,
+ * Curriculum, the sidebar and the notification feed all label departments by
+ * code. "College of Computing Studies" becomes CCS, the convention the seeded
+ * departments already follow.
+ */
+const CODE_STOPWORDS = new Set(['of', 'and', 'the', 'for', 'in', 'a', 'an']);
+const CODE_MAX_LENGTH = 20; // departments.department_code is validated max:20
+
+const deriveDepartmentCode = (departmentName: string): string => {
+  const words = departmentName.replace(/[^a-zA-Z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  const significant = words.filter(word => !CODE_STOPWORDS.has(word.toLowerCase()));
+  const initials = (significant.length > 0 ? significant : words)
+    .map(word => word[0])
+    .join('')
+    .toUpperCase();
+
+  return initials.slice(0, CODE_MAX_LENGTH) || 'DEPT';
+};
+
+/** The derived code, or the first free variant of it: CCS, then CCS2, CCS3… */
+const firstFreeDepartmentCode = (base: string, taken: Set<string>): string => {
+  if (!taken.has(base)) return base;
+
+  for (let suffix = 2; suffix <= 99; suffix += 1) {
+    const suffixText = String(suffix);
+    const candidate = `${base.slice(0, CODE_MAX_LENGTH - suffixText.length)}${suffixText}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+
+  return base;
+};
+
 interface Department {
   id: number;
-  code: string;          // e.g. "CCS"
+  code: string;          // derived from the name, e.g. "CCS" — no longer user-editable
   name: string;          // e.g. "College of Computing Studies"
   dean: string | null;   // e.g. "Dr. Juan dela Cruz" or null
   facultyCount: number;  // number
@@ -85,6 +121,40 @@ interface DepartmentsPageData {
   departments: Department[];
 }
 
+/** The logo, or a department-tinted placeholder when none has been uploaded. */
+function DepartmentLogo({
+  name,
+  logo,
+  className,
+  iconSize,
+}: {
+  name: string;
+  logo?: string | null;
+  className: string;
+  iconSize: number;
+}) {
+  if (logo) {
+    return (
+      <img
+        src={logo}
+        alt={`${name} logo`}
+        className={`${className} rounded-full object-cover border border-gray-200 bg-white shadow-2xs shrink-0`}
+      />
+    );
+  }
+
+  return (
+    <div
+      role="img"
+      aria-label={`${name} — no logo uploaded`}
+      title={`${name} — no logo uploaded`}
+      className={`${className} rounded-full border flex items-center justify-center shrink-0 shadow-2xs ${getDepartmentColor(name || '').bg}`}
+    >
+      <Building2 size={iconSize} />
+    </div>
+  );
+}
+
 export default function Departments() {
   const { toast } = useToast();
   const departmentsCacheKey = 'page:departments';
@@ -110,12 +180,11 @@ export default function Departments() {
   
   // Form state
   const [name, setName] = useState('');
-  const [code, setCode] = useState('');
+  const [editingName, setEditingName] = useState('');
   const [logo, setLogo] = useState<string | null>(null);
   const [schedulingProfile, setSchedulingProfile] = useState<'standard' | 'laboratory_enabled'>('standard');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [codeError, setCodeError] = useState('');
   const [nameError, setNameError] = useState('');
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,58 +280,79 @@ export default function Departments() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Input Validation
-    let hasError = false;
-    const trimmedCode = code.trim();
-    const trimmedName = name.trim();
 
-    if (!trimmedCode) {
-      setCodeError('Department code is required');
-      hasError = true;
-    } else if (trimmedCode.length > 10) {
-      setCodeError('Department code must not exceed 10 characters');
-      hasError = true;
-    } else {
-      setCodeError('');
-    }
+    // Input Validation
+    const trimmedName = name.trim();
 
     if (!trimmedName) {
       setNameError('Department name is required');
-      hasError = true;
-    } else if (trimmedName.length > 100) {
-      setNameError('Department name must not exceed 100 characters');
-      hasError = true;
-    } else {
-      setNameError('');
+      return;
     }
 
-    if (hasError) return;
+    if (trimmedName.length > 100) {
+      setNameError('Department name must not exceed 100 characters');
+      return;
+    }
 
+    setNameError('');
     setIsSubmitting(true);
 
+    // Derive on create, and again on rename so the code keeps tracking the name.
+    // A logo-only edit leaves it alone, so a hand-picked code (CED for College of
+    // Education) is not quietly rewritten to CE.
+    const needsCode = !isEditMode || trimmedName !== editingName;
+    const baseCode = deriveDepartmentCode(trimmedName);
+    const takenCodes = new Set(
+      departments
+        .filter(dept => dept.id !== editingId)
+        .map(dept => (dept.code || '').toUpperCase())
+        .filter(Boolean)
+    );
+
     try {
-      const payload = {
-        department_name: trimmedName,
-        department_code: trimmedCode,
-        logo: logo,
-        scheduling_profile: schedulingProfile,
-      };
+      let saved: ApiDepartment | null = null;
+      let lastError: unknown = null;
+
+      // `unique:departments,department_code` also counts soft-deleted rows, so a
+      // department deleted and re-added under the same name still clashes. The
+      // code is not on the form any more, so there is nothing for the user to
+      // correct — take the next free variant instead of dead-ending on a 422.
+      for (let attempt = 0; attempt < 5 && saved === null; attempt += 1) {
+        const departmentCode = firstFreeDepartmentCode(baseCode, takenCodes);
+        const payload = {
+          department_name: trimmedName,
+          logo: logo,
+          scheduling_profile: schedulingProfile,
+          ...(needsCode ? { department_code: departmentCode } : {}),
+        };
+
+        try {
+          const response = isEditMode && editingId !== null
+            ? await api.patch<ApiDepartment>(`/departments/${editingId}`, payload)
+            : await api.post<ApiDepartment>('/departments', payload);
+          saved = response.data;
+        } catch (err) {
+          lastError = err;
+          if (!needsCode || !apiFieldErrors(err).department_code) throw err;
+          takenCodes.add(departmentCode);
+        }
+      }
+
+      if (saved === null) throw lastError;
+      const savedDepartment = saved;
 
       if (isEditMode && editingId !== null) {
-        const response = await api.patch<ApiDepartment>(`/departments/${editingId}`, payload);
         setDepartments(prev => {
           const nextDepartments = prev.map(dept =>
-            dept.id === editingId ? mapDepartment(response.data) : dept
+            dept.id === editingId ? mapDepartment(savedDepartment) : dept
           );
           setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
           return nextDepartments;
         });
         toast.success('Success', 'Department updated successfully');
       } else {
-        const response = await api.post<ApiDepartment>('/departments', payload);
         setDepartments(prev => {
-          const nextDepartments = [mapDepartment(response.data), ...prev];
+          const nextDepartments = [mapDepartment(savedDepartment), ...prev];
           setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
           return nextDepartments;
         });
@@ -270,16 +360,15 @@ export default function Departments() {
       }
 
       setName('');
-      setCode('');
+      setEditingName('');
       setLogo(null);
       setSchedulingProfile('standard');
-      setCodeError('');
       setNameError('');
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
-    } catch {
-      toast.error('Error', 'Failed to save department.');
+    } catch (err) {
+      toast.error('Error', apiErrorMessage(err, 'Failed to save department.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -287,11 +376,10 @@ export default function Departments() {
 
   const handleEditClick = (dept: Department) => {
     setName(dept.name);
-    setCode(dept.code);
+    setEditingName(dept.name);
     setLogo(dept.logo || null);
     setSchedulingProfile(dept.schedulingProfile);
     setEditingId(dept.id);
-    setCodeError('');
     setNameError('');
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -324,21 +412,15 @@ export default function Departments() {
   const columns = useMemo<ColumnDef<Department>[]>(
     () => [
       {
-        accessorKey: 'code',
-        header: 'Code',
+        accessorKey: 'logo',
+        header: 'Logo',
+        // A base64 data URI is meaningless to sort by and would match every
+        // search term, so the column is display-only.
+        enableSorting: false,
+        enableGlobalFilter: false,
         cell: info => {
           const dept = info.row.original;
-          const colors = getDepartmentColor(dept.name || '');
-          return (
-            <div className="flex items-center gap-2.5">
-              {dept.logo ? (
-                <img src={dept.logo} alt={dept.name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
-              ) : null}
-              <span className={`px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border ${colors.bg}`}>
-                {info.getValue() as string}
-              </span>
-            </div>
-          );
+          return <DepartmentLogo name={dept.name} logo={dept.logo} className="w-9 h-9" iconSize={16} />;
         }
       },
       {
@@ -465,7 +547,7 @@ export default function Departments() {
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search department name or code..."
+            placeholder="Search department name..."
             className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
@@ -505,10 +587,9 @@ export default function Departments() {
               setIsEditMode(false);
               setEditingId(null);
               setName('');
-              setCode('');
+              setEditingName('');
               setLogo(null);
               setSchedulingProfile('standard');
-              setCodeError('');
               setNameError('');
               setIsModalOpen(true);
             }}
@@ -528,7 +609,7 @@ export default function Departments() {
               Array.from({ length: 6 }).map((_, index) => (
                 <div key={index} className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 shadow-sm animate-pulse">
                   <div className="flex justify-between items-start">
-                    <Skeleton className="h-6 w-16 rounded-full" />
+                    <Skeleton className="h-11 w-11 rounded-full" />
                     <Skeleton className="h-8 w-16 rounded-lg" />
                   </div>
                   <Skeleton className="h-5 w-44" />
@@ -547,7 +628,6 @@ export default function Departments() {
             ) : (
               table.getRowModel().rows.map(row => {
                 const dept = row.original;
-                const colors = getDepartmentColor(dept.name);
                 return (
                   <div
                     key={dept.id}
@@ -555,18 +635,11 @@ export default function Departments() {
                       setSelectedDeptForDetail(dept);
                       setIsDetailModalOpen(true);
                     }}
-                    className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 font-sans relative group cursor-pointer hover:border-[#C9952A]/40"
+                    className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between space-y-4 font-sans relative group cursor-pointer ${GRID_CARD_HOVER}`}
                   >
                     <div>
                       <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2.5">
-                          {dept.logo && (
-                            <img src={dept.logo} alt={dept.name} className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
-                          )}
-                          <span className={`px-3 py-1 text-xs font-extrabold rounded-full border shadow-2xs ${colors.bg}`}>
-                            {dept.code}
-                          </span>
-                        </div>
+                        <DepartmentLogo name={dept.name} logo={dept.logo} className="w-11 h-11" iconSize={20} />
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={(e) => {
@@ -591,7 +664,7 @@ export default function Departments() {
                         </div>
                       </div>
 
-                      <h3 className="text-base font-bold text-gray-900 leading-snug group-hover:text-[#5A1220] transition-colors">
+                      <h3 className="text-base font-bold text-gray-900 leading-snug">
                         {dept.name}
                       </h3>
                       <p className="text-xs font-medium text-gray-500 mt-1">
@@ -730,10 +803,13 @@ export default function Departments() {
                       }`}
                     >
                       <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                        <Skeleton className="h-5 w-12 rounded-full" />
+                        <Skeleton className="h-9 w-9 rounded-full" />
                       </td>
                       <td className="px-4 py-2.5 align-middle text-xs">
                         <Skeleton className="h-4 w-48" />
+                      </td>
+                      <td className="px-4 py-2.5 align-middle text-xs">
+                        <Skeleton className="h-5 w-28 rounded-full" />
                       </td>
                       <td className="px-4 py-2.5 align-middle text-xs">
                         <Skeleton className="h-4 w-32" />
@@ -777,7 +853,7 @@ export default function Departments() {
                       }`}
                     >
                       {row.getVisibleCells().map((cell, cellIdx) => {
-                        const isNoWrap = ['code', 'createdAt', 'actions'].includes(cell.column.id);
+                        const isNoWrap = ['logo', 'createdAt', 'actions'].includes(cell.column.id);
                         return (
                           <td 
                             key={cell.id} 
@@ -928,26 +1004,6 @@ export default function Departments() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Department Code <span className="text-red-500">*</span>
-                </label>
-                <input 
-                  type="text" 
-                  value={code}
-                  onChange={(e) => {
-                    setCode(e.target.value.toUpperCase());
-                    setCodeError('');
-                  }}
-                  placeholder="e.g. CCS"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    codeError 
-                      ? 'border-red-500 focus:ring-red-500' 
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
-                {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                   Department Name <span className="text-red-500">*</span>
                 </label>
                 <input 
@@ -1048,17 +1104,12 @@ export default function Departments() {
             {/* Header Banner */}
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div className="flex items-center gap-3">
-                {selectedDeptForDetail.logo ? (
-                  <img
-                    src={selectedDeptForDetail.logo}
-                    alt={selectedDeptForDetail.name}
-                    className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0 bg-white"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
-                    <Building2 size={20} />
-                  </div>
-                )}
+                <DepartmentLogo
+                  name={selectedDeptForDetail.name}
+                  logo={selectedDeptForDetail.logo}
+                  className="w-10 h-10"
+                  iconSize={20}
+                />
                 <div>
                   <h2 className="text-base font-bold text-[#1A1410] font-display break-words leading-tight">{selectedDeptForDetail.name}</h2>
                   <p className="text-xs text-gray-500 font-medium">Dean: {selectedDeptForDetail.dean || 'Not Assigned'}</p>
@@ -1087,8 +1138,10 @@ export default function Departments() {
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Department Code</p>
-                  <p className="text-xs font-mono font-bold text-gray-800">{selectedDeptForDetail.code}</p>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Scheduling Profile</p>
+                  <p className="text-xs font-bold text-gray-800">
+                    {selectedDeptForDetail.schedulingProfile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard'}
+                  </p>
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">

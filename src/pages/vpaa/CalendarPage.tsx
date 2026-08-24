@@ -25,6 +25,7 @@ import Skeleton from '../../components/ui/Skeleton';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
+import { formatTime12h, gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
 
 interface Department {
   id: number;
@@ -66,45 +67,34 @@ interface ScheduleItem {
   faculty?: Faculty | null;
   section_id?: number | null;
   section?: Section | null;
-  course?: { course_code?: string; course_name?: string } | null;
-  subject?: { subject_code?: string; subject_name?: string } | null;
+  course?: { course_code?: string; course_name?: string; units?: number } | null;
+  subject?: { subject_code?: string; subject_name?: string; units?: number } | null;
 }
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const timeSlots = Array.from({ length: 26 }, (_, i) => {
-  const totalMinutes = 7 * 60 + i * 30;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const period = hours >= 12 ? 'PM' : 'AM';
-  const displayHour = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
-  const displayMinutes = minutes === 0 ? '00' : '30';
-  return {
-    label: `${displayHour}:${displayMinutes} ${period}`,
-    minutes: totalMinutes
-  };
-});
+/** Card geometry, shared with the dashboard timetable grid. */
+const HEADER_HEIGHT = 54;
+const SLOT_HEIGHT = 24;
+const TIME_COLUMN_WIDTH = 88;
 
-const parseTimeToSlotIndex = (timeStr: string): number => {
-  if (!timeStr) return 0;
-  const match12 = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-  if (match12) {
-    let hour = parseInt(match12[1], 10);
-    const minutes = parseInt(match12[2], 10);
-    const ampm = match12[3].toUpperCase();
-    if (ampm === "PM" && hour !== 12) hour += 12;
-    if (ampm === "AM" && hour === 12) hour = 0;
-    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
-    return Math.max(0, totalHalfHours - 14);
-  }
-  const parts = timeStr.split(':');
-  if (parts.length >= 2) {
-    const hour = parseInt(parts[0], 10);
-    const minutes = parseInt(parts[1], 10);
-    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
-    return Math.max(0, totalHalfHours - 14);
-  }
-  return 0;
+const matchesDayOfWeek = (scheduleDay?: string | null, fullDayName?: string | null): boolean => {
+  if (!scheduleDay || !fullDayName) return false;
+  const s = scheduleDay.trim().toLowerCase();
+  const targetFull = fullDayName.trim().toLowerCase();
+  const targetShort = targetFull.substring(0, 3);
+
+  if (s.includes(targetFull) || s.includes(targetShort)) return true;
+
+  if (targetShort === 'mon' && s.includes('m') && !s.startsWith('th') && !s.includes('tth')) return true;
+  if (targetShort === 'tue' && (s === 't' || s.includes('tue') || s.startsWith('t/') || s.includes('t-th') || s.includes('tth') || (s.includes('t') && !s.includes('th') && !s.includes('tth')))) return true;
+  if (targetShort === 'wed' && (s.includes('w') || s.includes('wed'))) return true;
+  if (targetShort === 'thu' && (s.includes('th') || s.includes('tth') || s.includes('thu'))) return true;
+  if (targetShort === 'fri' && (s.includes('f') || s.includes('fri'))) return true;
+  if (targetShort === 'sat' && s.includes('sat')) return true;
+  if (targetShort === 'sun' && s.includes('sun')) return true;
+
+  return false;
 };
 
 const getShortDay = (day: string): string => {
@@ -147,61 +137,64 @@ const getDeptStyles = (code: string) => {
   }
 };
 
+/**
+ * Swatch classes for one department, mirroring getDeptStyles so the footer legend
+ * and the cards it explains can never drift apart.
+ */
+const getDeptSwatch = (code: string) => {
+  switch (normalizeDepartmentKey(code)) {
+    case "IT": return "border-blue-600 bg-blue-50";
+    case "AS": return "border-purple-600 bg-purple-50";
+    case "EDUC": return "border-orange-500 bg-orange-50";
+    case "BA": return "border-yellow-600 bg-yellow-50";
+    case "HM": return "border-lime-600 bg-lime-50";
+    case "MID": return "border-emerald-600 bg-emerald-50";
+    case "CRIM": return "border-[#5A1220] bg-[#5A1220]/5";
+    case "LIS": return "border-pink-600 bg-pink-50";
+    default: return "border-gray-500 bg-gray-50";
+  }
+};
+
+/**
+ * Chip colours for the monthly view and the day modal.
+ *
+ * Keyed off normalizeDepartmentKey, the same mapper getDeptStyles and
+ * getDeptSwatch use, so a department is the same colour wherever the page draws
+ * it and the weekly grid's footer legend stays truthful. The previous
+ * `code.includes(...)` chain covered only four departments, which left CHM, MID,
+ * CCJPS and CLIS sharing one maroon fallback and indistinguishable from each
+ * other here while the weekly grid drew them in four different colours.
+ */
 const getDepartmentColor = (codeOrName?: string) => {
-  const code = (codeOrName || '').toUpperCase();
-  if (code.includes('CS') || code.includes('COMPUTING') || code.includes('BSIT') || code.includes('IT')) {
-    return {
-      bg: 'bg-blue-500/10',
-      border: 'border-blue-500/30',
-      text: 'text-blue-700',
-      badge: 'bg-blue-600 text-white',
-    };
+  const value = codeOrName ?? '';
+  switch (normalizeDepartmentKey(value, value)) {
+    case "IT": return { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-700', badge: 'bg-blue-600 text-white' };
+    case "AS": return { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-700', badge: 'bg-purple-600 text-white' };
+    case "EDUC": return { bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-700', badge: 'bg-orange-600 text-white' };
+    case "BA": return { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-800', badge: 'bg-yellow-600 text-white' };
+    case "HM": return { bg: 'bg-lime-500/10', border: 'border-lime-500/30', text: 'text-lime-800', badge: 'bg-lime-600 text-white' };
+    case "MID": return { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-700', badge: 'bg-emerald-600 text-white' };
+    case "CRIM": return { bg: 'bg-[#5A1220]/10', border: 'border-[#5A1220]/30', text: 'text-[#5A1220]', badge: 'bg-[#5A1220] text-white' };
+    case "LIS": return { bg: 'bg-pink-500/10', border: 'border-pink-500/30', text: 'text-pink-700', badge: 'bg-pink-600 text-white' };
+    default: return { bg: 'bg-gray-500/10', border: 'border-gray-500/30', text: 'text-gray-700', badge: 'bg-gray-600 text-white' };
   }
-  if (code.includes('ARTS') || code.includes('CAS') || code.includes('SCIENCE') || code.includes('AS')) {
-    return {
-      bg: 'bg-purple-500/10',
-      border: 'border-purple-500/30',
-      text: 'text-purple-700',
-      badge: 'bg-purple-600 text-white',
-    };
-  }
-  if (code.includes('EDU') || code.includes('CED') || code.includes('COE')) {
-    return {
-      bg: 'bg-orange-500/10',
-      border: 'border-orange-500/30',
-      text: 'text-orange-700',
-      badge: 'bg-orange-600 text-white',
-    };
-  }
-  if (code.includes('BUS') || code.includes('CBM') || code.includes('BA')) {
-    return {
-      bg: 'bg-amber-500/10',
-      border: 'border-amber-500/30',
-      text: 'text-amber-700',
-      badge: 'bg-amber-600 text-white',
-    };
-  }
-  return {
-    bg: 'bg-[#5A1220]/10',
-    border: 'border-[#5A1220]/30',
-    text: 'text-[#5A1220]',
-    badge: 'bg-[#5A1220] text-white',
-  };
 };
 
 interface LayoutItem {
   schedule: ScheduleItem;
   leftPct: number;
   widthPct: number;
+  hiddenCount?: number;
+  overflowSchedules?: ScheduleItem[];
 }
 
 const getDayLayouts = (daySchedules: ScheduleItem[]): LayoutItem[] => {
   const sorted = [...daySchedules].sort((a, b) => {
-    const aStart = parseTimeToSlotIndex(a.start_time);
-    const bStart = parseTimeToSlotIndex(b.start_time);
+    const aStart = timeToSlot(a.start_time);
+    const bStart = timeToSlot(b.start_time);
     if (aStart !== bStart) return aStart - bStart;
-    return (parseTimeToSlotIndex(b.end_time) - parseTimeToSlotIndex(b.start_time)) -
-           (parseTimeToSlotIndex(a.end_time) - parseTimeToSlotIndex(a.start_time));
+    return (timeToSlot(b.end_time) - timeToSlot(b.start_time)) -
+           (timeToSlot(a.end_time) - timeToSlot(a.start_time));
   });
 
   const clusters: ScheduleItem[][] = [];
@@ -209,10 +202,10 @@ const getDayLayouts = (daySchedules: ScheduleItem[]): LayoutItem[] => {
     let placed = false;
     for (const cluster of clusters) {
       const overlaps = cluster.some((c) => {
-        const sStart = parseTimeToSlotIndex(s.start_time);
-        const sEnd = parseTimeToSlotIndex(s.end_time);
-        const cStart = parseTimeToSlotIndex(c.start_time);
-        const cEnd = parseTimeToSlotIndex(c.end_time);
+        const sStart = timeToSlot(s.start_time);
+        const sEnd = timeToSlot(s.end_time);
+        const cStart = timeToSlot(c.start_time);
+        const cEnd = timeToSlot(c.end_time);
         return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
       });
       if (overlaps) { cluster.push(s); placed = true; break; }
@@ -228,20 +221,44 @@ const getDayLayouts = (daySchedules: ScheduleItem[]): LayoutItem[] => {
       while (true) {
         if (!columns[colIdx]) { columns[colIdx] = [s]; break; }
         const overlapsCol = columns[colIdx].some((c) => {
-          const sStart = parseTimeToSlotIndex(s.start_time);
-          const sEnd = parseTimeToSlotIndex(s.end_time);
-          const cStart = parseTimeToSlotIndex(c.start_time);
-          const cEnd = parseTimeToSlotIndex(c.end_time);
+          const sStart = timeToSlot(s.start_time);
+          const sEnd = timeToSlot(s.end_time);
+          const cStart = timeToSlot(c.start_time);
+          const cEnd = timeToSlot(c.end_time);
           return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
         });
         if (!overlapsCol) { columns[colIdx].push(s); break; }
         colIdx++;
       }
     }
-    const numCols = columns.length;
-    columns.forEach((col, colIdx) => {
-      col.forEach((s) => {
-        layouts.push({ schedule: s, leftPct: (colIdx / numCols) * 100, widthPct: 100 / numCols });
+
+    const totalCols = columns.length;
+    const visibleCols = Math.min(2, totalCols);
+
+    const col0 = columns[0] || [];
+    const col1 = columns[1] || [];
+    const hiddenCols = columns.slice(2);
+    const hiddenSchedules = hiddenCols.flat();
+
+    col0.forEach((s, idx) => {
+      const isOverflowHolder = visibleCols === 1 && idx === 0 && hiddenSchedules.length > 0;
+      layouts.push({
+        schedule: s,
+        leftPct: 0,
+        widthPct: visibleCols === 1 ? 100 : 50,
+        hiddenCount: isOverflowHolder ? hiddenSchedules.length : 0,
+        overflowSchedules: isOverflowHolder ? [...cluster] : [],
+      });
+    });
+
+    col1.forEach((s, idx) => {
+      const isOverflowHolder = idx === 0 && hiddenSchedules.length > 0;
+      layouts.push({
+        schedule: s,
+        leftPct: 50,
+        widthPct: 50,
+        hiddenCount: isOverflowHolder ? hiddenSchedules.length : 0,
+        overflowSchedules: isOverflowHolder ? [...cluster] : [],
       });
     });
   }
@@ -262,7 +279,8 @@ export default function VpaaCalendarPage() {
   const [selectedDay, setSelectedDay] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleItem | null>(null);
-  const [dayModalInfo, setDayModalInfo] = useState<{ dayName: string; date: number; schedules: ScheduleItem[] } | null>(null);
+  const [clusterModalSchedules, setClusterModalSchedules] = useState<ScheduleItem[] | null>(null);
+  const [dayModalInfo, setDayModalInfo] = useState<{ dayName: string; fullDateStr: string; date: number; schedules: ScheduleItem[] } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -374,12 +392,36 @@ export default function VpaaCalendarPage() {
   const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
   const currentDayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
 
+  /**
+   * Rows the grid renders. The shared window (07:00-19:00 by default) is the floor,
+   * but it is only applied globally by the Schedule Builder's initial-data mapper,
+   * and this page loads from /schedules. Stretching to the latest class keeps an
+   * evening section on the grid instead of clipping it off the bottom.
+   */
+  const gridSlotCount = useMemo(() => {
+    const latestEnd = filteredSchedules.reduce((max, s) => Math.max(max, timeToSlot(s.end_time)), 0);
+    return Math.max(slotCount(), latestEnd);
+  }, [filteredSchedules]);
+
+  /** Departments present in the current view, for the grid's footer key. */
+  const legendDepartments = useMemo(() => {
+    const seen = new Map<string, string>();
+    filteredSchedules.forEach(item => {
+      const code = item.department?.department_code?.trim();
+      if (code && !seen.has(code)) seen.set(code, item.department?.department_name ?? code);
+    });
+    return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filteredSchedules]);
+
   const currentDayTimeTop = useMemo(() => {
-    if (currentTotalMinutes < 7 * 60 || currentTotalMinutes > 19 * 60 + 30) return null;
-    return ((currentTotalMinutes - 7 * 60) / 30) * 24 + 36;
-  }, [currentTotalMinutes]);
+    const slot = (currentTotalMinutes - gridOpeningMinutes()) / slotMinutes();
+    if (slot < 0 || slot > gridSlotCount) return null;
+    return slot * SLOT_HEIGHT + HEADER_HEIGHT;
+  }, [currentTotalMinutes, gridSlotCount]);
 
   const handlePrint = () => { window.print(); };
+
+  const visibleDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay);
 
   const timetableContent = (
     <div className={`${isFullscreen ? 'fixed inset-0 z-[999999] bg-white p-4 sm:p-6 flex flex-col w-screen h-screen m-0' : 'bg-white p-5 rounded-2xl border border-gray-300 shadow-md font-sans flex-1 flex flex-col'}`}>
@@ -405,52 +447,89 @@ export default function VpaaCalendarPage() {
           </button>
         </div>
       </div>
-      <div className="mt-3 flex-1 overflow-auto rounded-xl border border-gray-200">
+      <div className="mt-3 flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex-1 overflow-auto bg-slate-50/70 p-4">
         <WeeklyTimetableGrid
-          days={['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay)}
-          slotCount={timeSlots.length}
-          headerHeight={36}
-          timeColumnWidth={64}
+          days={visibleDays}
+          slotCount={gridSlotCount}
+          headerHeight={HEADER_HEIGHT}
+          timeColumnWidth={TIME_COLUMN_WIDTH}
           minWidth={850}
-          slotHeight={24}
-          getTimeLabel={(slot) => timeSlots[slot]?.label ?? ''}
-          getDayCount={(dayIndex) => {
-            const visibleDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay);
-            return filteredSchedules.filter(s => getShortDay(s.day) === visibleDays[dayIndex]).length;
-          }}
+          slotHeight={SLOT_HEIGHT}
+          getTimeLabel={slotToTimeLabel}
+          getDayCount={(dayIndex) => filteredSchedules.filter(s => getShortDay(s.day) === visibleDays[dayIndex]).length}
         >
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay).map((day, dayIndex) => {
+            {visibleDays.map((day, dayIndex) => {
               const daySchedules = filteredSchedules.filter(s => getShortDay(s.day) === day);
               const isToday = day === currentDayName;
               const layouts = getDayLayouts(daySchedules);
               return (
                 <React.Fragment key={day}>
                     {isToday && currentDayTimeTop !== null && (
-                      <div className="relative z-20 pointer-events-none" style={{ gridColumn: dayIndex + 2, gridRow: `2 / span ${timeSlots.length}` }}>
-                        <div className="absolute left-0 right-0 border-t-2 border-red-500 flex items-center" style={{ top: `${currentDayTimeTop - 36}px` }}>
+                      <div className="relative z-20 pointer-events-none" style={{ gridColumn: dayIndex + 2, gridRow: `2 / span ${gridSlotCount}` }}>
+                        <div className="absolute left-0 right-0 border-t-2 border-red-500 flex items-center" style={{ top: `${currentDayTimeTop - HEADER_HEIGHT}px` }}>
                           <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-xs" />
                         </div>
                       </div>
                     )}
                     {daySchedules.map((schedule) => {
-                      const startIdx = parseTimeToSlotIndex(schedule.start_time);
-                      const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                      const height = (endIdx - startIdx) * 24;
-                      if (height <= 0) return null;
+                      const startIdx = timeToSlot(schedule.start_time);
+                      const endIdx = Math.max(startIdx + 1, timeToSlot(schedule.end_time));
+                      const duration = endIdx - startIdx;
                       const layout = layouts.find(item => item.schedule.id === schedule.id);
+                      if (!layout) return null;
                       const deptCode = schedule.department?.department_code || schedule.section?.department_id?.toString() || 'GEN';
+                      const hasOverflow = Boolean(layout.hiddenCount && layout.hiddenCount > 0);
+                      const code = schedule.course?.course_code || schedule.subject?.subject_code || 'Class';
+                      const courseTitle = schedule.course?.course_name || schedule.subject?.subject_name || '';
+                      const units = schedule.course?.units ?? schedule.subject?.units;
+                      const isField = (schedule.mode ?? '').toLowerCase().includes('field');
+                      const timeRange = `${formatTime12h(schedule.start_time)}–${formatTime12h(schedule.end_time)}`;
+                      // Four rows need roughly 72px. Below that the course title is the row
+                      // to drop: the code above it already identifies the class, and the
+                      // full title is one click away in the detail modal.
+                      const showTitle = duration >= 3 && Boolean(courseTitle);
                       return (
-                        <div key={schedule.id} onClick={() => setSelectedSchedule(schedule)} style={{ gridColumn: dayIndex + 2, gridRow: `${startIdx + 2} / span ${endIdx - startIdx}`, height: `${height - 2}px`, marginTop: '1px', marginLeft: `calc(${layout?.leftPct ?? 0}% + 2px)`, width: `calc(${layout?.widthPct ?? 100}% - 4px)` }} className={`group z-10 rounded-lg border border-l-4 p-1.5 cursor-pointer text-left overflow-hidden shadow-2xs transition-all hover:scale-[1.02] hover:z-25 ${getDeptStyles(deptCode)}`}>
-                          <div className="space-y-0.5 min-w-0">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-extrabold text-[10px] truncate">{schedule.course?.course_code || schedule.subject?.subject_code || 'CLASS'}</span>
-                              <span className="text-[7.5px] font-black uppercase px-1 py-0.2 rounded bg-black/5 shrink-0">{schedule.section?.section_name || 'Sec'}</span>
+                        <div
+                          key={schedule.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedSchedule(schedule)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedSchedule(schedule);
+                            }
+                          }}
+                          style={{ gridColumn: dayIndex + 2, gridRow: `${startIdx + 2} / span ${duration}`, marginLeft: `calc(${layout.leftPct}% + 2px)`, width: `calc(${layout.widthPct}% - 4px)` }}
+                          className={`group relative z-10 m-0.5 cursor-pointer overflow-hidden rounded-xl border-2 border-l-4 p-2 text-left shadow-sm transition hover:z-20 hover:shadow-md ${getDeptStyles(deptCode)}`}
+                          title={`${code} · ${timeRange}${schedule.faculty ? ` · ${schedule.faculty.first_name} ${schedule.faculty.last_name}` : ''}`}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <strong className="truncate text-[11px] font-black">{code}</strong>
+                            <div className="flex shrink-0 items-center gap-1">
+                              {isField && <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold text-amber-700">Field</span>}
+                              <span className="rounded bg-black/5 px-1 py-0.5 text-[8px] font-black uppercase">{schedule.section?.section_name || 'Sec'}</span>
+                              {hasOverflow && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setClusterModalSchedules(layout.overflowSchedules || []);
+                                  }}
+                                  className="rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[8px] font-black text-white shadow-xs transition-transform hover:scale-105 hover:bg-[#a67a20]"
+                                  title={`View all ${layout.overflowSchedules?.length || 0} overlapping schedules for this time slot`}
+                                >
+                                  +{layout.hiddenCount}
+                                </button>
+                              )}
                             </div>
-                            <p className="text-[8.5px] font-semibold opacity-90 truncate leading-tight">{schedule.course?.course_name || schedule.subject?.subject_name || ''}</p>
                           </div>
-                          <div className="border-t border-black/5 pt-0.5 mt-auto flex items-center justify-between text-[7.5px] font-bold opacity-80">
-                            <span className="truncate max-w-[60%]">{schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}</span>
-                            <span className="truncate">{schedule.room?.room_code || 'TBD'}</span>
+                          {showTitle && <div className="mt-0.5 truncate text-[9px] font-semibold opacity-90">{courseTitle}</div>}
+                          <div className="mt-0.5 truncate text-[10px] font-semibold text-slate-700">{schedule.room?.room_code ?? 'Room TBA'}</div>
+                          <div className="mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-500">
+                            <span className="truncate">{timeRange}</span>
+                            {units ? <span className="shrink-0 rounded bg-white/80 px-1 py-0.5 font-bold">{units}u</span> : null}
                           </div>
                         </div>
                       );
@@ -459,6 +538,17 @@ export default function VpaaCalendarPage() {
               );
             })}
         </WeeklyTimetableGrid>
+        </div>
+
+        <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 bg-slate-50/60 px-5 py-3 text-[11px] font-semibold text-slate-500">
+          <span>Departments:</span>
+          {legendDepartments.length ? legendDepartments.map(([deptCode, deptName]) => (
+            <span key={deptCode} className="flex items-center gap-1.5" title={deptName}>
+              <i className={`h-3 w-3 rounded-full border-2 ${getDeptSwatch(deptCode)}`} />
+              {deptCode}
+            </span>
+          )) : <span className="italic text-slate-400">No classes in view</span>}
+        </footer>
       </div>
     </div>
   );
@@ -575,7 +665,11 @@ export default function VpaaCalendarPage() {
                 <button onClick={handleNextMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-2xs text-gray-700 transition-all cursor-pointer" title="Next Month"><ChevronRight size={16} /></button>
               </div>
             </div>
-            <span className="text-xs font-extrabold bg-[#5A1220]/10 text-[#5A1220] px-3 py-1.5 rounded-full border border-[#5A1220]/20">{filteredSchedules.length} Total Weekly Classes</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-extrabold bg-[#5A1220]/10 text-[#5A1220] px-3 py-1.5 rounded-full border border-[#5A1220]/20">
+                {filteredSchedules.length} Scheduled Classes
+              </span>
+            </div>
           </div>
           <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50/80 rounded-t-xl text-center py-2.5 text-xs font-black uppercase tracking-wider text-gray-700 divide-x divide-gray-200">
             <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
@@ -583,24 +677,84 @@ export default function VpaaCalendarPage() {
           <div className="grid grid-cols-7 border-l border-t border-gray-200 divide-x divide-y divide-gray-200 rounded-b-xl overflow-hidden bg-white">
             {monthCalendarCells.map((cell, idx) => {
               const dayName = cell.dateObj ? cell.dateObj.toLocaleString('en-US', { weekday: 'long' }) : '';
-              const daySchedules = cell.isCurrentMonth ? filteredSchedules.filter((s) => (s.day || '').toLowerCase().includes(dayName.substring(0, 3).toLowerCase())) : [];
+              const fullDateStr = cell.dateObj ? cell.dateObj.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : '';
+              const daySchedules = filteredSchedules.filter((s) => matchesDayOfWeek(s.day, dayName));
+              const isToday = cell.dateObj &&
+                cell.dateObj.getDate() === now.getDate() &&
+                cell.dateObj.getMonth() === now.getMonth() &&
+                cell.dateObj.getFullYear() === now.getFullYear();
+
               return (
-                <div key={idx} className={`min-h-[120px] p-2 flex flex-col justify-between transition-colors ${cell.isCurrentMonth ? 'bg-white hover:bg-slate-50/50' : 'bg-gray-50/40 text-gray-300'}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-xs font-black w-6 h-6 flex items-center justify-center rounded-full ${cell.isCurrentMonth ? 'text-gray-800' : 'text-gray-400'}`}>{cell.date}</span>
-                    {cell.isCurrentMonth && daySchedules.length > 0 && <span className="text-[9px] font-extrabold text-[#5A1220] bg-[#5A1220]/10 px-1.5 py-0.5 rounded-full">{daySchedules.length}</span>}
+                <div
+                  key={idx}
+                  onClick={() => {
+                    if (daySchedules.length > 0) {
+                      setDayModalInfo({ dayName, fullDateStr, date: cell.date, schedules: daySchedules });
+                    }
+                  }}
+                  className={`min-h-[130px] p-2 flex flex-col justify-between transition-all border ${
+                    isToday
+                      ? 'bg-gradient-to-b from-[#5A1220]/5 to-amber-500/5 border-[#5A1220] ring-1 ring-[#5A1220]/30 shadow-xs'
+                      : cell.isCurrentMonth
+                      ? 'bg-white border-gray-150 hover:bg-slate-50/80 hover:border-gray-300 cursor-pointer'
+                      : 'bg-gray-50/50 text-gray-400 border-gray-100 hover:bg-gray-100/60 cursor-pointer'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-xs font-black w-6 h-6 flex items-center justify-center rounded-full transition-transform ${
+                          isToday
+                            ? 'bg-[#5A1220] text-white shadow-xs scale-105'
+                            : cell.isCurrentMonth
+                            ? 'text-gray-800 bg-gray-100'
+                            : 'text-gray-400 bg-gray-100/50'
+                        }`}
+                      >
+                        {cell.date}
+                      </span>
+                      {isToday && (
+                        <span className="text-[8px] font-black text-[#5A1220] bg-[#5A1220]/10 border border-[#5A1220]/20 px-1.5 py-0.5 rounded-full tracking-wider uppercase">
+                          Today
+                        </span>
+                      )}
+                    </div>
+                    {daySchedules.length > 0 && (
+                      <span className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${cell.isCurrentMonth ? 'text-[#5A1220] bg-[#5A1220]/10 border border-[#5A1220]/20' : 'text-gray-500 bg-gray-200/60'}`}>
+                        {daySchedules.length} {daySchedules.length === 1 ? 'class' : 'classes'}
+                      </span>
+                    )}
                   </div>
                   <div className="space-y-1 overflow-hidden flex-1">
-                    {daySchedules.slice(0, 2).map((s) => {
-                      const colors = getDepartmentColor(s.department?.department_code);
+                    {daySchedules.slice(0, 3).map((s) => {
+                      const deptCode = s.department?.department_code || s.section?.department_id?.toString() || 'GEN';
+                      const colors = getDepartmentColor(deptCode);
                       return (
-                        <div key={s.id} onClick={() => setSelectedSchedule(s)} className={`px-1.5 py-1 rounded text-[10px] font-bold border ${colors.bg} ${colors.border} ${colors.text} truncate cursor-pointer hover:opacity-90 transition-all`}>
-                          <span className="font-mono">{s.start_time}</span> {s.course?.course_code || s.subject?.subject_code} ({s.room?.room_code})
+                        <div
+                          key={s.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSchedule(s);
+                          }}
+                          className={`px-1.5 py-1 rounded-md text-[9.5px] font-bold border ${colors.bg} ${colors.border} ${colors.text} truncate cursor-pointer hover:scale-[1.01] transition-all flex items-center justify-between gap-1 shadow-2xs`}
+                          title={`${s.course?.course_code || s.subject?.subject_code} - ${formatTime12h(s.start_time)} (${s.room?.room_code || 'TBD'})`}
+                        >
+                          <span className="font-mono font-extrabold text-[9px] shrink-0">{formatTime12h(s.start_time)}</span>
+                          <span className="truncate flex-1 font-extrabold">{s.course?.course_code || s.subject?.subject_code}</span>
+                          <span className="text-[8px] font-black opacity-75 shrink-0 bg-white/50 px-1 rounded">{s.room?.room_code || 'TBD'}</span>
                         </div>
                       );
                     })}
-                    {daySchedules.length > 2 && (
-                      <button onClick={() => setDayModalInfo({ dayName, date: cell.date, schedules: daySchedules })} className="text-[9px] font-bold text-[#5A1220] hover:underline cursor-pointer block pt-0.5">+{daySchedules.length - 2} more</button>
+                    {daySchedules.length > 3 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDayModalInfo({ dayName, fullDateStr, date: cell.date, schedules: daySchedules });
+                        }}
+                        className="text-[9px] font-black text-[#5A1220] hover:underline cursor-pointer block pt-0.5 text-left"
+                      >
+                        +{daySchedules.length - 3} more classes...
+                      </button>
                     )}
                   </div>
                 </div>
@@ -648,7 +802,7 @@ export default function VpaaCalendarPage() {
                   <span className="text-[10px] text-gray-400 uppercase font-bold block">Day & Time</span>
                   <div className="text-gray-900 font-bold flex items-center gap-1">
                     <Clock size={12} className="text-[#5A1220]" />
-                    <span>{selectedSchedule.day} ({selectedSchedule.start_time} - {selectedSchedule.end_time})</span>
+                    <span>{selectedSchedule.day} ({formatTime12h(selectedSchedule.start_time)} - {formatTime12h(selectedSchedule.end_time)})</span>
                   </div>
                 </div>
 
@@ -702,13 +856,18 @@ export default function VpaaCalendarPage() {
             <div className="bg-gradient-to-r from-[#5A1220] to-[#7B1113] p-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <CalendarIcon size={20} className="text-[#C9952A]" />
-                <h3 className="text-sm font-black tracking-tight">
-                  {dayModalInfo.dayName} (Date {dayModalInfo.date}) - {dayModalInfo.schedules.length} Classes
-                </h3>
+                <div>
+                  <h3 className="text-sm font-black tracking-tight">
+                    {dayModalInfo.fullDateStr || dayModalInfo.dayName}
+                  </h3>
+                  <p className="text-[11px] text-[#E8D5C4]/90 font-medium">
+                    {dayModalInfo.schedules.length} Total {dayModalInfo.schedules.length === 1 ? 'Class' : 'Classes'} Scheduled
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setDayModalInfo(null)}
-                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -716,7 +875,7 @@ export default function VpaaCalendarPage() {
 
             <div className="p-5 space-y-2.5 max-h-[60vh] overflow-y-auto font-sans">
               {dayModalInfo.schedules.map((s) => {
-                const deptCode = s.department?.department_code || 'DEPT';
+                const deptCode = s.department?.department_code || s.section?.department_id?.toString() || 'GEN';
                 const colors = getDepartmentColor(deptCode);
                 const courseCode = s.course?.course_code || s.subject?.subject_code || 'CLASS';
                 const courseName = s.course?.course_name || s.subject?.subject_name || '';
@@ -728,24 +887,39 @@ export default function VpaaCalendarPage() {
                       setDayModalInfo(null);
                       setSelectedSchedule(s);
                     }}
-                    className={`p-3 rounded-xl border ${colors.bg} ${colors.border} shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-3`}
+                    className={`p-3.5 rounded-xl border ${colors.bg} ${colors.border} shadow-2xs hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-3 group`}
                   >
-                    <div>
+                    <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${colors.badge}`}>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${colors.badge}`}>
                           {deptCode}
                         </span>
-                        <h4 className="text-xs font-extrabold text-gray-900">{courseCode}</h4>
+                        <h4 className="text-xs font-extrabold text-gray-900 truncate">{courseCode}</h4>
+                        <span className="text-[9.5px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                          Sec {s.section?.section_name || 'N/A'}
+                        </span>
                       </div>
-                      {courseName && <p className="text-[10px] text-gray-600 font-semibold mt-0.5">{courseName}</p>}
-                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-500 font-medium">
-                        <span><User size={10} className="inline mr-1 text-gray-400" />{s.faculty ? `${s.faculty.first_name} ${s.faculty.last_name}` : 'Unassigned'}</span>
-                        <span><MapPin size={10} className="inline mr-1 text-gray-400" />{s.room?.room_code || 'TBD'}</span>
+                      {courseName && <p className="text-[11px] text-gray-700 font-semibold truncate">{courseName}</p>}
+                      <div className="flex flex-wrap items-center gap-3 text-[10.5px] text-gray-600 font-medium pt-0.5">
+                        <span className="flex items-center gap-1">
+                          <User size={11} className="text-gray-400" />
+                          {s.faculty ? `${s.faculty.first_name} ${s.faculty.last_name}` : 'Unassigned'}
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <MapPin size={11} className="text-gray-400" />
+                          Room: {s.room?.room_code || 'TBD'}
+                        </span>
                       </div>
                     </div>
-                    <span className="text-xs font-mono font-bold bg-white/80 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-800 shrink-0">
-                      {s.start_time} - {s.end_time}
-                    </span>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-mono font-black bg-white/90 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-800 shadow-2xs block">
+                        {formatTime12h(s.start_time)} - {formatTime12h(s.end_time)}
+                      </span>
+                      <span className="text-[10px] font-bold text-[#C9952A] group-hover:underline mt-1 block">
+                        View Details &rarr;
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -755,6 +929,78 @@ export default function VpaaCalendarPage() {
               <button
                 onClick={() => setDayModalInfo(null)}
                 className="px-4 py-2 bg-[#5A1220] hover:bg-[#410b15] text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}{/* Overlapping Cluster Modal (+N Schedules) */}
+      {clusterModalSchedules && clusterModalSchedules.length > 0 && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] font-sans">
+            <div className="bg-gradient-to-r from-[#4e0a10] to-[#7B1113] p-5 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-bold text-lg leading-tight">
+                  Overlapping Schedules ({clusterModalSchedules.length})
+                </h3>
+                <p className="text-xs text-[#E8D5C4] mt-0.5">
+                  Showing max 2 visible cards on grid. Select a schedule below to view full details.
+                </p>
+              </div>
+              <button
+                onClick={() => setClusterModalSchedules(null)}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2.5 flex-1 divide-y divide-gray-100">
+              {clusterModalSchedules.map((sched) => {
+                const deptCode = sched.department?.department_code || sched.section?.department_id?.toString() || 'GEN';
+                return (
+                  <div
+                    key={sched.id}
+                    onClick={() => {
+                      setSelectedSchedule(sched);
+                      setClusterModalSchedules(null);
+                    }}
+                    className="pt-2.5 first:pt-0 p-3 rounded-2xl hover:bg-gray-50 border border-gray-100 transition-all cursor-pointer flex items-center justify-between group"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-sm text-[#4e0a10]">
+                          {sched.course?.course_code || sched.subject?.subject_code || 'CLASS'}
+                        </span>
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#4e0a10]/10 text-[#4e0a10]">
+                          {sched.section?.section_name || 'Sec'}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                          {sched.day} ({sched.start_time} - {sched.end_time})
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-gray-700">
+                        {sched.course?.course_name || sched.subject?.subject_name}
+                      </p>
+                      <div className="flex items-center gap-3 text-[11px] text-gray-500 font-medium pt-0.5">
+                        <span>Faculty: {sched.faculty ? `${sched.faculty.first_name} ${sched.faculty.last_name}` : 'TBA'}</span>
+                        <span>•</span>
+                        <span>Room: {sched.room?.room_code || 'TBD'}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs font-bold text-[#C9952A] group-hover:translate-x-1 transition-transform">
+                      View &rarr;
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-3 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setClusterModalSchedules(null)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 Close
               </button>

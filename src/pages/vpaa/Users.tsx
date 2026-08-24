@@ -13,7 +13,9 @@ import {
   Loader2,
   Camera,
   Plus,
-  Link2Off
+  Link2Off,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import {
   useReactTable,
@@ -26,6 +28,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 
 interface User {
   id: number;
@@ -131,15 +134,11 @@ export default function VpaaUsers() {
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [viewMode] = useState<'grid' | 'list'>('list');
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 6 });
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
   useEffect(() => {
-    setPagination(prev => ({
-      ...prev,
-      pageSize: viewMode === 'grid' ? 6 : 10,
-      pageIndex: 0
-    }));
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
   }, [viewMode]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -550,7 +549,8 @@ export default function VpaaUsers() {
         }
       },
       {
-        accessorKey: 'program',
+        id: 'program',
+        accessorFn: row => programs.find(pr => String(pr.id) === String(row.program_id)) ?? null,
         header: 'Program / Major',
         cell: info => {
           const program = info.getValue() as Program | null;
@@ -632,7 +632,7 @@ export default function VpaaUsers() {
         )
       }
     ],
-    [users, departments]
+    [users, departments, programs]
   );
 
   const table = useReactTable<User>({
@@ -651,7 +651,9 @@ export default function VpaaUsers() {
 
   return (
     <div>
-      <div className="bg-white border border-gray-200/80 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm font-sans mb-6">
+      {/* Search and Actions Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
+        {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
@@ -662,21 +664,54 @@ export default function VpaaUsers() {
             className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
-        <button
-          onClick={() => {
-            setIsEditMode(false);
-            setEditingId(null);
-            setIsDetailModalOpen(false);
-            setIsDeleteModalOpen(false);
-            setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
-            setNameError('');
-            setDeptError('');
-            setIsModalOpen(true);
-          }}
-          className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
-        >
-          <span className="text-lg leading-none">+</span> Add User
-        </button>
+
+        {/* Action Group: View Mode Toggle + Add User */}
+        <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
+          {/* View Mode Toggle (Grid / List) */}
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="List View"
+            >
+              <List size={15} />
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              setIsEditMode(false);
+              setEditingId(null);
+              setIsDetailModalOpen(false);
+              setIsDeleteModalOpen(false);
+              setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+              setNameError('');
+              setDeptError('');
+              setIsModalOpen(true);
+            }}
+            className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+          >
+            <Plus size={15} />
+            <span>Add User</span>
+          </button>
+        </div>
       </div>
 
       {viewMode === 'grid' ? (
@@ -704,6 +739,7 @@ export default function VpaaUsers() {
               const u = row.original;
               const initials = getInitials(u.name);
               const deptLogo = u.department_logo || departments.find(d => d.id === u.department_id)?.logo || null;
+              const program = programs.find(pr => String(pr.id) === String(u.program_id)) ?? null;
               let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200/50';
               if (u.role.toLowerCase() === 'secretary') {
                 badgeColor = 'bg-green-100 text-green-800 border border-green-200/50';
@@ -717,7 +753,7 @@ export default function VpaaUsers() {
                   onClick={() => {
                     openDetailModal(u);
                   }}
-                  className="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group hover:border-[#C9952A]/40 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden cursor-pointer"
+                  className={`bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group shadow-sm hover:shadow-md overflow-hidden cursor-pointer ${GRID_CARD_HOVER}`}
                 >
                   {/* Centered Background Department Watermark Logo */}
                   {deptLogo && (
@@ -741,7 +777,7 @@ export default function VpaaUsers() {
                           </div>
                         )}
                         <div>
-                          <h3 className="font-bold text-gray-800 text-sm leading-snug group-hover:text-[#C9952A] transition-colors">{u.name}</h3>
+                          <h3 className="font-bold text-gray-800 text-sm leading-snug">{u.name}</h3>
                           <span className="font-mono text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200/60 inline-block mt-0.5">
                             @{u.username}
                           </span>
@@ -757,9 +793,17 @@ export default function VpaaUsers() {
                         <span className="text-gray-400 font-semibold shrink-0">Department:</span>
                         <span className="font-bold text-gray-700 text-right break-words max-w-[200px] leading-tight">{u.department || '—'}</span>
                       </div>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-gray-400 font-semibold shrink-0">Program:</span>
+                        <span className="font-bold text-gray-700 text-right break-words max-w-[200px] leading-tight">{program ? program.code : '—'}</span>
+                      </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-400 font-semibold">Status:</span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-850 border border-emerald-200/60">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          u.status.toLowerCase() === 'active'
+                            ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60'
+                            : 'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}>
                           {u.status}
                         </span>
                       </div>
@@ -877,7 +921,7 @@ export default function VpaaUsers() {
                 ))
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-base font-semibold">No users found.</p>
                       <p className="text-xs">Try adjusting your search criteria or add a new user.</p>
