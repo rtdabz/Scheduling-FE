@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { FULL_DAY_NAMES, formatTime12h } from '../../lib/timeGrid';
 import FacultyAvailabilityEditor from './FacultyAvailabilityEditor';
+import Skeleton from '../ui/Skeleton';
 import type { AvailabilityResponse, AvailabilityWindow } from './facultyAvailability';
 
 interface FacultyAvailabilityPanelProps {
@@ -95,9 +96,9 @@ export default function FacultyAvailabilityPanel({
       </div>
 
       {isLoading ? (
-        <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white p-3 text-xs text-gray-400">
-          <LoadingSpinner size={13} className="animate-spin" />
-          <span>Loading availability&hellip;</span>
+        <div className="space-y-2 rounded-xl border border-gray-100 bg-white p-3" aria-busy="true" aria-label="Loading availability">
+          <Skeleton className="h-3 w-32" />
+          <Skeleton className="h-3 w-3/4" />
         </div>
       ) : loadError ? (
         <p className="rounded-xl border border-red-100 bg-red-50 p-3 text-[11px] font-semibold text-red-600">

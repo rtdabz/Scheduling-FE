@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, ClipboardList, Download, Filter, RefreshCw, Search, X } from 'lucide-react';
 import api from '../../lib/api';
+import Skeleton from '../../components/ui/Skeleton';
 
 type Actor = { id: number; name: string; username: string; role: string };
 type ActivityEntry = {
@@ -151,7 +152,7 @@ export default function ActivityLog() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         {error ? <div role="alert" className="p-8 text-center"><p className="text-sm font-semibold text-red-700">{error}</p><button onClick={() => void loadEntries()} className="mt-3 text-sm font-bold text-[#5A1220] hover:underline">Try again</button></div>
-          : loading ? <div className="p-12 text-center text-sm text-gray-500">Loading activity…</div>
+          : loading ? <div className="space-y-3 p-6" aria-busy="true" aria-label="Loading activity">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="flex items-center gap-3"><Skeleton className="h-4 w-32" /><Skeleton className="h-4 flex-1" /><Skeleton className="h-4 w-24" /><Skeleton className="h-4 w-20" /></div>)}</div>
           : entries.length === 0 ? <div className="p-12 text-center"><ClipboardList className="mx-auto h-10 w-10 text-gray-300" /><p className="mt-3 font-semibold text-gray-700">No activity found</p><p className="mt-1 text-sm text-gray-500">Try clearing the filters or check again after system activity occurs.</p></div>
           : <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500"><tr><th className="px-5 py-3">Date and time</th><th className="px-5 py-3">Event</th><th className="px-5 py-3">Actor</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Source</th></tr></thead>

@@ -20,6 +20,7 @@ import type { Course } from "../types";
 import { ReviewGroup } from "./WizardReviewComponents";
 import SchedulingRuleEditor from "./SchedulingRuleEditor";
 import WizardProgressStepper from "./WizardProgressStepper";
+import Skeleton from "../../../../components/ui/Skeleton";
 
 interface ConstraintCourse {
   id: number;
@@ -272,11 +273,10 @@ export default function GenerationConstraintsStepper({
         <WizardProgressStepper currentStep={step} steps={steps} ariaLabel="Generate schedule steps" />
 
         {isLoading ? (
-          <div className="flex flex-1 items-center justify-center border border-slate-200 bg-white shadow-sm" style={{ borderRadius: 8 }}>
-            <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
-              <LoadingSpinner className="h-5 w-5 text-[#4e0a10]" />
-              Loading semester constraints
-            </div>
+          <div className="flex flex-1 flex-col gap-4 border border-slate-200 bg-white p-5 shadow-sm" style={{ borderRadius: 8 }} aria-busy="true" aria-label="Loading semester constraints">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-3 w-3/4" />
+            <div className="grid gap-3 sm:grid-cols-2"><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-20 rounded-lg" /></div>
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 gap-3">

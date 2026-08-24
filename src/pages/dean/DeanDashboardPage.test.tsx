@@ -100,7 +100,7 @@ describe('DeanDashboardPage', () => {
   it('mounts and renders every panel of the dashboard', async () => {
     renderPage();
 
-    await waitFor(() => expect(screen.getByText('Dean Dashboard')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Schedule Review Queue')).toBeTruthy());
 
     // Every panel from the design is present.
     ['Schedule Review Queue', 'Section Submission Readiness', 'Schedule Review Overview',

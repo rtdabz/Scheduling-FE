@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell, CheckCheck, } from 'lucide-react';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import type { ActivityFeedItem } from '../overview';
+import Skeleton from '../ui/Skeleton';
 
 /**
  * Notification bell for the app shell: unread count on the badge, the recent
@@ -95,9 +96,9 @@ export default function NotificationBell() {
 
           <div className="max-h-[22rem] overflow-y-auto">
             {isLoading && feedItems.length === 0 ? (
-              <p className="flex items-center justify-center gap-2 py-6 text-[11px] text-slate-400">
-                <LoadingSpinner className="h-3.5 w-3.5" />Loading notifications
-              </p>
+              <div className="space-y-2 p-3" aria-busy="true" aria-label="Loading notifications">
+                {Array.from({ length: 4 }).map((_, index) => <div key={index} className="flex items-center gap-2"><Skeleton className="h-2 w-2 rounded-full" /><Skeleton className="h-3 flex-1" /></div>)}
+              </div>
             ) : feedItems.length > 0 ? (
               <ul className="divide-y divide-slate-100">
                 {feedItems.map(item => (

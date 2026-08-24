@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
-import { Calendar, Plus } from 'lucide-react';
+import { CalendarDays, ChevronDown, Plus } from 'lucide-react';
 import type { CurriculumCourse, CurriculumTerm, Program } from '../../types/curriculum';
 import CourseTable from './CourseTable';
 import AddCourseModal from './AddCourseModal';
 import EditCourseModal, { type EditCourseFormData } from './EditCourseModal';
-import type { CourseOption } from './AddCourseForm';
 
 interface SemesterCardProps {
   term: CurriculumTerm;
-  availableCourses: CourseOption[];
+  semesterTerms: CurriculumTerm[];
+  selectedYear: number;
+  selectedSemester: number;
+  yearLevelStats: Record<number, { courses: number; units: number; lec: number; lab: number }>;
+  onSelectYear: (year: number) => void;
+  onSelectSemester: (semester: number) => void;
   highlightedCourseId: number | null;
   removingCourseId: number | null;
   isRemoving: boolean;
@@ -41,7 +45,12 @@ const semesterLabels: Record<number, string> = {
 
 export default function SemesterCard({
   term,
-  availableCourses,
+  semesterTerms,
+  selectedYear,
+  selectedSemester,
+  yearLevelStats,
+  onSelectYear,
+  onSelectSemester,
   highlightedCourseId,
   removingCourseId,
   isRemoving,
@@ -91,16 +100,62 @@ export default function SemesterCard({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-3.5 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <Calendar size={16} className="text-[#C9952A]" />
-          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-            {semesterLabels[term.semester] || `Semester ${term.semester}`}
-          </h3>
+      {/* Semester navigation and table actions */}
+      <div className="flex flex-col gap-3 border-b border-gray-100 bg-gray-50/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="relative shrink-0">
+            <span className="sr-only">Year level</span>
+            <select
+              value={selectedYear}
+              onChange={(event) => onSelectYear(Number(event.target.value))}
+              className="h-9 appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-9 text-xs font-bold text-[#4e0a10] shadow-sm outline-none transition-colors hover:border-[#C9952A] focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/10 cursor-pointer"
+            >
+              {[1, 2, 3, 4].map((year) => (
+                <option key={year} value={year}>
+                  {year === 1 ? '1st' : year === 2 ? '2nd' : year === 3 ? '3rd' : '4th'} Year · {yearLevelStats[year]?.units || 0}u
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={14}
+              aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+          </label>
+
+          <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Semester">
+            {semesterTerms.map((semesterTerm) => {
+              const isSelected = semesterTerm.semester === selectedSemester;
+
+              return (
+                <button
+                  key={semesterTerm.semester}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => onSelectSemester(semesterTerm.semester)}
+                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#4e0a10] text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-[#4e0a10]'
+                  }`}
+                >
+                  <CalendarDays size={14} aria-hidden="true" />
+                  <span>{semesterLabels[semesterTerm.semester] || `Semester ${semesterTerm.semester}`}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-mono ${
+                      isSelected ? 'bg-[#C9952A] text-white' : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    {semesterTerm.totals.tu}u
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between gap-4 px-1 sm:justify-end">
           <div className="flex items-center gap-3 text-xs font-semibold text-gray-500">
             <span>{term.courses.length} courses</span>
             <span>·</span>

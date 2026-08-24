@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import Skeleton from '../../components/ui/Skeleton';
 
 interface SchedulingSettings {
   department_id: number;
@@ -164,7 +165,7 @@ function SettingToggleCard({
         </div>
 
         {isLoading ? (
-          <LoadingSpinner className="mt-1 h-5 w-5 shrink-0 text-slate-400" />
+          <Skeleton className="mt-1 h-6 w-10 shrink-0 rounded-md" />
         ) : (
           <button
             type="button"
@@ -683,4 +684,3 @@ export default function SecretarySettings() {
     </div>
   );
 }
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

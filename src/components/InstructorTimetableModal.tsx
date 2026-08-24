@@ -5,6 +5,7 @@ import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
 import { getCachedData, loadCachedData } from "../lib/dataCache";
 import WeeklyTimetableGrid from "./scheduling/WeeklyTimetableGrid";
+import Skeleton from "./ui/Skeleton";
 
 interface ApiScheduleRecord {
   id: number;
@@ -461,9 +462,9 @@ export default function InstructorTimetableModal({
         {/* Modal Body / CSS Grid Matching Schedule Builder TimetableGrid */}
         <div className="flex-1 overflow-auto bg-slate-50/20 p-4 font-sans relative [transform:translateZ(0)] will-change-scroll">
           {loading ? (
-            <div className="py-24 text-center space-y-3">
-              <LoadingSpinner className="w-8 h-8 text-[#4e0a10] mx-auto" />
-              <p className="text-xs font-bold text-slate-500">Loading instructor timetable grid...</p>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-6" aria-busy="true" aria-label="Loading instructor timetable">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-64 w-full rounded-xl" />
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -543,4 +544,3 @@ export default function InstructorTimetableModal({
     document.body
   );
 }
-import LoadingSpinner from "./ui/LoadingSpinner";

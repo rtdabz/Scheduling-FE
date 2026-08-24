@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, BookOpen } from 'lucide-react';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import type { CurriculumDetail, CurriculumTerm } from '../../types/curriculum';
+import Skeleton from '../ui/Skeleton';
 
 interface CurriculumDetailModalProps {
   isOpen: boolean;
@@ -67,8 +68,11 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
 
         <div className="p-6 max-h-[80vh] overflow-y-auto">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <LoadingSpinner size={24} className="animate-spin text-[#C9952A]" />
+            <div className="space-y-4 rounded-xl border border-gray-100 bg-white p-5" aria-busy="true" aria-label="Loading curriculum details">
+              <Skeleton className="h-7 w-64" />
+              <Skeleton className="h-4 w-28 rounded-full" />
+              <div className="grid grid-cols-2 gap-4"><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div>
+              <Skeleton className="h-40 w-full rounded-xl" />
             </div>
           ) : !curriculum ? (
             <div className="text-center py-12 text-gray-400">
@@ -170,4 +174,3 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
     document.body
   );
 }
-import LoadingSpinner from "../ui/LoadingSpinner";

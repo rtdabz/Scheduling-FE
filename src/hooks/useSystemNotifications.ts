@@ -121,8 +121,12 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
 
   useEffect(() => {
     let active = true;
+    let timerId: number | undefined;
+    let inFlight = false;
 
     const load = async () => {
+      if (!active || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
       try {
         const response = await api.get<NotificationResponse>('/notifications', {
           params: { limit },
@@ -134,19 +138,28 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
       } catch {
         if (!active) return;
       } finally {
+        inFlight = false;
         if (active) {
           setIsLoading(false);
+          const delay = document.visibilityState === 'visible' ? pollMs : pollMs * 4;
+          timerId = window.setTimeout(load, delay);
         }
       }
     };
 
-    const initialTimeoutId = window.setTimeout(load, 0);
-    const intervalId = window.setInterval(load, pollMs);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (timerId !== undefined) window.clearTimeout(timerId);
+        void load();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    timerId = window.setTimeout(load, 0);
 
     return () => {
       active = false;
-      window.clearTimeout(initialTimeoutId);
-      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (timerId !== undefined) window.clearTimeout(timerId);
     };
   }, [limit, pollMs]);
 

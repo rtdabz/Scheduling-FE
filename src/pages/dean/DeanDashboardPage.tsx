@@ -25,10 +25,8 @@ import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAx
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
 import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
-import { ActivityFeed } from '../../components/overview';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import type { SectionStatusItem } from '../../hooks/useDepartmentScheduleStatus';
-import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
@@ -129,8 +127,6 @@ export default function DeanDashboardPage() {
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
   const [users, setUsers] = useState<DeptUser[]>(cached?.users ?? []);
   const [term, setTerm] = useState<Term | null>(cached?.activeTerm ?? null);
-
-  const { feedItems: notificationItems, unreadCount } = useSystemNotifications();
 
   // ── Timetable controls ──
   const [yearFilter, setYearFilter] = useState('all');
@@ -550,30 +546,13 @@ export default function DeanDashboardPage() {
   if (loading) return <DashboardSkeleton variant="dean" />;
 
   return <div className="space-y-4 pb-8 text-slate-800">
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-primary">Dean Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">Review and approve department schedules before VPAA submission.</p>
-      </div>
-    </header>
-
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">{loadError || statusError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3" /> Retry</button>
     </div>}
 
-    <ActivityFeed
-      title="Recent Activity"
-      icon={ClipboardCheck}
-      items={notificationItems}
-      unreadCount={unreadCount}
-      emptyMessage="No recent notifications."
-      actionLabel="Open Approval Requests"
-      onAction={openApproval}
-    />
-
-    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
+    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
       {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button
         key={label}
         type="button"
@@ -633,7 +612,7 @@ export default function DeanDashboardPage() {
       <button
         type="button"
         onClick={openApproval}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
       >
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${pendingApprovals ? TONES.alert : TONES.good}`}><ClipboardCheck className="h-4 w-4" /></span>
         <div className="flex min-w-0 flex-1 flex-col">
@@ -651,7 +630,7 @@ export default function DeanDashboardPage() {
         badge={pendingApprovals}
         action="View all queue"
         onAction={openApproval}
-        className="xl:col-span-5"
+        className="xl:col-span-4"
       >
         {packages.length ? <>
           <div className="-mx-1 overflow-x-auto px-1">
@@ -705,7 +684,7 @@ export default function DeanDashboardPage() {
         subtitle="Status of sections by readiness stage."
         action="View all sections by status"
         onAction={openApproval}
-        className="xl:col-span-3"
+        className="xl:col-span-4"
       >
         <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
           <Donut slices={readinessSlices} headline={sectionTotal} caption="Total Sections" />
@@ -748,18 +727,19 @@ export default function DeanDashboardPage() {
       </Panel>
     </section>
 
-    <section className="grid items-stretch gap-4 xl:grid-cols-12">
-      <div className="min-w-0 xl:col-span-5">
+    <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="min-w-0">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>
 
-      <Panel
-        title="Faculty Workload"
-        subtitle="Teaching load overview for all active faculty."
-        action="Faculty workload by %"
-        onAction={() => navigate('/dean/faculty')}
-        className="flex flex-col xl:col-span-4"
-      >
+      <div className="flex min-w-0 flex-col gap-4">
+        <Panel
+          title="Faculty Workload"
+          subtitle="Teaching load overview for all active faculty."
+          action="Faculty workload by %"
+          onAction={() => navigate('/dean/faculty')}
+          className="flex flex-col"
+        >
         <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
           <Donut slices={workloadSlices} headline={deptFaculties.length} caption="Total Faculty" />
           <DonutLegend slices={workloadSlices} total={deptFaculties.length} />
@@ -772,13 +752,13 @@ export default function DeanDashboardPage() {
           </div>
           <InstructorWorkloadChart instructors={workload} />
         </div>
-      </Panel>
+        </Panel>
 
-      <Panel
-        title="Room Utilization"
-        subtitle="Usage overview of department rooms."
-        className="flex flex-col xl:col-span-3"
-      >
+        <Panel
+          title="Room Utilization"
+          subtitle="Usage overview of department rooms."
+          className="flex flex-col"
+        >
         <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
           <Donut slices={roomSlices} headline={`${utilization}%`} caption="Utilization" />
           <DonutLegend slices={roomSlices} total={assignableRooms.length} />
@@ -805,7 +785,8 @@ export default function DeanDashboardPage() {
           <button type="button" onClick={() => navigate('/dean/rooms')} className="text-[11px] font-bold text-primary hover:underline">Go to Room Management <ArrowRight className="inline h-3 w-3" /></button>
           {roomUsage.length > 5 && <span className="text-[10px] text-slate-400">+{roomUsage.length - 5} more</span>}
         </div>
-      </Panel>
+        </Panel>
+      </div>
     </section>
   </div>;
 }

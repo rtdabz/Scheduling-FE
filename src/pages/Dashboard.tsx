@@ -1,4 +1,5 @@
 import { lazy, Suspense, type FC } from 'react';
+import DashboardSkeleton from '../components/ui/DashboardSkeleton';
 
 export type UserRole = 'vpaa' | 'dean' | 'program_head' | 'secretary';
 
@@ -23,7 +24,7 @@ const Dashboard: FC<DashboardProps> = ({ role }) => {
   if (!Component) return <h2>Invalid Role</h2>;
 
   return (
-    <Suspense fallback={<div className="min-h-[240px] animate-pulse rounded-xl bg-slate-100" />}>
+    <Suspense fallback={<DashboardSkeleton variant={role === 'program_head' ? 'program' : role === 'vpaa' || role === 'dean' || role === 'secretary' ? role : 'institutional'} />}>
       <Component />
     </Suspense>
   );

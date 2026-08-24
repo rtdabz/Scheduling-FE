@@ -551,7 +551,7 @@ export default function VpaaDashboardPage() {
 
     <SectionLabel>Executive Overview</SectionLabel>
 
-    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
+    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
       {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button
         key={label}
         type="button"
@@ -611,7 +611,7 @@ export default function VpaaDashboardPage() {
       <button
         type="button"
         onClick={() => navigate('/departments')}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
       >
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${fullyApprovedDepartments === departments.length && departments.length > 0 ? TONES.good : TONES.info}`}><CheckCircle2 className="h-4 w-4" /></span>
         <div className="flex min-w-0 flex-1 flex-col">
@@ -726,33 +726,33 @@ export default function VpaaDashboardPage() {
 
     <SectionLabel>Tactical · Operational Overview</SectionLabel>
 
-    <section className="grid items-stretch gap-4 xl:grid-cols-12">
-      <div className="min-w-0 xl:col-span-5">
+    <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="min-w-0">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>
 
-      <Panel
-        title="Faculty Load Overview"
-        subtitle="Teaching load spread across all faculty."
-        action="View Faculty Loads"
-        onAction={() => navigate('/faculty')}
-        className="flex flex-col xl:col-span-3"
-      >
-        <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
-          <Donut slices={facultySlices} headline={grouped(faculties.length)} caption="Total Faculty" />
-          <DonutLegend slices={facultySlices} total={faculties.length} />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => navigate('/faculty')}
-          className="mt-auto self-start pt-3 text-[11px] font-bold text-primary hover:underline"
+      <div className="flex min-w-0 flex-col gap-4">
+        <Panel
+          title="Faculty Load Overview"
+          subtitle="Teaching load spread across all faculty."
+          action="View Faculty Loads"
+          onAction={() => navigate('/faculty')}
+          className="flex flex-col"
         >
-          View Faculty Loads <ArrowRight className="inline h-3 w-3" />
-        </button>
-      </Panel>
+          <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
+            <Donut slices={facultySlices} headline={grouped(faculties.length)} caption="Total Faculty" />
+            <DonutLegend slices={facultySlices} total={faculties.length} />
+          </div>
 
-      <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
+          <button
+            type="button"
+            onClick={() => navigate('/faculty')}
+            className="mt-auto self-start pt-3 text-[11px] font-bold text-primary hover:underline"
+          >
+            View Faculty Loads <ArrowRight className="inline h-3 w-3" />
+          </button>
+        </Panel>
+
         <Panel
           title="Institutional Readiness"
           subtitle="Departments by approval stage."

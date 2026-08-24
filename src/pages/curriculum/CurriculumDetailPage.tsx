@@ -1,15 +1,16 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
 import { BookOpen } from 'lucide-react';
 
 import CurriculumHeader from '../../components/curriculum/CurriculumHeader';
-import YearLevelTabs from '../../components/curriculum/YearLevelTabs';
 import SemesterCard from '../../components/curriculum/SemesterCard';
 import { useCurriculumDetail } from '../../hooks/curriculum/useCurriculumDetail';
 
 export default function CurriculumDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [selectedSemester, setSelectedSemester] = useState(1);
 
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
@@ -20,7 +21,6 @@ export default function CurriculumDetailPage() {
     curriculum,
     isLoading,
     isActivating,
-    availableCourses,
     programs,
     selectedYear,
     setSelectedYear,
@@ -37,6 +37,7 @@ export default function CurriculumDetailPage() {
     handleRemoveCourse,
   } = useCurriculumDetail(id);
 
+  const selectedTerm = currentYearSemesters.find((term) => term.semester === selectedSemester) ?? currentYearSemesters[0];
   return (
     <div className="w-full">
       {isLoading ? (
@@ -77,37 +78,30 @@ export default function CurriculumDetailPage() {
             onActivate={handleActivate}
           />
 
-          {/* Horizontal Year Level Navigation Tabs */}
-          <YearLevelTabs
-            selectedYear={selectedYear}
-            yearLevelStats={yearLevelStats}
-            onSelectYear={setSelectedYear}
-          />
-
-          {/* Three-Column Left, Middle and Right Semester Cards Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            {currentYearSemesters.map((term) => (
-              <div
-                key={`${term.year_level}-${term.semester}`}
-                className={term.semester === 3 ? 'col-span-1 lg:col-span-2' : ''}
-              >
-                <SemesterCard
-                  term={term}
-                  availableCourses={availableCourses}
-                  highlightedCourseId={highlightedCourseId}
-                  removingCourseId={removingCourseId}
-                  isRemoving={isRemoving}
-                  canEdit={canManageCurriculum}
-                  programs={programs}
-                  onInitiateRemove={(cId) => setRemovingCourseId(cId)}
-                  onCancelRemove={() => setRemovingCourseId(null)}
-                  onConfirmRemove={handleRemoveCourse}
-                  onAddCourseToSemester={handleAddCourseToSemester}
-                  onEditCourse={handleEditCourse}
-                />
-              </div>
-            ))}
-          </div>
+          {selectedTerm && (
+            <SemesterCard
+              term={selectedTerm}
+              semesterTerms={currentYearSemesters}
+              selectedYear={selectedYear}
+              selectedSemester={selectedSemester}
+              yearLevelStats={yearLevelStats}
+              onSelectYear={(year) => {
+                setSelectedYear(year);
+                setSelectedSemester(1);
+              }}
+              onSelectSemester={setSelectedSemester}
+              highlightedCourseId={highlightedCourseId}
+              removingCourseId={removingCourseId}
+              isRemoving={isRemoving}
+              canEdit={canManageCurriculum}
+              programs={programs}
+              onInitiateRemove={(cId) => setRemovingCourseId(cId)}
+              onCancelRemove={() => setRemovingCourseId(null)}
+              onConfirmRemove={handleRemoveCourse}
+              onAddCourseToSemester={handleAddCourseToSemester}
+              onEditCourse={handleEditCourse}
+            />
+          )}
         </>
       )}
     </div>
