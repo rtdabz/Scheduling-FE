@@ -1,471 +1,200 @@
-import { useState, useEffect, useMemo } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useToast } from '../../context/ToastContext';
-import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
-import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useNavigate } from 'react-router-dom';
-import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
 import {
-  Building2,
+  Activity,
+  AlertTriangle,
+  ArrowRight,
   BookOpen,
-  DoorOpen,
-  CalendarDays,
-  Clock,
+  Building2,
+  CalendarCheck2,
+  Check,
   CheckCircle2,
-  TrendingUp,
-  GraduationCap,
-  FileBarChart,
-  Download,
-  CheckSquare,
-  AlertCircle,
-  ClipboardList,
-  ChevronDown,
-  ChevronUp,
-  RotateCcw,
-  Filter,
-  SlidersHorizontal,
+  ChevronRight,
+  DoorOpen,
+  FileText,
+  Landmark,
   Maximize2,
   Minimize2,
-  Plus
+  Minus,
+  RotateCcw,
+  Search,
+  Undo2,
+  Users,
+  type LucideIcon,
 } from 'lucide-react';
+import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
+import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
+import { ActivityFeed } from '../../components/overview';
+import type { ActivityFeedItem } from '../../components/overview';
+import { useSystemNotifications } from '../../hooks/useSystemNotifications';
+import api from '../../lib/api';
+import { getStoredUser } from '../../lib/storedUser';
+import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { physicalRooms } from '../../lib/roomUsage';
+import { termLabel } from '../../lib/termLabel';
 
 interface Schedule {
-  id: number;
-  term_id: number;
-  section_id: number;
-  faculty_id?: number | null;
-  subject_id?: number | null;
-  room_id?: number | null;
-  day: string;
-  start_time: string;
-  end_time: string;
-  mode?: 'on-site' | 'online' | 'field';
-  status: string;
-  updated_at?: string;
-  section?: {
-    id: number;
-    section_name: string;
-    department_id: number;
-    department?: {
-      department_code: string;
-      department_name: string;
-    } | null;
-  } | null;
-  faculty?: {
-    id: number;
-    first_name: string;
-    last_name: string;
-  } | null;
-  room?: {
-    id: number;
-    room_code: string;
-    building?: string | null;
-    room_type?: string | null;
-  } | null;
-  course?: {
-    id: number;
-    course_code: string;
-    course_name: string;
-  } | null;
-  subject?: {
-    id: number;
-    subject_code: string;
-    subject_name: string;
-  } | null;
+  id:number; term_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
+  day:string; start_time:string; end_time:string; mode?:'on-site'|'online'|'field'; status:string; updated_at?:string;
+  section?:{ id:number; section_name:string; department_id:number; department?:{ department_code:string; department_name:string }|null }|null;
+  faculty?:{ id:number; first_name:string; last_name:string }|null;
+  room?:{ id:number; room_code:string; building?:string|null; room_type?:string }|null;
+  course?:{ id:number; course_code:string; course_name:string; course_category?:string|null; units?:number }|null;
+  subject?:{ id:number; subject_code:string; subject_name:string; subject_category?:string|null; units?:number }|null;
 }
-
-interface Room {
-  id: number;
-  room_code: string;
-  building?: string;
-}
-
-interface Section {
-  id: number;
-  section_name: string;
-  department_id: number;
-  department?: {
-    id: number;
-    department_code: string;
-    department_name: string;
-  } | null;
-}
-
-interface Faculty {
-  id: number;
-  first_name: string;
-  last_name: string;
-  middle_name?: string | null;
-  employment_type: 'full-time' | 'part-time';
-  max_units: number;
-  assigned_units?: number;
-  probono_units?: number | null;
-  department_id: number;
-  department?: {
-    id: number;
-    department_name: string;
-    department_code: string;
-  } | null;
-  status: string;
-}
-
-interface Department {
-  id: number;
-  department_name: string;
-  department_code: string;
-}
-
-interface Subject {
-  id: number;
-  subject_code: string;
-  subject_name: string;
-}
-
-interface Term {
-  id: number;
-  academic_year: string;
-  semester: '1st' | '2nd' | 'summer';
-  is_active: boolean;
-}
-
-
-interface StoredUser {
-  id?: number;
-  name?: string;
-  role?: string;
-}
+interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null }
+interface Section { id:number; section_name:string; department_id:number; department?:{ id:number; department_code:string; department_name:string }|null }
+interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; probono_units?:number|null; department_id:number; status:string }
+interface Department { id:number; department_name:string; department_code:string }
+interface Subject { id:number; subject_code:string; subject_name:string }
+interface Term { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
 
 interface DashboardData {
-  schedules: Schedule[];
-  rooms: Room[];
-  sections: Section[];
-  faculties: Faculty[];
-  departments: Department[];
-  subjects: Subject[];
-  activeTerm: Term | null;
+  schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[];
+  departments:Department[]; subjects:Subject[]; activeTerm:Term|null;
+}
+interface InitialDataResponse {
+  schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[];
+  departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_term?:Term;
 }
 
-interface InitialDataResponse extends Omit<DashboardData, 'activeTerm'> {
-  active_term: Term;
+type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
+
+interface Tile { label:string; value:number; detail:string; icon:LucideIcon; path:string; tone:Tone }
+
+const TONES: Record<Tone, string> = {
+  brand: 'bg-primary/10 text-primary',
+  info: 'bg-slate-100 text-slate-600',
+  good: 'bg-emerald-50 text-emerald-600',
+  warn: 'bg-amber-50 text-amber-700',
+  alert: 'bg-rose-50 text-rose-600',
+  accent: 'bg-violet-50 text-violet-600',
+};
+
+const ATTENTION_COLUMNS = 'minmax(0,1.4fr) minmax(0,1.3fr) minmax(0,0.95fr) minmax(0,0.85fr) 74px';
+const WORKFLOW_COLUMNS = 'minmax(0,1.5fr) minmax(0,1.35fr) minmax(0,0.95fr) 84px';
+
+const percent = (part:number, total:number) => (total > 0 ? Math.round((part / total) * 100) : 0);
+
+/** One decimal — the precision the donut legends quote each share to. */
+const share1 = (part:number, total:number) => (total > 0 ? ((part / total) * 100).toFixed(1) : '0.0');
+
+/** Thousands separators, so institution-wide counts stay readable. */
+const grouped = (value:number) => value.toLocaleString();
+
+/** "May 11, 2026" — the approval queue's Submitted column. */
+const formatSubmittedOn = (value?:string|null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+};
+
+/**
+ * "3 days ago" — how long a package has been sitting in the VPAA queue.
+ *
+ * `reference` is the dashboard's minute ticker rather than a fresh Date, so every
+ * row in a render agrees on "now" and the column refreshes on the same beat as
+ * the timetable's current-time marker.
+ */
+const relativeAge = (value:string|null|undefined, reference:Date) => {
+  if (!value) return '—';
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) return '—';
+  const minutes = Math.max(0, Math.floor((reference.getTime() - then) / 60000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+};
+
+interface Slice { key:string; label:string; value:number; color:string }
+
+/** Per-department rollup behind the workflow table, readiness donut and queue. */
+interface DepartmentStat {
+  id:number;
+  department_name:string;
+  department_code:string;
+  sectionsCount:number;
+  /** Sections the VPAA has approved. */
+  completedCount:number;
+  /** Sections anywhere in review — with the Dean or with the VPAA. */
+  pendingCount:number;
+  /** Sections the Dean has cleared and the VPAA has not, i.e. this queue. */
+  pendingVpaaCount:number;
+  /** Newest Dean hand-off among those sections. */
+  submittedAt:string|null;
+  approvalStatus:string;
+  progressPercent:number;
 }
 
-// ── Weekly Timetable Calendar Helpers ──
-const START_HOUR = 7;
-const END_HOUR = 21;
-
-const parseTimeToSlotIndex = (timeStr: string): number => {
-  if (!timeStr) return 0;
-  const match12 = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-  if (match12) {
-    let hour = parseInt(match12[1], 10);
-    const minutes = parseInt(match12[2], 10);
-    const ampm = match12[3].toUpperCase();
-    if (ampm === "PM" && hour !== 12) hour += 12;
-    if (ampm === "AM" && hour === 12) hour = 0;
-    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
-    return Math.max(0, totalHalfHours - 14); // 7:00 AM starts at slot 14
-  }
-  const parts = timeStr.split(':');
-  if (parts.length >= 2) {
-    const hour = parseInt(parts[0], 10);
-    const minutes = parseInt(parts[1], 10);
-    const totalHalfHours = (hour * 2) + (minutes >= 30 ? 1 : 0);
-    return Math.max(0, totalHalfHours - 14);
-  }
-  return 0;
-};
-
-const getShortDay = (day: string): string => {
-  const normalized = day.trim().toLowerCase();
-  if (normalized.startsWith("mon")) return "Mon";
-  if (normalized.startsWith("tue")) return "Tue";
-  if (normalized.startsWith("wed")) return "Wed";
-  if (normalized.startsWith("thu")) return "Thu";
-  if (normalized.startsWith("fri")) return "Fri";
-  if (normalized.startsWith("sat")) return "Sat";
-  if (normalized.startsWith("sun")) return "Sun";
-  return "Mon";
-};
-
-const normalizeDepartmentKey = (code: string, name = "") => {
-  const normalizedCode = code.trim().toUpperCase();
-  const value = name.toLowerCase();
-  if (["IT", "CIT"].includes(normalizedCode) || value.includes("information technology")) return "IT";
-  if (["AS", "CAS"].includes(normalizedCode) || value.includes("arts and sciences")) return "AS";
-  if (["EDUC", "CED"].includes(normalizedCode) || value.includes("education")) return "EDUC";
-  if (["BA", "CBA"].includes(normalizedCode) || value.includes("business")) return "BA";
-  if (["HM", "CHM"].includes(normalizedCode) || value.includes("hospitality")) return "HM";
-  if (["CM", "MID"].includes(normalizedCode) || value.includes("midwifery")) return "MID";
-  if (["CRIM", "CCJ", "CCJPS"].includes(normalizedCode) || value.includes("criminal")) return "CRIM";
-  if (["LIS", "CLIS"].includes(normalizedCode) || value.includes("library")) return "LIS";
-  return "";
-};
-
-const getDeptStyles = (code: string) => {
-  switch (normalizeDepartmentKey(code)) {
-    case "IT":
-      return "bg-blue-50 text-blue-800 border-blue-200 border-l-blue-600 hover:bg-blue-100/60";
-    case "AS":
-      return "bg-purple-50 text-purple-800 border-purple-200 border-l-purple-600 hover:bg-purple-100/60";
-    case "EDUC":
-      return "bg-orange-50 text-orange-855 border-orange-250 border-l-orange-500 hover:bg-orange-100/60";
-    case "BA":
-      return "bg-yellow-50/50 text-yellow-850 border-yellow-300 border-l-yellow-600 hover:bg-yellow-100/60";
-    case "HM":
-      return "bg-lime-50 text-lime-850 border-lime-300 border-l-lime-600 hover:bg-lime-100/60";
-    case "MID":
-      return "bg-emerald-50 text-emerald-850 border-emerald-300 border-l-emerald-600 hover:bg-emerald-100/60";
-    case "CRIM":
-      return "bg-[#5A1220]/5 text-[#5A1220] border-[#5A1220]/20 border-l-[#5A1220] hover:bg-[#5A1220]/10";
-    case "LIS":
-      return "bg-pink-50 text-pink-850 border-pink-300 border-l-pink-600 hover:bg-pink-100/60";
-    default:
-      return "bg-gray-50 text-gray-800 border-gray-300 border-l-gray-500 hover:bg-gray-100/60";
-  }
-};
-
-interface LayoutItem {
-  schedule: Schedule;
-  leftPct: number;
-  widthPct: number;
-}
-
-const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
-  const sorted = [...daySchedules].sort((a, b) => {
-    const aStart = parseTimeToSlotIndex(a.start_time);
-    const bStart = parseTimeToSlotIndex(b.start_time);
-    if (aStart !== bStart) return aStart - bStart;
-    return (
-      (parseTimeToSlotIndex(b.end_time) - parseTimeToSlotIndex(b.start_time)) -
-      (parseTimeToSlotIndex(a.end_time) - parseTimeToSlotIndex(a.start_time))
-    );
-  });
-
-  const layouts: LayoutItem[] = [];
-  const clusters: Schedule[][] = [];
-
-  for (const s of sorted) {
-    let placed = false;
-    for (const cluster of clusters) {
-      const overlaps = cluster.some((c) => {
-        const sStart = parseTimeToSlotIndex(s.start_time);
-        const sEnd = parseTimeToSlotIndex(s.end_time);
-        const cStart = parseTimeToSlotIndex(c.start_time);
-        const cEnd = parseTimeToSlotIndex(c.end_time);
-        return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
-      });
-      if (overlaps) {
-        cluster.push(s);
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      clusters.push([s]);
-    }
-  }
-
-  for (const cluster of clusters) {
-    const columns: Schedule[][] = [];
-    for (const s of cluster) {
-      let colIdx = 0;
-      while (true) {
-        if (!columns[colIdx]) {
-          columns[colIdx] = [s];
-          break;
-        }
-        const overlapsCol = columns[colIdx].some((c) => {
-          const sStart = parseTimeToSlotIndex(s.start_time);
-          const sEnd = parseTimeToSlotIndex(s.end_time);
-          const cStart = parseTimeToSlotIndex(c.start_time);
-          const cEnd = parseTimeToSlotIndex(c.end_time);
-          return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
-        });
-        if (!overlapsCol) {
-          columns[colIdx].push(s);
-          break;
-        }
-        colIdx += 1;
-      }
-    }
-    const colCount = columns.length;
-    columns.forEach((col, colIdx) => {
-      col.forEach((s) => {
-        layouts.push({
-          schedule: s,
-          leftPct: (colIdx / colCount) * 100,
-          widthPct: (1 / colCount) * 100,
-        });
-      });
-    });
-  }
-
-  return layouts;
+/** Icon and tint for one administrative-activity row, keyed off notification type. */
+const activityLook = (type?:string): { icon:LucideIcon; tone:string } => {
+  if (type === 'schedule_approved_by_vpaa' || type === 'schedule_approved_by_dean') return { icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' };
+  if (type === 'schedule_returned_by_vpaa' || type === 'schedule_returned_by_dean') return { icon: RotateCcw, tone: 'bg-rose-50 text-rose-600' };
+  if (type === 'schedule_submitted') return { icon: FileText, tone: 'bg-amber-50 text-amber-700' };
+  if (type === 'schedule_withdrawn') return { icon: Undo2, tone: 'bg-slate-100 text-slate-600' };
+  return { icon: Activity, tone: 'bg-primary/10 text-primary' };
 };
 
 export default function VpaaDashboardPage() {
-  const { toast } = useToast();
   const navigate = useNavigate();
 
-  // User
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
-  const dashboardCacheKey = `dashboard:${user?.role ?? 'vpaa'}:${user?.id ?? 'current'}`;
-  const cachedDashboardData = getCachedData<DashboardData>(dashboardCacheKey);
-  const [isLoading, setIsLoading] = useState(!hasCachedData(dashboardCacheKey));
+  const user = useMemo(() => getStoredUser(), []);
+  const cacheKey = `dashboard:${user?.role ?? 'vpaa'}:${user?.id ?? 'current'}`;
+  const cached = getCachedData<DashboardData>(cacheKey);
 
-  // States
-  const [schedules, setSchedules] = useState<Schedule[]>(cachedDashboardData?.schedules ?? []);
-  const [rooms, setRooms] = useState<Room[]>(cachedDashboardData?.rooms ?? []);
-  const [sections, setSections] = useState<Section[]>(cachedDashboardData?.sections ?? []);
-  const [faculties, setFaculties] = useState<Faculty[]>(cachedDashboardData?.faculties ?? []);
-  const [departments, setDepartments] = useState<Department[]>(cachedDashboardData?.departments ?? []);
-  const [subjects, setSubjects] = useState<Subject[]>(cachedDashboardData?.subjects ?? []);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedDashboardData?.activeTerm ?? null);
+  const [loading, setLoading] = useState(!hasCachedData(cacheKey));
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
+  const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
+  const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
+  const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cached?.departments ?? []);
+  const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
+  const [activeTerm, setActiveTerm] = useState<Term | null>(cached?.activeTerm ?? null);
 
-  // Timetable Calendar Filters and state (Essential only)
-  const daysOfWeek = useMemo(() => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], []);
-  const todayShort = useMemo(() => daysOfWeek[new Date().getDay()], [daysOfWeek]);
-  const [filterDept, setFilterDept] = useState<string>('all');
-  const filterDay = todayShort;
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [visibleCardsBySlot, setVisibleCardsBySlot] = useState<Record<string, number>>({});
+  const { feedItems: notificationItems, unreadCount } = useSystemNotifications();
 
-  useEffect(() => {
-    setVisibleCardsBySlot({});
-  }, [filterDept, searchQuery, activeTerm?.id]);
+  // ── Timetable controls ──
+  const [filterDept, setFilterDept] = useState('all');
+  const [filterBuilding, setFilterBuilding] = useState('all');
+  const [filterRoom, setFilterRoom] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Lock background body scroll when fullscreen calendar is open
-  useEffect(() => {
-    if (isFullscreen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isFullscreen]);
-
-  // Time slots mapping definition
-  const timeSlots = useMemo(() => {
-    const slots = [];
-    for (let slot = 0; slot < 25; slot += 1) { // 25 half-hour slots from 7:00 AM to 7:30 PM (ends at 7:00 PM label)
-      const totalMinutes = 7 * 60 + slot * 30;
-      let hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-      const ampm = hours >= 12 ? "PM" : "AM";
-      if (hours > 12) hours -= 12;
-      if (hours === 0) hours = 12;
-      slots.push({
-        label: `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`,
-      });
-    }
-    return slots;
-  }, []);
-
-  // Main calendar filter function
-  const calendarFilteredSchedules = useMemo(() => {
-    const activeTermSchedules = activeTerm?.id
-      ? schedules.filter(s => Number(s.term_id) === Number(activeTerm.id))
-      : schedules;
-
-    // Filter department
-    let deptSchedules = activeTermSchedules;
-    if (filterDept !== 'all') {
-      deptSchedules = activeTermSchedules.filter(s => Number(s.section?.department_id) === Number(filterDept));
-    }
-
-    // Filter day
-    if (filterDay !== 'all') {
-      deptSchedules = deptSchedules.filter(s => getShortDay(s.day) === filterDay);
-    }
-
-    // Filter by search query (Universal Search)
-    if (!searchQuery.trim()) {
-      return deptSchedules;
-    }
-
-    const q = searchQuery.toLowerCase();
-    return deptSchedules.filter(s => {
-      const sectionName = s.section?.section_name?.toLowerCase() || '';
-      const courseCode = s.course?.course_code?.toLowerCase() || '';
-      const courseName = s.course?.course_name?.toLowerCase() || '';
-      const facultyName = s.faculty
-        ? `${s.faculty.first_name} ${s.faculty.last_name}`.toLowerCase()
-        : '';
-      const roomCode = s.room?.room_code?.toLowerCase() || '';
-      const building = s.room?.building?.toLowerCase() || '';
-
-      return sectionName.includes(q) ||
-             courseCode.includes(q) ||
-             courseName.includes(q) ||
-             facultyName.includes(q) ||
-             roomCode.includes(q) ||
-             building.includes(q);
-    });
-  }, [filterDept, filterDay, searchQuery, schedules, activeTerm]);
-
-  // ── Calculated Summary Metrics ──
-  const totalClassesCount = calendarFilteredSchedules.length;
-  
-  const roomsInUseCount = useMemo(() => {
-    const usedRoomIds = new Set(calendarFilteredSchedules.map(s => s.room_id).filter(Boolean));
-    return usedRoomIds.size;
-  }, [calendarFilteredSchedules]);
-
-  const availableRoomsCount = useMemo(() => {
-    return Math.max(0, rooms.length - roomsInUseCount);
-  }, [rooms, roomsInUseCount]);
-
-  // Current time states for indicator line
+  // Minute ticker. Drives the queue's Age column so it stays current without a reload.
   const [now, setNow] = useState(new Date());
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 60000);
+    const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
-
-  const currentDayName = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return days[now.getDay()];
-  }, [now]);
-
-  const currentDayTimeTop = useMemo(() => {
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const totalMinutes = hours * 60 + minutes;
-    const startMinutes = 7 * 60; // 7:00 AM
-    const elapsed = totalMinutes - startMinutes;
-    if (elapsed < 0 || elapsed > 12 * 60) return null; // Outside 7:00 AM - 7:00 PM
-    return elapsed * 0.8; // 600px height / 720 minutes = 0.8px per minute
-  }, [now]);
-
-
 
   useEffect(() => {
     let active = true;
 
-    const loadData = async () => {
-      const shouldShowSkeleton = !hasCachedData(dashboardCacheKey);
+    const load = async () => {
+      setLoading(!hasCachedData(cacheKey));
+      setLoadError(null);
       try {
-        setIsLoading(shouldShowSkeleton);
-        const data = await loadCachedData<DashboardData>(dashboardCacheKey, async () => {
+        const data = await loadCachedData<DashboardData>(cacheKey, async () => {
           const response = await api.get<InitialDataResponse>('/initial-data');
-          const d = response.data || ({} as InitialDataResponse);
+          const d = response.data || {};
           return {
             schedules: Array.isArray(d.schedules) ? d.schedules : [],
             rooms: Array.isArray(d.rooms) ? d.rooms : [],
             sections: Array.isArray(d.sections) ? d.sections : [],
             faculties: Array.isArray(d.faculties) ? d.faculties : [],
             departments: Array.isArray(d.departments) ? d.departments : [],
-            subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray((d as any).courses) ? (d as any).courses : []),
+            subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray(d.courses) ? d.courses : []),
             activeTerm: d.active_term || null,
           };
-        });
+        }, reloadKey > 0);
 
         if (!active) return;
         setSchedules(data.schedules);
@@ -476,77 +205,48 @@ export default function VpaaDashboardPage() {
         setSubjects(data.subjects);
         setActiveTerm(data.activeTerm);
       } catch {
-        toast.error('Error', 'Failed to load dashboard data.');
+        if (active) setLoadError('Could not load institution-wide scheduling data. Figures below may be out of date.');
       } finally {
-        if (active) {
-          setIsLoading(false);
-        }
+        if (active) setLoading(false);
       }
     };
 
-    loadData();
+    load();
+    return () => { active = false; };
+  }, [cacheKey, reloadKey]);
 
-    return () => {
-      active = false;
-    };
-  }, [dashboardCacheKey, toast]);
+  const retry = () => setReloadKey(k => k + 1);
 
-  // ── 1. Grouped Schedule Status Map ──
+  const activeTermId = activeTerm?.id;
+
+  // ── Schedule status per section, newest row wins ──
   const scheduleStatusMap = useMemo(() => {
-    const map = new Map<number, { status: string; updated_at?: string }>();
+    const map = new Map<number, { status:string; updated_at?:string }>();
     schedules.forEach(s => {
-      const matchesActiveTerm = !activeTerm?.id || Number(s.term_id) === Number(activeTerm.id);
+      const matchesActiveTerm = !activeTermId || Number(s.term_id) === Number(activeTermId);
       if (matchesActiveTerm && !map.has(s.section_id)) {
         map.set(s.section_id, { status: s.status, updated_at: s.updated_at });
       }
     });
     return map;
-  }, [activeTerm?.id, schedules]);
+  }, [activeTermId, schedules]);
 
-  // ── 2. Department Progress Status Overview ──
-  const departmentStats = useMemo(() => {
-    return departments.map(dept => {
-      const deptSections = sections.filter(sec => Number(sec.department_id) === Number(dept.id));
-      let completedCount = 0;
-      let pendingCount = 0;
+  const termSchedules = useMemo(
+    () => (activeTermId ? schedules.filter(s => Number(s.term_id) === Number(activeTermId)) : schedules),
+    [activeTermId, schedules],
+  );
 
-      deptSections.forEach(sec => {
-        const val = scheduleStatusMap.get(sec.id);
-        if (val) {
-          if (val.status === 'approved') {
-            completedCount++;
-          } else if (val.status === 'submitted' || val.status === 'approved_by_dean' || val.status === 'conditionally_approved') {
-            pendingCount++;
-          }
-        }
-      });
+  // Physical rooms only: ONLINE and FIELD are placeholder rows standing in for a
+  // delivery mode, so counting them would overstate the campus room inventory.
+  const campusRooms = useMemo(() => physicalRooms(rooms), [rooms]);
 
-      const totalSections = deptSections.length;
-      const progressPercent = totalSections > 0 ? Math.round((completedCount / totalSections) * 100) : 0;
+  // ── Executive overview ──
+  const totalSectionsCount = sections.length;
+  /** Sections carrying at least one schedule row this term. */
+  const scheduledSectionCount = scheduleStatusMap.size;
+  const schedulingCompletion = percent(scheduledSectionCount, totalSectionsCount);
 
-      let approvalStatus = 'Draft';
-      if (completedCount === totalSections && totalSections > 0) {
-        approvalStatus = 'VPAA Approved';
-      } else if (pendingCount > 0) {
-        approvalStatus = 'Pending Review';
-      } else if (completedCount > 0) {
-        approvalStatus = 'Partially Approved';
-      }
-
-      return {
-        id: dept.id,
-        department_name: dept.department_name,
-        department_code: dept.department_code,
-        sectionsCount: totalSections,
-        completedCount,
-        pendingCount,
-        approvalStatus,
-        progressPercent
-      };
-    });
-  }, [departments, sections, scheduleStatusMap]);
-
-  // ── 3. Overall Progress Statistics ──
+  // ── Overall section status spread ──
   const overallStats = useMemo(() => {
     let draftCount = 0;
     let pendingCount = 0;
@@ -555,641 +255,676 @@ export default function VpaaDashboardPage() {
 
     sections.forEach(sec => {
       const val = scheduleStatusMap.get(sec.id);
-      if (val) {
-        if (val.status === 'approved') {
-          approvedCount++;
-        } else if (val.status === 'submitted' || val.status === 'approved_by_dean' || val.status === 'conditionally_approved') {
-          pendingCount++;
-        } else if (val.status === 'rejected' || val.status === 'rejected_by_dean') {
-          rejectedCount++;
-        } else {
-          draftCount++;
-        }
-      } else {
-        draftCount++;
-      }
+      if (!val) { draftCount++; return; }
+      if (val.status === 'approved') approvedCount++;
+      else if (val.status === 'submitted' || val.status === 'approved_by_dean') pendingCount++;
+      else if (val.status === 'rejected' || val.status === 'rejected_by_dean') rejectedCount++;
+      else draftCount++;
     });
-
-    const totalSectionsCount = sections.length;
-    const progressPercent = totalSectionsCount > 0
-      ? Math.round((approvedCount / totalSectionsCount) * 100)
-      : 0;
 
     return {
       draftCount,
       pendingCount,
       approvedCount,
       rejectedCount,
-      progressPercent
+      progressPercent: percent(approvedCount, sections.length),
     };
   }, [sections, scheduleStatusMap]);
 
-  // ── 4. Faculty Load Distribution Counts ──
-  const facultyStats = useMemo(() => {
-    const total = faculties.length;
-    let available = 0;
-    let fullyLoaded = 0;
+  /** Sections the Dean cleared that the VPAA has not — the final-approval queue. */
+  const awaitingVpaaReview = useMemo(() => {
+    let pending = 0;
+    scheduleStatusMap.forEach(val => { if (val.status === 'approved_by_dean') pending++; });
+    return pending;
+  }, [scheduleStatusMap]);
+
+  // ── Per-department rollup ──
+  const departmentStats = useMemo<DepartmentStat[]>(() => departments.map(dept => {
+    const deptSections = sections.filter(sec => Number(sec.department_id) === Number(dept.id));
+    let completedCount = 0;
+    let pendingCount = 0;
+    let pendingVpaaCount = 0;
+    let submittedAt: string | null = null;
+
+    deptSections.forEach(sec => {
+      const val = scheduleStatusMap.get(sec.id);
+      if (!val) return;
+      if (val.status === 'approved') {
+        completedCount++;
+      } else if (val.status === 'submitted' || val.status === 'approved_by_dean') {
+        pendingCount++;
+        if (val.status === 'approved_by_dean') {
+          pendingVpaaCount++;
+          // ISO-8601 stamps sort chronologically as text, so no Date churn per row.
+          if (val.updated_at && (!submittedAt || val.updated_at > submittedAt)) submittedAt = val.updated_at;
+        }
+      }
+    });
+
+    const sectionsCount = deptSections.length;
+    let approvalStatus = 'Draft';
+    if (completedCount === sectionsCount && sectionsCount > 0) approvalStatus = 'Fully Approved';
+    else if (pendingCount > 0) approvalStatus = 'Pending Review';
+    else if (completedCount > 0) approvalStatus = 'Partially Approved';
+
+    return {
+      id: dept.id,
+      department_name: dept.department_name,
+      department_code: dept.department_code,
+      sectionsCount,
+      completedCount,
+      pendingCount,
+      pendingVpaaCount,
+      submittedAt,
+      approvalStatus,
+      progressPercent: percent(completedCount, sectionsCount),
+    };
+  }), [departments, sections, scheduleStatusMap]);
+
+  /** Furthest-along first, matching the reference's descending completion table. */
+  const workflowRows = useMemo(
+    () => [...departmentStats].sort((a, b) => b.progressPercent - a.progressPercent || a.department_code.localeCompare(b.department_code)),
+    [departmentStats],
+  );
+
+  const fullyApprovedDepartments = departmentStats.filter(d => d.approvalStatus === 'Fully Approved').length;
+
+  /**
+   * Departments still needing the VPAA, newest hand-off first — the order the
+   * reference's queue is in.
+   */
+  const attentionRows = useMemo(
+    () => departmentStats
+      .filter(d => d.pendingVpaaCount > 0)
+      .sort((a, b) => (b.submittedAt ?? '').localeCompare(a.submittedAt ?? '')),
+    [departmentStats],
+  );
+
+  // ── Institutional readiness, by department ──
+  const readiness = useMemo(() => {
+    let readyForApproval = 0;
+    let stillDrafting = 0;
+    let fullyApproved = 0;
+
+    departmentStats.forEach(dept => {
+      if (dept.approvalStatus === 'Fully Approved') fullyApproved++;
+      else if (dept.pendingVpaaCount > 0) readyForApproval++;
+      else stillDrafting++;
+    });
+
+    return { readyForApproval, stillDrafting, fullyApproved };
+  }, [departmentStats]);
+
+  const readinessSlices: Slice[] = [
+    { key: 'ready', label: 'Ready for Final Approval', value: readiness.readyForApproval, color: '#16a36a' },
+    { key: 'drafting', label: 'Still Drafting', value: readiness.stillDrafting, color: '#3b82f6' },
+    { key: 'approved', label: 'Fully Approved', value: readiness.fullyApproved, color: '#8b5cf6' },
+  ];
+
+  // ── Faculty load bands ──
+  // The ceiling formula is unchanged from the previous dashboard (max_units with a
+  // 21-unit fallback); the bands below just split the old "available" bucket so
+  // faculty with nothing assigned are reported separately.
+  const facultyBands = useMemo(() => {
+    let completeLoad = 0;
+    let remainingCapacity = 0;
     let overloaded = 0;
-    let probono = 0;
+    let noAssignment = 0;
 
     faculties.forEach(f => {
       const assigned = f.assigned_units || 0;
       const max = f.max_units || 21;
-      const pct = max > 0 ? (assigned / max) * 100 : 0;
-
-      if (pct > 100) {
-        overloaded++;
-      } else if (pct === 100) {
-        fullyLoaded++;
-      } else {
-        available++;
-      }
-      
-      // Pro Bono tracking (custom workload indicators mapped previously)
-      const isProBono = f.probono_units !== undefined && f.probono_units !== null && Number(f.probono_units) > 0;
-      if (isProBono) {
-        probono++;
-      }
+      if (assigned <= 0) noAssignment++;
+      else if (assigned > max) overloaded++;
+      else if (assigned === max) completeLoad++;
+      else remainingCapacity++;
     });
 
-    return { total, available, fullyLoaded, overloaded, probono };
+    return { completeLoad, remainingCapacity, overloaded, noAssignment };
   }, [faculties]);
 
+  const facultySlices: Slice[] = [
+    { key: 'complete', label: 'Complete Load', value: facultyBands.completeLoad, color: '#16a36a' },
+    { key: 'remaining', label: 'With Remaining Capacity', value: facultyBands.remainingCapacity, color: '#3b82f6' },
+    { key: 'overloaded', label: 'Overloaded', value: facultyBands.overloaded, color: '#f59e0b' },
+    { key: 'none', label: 'No Assignment', value: facultyBands.noAssignment, color: '#cbd5e1' },
+  ];
 
-  return (
-    <div className="space-y-5 pb-8 font-sans min-h-screen bg-[#F7F4F0]">
-      {isLoading ? (
-        <DashboardSkeleton />
-      ) : (
-        /* Main Dashboard Grid matching layout diagram */
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
-          
-          {/* ═══════════════════════════════════════════════════════════
-              LEFT COLUMN: 2x2 CARDS -> TABLE (TIMETABLE)
-             ═══════════════════════════════════════════════════════════ */}
-          <div className="xl:col-span-6 space-y-4 flex flex-col h-full">
-            
-            {/* 1. 2x2 CARDS Grid (4 Cards) */}
-            <div className="grid grid-cols-2 gap-3.5">
-              {/* Card 1: Departments */}
-              <div
-                onClick={() => navigate('/departments')}
-                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
-              >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Departments</span>
-                <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-2xl font-black text-gray-900">{departments.length}</span>
-                  <Building2 className="w-4.5 h-4.5 text-[#5A1220]/70" />
-                </div>
-              </div>
+  // ── Timetable filters ──
+  const buildingOptions = useMemo(
+    () => Array.from(new Set(campusRooms.map(r => (r.building ?? '').trim()).filter(Boolean))).sort(),
+    [campusRooms],
+  );
+  const roomOptions = useMemo(() => {
+    const scoped = filterBuilding === 'all'
+      ? campusRooms
+      : campusRooms.filter(r => (r.building ?? '').trim() === filterBuilding);
+    return [...scoped].sort((a, b) => a.room_code.localeCompare(b.room_code));
+  }, [campusRooms, filterBuilding]);
 
-              {/* Card 2: Faculty */}
-              <div
-                onClick={() => navigate('/faculty')}
-                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
-              >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Total Faculty</span>
-                <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-2xl font-black text-gray-900">{faculties.length}</span>
-                  <GraduationCap className="w-4.5 h-4.5 text-[#5A1220]/70" />
-                </div>
-              </div>
+  const timetableSchedules = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return termSchedules.filter(s => {
+      if (filterDept !== 'all' && Number(s.section?.department_id) !== Number(filterDept)) return false;
+      if (filterBuilding !== 'all' && (s.room?.building ?? '').trim() !== filterBuilding) return false;
+      if (filterRoom !== 'all' && String(s.room_id ?? '') !== filterRoom) return false;
+      if (!query) return true;
+      return [
+        s.section?.section_name,
+        s.course?.course_code,
+        s.course?.course_name,
+        s.subject?.subject_code,
+        s.subject?.subject_name,
+        s.faculty ? `${s.faculty.first_name} ${s.faculty.last_name}` : '',
+        s.room?.room_code,
+        s.room?.building,
+      ].some(value => (value ?? '').toLowerCase().includes(query));
+    });
+  }, [termSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
 
-              {/* Card 3: Courses */}
-              <div
-                onClick={() => navigate('/curriculum-view')}
-                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
-              >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Courses</span>
-                <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-2xl font-black text-gray-900">{subjects.length}</span>
-                  <BookOpen className="w-4.5 h-4.5 text-[#5A1220]/70" />
-                </div>
-              </div>
+  const timetableRoomsUsed = useMemo(
+    () => new Set(timetableSchedules.map(s => s.room_id).filter(Boolean)).size,
+    [timetableSchedules],
+  );
+  const timetableRoomsFree = Math.max(0, campusRooms.length - timetableRoomsUsed);
 
-              {/* Card 4: Classrooms */}
-              <div
-                onClick={() => navigate('/rooms')}
-                className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all cursor-pointer min-h-[90px]"
-              >
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Classrooms</span>
-                <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-2xl font-black text-gray-900">{rooms.length}</span>
-                  <DoorOpen className="w-4.5 h-4.5 text-[#5A1220]/70" />
-                </div>
-              </div>
-            </div>
+  /**
+   * The room list is scoped by building, so switching building has to clear the
+   * room too — a room from the previous building matches nothing and would filter
+   * the grid to empty with no visible reason why.
+   */
+  const changeBuilding = (value:string) => {
+    setFilterBuilding(value);
+    setFilterRoom('all');
+  };
 
-            {/* 2. TABLE: Overall Department Schedule Timetable */}
-            {(() => {
-              const timetableElement = (
-                <div
-                  className={`${
-                    isFullscreen
-                      ? 'fixed inset-0 z-[999999] bg-white p-4 sm:p-6 flex flex-col w-screen h-screen m-0 top-0 left-0 right-0 bottom-0 overflow-hidden box-border select-none'
-                      : 'bg-white p-5 rounded-2xl border border-gray-200 shadow-sm font-sans flex-1 flex flex-col justify-between'
-                  }`}
-                  style={isFullscreen ? { top: 0, left: 0, width: '100vw', height: '100vh', margin: 0 } : undefined}
-                >
-                  {/* Table Header Controls */}
-                  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3 flex-shrink-0">
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-2">
-                        <CalendarDays className="w-4.5 h-4.5 text-[#5A1220]" />
-                        <h2 className="text-gray-850 font-bold text-base leading-none">
-                          Institutional Timetable Calendar
-                        </h2>
-                      </div>
-                      
-                      {/* Action Filters */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Department Filter */}
-                        <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-xl shadow-sm">
-                          <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Dept</span>
-                          <select
-                            value={filterDept}
-                            onChange={(e) => setFilterDept(e.target.value)}
-                            className="border-none text-gray-700 bg-transparent text-xs font-semibold focus:ring-0 cursor-pointer p-0 pr-5"
-                          >
-                            <option value="all">All Departments</option>
-                            {departments.map((dept) => (
-                              <option key={dept.id} value={dept.id}>{dept.department_code}</option>
-                            ))}
-                          </select>
-                        </div>
+  const filtersActive = filterDept !== 'all' || filterBuilding !== 'all' || filterRoom !== 'all' || searchQuery !== '';
+  const resetFilters = () => {
+    setFilterDept('all');
+    setFilterBuilding('all');
+    setFilterRoom('all');
+    setSearchQuery('');
+  };
 
-                        <span className="inline-flex items-center rounded-xl border border-[#5A1220]/15 bg-[#5A1220]/5 px-2.5 py-1 text-xs font-bold text-[#5A1220]">
-                          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()]}
-                        </span>
-                      </div>
-                    </div>
+  useEffect(() => {
+    document.body.style.overflow = isFullscreen ? 'hidden' : '';
 
-                    {/* Search Bar & Screen Controls */}
-                    <div className="flex items-center gap-2 w-full lg:w-auto relative">
-                      <div className="relative flex-1 lg:w-48 lg:flex-none">
-                        <input
-                          type="text"
-                          placeholder="Search..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full px-2.5 py-1.5 pl-8 border border-gray-300 text-gray-700 bg-white rounded-xl focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] text-xs font-semibold shadow-sm transition-all"
-                        />
-                        <Filter className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" />
-                      </div>
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isFullscreen) setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullscreen]);
 
-                      {/* Full Window Toggle Button */}
-                      <button
-                        onClick={() => setIsFullscreen(!isFullscreen)}
-                        className="p-1.5 text-gray-700 hover:text-[#5A1220] hover:bg-gray-100 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
-                        title={isFullscreen ? "Exit Full Window (Esc)" : "Full Window View"}
-                      >
-                        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                      </button>
+  const openApproval = () => navigate('/schedules/approval');
 
-                      {/* Reset Button */}
-                      {(filterDept !== 'all' || searchQuery !== '') && (
-                        <button
-                          onClick={() => {
-                            setFilterDept('all');
-                            setSearchQuery('');
-                          }}
-                          className="p-1.5 text-gray-555 hover:text-[#5A1220] hover:bg-red-50 hover:border-red-200 rounded-xl transition-all cursor-pointer border border-gray-200 bg-white shadow-sm flex items-center justify-center shrink-0"
-                          title="Reset Filters"
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+  const tiles: Tile[] = [
+    { label: 'Departments', value: departments.length, detail: 'All academic units', icon: Landmark, path: '/departments', tone: 'brand' },
+    { label: 'Faculty', value: faculties.length, detail: 'Active faculty', icon: Users, path: '/faculty', tone: 'accent' },
+    { label: 'Courses', value: subjects.length, detail: 'Curriculum courses', icon: BookOpen, path: '/curriculum-view', tone: 'good' },
+    { label: 'Rooms', value: campusRooms.length, detail: 'Across campus', icon: Building2, path: '/rooms', tone: 'warn' },
+  ];
 
-                  {/* Compact Metrics Strip */}
-                  <div className="flex items-center justify-between text-xs py-2 px-1 border-b border-gray-100 text-gray-500 font-semibold flex-shrink-0">
-                    <div className="flex items-center gap-4">
-                      <span>Classes: <strong className="text-[#5A1220]">{totalClassesCount}</strong></span>
-                      <span>Rooms in Use: <strong className="text-slate-800">{roomsInUseCount}</strong></span>
-                      <span>Available Rooms: <strong className="text-emerald-600">{availableRoomsCount}</strong></span>
-                    </div>
-                    <span className="text-[10px] text-gray-400">7:00 AM &ndash; 7:00 PM</span>
-                  </div>
+  const completionSlices = [
+    { key: 'done', value: Math.max(0, scheduledSectionCount), color: '#16a36a' },
+    { key: 'left', value: Math.max(0, totalSectionsCount - scheduledSectionCount), color: '#e2e8f0' },
+  ].filter(slice => slice.value > 0);
 
-                  {/* Timetable Grid (selected day, 7:00 AM - 7:00 PM, 30-min slots) */}
-                  <div className="mt-3 flex flex-col">
-                    {(() => {
-                      const selectedDay = filterDay === 'all' ? todayShort : filterDay;
-                      const daySchedules = calendarFilteredSchedules
-                        .filter((schedule) => getShortDay(schedule.day) === selectedDay)
-                        .sort((a, b) => parseTimeToSlotIndex(a.start_time) - parseTimeToSlotIndex(b.start_time));
-                      const schedulesBySlot = new Map<number, Schedule[]>();
+  const activityRows: ActivityFeedItem[] = notificationItems.slice(0, 5);
 
-                      daySchedules.forEach((schedule) => {
-                        const slot = parseTimeToSlotIndex(schedule.start_time);
-                        schedulesBySlot.set(slot, [...(schedulesBySlot.get(slot) ?? []), schedule]);
-                      });
+  /**
+   * The master-timetable panel. Extracted so the same tree can be portalled to the
+   * body for the full-window view without the grid remounting into a new shape.
+   */
+  const timetablePanel = (
+    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex h-full min-w-0 flex-col'}>
+      <Panel
+        title="Institutional Master Timetable (Preview)"
+        subtitle="Campus-wide classes for today."
+        action="Open Master Timetable"
+        onAction={() => navigate('/calendar')}
+        className="flex flex-1 flex-col"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterSelect label="Dept" value={filterDept} onChange={setFilterDept}>
+            <option value="all">All</option>
+            {departments.map(dept => <option key={dept.id} value={String(dept.id)}>{dept.department_code}</option>)}
+          </FilterSelect>
+          <FilterSelect label="Building" value={filterBuilding} onChange={changeBuilding}>
+            <option value="all">All</option>
+            {buildingOptions.map(building => <option key={building} value={building}>{building}</option>)}
+          </FilterSelect>
+          <FilterSelect label="Room" value={filterRoom} onChange={setFilterRoom}>
+            <option value="all">All</option>
+            {roomOptions.map(room => <option key={room.id} value={String(room.id)}>{room.room_code}</option>)}
+          </FilterSelect>
 
-                      const visibleSchedules = daySchedules.filter((schedule) => {
-                        const slot = parseTimeToSlotIndex(schedule.start_time);
-                        const slotKey = `${selectedDay}-${slot}`;
-                        const slotSchedules = schedulesBySlot.get(slot) ?? [];
-                        return slotSchedules.indexOf(schedule) < (visibleCardsBySlot[slotKey] ?? 5);
-                      });
-                      const layouts = getDayLayouts(visibleSchedules);
-                      const isToday = selectedDay === currentDayName;
-
-                      return (
-                        <div className="rounded-xl bg-white relative">
-                          <WeeklyTimetableGrid
-                            days={[selectedDay]}
-                            slotCount={timeSlots.length}
-                            headerHeight={36}
-                            timeColumnWidth={64}
-                            slotHeight={24}
-                            minWidth={0}
-                            getTimeLabel={(slot) => timeSlots[slot]?.label ?? ''}
-                            getDayCount={() => daySchedules.length}
-                            renderCell={(_, slot) => (
-                              <div
-                                key={`dashboard-cell-${selectedDay}-${slot}`}
-                                className={`border-b border-r border-gray-100 ${isToday ? 'bg-red-500/[0.015]' : 'bg-white'}`}
-                                style={{ gridColumn: 2, gridRow: slot + 2 }}
-                              />
-                            )}
-                          >
-                            {isToday && currentDayTimeTop !== null && (
-                              <div
-                                className="absolute left-16 right-0 z-30 flex items-center border-t-2 border-red-500 pointer-events-none"
-                                style={{ top: `${36 + currentDayTimeTop}px` }}
-                              >
-                                <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
-                              </div>
-                            )}
-
-                            {visibleSchedules.map((schedule) => {
-                              const startIdx = parseTimeToSlotIndex(schedule.start_time);
-                              const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                              const durationSlots = Math.max(1, endIdx - startIdx);
-                              const height = durationSlots * 24;
-                              const layout = layouts.find((item) => item.schedule.id === schedule.id);
-                              const left = layout ? `${layout.leftPct}%` : '0%';
-                              const width = layout ? `${layout.widthPct}%` : '100%';
-                              const deptCode = schedule.section?.department?.department_code || (schedule as unknown as { department?: { department_code?: string } })?.department?.department_code || 'GEN';
-
-                              return (
-                                <div
-                                  key={schedule.id}
-                                  title={`${schedule.course?.course_code || schedule.subject?.subject_code || 'Subject'}\n${schedule.course?.course_name || schedule.subject?.subject_name || 'No title'}\n${schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}\n${schedule.room?.room_code || 'Room TBA'}\n${schedule.start_time} - ${schedule.end_time}`}
-                                  style={{
-                                    gridColumn: 2,
-                                    gridRow: `${startIdx + 2} / span ${durationSlots}`,
-                                    height: `${height - 2}px`,
-                                    marginTop: '1px',
-                                    marginLeft: `calc(${left} + 2px)`,
-                                    width: `calc(${width} - 4px)`,
-                                  }}
-                                  className={`group z-10 rounded-lg border border-l-4 p-1.5 overflow-hidden text-left flex flex-col justify-between font-sans shadow-xs select-none transition-all duration-150 hover:scale-[1.02] hover:shadow-md hover:z-30 ${getDeptStyles(deptCode)}`}
-                                >
-                                  <div className="space-y-0.5 min-w-0">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="font-extrabold text-[10px] leading-tight truncate">
-                                        {schedule.course?.course_code || schedule.subject?.subject_code || 'N/A'}
-                                      </span>
-                                      <span className="text-[7.5px] font-black uppercase px-1 py-0.5 rounded bg-black/5 shrink-0 truncate max-w-[50%]">
-                                        {schedule.section?.section_name || 'Sec'}
-                                      </span>
-                                    </div>
-                                    <p className="text-[8.5px] font-semibold opacity-90 truncate leading-tight">
-                                      {schedule.course?.course_name || schedule.subject?.subject_name || 'No title'}
-                                    </p>
-                                  </div>
-                                  <div className="border-t border-black/5 pt-0.5 mt-auto flex items-center justify-between text-[7.5px] font-bold opacity-80 gap-1">
-                                    <span className="truncate">
-                                      {schedule.faculty ? `${schedule.faculty.first_name[0]}. ${schedule.faculty.last_name}` : 'TBA'}
-                                    </span>
-                                    <span className="truncate shrink-0">{schedule.room?.room_code || 'Room TBA'}</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-
-                            {Array.from(schedulesBySlot.entries()).map(([slot, slotSchedules]) => {
-                              const slotKey = `${selectedDay}-${slot}`;
-                              const visibleCount = visibleCardsBySlot[slotKey] ?? 5;
-                              const remainingCount = Math.max(0, slotSchedules.length - visibleCount);
-                              if (remainingCount === 0) return null;
-                              const nextCount = Math.min(5, remainingCount);
-
-                              return (
-                                <button
-                                  key={`more-${slotKey}`}
-                                  type="button"
-                                  onClick={() => setVisibleCardsBySlot((current) => ({
-                                    ...current,
-                                    [slotKey]: visibleCount + 5,
-                                  }))}
-                                  aria-label={`Show ${nextCount} more classes at ${timeSlots[slot]?.label ?? 'this time'}`}
-                                  title={`Show ${nextCount} more classes in this time slot`}
-                                  className="z-40 mt-1 mr-1 h-5 min-w-7 justify-self-end self-start rounded-md border border-[#5A1220]/20 bg-[#5A1220] px-1.5 text-[9px] font-black text-white shadow-md hover:bg-[#741827] focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
-                                  style={{ gridColumn: 2, gridRow: slot + 2 }}
-                                >
-                                  <span className="flex items-center justify-center gap-0.5"><Plus className="h-3 w-3" />{nextCount}</span>
-                                </button>
-                              );
-                            })}
-                          </WeeklyTimetableGrid>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Timetable Footer */}
-                  <div className="border-t border-gray-100 pt-3 mt-3 flex items-center justify-between text-[11px] text-gray-400 flex-shrink-0">
-                    <span>Institutional Academic Schedule Matrix</span>
-                    <button
-                      onClick={() => navigate('/vpaa/schedules')}
-                      className="font-bold text-[#5A1220] hover:underline cursor-pointer"
-                    >
-                      Manage Schedules &rarr;
-                    </button>
-                  </div>
-                </div>
-              );
-
-              return isFullscreen ? createPortal(timetableElement, document.body) : timetableElement;
-            })()}
+          <div className="relative ml-auto">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              placeholder="Search timetable"
+              aria-label="Search timetable"
+              className="w-40 rounded-md border border-slate-200 bg-white py-1.5 pl-7 pr-2 text-[10px] font-semibold text-slate-700 shadow-sm outline-none transition focus:border-primary/40"
+            />
           </div>
-
-          {/* ═══════════════════════════════════════════════════════════
-              RIGHT COLUMN: 2 PIE CHARTS -> BAR CHART
-             ═══════════════════════════════════════════════════════════ */}
-          <div className="xl:col-span-6 space-y-4 flex flex-col h-full font-sans">
-            
-            {/* 1. 2 PIE CHARTS Side-by-Side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
-              {/* PIE CHART 1: Schedule Status Distribution */}
-              <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between font-sans">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                  <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <CheckSquare className="w-4 h-4 text-[#5A1220]" />
-                    Schedule Status
-                  </h3>
-                  <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
-                    Total: {sections.length}
-                  </span>
-                </div>
-
-                {/* Interactive Donut Visualization */}
-                <div className="flex items-center justify-center my-4 relative">
-                  <svg className="w-32 h-32 -rotate-90 transform" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="10" />
-                    {(() => {
-                      const total = sections.length || 1;
-                      const data = [
-                        { count: overallStats.approvedCount, color: '#10B981' },
-                        { count: overallStats.pendingCount, color: '#F59E0B' },
-                        { count: overallStats.draftCount, color: '#94A3B8' },
-                        { count: overallStats.rejectedCount, color: '#F43F5E' },
-                      ];
-                      let cumulative = 0;
-                      const circumference = 2 * Math.PI * 38;
-
-                      return data.map((item, idx) => {
-                        if (item.count <= 0) return null;
-                        const pct = (item.count / total) * 100;
-                        const dashArray = `${(pct / 100) * circumference} ${circumference}`;
-                        const dashOffset = -((cumulative / 100) * circumference);
-                        cumulative += pct;
-
-                        return (
-                          <circle
-                            key={idx}
-                            cx="50"
-                            cy="50"
-                            r="38"
-                            fill="transparent"
-                            stroke={item.color}
-                            strokeWidth="10"
-                            strokeDasharray={dashArray}
-                            strokeDashoffset={dashOffset}
-                            className="transition-all duration-500"
-                          />
-                        );
-                      });
-                    })()}
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-sans">
-                    <span className="text-2xl font-black text-gray-900 leading-none">{sections.length}</span>
-                    <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider mt-1">Schedules</span>
-                  </div>
-                </div>
-
-                {/* Donut Legend */}
-                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 font-sans">
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Approved</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {overallStats.approvedCount}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Pending</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {overallStats.pendingCount}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Drafts</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {overallStats.draftCount}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Rejected</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {overallStats.rejectedCount}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* PIE CHART 2: Faculty Load Distribution */}
-              <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between font-sans">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                  <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <GraduationCap className="w-4 h-4 text-[#5A1220]" />
-                    Faculty Load
-                  </h3>
-                  <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
-                    Total: {faculties.length}
-                  </span>
-                </div>
-
-                {/* Interactive Donut Visualization */}
-                <div className="flex items-center justify-center my-4 relative">
-                  <svg className="w-32 h-32 -rotate-90 transform" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f1f5f9" strokeWidth="10" />
-                    {(() => {
-                      const total = faculties.length || 1;
-                      const data = [
-                        { count: facultyStats.available, color: '#10B981' },
-                        { count: facultyStats.fullyLoaded, color: '#3B82F6' },
-                        { count: facultyStats.overloaded, color: '#EF4444' },
-                        { count: facultyStats.probono, color: '#A855F7' },
-                      ];
-                      let cumulative = 0;
-                      const circumference = 2 * Math.PI * 38;
-
-                      return data.map((item, idx) => {
-                        if (item.count <= 0) return null;
-                        const pct = (item.count / total) * 100;
-                        const dashArray = `${(pct / 100) * circumference} ${circumference}`;
-                        const dashOffset = -((cumulative / 100) * circumference);
-                        cumulative += pct;
-
-                        return (
-                          <circle
-                            key={idx}
-                            cx="50"
-                            cy="50"
-                            r="38"
-                            fill="transparent"
-                            stroke={item.color}
-                            strokeWidth="10"
-                            strokeDasharray={dashArray}
-                            strokeDashoffset={dashOffset}
-                            className="transition-all duration-500"
-                          />
-                        );
-                      });
-                    })()}
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-sans">
-                    <span className="text-2xl font-black text-gray-900 leading-none">{faculties.length}</span>
-                    <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider mt-1">Faculty</span>
-                  </div>
-                </div>
-
-                {/* Donut Legend */}
-                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 font-sans">
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Available</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {facultyStats.available}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Loaded</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {facultyStats.fullyLoaded}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Overload</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {facultyStats.overloaded}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-gray-50/80 border border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
-                      <span className="font-semibold text-gray-600 text-xs">Pro Bono</span>
-                    </div>
-                    <span className="font-bold text-gray-900 text-xs px-2 py-0.5 bg-white rounded-md shadow-2xs border border-gray-200/60">
-                      {facultyStats.probono}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. BAR CHART: Department Progress Comparison (Fits all departments without scrolling) */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5 mb-3">
-                  <div>
-                    <h3 className="font-sans font-bold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-[#5A1220]" />
-                      Department Scheduling Progress
-                    </h3>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Section readiness & approval completion by department</p>
-                  </div>
-                  <span className="text-xs font-black text-[#5A1220] bg-red-50 px-2.5 py-1 rounded-xl border border-red-100">
-                    {overallStats.progressPercent}% Institutional
-                  </span>
-                </div>
-
-                {/* All Departments Fitted Cleanly - No Scrollbar */}
-                <div className="space-y-2">
-                  {departmentStats.map((dept) => {
-                    const isCompleted = dept.progressPercent === 100;
-                    return (
-                      <div key={dept.id} className="space-y-1 pb-1.5 border-b border-gray-100 last:border-0 last:pb-0">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-extrabold text-gray-900 w-14 text-xs">{dept.department_code}</span>
-                            <span className="text-[11px] text-gray-500 truncate max-w-[180px]">{dept.department_name}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-gray-400">{dept.completedCount}/{dept.sectionsCount} Sections</span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
-                              isCompleted
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-gray-100 text-gray-700'
-                            }`}>
-                              {dept.progressPercent}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden flex">
-                          <div
-                            style={{ width: `${dept.progressPercent}%` }}
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              isCompleted ? 'bg-emerald-500' : 'bg-[#5A1220]'
-                            }`}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="border-t border-gray-100 pt-3 mt-3 flex items-center justify-between text-[11px] text-gray-400">
-                <span>Active Departments: {departments.length}</span>
-                <button
-                  onClick={() => navigate('/departments')}
-                  className="font-bold text-[#5A1220] hover:underline cursor-pointer"
-                >
-                  Manage Departments &rarr;
-                </button>
-              </div>
-            </div>
-
-          </div>
-
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(open => !open)}
+            title={isFullscreen ? 'Exit full window (Esc)' : 'Full window view'}
+            aria-label={isFullscreen ? 'Exit full window' : 'Full window view'}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
+          >
+            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
+          {filtersActive && <button
+            type="button"
+            onClick={resetFilters}
+            title="Reset filters"
+            aria-label="Reset filters"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>}
         </div>
-      )}
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <StatChip icon={CalendarCheck2} value={timetableSchedules.length} label="Scheduled Classes" />
+          <StatChip icon={Building2} value={timetableRoomsUsed} label="Rooms in Use" />
+          <StatChip icon={DoorOpen} value={timetableRoomsFree} label="Available Rooms" />
+        </div>
+
+        <div className="mt-3 min-w-0">
+          <DashboardTimetableGrid
+            schedules={timetableSchedules}
+            sectionLabel={`${grouped(departments.length)} ${departments.length === 1 ? 'department' : 'departments'} · ${grouped(timetableSchedules.length)} ${timetableSchedules.length === 1 ? 'class' : 'classes'}`}
+            onOpenSchedule={() => navigate('/schedules')}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => navigate('/calendar')}
+          className="mt-auto self-start pt-3 text-[11px] font-bold text-primary hover:underline"
+        >
+          Open Master Timetable <ArrowRight className="inline h-3 w-3" />
+        </button>
+      </Panel>
     </div>
   );
+
+  if (loading) return <DashboardSkeleton variant="vpaa" />;
+
+  return <div className="space-y-4 pb-8 text-slate-800">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-primary">VPAA Dashboard</h1>
+        <p className="mt-1 text-sm text-slate-500">Institution-wide scheduling monitoring and final approval.</p>
+      </div>
+    </header>
+
+    {loadError && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span className="flex-1">{loadError}</span>
+      <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3" /> Retry</button>
+    </div>}
+
+    <ActivityFeed
+      title="Recent Activity"
+      icon={Activity}
+      items={notificationItems}
+      unreadCount={unreadCount}
+      emptyMessage="No recent notifications."
+      actionLabel="Open VPAA Reviews"
+      onAction={openApproval}
+    />
+
+    <SectionLabel>Executive Overview</SectionLabel>
+
+    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
+      {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button
+        key={label}
+        type="button"
+        onClick={() => navigate(path)}
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
+      >
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}><Icon className="h-4 w-4" /></span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="text-lg font-bold leading-5 text-primary">{grouped(value)}</div>
+          <div className="mt-1 break-words text-[11px] font-bold leading-tight">{label}</div>
+          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{detail}</div>
+        </div>
+      </button>)}
+
+      <button
+        type="button"
+        onClick={() => navigate('/schedules')}
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
+      >
+        <div className="relative h-12 w-12 shrink-0 self-start">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={completionSlices.map(slice => ({ name: slice.key, value: slice.value }))}
+                dataKey="value"
+                innerRadius="67%"
+                outerRadius="100%"
+                startAngle={90}
+                endAngle={-270}
+                paddingAngle={1}
+                stroke="#ffffff"
+                strokeWidth={3}
+              >
+                {completionSlices.map(slice => <Cell key={slice.key} fill={slice.color} />)}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold leading-none tabular-nums text-primary">{schedulingCompletion}%</span>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="break-words text-[11px] font-bold leading-tight">Overall Scheduling Completion</div>
+          <div className="mt-1 h-7 min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[{ readiness: schedulingCompletion, label: `${schedulingCompletion}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
+                <XAxis type="number" domain={[0, 100]} hide />
+                <YAxis type="category" hide />
+                <Bar dataKey="readiness" fill={schedulingCompletion === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
+                  <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{grouped(scheduledSectionCount)} / {grouped(totalSectionsCount)} sections scheduled</div>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => navigate('/departments')}
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
+      >
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${fullyApprovedDepartments === departments.length && departments.length > 0 ? TONES.good : TONES.info}`}><CheckCircle2 className="h-4 w-4" /></span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="text-lg font-bold leading-5 text-primary">{fullyApprovedDepartments} / {departments.length}</div>
+          <div className="mt-1 break-words text-[11px] font-bold leading-tight">Fully Approved Departments</div>
+          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{percent(fullyApprovedDepartments, departments.length)}% of departments</div>
+        </div>
+      </button>
+    </section>
+
+    <section className="grid gap-4 xl:grid-cols-12">
+      <Panel
+        title="Requires Attention"
+        subtitle="Department packages the Deans have cleared for your final approval."
+        tone="alert"
+        action="View all approval queue"
+        onAction={openApproval}
+        className="xl:col-span-6"
+      >
+        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${awaitingVpaaReview ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${awaitingVpaaReview ? TONES.alert : TONES.good}`}>
+            {awaitingVpaaReview ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-bold leading-tight text-primary">
+              {grouped(awaitingVpaaReview)} {awaitingVpaaReview === 1 ? 'Schedule' : 'Schedules'} Awaiting VPAA Review
+            </div>
+            <p className="mt-0.5 text-[10px] font-semibold leading-tight text-slate-600">
+              {awaitingVpaaReview ? 'Submitted by Deans for final approval' : 'Nothing is waiting on your final approval'}
+            </p>
+          </div>
+        </div>
+
+        {attentionRows.length ? <div className="-mx-1 mt-3 overflow-x-auto px-1">
+          <div className="min-w-[500px]">
+            <div className="grid gap-2 border-b border-slate-100 pb-2 text-[9px] font-bold uppercase tracking-wide text-slate-400" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
+              <span>Department</span>
+              <span>Academic Term</span>
+              <span>Submitted</span>
+              <span>Age</span>
+              <span />
+            </div>
+            <ul className="divide-y divide-slate-100">
+              {attentionRows.map(row => <li key={row.id} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
+                <b className="truncate text-[11px] text-slate-700" title={row.department_name}>{row.department_name}</b>
+                <span className="truncate text-[10px] font-semibold text-slate-500" title={termLabel(activeTerm)}>{termLabel(activeTerm)}</span>
+                <span className="truncate text-[10px] font-semibold text-slate-500">{formatSubmittedOn(row.submittedAt)}</span>
+                <span className="truncate text-[10px] font-semibold text-slate-500">{relativeAge(row.submittedAt, now)}</span>
+                <button
+                  type="button"
+                  onClick={openApproval}
+                  title={`Review ${row.department_name} — ${row.pendingVpaaCount} section${row.pendingVpaaCount === 1 ? '' : 's'} awaiting approval`}
+                  className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-600 transition hover:border-rose-300 hover:bg-rose-100"
+                >
+                  Review
+                </button>
+              </li>)}
+            </ul>
+          </div>
+        </div> : <p className="mt-3 py-4 text-center text-[11px] italic text-slate-400">No department packages are awaiting your review.</p>}
+      </Panel>
+
+      <Panel
+        title="Workflow · Department Scheduling Progress"
+        subtitle="Approval completion for every academic unit."
+        action="View all departments"
+        onAction={() => navigate('/departments')}
+        className="xl:col-span-6"
+      >
+        {workflowRows.length ? <>
+          <div className="-mx-1 overflow-x-auto px-1">
+            <div className="min-w-[460px]">
+              <div className="grid gap-2 border-b border-slate-100 pb-2 text-[9px] font-bold uppercase leading-tight tracking-wide text-slate-400" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
+                <span>Department</span>
+                <span>Completion</span>
+                <span className="text-right">Sections (Done / Total)</span>
+                <span className="text-right">Fully Approved</span>
+              </div>
+              <ul className="divide-y divide-slate-100">
+                {workflowRows.map(row => <li key={row.id} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
+                  <b className="truncate text-[11px] text-slate-700" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
+                  <span className="h-6 min-w-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[{ readiness: row.progressPercent, label: `${row.progressPercent}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
+                        <XAxis type="number" domain={[0, 100]} hide />
+                        <YAxis type="category" hide />
+                        <Bar dataKey="readiness" fill={row.progressPercent === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
+                          <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </span>
+                  <span className="text-right text-[10px] font-semibold tabular-nums text-slate-500">{grouped(row.completedCount)} / {grouped(row.sectionsCount)}</span>
+                  <span className="flex justify-end">
+                    {row.approvalStatus === 'Fully Approved'
+                      ? <Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Fully approved" />
+                      : <Minus className="h-3.5 w-3.5 text-slate-300" aria-label="Not approved yet" />}
+                  </span>
+                </li>)}
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-[10px] font-semibold text-slate-500">
+            <span className="flex items-center gap-1.5"><Check className="h-3 w-3 text-emerald-600" /> Fully Approved</span>
+            <span className="flex items-center gap-1.5"><Minus className="h-3 w-3 text-slate-300" /> Not Approved Yet</span>
+            <span className="ml-auto font-bold text-primary tabular-nums">{overallStats.progressPercent}% institutional</span>
+          </div>
+        </> : <p className="py-6 text-center text-[11px] italic text-slate-400">No departments are configured yet.</p>}
+      </Panel>
+    </section>
+
+    <SectionLabel>Tactical · Operational Overview</SectionLabel>
+
+    <section className="grid items-stretch gap-4 xl:grid-cols-12">
+      <div className="min-w-0 xl:col-span-5">
+        {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
+      </div>
+
+      <Panel
+        title="Faculty Load Overview"
+        subtitle="Teaching load spread across all faculty."
+        action="View Faculty Loads"
+        onAction={() => navigate('/faculty')}
+        className="flex flex-col xl:col-span-3"
+      >
+        <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
+          <Donut slices={facultySlices} headline={grouped(faculties.length)} caption="Total Faculty" />
+          <DonutLegend slices={facultySlices} total={faculties.length} />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => navigate('/faculty')}
+          className="mt-auto self-start pt-3 text-[11px] font-bold text-primary hover:underline"
+        >
+          View Faculty Loads <ArrowRight className="inline h-3 w-3" />
+        </button>
+      </Panel>
+
+      <div className="flex min-w-0 flex-col gap-4 xl:col-span-4">
+        <Panel
+          title="Institutional Readiness"
+          subtitle="Departments by approval stage."
+          action="View Readiness"
+          onAction={() => navigate('/departments')}
+        >
+          <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
+            <Donut slices={readinessSlices} headline={departments.length} caption="Departments" />
+            <DonutLegend slices={readinessSlices} total={departments.length} />
+          </div>
+        </Panel>
+
+        <Panel
+          title="Recent Administrative Activity"
+          subtitle="Latest workflow events across the institution."
+          action="View all activity"
+          onAction={openApproval}
+          className="flex flex-1 flex-col"
+        >
+          {activityRows.length ? <ul className="space-y-2.5">
+            {activityRows.map(item => {
+              const { icon: Icon, tone } = activityLook(item.type);
+              return <li key={item.id} className="flex items-start gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tone}`}><Icon className="h-3.5 w-3.5" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {item.isUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+                    <span className="truncate text-[11px] font-bold leading-tight text-slate-700" title={item.title}>{item.title ?? 'Activity'}</span>
+                  </div>
+                  <p className="mt-0.5 line-clamp-1 text-[10px] font-medium leading-tight text-slate-500" title={item.action}>{item.action}</p>
+                </div>
+                <span className="shrink-0 text-[9px] font-semibold text-slate-400">{item.timestamp}</span>
+              </li>;
+            })}
+          </ul> : <p className="py-4 text-center text-[11px] italic text-slate-400">No recent administrative activity.</p>}
+        </Panel>
+      </div>
+    </section>
+  </div>;
+}
+
+/** Small eyebrow label grouping a band of panels, as in the reference layout. */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <h2 className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary/70">{children}</h2>;
+}
+
+function Panel({ title, subtitle, badge, tone = 'brand', children, action, onAction, className = '' }: {
+  title: string;
+  subtitle?: string;
+  badge?: number;
+  tone?: 'brand' | 'alert';
+  children: ReactNode;
+  action?: string;
+  onAction?: () => void;
+  className?: string;
+}) {
+  return <section className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
+    <div className="mb-3 flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <h2 className={`text-[11px] font-bold uppercase tracking-wide ${tone === 'alert' ? 'text-rose-600' : 'text-primary'}`}>{title}</h2>
+          {badge != null && badge > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold leading-none tabular-nums text-white">{badge}</span>}
+        </div>
+        {subtitle && <p className="mt-1 text-[10px] font-medium leading-tight text-slate-500">{subtitle}</p>}
+      </div>
+      {action && <button type="button" onClick={onAction} className="inline-flex shrink-0 items-center text-[10px] font-bold text-primary hover:underline">{action}<ChevronRight className="h-3 w-3" /></button>}
+    </div>
+    {children}
+  </section>;
+}
+
+/**
+ * Donut and its centre readout — the same recharts configuration as the Secretary
+ * dashboard's drafting donut, so every dashboard draws the same ring.
+ *
+ * An all-zero series is drawn as one neutral ring rather than nothing: recharts
+ * renders no arcs when every value is 0, which reads as a broken chart.
+ */
+function Donut({ slices, headline, caption }: { slices: Slice[]; headline: number | string; caption: string }) {
+  const filled = slices.filter(slice => slice.value > 0);
+  const rows: Slice[] = filled.length ? filled : [{ key: 'empty', label: 'No data', value: 1, color: '#e2e8f0' }];
+
+  return <div className="relative mx-auto h-32 w-32">
+    <ResponsiveContainer width="100%" height="100%">
+      <PieChart>
+        <Pie
+          data={rows.map(slice => ({ name: slice.label, value: slice.value }))}
+          dataKey="value"
+          innerRadius="67%"
+          outerRadius="100%"
+          startAngle={90}
+          endAngle={-270}
+          paddingAngle={1}
+          stroke="#ffffff"
+          strokeWidth={3}
+        >
+          {rows.map(slice => <Cell key={slice.key} fill={slice.color} />)}
+        </Pie>
+      </PieChart>
+    </ResponsiveContainer>
+    <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white text-center">
+      <b className="text-2xl leading-none text-primary">{headline}</b>
+      <span className="mt-1 px-1 text-[9px] font-semibold leading-tight text-slate-500">{caption}</span>
+    </div>
+  </div>;
+}
+
+function DonutLegend({ slices, total }: { slices: Slice[]; total: number }) {
+  return <ul className="min-w-0 space-y-2">
+    {slices.map(slice => <li key={slice.key} className="flex items-start gap-2">
+      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: slice.color }} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[10px] font-bold leading-tight text-slate-700" title={slice.label}>{slice.label}</div>
+        <div className="mt-0.5 text-[10px] font-semibold tabular-nums text-slate-500">{slice.value.toLocaleString()} ({share1(slice.value, total)}%)</div>
+      </div>
+    </li>)}
+  </ul>;
+}
+
+function FilterSelect({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
+  return <label className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-500 shadow-sm">
+    <span className="shrink-0">{label}:</span>
+    <select
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      aria-label={label}
+      className="max-w-[92px] cursor-pointer truncate border-none bg-transparent p-0 pr-1 text-[10px] font-bold text-slate-700 outline-none"
+    >
+      {children}
+    </select>
+  </label>;
+}
+
+function StatChip({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+  return <div className="rounded-md border border-slate-100 bg-slate-50/60 p-2 text-center">
+    <Icon className="mx-auto h-3.5 w-3.5 text-primary/70" />
+    <b className="mt-1 block text-sm leading-none tabular-nums text-primary">{value.toLocaleString()}</b>
+    <span className="mt-1 block truncate text-[9px] font-semibold text-slate-500" title={label}>{label}</span>
+  </div>;
 }

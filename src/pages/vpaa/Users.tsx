@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
-import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
+  AlertTriangle,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   X,
+  Loader2,
   Camera,
-  Link2Off
+  Plus,
+  Link2Off,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import {
   useReactTable,
@@ -24,6 +28,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 
 interface User {
   id: number;
@@ -34,7 +39,6 @@ interface User {
   department: string | null;
   department_id: number | null;
   program_id?: number | string | null;
-  program: Program | null;
   department_logo?: string | null;
   status: 'Active' | 'Inactive';
   profile_picture?: string | null;
@@ -63,7 +67,7 @@ interface Program {
   department_id: number;
   cluster: string | null;
   code: string;
-  name: string | null;
+  name: string;
 }
 
 interface ApiUser {
@@ -75,7 +79,6 @@ interface ApiUser {
   department_id: number | null;
   program_id?: number | null;
   department: ApiDepartment | null;
-  program?: Program | null;
   profile_picture?: string | null;
   is_active: boolean;
   allow_google_login: boolean;
@@ -111,7 +114,6 @@ const mapApiUser = (u: ApiUser): User => ({
   department: u.department ? u.department.department_name : null,
   department_id: u.department_id,
   program_id: u.program_id ?? null,
-  program: u.program ?? null,
   status: u.is_active ? 'Active' : 'Inactive',
   profile_picture: u.profile_picture || null,
   department_logo: u.department?.logo || null,
@@ -123,7 +125,7 @@ const mapApiUser = (u: ApiUser): User => ({
 
 export default function VpaaUsers() {
   const { toast } = useToast();
-  const usersCacheKey = 'page:users:v2';
+  const usersCacheKey = 'page:users';
   const cachedUsersData = getCachedData<UsersPageData>(usersCacheKey);
   const [users, setUsers] = useState<User[]>(cachedUsersData?.users ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedUsersData?.departments ?? []);
@@ -132,15 +134,11 @@ export default function VpaaUsers() {
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [viewMode] = useState<'grid' | 'list'>('list');
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 6 });
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
   useEffect(() => {
-    setPagination(prev => ({
-      ...prev,
-      pageSize: viewMode === 'grid' ? 6 : 10,
-      pageIndex: 0
-    }));
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
   }, [viewMode]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -162,6 +160,13 @@ export default function VpaaUsers() {
   const [nameError, setNameError] = useState('');
   const [deptError, setDeptError] = useState('');
   const [programError, setProgramError] = useState('');
+  const [newProgram, setNewProgram] = useState({
+    cluster: '',
+    code: '',
+    name: '',
+  });
+  const [programFormError, setProgramFormError] = useState('');
+  const [isCreatingProgram, setIsCreatingProgram] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -231,23 +236,11 @@ export default function VpaaUsers() {
     if (!isEditMode && formData.role && formData.department_id) {
       const dept = departments.find(d => d.id === parseInt(formData.department_id));
       if (dept) {
-        const program = formData.role === 'Program Head'
-          ? programs.find(item => String(item.id) === String(formData.program_id))
-          : null;
-
-        // A department may have several Program Heads. Include the assigned
-        // program code so each account receives a distinct login username.
-        if (formData.role === 'Program Head' && !program) {
-          setFormData(prev => ({ ...prev, username: '' }));
-          return;
-        }
-
         const roleName = formData.role
           .split(' ')
           .map(word => word.charAt(0).toUpperCase() + word.slice(1))
           .join('');
-        const generatedUser = `${dept.department_code}${program?.code ?? ''}${roleName}`
-          .replace(/[^a-zA-Z0-9]/g, '');
+        const generatedUser = `${dept.department_code}${roleName}`;
         const bytes = crypto.getRandomValues(new Uint8Array(6));
         const temporaryPassword = `Wi${Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')}A9`;
         setFormData(prev => ({
@@ -257,13 +250,55 @@ export default function VpaaUsers() {
         }));
       }
     }
-  }, [formData.role, formData.department_id, formData.program_id, departments, programs, isEditMode]);
+  }, [formData.role, formData.department_id, departments, isEditMode]);
 
   const isProgramHeadRole = formData.role === 'Program Head';
   const selectedDepartmentPrograms = useMemo(
     () => programs.filter((program) => String(program.department_id) === String(formData.department_id)),
     [programs, formData.department_id]
   );
+
+  const createProgram = async () => {
+    if (!formData.department_id) {
+      setProgramFormError('Select a department before adding a program.');
+      return;
+    }
+
+    const code = newProgram.code.trim();
+    const name = newProgram.name.trim();
+    if (!code || !name) {
+      setProgramFormError('Program code and name are required.');
+      return;
+    }
+
+    setIsCreatingProgram(true);
+    setProgramFormError('');
+    try {
+      const response = await api.post<{ data: Program }>('/programs', {
+        department_id: parseInt(formData.department_id),
+        cluster: newProgram.cluster.trim() || null,
+        code,
+        name,
+      });
+      const createdProgram = response.data.data;
+      setPrograms((prev) => {
+        const nextPrograms = [...prev, createdProgram].sort((a, b) =>
+          (a.cluster ?? '').localeCompare(b.cluster ?? '') || a.code.localeCompare(b.code)
+        );
+        setCachedData<UsersPageData>(usersCacheKey, { users, departments, programs: nextPrograms });
+        return nextPrograms;
+      });
+      setFormData((prev) => ({ ...prev, program_id: String(createdProgram.id) }));
+      setNewProgram({ cluster: '', code: '', name: '' });
+      setProgramError('');
+      toast.success('Program Added', 'Program assignment option is now available.');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      setProgramFormError(err?.response?.data?.message || 'Failed to add program.');
+    } finally {
+      setIsCreatingProgram(false);
+    }
+  };
 
   const fetchData = async (forceRefresh = false) => {
     setIsLoading(forceRefresh || !hasCachedData(usersCacheKey));
@@ -400,6 +435,8 @@ export default function VpaaUsers() {
     setNameError('');
     setDeptError('');
     setProgramError('');
+    setProgramFormError('');
+    setNewProgram({ cluster: '', code: '', name: '' });
     setEditingId(user.id);
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -512,7 +549,8 @@ export default function VpaaUsers() {
         }
       },
       {
-        accessorKey: 'program',
+        id: 'program',
+        accessorFn: row => programs.find(pr => String(pr.id) === String(row.program_id)) ?? null,
         header: 'Program / Major',
         cell: info => {
           const program = info.getValue() as Program | null;
@@ -520,7 +558,7 @@ export default function VpaaUsers() {
           return (
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-700">{program.code}</p>
-              <p className="max-w-44 truncate text-[11px] text-gray-500">{program.name || program.cluster || 'No name specified'}</p>
+              <p className="max-w-44 truncate text-[11px] text-gray-500">{program.name}</p>
             </div>
           );
         }
@@ -594,7 +632,7 @@ export default function VpaaUsers() {
         )
       }
     ],
-    [users, departments]
+    [users, departments, programs]
   );
 
   const table = useReactTable<User>({
@@ -613,7 +651,9 @@ export default function VpaaUsers() {
 
   return (
     <div>
-      <div className="bg-white border border-gray-200/80 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm font-sans mb-6">
+      {/* Search and Actions Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
+        {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
@@ -624,21 +664,54 @@ export default function VpaaUsers() {
             className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
           />
         </div>
-        <button
-          onClick={() => {
-            setIsEditMode(false);
-            setEditingId(null);
-            setIsDetailModalOpen(false);
-            setIsDeleteModalOpen(false);
-            setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
-            setNameError('');
-            setDeptError('');
-            setIsModalOpen(true);
-          }}
-          className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm"
-        >
-          <span className="text-lg leading-none">+</span> Add User
-        </button>
+
+        {/* Action Group: View Mode Toggle + Add User */}
+        <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
+          {/* View Mode Toggle (Grid / List) */}
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="List View"
+            >
+              <List size={15} />
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              setIsEditMode(false);
+              setEditingId(null);
+              setIsDetailModalOpen(false);
+              setIsDeleteModalOpen(false);
+              setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+              setNameError('');
+              setDeptError('');
+              setIsModalOpen(true);
+            }}
+            className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+          >
+            <Plus size={15} />
+            <span>Add User</span>
+          </button>
+        </div>
       </div>
 
       {viewMode === 'grid' ? (
@@ -666,6 +739,7 @@ export default function VpaaUsers() {
               const u = row.original;
               const initials = getInitials(u.name);
               const deptLogo = u.department_logo || departments.find(d => d.id === u.department_id)?.logo || null;
+              const program = programs.find(pr => String(pr.id) === String(u.program_id)) ?? null;
               let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200/50';
               if (u.role.toLowerCase() === 'secretary') {
                 badgeColor = 'bg-green-100 text-green-800 border border-green-200/50';
@@ -679,7 +753,7 @@ export default function VpaaUsers() {
                   onClick={() => {
                     openDetailModal(u);
                   }}
-                  className="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group hover:border-[#C9952A]/40 transition-all duration-200 shadow-sm hover:shadow-md overflow-hidden cursor-pointer"
+                  className={`bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group shadow-sm hover:shadow-md overflow-hidden cursor-pointer ${GRID_CARD_HOVER}`}
                 >
                   {/* Centered Background Department Watermark Logo */}
                   {deptLogo && (
@@ -703,7 +777,7 @@ export default function VpaaUsers() {
                           </div>
                         )}
                         <div>
-                          <h3 className="font-bold text-gray-800 text-sm leading-snug group-hover:text-[#C9952A] transition-colors">{u.name}</h3>
+                          <h3 className="font-bold text-gray-800 text-sm leading-snug">{u.name}</h3>
                           <span className="font-mono text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200/60 inline-block mt-0.5">
                             @{u.username}
                           </span>
@@ -719,9 +793,17 @@ export default function VpaaUsers() {
                         <span className="text-gray-400 font-semibold shrink-0">Department:</span>
                         <span className="font-bold text-gray-700 text-right break-words max-w-[200px] leading-tight">{u.department || '—'}</span>
                       </div>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-gray-400 font-semibold shrink-0">Program:</span>
+                        <span className="font-bold text-gray-700 text-right break-words max-w-[200px] leading-tight">{program ? program.code : '—'}</span>
+                      </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-400 font-semibold">Status:</span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-850 border border-emerald-200/60">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          u.status.toLowerCase() === 'active'
+                            ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60'
+                            : 'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}>
                           {u.status}
                         </span>
                       </div>
@@ -839,7 +921,7 @@ export default function VpaaUsers() {
                 ))
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-base font-semibold">No users found.</p>
                       <p className="text-xs">Try adjusting your search criteria or add a new user.</p>
@@ -1104,6 +1186,7 @@ export default function VpaaUsers() {
                     setFormData({ ...formData, department_id: e.target.value, program_id: '' });
                     setDeptError('');
                     setProgramError('');
+                    setProgramFormError('');
                   }}
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm cursor-pointer transition-all ${
                     deptError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
@@ -1146,13 +1229,66 @@ export default function VpaaUsers() {
                       </option>
                       {selectedDepartmentPrograms.map((program) => (
                         <option key={program.id} value={program.id}>
-                          {program.code} - {program.name || program.cluster || 'Unnamed program'}
+                          {program.code} - {program.name}{program.cluster ? ` (${program.cluster})` : ''}
                         </option>
                       ))}
                     </select>
                     {programError && <p className="text-xs text-red-500 mt-1 font-semibold">{programError}</p>}
                   </div>
 
+                  <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-[1fr_0.8fr]">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Program Cluster
+                      </label>
+                      <input
+                        type="text"
+                        value={newProgram.cluster}
+                        onChange={(e) => setNewProgram({ ...newProgram, cluster: e.target.value })}
+                        placeholder="e.g. Teacher Education"
+                        disabled={!formData.department_id}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Code
+                      </label>
+                      <input
+                        type="text"
+                        value={newProgram.code}
+                        onChange={(e) => setNewProgram({ ...newProgram, code: e.target.value.toUpperCase() })}
+                        placeholder="e.g. BSED-ENG"
+                        disabled={!formData.department_id}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm font-mono outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Program / Major Name
+                      </label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="text"
+                          value={newProgram.name}
+                          onChange={(e) => setNewProgram({ ...newProgram, name: e.target.value })}
+                          placeholder="e.g. BSED Major in English"
+                          disabled={!formData.department_id}
+                          className="min-w-0 flex-1 px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+                        />
+                        <button
+                          type="button"
+                          disabled={isCreatingProgram || !formData.department_id}
+                          onClick={createProgram}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#4e0a10]/20 bg-[#4e0a10] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isCreatingProgram ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                          Add Program
+                        </button>
+                      </div>
+                      {programFormError && <p className="text-xs text-red-500 mt-1 font-semibold">{programFormError}</p>}
+                    </div>
+                  </div>
                 </section>
               )}
 
@@ -1169,7 +1305,7 @@ export default function VpaaUsers() {
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
-                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
+                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : 'Create Account')
@@ -1181,7 +1317,19 @@ export default function VpaaUsers() {
         </div>
       )}
 
-      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete User Account" message="Are you sure you want to delete this user account? This action is permanent and cannot be undone." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteUser}>
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-gray-800 font-display">Delete User Account</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Are you sure you want to delete this user account? This action is permanent and cannot be undone.
+                </p>
+              </div>
               <div className="space-y-2 text-left">
                 <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-3 cursor-pointer">
                   <input type="radio" name="faculty-delete-choice" checked={!removeFacultyProfile} onChange={() => setRemoveFacultyProfile(false)} className="mt-0.5 accent-[#5A1220]" />
@@ -1192,7 +1340,24 @@ export default function VpaaUsers() {
                   <span><span className="block text-xs font-bold text-red-700">Remove faculty profile too</span><span className="block text-[11px] text-red-600/80">The linked faculty record will be deleted.</span></span>
                 </label>
               </div>
-      </ConfirmModal>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteUser}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* User Detail Modal */}
       {isDetailModalOpen && selectedUserForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1303,4 +1468,3 @@ export default function VpaaUsers() {
     </div>
   );
 }
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

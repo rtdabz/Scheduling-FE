@@ -26,6 +26,7 @@ import {
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { apiErrorMessage } from '../../lib/apiError';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
@@ -858,7 +859,7 @@ export default function ProgramHeadFaculty() {
               const deptLogo = f.department?.logo || departments.find(d => d.id === f.department_id)?.logo || null;
 
               return (
-                <div key={f.id} className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between font-sans relative group overflow-hidden">
+                <div key={f.id} className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between font-sans relative group overflow-hidden ${GRID_CARD_HOVER}`}>
                   {/* Centered Background Department Watermark Logo */}
                   {deptLogo && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">

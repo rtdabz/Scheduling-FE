@@ -3,12 +3,13 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
-import ConfirmModal from '../../components/ui/ConfirmModal';
 import {
   Pencil,
   Trash2,
   Search,
+  AlertTriangle,
   X,
+  Loader2,
   Building2,
   ArrowLeft,
   Clock,
@@ -21,9 +22,9 @@ import {
   Plus
 } from 'lucide-react';
 import api from '../../lib/api';
-import { clearDataCache, setCachedData } from '../../lib/dataCache';
+import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
-import { useRoomsPageData } from '../../hooks/useRoomsPageData';
 
 
 interface Department {
@@ -112,11 +113,12 @@ export default function DeanRooms() {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
-  const { rooms, departments, schedules, activeTerm, isLoading, updateRoom, addRoom, removeRoom, refresh } = useRoomsPageData(
-    user?.role,
-    user?.department_id,
-    () => toast.error('Error', 'Failed to load rooms and schedules data.'),
-  );
+  const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
+  const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
+  const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
+  const [activeTerm, setActiveTerm] = useState<any | null>(cachedRoomsData?.activeTerm ?? null);
+  const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
@@ -159,6 +161,38 @@ export default function DeanRooms() {
   // Error states
   const [codeError, setCodeError] = useState('');
   const [buildingError, setBuildingError] = useState('');
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async (forceRefresh = false) => {
+    setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
+    try {
+      const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
+        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data');
+        const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
+        const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
+        const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
+        const activeTerm = initialDataRes.data?.active_term || null;
+
+        return {
+          rooms: rawRooms.map(mapApiRoom),
+          departments: rawDepts,
+          schedules: rawSchedules,
+          activeTerm: activeTerm,
+        };
+      }, forceRefresh);
+      setRooms(data.rooms);
+      setDepartments(data.departments);
+      setSchedules(data.schedules || []);
+      setActiveTerm(data.activeTerm || null);
+    } catch {
+      toast.error('Error', 'Failed to load rooms and schedules data.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,12 +239,22 @@ export default function DeanRooms() {
       if (isEditMode && editingId !== null) {
         const res = await api.put<{ room: ApiRoom }>(`/rooms/${editingId}`, payload);
         const updatedRoom = mapApiRoom(res.data.room);
-        updateRoom(updatedRoom);
+        setRooms(prev => {
+          const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
+          clearDataCache();
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+          return nextRooms;
+        });
         toast.success('Success', 'Room updated successfully');
       } else {
         const res = await api.post<{ room: ApiRoom }>('/rooms', payload);
         const createdRoom = mapApiRoom(res.data.room);
-        addRoom(createdRoom);
+        setRooms(prev => {
+          const nextRooms = [createdRoom, ...prev];
+          clearDataCache();
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+          return nextRooms;
+        });
         toast.success('Success', 'Room created successfully');
       }
 
@@ -255,7 +299,12 @@ export default function DeanRooms() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/rooms/${idToDelete}`);
-        removeRoom(idToDelete);
+        setRooms(prev => {
+          const nextRooms = prev.filter(r => r.id !== idToDelete);
+          clearDataCache();
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+          return nextRooms;
+        });
         toast.success('Deleted', 'Room removed successfully');
       } catch {
         toast.error('Error', 'Failed to delete room');
@@ -545,10 +594,10 @@ export default function DeanRooms() {
                   <div
                     key={building.name}
                     onClick={() => setSelectedBuilding(building.name)}
-                    className="bg-white border border-gray-100 hover:border-[#C9952A]/40 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-4 group font-sans"
+                    className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] group-hover:bg-[#C9952A]/10 group-hover:text-[#C9952A] flex items-center justify-center transition-colors">
+                      <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
                         <Building2 size={24} />
                       </div>
                       <span className="text-[11px] font-bold uppercase tracking-wider bg-gray-50 text-gray-500 border border-gray-150 px-2 py-0.5 rounded-full">
@@ -557,7 +606,7 @@ export default function DeanRooms() {
                     </div>
 
                     <div>
-                      <h3 className="text-base font-bold text-gray-800 font-sans group-hover:text-[#C9952A] transition-colors leading-tight">
+                      <h3 className="text-base font-bold text-gray-800 font-sans leading-tight">
                         {building.name}
                       </h3>
                       <p className="text-xs text-gray-400 mt-1 font-semibold">
@@ -572,7 +621,7 @@ export default function DeanRooms() {
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-[#4e0a10] rounded-full transition-all duration-500 group-hover:bg-[#C9952A]"
+                          className="h-full bg-[#4e0a10] rounded-full transition-all duration-500"
                           style={{ width: `${percent}%` }}
                         />
                       </div>
@@ -699,7 +748,7 @@ export default function DeanRooms() {
                       setSelectedRoomIdForDetail(room.id);
                       setIsDetailModalOpen(true);
                     }}
-                    className="bg-white border border-gray-150 hover:border-[#C9952A]/40 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans"
+                    className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="space-y-1">
@@ -1053,7 +1102,7 @@ export default function DeanRooms() {
                   disabled={isSubmitting}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
-                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
+                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
@@ -1066,7 +1115,39 @@ export default function DeanRooms() {
         document.body
       )}
 
-      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Room" message="Are you sure you want to delete this room? This action is permanent and cannot be undone." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteRoom} />
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Room</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Are you sure you want to delete this room? This action is permanent and cannot be undone.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteRoom}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Classroom Detail Modal */}
       <RoomDetailModal
@@ -1080,4 +1161,3 @@ export default function DeanRooms() {
     </div>
   );
 };
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

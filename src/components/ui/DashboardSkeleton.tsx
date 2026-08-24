@@ -3,7 +3,7 @@ import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
 import { slotCount } from '../../lib/timeGrid';
 import Skeleton from './Skeleton';
 
-type DashboardSkeletonVariant = 'secretary' | 'program' | 'institutional';
+type DashboardSkeletonVariant = 'secretary' | 'dean' | 'vpaa' | 'program' | 'institutional';
 
 interface DashboardSkeletonProps {
   metricCount?: number;
@@ -17,8 +17,8 @@ function PanelFrame({ className = '', children }: { className?: string; children
   </section>;
 }
 
-function MetricCard() {
-  return <div className="min-h-[90px] rounded-lg border border-slate-200 bg-white p-3 shadow-sm"><div className="flex items-start gap-2.5"><Skeleton className="h-9 w-9 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-5 w-10" /><Skeleton className="mt-1 h-3 w-4/5" /><Skeleton className="mt-1.5 h-2.5 w-3/5" /></div></div></div>;
+function MetricCard({ className = '' }: { className?: string }) {
+  return <div className={`min-h-[90px] rounded-lg border border-slate-200 bg-white p-3 shadow-sm ${className}`}><div className="flex items-start gap-2.5"><Skeleton className="h-9 w-9 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-5 w-10" /><Skeleton className="mt-1 h-3 w-4/5" /><Skeleton className="mt-1.5 h-2.5 w-3/5" /></div></div></div>;
 }
 
 function QueueSkeleton() {
@@ -47,6 +47,32 @@ function SecretarySkeleton() {
   return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true"><div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">{Array.from({ length: 8 }).map((_, i) => <MetricCard key={i} />)}</div><div className="grid gap-4 xl:grid-cols-12"><QueueSkeleton /><ProgressSkeleton /><WorkloadSkeleton /></div><div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0"><SecretaryTimetableSkeleton /></div><div className="flex min-w-0 flex-col gap-4"><PanelFrame><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3 grid grid-cols-4 gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><Skeleton className="mt-3.5 h-3 w-full" /><Skeleton className="mt-2 h-[140px] w-full rounded" /><Skeleton className="mt-3 h-4 w-44" /></PanelFrame><PanelFrame className="flex-1"><Skeleton className="h-14 w-full rounded-lg" /><Skeleton className="mt-2.5 h-8 w-full" /><Skeleton className="mt-2.5 h-7 w-full" /><div className="mt-2 space-y-1.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-3.5 w-full" />)}</div><Skeleton className="mt-3 h-7 w-full rounded-md" /></PanelFrame></div></div></div>;
 }
 
+/** Table shell used by the Dean's Review Queue and Review Overview panels. */
+function TableSkeleton({ columns, rows = 5, footer = false }: { columns: number; rows?: number; footer?: boolean }) {
+  const template = `minmax(0,1.4fr) repeat(${columns - 1}, minmax(0,1fr))`;
+  return <div className="min-w-0">
+    <div className="grid gap-2 border-b border-slate-100 pb-2" style={{ gridTemplateColumns: template }}>{Array.from({ length: columns }).map((_, i) => <Skeleton key={i} className="h-2 w-full max-w-[72px]" />)}</div>
+    <div className="divide-y divide-slate-100">{Array.from({ length: rows }).map((_, row) => <div key={row} className="grid items-center gap-2 py-2.5" style={{ gridTemplateColumns: template }}>{Array.from({ length: columns }).map((_, col) => <Skeleton key={col} className={`h-2.5 ${col === 0 ? 'w-4/5' : 'w-3/5'}`} />)}</div>)}</div>
+    {footer && <div className="grid gap-2 border-t border-slate-200 pt-2.5" style={{ gridTemplateColumns: template }}>{Array.from({ length: columns }).map((_, i) => <Skeleton key={i} className="h-2.5 w-2/5" />)}</div>}
+  </div>;
+}
+
+/** Donut plus its legend rows — the Dean's readiness, workload and utilization panels. */
+function DonutSkeleton({ legendRows = 4 }: { legendRows?: number }) {
+  return <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
+    <Skeleton className="mx-auto h-32 w-32 rounded-full" />
+    <div className="space-y-2">{Array.from({ length: legendRows }).map((_, i) => <div key={i} className="flex items-start gap-2"><Skeleton className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-2.5 w-4/5" /><Skeleton className="mt-1 h-2 w-2/5" /></div></div>)}</div>
+  </div>;
+}
+
+function DeanSkeleton() {
+  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard"><header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><Skeleton className="h-8 w-52" /><Skeleton className="mt-1 h-5 w-80 max-w-full" /></div></header><div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">{Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}<MetricCard className="xl:col-span-2" /><MetricCard /></div><div className="grid gap-4 xl:grid-cols-12"><PanelFrame className="xl:col-span-5"><TableSkeleton columns={5} /><div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-2.5">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-2.5 w-20" />)}</div></PanelFrame><PanelFrame className="xl:col-span-3"><DonutSkeleton legendRows={5} /><Skeleton className="mt-3.5 h-3 w-40" /></PanelFrame><PanelFrame className="xl:col-span-4"><TableSkeleton columns={5} footer /></PanelFrame></div><div className="grid items-stretch gap-4 xl:grid-cols-12"><PanelFrame className="xl:col-span-5"><div className="flex flex-wrap items-center gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-md" />)}<Skeleton className="ml-auto h-7 w-40 rounded-md" /><Skeleton className="h-7 w-7 rounded-md" /></div><div className="mt-3 grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><div className="mt-3"><SecretaryTimetableSkeleton /></div><Skeleton className="mt-3 h-4 w-32" /></PanelFrame><PanelFrame className="xl:col-span-4"><DonutSkeleton /><div className="mt-3.5 border-t border-slate-100 pt-3"><div className="flex items-center justify-between"><Skeleton className="h-2.5 w-28" /><Skeleton className="h-2 w-24" /></div><div className="mt-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex h-[46px] items-center gap-2"><Skeleton className="h-7 w-7 shrink-0 rounded-full" /><Skeleton className="h-2.5 w-24" /><Skeleton className="h-3 flex-1 rounded-full" /></div>)}</div></div></PanelFrame><PanelFrame className="xl:col-span-3"><DonutSkeleton legendRows={2} /><div className="mt-3.5 flex items-baseline justify-between"><Skeleton className="h-2.5 w-32" /><Skeleton className="h-2 w-16" /></div><Skeleton className="mt-2 h-[140px] w-full rounded" /><Skeleton className="mt-3 h-4 w-40" /></PanelFrame></div></div>;
+}
+
+function VpaaSkeleton() {
+  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard"><header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><Skeleton className="h-8 w-52" /><Skeleton className="mt-1 h-5 w-80 max-w-full" /></div></header><Skeleton className="h-2.5 w-36" /><div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">{Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}<MetricCard className="xl:col-span-2" /><MetricCard /></div><div className="grid gap-4 xl:grid-cols-12"><PanelFrame className="xl:col-span-6"><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3"><TableSkeleton columns={5} rows={4} /></div><Skeleton className="mt-3 h-3 w-36" /></PanelFrame><PanelFrame className="xl:col-span-6"><TableSkeleton columns={4} rows={6} /><div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-2.5"><Skeleton className="h-2.5 w-24" /><Skeleton className="h-2.5 w-28" /></div></PanelFrame></div><Skeleton className="h-2.5 w-52" /><div className="grid items-stretch gap-4 xl:grid-cols-12"><PanelFrame className="xl:col-span-5"><div className="flex flex-wrap items-center gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-md" />)}<Skeleton className="ml-auto h-7 w-40 rounded-md" /><Skeleton className="h-7 w-7 rounded-md" /></div><div className="mt-3 grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><div className="mt-3"><SecretaryTimetableSkeleton /></div><Skeleton className="mt-3 h-4 w-36" /></PanelFrame><PanelFrame className="xl:col-span-3"><DonutSkeleton /><Skeleton className="mt-3.5 h-4 w-32" /></PanelFrame><div className="flex flex-col gap-4 xl:col-span-4"><PanelFrame><DonutSkeleton legendRows={3} /><Skeleton className="mt-3.5 h-4 w-28" /></PanelFrame><PanelFrame className="flex-1"><div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex items-start gap-2.5"><Skeleton className="h-7 w-7 shrink-0 rounded-md" /><div className="min-w-0 flex-1"><Skeleton className="h-2.5 w-4/5" /><Skeleton className="mt-1 h-2 w-2/5" /></div><Skeleton className="h-2 w-12 shrink-0" /></div>)}</div></PanelFrame></div></div></div>;
+}
+
 function TimetableSkeleton() {
   return <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3"><div className="flex items-center gap-2"><Skeleton className="h-5 w-5 rounded" /><Skeleton className="h-4 w-48" /></div><div className="flex gap-2"><Skeleton className="h-7 w-20 rounded-lg" /><Skeleton className="h-7 w-20 rounded-lg" /></div></div><div className="grid grid-cols-[64px_1fr] overflow-hidden rounded-xl border border-slate-200"><div><Skeleton className="h-9 w-full rounded-none" />{Array.from({ length: 13 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-none border-t border-white" />)}</div><div><Skeleton className="h-9 w-full rounded-none" />{Array.from({ length: 13 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-none border-t border-white" />)}</div></div></div>;
 }
@@ -65,6 +91,8 @@ function InstitutionalSkeleton() {
 
 export default function DashboardSkeleton({ metricCount, variant = 'institutional' }: DashboardSkeletonProps) {
   if (variant === 'secretary') return <SecretarySkeleton />;
+  if (variant === 'dean') return <DeanSkeleton />;
+  if (variant === 'vpaa') return <VpaaSkeleton />;
   if (variant === 'program' || variant === 'summary') return <ProgramSkeleton />;
   if (metricCount && metricCount !== 4) return <ProgramSkeleton />;
   return <InstitutionalSkeleton />;
