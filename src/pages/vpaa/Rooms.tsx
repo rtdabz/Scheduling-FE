@@ -532,7 +532,7 @@ export default function VpaaRooms() {
                 setBuildingError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-full hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
             >
               <Plus size={15} />
               <span>{selectedBuilding ? 'Add Room' : 'Add Building'}</span>

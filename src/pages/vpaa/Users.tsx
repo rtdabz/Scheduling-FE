@@ -843,12 +843,12 @@ export default function VpaaUsers() {
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
+                <tr key={headerGroup.id} className="bg-gray-50/80 border-b border-gray-200">
                   {headerGroup.headers.map(header => (
                     <th
                       key={header.id}
