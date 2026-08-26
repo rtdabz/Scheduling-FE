@@ -1,5 +1,6 @@
 import { Pencil, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
+import { TABLE_ROW_HOVER } from "../../../../lib/cardStyles";
 
 export type SchedulingRuleRow = {
   key: string;
@@ -46,7 +47,7 @@ export default function SchedulingRuleEditor({
           <p className="px-1 py-3 text-center text-xs font-semibold text-slate-500">{emptyText}</p>
         ) : (
           rows.map((row) => (
-            <div key={row.key} className="grid items-center gap-2 border-b border-slate-100 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(120px,auto)_auto]">
+            <div key={row.key} className={`grid items-center gap-2 border-b border-slate-100 px-2 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(120px,auto)_auto] ${TABLE_ROW_HOVER}`}>
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-slate-900">{row.label}</p>
                 <p className="truncate text-xs font-semibold text-slate-500">{row.detail}</p>

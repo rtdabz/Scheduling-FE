@@ -263,8 +263,8 @@ export default function CourseManager() {
   });
 
   const courseGuideSteps = useMemo(() => [
-    { element: '#course-list-filters', title: 'Find a course', description: 'Search by course code or name, then narrow the list by year level, category, or semester.', side: 'bottom' as const },
-    { element: '#course-list-table', title: 'Review course details', description: 'Verify units, category, semester, and department ownership before using a course elsewhere.', side: 'top' as const },
+    { element: '#course-list-filters', title: 'Find a course', description: 'Search by code or name. Filter by year, category, or semester.', side: 'bottom' as const },
+    { element: '#course-list-table', title: 'Check course details', description: 'Review units, category, semester, and department.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'course-list', isReady: true, steps: courseGuideSteps });
 

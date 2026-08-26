@@ -1387,7 +1387,15 @@ departmentSectionProgress.every((section) => section.status === "completed");
       let savedScheduleRecords: ApiScheduleRecord[];
       let deletedScheduleRecordIds: number[] = [];
 
-      if (selectedRecommendationId !== null) {
+      // Acceptance creates/replaces every replaceable row for the course. That
+      // is correct for a new placement, but too broad while rescheduling one
+      // meeting (notably a split course). Keep reschedules on the batch path,
+      // where operations carry the exact existing schedule ids to update.
+      const recommendationIdToRejectAfterBatch = dropContext.isRescheduling
+        ? selectedRecommendationId
+        : null;
+
+      if (selectedRecommendationId !== null && !dropContext.isRescheduling) {
         const response = await api.post<AcceptedRecommendationResponse>(
           `/schedule-recommendations/${selectedRecommendationId}/accept`
         );
@@ -1399,6 +1407,14 @@ departmentSectionProgress.every((section) => section.status === "completed");
         });
         savedScheduleRecords = response.data.schedules ?? [];
         deletedScheduleRecordIds = response.data.deleted_schedule_ids ?? [];
+      }
+
+      if (recommendationIdToRejectAfterBatch !== null) {
+        // The recommendation was used as a validated placement preview; the
+        // actual persistence was performed by /schedules/batch.
+        await api.post(`/schedule-recommendations/${recommendationIdToRejectAfterBatch}/reject`, {
+          reason: "Applied through the atomic schedule update path."
+        }).catch(() => undefined);
       }
 
       const savedScheduleItems = savedScheduleRecords.map(mapApiScheduleToItem);

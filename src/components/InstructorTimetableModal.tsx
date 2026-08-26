@@ -6,6 +6,7 @@ import { useToast } from "../context/ToastContext";
 import { getCachedData, loadCachedData } from "../lib/dataCache";
 import WeeklyTimetableGrid from "./scheduling/WeeklyTimetableGrid";
 import Skeleton from "./ui/Skeleton";
+import { scheduleLocationLabel } from "../lib/scheduleLocation";
 
 interface ApiScheduleRecord {
   id: number;
@@ -167,7 +168,7 @@ export default function InstructorTimetableModal({
           const courseName = s.course?.course_name ?? s.subject?.course_name ?? s.subject?.subject_name ?? "";
           const category = s.course?.course_category ?? s.subject?.subject_category ?? "major";
           const sectionName = s.section?.section_name ?? "SEC";
-          const roomName = s.room ? (s.room.room_code === "ONLINE" ? "Online" : (s.room.room_code ?? "TBA")) : "TBA";
+          const roomName = scheduleLocationLabel(s.mode, s.room?.room_code);
 
           return {
             id: s.id,

@@ -10,11 +10,9 @@ import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
-
-import { useTour } from '../../hooks/useTour'
+import RoleOnboarding from '../onboarding/RoleOnboarding'
 
 export default function AppLayout() {
-  useTour()
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
   const location = useLocation()
   const { term: activeTerm } = useActiveTerm()
@@ -100,6 +98,7 @@ export default function AppLayout() {
         </main>
       </div>
       <HelperBuddyChat />
+      <RoleOnboarding onOpenSidebar={() => setSidebarOpen(true)} />
     </div>
   )
 }

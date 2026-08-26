@@ -277,10 +277,10 @@ export default function SecretarySettings() {
     action?.();
   };
   const settingsGuideSteps = useMemo(() => [
-    { element: '#secretary-settings-overview', title: 'Review the department profile', description: 'Check which scheduling profile is active and review the recommended controls for this department.', side: 'bottom' as const, align: 'start' as const },
-    { element: '#configuration-override', title: 'Configure scheduling rules', description: 'Open this section to manage course splitting, GEC split behavior, evening field scheduling, Sunday delivery, and custom lab duration.', side: 'bottom' as const },
-    { element: '#resource-slot-limits', title: 'Set resource slot limits', description: 'Review how many online and field sections may share a scheduling slot for this department.', side: 'top' as const },
-    { element: '#secretary-settings-profile-guide', title: 'Use the profile guide', description: 'Use these recommendations as a quick reference when deciding which settings to enable.', side: 'top' as const },
+    { element: '#secretary-settings-overview', title: 'Check the department profile', description: 'See the active profile and its recommended settings.', side: 'bottom' as const, align: 'start' as const },
+    { element: '#configuration-override', title: 'Set scheduling rules', description: 'Open this section to change splitting, evening, Sunday, and lab rules.', side: 'bottom' as const },
+    { element: '#resource-slot-limits', title: 'Set slot limits', description: 'Choose how many online or field classes can use the same time slot.', side: 'top' as const },
+    { element: '#secretary-settings-profile-guide', title: 'Read the profile guide', description: 'Use these tips to choose the right settings.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'secretary-settings', isReady: true, steps: settingsGuideSteps });
   return (

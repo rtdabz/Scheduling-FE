@@ -42,11 +42,9 @@ interface TopBarProps {
   canWithdrawSubmission: boolean;
   isWithdrawingSubmission: boolean;
   onPrint: () => void;
-  onGenerate?: (sectionId: string) => void;
   onGenerateYearLevel?: () => void;
   onAutoAssign?: () => void;
   isGenerateDisabled?: boolean;
-  isSectionGenerateDisabled?: boolean;
   isLoading?: boolean;
 
   isMarkingSectionDone: boolean;
@@ -236,11 +234,9 @@ export default function TopBar({
   canWithdrawSubmission,
   isWithdrawingSubmission,
   onPrint,
-  onGenerate,
   onGenerateYearLevel,
   onAutoAssign,
   isGenerateDisabled,
-  isSectionGenerateDisabled,
   isLoading = false,
   isMarkingSectionDone,
   isEditingSection,
@@ -576,13 +572,11 @@ export default function TopBar({
               <UserCheck className="h-3.5 w-3.5" />
               <span>Auto-Assign</span>
             </button>
-          ) : onGenerate && (
+          ) : onGenerateYearLevel && (
             <div id="schedule-builder-generate">
               <GenerateScheduleButton
                 disabled={Boolean(isGenerateDisabled)}
-                sectionDisabled={Boolean(isSectionGenerateDisabled)}
-                onClick={() => selectedSectionId && onGenerate(selectedSectionId)}
-                onYearLevelClick={onGenerateYearLevel}
+                onClick={onGenerateYearLevel}
               />
             </div>
           )}</>}

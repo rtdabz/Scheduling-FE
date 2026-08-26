@@ -8,13 +8,11 @@ import SubmitApprovalModal from "./Modals/SubmitApprovalModal";
 import WithdrawSubmissionModal from "./Modals/WithdrawSubmissionModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
-import GenerateScheduleModal from "./GenerateSchedule/GenerateScheduleModal";
 import YearLevelGenerateScheduleModal from "./GenerateSchedule/YearLevelGenerateScheduleModal";
 import AutoAssignModal from "./Modals/AutoAssignModal";
 import OverloadConfirmationModal from "../../../components/faculty/OverloadConfirmationModal";
 import { useEffect, useMemo, useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
-import { useGenerateSchedule } from "./GenerateSchedule/useGenerateSchedule";
 import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
 
 interface SchedulerPanelProps {
@@ -24,25 +22,25 @@ interface SchedulerPanelProps {
 export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPanelProps) {
   const scheduler = useScheduler();
   const plottingGuideSteps = useMemo(() => [
-    { element: "#schedule-builder-section", title: "1. Choose a section", description: "Start with one section from the active term. Its courses and timetable will load here.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-generate", title: "2. Generate a proposal", description: "Generate a conflict-checked schedule for the selected section.", side: "bottom" as const, align: "end" as const },
-    { element: "#schedule-builder-course-bank-toggle", title: "3. Show the Course Bank", description: "Use this button to show the Course Bank when it is hidden, or hide it when you need more timetable space.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-course-bank", title: "4. Place every course", description: "Select a course and click an empty time slot, or drag it onto the timetable, until every course is placed.", side: "right" as const, align: "start" as const },
-    { element: "#schedule-builder-timetable", title: "5. Review conflicts and rooms", description: "Check meeting times, room assignments, and conflict messages. Move or edit a class when corrections are needed.", side: "top" as const },
-    { element: "#schedule-builder-next-step", title: "6. Mark plotting complete", description: "When all courses are placed and reviewed, mark the section Done so it can be submitted for approval.", side: "bottom" as const },
+    { element: "#schedule-builder-section", title: "Choose a section", description: "Select a section to load its courses and timetable.", side: "bottom" as const, align: "start" as const },
+    { element: "#schedule-builder-generate", title: "Generate a schedule", description: "Create a schedule proposal and check it for conflicts.", side: "bottom" as const, align: "end" as const },
+    { element: "#schedule-builder-course-bank-toggle", title: "Show the Course Bank", description: "Show or hide the Course Bank.", side: "bottom" as const, align: "start" as const },
+    { element: "#schedule-builder-course-bank", title: "Place each course", description: "Select a course and click an empty time, or drag it onto the timetable.", side: "right" as const, align: "start" as const },
+    { element: "#schedule-builder-timetable", title: "Check the timetable", description: "Review times, rooms, and conflicts. Move or edit classes if needed.", side: "top" as const },
+    { element: "#schedule-builder-next-step", title: "Finish plotting", description: "When all courses are placed and checked, mark the section Done.", side: "bottom" as const },
   ], []);
   const facultyAssignmentGuideSteps = useMemo(() => [
-    { element: "#schedule-builder-section", title: "1. Choose an approved section", description: "Select the approved section whose scheduled classes need instructors.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-workflow", title: "2. Confirm Faculty Assignment", description: "The workflow is now in Faculty Assignment. Plotting is complete, so focus on assigning an eligible instructor to each class.", side: "bottom" as const },
-    { element: "#schedule-builder-timetable", title: "3. Open an unassigned class", description: "Select a class in the timetable that has no instructor. Its assignment dialog will show eligible faculty and conflict information.", side: "top" as const },
-    { element: "#schedule-builder-auto-assign", title: "4. Use Auto-Assign when appropriate", description: "You may review and apply automatic assignments for eligible classes, then inspect the results before finalizing.", side: "bottom" as const, align: "end" as const },
-    { element: "#schedule-builder-next-step", title: "5. Finalize after all assignments", description: "Once every class has an instructor and conflicts are resolved, use the final action to mark the section finalized.", side: "bottom" as const },
+    { element: "#schedule-builder-section", title: "Choose an approved section", description: "Select a section with classes that need instructors.", side: "bottom" as const, align: "start" as const },
+    { element: "#schedule-builder-workflow", title: "Check the current step", description: "Faculty Assignment means the timetable is ready for instructors.", side: "bottom" as const },
+    { element: "#schedule-builder-timetable", title: "Open an unassigned class", description: "Select a class without an instructor to see eligible faculty and conflicts.", side: "top" as const },
+    { element: "#schedule-builder-auto-assign", title: "Use Auto-Assign", description: "Review automatic instructor suggestions, then apply the ones you want.", side: "bottom" as const, align: "end" as const },
+    { element: "#schedule-builder-next-step", title: "Finalize the section", description: "Finalize after every class has an instructor and no conflicts remain.", side: "bottom" as const },
   ], []);
   const reviewGuideSteps = useMemo(() => [
-    { element: "#schedule-builder-section", title: "1. Choose a section", description: "Select a section to review its current schedule and workflow status.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-workflow", title: "2. Check the workflow stage", description: "Use this progress indicator to see whether plotting, approval, or faculty assignment is complete.", side: "bottom" as const },
-    { element: "#schedule-builder-timetable", title: "3. Review the timetable", description: "Inspect the plotted classes, meeting times, rooms, instructors, and any conflict information available for the section.", side: "top" as const },
-    { element: "#schedule-builder-next-step", title: "4. Review the next action", description: "This area shows the section status, department readiness, and any action currently available to move the schedule forward.", side: "bottom" as const },
+    { element: "#schedule-builder-section", title: "Choose a section", description: "Select a section to review its schedule and status.", side: "bottom" as const, align: "start" as const },
+    { element: "#schedule-builder-workflow", title: "Check the workflow", description: "See which scheduling steps are complete.", side: "bottom" as const },
+    { element: "#schedule-builder-timetable", title: "Review the timetable", description: "Check classes, times, rooms, instructors, and conflicts.", side: "top" as const },
+    { element: "#schedule-builder-next-step", title: "Check the next action", description: "See the section status and what you can do next.", side: "bottom" as const },
   ], []);
   const plottingActive = ["draft", "revision"].includes(scheduler.currentStatus);
   const facultyAssignmentActive = ["approved", "faculty_assignment"].includes(scheduler.currentStatus);
@@ -50,7 +48,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   useWorkflowGuide({ id: "schedule-builder-plotting", isReady: !scheduler.isLoading && plottingActive, steps: plottingGuideSteps });
   useWorkflowGuide({ id: "schedule-builder-faculty-assignment", isReady: !scheduler.isLoading && facultyAssignmentActive, steps: facultyAssignmentGuideSteps });
   useWorkflowGuide({ id: "schedule-builder-review", isReady: !scheduler.isLoading && reviewActive, steps: reviewGuideSteps });
-  const [isYearLevelGenerateOpen, setIsYearLevelGenerateOpen] = useState(false);
+  const [generationScope, setGenerationScope] = useState<"year" | "section" | null>(null);
   const [isAutoAssignOpen, setIsAutoAssignOpen] = useState(false);
 
   useEffect(() => {
@@ -59,11 +57,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     }
   }, [autoAssignOnOpen, scheduler.schedules.length]);
 
-  const generateSchedule = useGenerateSchedule({
-    onAccepted: scheduler.handleAcceptedRecommendation,
-    existingSchedules: scheduler.sectionSchedules
-  });
-
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
 
   return (
@@ -71,10 +64,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       <TopBar
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
-        onGenerate={generateSchedule.openModal}
-        onGenerateYearLevel={() => setIsYearLevelGenerateOpen(true)}
+        onGenerateYearLevel={() => setGenerationScope("year")}
         isGenerateDisabled={!scheduler.isEditable}
-        isSectionGenerateDisabled={!scheduler.selectedSectionId}
         onAutoAssign={() => setIsAutoAssignOpen(true)}
       />
 
@@ -109,41 +100,18 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onCancel={scheduler.cancelWithdrawSubmission}
       />
       <RoomViewModal {...scheduler} />
-      <GenerateScheduleModal
-        isOpen={generateSchedule.isOpen}
-        isGenerating={generateSchedule.isGenerating}
-        isApplying={generateSchedule.isApplying}
-        progressStep={generateSchedule.progressStep}
-        errorMessage={generateSchedule.errorMessage}
-        baseSchedules={generateSchedule.baseSchedules}
-        existingSchedules={scheduler.sectionSchedules}
-        preferredTimeBlock={generateSchedule.preferredTimeBlock}
-        setPreferredTimeBlock={generateSchedule.setPreferredTimeBlock}
-
-        splitSessionEnabled={generateSchedule.splitSessionEnabled}
-        setSplitSessionEnabled={generateSchedule.setSplitSessionEnabled}
-        selectedSplitSessionCourseIds={generateSchedule.selectedSplitSessionCourseIds}
-        setSelectedSplitSessionCourseIds={generateSchedule.setSelectedSplitSessionCourseIds}
-        selectedGecCourseIds={generateSchedule.selectedGecCourseIds}
-        setSelectedGecCourseIds={generateSchedule.setSelectedGecCourseIds}
-        sectionId={scheduler.selectedSectionId}
-        sectionName={selectedSection?.name ?? ""}
-        availableCourses={scheduler.sectionCourses}
-        allCourses={scheduler.subjects}
-        onClose={generateSchedule.closeModal}
-        onGenerate={generateSchedule.generate}
-        onApplySchedule={generateSchedule.applySchedule}
-        rooms={scheduler.rooms}
-      />
       <YearLevelGenerateScheduleModal
-        isOpen={isYearLevelGenerateOpen}
-        onClose={() => setIsYearLevelGenerateOpen(false)}
+        isOpen={generationScope !== null}
+        onClose={() => setGenerationScope(null)}
         sections={scheduler.sections}
         courses={scheduler.subjects}
         activeTerm={scheduler.activeTerm}
         departmentId={selectedSection?.departmentId ?? scheduler.sections[0]?.departmentId ?? null}
         existingSchedules={scheduler.schedules}
         onAccepted={scheduler.handleAcceptedRecommendation}
+        scope={generationScope ?? "year"}
+        onScopeChange={setGenerationScope}
+        selectedSectionId={scheduler.selectedSectionId}
       />
       <ClearAllModal {...scheduler} />
       <PrintSchedule

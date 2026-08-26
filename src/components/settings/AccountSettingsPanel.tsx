@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut, RefreshCw, User } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
@@ -79,14 +79,6 @@ export default function AccountSettingsPanel() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('restart-tour'))}
-            className="inline-flex items-center gap-2 rounded-lg border border-[#C9952A]/30 bg-white px-3.5 py-2 text-sm font-semibold text-[#7B1113] transition-colors hover:bg-[#C9952A]/10"
-          >
-            <RefreshCw size={16} className="text-[#C9952A]" />
-            Restart Tour
-          </button>
           <button
             type="button"
             disabled={isLoggingOut}

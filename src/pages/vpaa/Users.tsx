@@ -368,6 +368,7 @@ export default function VpaaUsers() {
         const res = await api.put<{ data: ApiUser }>(`/user/${editingId}`, {
           name: formData.name.trim(),
           email: formData.email.trim(),
+          password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
@@ -387,7 +388,6 @@ export default function VpaaUsers() {
           name: formData.name.trim(),
           username: formData.username,
           email: formData.email.trim(),
-          password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
@@ -1120,16 +1120,8 @@ export default function VpaaUsers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Password
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.password}
-                    readOnly
-                    placeholder={isEditMode ? '' : 'Auto-generated'}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed outline-none text-sm"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">Password</label>
+                  <input type="text" value={formData.password} readOnly placeholder={isEditMode ? '' : 'Auto-generated'} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed outline-none text-sm" />
                 </div>
               </div>
 

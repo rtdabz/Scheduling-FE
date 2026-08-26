@@ -4,6 +4,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, History, List, RefreshCw, X } 
 import api from '../../lib/api';
 import WeeklyTimetableGrid, { WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
 import { formatTime12h, slotCount, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import { scheduleLocationLabel } from '../../lib/scheduleLocation';
 import ScheduleCard from '../ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard';
 import Skeleton from '../../components/ui/Skeleton';
 import type { DeliveryMode, ScheduleItem, Subject } from '../ClassSchedules/SchedulerPanel/types';
@@ -19,12 +20,7 @@ const number = (s: Record<string, unknown>, key: string) => Number(s[key] ?? 0);
 const mode = (v: string): DeliveryMode => v === 'online' || v === 'field' ? v : 'on-site';
 const bool = (v: unknown) => v === true || v === 1 || v === '1';
 const noop = () => undefined;
-const location = (item: Snapshot): string => {
-  const scheduleMode = mode(value(item.snapshot, 'mode'));
-  if (scheduleMode === 'online') return 'ONLINE';
-  if (scheduleMode === 'field') return 'FIELD';
-  return item.room_name || 'Room TBA';
-};
+const location = (item: Snapshot): string => scheduleLocationLabel(mode(value(item.snapshot, 'mode')), item.room_name);
 
 const gridCard = (item: Snapshot): { schedule: ScheduleItem; subject: Subject } => {
   const start = timeToSlot(value(item.snapshot, 'start_time'));
@@ -34,7 +30,7 @@ const gridCard = (item: Snapshot): { schedule: ScheduleItem; subject: Subject } 
   const units = Number(item.units ?? 0);
   const courseId = String(number(item.snapshot, 'course_id') || item.schedule_id || item.id);
   return {
-    schedule: { id: String(item.schedule_id ?? item.id), termId: number(item.snapshot, 'term_id'), departmentId: number(item.snapshot, 'department_id'), courseId, courseCode: item.course_code || 'Course', courseName: item.course_name || 'Untitled course', courseType: category, lectureUnits: Number(item.lecture_hours ?? 0), laboratoryUnits: Number(item.lab_hours ?? 0), totalUnits: units, sectionName: item.section_name || 'Section', roomName: item.room_name || 'Room TBA', day, startTime: formatTime12h(value(item.snapshot, 'start_time')), endTime: formatTime12h(value(item.snapshot, 'end_time')), mode: mode(value(item.snapshot, 'mode')), facultyName: item.faculty_name || null, facultyId: value(item.snapshot, 'faculty_id') || null, status: 'finalized', dayIndex: WEEK_DAYS.indexOf(day as typeof WEEK_DAYS[number]), startSlot: start, durationSlots: end - start, sectionId: String(item.section_id ?? number(item.snapshot, 'section_id')), roomId: value(item.snapshot, 'room_id'), isHybrid: bool(item.snapshot.is_hybrid) },
+    schedule: { id: String(item.schedule_id ?? item.id), termId: number(item.snapshot, 'term_id'), departmentId: number(item.snapshot, 'department_id'), courseId, courseCode: item.course_code || 'Course', courseName: item.course_name || 'Untitled course', courseType: category, lectureUnits: Number(item.lecture_hours ?? 0), laboratoryUnits: Number(item.lab_hours ?? 0), totalUnits: units, sectionName: item.section_name || 'Section', roomName: location(item), day, startTime: formatTime12h(value(item.snapshot, 'start_time')), endTime: formatTime12h(value(item.snapshot, 'end_time')), mode: mode(value(item.snapshot, 'mode')), facultyName: item.faculty_name || null, facultyId: value(item.snapshot, 'faculty_id') || null, status: 'finalized', dayIndex: WEEK_DAYS.indexOf(day as typeof WEEK_DAYS[number]), startSlot: start, durationSlots: end - start, sectionId: String(item.section_id ?? number(item.snapshot, 'section_id')), roomId: value(item.snapshot, 'room_id'), isHybrid: bool(item.snapshot.is_hybrid) },
     subject: { id: courseId, code: item.course_code || 'Course', name: item.course_name || 'Untitled course', units, lectureHours: Number(item.lecture_hours ?? 0), labHours: Number(item.lab_hours ?? 0), category, semester: '1st', departmentId: number(item.snapshot, 'department_id') || null, yearLevel: 1, roomTypeRequired: 'lecture', status: 'active' },
   };
 };

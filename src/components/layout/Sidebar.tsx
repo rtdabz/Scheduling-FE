@@ -4,7 +4,7 @@ import Skeleton from '../ui/Skeleton';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
 import campusBg from '../../assets/campus-bg.jpg';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Compass, X } from 'lucide-react';
 import api from '../../lib/api';
 
 interface SidebarProps {
@@ -330,6 +330,23 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
           </div>
         ))}
       </nav>
+
+      <div className={`relative z-10 flex-shrink-0 border-t border-white/10 p-3 ${isOpen ? '' : 'px-2'}`}>
+        <button
+          id="sidebar-getting-started"
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('restart-tour'));
+            if (window.innerWidth < 768) onClose();
+          }}
+          title="Getting Started"
+          aria-label="Open Getting Started guide"
+          className={`flex h-11 w-full items-center rounded-xl border border-[#C9952A]/35 bg-[#C9952A]/10 text-[#F3D37A] shadow-sm transition-all duration-200 hover:border-[#C9952A]/70 hover:bg-[#C9952A]/20 hover:text-white ${isOpen ? 'gap-3 px-3' : 'justify-center px-0'}`}
+        >
+          <Compass size={18} className="flex-shrink-0" aria-hidden="true" />
+          {isOpen && <span className="whitespace-nowrap text-sm font-bold">Getting Started</span>}
+        </button>
+      </div>
 
     </div>
   );

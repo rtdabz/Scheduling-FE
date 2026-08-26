@@ -26,6 +26,7 @@ import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache
 import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
 import { formatTime12h, gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import { scheduleLocationLabel } from '../../lib/scheduleLocation';
 
 interface Department {
   id: number;
@@ -526,7 +527,7 @@ export default function VpaaCalendarPage() {
                             </div>
                           </div>
                           {showTitle && <div className="mt-0.5 truncate text-[9px] font-semibold opacity-90">{courseTitle}</div>}
-                          <div className="mt-0.5 truncate text-[10px] font-semibold text-slate-700">{schedule.room?.room_code ?? 'Room TBA'}</div>
+                          <div className="mt-0.5 truncate text-[10px] font-semibold text-slate-700">{scheduleLocationLabel(schedule.mode, schedule.room?.room_code)}</div>
                           <div className="mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-500">
                             <span className="truncate">{timeRange}</span>
                             {units ? <span className="shrink-0 rounded bg-white/80 px-1 py-0.5 font-bold">{units}u</span> : null}

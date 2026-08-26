@@ -275,9 +275,9 @@ export default function CurriculumListPage() {
   });
 
   const curriculumGuideSteps = useMemo(() => [
-    { element: '#curriculum-actions', title: 'Start with the curriculum record', description: 'Create a curriculum or open the visual curriculum view when setting up a program structure.', side: 'bottom' as const },
-    { element: '#curriculum-filters', title: 'Find the right version', description: 'Search and filter by department and status to distinguish active, draft, and archived records.', side: 'bottom' as const },
-    { element: '#curriculum-list', title: 'Review curriculum structure', description: 'Open a curriculum to maintain its course structure. Publish the intended version before using teaching assignments.', side: 'top' as const },
+    { element: '#curriculum-actions', title: 'Create or view a curriculum', description: 'Add a curriculum or open the visual curriculum view.', side: 'bottom' as const },
+    { element: '#curriculum-filters', title: 'Find a curriculum', description: 'Search or filter by department and status.', side: 'bottom' as const },
+    { element: '#curriculum-list', title: 'Manage the curriculum', description: 'Open a curriculum to edit its courses. Publish it before assigning teaching departments.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps });
 

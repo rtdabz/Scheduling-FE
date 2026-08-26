@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { driver } from "driver.js";
-import "driver.js/dist/driver.css";
+import Shepherd, { type Tour } from "shepherd.js";
 import { getStoredUser } from "../lib/storedUser";
+import { startExclusiveTour } from "../onboarding/shepherdTour";
 
 export interface WorkflowGuideStep {
   element: string;
@@ -17,7 +17,13 @@ interface UseWorkflowGuideOptions {
   steps: WorkflowGuideStep[];
 }
 
-/** Shared Driver.js lifecycle for focused, page-specific workflow guides. */
+const placement = (side: WorkflowGuideStep["side"], align: WorkflowGuideStep["align"]): "top" | "top-start" | "top-end" | "right" | "right-start" | "right-end" | "bottom" | "bottom-start" | "bottom-end" | "left" | "left-start" | "left-end" => {
+  const resolvedSide = side ?? "bottom";
+  if (!align || align === "center") return resolvedSide;
+  return `${resolvedSide}-${align}`;
+};
+
+/** Shared Shepherd lifecycle for focused, page-specific workflow guides. */
 export function useWorkflowGuide({ id, isReady, steps }: UseWorkflowGuideOptions) {
   useEffect(() => {
     if (!isReady) return;
@@ -28,51 +34,55 @@ export function useWorkflowGuide({ id, isReady, steps }: UseWorkflowGuideOptions
     const restartEvent = `restart-workflow-guide:${id}`;
     let mounted = true;
     let frameId: number | null = null;
-    let activeGuide: ReturnType<typeof driver> | null = null;
+    let activeGuide: Tour | null = null;
 
     const start = () => {
       if (!mounted) return;
-      activeGuide?.destroy();
+      if (activeGuide) void activeGuide.cancel();
 
       const visibleSteps = steps
-        .filter((step) => document.querySelector(step.element))
-        .map((step, index) => ({
-          element: step.element,
-          popover: {
-            // Number only the targets that are currently visible. Some workflow
-            // controls are conditional, so hardcoded numbers can otherwise skip
-            // from 2 to 4 when an unavailable step is filtered out.
-            title: `${index + 1}. ${step.title.replace(/^\s*\d+\s*[.)-]?\s*/, "")}`,
-            description: step.description,
-            side: step.side ?? "bottom",
-            align: step.align ?? "center",
-          },
-        }));
+        .filter((step) => {
+          const element = document.querySelector(step.element);
+          if (!(element instanceof HTMLElement)) return false;
+          const styles = window.getComputedStyle(element);
+          return styles.display !== "none" && styles.visibility !== "hidden" && element.getClientRects().length > 0;
+        })
+        .map((step) => step);
       if (!visibleSteps.length) return;
 
       // Record the first display immediately. A page refresh while the guide is
       // open must not cause the same automatic tour to launch again.
       localStorage.setItem(completionKey, "true");
 
-      activeGuide = driver({
-        animate: true,
-        smoothScroll: false,
-        showProgress: true,
-        progressText: "{{current}} of {{total}}",
-        nextBtnText: "Next",
-        prevBtnText: "Back",
-        doneBtnText: "Finish",
-        steps: visibleSteps,
-        onHighlightStarted: (element) => {
-          // Scroll before Driver.js calculates the spotlight and popover
-          // positions. Scrolling after highlighting leaves the overlay behind
-          // when a later step is lower on the page.
-          if (element instanceof HTMLElement) {
-            element.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-          }
+      activeGuide = new Shepherd.Tour({
+        id: `workflow-${id}`,
+        useModalOverlay: true,
+        defaultStepOptions: {
+          cancelIcon: { enabled: true, label: "Close workflow guide" },
+          classes: "wicars-shepherd-step",
+          canClickTarget: false,
+          scrollTo: { block: "center", inline: "nearest", behavior: "auto" },
+          skipMissingElement: true,
+          waitForElement: 500,
+          modalOverlayOpeningPadding: 6,
+          modalOverlayOpeningRadius: 12,
         },
       });
-      activeGuide.drive();
+
+      visibleSteps.forEach((step, index) => {
+        const isLast = index === visibleSteps.length - 1;
+        activeGuide?.addStep({
+          id: `${id}-${index + 1}`,
+          title: `${index + 1}. ${step.title.replace(/^\s*\d+\s*[.)-]?\s*/, "")}`,
+          text: `<p>${step.description}</p><span class="wicars-shepherd-progress">${index + 1} of ${visibleSteps.length}</span>`,
+          attachTo: { element: step.element, on: placement(step.side, step.align) },
+          buttons: [
+            ...(index > 0 ? [{ text: "Back", secondary: true, action(this: Tour) { void this.back(); } }] : []),
+            { text: isLast ? "Finish" : "Next", action(this: Tour) { if (isLast) this.complete(); else void this.next(); } },
+          ],
+        });
+      });
+      void startExclusiveTour(activeGuide);
     };
 
     const scheduleStart = () => {
@@ -93,7 +103,7 @@ export function useWorkflowGuide({ id, isReady, steps }: UseWorkflowGuideOptions
     return () => {
       mounted = false;
       if (frameId !== null) window.cancelAnimationFrame(frameId);
-      activeGuide?.destroy();
+      if (activeGuide) void activeGuide.cancel();
       window.removeEventListener(restartEvent, restart);
     };
   }, [id, isReady, steps]);

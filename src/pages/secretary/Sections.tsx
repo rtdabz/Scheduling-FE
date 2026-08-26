@@ -360,8 +360,8 @@ export default function SecretarySections() {
   });
 
   const sectionGuideSteps = useMemo(() => [
-    { element: '#sections-toolbar', title: 'Find or create a section', description: 'Search existing sections or add the sections needed before starting Schedule Builder.', side: 'bottom' as const },
-    { element: '#sections-table', title: 'Review section records', description: 'Check the section name, year level, term, and status before editing or scheduling it.', side: 'top' as const },
+    { element: '#sections-toolbar', title: 'Find or add a section', description: 'Search for a section or add a new one before scheduling.', side: 'bottom' as const },
+    { element: '#sections-table', title: 'Check section details', description: 'Review the name, year level, term, and status.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps });
 

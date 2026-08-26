@@ -647,9 +647,9 @@ export default function SecretaryFaculty() {
   }, [filteredFaculties]);
 
   const instructorGuideSteps = useMemo(() => [
-    { element: '#instructors-filters', title: 'Find an instructor', description: 'Search by name, then filter by department or employment type and sort by workload.', side: 'bottom' as const },
-    { element: '#instructors-summary', title: 'Check workload status', description: 'Use the summary counts to spot available, fully loaded, overloaded, and pro bono instructors.', side: 'bottom' as const },
-    { element: '#instructors-workspace', title: 'Manage instructor records', description: 'Review the instructor list and open a row to maintain faculty details, workload, and availability.', side: 'top' as const },
+    { element: '#instructors-filters', title: 'Find an instructor', description: 'Search by name or filter by department, job type, or workload.', side: 'bottom' as const },
+    { element: '#instructors-summary', title: 'Check teaching loads', description: 'See who is available, fully loaded, overloaded, or pro bono.', side: 'bottom' as const },
+    { element: '#instructors-workspace', title: 'Manage instructors', description: 'Open an instructor to update details, load, and availability.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'instructors', isReady: true, steps: instructorGuideSteps });
 

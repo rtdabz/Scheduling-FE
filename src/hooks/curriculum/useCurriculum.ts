@@ -28,7 +28,7 @@ export function useCurriculum() {
 
   // Role permissions
   const canManageCurriculum = useMemo(() => {
-    return ['vpaa', 'dean', 'secretary', 'program_head'].includes(userRole);
+    return ['vpaa', 'secretary', 'program_head'].includes(userRole);
   }, [userRole]);
 
   // Filters

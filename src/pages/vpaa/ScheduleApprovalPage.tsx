@@ -26,6 +26,7 @@ import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid, { WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
 import ScheduleApprovalList from '../../components/scheduling/ScheduleApprovalList';
 import type { ApprovalScheduleItem } from '../../components/scheduling/ScheduleApprovalList';
+import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
 
 interface ScheduleApproval {
   id: number;
@@ -80,6 +81,7 @@ interface RawSchedule extends ApprovalScheduleItem {
   approved_at_vpaa?: string | null;
   department?: {
     department_name?: string;
+    logo?: string | null;
   } | null;
   section?: {
     section_name?: string;
@@ -270,7 +272,8 @@ export default function VpaaScheduleApprovalPage() {
   });
 
   // Modals state
-  const [viewSchedule, setViewSchedule] = useState<ScheduleApproval | null>(null);
+  const [viewSchedule, setViewScheduleState] = useState<ScheduleApproval>(null as unknown as ScheduleApproval);
+  const setViewSchedule = (value: ScheduleApproval | null) => setViewScheduleState(value as ScheduleApproval);
   const [approveConfirm, setApproveConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectConfirm, setRejectConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -971,16 +974,36 @@ export default function VpaaScheduleApprovalPage() {
 
       {/* View Weekly Timetable Modal */}
       {viewSchedule && (
+        <ScheduleApprovalPreviewModal
+          open={Boolean(viewSchedule)}
+          title={`${viewSchedule.department} Department Schedule`}
+          status={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved' ? 'pending' : viewSchedule.status === 'rejected' ? 'rejected' : 'approved'}
+          statusLabel={getStatusLabel(viewSchedule.status)}
+          sections={modalSections}
+          schedules={modalSchedules}
+          getCourseCode={getScheduleCourseCode}
+          getCourseName={getScheduleCourseName}
+          getRoomName={getRoomName}
+          getModeLabel={getModeLabel}
+          formatTime={formatTime24hTo12h}
+          departmentLogoUrl={modalSchedules[0]?.department?.logo}
+          canAct={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved'}
+          onApprove={() => { handleApprove(viewSchedule); setViewSchedule(null); }}
+          onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}
+          onClose={() => setViewSchedule(null)}
+        />
+      )}
+      {viewSchedule ? false && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-bold text-[#1A1410] font-display">
-                    {viewSchedule.department} Department Schedule
+                    {viewSchedule!.department} Department Schedule
                   </h2>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusBadge(viewSchedule.status)}`}>
-                    {getStatusLabel(viewSchedule.status)}
+                    {getStatusLabel(viewSchedule!.status)}
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 font-medium mt-1">View Only - No edits allowed</p>
@@ -1072,7 +1095,7 @@ export default function VpaaScheduleApprovalPage() {
                         const endRow = getSlotIndexFrom24h(item.end_time) + 2;
                         const cardHeight = (endRow - startRow) * APPROVAL_SLOT_HEIGHT_PX;
                         const showBottomRow = cardHeight > 80;
-                        const colors = getDeptColorClasses(viewSchedule.department);
+                        const colors = getDeptColorClasses(viewSchedule!.department);
                         return (
                           <div key={item.id} className={`${colors.bg} ${colors.border} ${colors.text} border-2 border-l-[4px] ${colors.accent} p-2 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between leading-snug box-border`} style={{ gridColumn: colIndex, gridRowStart: startRow, gridRowEnd: endRow, height: `${cardHeight}px`, zIndex: 5 }}>
                             <div className="min-w-0">
@@ -1099,11 +1122,11 @@ export default function VpaaScheduleApprovalPage() {
 
             <div className="p-3 bg-gray-50/80 border-t border-gray-200/80 flex justify-between items-center">
               <div className="flex gap-2">
-                {(viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved') && (
+                {(viewSchedule!.status === 'approved_by_dean' || viewSchedule!.status === 'conditionally_approved') && (
                   <>
                     <button 
                       onClick={() => {
-                        handleApprove(viewSchedule);
+                        handleApprove(viewSchedule!);
                         setViewSchedule(null);
                       }}
                       className="px-4 py-2 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] text-xs font-semibold cursor-pointer transition-colors"
@@ -1112,7 +1135,7 @@ export default function VpaaScheduleApprovalPage() {
                     </button>
                     <button 
                       onClick={() => {
-                        handleReject(viewSchedule);
+                        handleReject(viewSchedule!);
                         setViewSchedule(null);
                       }}
                       className="px-4 py-2 border border-red-500 text-red-500 bg-white rounded-xl hover:bg-red-50 text-xs font-semibold cursor-pointer transition-colors"
@@ -1131,7 +1154,7 @@ export default function VpaaScheduleApprovalPage() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Approve Confirmation Modal */}
       {approveConfirm && (

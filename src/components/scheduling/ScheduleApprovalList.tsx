@@ -17,6 +17,7 @@ export interface ApprovalScheduleItem {
   subject?: { subject_code?: string; subject_name?: string } | null;
   faculty?: { first_name?: string; last_name?: string } | null;
   room?: { room_code?: string; building?: string | null } | null;
+  department?: { department_name?: string; logo?: string | null } | null;
 }
 
 interface ScheduleApprovalListProps<T extends ApprovalScheduleItem> {

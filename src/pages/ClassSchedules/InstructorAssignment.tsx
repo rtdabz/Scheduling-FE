@@ -318,10 +318,10 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<AssignmentWarning[]>([]);
   const instructorGuideSteps = useMemo(() => [
-    { element: "#instructor-assignment-overview", title: "Start with approved schedules", description: "Only approved schedules that need your department's instructors appear in this workflow.", side: "bottom" as const },
-    { element: "#instructor-assignment-departments", title: "Choose an offering department", description: "Open the department whose scheduled courses need instructors from your department.", side: "top" as const },
-    { element: "#instructor-assignment-timetable", title: "Select an unassigned class", description: "Use the timetable to find classes marked as needing an instructor, then select one to review eligible faculty.", side: "top" as const },
-    { element: "#instructor-assignment-section-filter", title: "Filter the section", description: "Narrow the timetable to one section when completing assignments in stages.", side: "bottom" as const },
+    { element: "#instructor-assignment-overview", title: "Review approved schedules", description: "This page shows approved classes that still need your instructors.", side: "bottom" as const },
+    { element: "#instructor-assignment-departments", title: "Choose a department", description: "Open a department with classes that need your instructors.", side: "top" as const },
+    { element: "#instructor-assignment-timetable", title: "Select an unassigned class", description: "Choose a class without an instructor to see eligible faculty.", side: "top" as const },
+    { element: "#instructor-assignment-section-filter", title: "Filter by section", description: "Show one section at a time when needed.", side: "bottom" as const },
   ], []);
   useWorkflowGuide({ id: "instructor-assignment", isReady: !isLoading && workflowGuideId === "instructor-assignment", steps: instructorGuideSteps });
 

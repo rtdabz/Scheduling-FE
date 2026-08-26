@@ -111,6 +111,10 @@ export const impactLabels: Record<string, string> = {
  */
 export function parseYearLevelFailure(error: unknown): YearLevelGenerationFailure | null {
   const data = (error as { response?: { data?: unknown } } | null)?.response?.data;
+  return parseYearLevelFailurePayload(data);
+}
+
+export function parseYearLevelFailurePayload(data: unknown): YearLevelGenerationFailure | null {
   if (!data || typeof data !== "object") return null;
 
   const payload = data as Record<string, unknown>;

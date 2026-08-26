@@ -100,10 +100,10 @@ export default function CourseTeachingAssignments() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const courseTeachingGuideSteps = useMemo(() => [
-    { element: '#course-teaching-target', title: '1. Choose the responsible department', description: 'Select the department or program that will teach the minor courses from your curriculum.', side: 'right' as const },
-    { element: '#course-teaching-filters', title: '2. Select the year level and program', description: 'Work one year level at a time. Optionally restrict the assignment to a specific receiving program.', side: 'bottom' as const },
-    { element: '#course-teaching-courses', title: '3. Select available minor courses', description: 'Choose only the courses to delegate. Major courses remain with their offering department.', side: 'top' as const },
-    { element: '#course-teaching-save', title: '4. Save the teaching assignment', description: 'Save the selected courses before building their schedule or assigning instructors.', side: 'top' as const },
+    { element: '#course-teaching-target', title: 'Choose the teaching department', description: 'Select who will teach the minor courses.', side: 'right' as const },
+    { element: '#course-teaching-filters', title: 'Choose a year and program', description: 'Work on one year level. You can also select a receiving program.', side: 'bottom' as const },
+    { element: '#course-teaching-courses', title: 'Select minor courses', description: 'Choose the minor courses you want to assign.', side: 'top' as const },
+    { element: '#course-teaching-save', title: 'Save the assignment', description: 'Save before creating schedules or assigning instructors.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'course-teaching', isReady: !loading, steps: courseTeachingGuideSteps });
 

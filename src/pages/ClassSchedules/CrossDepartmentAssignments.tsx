@@ -48,9 +48,9 @@ export default function CrossDepartmentAssignments() {
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
   const crossDepartmentGuideSteps = useMemo(() => [
-    { element: '#cross-department-guide', title: 'Assign delegated courses', description: 'This workspace only shows courses another department scheduled for your department to teach.', side: 'bottom' as const },
-    { element: '#instructor-assignment-departments', title: 'Open the source department', description: 'Choose the department that offers the delegated course schedule.', side: 'top' as const },
-    { element: '#instructor-assignment-timetable', title: 'Assign your department\'s instructors', description: 'Select an unassigned class, choose an eligible instructor from your department, and save the assignment.', side: 'top' as const },
+    { element: '#cross-department-guide', title: 'Assign delegated courses', description: 'This page shows courses your department was asked to teach.', side: 'bottom' as const },
+    { element: '#instructor-assignment-departments', title: 'Choose a source department', description: 'Open the department that owns the course.', side: 'top' as const },
+    { element: '#instructor-assignment-timetable', title: 'Assign an instructor', description: 'Select an unassigned class, choose an eligible instructor, and save.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'cross-department-assignment', isReady: !scheduler.isLoading && isAssignmentWorkspaceReady, steps: crossDepartmentGuideSteps });
   const allAssigned = workspaceState.allAssigned;

@@ -2,9 +2,11 @@ import React from 'react';
 import { BookOpen, CalendarDays, Globe2, MapPin } from 'lucide-react';
 import WeeklyTimetableGrid from './WeeklyTimetableGrid';
 import { FULL_DAY_NAMES, timeToSlot, slotCount, slotToTimeLabel, formatTime12h } from '../../lib/timeGrid';
+import { scheduleLocationLabel } from '../../lib/scheduleLocation';
 
 export interface DashboardSchedule {
   id: number | string;
+  status?: string | null;
   day: string;
   start_time: string;
   end_time: string;
@@ -107,7 +109,12 @@ export default function DashboardTimetableGrid({
   const todayIndex = (new Date().getDay() + 6) % 7;
   const todayName = FULL_DAY_NAMES[todayIndex];
   const visibleSchedules = schedules.filter(schedule =>
-    dayIndex(schedule.day) === todayIndex && (deliveryMode === 'online' ? isOnline(schedule) : !isOnline(schedule))
+    // Dashboard timetables are published views. Draft, submitted, and
+    // dean-approved rows remain available in their workflow screens, but must
+    // not be plotted here until the VPAA approval transition is complete.
+    schedule.status?.toLowerCase() === 'approved'
+    && dayIndex(schedule.day) === todayIndex
+    && (deliveryMode === 'online' ? isOnline(schedule) : !isOnline(schedule))
   );
   const cardLayouts = getCardLayouts(visibleSchedules);
   const placedSubjects = new Set(visibleSchedules.map(schedule => (
@@ -202,7 +209,7 @@ export default function DashboardTimetableGrid({
                   ) : null}
                 </div>
                 <div className="mt-0.5 truncate text-[10px] font-semibold text-slate-700">
-                  {schedule.room?.room_code ?? 'Room TBA'}
+                  {scheduleLocationLabel(schedule.mode, schedule.room?.room_code, schedule.room?.room_type)}
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-500">
                   <span>{formatTime12h(schedule.start_time)}–{formatTime12h(schedule.end_time)}</span>

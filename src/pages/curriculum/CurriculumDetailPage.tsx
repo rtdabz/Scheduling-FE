@@ -15,7 +15,7 @@ export default function CurriculumDetailPage() {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userRole = user?.role?.toLowerCase() || 'user';
-  const canManageCurriculum = ['vpaa', 'dean', 'secretary', 'program_head'].includes(userRole);
+  const canManageCurriculum = ['vpaa', 'secretary', 'program_head'].includes(userRole);
 
   const {
     curriculum,

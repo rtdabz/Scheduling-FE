@@ -124,8 +124,7 @@ export default function SecretaryRooms() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isDean = user?.role?.toLowerCase() === 'dean';
-  const canManageRooms = isVpaa || isDean;
+  const canManageRooms = isVpaa;
 
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
@@ -449,8 +448,8 @@ export default function SecretaryRooms() {
   }, [selectedRoom, schedules, activeTabDay]);
 
   const roomGuideSteps = useMemo(() => [
-    { element: '#rooms-filters', title: 'Find a building or room', description: 'Search by room or building, then filter by room type when locating an available space.', side: 'bottom' as const },
-    { element: '#rooms-workspace', title: 'Review room availability', description: 'Select a building to inspect rooms, capacity, status, and current schedules.', side: 'top' as const },
+    { element: '#rooms-filters', title: 'Find a room', description: 'Search by room or building. Use the type filter to narrow the list.', side: 'bottom' as const },
+    { element: '#rooms-workspace', title: 'Check room details', description: 'Select a building to see rooms, capacity, status, and schedules.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'rooms', isReady: true, steps: roomGuideSteps });
 
