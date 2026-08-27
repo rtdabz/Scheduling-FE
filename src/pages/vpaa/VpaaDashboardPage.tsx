@@ -1,3 +1,5 @@
+import { formatPhilippineDate } from '../../lib/philippineTime';
+
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -83,7 +85,7 @@ const formatSubmittedOn = (value?:string|null) => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+  return formatPhilippineDate(value, { month:'short', day:'numeric', year:'numeric' });
 };
 
 /**

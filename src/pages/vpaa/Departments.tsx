@@ -1,3 +1,5 @@
+import { formatPhilippineDate } from '../../lib/philippineTime';
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
@@ -101,6 +103,15 @@ interface Department {
   logo?: string | null;
   schedulingProfile: 'standard' | 'laboratory_enabled';
   createdAt: string;     // ISO date string
+  programs: Program[];
+}
+
+interface Program {
+  id: number;
+  department_id: number;
+  cluster?: string | null;
+  code: string;
+  name?: string | null;
 }
 
 interface ApiDepartment {
@@ -115,6 +126,7 @@ interface ApiDepartment {
   users?: Array<{
     name?: string;
   }>;
+  programs?: Program[];
 }
 
 interface DepartmentsPageData {
@@ -157,7 +169,7 @@ function DepartmentLogo({
 
 export default function Departments() {
   const { toast } = useToast();
-  const departmentsCacheKey = 'page:departments';
+  const departmentsCacheKey = 'page:departments:v2';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
@@ -186,6 +198,9 @@ export default function Departments() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState('');
+  const [newProgram, setNewProgram] = useState({ cluster: '', code: '', name: '' });
+  const [programFormError, setProgramFormError] = useState('');
+  const [isCreatingProgram, setIsCreatingProgram] = useState(false);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -240,6 +255,13 @@ export default function Departments() {
   const [selectedDeptForDetail, setSelectedDeptForDetail] = useState<Department | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
+  const openDepartmentDetail = (department: Department) => {
+    setSelectedDeptForDetail(department);
+    setNewProgram({ cluster: '', code: '', name: '' });
+    setProgramFormError('');
+    setIsDetailModalOpen(true);
+  };
+
   useEffect(() => {
     fetchDepartments();
   }, []);
@@ -254,7 +276,49 @@ export default function Departments() {
     logo: department.logo || null,
     schedulingProfile: department.scheduling_profile ?? 'standard',
     createdAt: department.created_at,
+    programs: department.programs ?? [],
   });
+
+  const createProgram = async () => {
+    if (!selectedDeptForDetail) return;
+
+    const code = newProgram.code.trim();
+    const name = newProgram.name.trim();
+    if (!code || !name) {
+      setProgramFormError('Program code and name are required.');
+      return;
+    }
+
+    setIsCreatingProgram(true);
+    setProgramFormError('');
+    try {
+      const response = await api.post<{ data: Program }>('/programs', {
+        department_id: selectedDeptForDetail.id,
+        cluster: newProgram.cluster.trim() || null,
+        code,
+        name,
+      });
+      const createdProgram = response.data.data;
+      const nextPrograms = [...selectedDeptForDetail.programs, createdProgram].sort((first, second) =>
+        (first.cluster ?? '').localeCompare(second.cluster ?? '') || first.code.localeCompare(second.code)
+      );
+
+      setDepartments((previousDepartments) => {
+        const nextDepartments = previousDepartments.map((department) =>
+          department.id === selectedDeptForDetail.id ? { ...department, programs: nextPrograms } : department
+        );
+        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+        return nextDepartments;
+      });
+      setSelectedDeptForDetail({ ...selectedDeptForDetail, programs: nextPrograms });
+      setNewProgram({ cluster: '', code: '', name: '' });
+      toast.success('Program Added', 'The program is now available under this department.');
+    } catch (error) {
+      setProgramFormError(apiErrorMessage(error, 'Failed to add program.'));
+    } finally {
+      setIsCreatingProgram(false);
+    }
+  };
 
   const fetchDepartments = async (forceRefresh = false) => {
     const cachedData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
@@ -468,7 +532,7 @@ export default function Departments() {
           if (!val) return '—';
           try {
             const date = new Date(val);
-            return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+            return formatPhilippineDate(val, { month: 'short', day: '2-digit', year: 'numeric' });
           } catch {
             return '—';
           }
@@ -1148,11 +1212,47 @@ export default function Departments() {
                   <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date Created</p>
                   <p className="text-xs font-bold text-gray-700">
                     {selectedDeptForDetail.createdAt
-                      ? new Date(selectedDeptForDetail.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+                      ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
                       : '—'}
                   </p>
                 </div>
               </div>
+
+              <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-xs">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Programs</p>
+                    <p className="mt-1 text-xs text-gray-500">Programs offered by this department.</p>
+                  </div>
+                  <span className="rounded-full bg-[#5A1220]/10 px-2.5 py-1 text-[11px] font-bold text-[#5A1220]">
+                    {selectedDeptForDetail.programs.length}
+                  </span>
+                </div>
+                <div className="mb-4 space-y-2">
+                  {selectedDeptForDetail.programs.length > 0 ? selectedDeptForDetail.programs.map((program) => (
+                    <div key={program.id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-800">{program.code}</p>
+                        <p className="truncate text-[11px] text-gray-500">{program.name || 'Unnamed program'}</p>
+                      </div>
+                      {program.cluster && <span className="shrink-0 text-[10px] font-semibold text-gray-400">{program.cluster}</span>}
+                    </div>
+                  )) : <p className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-400">No programs added yet.</p>}
+                </div>
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="mb-2 text-xs font-bold text-[#4e0a10]">Add Program</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={newProgram.code} onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value })} placeholder="Program code" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-[#C9952A]" />
+                    <input value={newProgram.name} onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })} placeholder="Program name" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-[#C9952A]" />
+                  </div>
+                  <input value={newProgram.cluster} onChange={(event) => setNewProgram({ ...newProgram, cluster: event.target.value })} placeholder="Program cluster (optional)" className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-[#C9952A]" />
+                  <button type="button" onClick={createProgram} disabled={isCreatingProgram} className="mt-2 inline-flex items-center gap-2 rounded-xl bg-[#4e0a10] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60">
+                    {isCreatingProgram ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                    Add Program
+                  </button>
+                  {programFormError && <p className="mt-1 text-xs font-semibold text-red-500">{programFormError}</p>}
+                </div>
+              </section>
 
               {/* Action Buttons */}
               <div className="pt-3 border-t border-gray-200/80 flex items-center justify-end gap-3">

@@ -1,3 +1,5 @@
+import { formatPhilippineDate } from '../../lib/philippineTime';
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -388,6 +390,7 @@ export default function VpaaUsers() {
           name: formData.name.trim(),
           username: formData.username,
           email: formData.email.trim(),
+          password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
@@ -588,7 +591,7 @@ export default function VpaaUsers() {
           if (!val) return '—';
           try {
             const date = new Date(val);
-            return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+            return formatPhilippineDate(val, { month: 'short', day: '2-digit', year: 'numeric' });
           } catch {
             return '—';
           }
@@ -812,7 +815,7 @@ export default function VpaaUsers() {
 
                   <div className="pt-3 border-t border-gray-100 flex items-center justify-between relative z-10">
                     <span className="text-[10px] text-gray-400 font-medium">
-                      Added {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : '—'}
+                      Added {u.createdAt ? formatPhilippineDate(u.createdAt, { month: 'short', day: '2-digit', year: 'numeric' }) : '—'}
                     </span>
                     <div className="flex items-center gap-1">
                       <button
@@ -1421,7 +1424,7 @@ export default function VpaaUsers() {
                   <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date Created</p>
                   <p className="text-xs font-bold text-gray-700">
                     {selectedUserForDetail.createdAt
-                      ? new Date(selectedUserForDetail.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+                      ? formatPhilippineDate(selectedUserForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
                       : '—'}
                   </p>
                 </div>

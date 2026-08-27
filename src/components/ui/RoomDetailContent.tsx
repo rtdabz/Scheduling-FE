@@ -1,3 +1,5 @@
+import { getPhilippineNowParts } from '../../lib/philippineTime';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar,
@@ -217,7 +219,7 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
 
   useEffect(() => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const currentDayIdx = new Date().getDay();
+    const { weekdayIndex: currentDayIdx } = getPhilippineNowParts();
     const defaultDay = days[currentDayIdx];
     setActiveTabDay(defaultDay);
   }, []);

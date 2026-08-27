@@ -1,3 +1,5 @@
+import { getPhilippineNowParts } from '../../lib/philippineTime';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -334,7 +336,8 @@ export default function VpaaRooms() {
 
   const getRoomStatusToday = (roomId: number) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const todayName = days[new Date().getDay()];
+    const { weekdayIndex, hour, minute } = getPhilippineNowParts();
+    const todayName = days[weekdayIndex];
     
     const todaySchedules = schedules.filter(s => s.room_id === roomId && s.day === todayName);
     

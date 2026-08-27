@@ -1,3 +1,5 @@
+import { formatPhilippineDate } from '../../lib/philippineTime';
+
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -90,7 +92,7 @@ const formatSubmittedOn = (value?:string|null) => {
   if (!value) return 'Not submitted';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Not submitted';
-  return date.toLocaleString(undefined, { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+  return formatPhilippineDate(value, { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
 };
 
 /** Keep rows that belong to the Dean's department (rows with no department are shared/global). */
