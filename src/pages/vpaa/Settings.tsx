@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useToast } from '../../context/ToastContext';
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
-  ArrowUpDown,
   CalendarRange,
   CheckCircle2,
+  Clock3,
   History,
   Save,
   Signature,
@@ -19,11 +17,13 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import DataTable from '../../components/ui/DataTable';
 import api from '../../lib/api';
+import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { operatingHoursError, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
 import {
   academicYearError,
   followingYear,
@@ -69,6 +69,16 @@ interface ActivationHistoryEntry {
 
 interface SettingsPageData {
   terms: Term[];
+}
+
+interface TimeslotSettings {
+  opening_time: string;
+  closing_time: string;
+  slot_interval: number;
+}
+
+interface TimeslotResponse {
+  settings: TimeslotSettings;
 }
 
 const SEMESTER_LABELS: Record<Term['semester'], string> = {
@@ -140,6 +150,10 @@ export default function Settings() {
   const [signatories, setSignatories] = useState<InstitutionSettings>(DEFAULT_INSTITUTION_SETTINGS);
   const [signatoryDraft, setSignatoryDraft] = useState<InstitutionSettings>(DEFAULT_INSTITUTION_SETTINGS);
   const [isSavingSignatory, setIsSavingSignatory] = useState(false);
+  const [operatingHours, setOperatingHours] = useState<TimeslotSettings | null>(null);
+  const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '' });
+  const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
+  const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
 
   // Table States
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -188,6 +202,26 @@ export default function Settings() {
     });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    api.get<TimeslotResponse>('/timeslots')
+      .then(({ data }) => {
+        if (!active) return;
+        setOperatingHours(data.settings);
+        setOperatingHoursDraft({
+          opening_time: toTimeInputValue(data.settings.opening_time),
+          closing_time: toTimeInputValue(data.settings.closing_time),
+        });
+      })
+      .catch((error) => toast.error('Error', apiMessage(error, 'Failed to load operating hours.')))
+      .finally(() => {
+        if (active) setIsLoadingOperatingHours(false);
+      });
+
+    return () => { active = false; };
+  }, [toast]);
 
   const activeSemester = useMemo(() => terms.find(t => t.is_active)?.semester, [terms]);
   const isSummerToggleEnabled = activeSemester === '2nd';
@@ -321,6 +355,51 @@ export default function Settings() {
       setIsSavingSignatory(false);
     }
   };
+
+  const saveOperatingHours = async () => {
+    if (!operatingHours) return;
+
+    const validationError = operatingHoursError(
+      operatingHoursDraft.opening_time,
+      operatingHoursDraft.closing_time,
+    );
+    if (validationError) {
+      toast.error('Invalid operating hours', validationError);
+      return;
+    }
+
+    setIsSavingOperatingHours(true);
+    try {
+      const { data } = await api.patch<TimeslotResponse>('/timeslots/settings', {
+        opening_time: toApiTime(operatingHoursDraft.opening_time),
+        closing_time: toApiTime(operatingHoursDraft.closing_time),
+        slot_interval: operatingHours.slot_interval,
+      });
+      setOperatingHours(data.settings);
+      setOperatingHoursDraft({
+        opening_time: toTimeInputValue(data.settings.opening_time),
+        closing_time: toTimeInputValue(data.settings.closing_time),
+      });
+      toast.success('Operating hours saved', 'Schedule generation now uses the updated daily time range.');
+    } catch (error) {
+      toast.error('Not saved', apiMessage(error, 'Failed to update operating hours.'));
+    } finally {
+      setIsSavingOperatingHours(false);
+    }
+  };
+
+  const savedOperatingHoursDraft = operatingHours ? {
+    opening_time: toTimeInputValue(operatingHours.opening_time),
+    closing_time: toTimeInputValue(operatingHours.closing_time),
+  } : null;
+  const operatingHoursDirty = savedOperatingHoursDraft !== null && (
+    operatingHoursDraft.opening_time !== savedOperatingHoursDraft.opening_time
+    || operatingHoursDraft.closing_time !== savedOperatingHoursDraft.closing_time
+  );
+  const operatingHoursValidationError = operatingHoursError(
+    operatingHoursDraft.opening_time,
+    operatingHoursDraft.closing_time,
+  );
 
   const sortedTerms = useMemo(() => {
     const semesterOrder = { '1st': 1, '2nd': 2, 'summer': 3 };
@@ -565,6 +644,62 @@ export default function Settings() {
       </SectionCard>
 
       <SectionCard
+        icon={Clock3}
+        title="Institution Operating Hours"
+        description="Set the daily time range used by schedule generation, conflict validation, and faculty availability."
+        aside={operatingHours && (
+          <span className="rounded-full bg-[#C9952A]/15 px-2.5 py-1 text-[10px] font-bold text-[#7B1113]">
+            {operatingHours.opening_time} - {operatingHours.closing_time}
+          </span>
+        )}
+      >
+        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Opening time</span>
+              <input
+                type="time"
+                step={1800}
+                value={operatingHoursDraft.opening_time}
+                onChange={event => setOperatingHoursDraft(current => ({ ...current, opening_time: event.target.value }))}
+                disabled={isLoadingOperatingHours || isSavingOperatingHours}
+                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Closing time</span>
+              <input
+                type="time"
+                step={1800}
+                value={operatingHoursDraft.closing_time}
+                onChange={event => setOperatingHoursDraft(current => ({ ...current, closing_time: event.target.value }))}
+                disabled={isLoadingOperatingHours || isSavingOperatingHours}
+                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+              />
+            </label>
+            <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
+              Extending the closing time expands the valid daily scheduling range. Explicit duration-specific start-time overrides remain authoritative.
+            </p>
+            {operatingHoursValidationError && !isLoadingOperatingHours && (
+              <p className="flex items-center gap-1 text-xs font-semibold text-red-600 sm:col-span-2">
+                <TriangleAlert className="h-3.5 w-3.5" />
+                {operatingHoursValidationError}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={saveOperatingHours}
+            disabled={!operatingHoursDirty || !!operatingHoursValidationError || isLoadingOperatingHours || isSavingOperatingHours}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSavingOperatingHours ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+            {isSavingOperatingHours ? 'Saving' : 'Save operating hours'}
+          </button>
+        </div>
+      </SectionCard>
+
+      <SectionCard
         icon={Signature}
         title="Document Signatories"
         description="Printed schedules and teaching load sheets are approved by this officer. Update the name when the office changes hands."
@@ -654,99 +789,13 @@ export default function Settings() {
           <span className="text-xs font-semibold text-gray-500">{history.length} logged</span>
         }
       >
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="border-b border-gray-100 bg-gray-50/75">
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="select-none px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500"
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 inline-flex cursor-pointer items-center text-gray-400 hover:text-gray-600"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center font-sans text-sm text-gray-400">
-                    No activations yet. Setting a term as active records it here.
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr
-                    key={row.id}
-                    className={`h-12 transition-colors hover:bg-gray-50/70 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'}`}
-                  >
-                    {row.getVisibleCells().map(cell => (
-                      <td
-                        key={cell.id}
-                        className={`px-4 py-2.5 align-middle text-xs ${cell.column.id === 'academic_year' ? 'whitespace-nowrap' : ''}`}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {table.getFilteredRowModel().rows.length > 0 && (
-          <div className="flex flex-col items-center justify-between gap-4 border-t border-gray-100 bg-gray-50/30 px-6 py-4 sm:flex-row">
-            <div className="text-xs font-semibold text-gray-500">
-              Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-              {Math.min(
-                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                table.getFilteredRowModel().rows.length
-              )} of {table.getFilteredRowModel().rows.length} entries
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="cursor-pointer rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-bold text-gray-600 transition-all hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                Prev
-              </button>
-              <span className="px-1 text-xs font-bold text-gray-500">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="cursor-pointer rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-bold text-gray-600 transition-all hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          table={table}
+          emptyTitle="No activations yet."
+          emptyDescription="Setting a term as active records it here."
+          totalLabel="entries"
+          cellClassName={columnId => columnId === 'academic_year' ? 'whitespace-nowrap' : ''}
+        />
       </SectionCard>
 
       {isActivateModalOpen && (
@@ -783,4 +832,3 @@ export default function Settings() {
     </div>
   );
 }
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

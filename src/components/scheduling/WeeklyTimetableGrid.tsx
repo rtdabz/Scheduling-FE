@@ -24,6 +24,7 @@ interface WeeklyTimetableGridProps {
   rowTemplate?: string;
   minWidth?: number;
   className?: string;
+  style?: React.CSSProperties;
   disabledDayIndexes?: number[];
   getTimeLabel: (slot: number) => string;
   getDayCount?: (dayIndex: number) => number;
@@ -42,6 +43,7 @@ export default function WeeklyTimetableGrid({
   rowTemplate,
   minWidth = 840,
   className = "",
+  style,
   disabledDayIndexes = [],
   getTimeLabel,
   getDayCount,
@@ -53,9 +55,11 @@ export default function WeeklyTimetableGrid({
 
   return (
     <div
-      className={`relative grid select-none overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`relative grid select-none overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
       style={{
+        minHeight: `${headerHeight + slotCount * slotHeight}px`,
         minWidth,
+        ...style,
         gridTemplateColumns: `${timeColumnWidth}px repeat(${days.length}, minmax(0, 1fr))`,
         gridTemplateRows: `${headerHeight}px ${rowTemplate ?? `repeat(${slotCount}, ${slotHeight}px)`}`,
       }}

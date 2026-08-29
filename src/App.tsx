@@ -41,7 +41,6 @@ const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
 
 const CurriculumListPage = lazy(() => import('./pages/curriculum/CurriculumListPage'));
 const CurriculumDetailPage = lazy(() => import('./pages/curriculum/CurriculumDetailPage'));
-const CurriculumViewPage = lazy(() => import('./pages/curriculum/CurriculumViewPage'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
 
 interface StoredUser {
@@ -134,7 +133,6 @@ export default function App() {
 
             <Route path="/curriculum" element={<CurriculumListPage />} />
             <Route path="/curriculum/:id" element={<CurriculumDetailPage />} />
-            <Route path="/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/users" element={<VpaaUsers />} />
             <Route path="/departments" element={<Departments />} />
             <Route path="/reports" element={<VpaaReports />} />
@@ -184,7 +182,6 @@ export default function App() {
             <Route path="/program_head/courses" element={<SecretaryCourses />} />
             <Route path="/program_head/curriculum" element={<CurriculumListPage />} />
             <Route path="/program_head/curriculum/:id" element={<CurriculumDetailPage />} />
-            <Route path="/program_head/curriculum-view" element={<CurriculumViewPage />} />
             <Route path="/program_head/sections" element={<SecretarySections />} />
             <Route path="/program_head/instructor-assignment" element={<InstructorAssignment />} />
             <Route path="/program_head/schedule-history" element={<VpaaScheduleHistory />} />

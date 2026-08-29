@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
 import {
@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Archive,
   BookOpen,
+  Printer,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -33,9 +34,13 @@ import CurriculumFormModal from '../../components/curriculum/CurriculumFormModal
 import CurriculumCard from '../../components/curriculum/CurriculumCard';
 import CurriculumArchiveModal from '../../components/curriculum/CurriculumArchiveModal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import TableActionButton from '../../components/ui/TableActionButton';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import type { Curriculum } from '../../types/curriculum';
+import { curriculumService } from '../../services/curriculum/curriculumService';
+import { printCurriculum } from '../../lib/curriculumPrintable';
+import { useToast } from '../../context/ToastContext';
 
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -45,6 +50,7 @@ const statusColors: Record<string, string> = {
 
 export default function CurriculumListPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     curriculumList,
     rawCurriculumList,
@@ -68,6 +74,7 @@ export default function CurriculumListPage() {
   // View mode
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [printingCurriculumId, setPrintingCurriculumId] = useState<number | null>(null);
 
   // Table states
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -110,6 +117,24 @@ export default function CurriculumListPage() {
       },
     });
   };
+
+  const handlePrintCurriculum = useCallback(async (item: Curriculum) => {
+    if (printingCurriculumId !== null) return;
+
+    setPrintingCurriculumId(item.id);
+    try {
+      const detail = await curriculumService.getCurriculumFull(item.id);
+      await printCurriculum({
+        curriculum: detail.curriculum,
+        terms: detail.terms ?? [],
+        program: programs.find((program) => program.id === detail.curriculum.program_id) ?? null,
+      });
+    } catch {
+      toast.error('Print failed', 'The curriculum printable could not be generated.');
+    } finally {
+      setPrintingCurriculumId(null);
+    }
+  }, [printingCurriculumId, programs, toast]);
 
   const gridFilteredCurriculumList = useMemo(() => {
     let result = [...curriculumList];
@@ -188,64 +213,64 @@ export default function CurriculumListPage() {
           const curriculumPath = userRole === 'vpaa' ? `/curriculum/${item.id}` : `/${userRole}/curriculum/${item.id}`;
           return (
             <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <button
-                type="button"
+              <TableActionButton
+                label="View Curriculum"
+                variant="view"
                 onClick={() => navigate(curriculumPath)}
-                className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-                title="View Curriculum"
                 aria-label={`View ${item.name}`}
               >
                 <Eye size={15} />
-              </button>
+              </TableActionButton>
+              <TableActionButton
+                label="Print Curriculum"
+                variant="print"
+                onClick={() => void handlePrintCurriculum(item)}
+                disabled={printingCurriculumId !== null}
+                aria-label={`Print ${item.name}`}
+              >
+                <Printer size={15} className={printingCurriculumId === item.id ? 'animate-pulse' : ''} />
+              </TableActionButton>
               {canManageCurriculum && (
                 <>
-                  <button
-                    type="button"
+                  <TableActionButton
+                    label="Edit Curriculum"
+                    variant="edit"
                     onClick={() => {
                       setEditingCurriculum(item);
                       setIsEditMode(true);
                       setIsFormModalOpen(true);
                     }}
-                    className="p-1.5 text-gray-500 hover:text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-                    title="Edit Curriculum"
                     aria-label={`Edit ${item.name}`}
                   >
                     <Pencil size={15} />
-                  </button>
-                  <button
-                    type="button"
+                  </TableActionButton>
+                  <TableActionButton
+                    label="Duplicate Curriculum"
+                    variant="copy"
                     onClick={() => handleDuplicate(item.id)}
-                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                    title="Duplicate Curriculum"
                     aria-label={`Duplicate ${item.name}`}
                   >
                     <Copy size={15} />
-                  </button>
-                      <button
-                        type="button"
+                  </TableActionButton>
+                      <TableActionButton
+                        label={item.status === 'active' ? 'Deactivate' : 'Activate'}
+                        variant={item.status === 'active' ? 'success' : 'danger'}
                         onClick={() =>
                           handleStatusChange(item.id, item.status === 'active' ? 'draft' : 'active')
                         }
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          item.status === 'active'
-                            ? 'text-emerald-600 hover:bg-emerald-50'
-                            : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
-                        }`}
-                        title={item.status === 'active' ? 'Deactivate' : 'Activate'}
                         aria-label={`${item.status === 'active' ? 'Deactivate' : 'Activate'} ${item.name}`}
                       >
-                        <CheckCircle2 size={15} />
-                      </button>
+                        <CheckCircle2 size={15} strokeWidth={item.status === 'active' ? 2.5 : 2} />
+                      </TableActionButton>
                       {item.status !== 'active' && (
-                        <button
-                          type="button"
+                        <TableActionButton
+                          label="Archive Curriculum"
+                          variant="archive"
                           onClick={() => triggerArchiveConfirmation(item.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                          title="Archive Curriculum"
                           aria-label={`Archive ${item.name}`}
                         >
                           <Archive size={15} />
-                        </button>
+                        </TableActionButton>
                       )}
                 </>
               )}
@@ -254,7 +279,7 @@ export default function CurriculumListPage() {
         },
       },
     ],
-    [navigate, canManageCurriculum, handleDuplicate, handleStatusChange, handleArchive]
+    [navigate, canManageCurriculum, handleDuplicate, handleStatusChange, handleArchive, handlePrintCurriculum, printingCurriculumId]
   );
 
   const table = useReactTable({
@@ -275,7 +300,7 @@ export default function CurriculumListPage() {
   });
 
   const curriculumGuideSteps = useMemo(() => [
-    { element: '#curriculum-actions', title: 'Create or view a curriculum', description: 'Add a curriculum or open the visual curriculum view.', side: 'bottom' as const },
+    { element: '#curriculum-create-button', title: 'Create a curriculum', description: 'Select Create Curriculum to add a curriculum for your department or program.', side: 'bottom' as const },
     { element: '#curriculum-filters', title: 'Find a curriculum', description: 'Search or filter by department and status.', side: 'bottom' as const },
     { element: '#curriculum-list', title: 'Manage the curriculum', description: 'Open a curriculum to edit its courses. Publish it before assigning teaching departments.', side: 'top' as const },
   ], []);
@@ -289,14 +314,6 @@ export default function CurriculumListPage() {
           <div className="flex items-center gap-2 shrink-0">
             <WorkflowGuideButton guideId="curriculum" />
             <button
-              onClick={() => navigate('/curriculum-view')}
-              className="border border-[#C9952A] text-[#4e0a10] bg-amber-50/50 hover:bg-amber-100 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-bold text-xs shadow-sm cursor-pointer"
-              title="View Visual Curriculum Map (CMO Prescribed)"
-            >
-              <BookOpen size={16} className="text-[#C9952A]" />
-              <span>Curriculum View</span>
-            </button>
-            <button
               onClick={() => setIsArchiveOpen(true)}
               className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-xs shadow-sm cursor-pointer"
               title="View Archived Curriculum"
@@ -305,6 +322,7 @@ export default function CurriculumListPage() {
               <span>Archive</span>
             </button>
             <button
+              id="curriculum-create-button"
               onClick={() => {
                 setEditingCurriculum(null);
                 setIsEditMode(false);

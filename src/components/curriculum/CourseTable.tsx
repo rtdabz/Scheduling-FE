@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { BookOpen, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import TableActionButton from '../ui/TableActionButton';
 import type { CurriculumCourse } from '../../types/curriculum';
 
 interface CourseTableProps {
@@ -107,21 +108,21 @@ export default function CourseTable({
                     ) : (
                       <div className="flex items-center justify-end gap-1">
                         {onInitiateEdit && (
-                          <button
+                          <TableActionButton
+                            label="Edit course details"
+                            variant="edit"
                             onClick={() => onInitiateEdit(course)}
-                            className="p-1.5 text-gray-400 hover:text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
-                            title="Edit course details"
                           >
                             <Pencil size={15} />
-                          </button>
+                          </TableActionButton>
                         )}
-                        <button
+                        <TableActionButton
+                          label="Remove course"
+                          variant="danger"
                           onClick={() => onInitiateRemove(course.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                          title="Remove course"
                         >
                           <Trash2 size={15} />
-                        </button>
+                        </TableActionButton>
                       </div>
                     )}
                   </td>

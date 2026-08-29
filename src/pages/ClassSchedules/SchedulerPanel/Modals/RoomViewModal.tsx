@@ -6,7 +6,7 @@ import {
   getGridCardStyles,
   slotToTimeStr
 } from "../constants";
-import type { ScheduleItem, Room } from "../types";
+import type { Department, ScheduleItem, Room } from "../types";
 import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
 
@@ -17,6 +17,7 @@ interface RoomViewModalProps {
   roomViewRoomId: string;
   setRoomViewRoomId: (value: string) => void;
   schedules: ScheduleItem[];
+  departments: Department[];
 }
 
 const SLOT_COUNT = 24;
@@ -26,7 +27,8 @@ export default function RoomViewModal({
   setIsRoomViewOpen,
   roomViewRoomId,
   setRoomViewRoomId,
-  schedules
+  schedules,
+  departments,
 }: RoomViewModalProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [listPage, setListPage] = useState(1);
@@ -47,6 +49,10 @@ export default function RoomViewModal({
   );
 
   const currentDepartmentId = useMemo(() => getStoredUserDepartmentId(), []);
+  const currentDepartment = useMemo(
+    () => departments.find((department) => Number(department.id) === currentDepartmentId),
+    [currentDepartmentId, departments],
+  );
 
   const roomClasses = useMemo(() => {
     return schedules.filter((s) => {
@@ -107,7 +113,12 @@ export default function RoomViewModal({
   }, [isRoomViewOpen, roomViewRoomId, viewMode, listPageSize]);
 
   const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
-  const sharedRoomCapacity = Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
+  const configuredSharedCapacity = room?.roomType === "online"
+    ? currentDepartment?.online_slot_limit
+    : room?.roomType === "field"
+      ? currentDepartment?.field_slot_limit
+      : null;
+  const sharedRoomCapacity = Math.max(1, Number(configuredSharedCapacity ?? room?.maxConcurrentClasses ?? 1) || 1);
   const peakSharedOccupancy = useMemo(() => {
     if (!isSharedRoom) return 0;
 

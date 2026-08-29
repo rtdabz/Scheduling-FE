@@ -4,8 +4,9 @@ import type autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ApiDepartmentRecord, ScheduleItem, Section, UserSummary } from "./types";
+import type { ApiDepartmentRecord, ScheduleItem, Section, Term, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
+import { semesterLabel } from "../../../lib/termLabel";
 
 interface PrintScheduleProps {
   sections: Section[];
@@ -15,6 +16,7 @@ interface PrintScheduleProps {
   selectedSectionId: string;
   departments: ApiDepartmentRecord[];
   users: UserSummary[];
+  activeTerm: Term | null;
 }
 
 interface AutoTableDocument extends jsPDF {
@@ -29,8 +31,6 @@ interface JsPdfDocumentWithPageInfo extends jsPDF {
   };
 }
 
-const ACADEMIC_YEAR = "2025-2026";
-const TERM = "2nd";
 const PAGE_TOP_Y = 15;
 const PAGE_FOOTER_Y = 192;
 const CONTENT_BOTTOM_Y = 185;
@@ -41,6 +41,10 @@ const SIGNATORIES = {
   reviewedBy: { name: "", role: "Dean" },
   recommendedBy: { name: "KHAREN JANE S. UNGAB, DM", role: "Vice-President for Academic Affairs" },
 };
+
+export const buildPrintTermTitle = (term: Term | null): string => term
+  ? `CLASS SCHEDULE AY ${term.academic_year}    ${semesterLabel(term.semester)}`
+  : "CLASS SCHEDULE";
 
 /** The approving signatory is whatever the VPAA saved in Settings. */
 const buildSignatories = (settings: InstitutionSettings, preparedByName: string, reviewedByName: string) => [
@@ -92,6 +96,7 @@ export default function PrintSchedule({
   selectedSectionId,
   departments,
   users,
+  activeTerm,
 }: PrintScheduleProps) {
 
   const activeSection = sections.find((section) => section.id === selectedSectionId);
@@ -277,14 +282,17 @@ export default function PrintSchedule({
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
-    doc.text(`CLASS SCHEDULE AY  ${ACADEMIC_YEAR}    ${TERM} Term`, 148.5, currentY + 11.5, { align: "center" });
+    doc.text(buildPrintTermTitle(activeTerm), 148.5, currentY + 11.5, { align: "center" });
 
     currentY += 13;
 
     // Determine target sections belonging to the same department as the active section
-    const unfilteredSections = activeSection
-      ? sections.filter((s) => s.departmentId === activeSection.departmentId)
+    const activeTermSections = activeTerm
+      ? sections.filter((section) => Number(section.termId) === Number(activeTerm.id))
       : sections;
+    const unfilteredSections = activeSection
+      ? activeTermSections.filter((section) => section.departmentId === activeSection.departmentId)
+      : activeTermSections;
 
     const targetSections = [...unfilteredSections].sort((a, b) => {
       const yearA = Number(a.yearLevel) || 0;

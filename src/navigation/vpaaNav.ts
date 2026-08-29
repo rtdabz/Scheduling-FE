@@ -39,7 +39,7 @@ export const vpaaNav: NavSection[] = [
       { label: 'Master Calendar', path: '/calendar', icon: Calendar, id: 'sidebar-calendar' },
       { label: 'Faculty', path: '/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
       { label: 'Rooms', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
-      { label: 'Curriculum', path: '/curriculum-view', icon: BookOpen, id: 'sidebar-curriculum-view' },
+      { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
     ]
   },
   {

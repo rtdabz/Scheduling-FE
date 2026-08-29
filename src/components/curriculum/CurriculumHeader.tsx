@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, } from 'lucide-react';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
 
 interface CurriculumHeaderProps {
@@ -59,16 +59,18 @@ export default function CurriculumHeader({
             <h1 className="text-2xl font-bold text-[#1A1410] font-display">{curriculum.name}</h1>
           </div>
 
-          {curriculum.status === 'draft' && canActivate && (
-            <button
-              onClick={onActivate}
-              disabled={isActivating}
-              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 shrink-0 shadow-sm"
-            >
-              {isActivating ? <LoadingSpinner size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              Activate Curriculum
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {curriculum.status === 'draft' && canActivate && (
+              <button
+                onClick={onActivate}
+                disabled={isActivating}
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 shadow-sm"
+              >
+                {isActivating ? <LoadingSpinner size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                Activate Curriculum
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Metadata Grid */}

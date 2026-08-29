@@ -84,7 +84,7 @@ export default function CurriculumCard({
         <button
           onClick={() => onView(curriculum.id)}
           title="View curriculum details"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-100"
         >
           <Eye size={14} />
           View
@@ -95,7 +95,7 @@ export default function CurriculumCard({
             <button
               onClick={() => onEdit(curriculum)}
               title="Edit curriculum information"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100"
             >
               <Pencil size={14} />
               Edit
@@ -103,7 +103,7 @@ export default function CurriculumCard({
             <button
               onClick={() => onDuplicate(curriculum.id)}
               title="Create a copy of this curriculum as a draft"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
             >
               <Copy size={14} />
               Duplicate
@@ -111,10 +111,10 @@ export default function CurriculumCard({
             <button
               onClick={handleStatusToggle}
               title={curriculum.status === 'active' ? 'Set status to draft' : 'Set status to active (deactivates the other curriculum in the same department)'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
                 curriculum.status === 'active'
-                  ? 'text-gray-600 hover:bg-gray-100'
-                  : 'text-emerald-600 hover:bg-emerald-50'
+                  ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                  : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
               }`}
             >
               <CheckCircle2 size={14} />
@@ -124,7 +124,7 @@ export default function CurriculumCard({
               <button
                 onClick={() => onArchive(curriculum.id)}
                 title="Archive this curriculum"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100"
               >
                 <Archive size={14} />
                 Archive

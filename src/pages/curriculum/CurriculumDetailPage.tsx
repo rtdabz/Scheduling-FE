@@ -15,7 +15,7 @@ export default function CurriculumDetailPage() {
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userRole = user?.role?.toLowerCase() || 'user';
-  const canManageCurriculum = ['vpaa', 'secretary', 'program_head'].includes(userRole);
+  const canManageCurriculum = userRole === 'vpaa';
 
   const {
     curriculum,
@@ -38,6 +38,7 @@ export default function CurriculumDetailPage() {
   } = useCurriculumDetail(id);
 
   const selectedTerm = currentYearSemesters.find((term) => term.semester === selectedSemester) ?? currentYearSemesters[0];
+
   return (
     <div className="w-full">
       {isLoading ? (

@@ -3,6 +3,7 @@ import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, MousePointerClick, M
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
+  SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
 import type { ConflictInfo, ScheduleItem, Room, Section, Subject, Term } from "../types";
@@ -107,13 +108,20 @@ export default function TimetableGrid({
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerTerm = activeTerm?.semester === "summer";
   const subjectsById = React.useMemo(() => buildSubjectIndex(subjects), [subjects]);
+  const timetableSlotCount = React.useMemo(
+    () => Math.max(
+      slotCount(),
+      ...sectionSchedules.map((schedule) => schedule.startSlot + schedule.durationSlots),
+    ),
+    [sectionSchedules],
+  );
   const placementLabel = placementSubjectId
     ? subjectsById.get(String(placementSubjectId))?.code ?? "subject"
     : movingScheduleId
       ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
       : "";
   return (
-    <div id="schedule-builder-timetable" className="flex min-h-[36rem] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-full lg:min-h-0">
+    <div id="schedule-builder-timetable" className="flex min-h-[48rem] min-w-0 flex-1 flex-col overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-auto lg:min-h-[48rem]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 shrink-0">
         <div>
           <h2 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
@@ -218,14 +226,14 @@ export default function TimetableGrid({
             </p>
           </div>
         ) : (
-          <div className={`${isWideView ? "overflow-hidden" : "overflow-x-auto overflow-y-hidden"} flex min-h-0 flex-1 flex-col p-2 sm:p-4`}>
+          <div className={`${isWideView ? "overflow-hidden" : "overflow-auto"} flex min-h-0 flex-1 flex-col p-2 sm:p-4`}>
             <WeeklyTimetableGrid
               days={DAYS}
-              slotCount={slotCount()}
+              slotCount={timetableSlotCount}
               headerHeight={GRID_HEADER_HEIGHT_PX}
-              rowTemplate={`repeat(${slotCount()}, minmax(0, 1fr))`}
+              rowTemplate={`repeat(${timetableSlotCount}, ${SLOT_HEIGHT_PX}px)`}
               minWidth={isWideView ? 0 : 900}
-              className="flex-1"
+              className="flex-1 shrink-0"
               isLoading={isLoading}
               disabledDayIndexes={isSummerTerm ? [5, 6] : []}
               getTimeLabel={slotToTimeStr}

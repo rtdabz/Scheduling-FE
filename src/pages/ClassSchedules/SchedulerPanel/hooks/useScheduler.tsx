@@ -29,6 +29,7 @@ import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility
 import type { SubjectClassification } from "../constants";
 import type { InitialDataResponse, SchedulerCacheData } from "./initialDataMapper";
 import {
+  generatedScheduleSectionId,
   hasUsableSchedulerCache,
   mapApiScheduleToItem,
   mapInitialData,
@@ -339,7 +340,7 @@ export const useScheduler = () => {
   }, [activeTerm, schedulerCacheKey]);
 
   const handleAcceptedRecommendation = useCallback(
-    (newSchedules?: ApiScheduleRecord[]) => {
+    async (newSchedules?: ApiScheduleRecord[]) => {
       if (newSchedules && newSchedules.length > 0) {
         const mapped = newSchedules.map(mapApiScheduleToItem);
         const replacedCourseIds = new Set(mapped.map((s) => s.courseId || s.subjectId).filter(Boolean));
@@ -364,8 +365,11 @@ export const useScheduler = () => {
           }
           return updated;
         });
+        setSelectedSectionId((currentSectionId) =>
+          generatedScheduleSectionId(currentSectionId, mapped)
+        );
       }
-      void refreshSchedules();
+      await refreshSchedules();
     },
     [refreshSchedules, schedulerCacheKey]
   );

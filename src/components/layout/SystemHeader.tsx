@@ -1,7 +1,6 @@
 import { Menu } from 'lucide-react';
 import NotificationBell from '../notifications/NotificationBell';
 import { academicYearLabel, semesterLabel } from '../../lib/termLabel';
-import campusBg from '../../assets/campus-bg.jpg';
 import UserProfileMenu from './UserProfileMenu';
 
 interface HeaderTerm {
@@ -19,7 +18,6 @@ export default function SystemHeader({ activeTerm, sidebarOpen = false, onToggle
   return (
     <header className="relative z-50 flex min-h-[4.25rem] shrink-0 items-center justify-between gap-3 border-b border-l border-white/10 bg-[#4e0a10] px-3 py-3 text-white shadow-md sm:px-4">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <img src={campusBg} alt="" className="h-full w-full object-cover object-center opacity-35 contrast-105 saturate-110" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#36060b] via-[#4e0a10]/80 to-[#5A1220]/70 mix-blend-multiply" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
       </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import TableActionButton from '../../components/ui/TableActionButton';
 import {
   Pencil,
   Trash2,
@@ -310,23 +311,25 @@ export default function SecretarySections() {
           cell: ({ row }) => (
             <div className="flex justify-end gap-1.5">
               <div className="relative group/tooltip">
-                <button
+                <TableActionButton
+                  label="Edit"
+                  variant="edit"
                   onClick={() => handleEditClick(row.original)}
-                  className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                 >
                   <Pencil size={17} />
-                </button>
+                </TableActionButton>
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                   Edit
                 </span>
               </div>
               <div className="relative group/tooltip">
-                <button
+                <TableActionButton
+                  label="Delete"
+                  variant="danger"
                   onClick={() => triggerDeleteConfirmation(row.original.id)}
-                  className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                 >
                   <Trash2 size={17} />
-                </button>
+                </TableActionButton>
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                   Delete
                 </span>

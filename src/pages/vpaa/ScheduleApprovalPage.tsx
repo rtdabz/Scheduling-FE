@@ -19,6 +19,7 @@ import {
   flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
@@ -698,12 +699,13 @@ export default function VpaaScheduleApprovalPage() {
             <div className="flex justify-end gap-1.5">
               {/* View Schedule Timetable */}
               <div className="relative group">
-                <button 
+                <TableActionButton
+                  label="View"
+                  variant="view"
                   onClick={() => setViewSchedule(sched)}
-                  className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                 >
                   <Eye size={17} />
-                </button>
+                </TableActionButton>
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-md">
                   View
                 </span>

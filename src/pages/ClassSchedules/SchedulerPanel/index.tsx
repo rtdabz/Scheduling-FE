@@ -8,12 +8,12 @@ import SubmitApprovalModal from "./Modals/SubmitApprovalModal";
 import WithdrawSubmissionModal from "./Modals/WithdrawSubmissionModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
-import YearLevelGenerateScheduleModal from "./GenerateSchedule/YearLevelGenerateScheduleModal";
 import AutoAssignModal from "./Modals/AutoAssignModal";
 import OverloadConfirmationModal from "../../../components/faculty/OverloadConfirmationModal";
 import { useEffect, useMemo, useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
 import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
+import YearLevelGenerateScheduleWorkflow from "./GenerateSchedule/YearLevelGenerateScheduleWorkflow";
 
 interface SchedulerPanelProps {
   autoAssignOnOpen?: boolean;
@@ -48,8 +48,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   useWorkflowGuide({ id: "schedule-builder-plotting", isReady: !scheduler.isLoading && plottingActive, steps: plottingGuideSteps });
   useWorkflowGuide({ id: "schedule-builder-faculty-assignment", isReady: !scheduler.isLoading && facultyAssignmentActive, steps: facultyAssignmentGuideSteps });
   useWorkflowGuide({ id: "schedule-builder-review", isReady: !scheduler.isLoading && reviewActive, steps: reviewGuideSteps });
-  const [generationScope, setGenerationScope] = useState<"year" | "section" | null>(null);
   const [isAutoAssignOpen, setIsAutoAssignOpen] = useState(false);
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
 
   useEffect(() => {
     if (autoAssignOnOpen && scheduler.schedules.length > 0) {
@@ -58,21 +58,58 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   }, [autoAssignOnOpen, scheduler.schedules.length]);
 
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
+  const generatorDepartmentId = selectedSection?.departmentId ?? scheduler.sections[0]?.departmentId ?? null;
+  const generatorDepartmentLogoUrl = scheduler.departments.find(
+    (department) => Number(department.id) === Number(generatorDepartmentId),
+  )?.logo ?? null;
+
+  useEffect(() => {
+    if (!isGeneratorOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsGeneratorOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isGeneratorOpen]);
 
   return (
     <div className="flex flex-col gap-4 w-full text-slate-800 antialiased">
       <TopBar
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
-        onGenerateYearLevel={() => setGenerationScope("year")}
+        onGenerateYearLevel={() => setIsGeneratorOpen(true)}
         isGenerateDisabled={!scheduler.isEditable}
         onAutoAssign={() => setIsAutoAssignOpen(true)}
       />
 
-      <div className="flex min-h-0 w-full flex-col gap-4 overflow-visible lg:h-[calc(100dvh-180px)] lg:min-h-[560px] lg:flex-row lg:overflow-hidden">
+      <div className="flex min-h-0 w-full flex-col gap-4 overflow-visible lg:h-auto lg:min-h-[560px] lg:flex-row">
         {!scheduler.isWideView && <CourseBank {...scheduler} />}
         <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
       </div>
+
+      {isGeneratorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-[1px] sm:p-4" role="dialog" aria-modal="true" aria-label="Generate schedule">
+          <div className="h-[calc(100dvh-1rem)] w-full max-w-[1600px] overflow-hidden bg-white shadow-2xl sm:h-[calc(100dvh-2rem)] sm:rounded-lg">
+            <YearLevelGenerateScheduleWorkflow
+              onClose={() => setIsGeneratorOpen(false)}
+              sections={scheduler.sections}
+              courses={scheduler.subjects}
+              activeTerm={scheduler.activeTerm}
+              departmentId={generatorDepartmentId}
+              departmentLogoUrl={generatorDepartmentLogoUrl}
+              existingSchedules={scheduler.schedules}
+              onAccepted={scheduler.handleAcceptedRecommendation}
+            />
+          </div>
+        </div>
+      )}
 
       <DropModal {...scheduler} />
       <FacultyModal {...scheduler} />
@@ -100,19 +137,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onCancel={scheduler.cancelWithdrawSubmission}
       />
       <RoomViewModal {...scheduler} />
-      <YearLevelGenerateScheduleModal
-        isOpen={generationScope !== null}
-        onClose={() => setGenerationScope(null)}
-        sections={scheduler.sections}
-        courses={scheduler.subjects}
-        activeTerm={scheduler.activeTerm}
-        departmentId={selectedSection?.departmentId ?? scheduler.sections[0]?.departmentId ?? null}
-        existingSchedules={scheduler.schedules}
-        onAccepted={scheduler.handleAcceptedRecommendation}
-        scope={generationScope ?? "year"}
-        onScopeChange={setGenerationScope}
-        selectedSectionId={scheduler.selectedSectionId}
-      />
       <ClearAllModal {...scheduler} />
       <PrintSchedule
         sections={scheduler.sections}
@@ -122,6 +146,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}
         selectedSectionId={scheduler.selectedSectionId}
+        activeTerm={scheduler.activeTerm}
       />
       {/* One overload confirmation for all three faculty paths: the slot popup,
           the inline picker and Auto-Assign each await this same answer. */}

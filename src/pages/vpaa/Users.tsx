@@ -8,9 +8,6 @@ import {
   Trash2,
   Search,
   AlertTriangle,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   X,
   Loader2,
   Camera,
@@ -25,9 +22,10 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import DataTable from '../../components/ui/DataTable';
+import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
@@ -590,7 +588,6 @@ export default function VpaaUsers() {
           const val = info.getValue() as string;
           if (!val) return '—';
           try {
-            const date = new Date(val);
             return formatPhilippineDate(val, { month: 'short', day: '2-digit', year: 'numeric' });
           } catch {
             return '—';
@@ -604,29 +601,31 @@ export default function VpaaUsers() {
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
             <div className="relative group/tooltip">
-              <button
+              <TableActionButton
+                label="Edit"
+                variant="edit"
                 onClick={(event) => {
                   event.stopPropagation();
                   handleEditClick(row.original);
                 }}
-                className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Pencil size={17} />
-              </button>
+              </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Edit
               </span>
             </div>
             <div className="relative group/tooltip">
-              <button
+              <TableActionButton
+                label="Delete"
+                variant="danger"
                 onClick={(event) => {
                   event.stopPropagation();
                   triggerDeleteConfirmation(row.original.id);
                 }}
-                className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={17} />
-              </button>
+              </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Delete
               </span>
@@ -846,174 +845,15 @@ export default function VpaaUsers() {
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/80 border-b border-gray-200">
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr 
-                    key={`skeleton-row-${index}`} 
-                    className={`h-12 border-b border-gray-100 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <div className="flex items-center gap-3">
-                        <Skeleton className="w-8 h-8 rounded-full" />
-                        <Skeleton className="h-4 w-32" />
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-20" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-24 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-28" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-24" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-20" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                      <div className="flex justify-end gap-2">
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No users found.</p>
-                      <p className="text-xs">Try adjusting your search criteria or add a new user.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr 
-                    key={row.id} 
-                    onClick={() => {
-                      openDetailModal(row.original);
-                    }}
-                    className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    {row.getVisibleCells().map((cell, cellIdx) => (
-                      <td key={cell.id} className={`px-4 py-3 text-xs font-semibold text-gray-700 font-sans align-middle ${cellIdx === 0 ? 'border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all' : ''}`}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      )}
-
-      {/* Pagination (shared for both Grid and List views) */}
-      {table.getFilteredRowModel().rows.length > 0 && (
-        <div className="px-6 py-4 border border-gray-100 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 bg-white shadow-sm font-sans mb-6">
-          <div className="flex items-center gap-4">
-            <div className="text-xs font-semibold text-gray-500">
-              Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-              {Math.min(
-                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                table.getFilteredRowModel().rows.length
-              )} of {table.getFilteredRowModel().rows.length} users
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 font-semibold">Show</span>
-              <select
-                value={table.getState().pagination.pageSize}
-                onChange={e => table.setPageSize(Number(e.target.value))}
-                className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-              >
-                {[10, 25, 50].map(pageSize => (
-                  <option key={pageSize} value={pageSize}>{pageSize}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => table.setPageIndex(0)}
-              disabled={!table.getCanPreviousPage()}
-              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-            >
-              First
-            </button>
-            <button
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-            >
-              Prev
-            </button>
-            <span className="text-xs font-bold text-gray-500 px-1">
-              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-            </span>
-            <button
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-            >
-              Next
-            </button>
-            <button
-              onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-              disabled={!table.getCanNextPage()}
-              className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-            >
-              Last
-            </button>
-          </div>
-        </div>
+        <DataTable
+          table={table}
+          isLoading={isLoading}
+          emptyTitle="No users found."
+          emptyDescription="Try adjusting your search criteria or add a new user."
+          totalLabel="users"
+          onRowClick={openDetailModal}
+          cellClassName={columnId => columnId === 'name' ? 'border-l-4 border-l-transparent' : ''}
+        />
       )}
 
       {isModalOpen && (

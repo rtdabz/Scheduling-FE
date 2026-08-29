@@ -1,7 +1,14 @@
-import { useEffect } from "react";
-import Shepherd, { type Tour } from "shepherd.js";
+import { createElement, useEffect } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { EVENTS, Joyride, type EventData, type Step } from "react-joyride";
 import { getStoredUser } from "../lib/storedUser";
-import { startExclusiveTour } from "../onboarding/shepherdTour";
+import "../styles/onboarding.css";
+import {
+  announceJoyrideStart,
+  coachMarkOptions,
+  coachMarkStyles,
+  listenForOtherJoyrides,
+} from "../onboarding/joyrideTour";
 
 export interface WorkflowGuideStep {
   element: string;
@@ -20,69 +27,89 @@ interface UseWorkflowGuideOptions {
 const placement = (side: WorkflowGuideStep["side"], align: WorkflowGuideStep["align"]): "top" | "top-start" | "top-end" | "right" | "right-start" | "right-end" | "bottom" | "bottom-start" | "bottom-end" | "left" | "left-start" | "left-end" => {
   const resolvedSide = side ?? "bottom";
   if (!align || align === "center") return resolvedSide;
-  return `${resolvedSide}-${align}`;
+  return (resolvedSide + "-" + align) as ReturnType<typeof placement>;
 };
 
-/** Shared Shepherd lifecycle for focused, page-specific workflow guides. */
+const isVisible = (selector: string): boolean => {
+  const element = document.querySelector(selector);
+  if (!(element instanceof HTMLElement)) return false;
+  const styles = window.getComputedStyle(element);
+  return styles.display !== "none" && styles.visibility !== "hidden" && element.getClientRects().length > 0;
+};
+
+const createSteps = (steps: WorkflowGuideStep[]): Step[] => steps
+  .filter((step) => isVisible(step.element))
+  .map((step, index) => ({
+    id: "workflow-step-" + (index + 1),
+    target: step.element,
+    title: (index + 1) + ". " + step.title.replace(/^\s*\d+\s*[.)-]?\s*/, ""),
+    content: createElement(
+      "div",
+      { className: "wicars-coach-mark-copy" },
+      createElement("p", null, step.description),
+      createElement("span", null, "Use the highlighted area, then continue when you are ready."),
+    ),
+    placement: placement(step.side, step.align),
+  }));
+
+/** Shared React Joyride lifecycle for focused, page-specific coach marks. */
 export function useWorkflowGuide({ id, isReady, steps }: UseWorkflowGuideOptions) {
   useEffect(() => {
     if (!isReady) return;
 
     const user = getStoredUser();
     const userKey = user?.id ?? user?.email ?? "current";
-    const completionKey = `wicars_workflow_guide_done_${id}_${userKey}`;
-    const restartEvent = `restart-workflow-guide:${id}`;
+    const completionKey = "wicars_workflow_guide_done_v2_" + id + "_" + userKey;
+    const restartEvent = "restart-workflow-guide:" + id;
+    const tourId = "workflow:" + id;
+    const host = document.createElement("div");
+    host.dataset.wicarsGuideRoot = id;
+    document.body.appendChild(host);
+
     let mounted = true;
     let frameId: number | null = null;
-    let activeGuide: Tour | null = null;
+    let root: Root | null = createRoot(host);
+    let activeSteps: Step[] = [];
+
+    const stop = () => {
+      if (!root) return;
+      root.render(createElement(Joyride, {
+        continuous: true,
+        options: coachMarkOptions,
+        run: false,
+        steps: activeSteps,
+        styles: coachMarkStyles,
+      }));
+    };
+
+    const handleEvent = (event: EventData) => {
+      if (event.type === EVENTS.TOUR_END) stop();
+    };
 
     const start = () => {
-      if (!mounted) return;
-      if (activeGuide) void activeGuide.cancel();
+      if (!mounted || !root) return;
+      activeSteps = createSteps(steps);
+      if (!activeSteps.length) return;
 
-      const visibleSteps = steps
-        .filter((step) => {
-          const element = document.querySelector(step.element);
-          if (!(element instanceof HTMLElement)) return false;
-          const styles = window.getComputedStyle(element);
-          return styles.display !== "none" && styles.visibility !== "hidden" && element.getClientRects().length > 0;
-        })
-        .map((step) => step);
-      if (!visibleSteps.length) return;
-
-      // Record the first display immediately. A page refresh while the guide is
-      // open must not cause the same automatic tour to launch again.
       localStorage.setItem(completionKey, "true");
-
-      activeGuide = new Shepherd.Tour({
-        id: `workflow-${id}`,
-        useModalOverlay: true,
-        defaultStepOptions: {
-          cancelIcon: { enabled: true, label: "Close workflow guide" },
-          classes: "wicars-shepherd-step",
-          canClickTarget: false,
-          scrollTo: { block: "center", inline: "nearest", behavior: "auto" },
-          skipMissingElement: true,
-          waitForElement: 500,
-          modalOverlayOpeningPadding: 6,
-          modalOverlayOpeningRadius: 12,
+      announceJoyrideStart(tourId);
+      root.render(createElement(Joyride, {
+        continuous: true,
+        locale: {
+          back: "Back",
+          close: "Close",
+          last: "Finish",
+          next: "Next",
+          nextWithProgress: "Next ({current} of {total})",
+          skip: "Exit guide",
         },
-      });
-
-      visibleSteps.forEach((step, index) => {
-        const isLast = index === visibleSteps.length - 1;
-        activeGuide?.addStep({
-          id: `${id}-${index + 1}`,
-          title: `${index + 1}. ${step.title.replace(/^\s*\d+\s*[.)-]?\s*/, "")}`,
-          text: `<p>${step.description}</p><span class="wicars-shepherd-progress">${index + 1} of ${visibleSteps.length}</span>`,
-          attachTo: { element: step.element, on: placement(step.side, step.align) },
-          buttons: [
-            ...(index > 0 ? [{ text: "Back", secondary: true, action(this: Tour) { void this.back(); } }] : []),
-            { text: isLast ? "Finish" : "Next", action(this: Tour) { if (isLast) this.complete(); else void this.next(); } },
-          ],
-        });
-      });
-      void startExclusiveTour(activeGuide);
+        onEvent: handleEvent,
+        options: coachMarkOptions,
+        run: true,
+        scrollToFirstStep: true,
+        steps: activeSteps,
+        styles: coachMarkStyles,
+      }));
     };
 
     const scheduleStart = () => {
@@ -92,19 +119,21 @@ export function useWorkflowGuide({ id, isReady, steps }: UseWorkflowGuideOptions
         start();
       });
     };
-    // Manual help requests may replay the tour, but must not clear the
-    // completion flag. Clearing it would make the guide auto-open again after
-    // a remount or a workflow/status change.
-    const restart = () => scheduleStart();
 
     if (!localStorage.getItem(completionKey)) scheduleStart();
+
+    const restart = () => scheduleStart();
+    const stopForOtherTour = listenForOtherJoyrides(tourId, stop);
     window.addEventListener(restartEvent, restart);
 
     return () => {
       mounted = false;
       if (frameId !== null) window.cancelAnimationFrame(frameId);
-      if (activeGuide) void activeGuide.cancel();
+      stopForOtherTour();
       window.removeEventListener(restartEvent, restart);
+      root?.unmount();
+      root = null;
+      host.remove();
     };
   }, [id, isReady, steps]);
 }

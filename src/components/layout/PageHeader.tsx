@@ -36,9 +36,9 @@ const descriptions: Record<string, string> = {
   Schedules: 'Create, review, and manage academic schedules for the active term.',
   'Schedule Approval': 'Review submitted schedules and continue the approval workflow.',
   'Schedule Builder': 'Plot classes, resolve conflicts, and prepare the schedule for submission.',
+  'Schedule Generator': 'Configure, review, and generate a conflict-checked draft schedule.',
   'Course List': 'Review and maintain the courses available to the department.',
   Curriculum: 'Manage academic curriculum, course structures, and active program frameworks.',
-  'Curriculum View': 'View the program of study by year level and semester.',
   Sections: 'Manage sections and prepare them for schedule creation.',
   Instructors: 'Review faculty records, availability, and teaching assignments.',
   Faculty: 'Review faculty records, availability, and workload information.',
@@ -53,7 +53,8 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
   const match = navItems.map((section) => findMatch(section.items, pathname)).find(Boolean) ?? null;
   const labels = match?.labels ?? humanizePath(pathname);
   const isDetailRoute = Boolean(match?.path && pathname !== match.path && pathname.startsWith(`${match.path}/`));
-  const trail = isDetailRoute ? [...labels, 'Details'] : labels;
+  const detailLabel = pathname.endsWith('/schedules/generate') ? 'Schedule Generator' : 'Details';
+  const trail = isDetailRoute ? [...labels, detailLabel] : labels;
 
   const rawTitle = trail[trail.length - 1] ?? 'Workspace';
   const role = pathname.split('/')[1];

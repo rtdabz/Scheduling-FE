@@ -362,9 +362,9 @@ export default function SecretarySettings() {
             }}
           />
           <SettingToggleCard
-            title="GEC Split Override"
+            title="Minor Course Split Sessions"
             recommendation="optional"
-            description="Allow selected GEC courses to split into shorter meetings."
+            description="Allow selected minor courses to split into shorter meetings."
             note="Example: 3 units becomes two 1.5-hour sessions."
             enabled={gecSplitEnabled}
             isLoading={isLoading}
@@ -373,9 +373,9 @@ export default function SecretarySettings() {
             onToggle={() => {
               if (!gecSplitEnabled) {
                 requestConfirmation({
-                  title: 'Enable GEC Split Override?',
-                  message: 'Only selected GEC courses can split into shorter meetings.\n\nOnly the GEC courses you select are affected.',
-                  confirmLabel: 'Enable GEC Split',
+                  title: 'Enable Minor Course Split Sessions?',
+                  message: 'Selected minor courses can split into shorter meetings.\n\nChoose the affected courses in the schedule generation modal.',
+                  confirmLabel: 'Enable Split Sessions',
                   variant: 'warning',
                   onConfirm: () => updateSetting({
                     gec_split_schedule_override_enabled: true,
@@ -384,8 +384,8 @@ export default function SecretarySettings() {
                 return;
               }
               requestConfirmation({
-                title: 'Turn off GEC Split Override?',
-                message: 'Selected GEC courses will stop splitting into shorter meetings during generation.\n\nExisting curriculum units remain unchanged.',
+                title: 'Turn off Minor Course Split Sessions?',
+                message: 'Selected minor courses will stop splitting into shorter meetings during generation.\n\nExisting curriculum units remain unchanged.',
                 confirmLabel: 'Turn Off',
                 variant: 'maroon',
                 onConfirm: () => updateSetting({

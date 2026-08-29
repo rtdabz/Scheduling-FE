@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import TableActionButton from '../../components/ui/TableActionButton';
 import {
   Pencil,
   Trash2,
@@ -1002,14 +1003,14 @@ export default function VpaaFaculty() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleEditClick(f)}
-                          className="p-1.5 text-gray-500 hover:text-[#C9952A] hover:bg-amber-50 border border-transparent hover:border-amber-100 rounded-lg cursor-pointer transition-all"
+                          className="rounded-lg border border-amber-200 bg-amber-50 p-1.5 text-amber-700 transition-colors hover:bg-amber-100"
                           title="Edit Instructor"
                         >
                           <Pencil size={15} />
                         </button>
                         <button
                           onClick={() => triggerDeleteConfirmation(f.id)}
-                          className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 rounded-lg cursor-pointer transition-all"
+                          className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 transition-colors hover:bg-red-100"
                           title="Delete Instructor"
                         >
                           <Trash2 size={15} />
@@ -1129,11 +1130,11 @@ export default function VpaaFaculty() {
                             {statusDetails.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                          <div className="inline-flex items-center justify-center gap-3">
+                        <td className="px-4 py-3.5 text-center align-middle whitespace-nowrap">
+                          <div className="inline-flex min-h-8 items-center justify-center gap-3">
                             <button
                               onClick={() => handleViewDetails(f)}
-                              className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
+                              className="inline-flex h-8 items-center text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
                             >
                               View Details
                             </button>
@@ -1149,23 +1150,25 @@ export default function VpaaFaculty() {
                             {canManageFaculty && (
                               <>
                                 <div className="relative group/tooltip">
-                                  <button
+                                  <TableActionButton
+                                    label="Edit"
+                                    variant="edit"
                                     onClick={() => handleEditClick(f)}
-                                    className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                                   >
                                     <Pencil size={17} />
-                                  </button>
+                                  </TableActionButton>
                                   <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                                     Edit
                                   </span>
                                 </div>
                                 <div className="relative group/tooltip">
-                                  <button
+                                  <TableActionButton
+                                    label="Delete"
+                                    variant="danger"
                                     onClick={() => triggerDeleteConfirmation(f.id)}
-                                    className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
                                   >
                                     <Trash2 size={17} />
-                                  </button>
+                                  </TableActionButton>
                                   <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                                     Delete
                                   </span>

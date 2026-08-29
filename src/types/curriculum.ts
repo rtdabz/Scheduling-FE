@@ -2,6 +2,7 @@ export interface Department {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
 }
 
 export interface Program {

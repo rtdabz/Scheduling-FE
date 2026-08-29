@@ -6,6 +6,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import TableActionButton from '../../components/ui/TableActionButton';
 import {
   Pencil,
   Trash2,
@@ -824,14 +825,14 @@ export default function SecretaryRooms() {
                       <div className="flex justify-end gap-2 border-t border-gray-100 pt-3" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => handleEditClick(room)}
-                          className="px-3 py-1.5 bg-white border border-gray-250 text-gray-700 hover:text-[#C9952A] hover:bg-gray-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
+                          className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
                         >
                           <Pencil size={13} />
                           <span>Edit</span>
                         </button>
                         <button
                           onClick={() => triggerDeleteConfirmation(room.id)}
-                          className="px-3 py-1.5 bg-white border border-gray-250 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
+                          className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
                         >
                           <Trash2 size={13} />
                           <span>Delete</span>
@@ -925,20 +926,20 @@ export default function SecretaryRooms() {
                           {canManageRooms && (
                             <td className="px-6 py-4 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-2">
-                                <button
+                                <TableActionButton
+                                  label="Edit Room"
+                                  variant="edit"
                                   onClick={() => handleEditClick(room)}
-                                  className="p-1 text-gray-500 hover:text-[#C9952A] transition-colors"
-                                  title="Edit Room"
                                 >
                                   <Pencil size={15} />
-                                </button>
-                                <button
+                                </TableActionButton>
+                                <TableActionButton
+                                  label="Delete Room"
+                                  variant="danger"
                                   onClick={() => triggerDeleteConfirmation(room.id)}
-                                  className="p-1 text-red-500 hover:text-red-700 transition-colors"
-                                  title="Delete Room"
                                 >
                                   <Trash2 size={15} />
-                                </button>
+                                </TableActionButton>
                               </div>
                             </td>
                           )}

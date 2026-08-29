@@ -25,6 +25,7 @@ export interface Department {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
   online_slot_limit?: number;
   field_slot_limit?: number;
   /** Defaults to true server-side when null; mirrors RuleEngine's Sunday rule. */

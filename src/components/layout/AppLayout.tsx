@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import HelperBuddyChat from '../help/HelperBuddyChat'
 import PageHeader from './PageHeader'
 import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
@@ -10,7 +9,6 @@ import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
-import RoleOnboarding from '../onboarding/RoleOnboarding'
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
@@ -97,8 +95,6 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
-      <HelperBuddyChat />
-      <RoleOnboarding onOpenSidebar={() => setSidebarOpen(true)} />
     </div>
   )
 }

@@ -450,7 +450,7 @@ export default function VpaaDashboardPage() {
   const tiles: Tile[] = [
     { label: 'Departments', value: departments.length, detail: 'All academic units', icon: Landmark, path: '/departments', tone: 'brand' },
     { label: 'Faculty', value: faculties.length, detail: 'Active faculty', icon: Users, path: '/faculty', tone: 'accent' },
-    { label: 'Courses', value: subjects.length, detail: 'Curriculum courses', icon: BookOpen, path: '/curriculum-view', tone: 'good' },
+    { label: 'Courses', value: subjects.length, detail: 'Curriculum courses', icon: BookOpen, path: '/curriculum', tone: 'good' },
     { label: 'Rooms', value: campusRooms.length, detail: 'Across campus', icon: Building2, path: '/rooms', tone: 'warn' },
   ];
 

@@ -10,7 +10,7 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router-dom/')) return 'react-vendor';
           if (id.includes('node_modules/@tanstack/react-table/')) return 'table-vendor';
-          if (id.includes('node_modules/axios/') || id.includes('node_modules/shepherd.js/') || id.includes('node_modules/@floating-ui/')) return 'utility-vendor';
+          if (id.includes('node_modules/axios/') || id.includes('node_modules/react-joyride/') || id.includes('node_modules/@floating-ui/')) return 'utility-vendor';
           return undefined;
         },
       },

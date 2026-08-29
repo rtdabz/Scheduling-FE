@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mapInitialData, type InitialDataResponse } from "./initialDataMapper";
-import type { ApiCourseRecord } from "../types";
+import { generatedScheduleSectionId, mapApiScheduleToItem, mapInitialData, type InitialDataResponse } from "./initialDataMapper";
+import type { ApiCourseRecord, ApiScheduleRecord } from "../types";
 
 const course = (overrides: Partial<ApiCourseRecord> = {}): ApiCourseRecord => ({
   id: 10,
@@ -86,5 +86,32 @@ describe("mapInitialData teaching college", () => {
     const subject = mapCourse(course({ course_code: "IT 101", course_category: "major" }));
 
     expect(subject.teachingDepartmentId).toBeNull();
+  });
+});
+
+describe("generatedScheduleSectionId", () => {
+  const schedule = (id: number, sectionId: number): ApiScheduleRecord => ({
+    id,
+    term_id: 1,
+    department_id: 2,
+    course_id: id + 20,
+    section_id: sectionId,
+    room_id: 3,
+    day: "Monday",
+    start_time: "07:00:00",
+    end_time: "10:00:00",
+    status: "draft",
+  });
+  const generated = [
+    mapApiScheduleToItem(schedule(1, 10)),
+    mapApiScheduleToItem(schedule(2, 11)),
+  ];
+
+  it("keeps a selected section included in the generated result", () => {
+    expect(generatedScheduleSectionId("11", generated)).toBe("11");
+  });
+
+  it("selects the first generated section when the current timetable is outside the result", () => {
+    expect(generatedScheduleSectionId("99", generated)).toBe("10");
   });
 });

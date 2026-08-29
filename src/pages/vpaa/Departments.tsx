@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import TableActionButton from '../../components/ui/TableActionButton';
 import {
   Pencil, 
   Trash2, 
@@ -546,30 +547,32 @@ export default function Departments() {
           <div className="flex justify-end gap-1.5">
             {/* Edit Button */}
             <div className="relative group/tooltip">
-              <button 
+              <TableActionButton
+                label="Edit"
+                variant="edit"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleEditClick(row.original);
                 }}
-                className="p-2 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Pencil size={17} />
-              </button>
+              </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Edit
               </span>
             </div>
             {/* Delete Button */}
             <div className="relative group/tooltip">
-              <button 
+              <TableActionButton
+                label="Delete"
+                variant="danger"
                 onClick={(e) => {
                   e.stopPropagation();
                   triggerDeleteConfirmation(row.original.id);
                 }}
-                className="p-2 text-red-500 hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={17} />
-              </button>
+              </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Delete
               </span>
@@ -705,26 +708,26 @@ export default function Departments() {
                       <div className="flex justify-between items-start mb-3">
                         <DepartmentLogo name={dept.name} logo={dept.logo} className="w-11 h-11" iconSize={20} />
                         <div className="flex items-center gap-1.5">
-                          <button
+                          <TableActionButton
+                            label="Edit Department"
+                            variant="edit"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleEditClick(dept);
                             }}
-                            className="p-1.5 text-gray-400 hover:text-[#C9952A] hover:bg-amber-50 rounded-lg transition-all cursor-pointer"
-                            title="Edit Department"
                           >
                             <Pencil size={15} />
-                          </button>
-                          <button
+                          </TableActionButton>
+                          <TableActionButton
+                            label="Delete Department"
+                            variant="danger"
                             onClick={(e) => {
                               e.stopPropagation();
                               triggerDeleteConfirmation(dept.id);
                             }}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
-                            title="Delete Department"
                           >
                             <Trash2 size={15} />
-                          </button>
+                          </TableActionButton>
                         </div>
                       </div>
 

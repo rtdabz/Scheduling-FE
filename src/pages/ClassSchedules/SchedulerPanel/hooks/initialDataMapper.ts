@@ -205,6 +205,26 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
 };
 
 /**
+ * Keep the current section when it belongs to the saved result; otherwise move
+ * the timetable to the first generated section so a successful save is visible.
+ */
+export const generatedScheduleSectionId = (
+  currentSectionId: string,
+  schedules: ScheduleItem[],
+): string => {
+  const generatedSectionIds = new Set(
+    schedules.map((schedule) => schedule.sectionId).filter(Boolean),
+  );
+
+  if (generatedSectionIds.has(currentSectionId)) {
+    return currentSectionId;
+  }
+
+  return schedules.find((schedule) => Boolean(schedule.sectionId))?.sectionId
+    ?? currentSectionId;
+};
+
+/**
  * Single mapper for the `/initial-data` payload.
  *
  * Both the mount effect and refreshData() go through this. They previously kept
