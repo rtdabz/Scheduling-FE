@@ -8,6 +8,7 @@ interface InstructorTimetableButtonProps {
   departmentName?: string;
   variant?: "primary" | "secondary" | "outline" | "link";
   className?: string;
+  iconOnly?: boolean;
 }
 
 export default function InstructorTimetableButton({
@@ -16,6 +17,7 @@ export default function InstructorTimetableButton({
   departmentName,
   variant = "outline",
   className = "",
+  iconOnly = false,
 }: InstructorTimetableButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -38,11 +40,12 @@ export default function InstructorTimetableButton({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className={`inline-flex items-center justify-center gap-1.5 cursor-pointer font-sans ${getButtonClass()} ${className}`}
+        className={`inline-flex items-center justify-center cursor-pointer font-sans ${iconOnly ? "h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-700 transition-all hover:border-[#C9952A] hover:bg-amber-50/50 hover:text-[#4e0a10]" : `gap-1.5 ${getButtonClass()}`} ${className}`}
+        aria-label="View Schedule"
         title="View Schedule"
       >
         <Calendar size={13} className="text-[#C9952A]" />
-        <span>View Schedule</span>
+        {!iconOnly && <span>View Schedule</span>}
       </button>
 
       <InstructorTimetableModal

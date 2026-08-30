@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Archive,
   BookOpen,
+  BookPlus,
   Printer,
 } from 'lucide-react';
 import {
@@ -216,11 +217,21 @@ export default function CurriculumListPage() {
               <TableActionButton
                 label="View Curriculum"
                 variant="view"
-                onClick={() => navigate(curriculumPath)}
+                onClick={() => navigate(`${curriculumPath}?mode=view`)}
                 aria-label={`View ${item.name}`}
               >
                 <Eye size={15} />
               </TableActionButton>
+              {canManageCurriculum && (
+                <TableActionButton
+                  label="Add Courses"
+                  variant="success"
+                  onClick={() => navigate(`${curriculumPath}?mode=edit`)}
+                  aria-label={`Add courses to ${item.name}`}
+                >
+                  <BookPlus size={15} />
+                </TableActionButton>
+              )}
               <TableActionButton
                 label="Print Curriculum"
                 variant="print"
@@ -279,7 +290,7 @@ export default function CurriculumListPage() {
         },
       },
     ],
-    [navigate, canManageCurriculum, handleDuplicate, handleStatusChange, handleArchive, handlePrintCurriculum, printingCurriculumId]
+    [navigate, canManageCurriculum, handleDuplicate, handleStatusChange, handleArchive, handlePrintCurriculum, printingCurriculumId, userRole]
   );
 
   const table = useReactTable({
@@ -501,7 +512,7 @@ export default function CurriculumListPage() {
                 curriculum={item}
                 canEdit={canManageCurriculum}
                 onView={(id) => {
-                  const path = userRole === 'vpaa' ? `/curriculum/${id}` : `/${userRole}/curriculum/${id}`;
+                  const path = userRole === 'vpaa' ? `/curriculum/${id}?mode=view` : `/${userRole}/curriculum/${id}?mode=view`;
                   navigate(path);
                 }}
                 onEdit={(c) => {
@@ -527,8 +538,11 @@ export default function CurriculumListPage() {
         onClose={() => setIsFormModalOpen(false)}
         programs={programs.filter((program) => !editingCurriculum || program.department_id === editingCurriculum.department_id)}
         onSubmit={async (data) => {
-          await handleCreateOrUpdate(data, editingCurriculum);
+          const saved = await handleCreateOrUpdate(data, editingCurriculum);
           setIsFormModalOpen(false);
+          if (!editingCurriculum) {
+            navigate(`/curriculum/${saved.id}?mode=edit`);
+          }
         }}
       />
 

@@ -377,23 +377,6 @@ export default function PrintSchedule({
         const isAdditionalMeeting = prevKey === itemKey;
         const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
         const roomLabel = item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "");
-        const previousRoomLabel = previousItem
-          ? previousItem.roomName || (previousItem.mode === "online" ? "Online" : previousItem.mode === "field" ? "Field" : "")
-          : "";
-        const sameMeetingTime = (left: typeof item, right: typeof item) =>
-          left.startTime === right.startTime && left.endTime === right.endTime;
-        const isAdditionalRoomMeeting = previousRoomLabel === roomLabel
-          && previousItem !== undefined
-          && sameMeetingTime(item, previousItem);
-        const roomMeetingCount = isAdditionalRoomMeeting
-          ? 1
-          : filledRows.slice(index).findIndex((candidate, offset) => {
-              if (offset === 0) return false;
-              const candidateRoom = candidate.roomName || (candidate.mode === "online" ? "Online" : candidate.mode === "field" ? "Field" : "");
-              return candidateRoom !== roomLabel
-                || !sameMeetingTime(candidate, item);
-            });
-        const roomRowSpan = roomMeetingCount === -1 ? filledRows.length - index : roomMeetingCount;
 
         return [
           ...(isAdditionalMeeting ? [] : [
@@ -425,11 +408,10 @@ export default function PrintSchedule({
           ]),
           getFullDayName(item.day),
           `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
-          ...(isAdditionalRoomMeeting ? [] : [{
+          {
             content: roomLabel,
-            rowSpan: roomRowSpan,
             styles: { halign: "center" as const, valign: "middle" as const }
-          }])
+          }
         ];
       });
 

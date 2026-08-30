@@ -308,9 +308,9 @@ export default function VpaaRooms() {
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
-        toast.success('Deleted', 'Room removed successfully');
+        toast.success('Archived', 'Room archived successfully');
       } catch {
-        toast.error('Error', 'Failed to delete room');
+        toast.error('Error', 'Failed to archive room');
       } finally {
         setIsDeleteModalOpen(false);
         setIdToDelete(null);
@@ -825,7 +825,7 @@ export default function VpaaRooms() {
                           className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
                         >
                           <Trash2 size={13} />
-                          <span>Delete</span>
+                          <span>Archive</span>
                         </button>
                       </div>
                     )}
@@ -924,7 +924,7 @@ export default function VpaaRooms() {
                                   <Pencil size={15} />
                                 </TableActionButton>
                                 <TableActionButton
-                                  label="Delete Room"
+                                  label="Archive Room"
                                   variant="danger"
                                   onClick={() => triggerDeleteConfirmation(room.id)}
                                 >
@@ -1126,7 +1126,7 @@ export default function VpaaRooms() {
         document.body
       )}
 
-      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Room" message="Are you sure you want to delete this room? This action is permanent and cannot be undone." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteRoom} />
+      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Archive Record" title="Archive Room" message="This room will be hidden from active lists and can be restored from the Archive." confirmLabel="Archive" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteRoom} />
 
       {/* Classroom Detail Modal */}
       <RoomDetailModal

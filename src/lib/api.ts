@@ -29,7 +29,7 @@ api.interceptors.response.use(
     },
     (error) => {
         const requestUrl = error.config?.url;
-        if (error.response?.status === 401 && requestUrl !== '/login') {
+        if (error.response?.status === 401 && requestUrl !== '/login' && requestUrl !== '/logout') {
             clearDataCache();
             localStorage.removeItem('token');
             localStorage.removeItem('user');

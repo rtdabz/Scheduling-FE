@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { LogOut, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
-import { clearDataCache } from '../../lib/dataCache';
+import { logoutCurrentSession } from '../../lib/authSession';
 
 interface StoredUser {
   name?: string;
@@ -40,24 +39,13 @@ export default function AccountSettingsPanel() {
   const user = getStoredUser();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     if (isLoggingOut) return;
 
     setIsLoggingOut(true);
-    try {
-      await api.post('/logout');
-    } catch {
-      // Token cleanup below still completes local sign out if the server session is already gone.
-    } finally {
-      clearDataCache();
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('user');
-      toast.success('Logged Out', 'You have been successfully signed out.');
-      navigate('/');
-      setIsLoggingOut(false);
-    }
+    logoutCurrentSession();
+    toast.success('Logged Out', 'You have been successfully signed out.');
+    navigate('/', { replace: true });
   };
 
   return (

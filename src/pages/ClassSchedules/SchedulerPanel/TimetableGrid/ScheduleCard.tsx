@@ -25,6 +25,7 @@ interface ScheduleCardProps {
   onCardClick: (id: string) => void;
   slotHeight?: number;
   isWideView?: boolean;
+  isReadOnlyViewer?: boolean;
 }
 
 /**
@@ -55,7 +56,8 @@ const ScheduleCard = memo(function ScheduleCard({
   onDelete,
   onCardClick,
   slotHeight,
-  isWideView = false
+  isWideView = false,
+  isReadOnlyViewer = false
 }: ScheduleCardProps) {
   const room = rooms.find((r) => r.id === schedule.roomId);
   const gridStyles = getGridCardStyles(subject.category);
@@ -125,6 +127,8 @@ const ScheduleCard = memo(function ScheduleCard({
           ? "cursor-pointer"
           : isEditable
           ? "cursor-grab active:cursor-grabbing"
+          : isReadOnlyViewer
+          ? "cursor-default"
           : "cursor-not-allowed"
       } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-20" : ""} ${currentStatus === "finalized" ? "cursor-default" : ""}`}
       style={{

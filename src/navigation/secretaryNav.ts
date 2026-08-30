@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Building2,
   CalendarDays,
+  CalendarRange,
   DoorOpen,
   BookOpen,
   Users,
@@ -27,19 +28,20 @@ export const secretaryNav: NavSection[] = [
           { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum' },
         ],
       },
+      { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections' },
       {
         label: 'Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         children: [
-          { label: 'Schedule Builder', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-schedule-builder' },
+          { label: 'Schedule Builder', path: '/secretary/schedules', icon: CalendarRange, id: 'sidebar-schedule-builder' },
+          { label: 'Section Timetables', path: '/secretary/section-timetables', icon: CalendarDays, id: 'sidebar-section-timetables' },
           { label: 'Course Teaching', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments' },
           { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments' },
         ],
       },
-      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections' },
       { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors' },
-      { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
     ]
   },
   {

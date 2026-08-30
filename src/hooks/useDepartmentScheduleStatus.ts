@@ -88,7 +88,7 @@ export function useDepartmentScheduleStatus(
             );
             return res.data;
           },
-          fetchKey > 0
+          true
         );
         if (!cancelled) {
           setSections(data.sections);

@@ -18,6 +18,7 @@ const Departments = lazy(() => import('./pages/vpaa/Departments'));
 const VpaaReports = lazy(() => import('./pages/vpaa/Reports'));
 const VpaaActivityLog = lazy(() => import('./pages/vpaa/ActivityLog'));
 const VpaaScheduleHistory = lazy(() => import('./pages/vpaa/ScheduleHistory'));
+const VpaaArchive = lazy(() => import('./pages/vpaa/Archive'));
 const Settings = lazy(() => import('./pages/vpaa/Settings'));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
 
@@ -31,7 +32,9 @@ const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
 const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
 const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
 const SecretarySettings = lazy(() => import('./pages/secretary/Settings'));
+const SecretarySectionTimetables = lazy(() => import('./pages/secretary/SectionTimetables'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
+const ProgramHeadSectionTimetables = lazy(() => import('./pages/program_head/SectionTimetables'));
 const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
 const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
@@ -138,6 +141,7 @@ export default function App() {
             <Route path="/reports" element={<VpaaReports />} />
             <Route path="/activity-log" element={<VpaaActivityLog />} />
             <Route path="/schedule-history" element={<VpaaScheduleHistory />} />
+            <Route path="/archive" element={<VpaaArchive />} />
             <Route path="/settings" element={<Settings />} />
 
             {/* Dean Routes */}
@@ -156,6 +160,7 @@ export default function App() {
             {/* Secretary Routes */}
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
             <Route path="/secretary/schedules" element={<SecretarySchedules />} />
+            <Route path="/secretary/section-timetables" element={<SecretarySectionTimetables />} />
             <Route path="/secretary/rooms" element={<SecretaryRooms />} />
 
             <Route path="/secretary/courses" element={<SecretaryCourses />} />
@@ -175,6 +180,7 @@ export default function App() {
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
             <Route path="/program_head/schedules" element={<ProgramHeadSchedules />} />
+            <Route path="/program_head/section-timetables" element={<ProgramHeadSectionTimetables />} />
             <Route path="/program_head/faculty" element={<ProgramHeadFaculty />} />
             <Route path="/program_head/instructors" element={<ProgramHeadFaculty />} />
             <Route path="/program_head/rooms" element={<ProgramHeadRooms />} />

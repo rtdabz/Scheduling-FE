@@ -100,7 +100,7 @@ export default function SubmitApprovalModal({
                 Submit schedule?
               </h3>
               <p id="submit-approval-desc" className="text-sm text-gray-600 mt-1">
-                You are about to send the complete department schedule to the Dean for review.
+                You are about to send the ready schedule sections to the Dean for review.
               </p>
             </div>
           </div>
@@ -125,7 +125,7 @@ export default function SubmitApprovalModal({
             <div className="flex items-start gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
               <p className="text-xs font-medium text-emerald-800">
-                All department sections are marked Done. The Dean will review the complete department schedule as one submission.
+                Only the completed revision cohort will be submitted. Sections that are already finalized or approved will remain unchanged.
               </p>
             </div>
           ) : (
@@ -139,11 +139,21 @@ export default function SubmitApprovalModal({
 
           <div className="rounded-xl border border-gray-200 overflow-hidden">
             <div className="bg-gray-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-gray-500">
-              Department checklist
+              Department workflow status
             </div>
             <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
-              {departmentSectionProgress.map((section) => (
-                <div key={section.sectionId} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              {departmentSectionProgress.map((section) => {
+                const isProtected = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "finalized"].includes(section.status);
+                const statusLabel = section.status === "completed"
+                  ? "Will submit"
+                  : section.status === "finalized"
+                    ? "Finalized"
+                    : isProtected
+                      ? "Unchanged"
+                      : section.isDone
+                        ? "Done"
+                        : "Not ready";
+                return <div key={section.sectionId} className="flex items-center justify-between gap-3 px-4 py-2.5">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-800 truncate">{section.sectionName}</p>
                     <p className="text-[11px] text-gray-500">
@@ -151,12 +161,16 @@ export default function SubmitApprovalModal({
                     </p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                    section.isDone ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                    section.status === "completed"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : isProtected
+                        ? "bg-slate-100 text-slate-600"
+                        : "bg-amber-50 text-amber-700"
                   }`}>
-                    {section.isDone ? "Done" : "Not ready"}
+                    {statusLabel}
                   </span>
-                </div>
-              ))}
+                </div>;
+              })}
             </div>
           </div>
         </div>

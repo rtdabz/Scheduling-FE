@@ -2,6 +2,7 @@ import { X, Check } from 'lucide-react';
 import tccLogo from '../../assets/logo.jpg';
 import municipalLogo from '../../assets/municipal-logo.png';
 import type { ApprovalScheduleItem } from './ScheduleApprovalList';
+import { semesterLabel, type LabelledTerm } from '../../lib/termLabel';
 
 type PreviewStatus = 'pending' | 'approved' | 'rejected';
 
@@ -20,6 +21,7 @@ interface Props<T extends ApprovalScheduleItem> {
   getModeLabel: (mode: T['mode']) => string | undefined;
   formatTime: (value: string) => string;
   departmentLogoUrl?: string | null;
+  activeTerm: LabelledTerm | null;
   canAct: boolean;
   onApprove: () => void;
   onReject: () => void;
@@ -30,10 +32,20 @@ const fullDay = (day: string) => day.length <= 3
   ? ({ mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }[day.toLowerCase()] ?? day)
   : day;
 
+const getCourseUnits = (item: ApprovalScheduleItem) => {
+  const lecture = Number(item.course?.lecture_hours ?? item.subject?.lecture_hours ?? 0);
+  const laboratory = Number(item.course?.lab_hours ?? item.subject?.lab_hours ?? 0);
+  return { lecture, laboratory, total: lecture + laboratory };
+};
+
+export const buildApprovalTermTitle = (term: LabelledTerm | null): string => term
+  ? `CLASS SCHEDULE AY ${term.academic_year ?? ''}    ${semesterLabel(term.semester)}`
+  : 'CLASS SCHEDULE';
+
 export default function ScheduleApprovalPreviewModal<T extends ApprovalScheduleItem>({
   open, title, status, statusLabel, sections, schedules, getCourseCode, getCourseName,
   getRoomName, getModeLabel, formatTime, canAct, onApprove, onReject, onClose,
-  departmentLogoUrl,
+  departmentLogoUrl, activeTerm,
 }: Props<T>) {
   if (!open) return null;
   const grouped = sections.map((section) => ({
@@ -65,7 +77,7 @@ export default function ScheduleApprovalPreviewModal<T extends ApprovalScheduleI
             </div>
             <div className="mt-3 border border-black">
               <div className="bg-[#7b0c17] py-1 text-center text-sm font-bold text-white">{title.toUpperCase()}</div>
-              <div className="border-t border-black py-1 text-center text-xs font-bold">CLASS SCHEDULE AY 2025-2026&nbsp;&nbsp;&nbsp; 2nd Term</div>
+              <div className="border-t border-black py-1 text-center text-xs font-bold whitespace-pre-wrap">{buildApprovalTermTitle(activeTerm)}</div>
             </div>
             {grouped.length === 0 ? <div className="py-16 text-center text-sm italic text-gray-500">This department has no schedule entries.</div> : grouped.map((section) => (
               <div key={section.id} className="mt-4">
@@ -75,7 +87,7 @@ export default function ScheduleApprovalPreviewModal<T extends ApprovalScheduleI
                     <tr className="font-bold"><th rowSpan={2} className="border border-black px-1 py-1">COURSE CODE</th><th rowSpan={2} className="border border-black px-1 py-1">COURSE DESCRIPTION</th><th colSpan={3} className="border border-black px-1 py-1">UNITS</th><th rowSpan={2} className="border border-black px-1 py-1">DAY</th><th rowSpan={2} className="border border-black px-1 py-1">TIME</th><th rowSpan={2} className="border border-black px-1 py-1">ROOM</th></tr>
                     <tr className="font-bold"><th className="border border-black px-1 py-1">LEC</th><th className="border border-black px-1 py-1">LAB</th><th className="border border-black px-1 py-1">TOTAL</th></tr>
                   </thead>
-                  <tbody>{section.rows.map((item) => <tr key={item.id}><td className="border border-black px-1 py-1 text-center">{getCourseCode(item) ?? '—'}</td><td className="border border-black px-1 py-1">{getCourseName(item) ?? '—'}</td><td className="border border-black px-1 py-1 text-center">—</td><td className="border border-black px-1 py-1 text-center">—</td><td className="border border-black px-1 py-1 text-center">—</td><td className="border border-black px-1 py-1 text-center">{fullDay(item.day)}</td><td className="border border-black px-1 py-1 text-center">{formatTime(item.start_time)} – {formatTime(item.end_time)}</td><td className="border border-black px-1 py-1 text-center">{getRoomName(item) || getModeLabel(item.mode) || '—'}</td></tr>)}</tbody>
+                  <tbody>{section.rows.map((item) => { const units = getCourseUnits(item); return <tr key={item.id}><td className="border border-black px-1 py-1 text-center">{getCourseCode(item) ?? 'â€”'}</td><td className="border border-black px-1 py-1">{getCourseName(item) ?? 'â€”'}</td><td className="border border-black px-1 py-1 text-center">{units.lecture}</td><td className="border border-black px-1 py-1 text-center">{units.laboratory}</td><td className="border border-black px-1 py-1 text-center">{units.total}</td><td className="border border-black px-1 py-1 text-center">{fullDay(item.day)}</td><td className="border border-black px-1 py-1 text-center">{formatTime(item.start_time)} â€“ {formatTime(item.end_time)}</td><td className="border border-black px-1 py-1 text-center">{getRoomName(item) || getModeLabel(item.mode) || 'â€”'}</td></tr>; })}</tbody>
                 </table>
               </div>
             ))}

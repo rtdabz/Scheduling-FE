@@ -31,15 +31,19 @@ import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleAp
 
 interface ScheduleApproval {
   id: number;
+  submissionId: number;
   department: string;
   section: string;
   subjectsScheduled: number;
   submittedBy: string;
   submittedAt: string;
   deanReviewedAt: string | null;
-  status: 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'rejected_by_dean' | 'approved' | 'rejected';
+  status: 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'rejected_by_dean' | 'approved' | 'rejected' | 'revision';
   mode: 'on-site' | 'online' | 'field';
+  workflowSectionIds?: string[];
 }
+
+type VpaaQueueTab = 'pending' | 'approved' | 'withdrawn' | 'rejected';
 
 interface StoredUser {
   id?: number;
@@ -105,6 +109,23 @@ interface RawSchedule extends ApprovalScheduleItem {
   } | null;
 }
 
+interface RawScheduleSubmissionSection extends RawSection {
+  pivot?: { state?: 'included' | 'withdrawn' };
+}
+
+interface RawScheduleSubmission {
+  id: number;
+  department_id: number | string;
+  term_id: number | string;
+  revision_number: number;
+  status: 'pending_dean' | 'pending_vpaa' | 'approved' | 'withdrawn' | 'partially_withdrawn' | 'rejected_by_dean' | 'rejected_by_vpaa';
+  submitted_at: string | null;
+  dean_reviewed_at: string | null;
+  approval_override?: boolean;
+  sections: RawScheduleSubmissionSection[];
+  submitter?: { name?: string } | null;
+}
+
 const getScheduleCourseCode = (s: RawSchedule) => s.course?.course_code ?? s.subject?.subject_code ?? 'Course';
 const getScheduleCourseName = (s: RawSchedule) => s.course?.course_name ?? s.subject?.subject_name ?? 'Untitled course';
 const getScheduleCourseId = (s: RawSchedule) => s.course_id ?? s.subject_id;
@@ -128,14 +149,32 @@ const dayOrder: Record<string, number> = {
 
 const APPROVAL_SLOT_HEIGHT_PX = 24;
 
-const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['status'] => {
-  const statuses = items.map((item) => item.status);
-  if (statuses.includes('conditionally_approved')) return 'conditionally_approved';
-  if (statuses.includes('approved_by_dean')) return 'approved_by_dean';
-  if (statuses.includes('submitted')) return 'submitted';
-  if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
-  if (statuses.includes('rejected')) return 'rejected';
-  return 'approved';
+const submissionDisplayStatus = (submission: RawScheduleSubmission): ScheduleApproval['status'] => {
+  switch (submission.status) {
+    case 'pending_dean': return 'submitted';
+    case 'pending_vpaa': return submission.approval_override ? 'conditionally_approved' : 'approved_by_dean';
+    case 'approved': return 'approved';
+    case 'rejected_by_dean': return 'rejected_by_dean';
+    case 'rejected_by_vpaa': return 'rejected';
+    default: return 'revision';
+  }
+};
+
+const submissionSectionIds = (submission: RawScheduleSubmission): string[] => {
+  const withdrawn = submission.sections.filter((section) => section.pivot?.state === 'withdrawn');
+  const sections = ['withdrawn', 'partially_withdrawn'].includes(submission.status) && withdrawn.length > 0
+    ? withdrawn
+    : submission.sections;
+  return sections.map((section) => String(section.id));
+};
+
+const formatSectionSummary = (sections: RawSection[], sectionIds: string[]): string => {
+  const selected = new Set(sectionIds);
+  const visible = sections.filter((section) => selected.has(String(section.id)));
+  if (visible.length === 0) {
+    return `${selected.size} section${selected.size !== 1 ? 's' : ''}`;
+  }
+  return visible.map((section) => section.section_name).join(', ');
 };
 
 const parseApiDate = (value: string): Date => {
@@ -149,6 +188,13 @@ interface ScheduleApprovalPageData {
   rawSchedules: RawSchedule[];
   rawSections: RawSection[];
   departments: DepartmentOption[];
+  activeTerm: ApprovalTerm | null;
+}
+
+interface ApprovalTerm {
+  id: number | string;
+  academic_year: string;
+  semester: string;
 }
 
 const normalizeDepartmentKey = (dept: string) => {
@@ -260,9 +306,11 @@ export default function VpaaScheduleApprovalPage() {
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>(cachedApprovalData?.rawSchedules ?? []);
   const [rawSections, setRawSections] = useState<RawSection[]>(cachedApprovalData?.rawSections ?? []);
   const [departments, setDepartments] = useState<DepartmentOption[]>(cachedApprovalData?.departments ?? []);
+  const [activeTerm, setActiveTerm] = useState<ApprovalTerm | null>(cachedApprovalData?.activeTerm ?? null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(approvalCacheKey));
   
   // Filters
+  const [selectedQueueTab, setSelectedQueueTab] = useState<VpaaQueueTab>('pending');
   const [selectedDept, setSelectedDept] = useState('All Departments');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [selectedMode, setSelectedMode] = useState('All Modes');
@@ -290,12 +338,13 @@ export default function VpaaScheduleApprovalPage() {
     const loadData = async () => {
       try {
         setIsLoading(!hasCachedData(approvalCacheKey));
-        const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
+          const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
           const response = await api.get<{
-            active_term: { id: number | string } | null;
+            active_term: ApprovalTerm | null;
             departments: RawDepartment[];
             sections: RawSection[];
             schedules: RawSchedule[];
+            schedule_submissions: RawScheduleSubmission[];
           }>('/initial-data');
           const term = response.data.active_term;
 
@@ -337,39 +386,48 @@ export default function VpaaScheduleApprovalPage() {
             schedulesByDepartment[departmentId].push(s);
           });
 
-          const mappedApprovals: ScheduleApproval[] = [];
-          Object.entries(schedulesByDepartment).forEach(([departmentId, deptSchedules]) => {
-            if (deptSchedules.length === 0) return;
+          const departmentNames = new Map(
+            response.data.departments.map((department) => [String(department.id), department.department_name])
+          );
+          const mappedApprovals = response.data.schedule_submissions
+            .filter((submission) => !term || Number(submission.term_id) === Number(term.id))
+            .map((submission): ScheduleApproval => {
+              const departmentId = String(submission.department_id);
+              const workflowSectionIds = submissionSectionIds(submission);
+              const deptSchedules = schedulesByDepartment[departmentId] ?? [];
+              const visibleDeptSchedules = deptSchedules.filter((schedule) =>
+                workflowSectionIds.includes(String(schedule.section_id))
+              );
+              const firstSchedule = visibleDeptSchedules[0] ?? deptSchedules[0];
 
-            const firstSched = deptSchedules[0];
-            const status = getDepartmentApprovalStatus(deptSchedules);
-            if (status === 'submitted') return;
-            const departmentSections = sectionsByDepartment[departmentId] ?? [];
-
-            mappedApprovals.push({
-              id: Number(departmentId),
-              department: firstSched.department?.department_name ?? "",
-              section: `${departmentSections.length} section${departmentSections.length !== 1 ? 's' : ''}`,
-              subjectsScheduled: new Set(deptSchedules.map((s) => getScheduleCourseId(s))).size,
-              submittedBy: "Coordinator",
-              submittedAt: firstSched.created_at ?? "",
-              deanReviewedAt: firstSched.reviewed_at_dean ?? null,
-              status: status,
-              mode: firstSched.mode ?? "on-site"
+              return {
+                id: Number(submission.department_id),
+                submissionId: submission.id,
+                department: firstSchedule?.department?.department_name ?? departmentNames.get(departmentId) ?? '',
+                section: formatSectionSummary(sectionsByDepartment[departmentId] ?? [], workflowSectionIds),
+                subjectsScheduled: new Set(visibleDeptSchedules.map((schedule) => getScheduleCourseId(schedule))).size,
+                submittedBy: submission.submitter?.name ?? 'Secretary',
+                submittedAt: submission.submitted_at ?? '',
+                deanReviewedAt: submission.dean_reviewed_at,
+                status: submissionDisplayStatus(submission),
+                mode: firstSchedule?.mode ?? 'on-site',
+                workflowSectionIds,
+              };
             });
-          });
 
           return {
             schedules: mappedApprovals,
             rawSchedules: dbSchedules,
             rawSections: filteredSections,
             departments: mappedDepts,
+            activeTerm: term,
           };
-        });
+        }, true);
 
         setDepartments(data.departments);
         setRawSchedules(data.rawSchedules);
         setRawSections(data.rawSections);
+        setActiveTerm(data.activeTerm);
         setSchedules(data.schedules);
       } catch (err) {
         // Safe empty catch block
@@ -382,6 +440,7 @@ export default function VpaaScheduleApprovalPage() {
   }, []);
 
   const resetFilters = () => {
+    setSelectedQueueTab('pending');
     setSelectedDept('All Departments');
     setSelectedStatus('All Status');
     setSelectedMode('All Modes');
@@ -399,12 +458,14 @@ export default function VpaaScheduleApprovalPage() {
 
         setSchedules((prev) =>
           prev.map((s) =>
-            s.id === approveConfirm.id ? { ...s, status: 'approved' } : s
+            s.submissionId === approveConfirm.submissionId ? { ...s, status: 'approved' } : s
           )
         );
         setRawSchedules((prev) =>
           prev.map((s) =>
             Number(s.department_id) === Number(approveConfirm.id)
+              && (approveConfirm.workflowSectionIds?.includes(String(s.section_id)) ?? true)
+              && (s.status === 'approved_by_dean' || s.status === 'conditionally_approved')
               ? { ...s, status: 'approved', approved_by_vpaa: userId, approved_at_vpaa: now }
               : s
           )
@@ -440,12 +501,14 @@ export default function VpaaScheduleApprovalPage() {
 
         setSchedules((prev) =>
           prev.map((s) =>
-            s.id === rejectConfirm.id ? { ...s, status: 'rejected' } : s
+            s.submissionId === rejectConfirm.submissionId ? { ...s, status: 'rejected' } : s
           )
         );
         setRawSchedules((prev) =>
           prev.map((s) =>
             Number(s.department_id) === Number(rejectConfirm.id)
+              && (rejectConfirm.workflowSectionIds?.includes(String(s.section_id)) ?? true)
+              && (s.status === 'approved_by_dean' || s.status === 'conditionally_approved')
               ? { ...s, status: 'rejected', rejection_reason: rejectReason, approved_by_vpaa: userId, approved_at_vpaa: now }
               : s
           )
@@ -466,6 +529,14 @@ export default function VpaaScheduleApprovalPage() {
   const filteredData = useMemo(() => {
     return schedules.filter(s => {
       const matchDept = selectedDept === 'All Departments' || s.department === selectedDept;
+      const matchesQueueTab = selectedQueueTab === 'pending'
+        ? s.status === 'approved_by_dean' || s.status === 'conditionally_approved'
+        : selectedQueueTab === 'approved'
+          ? s.status === 'approved'
+          : selectedQueueTab === 'withdrawn'
+            ? s.status === 'revision'
+            : s.status === 'rejected' || s.status === 'rejected_by_dean';
+      if (!matchesQueueTab) return false;
       
       let matchStatus = true;
       if (selectedStatus !== 'All Status') {
@@ -482,7 +553,7 @@ export default function VpaaScheduleApprovalPage() {
       
       return matchDept && matchStatus && matchMode;
     });
-  }, [schedules, selectedDept, selectedStatus, selectedMode]);
+  }, [schedules, selectedQueueTab, selectedDept, selectedStatus, selectedMode]);
 
   // Format date helper
   const formatDate = (dateStr: string | null) => {
@@ -582,8 +653,14 @@ export default function VpaaScheduleApprovalPage() {
 
   const modalSchedules = useMemo(() => {
     if (!viewSchedule) return [];
+    const workflowSectionIds = new Set(viewSchedule.workflowSectionIds ?? []);
+    const pendingVpaaReview = viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved';
     return rawSchedules
-      .filter((schedule) => Number(schedule.department_id) === Number(viewSchedule.id))
+      .filter((schedule) => (
+        Number(schedule.department_id) === Number(viewSchedule.id)
+        && (workflowSectionIds.size === 0 || workflowSectionIds.has(String(schedule.section_id)))
+        && (!pendingVpaaReview || schedule.status === 'approved_by_dean' || schedule.status === 'conditionally_approved')
+      ))
       .sort((left, right) => (
         getSectionName(left).localeCompare(getSectionName(right))
         || (dayOrder[left.day] ?? 99) - (dayOrder[right.day] ?? 99)
@@ -594,9 +671,13 @@ export default function VpaaScheduleApprovalPage() {
   const modalSections = useMemo<ScheduleSectionOption[]>(() => {
     if (!viewSchedule) return [];
     const sectionMap = new Map<string, string>();
+    const visibleSectionIds = new Set(modalSchedules.map((schedule) => String(schedule.section_id)));
 
     rawSections
-      .filter((section) => Number(section.department_id) === Number(viewSchedule.id))
+      .filter((section) => (
+        Number(section.department_id) === Number(viewSchedule.id)
+        && (visibleSectionIds.size === 0 || visibleSectionIds.has(String(section.id)))
+      ))
       .forEach((section) => sectionMap.set(String(section.id), section.section_name));
 
     modalSchedules.forEach((schedule) => {
@@ -653,11 +734,6 @@ export default function VpaaScheduleApprovalPage() {
         cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
       },
       {
-        accessorKey: 'section',
-        header: 'Submission',
-        cell: info => <span className="text-gray-700 font-semibold">{info.getValue() as string}</span>
-      },
-      {
         accessorKey: 'subjectsScheduled',
         header: () => <div className="text-center">Subjects Scheduled</div>,
         cell: info => <div className="text-center font-semibold text-gray-700">{info.getValue() as number}</div>
@@ -669,12 +745,12 @@ export default function VpaaScheduleApprovalPage() {
       },
       {
         accessorKey: 'submittedAt',
-        header: 'Submitted At',
+        header: 'Submitted',
         cell: info => <span className="text-gray-500 font-medium">{formatDate(info.getValue() as string)}</span>
       },
       {
         accessorKey: 'deanReviewedAt',
-        header: 'Dean Reviewed At',
+        header: 'Reviewed',
         cell: info => <span className="text-gray-500 font-medium">{formatDate(info.getValue() as string | null)}</span>
       },
       {
@@ -736,8 +812,45 @@ export default function VpaaScheduleApprovalPage() {
 
 
 
+  const queueTabs: Array<{ id: VpaaQueueTab; label: string }> = [
+    { id: 'pending', label: 'Pending Approval' },
+    { id: 'approved', label: 'Schedule Approved' },
+    { id: 'withdrawn', label: 'Withdrawn' },
+    { id: 'rejected', label: 'Rejected' },
+  ];
+  const matchesQueueTab = (schedule: ScheduleApproval, tab: VpaaQueueTab): boolean => tab === 'pending'
+    ? schedule.status === 'approved_by_dean' || schedule.status === 'conditionally_approved'
+    : tab === 'approved'
+      ? schedule.status === 'approved'
+      : tab === 'withdrawn'
+        ? schedule.status === 'revision'
+        : schedule.status === 'rejected' || schedule.status === 'rejected_by_dean';
+  const queueCounts = queueTabs.reduce<Record<VpaaQueueTab, number>>((counts, tab) => {
+    counts[tab.id] = schedules.filter((schedule) => matchesQueueTab(schedule, tab.id)).length;
+    return counts;
+  }, { pending: 0, approved: 0, withdrawn: 0, rejected: 0 });
+
   return (
     <div className="relative">
+      <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
+        {queueTabs.map((tab) => {
+          const active = selectedQueueTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setSelectedQueueTab(tab.id);
+                setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+              }}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold uppercase tracking-wide transition-colors ${active ? 'bg-[#4e0a10] text-white shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10]'}`}
+            >
+              {tab.label}
+              <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-white text-gray-500'}`}>{queueCounts[tab.id]}</span>
+            </button>
+          );
+        })}
+      </div>
       {/* Filter Row */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">
@@ -872,7 +985,7 @@ export default function VpaaScheduleApprovalPage() {
                 ))
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-base font-semibold">No schedules found.</p>
                       <p className="text-xs">Adjust your status/department filters and try again.</p>
@@ -888,7 +1001,7 @@ export default function VpaaScheduleApprovalPage() {
                     }`}
                   >
                     {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['section', 'subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(cell.column.id);
+                      const isNoWrap = ['subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(cell.column.id);
                       return (
                         <td 
                           key={cell.id} 
@@ -989,6 +1102,7 @@ export default function VpaaScheduleApprovalPage() {
           getModeLabel={getModeLabel}
           formatTime={formatTime24hTo12h}
           departmentLogoUrl={modalSchedules[0]?.department?.logo}
+          activeTerm={activeTerm}
           canAct={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved'}
           onApprove={() => { handleApprove(viewSchedule); setViewSchedule(null); }}
           onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}

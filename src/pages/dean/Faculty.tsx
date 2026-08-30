@@ -22,7 +22,8 @@ import {
   LayoutGrid,
   List,
   Camera,
-  UserRound
+  UserRound,
+  Eye
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -420,19 +421,19 @@ export default function DeanFaculty() {
       const released = res.data?.released_schedule_count ?? 0;
       if (released > 0) {
         toast.warning(
-          'Deleted',
+          'Archived',
           `Instructor removed. ${released} approved meeting${released === 1 ? '' : 's'} `
             + `${released === 1 ? 'is' : 'are'} now unassigned and need${released === 1 ? 's' : ''} a new instructor.`
         );
       } else {
-        toast.success('Deleted', 'Instructor removed successfully');
+        toast.success('Archived', 'Instructor archived successfully');
       }
 
       setIsDeleteModalOpen(false);
       setIdToDelete(null);
     } catch (err) {
       // Leave the dialog open on failure so the reason stays on screen.
-      toast.error('Error', apiErrorMessage(err, 'Failed to delete instructor'));
+      toast.error('Error', apiErrorMessage(err, 'Failed to archive instructor'));
     } finally {
       setIsDeleting(false);
     }
@@ -1001,7 +1002,7 @@ export default function DeanFaculty() {
                         <button
                           onClick={() => triggerDeleteConfirmation(f.id)}
                           className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 transition-colors hover:bg-red-100"
-                          title="Delete Instructor"
+                          title="Archive Instructor"
                         >
                           <Trash2 size={15} />
                         </button>
@@ -1025,7 +1026,6 @@ export default function DeanFaculty() {
                   <th className="px-4 py-3.5">Employment</th>
                   <th className="px-4 py-3.5">Workload Units</th>
                   <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5 text-center">Teaching Load & Schedule</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1038,13 +1038,12 @@ export default function DeanFaculty() {
                       <td className="px-4 py-4"><Skeleton className="h-4 w-20" /></td>
                       <td className="px-4 py-4"><Skeleton className="h-4 w-28" /></td>
                       <td className="px-4 py-4"><Skeleton className="h-4 w-20" /></td>
-                      <td className="px-4 py-4 text-center"><Skeleton className="h-8 w-44 mx-auto rounded-lg" /></td>
                       <td className="px-5 py-4 text-right"><Skeleton className="h-8 w-20 ml-auto rounded-lg" /></td>
                     </tr>
                   ))
                 ) : sortedFaculties.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                    <td colSpan={6} className="py-12 text-center text-gray-400">
                       <p className="text-base font-semibold">No instructors found.</p>
                       <p className="text-xs">Try adjusting search parameters or add a new record.</p>
                     </td>
@@ -1120,23 +1119,22 @@ export default function DeanFaculty() {
                             {statusDetails.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-center align-middle whitespace-nowrap">
-                          <div className="inline-flex min-h-8 items-center justify-center gap-3">
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleViewDetails(f)}
-                              className="inline-flex h-8 items-center text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-[#5A1220] hover:border-[#C9952A] hover:bg-amber-50 hover:text-[#410b15] cursor-pointer"
+                              aria-label="View Details"
+                              title="View Details"
                             >
-                              View Details
+                              <Eye size={15} />
                             </button>
                             <InstructorTimetableButton
                               facultyId={f.id}
                               facultyName={name}
                               departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
+                              iconOnly
                             />
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
                             {canManageFaculty && (
                               <>
                                 <div className="relative group/tooltip">
@@ -1153,14 +1151,14 @@ export default function DeanFaculty() {
                                 </div>
                                 <div className="relative group/tooltip">
                                   <TableActionButton
-                                    label="Delete"
+                                    label="Archive"
                                     variant="danger"
                                     onClick={() => triggerDeleteConfirmation(f.id)}
                                   >
                                     <Trash2 size={17} />
                                   </TableActionButton>
                                   <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                                    Delete
+                                    Archive
                                   </span>
                                 </div>
                               </>
@@ -1703,12 +1701,12 @@ export default function DeanFaculty() {
             <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-4 border border-red-100 animate-pulse font-sans">
               <AlertTriangle size={24} />
             </div>
-            <h3 className="text-base font-bold text-gray-800 mb-2 font-sans">Delete Instructor</h3>
+            <h3 className="text-base font-bold text-gray-800 mb-2 font-sans">Archive Instructor</h3>
             <p className="text-gray-500 text-sm mb-4 font-sans">
               {facultyToDelete
-                ? `Delete ${facultyToDelete.first_name} ${facultyToDelete.last_name}? `
-                : 'Delete this instructor? '}
-              This cannot be undone and permanently removes the record from the database.
+                ? `Archive ${facultyToDelete.first_name} ${facultyToDelete.last_name}? `
+                : 'Archive this instructor? '}
+              The record can be restored by the VPAA from the Archive.
             </p>
             {facultyToDelete && facultyToDelete.live_schedule_count > 0 && (
               <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800 font-sans">
@@ -1735,7 +1733,7 @@ export default function DeanFaculty() {
                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed font-sans"
               >
                 {isDeleting && <LoadingSpinner size={14} className="animate-spin" />}
-                <span>Confirm Delete</span>
+                <span>Confirm Archive</span>
               </button>
             </div>
           </div>

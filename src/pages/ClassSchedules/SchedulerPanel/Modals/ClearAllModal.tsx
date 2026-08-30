@@ -126,7 +126,7 @@ export default function ClearAllModal({
           <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
             <p className="text-xs font-medium text-amber-800">
-              This action cannot be undone. Cleared classes will be permanently removed from the timetable.
+              Cleared classes are archived and can be restored by the VPAA from the Archive.
             </p>
           </div>
         </div>

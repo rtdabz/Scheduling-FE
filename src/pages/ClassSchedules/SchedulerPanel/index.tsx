@@ -85,7 +85,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
         onGenerateYearLevel={() => setIsGeneratorOpen(true)}
-        isGenerateDisabled={!scheduler.isEditable}
         onAutoAssign={() => setIsAutoAssignOpen(true)}
       />
 
@@ -96,7 +95,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
 
       {isGeneratorOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-[1px] sm:p-4" role="dialog" aria-modal="true" aria-label="Generate schedule">
-          <div className="h-[calc(100dvh-1rem)] w-full max-w-[1600px] overflow-hidden bg-white shadow-2xl sm:h-[calc(100dvh-2rem)] sm:rounded-lg">
+          <div className="h-[calc(100dvh-1rem)] w-full max-w-[1600px] overflow-hidden bg-white shadow-2xl sm:rounded-lg">
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
               sections={scheduler.sections}

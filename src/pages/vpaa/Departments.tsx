@@ -464,11 +464,11 @@ export default function Departments() {
           setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
           return nextDepartments;
         });
-        toast.success('Deleted', 'Department removed');
+        toast.success('Archived', 'Department moved to the Archive');
         setIsDeleteModalOpen(false);
         setIdToDelete(null);
       } catch {
-        toast.error('Delete Failed', 'Could not delete the department.');
+        toast.error('Archive Failed', 'Could not archive the department.');
       }
     }
   };
@@ -564,7 +564,7 @@ export default function Departments() {
             {/* Delete Button */}
             <div className="relative group/tooltip">
               <TableActionButton
-                label="Delete"
+                label="Archive"
                 variant="danger"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -574,7 +574,7 @@ export default function Departments() {
                 <Trash2 size={17} />
               </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                Delete
+                Archive
               </span>
             </div>
           </div>
@@ -719,7 +719,7 @@ export default function Departments() {
                             <Pencil size={15} />
                           </TableActionButton>
                           <TableActionButton
-                            label="Delete Department"
+                            label="Archive Department"
                             variant="danger"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1140,9 +1140,9 @@ export default function Departments() {
                 <AlertTriangle size={24} />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Department</h3>
+                <h3 className="text-lg font-bold text-gray-800 font-display">Archive Department</h3>
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this department? This action is permanent and cannot be undone.
+                  This department will be hidden from active lists and can be restored from the Archive.
                 </p>
               </div>
               <div className="flex gap-3 pt-2">
@@ -1156,7 +1156,7 @@ export default function Departments() {
                   onClick={confirmDeleteDepartment}
                   className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
                 >
-                  Confirm Delete
+                  Confirm Archive
                 </button>
               </div>
             </div>

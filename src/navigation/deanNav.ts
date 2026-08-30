@@ -35,7 +35,7 @@ export const deanNav: NavSection[] = [
           },
         ]
       },
-      { label: 'Faculty', path: '/dean/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
+      { label: 'Instructor', path: '/dean/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
       { label: 'Rooms', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
     ]
   },

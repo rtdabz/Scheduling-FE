@@ -54,6 +54,7 @@ interface TimetableGridProps {
   isLoading?: boolean;
   isWideView?: boolean;
   handleToggleWideView?: () => void;
+  isReadOnlyViewer?: boolean;
 }
 
 /**
@@ -103,10 +104,12 @@ export default function TimetableGrid({
   handleEditMovingSchedule,
   isLoading = false,
   isWideView = false,
-  handleToggleWideView
+  handleToggleWideView,
+  isReadOnlyViewer = false
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerTerm = activeTerm?.semester === "summer";
+  const isFacultyAssignment = currentStatus === "faculty_assignment";
   const subjectsById = React.useMemo(() => buildSubjectIndex(subjects), [subjects]);
   const timetableSlotCount = React.useMemo(
     () => Math.max(
@@ -150,7 +153,7 @@ export default function TimetableGrid({
               </span>
             </>}
           </div>
-          {isLoading ? <Skeleton className="h-8 w-36 rounded-xl" /> : <button
+          {!isReadOnlyViewer && !isFacultyAssignment && (isLoading ? <Skeleton className="h-8 w-36 rounded-xl" /> : <button
             id="schedule-builder-course-bank-toggle"
             type="button"
             onClick={handleToggleWideView}
@@ -162,17 +165,17 @@ export default function TimetableGrid({
           >
             <BookOpen className="w-3.5 h-3.5" />
             {isWideView ? "Show Course Bank" : "Hide Course Bank"}
-          </button>}
+          </button>)}
 
-          {isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
+          {!isReadOnlyViewer && (isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
             type="button"
             onClick={() => setIsRoomViewOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
           >
             <DoorOpen className="w-3.5 h-3.5" />
             Room View
-          </button>}
-          {isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
+          </button>)}
+          {!isReadOnlyViewer && (isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
             type="button"
             onClick={handleClearAll}
             disabled={!isEditable || schedules.length === 0}
@@ -183,7 +186,7 @@ export default function TimetableGrid({
           >
             <Trash2 className="w-3.5 h-3.5" />
             Clear All
-          </button>}
+          </button>)}
         </div>
       </div>
 
@@ -313,6 +316,7 @@ export default function TimetableGrid({
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
                       isWideView={isWideView}
+                      isReadOnlyViewer={isReadOnlyViewer}
                     />
                   );
                 })

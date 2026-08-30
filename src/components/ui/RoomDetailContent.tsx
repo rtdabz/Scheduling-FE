@@ -1,6 +1,6 @@
 import { getPhilippineNowParts } from '../../lib/philippineTime';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Calendar,
   Clock,
@@ -11,7 +11,14 @@ import {
 } from 'lucide-react';
 import Skeleton from './Skeleton';
 import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
-import TimetableCardTooltip from '../scheduling/TimetableCardTooltip';
+import ScheduleCard from '../../pages/ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard';
+import { DAYS, GRID_HEADER_HEIGHT_PX, SLOT_HEIGHT_PX } from '../../pages/ClassSchedules/SchedulerPanel/constants';
+import { slotCount, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import type {
+  Room as SchedulerRoom,
+  ScheduleItem,
+  Subject,
+} from '../../pages/ClassSchedules/SchedulerPanel/types';
 
 interface Department {
   id: number;
@@ -41,6 +48,7 @@ interface Schedule {
   start_time: string;
   end_time: string;
   mode: string;
+  meeting_type?: 'lecture' | 'laboratory' | null;
   status: string;
   section?: {
     id: number;
@@ -50,6 +58,10 @@ interface Schedule {
     id: number;
     course_code: string;
     course_name: string;
+    course_category?: 'major' | 'minor';
+    units?: number | string | null;
+    lecture_hours?: number | string | null;
+    lab_hours?: number | string | null;
   } | null;
   faculty?: {
     id: number;
@@ -64,8 +76,6 @@ interface RoomDetailContentProps {
   schedules: Schedule[];
   isLoading: boolean;
 }
-
-const ROOM_WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 
 const formatTime = (timeStr: string) => {
   if (!timeStr) return '';
@@ -84,184 +94,14 @@ const getMinutes = (timeStr: string) => {
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 };
 
-const parseTimeToSlotIndex = (timeStr: string): number => {
-  if (!timeStr) return 0;
-  const parts = timeStr.split(':');
-  const h = parseInt(parts[0], 10);
-  const m = parseInt(parts[1], 10);
-  const totalMinutes = h * 60 + m;
-  const startMinutes = 7 * 60; // 7:00 AM
-  const slotIdx = Math.floor((totalMinutes - startMinutes) / 30);
-  return Math.max(0, Math.min(24, slotIdx)); // Max slot index 24 (for 7:00 PM end time)
-};
-
-const getDeptStyles = (deptCode: string) => {
-  const code = (deptCode || '').toUpperCase();
-  if (code.includes('IT') || code.includes('CS') || code.includes('TECH')) {
-    return 'bg-blue-50 text-blue-805 border-blue-200 border-l-blue-600';
-  }
-  if (code.includes('AS') || code.includes('ART') || code.includes('SCI')) {
-    return 'bg-purple-50 text-purple-800 border-purple-200 border-l-purple-600';
-  }
-  if (code.includes('ED') || code.includes('EDUC')) {
-    return 'bg-orange-50 text-orange-800 border-orange-200 border-l-orange-505';
-  }
-  if (code.includes('BA') || code.includes('BUS')) {
-    return 'bg-yellow-50/50 text-yellow-805 border-yellow-250 border-l-yellow-600';
-  }
-  if (code.includes('HM') || code.includes('HOS')) {
-    return 'bg-lime-50 text-lime-800 border-lime-200 border-l-lime-600';
-  }
-  if (code.includes('MID') || code.includes('MED')) {
-    return 'bg-emerald-50 text-emerald-800 border-emerald-250 border-l-emerald-600';
-  }
-  if (code.includes('CRIM') || code.includes('LAW')) {
-    return 'bg-[#5A1220]/5 text-[#5A1220] border-[#5A1220]/20 border-l-[#5A1220]';
-  }
-  if (code.includes('LIS') || code.includes('LIB')) {
-    return 'bg-pink-50 text-pink-850 border-pink-200 border-l-pink-600';
-  }
-  return 'bg-slate-50 text-slate-800 border-slate-200 border-l-slate-500';
-};
-
-const getClassType = (sched: Schedule) => {
-  if (sched.mode?.toLowerCase() === 'laboratory' || sched.mode?.toLowerCase() === 'lab') return 'Laboratory';
-  const name = (sched.course?.course_name || '').toLowerCase();
-  const code = (sched.course?.course_code || '').toLowerCase();
-  if (name.includes('lab') || name.includes('laboratory') || code.includes('l') || code.endsWith('l')) {
-    return 'Laboratory';
-  }
-  return 'Lecture';
-};
-
-interface LayoutItem {
-  schedule: Schedule;
-  leftPct: number;
-  widthPct: number;
-}
-
-const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
-  const sorted = [...daySchedules].sort((a, b) => {
-    const aStart = parseTimeToSlotIndex(a.start_time);
-    const bStart = parseTimeToSlotIndex(b.start_time);
-    if (aStart !== bStart) return aStart - bStart;
-    return (
-      (parseTimeToSlotIndex(b.end_time) - parseTimeToSlotIndex(b.start_time)) -
-      (parseTimeToSlotIndex(a.end_time) - parseTimeToSlotIndex(a.start_time))
-    );
-  });
-
-  const layouts: LayoutItem[] = [];
-  const clusters: Schedule[][] = [];
-
-  for (const s of sorted) {
-    let placed = false;
-    for (const cluster of clusters) {
-      const overlaps = cluster.some((c) => {
-        const sStart = parseTimeToSlotIndex(s.start_time);
-        const sEnd = parseTimeToSlotIndex(s.end_time);
-        const cStart = parseTimeToSlotIndex(c.start_time);
-        const cEnd = parseTimeToSlotIndex(c.end_time);
-        return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
-      });
-      if (overlaps) {
-        cluster.push(s);
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      clusters.push([s]);
-    }
-  }
-
-  for (const cluster of clusters) {
-    const columns: Schedule[][] = [];
-    for (const s of cluster) {
-      let colIdx = 0;
-      while (true) {
-        if (!columns[colIdx]) {
-          columns[colIdx] = [s];
-          break;
-        }
-        const overlapsCol = columns[colIdx].some((c) => {
-          const sStart = parseTimeToSlotIndex(s.start_time);
-          const sEnd = parseTimeToSlotIndex(s.end_time);
-          const cStart = parseTimeToSlotIndex(c.start_time);
-          const cEnd = parseTimeToSlotIndex(c.end_time);
-          return Math.max(sStart, cStart) < Math.min(sEnd, cEnd);
-        });
-        if (!overlapsCol) {
-          columns[colIdx].push(s);
-          break;
-        }
-        colIdx += 1;
-      }
-    }
-    const colCount = columns.length;
-    columns.forEach((col, colIdx) => {
-      col.forEach((s) => {
-        layouts.push({
-          schedule: s,
-          leftPct: (colIdx / colCount) * 100,
-          widthPct: (1 / colCount) * 100,
-        });
-      });
-    });
-  }
-
-  return layouts;
-};
+const noop = () => undefined;
 
 export default function RoomDetailContent({ room, schedules, isLoading }: RoomDetailContentProps) {
-  const [activeTabDay, setActiveTabDay] = useState<string>('Monday');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-
-  useEffect(() => {
+  const [activeTabDay, setActiveTabDay] = useState<string>(() => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const { weekdayIndex: currentDayIdx } = getPhilippineNowParts();
-    const defaultDay = days[currentDayIdx];
-    setActiveTabDay(defaultDay);
-  }, []);
-
-  const timeSlots = useMemo(() => {
-    const slots = [];
-    for (let slot = 0; slot < 25; slot += 1) { // 25 half-hour slots from 7:00 AM to 7:30 PM
-      const totalMinutes = 7 * 60 + slot * 30;
-      let hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      if (hours > 12) hours -= 12;
-      if (hours === 0) hours = 12;
-      slots.push({
-        label: `${hours}:${minutes.toString().padStart(2, '0')} ${ampm}`,
-      });
-    }
-    return slots;
-  }, []);
-
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 60000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const currentDayName = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return days[now.getDay()];
-  }, [now]);
-
-  const currentDayTimeTop = useMemo(() => {
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const totalMinutes = hours * 60 + minutes;
-    const startMinutes = 7 * 60; // 7:00 AM
-    const elapsed = totalMinutes - startMinutes;
-    if (elapsed < 0 || elapsed > 12 * 60) return null; // Outside 7:00 AM - 7:00 PM
-    return elapsed * 0.8;
-  }, [now]);
+    return days[getPhilippineNowParts().weekdayIndex];
+  });
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   const activeRoomSchedules = useMemo(() => {
     if (!room) return [];
@@ -269,6 +109,81 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
       .filter(s => s.room_id === room.id && s.day === activeTabDay)
       .sort((a, b) => getMinutes(a.start_time) - getMinutes(b.start_time));
   }, [room, schedules, activeTabDay]);
+
+  const roomGridCards = useMemo(() => {
+    if (!room) return [];
+
+    return schedules
+      .filter((schedule) => schedule.room_id === room.id)
+      .map((schedule): { schedule: ScheduleItem; subject: Subject } | null => {
+        const dayIndex = DAYS.indexOf(schedule.day);
+        if (dayIndex < 0) return null;
+
+        const startSlot = timeToSlot(schedule.start_time);
+        const endSlot = timeToSlot(schedule.end_time);
+        const category = schedule.course?.course_category === 'minor' ? 'minor' : 'major';
+        const courseId = String(schedule.course_id);
+
+        return {
+          schedule: {
+            id: String(schedule.id),
+            termId: schedule.term_id,
+            departmentId: schedule.department_id,
+            courseId,
+            subjectId: courseId,
+            courseCode: schedule.course?.course_code ?? 'Course',
+            subjectCode: schedule.course?.course_code ?? 'Course',
+            courseName: schedule.course?.course_name ?? 'No course name',
+            subjectName: schedule.course?.course_name ?? 'No course name',
+            courseType: category,
+            subjectType: category,
+            lectureUnits: Number(schedule.course?.lecture_hours ?? 0),
+            laboratoryUnits: Number(schedule.course?.lab_hours ?? 0),
+            totalUnits: Number(schedule.course?.units ?? 0),
+            sectionName: schedule.section?.section_name ?? '',
+            roomName: room.room_code,
+            day: DAYS[dayIndex],
+            startTime: formatTime(schedule.start_time),
+            endTime: formatTime(schedule.end_time),
+            mode: schedule.mode === 'online' || schedule.mode === 'field' ? schedule.mode : 'on-site',
+            facultyName: schedule.faculty
+              ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}`.trim()
+              : null,
+            facultyId: schedule.faculty_id == null ? null : String(schedule.faculty_id),
+            status: schedule.status as ScheduleItem['status'],
+            dayIndex,
+            startSlot,
+            durationSlots: Math.max(1, endSlot - startSlot),
+            sectionId: String(schedule.section_id),
+            roomId: String(room.id),
+            meetingType: schedule.meeting_type ?? null,
+          },
+          subject: {
+            id: courseId,
+            code: schedule.course?.course_code ?? 'Course',
+            name: schedule.course?.course_name ?? 'No course name',
+            units: Number(schedule.course?.units ?? 0),
+            lectureHours: Number(schedule.course?.lecture_hours ?? 0),
+            labHours: Number(schedule.course?.lab_hours ?? 0),
+            category,
+            semester: '1st',
+            departmentId: schedule.department_id,
+            yearLevel: 1,
+            roomTypeRequired: room.room_type === 'laboratory' ? 'laboratory' : 'lecture',
+            status: 'active',
+          },
+        };
+      })
+      .filter((item): item is { schedule: ScheduleItem; subject: Subject } => item !== null);
+  }, [room, schedules]);
+
+  const schedulerRoom = useMemo<SchedulerRoom | null>(() => room ? ({
+    id: String(room.id),
+    name: room.room_code,
+    departmentId: room.department_id,
+    roomType: room.room_type,
+    status: room.status,
+  }) : null, [room]);
 
   if (isLoading || !room) {
     return (
@@ -391,109 +306,38 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
         </div>
 
         {viewMode === 'grid' ? (
-          <div className="flex-1 flex flex-col min-h-0 p-6">
-            <div className="flex-1 overflow-x-auto rounded-2xl border border-gray-200 shadow-inner min-h-0">
-              <WeeklyTimetableGrid
-                days={ROOM_WEEK_DAYS}
-                slotCount={timeSlots.length}
-                headerHeight={48}
-                timeColumnWidth={80}
-                slotHeight={24}
-                minWidth={1000}
-                getTimeLabel={(slot) => timeSlots[slot]?.label ?? ''}
-                getDayCount={(dayIndex) => schedules.filter((schedule) => schedule.room_id === room.id && schedule.day === ROOM_WEEK_DAYS[dayIndex]).length}
-              >
-                  {ROOM_WEEK_DAYS.map((day, dayIndex) => {
-                    const daySchedules = schedules.filter(
-                      (s) => s.room_id === room.id && s.day === day
-                    );
-                    
-                    const layouts = getDayLayouts(daySchedules);
-                    const shortDayName = day.substring(0, 3);
-                    const isCurrentDay = shortDayName === currentDayName;
-
-                    return (
-                      <React.Fragment key={day}>
-                          {/* Google Calendar Time Indicator Line */}
-                          {isCurrentDay && currentDayTimeTop !== null && (
-                            <div
-                              className="relative z-20 pointer-events-none"
-                              style={{ gridColumn: dayIndex + 2, gridRow: `2 / span ${timeSlots.length}` }}
-                            >
-                              <div className="absolute left-0 right-0 border-t-2 border-red-500 flex items-center" style={{ top: `${currentDayTimeTop}px` }}>
-                                <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shadow-sm" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Render schedules on grid */}
-                          {daySchedules.map((schedule) => {
-                            const startIdx = parseTimeToSlotIndex(schedule.start_time);
-                            const endIdx = parseTimeToSlotIndex(schedule.end_time);
-                            const height = (endIdx - startIdx) * 24;
-                            const layout = layouts.find((item) => item.schedule.id === schedule.id);
-                            
-                            const left = layout ? `${layout.leftPct}%` : "0%";
-                            const width = layout ? `${layout.widthPct}%` : "100%";
-                            const deptCode = schedule.course?.course_code?.substring(0, 4) || "GEN";
-                            const isLab = getClassType(schedule) === 'Laboratory';
-
-                            return (
-                              <div
-                                key={schedule.id}
-                                className={`group z-10 m-0.5 rounded-xl border-2 border-l-4 p-2 overflow-visible text-left flex flex-col justify-between font-sans shadow-sm select-none transition-all duration-150 hover:scale-[1.02] hover:shadow-md hover:z-30 ${getDeptStyles(deptCode)}`}
-                                style={{
-                                  gridColumn: dayIndex + 2,
-                                  gridRow: `${startIdx + 2} / span ${Math.max(1, endIdx - startIdx)}`,
-                                  height: `${Math.max(24, height) - 4}px`,
-                                  marginLeft: `calc(${left} + 2px)`,
-                                  width: `calc(${width} - 4px)`,
-                                  fontSize: '9px',
-                                  lineHeight: '1.2'
-                                }}
-                              >
-                                {/* Header */}
-                                <div className="min-w-0 flex items-center justify-between gap-1">
-                                  <p className="font-black truncate text-gray-900">
-                                    {schedule.course?.course_code || "Course"}
-                                  </p>
-                                  <span className={`px-1 rounded-[3px] text-[7.5px] font-black uppercase tracking-wider scale-90 ${
-                                    isLab
-                                      ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                                      : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                  }`}>
-                                    {isLab ? 'LAB' : 'LEC'}
-                                  </span>
-                                </div>
-
-                                {/* Details Body */}
-                                <div className="mt-1 flex-1 flex flex-col justify-end text-[8px] font-bold text-slate-600 space-y-0.5 min-w-0">
-                                  <p className="truncate font-black text-[#5A1220]">{schedule.section?.section_name}</p>
-                                  <p className="truncate text-slate-800">
-                                    👤 {schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
-                                  </p>
-                                  <p className="truncate text-slate-800">
-                                    🚪 {room.room_code}
-                                  </p>
-                                </div>
-
-                                <TimetableCardTooltip
-                                  code={schedule.course?.course_code || 'Subject'}
-                                  name={`${schedule.course?.course_name || 'No course name'} (${schedule.section?.section_name || 'Unassigned section'})`}
-                                  instructor={schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}` : 'Unassigned'}
-                                  location={`${room.building || 'Main'} - ${room.room_code}`}
-                                  time={`${formatTime(schedule.start_time)} - ${formatTime(schedule.end_time)}`}
-                                  badge={isLab ? 'Laboratory' : 'Lecture'}
-                                  align={['Thursday', 'Friday', 'Saturday'].includes(day) ? 'right' : 'left'}
-                                />
-                              </div>
-                            );
-                          })}
-                      </React.Fragment>
-                    );
-                  })}
-              </WeeklyTimetableGrid>
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-5">
+            <WeeklyTimetableGrid
+              days={DAYS}
+              slotCount={Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots))}
+              headerHeight={GRID_HEADER_HEIGHT_PX}
+              rowTemplate={`repeat(${Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots))}, ${SLOT_HEIGHT_PX}px)`}
+              minWidth={900}
+              className="min-h-full shrink-0"
+              getTimeLabel={slotToTimeLabel}
+              getDayCount={(dayIndex) => roomGridCards.filter(({ schedule }) => schedule.dayIndex === dayIndex).length}
+            >
+              {roomGridCards.map(({ schedule, subject }) => (
+                <ScheduleCard
+                  key={schedule.id}
+                  rooms={schedulerRoom ? [schedulerRoom] : []}
+                  schedule={schedule}
+                  subject={subject}
+                  isEditable={false}
+                  isPhase2Active={false}
+                  currentStatus="finalized"
+                  draggedScheduleId={null}
+                  isMoving={false}
+                  deleteConfirmScheduleId={null}
+                  setDeleteConfirmScheduleId={noop}
+                  onDragStart={noop}
+                  onDragEnd={noop}
+                  onDelete={noop}
+                  onCardClick={noop}
+                  isReadOnlyViewer
+                />
+              ))}
+            </WeeklyTimetableGrid>
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0">

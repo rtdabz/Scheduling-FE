@@ -12,8 +12,16 @@ export interface ToastItem {
   exiting?: boolean
 }
 
+export interface ModalNoticeItem {
+  id: string
+  type: Exclude<ToastType, 'success'>
+  title: string
+  message: string
+}
+
 interface ToastContextValue {
   toasts: ToastItem[]
+  modalNotices: ModalNoticeItem[]
   toast: {
     success: (title: string, message: string, duration?: number) => void
     error: (title: string, message: string, duration?: number) => void
@@ -21,12 +29,14 @@ interface ToastContextValue {
     info: (title: string, message: string, duration?: number) => void
   }
   dismiss: (id: string) => void
+  dismissModalNotice: (id: string) => void
 }
 
 const ToastContext = createContext<ToastContextValue | undefined>(undefined)
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  const [modalNotices, setModalNotices] = useState<ModalNoticeItem[]>([])
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) =>
@@ -40,9 +50,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addToast = useCallback(
-    (type: ToastType, title: string, message: string, duration = 2500) => {
+    (title: string, message: string, duration = 2500) => {
       const id = crypto.randomUUID()
-      const newToast: ToastItem = { id, type, title, message, duration }
+      const newToast: ToastItem = { id, type: 'success', title, message, duration }
 
       setToasts((prev) => {
         const next = [...prev, newToast]
@@ -60,15 +70,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss]
   )
 
+  const addModalNotice = useCallback((type: ModalNoticeItem['type'], title: string, message: string) => {
+    setModalNotices((prev) => [...prev, { id: crypto.randomUUID(), type, title, message }])
+  }, [])
+
+  const dismissModalNotice = useCallback((id: string) => {
+    setModalNotices((prev) => prev.filter((notice) => notice.id !== id))
+  }, [])
+
   const toastApi = useMemo(() => ({
-    success: (title: string, message: string, duration?: number) => addToast('success', title, message, duration),
-    error: (title: string, message: string, duration?: number) => addToast('error', title, message, duration),
-    warning: (title: string, message: string, duration?: number) => addToast('warning', title, message, duration),
-    info: (title: string, message: string, duration?: number) => addToast('info', title, message, duration),
-  }), [addToast])
+    success: (title: string, message: string, duration?: number) => addToast(title, message, duration),
+    error: (title: string, message: string, _duration?: number) => addModalNotice('error', title, message),
+    warning: (title: string, message: string, _duration?: number) => addModalNotice('warning', title, message),
+    info: (title: string, message: string, _duration?: number) => addModalNotice('info', title, message),
+  }), [addModalNotice, addToast])
 
   return (
-    <ToastContext.Provider value={{ toasts, toast: toastApi, dismiss }}>
+    <ToastContext.Provider value={{ toasts, modalNotices, toast: toastApi, dismiss, dismissModalNotice }}>
       {children}
     </ToastContext.Provider>
   )

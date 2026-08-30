@@ -178,9 +178,9 @@ export default function SecretarySections() {
           setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
           return nextSections;
         });
-        toast.success('Deleted', 'Section removed successfully');
+        toast.success('Archived', 'Section archived successfully');
       } catch {
-        toast.error('Error', 'Failed to delete section');
+        toast.error('Error', 'Failed to archive section');
       } finally {
         setIsDeleteModalOpen(false);
         setIdToDelete(null);
@@ -324,14 +324,14 @@ export default function SecretarySections() {
               </div>
               <div className="relative group/tooltip">
                 <TableActionButton
-                  label="Delete"
+                  label="Archive"
                   variant="danger"
                   onClick={() => triggerDeleteConfirmation(row.original.id)}
                 >
                   <Trash2 size={17} />
                 </TableActionButton>
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                  Delete
+                  Archive
                 </span>
               </div>
             </div>
@@ -589,7 +589,7 @@ export default function SecretarySections() {
         onSaveBatch={handleSaveBatch}
       />
 
-      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Permanent Action" title="Delete Section" message="Are you sure you want to delete this section? This action cannot be undone and will permanently remove this record from the database." confirmLabel="Delete" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteSection} />
+      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Archive Record" title="Archive Section" message="This section will be hidden from active lists and can be restored from the Archive." confirmLabel="Archive" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteSection} />
     </div>
   );
 }

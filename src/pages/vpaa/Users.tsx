@@ -215,7 +215,6 @@ export default function VpaaUsers() {
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
-  const [removeFacultyProfile, setRemoveFacultyProfile] = useState(false);
 
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -448,25 +447,23 @@ export default function VpaaUsers() {
     setIsModalOpen(false);
     setIsDetailModalOpen(false);
     setIsDeleteModalOpen(true);
-    setRemoveFacultyProfile(false);
   };
 
   const confirmDeleteUser = async () => {
     if (idToDelete !== null) {
       try {
-        await api.delete(`/user/${idToDelete}`, { data: { remove_faculty_profile: removeFacultyProfile } });
+        await api.delete(`/user/${idToDelete}`);
         setUsers(prev => {
           const nextUsers = prev.filter(user => user.id !== idToDelete);
           setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
-        toast.success('Deleted', 'User removed successfully');
+        toast.success('Archived', 'User archived successfully');
       } catch {
-        toast.error('Error', 'Failed to delete user');
+        toast.error('Error', 'Failed to archive user');
       } finally {
         setIsDeleteModalOpen(false);
         setIdToDelete(null);
-        setRemoveFacultyProfile(false);
       }
     }
   };
@@ -617,7 +614,7 @@ export default function VpaaUsers() {
             </div>
             <div className="relative group/tooltip">
               <TableActionButton
-                label="Delete"
+                label="Archive"
                 variant="danger"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -627,7 +624,7 @@ export default function VpaaUsers() {
                 <Trash2 size={17} />
               </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                Delete
+                Archive
               </span>
             </div>
           </div>
@@ -833,7 +830,7 @@ export default function VpaaUsers() {
                           triggerDeleteConfirmation(u.id);
                         }}
                         className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                        title="Delete User"
+                        title="Archive User"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -1160,20 +1157,10 @@ export default function VpaaUsers() {
                 <AlertTriangle size={24} />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete User Account</h3>
+                <h3 className="text-lg font-bold text-gray-800 font-display">Archive User Account</h3>
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this user account? This action is permanent and cannot be undone.
+                  The account will be disabled and moved to the Archive. Its linked faculty profile and history will be preserved.
                 </p>
-              </div>
-              <div className="space-y-2 text-left">
-                <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-3 cursor-pointer">
-                  <input type="radio" name="faculty-delete-choice" checked={!removeFacultyProfile} onChange={() => setRemoveFacultyProfile(false)} className="mt-0.5 accent-[#5A1220]" />
-                  <span><span className="block text-xs font-bold text-gray-800">Keep as regular faculty</span><span className="block text-[11px] text-gray-500">Remove the login and role indicator, but keep the faculty record.</span></span>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/50 p-3 cursor-pointer">
-                  <input type="radio" name="faculty-delete-choice" checked={removeFacultyProfile} onChange={() => setRemoveFacultyProfile(true)} className="mt-0.5 accent-red-600" />
-                  <span><span className="block text-xs font-bold text-red-700">Remove faculty profile too</span><span className="block text-[11px] text-red-600/80">The linked faculty record will be deleted.</span></span>
-                </label>
               </div>
               <div className="flex gap-3 pt-2">
                 <button
@@ -1186,7 +1173,7 @@ export default function VpaaUsers() {
                   onClick={confirmDeleteUser}
                   className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
                 >
-                  Confirm Delete
+                  Confirm Archive
                 </button>
               </div>
             </div>

@@ -1,9 +1,9 @@
-import { AlertTriangle, CheckCircle2, HelpCircle, Pencil, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, HelpCircle, Pencil, Trash2, X, XCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Modal from './Modal';
 import LoadingSpinner from './LoadingSpinner';
 
-export type ConfirmModalVariant = 'danger' | 'warning' | 'success' | 'update' | 'info' | 'maroon';
+export type ConfirmModalVariant = 'danger' | 'error' | 'warning' | 'success' | 'update' | 'info' | 'maroon';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ interface ConfirmModalProps {
   onCancel: () => void;
   variant?: ConfirmModalVariant;
   isConfirming?: boolean;
+  showCancel?: boolean;
   children?: ReactNode;
 }
 
@@ -30,6 +31,7 @@ export default function ConfirmModal({
   onCancel,
   variant = 'warning',
   isConfirming = false,
+  showCancel = true,
   children,
 }: ConfirmModalProps) {
   if (!isOpen) return null;
@@ -42,6 +44,14 @@ export default function ConfirmModal({
       border: 'border-t-red-500',
       BodyIcon: AlertTriangle,
       ActionIcon: Trash2,
+    },
+    error: {
+      icon: 'bg-red-50 text-red-600 ring-red-100',
+      eyebrow: 'text-red-700',
+      action: 'bg-red-600 hover:bg-red-700 focus:ring-red-500',
+      border: 'border-t-red-500',
+      BodyIcon: XCircle,
+      ActionIcon: CheckCircle2,
     },
     warning: {
       icon: 'bg-amber-50 text-amber-600 ring-amber-100',
@@ -91,6 +101,7 @@ export default function ConfirmModal({
   return (
     <Modal isOpen={isOpen} onClose={onCancel} title={title} size="md" className={`border-t-4 ${style.border}`} footer={
       <>
+        {showCancel && (
           <button
             type="button"
             onClick={onCancel}
@@ -100,6 +111,7 @@ export default function ConfirmModal({
             <X size={14} />
             {cancelLabel}
           </button>
+        )}
           <button
             type="button"
             onClick={() => { void onConfirm(); }}

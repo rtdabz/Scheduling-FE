@@ -40,7 +40,7 @@ import { requiredRoomTypeForMeeting, useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
-import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
+import { getCachedData, loadCachedData, setCachedData, clearCachedKey, clearDataCache } from "../../../../lib/dataCache";
 import { getStoredUser } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { buildPreferredPattern, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
@@ -99,6 +99,34 @@ const departmentWithdrawableStatuses: ScheduleItem["status"][] = [
   "approved",
   "faculty_assignment"
 ];
+
+const departmentProtectedStatuses: ScheduleItem["status"][] = [
+  "submitted",
+  "approved_by_dean",
+  "conditionally_approved",
+  "approved",
+  "faculty_assignment",
+  "finalized"
+];
+
+const deriveSectionProgressStatus = (items: ScheduleItem[]): ScheduleItem["status"] => {
+  const statuses = new Set(items.map((item) => item.status));
+  if (statuses.has("finalized")) return "finalized";
+
+  const conservativeOrder: ScheduleItem["status"][] = [
+    "revision",
+    "rejected_by_dean",
+    "rejected",
+    "draft",
+    "completed",
+    "submitted",
+    "approved_by_dean",
+    "conditionally_approved",
+    "approved",
+    "faculty_assignment"
+  ];
+  return conservativeOrder.find((status) => statuses.has(status)) ?? "draft";
+};
 
 
 interface AtomicScheduleResponse {
@@ -648,7 +676,9 @@ export const useScheduler = () => {
         const sectionScheduleItems = schedulesBySection.get(section.id) ?? [];
         const requiredSubjects = subjectCountByYear.get(section.yearLevel) ?? 0;
         const plottedSubjects = new Set(sectionScheduleItems.map((schedule) => schedule.subjectId)).size;
-        const status = sectionScheduleItems.length > 0 ? sectionScheduleItems[0].status : "draft";
+        const status = sectionScheduleItems.length > 0
+          ? deriveSectionProgressStatus(sectionScheduleItems)
+          : "draft";
         const isFullyPlotted = requiredSubjects === 0 || plottedSubjects >= requiredSubjects;
 
         return {
@@ -669,8 +699,11 @@ export const useScheduler = () => {
 
   const departmentTotalSections = departmentSectionProgress.length;
   const departmentDoneSections = departmentSectionProgress.filter((section) => section.isDone).length;
-  const departmentRemainingSections = Math.max(0, departmentTotalSections - departmentDoneSections);
-  const departmentHasSubmittedSchedule = departmentSectionProgress.some((section) =>
+  const submissionReadySections = departmentSectionProgress.filter((section) => section.status === "completed");
+  const departmentRemainingSections = departmentSectionProgress.filter((section) =>
+    section.status !== "completed" && !departmentProtectedStatuses.includes(section.status)
+  ).length;
+  const departmentHasSubmittedSchedule = submissionReadySections.length === 0 && departmentSectionProgress.some((section) =>
     departmentSubmittedStatuses.includes(section.status)
   );
   const departmentHasWithdrawableSubmission = departmentSectionProgress.some((section) =>
@@ -684,10 +717,11 @@ export const useScheduler = () => {
       ? "vpaa_review"
       : "dean_review";
   const departmentReadyToSubmit =
-    departmentTotalSections > 0 &&
+    submissionReadySections.length > 0 &&
     departmentRemainingSections === 0 &&
-    !departmentHasSubmittedSchedule &&
-departmentSectionProgress.every((section) => section.status === "completed");
+    departmentSectionProgress.every((section) =>
+      section.status === "completed" || departmentProtectedStatuses.includes(section.status)
+    );
 
   const dropSubject = dropContext
     ? subjects.find((s) => s.id === dropContext.subjectId) ?? null
@@ -1660,17 +1694,18 @@ departmentSectionProgress.every((section) => section.status === "completed");
 
     try {
       setIsSubmittingSchedule(true);
-      await api.post(`/departments/${section.departmentId}/submit-schedules`);
+      const submittedSectionIds = submissionReadySections.map((item) => Number(item.sectionId));
+      await api.post(`/departments/${section.departmentId}/submit-schedules`, {
+        section_ids: submittedSectionIds
+      });
+      clearDataCache();
 
-      // Optimistic update for all sections in this department to instantly reflect submission
-      const deptSectionIds = new Set(
-        sections
-          .filter((s) => s.departmentId === section.departmentId)
-          .map((s) => s.id)
-      );
+      // Only the current revision cohort re-enters approval. Finalized and
+      // previously approved sections remain at their existing workflow stage.
+      const submittedSectionIdSet = new Set(submissionReadySections.map((item) => item.sectionId));
       setSchedules((prev) =>
         prev.map((item) =>
-          deptSectionIds.has(item.sectionId)
+          submittedSectionIdSet.has(item.sectionId)
             ? { ...item, status: "submitted" }
             : item
         )
@@ -1749,8 +1784,11 @@ departmentSectionProgress.every((section) => section.status === "completed");
         "Submission Withdrawn",
         (departmentWithdrawalStage === "vpaa_approved"
           ? "VPAA approval was revoked and only the selected sections were unlocked for revision."
-          : "Only the selected sections were unlocked for revision.") + releasedNote
+          : "Only the selected sections were unlocked for revision.")
+          + " After revision, mark the section done and submit it again for Dean and VPAA approval."
+          + releasedNote
       );
+      clearDataCache();
       refreshSchedules().catch(() => {});
       setIsWithdrawSubmissionModalOpen(false);
     } catch (err) {

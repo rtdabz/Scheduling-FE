@@ -58,6 +58,7 @@ type Step = 1 | 2 | 3 | 4 | 5;
 type CourseMode = DeliveryModeOption | "automatic";
 type SchedulingPreference = "automatic" | "morning" | "afternoon" | "flexible";
 type FixedGecSplitPattern = "MW" | "TTh";
+const GEC_PATTERN_LABELS: Record<FixedGecSplitPattern, string> = { MW: "Mon-Wed", TTh: "Tue-Thur" };
 // "auto" keeps the course split into two meetings but lets the generator pick
 // the day pair — the relaxation the Recommended Adjustment panel applies.
 type GecSplitPattern = FixedGecSplitPattern | "auto";
@@ -133,7 +134,27 @@ async function pollGenerationRun(
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
   }
 
-  throw new Error("Year-level generation is still running. Check the generation status before retrying.");
+  // Re-read once at the deadline. A worker timeout or failed queue attempt can
+  // finish between the last poll and the client deadline; do not report that
+  // terminal state as an active generation.
+  const finalResponse = await api.get<GenerationRun>(`/schedule-recommendations/generation-runs/${runId}`);
+  const finalRun = finalResponse.data;
+  if (finalRun.status === "failed" || finalRun.status === "cancelled") {
+    const error = new Error(finalRun.error_message ?? "Year-level generation failed.");
+    Object.assign(error, { response: { data: finalRun.result ?? { message: error.message } } });
+    throw error;
+  }
+  if (finalRun.status === "completed" && finalRun.result && typeof finalRun.result === "object") {
+    return finalRun.result as GenerationResult;
+  }
+
+  if (finalRun.status === "queued") {
+    throw new Error("Year-level generation is still queued. Start the scheduling queue worker, then check the generation status before retrying.");
+  }
+  if (finalRun.status === "running") {
+    throw new Error("Year-level generation is still running. Check the generation status before retrying.");
+  }
+  throw new Error("Year-level generation ended without a terminal status. Check the generation status before retrying.");
 }
 
 interface Props {
@@ -212,6 +233,14 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
       sectionIds.has(String(schedule.sectionId))
       && (!activeTerm || Number(schedule.termId) === Number(activeTerm.id))
     ).length;
+  }, [activeTerm, existingSchedules, scopedSections]);
+  const yearLevelHasFinalizedSchedule = useMemo(() => {
+    const sectionIds = new Set(scopedSections.map((section) => String(section.id)));
+    return existingSchedules.some((schedule) =>
+      sectionIds.has(String(schedule.sectionId))
+      && (!activeTerm || Number(schedule.termId) === Number(activeTerm.id))
+      && schedule.status === "finalized"
+    );
   }, [activeTerm, existingSchedules, scopedSections]);
   const roomCodeById = useMemo(() => new Map(
     rooms
@@ -358,6 +387,12 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
     }
   }, [requiresRegenerationConfirmation, step]);
 
+  useEffect(() => {
+    if (yearLevelHasFinalizedSchedule && step !== 1) {
+      setStep(1);
+    }
+  }, [step, yearLevelHasFinalizedSchedule]);
+
   const updateConfig = (sectionId: string, change: Partial<SectionConfig>) => setConfigs((current) => ({
     ...current,
     [sectionId]: {
@@ -374,6 +409,7 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
 
   const generate = async (configsOverride?: Record<string, SectionConfig>) => {
     if (!activeTerm || departmentId === null) return;
+    if (yearLevelHasFinalizedSchedule) return;
     const activeConfigs = configsOverride ?? configs;
     setGenerating(true);
     setPreview([]);
@@ -389,12 +425,17 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
           return {
             section_id: Number(section.id),
             course_ids: config.courseIds.map(Number),
-            selected_split_session_course_ids: config.splitCourseIds.map(Number),
+            selected_split_session_course_ids: config.splitCourseIds
+              .filter((courseId) => !forcedDaysByCourseId.has(Number(courseId)))
+              .map(Number),
             selected_gec_course_ids: settings?.gec_split_schedule_override_enabled
-              ? config.gecSplitCourseIds.map(Number)
+              ? config.gecSplitCourseIds
+                .filter((courseId) => !forcedDaysByCourseId.has(Number(courseId)))
+                .map(Number)
               : [],
             preferred_patterns: Object.fromEntries(
               config.gecSplitCourseIds
+                .filter((id) => !forcedDaysByCourseId.has(Number(id)))
                 .map((id) => [id, config.gecSplitPatternsByCourseId[id] ?? "MW"] as const)
                 .filter(([, pattern]) => pattern !== "auto")
                 .map(([id, pattern]) => [Number(id), pattern])
@@ -547,7 +588,7 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
 
   const canContinue = scopedSections.length > 0
     && scopedCourses.length > 0
-    && (step !== 1 || !requiresRegenerationConfirmation)
+    && (step !== 1 || (!requiresRegenerationConfirmation && !yearLevelHasFinalizedSchedule))
     && (step !== 2 || setupDraft.completed)
     && (step !== 3 || lockedSectionsCount === scopedSections.length);
 
@@ -603,6 +644,7 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
                 setConfirmedRegenerationYear(null);
               }}
               existingScheduleCount={existingScheduleCountForYear}
+              yearLevelHasFinalizedSchedule={yearLevelHasFinalizedSchedule}
               requiresRegenerationConfirmation={requiresRegenerationConfirmation}
               onConfirmRegeneration={() => setConfirmedRegenerationYear(yearLevel)}
               actionsDisabled={requiresRegenerationConfirmation}
@@ -625,6 +667,7 @@ export default function YearLevelGenerateScheduleWorkflow({ onClose, sections, c
               yearLevel={yearLevel}
               onYearChange={() => undefined}
               existingScheduleCount={existingScheduleCountForYear}
+              yearLevelHasFinalizedSchedule={yearLevelHasFinalizedSchedule}
               requiresRegenerationConfirmation={requiresRegenerationConfirmation}
               onConfirmRegeneration={() => setConfirmedRegenerationYear(yearLevel)}
               actionsDisabled={requiresRegenerationConfirmation}
@@ -870,6 +913,7 @@ function ScopeRulesStep({
   yearLevel,
   onYearChange,
   existingScheduleCount,
+  yearLevelHasFinalizedSchedule,
   requiresRegenerationConfirmation,
   onConfirmRegeneration,
   actionsDisabled,
@@ -889,6 +933,7 @@ function ScopeRulesStep({
   yearLevel: number;
   onYearChange: (value: number) => void;
   existingScheduleCount: number;
+  yearLevelHasFinalizedSchedule: boolean;
   requiresRegenerationConfirmation: boolean;
   onConfirmRegeneration: () => void;
   actionsDisabled: boolean;
@@ -1071,7 +1116,15 @@ function ScopeRulesStep({
               </label>
               <span className="shrink-0 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 ring-1 ring-emerald-200">{sections.length} sections</span>
             </div>
-            {requiresRegenerationConfirmation && (
+            {yearLevelHasFinalizedSchedule ? (
+              <div className="mt-3 flex shrink-0 items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700" />
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-rose-950">This year level schedule is already finalized and it cannot be generated or rescheduled again.</p>
+                  <p className="mt-0.5 text-xs font-semibold text-rose-800">Reopen the finalized schedules before making changes.</p>
+                </div>
+              </div>
+            ) : requiresRegenerationConfirmation && (
               <div className="mt-3 flex shrink-0 flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                 <AlertCircle className="h-4 w-4 shrink-0 text-amber-700" />
                 <div className="min-w-0 flex-1">
@@ -1355,7 +1408,9 @@ function CoursesSectionsStep({
 
     return patternAvailabilityBySectionCourseKey.get(`${activeSectionId}:${courseId}`)?.[pattern]?.full ?? false;
   });
-  const hybridEligibleCourseIds = courses.filter((course) => Number(course.labHours ?? 0) > 0).map((course) => course.id);
+  const hybridEligibleCourseIds = courses
+    .filter((course) => Number(course.labHours ?? 0) > 0 && !forcedDaysByCourseId.has(Number(course.id)))
+    .map((course) => course.id);
   const allHybridSelected = hybridEligibleCourseIds.length > 0 && hybridEligibleCourseIds.every((courseId) => config.splitCourseIds.includes(courseId));
   const toggleAllHybrid = () => updateConfig({
     splitCourseIds: allHybridSelected
@@ -1488,6 +1543,7 @@ function CoursesSectionsStep({
                   toggle={toggle}
                   minorSplitEnabled={minorSplitEnabled}
                   allowedSplitCourseIds={allowedSplitCourseIds}
+                  forcedDay={forcedDay}
                 />
               </div>
             );
@@ -1514,6 +1570,7 @@ function CourseInlineConfiguration({
   toggle,
   minorSplitEnabled,
   allowedSplitCourseIds,
+  forcedDay,
 }: {
   course: Course;
   config: SectionConfig;
@@ -1522,14 +1579,19 @@ function CourseInlineConfiguration({
   toggle: (values: string[], id: string) => string[];
   minorSplitEnabled: boolean;
   allowedSplitCourseIds: ReadonlySet<string>;
+  forcedDay?: string;
 }) {
-  const lectureLabSplit = config.splitCourseIds.includes(course.id);
-  const gecSplit = config.gecSplitCourseIds.includes(course.id);
+  const hasForcedDay = Boolean(forcedDay);
+  const lectureLabSplit = !hasForcedDay && config.splitCourseIds.includes(course.id);
+  const gecSplit = !hasForcedDay && config.gecSplitCourseIds.includes(course.id);
   const gecPattern = config.gecSplitPatternsByCourseId[course.id] ?? "MW";
   const gecPatternsFull = Boolean(patternAvailability?.MW.full && patternAvailability?.TTh.full);
-  const toggleLectureLabSplit = () => updateConfig({ splitCourseIds: toggle(config.splitCourseIds, course.id) });
+  const toggleLectureLabSplit = () => {
+    if (hasForcedDay) return;
+    updateConfig({ splitCourseIds: toggle(config.splitCourseIds, course.id) });
+  };
   const toggleGecSplit = () => {
-    if (gecPatternsFull) return;
+    if (gecPatternsFull || hasForcedDay) return;
     updateConfig({ gecSplitCourseIds: toggle(config.gecSplitCourseIds, course.id) });
   };
   const preference = displayPreferenceValue(config.preferencesByCourseId[course.id] ?? "automatic");
@@ -1550,14 +1612,18 @@ function CourseInlineConfiguration({
             <button
               type="button"
               onClick={toggleLectureLabSplit}
+              disabled={hasForcedDay}
+              title={hasForcedDay ? `Disabled because this course is fixed to ${forcedDay}.` : undefined}
               className={`flex w-full items-start gap-2 rounded-md border p-2 text-left transition ${
                 lectureLabSplit
                   ? "border-[#4e0a10] bg-[#4e0a10]/5 shadow-sm"
-                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                  : hasForcedDay
+                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
               }`}
               aria-pressed={lectureLabSplit}
             >
-              <input type="checkbox" checked={lectureLabSplit} readOnly className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#4e0a10]" />
+              <input type="checkbox" checked={lectureLabSplit} disabled={hasForcedDay} readOnly className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#4e0a10]" />
               <span className="min-w-0">
                 <span className="block text-xs font-black text-slate-900">Hybrid</span>
                 <span className="mt-0.5 block text-[11px] font-semibold leading-4 text-slate-500">Online lecture plus on-site laboratory.</span>
@@ -1568,26 +1634,26 @@ function CourseInlineConfiguration({
             <div className={`rounded-md border p-2 transition ${gecSplit ? "border-[#4e0a10] bg-[#4e0a10]/5 shadow-sm" : "border-slate-200 bg-white"}`}>
               <div
                 role="button"
-                tabIndex={gecPatternsFull ? -1 : 0}
+                tabIndex={gecPatternsFull || hasForcedDay ? -1 : 0}
                 onClick={toggleGecSplit}
                 onKeyDown={(event) => {
-                  if (gecPatternsFull) return;
+                  if (gecPatternsFull || hasForcedDay) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     toggleGecSplit();
                   }
                 }}
-                aria-disabled={gecPatternsFull}
+                aria-disabled={gecPatternsFull || hasForcedDay}
                 aria-pressed={gecSplit}
-                className={`flex items-start gap-3 ${gecPatternsFull ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                className={`flex items-start gap-3 ${gecPatternsFull || hasForcedDay ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
               >
-                <input type="checkbox" checked={gecSplit} disabled={gecPatternsFull} readOnly className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#4e0a10] disabled:cursor-not-allowed" />
+                <input type="checkbox" checked={gecSplit} disabled={gecPatternsFull || hasForcedDay} readOnly className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#4e0a10] disabled:cursor-not-allowed" />
                 <span className="min-w-0">
                   <span className="block text-xs font-black text-slate-900">Split Session</span>
-                  <span className="mt-0.5 block text-[11px] font-semibold leading-4 text-slate-500">Two meetings in a week using an MW or TTh pattern.</span>
+                  <span className="mt-0.5 block text-[11px] font-semibold leading-4 text-slate-500">Two meetings in a week using a Mon-Wed or Tue-Thur pattern.</span>
                 </span>
               </div>
-              {gecPatternsFull && <p className="mt-2 text-[11px] font-bold text-rose-600">MW and TTh meeting patterns are full.</p>}
+              {gecPatternsFull && <p className="mt-2 text-[11px] font-bold text-rose-600">Mon-Wed and Tue-Thur meeting patterns are full.</p>}
               {gecSplit && (
                 <label className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
                   Meeting days
@@ -1602,8 +1668,8 @@ function CourseInlineConfiguration({
                     })}
                     className="h-8 w-[120px] rounded-md border border-slate-200 bg-white px-2 text-xs font-bold normal-case tracking-normal text-slate-800"
                   >
-                    <option value="MW" disabled={patternAvailability?.MW.full}>MW{patternAvailability?.MW.full ? " - full" : ""}</option>
-                    <option value="TTh" disabled={patternAvailability?.TTh.full}>TTh{patternAvailability?.TTh.full ? " - full" : ""}</option>
+                    <option value="MW" disabled={patternAvailability?.MW.full}>{GEC_PATTERN_LABELS.MW}{patternAvailability?.MW.full ? " - full" : ""}</option>
+                    <option value="TTh" disabled={patternAvailability?.TTh.full}>{GEC_PATTERN_LABELS.TTh}{patternAvailability?.TTh.full ? " - full" : ""}</option>
                     {gecPattern === "auto" && <option value="auto" disabled>Generator picks</option>}
                   </select>
                 </label>
@@ -1692,11 +1758,11 @@ function SectionRecommendationCard({
               <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1 shadow-2xs">
                 <span className="font-bold text-slate-900">Minor Split Availability:</span>
                 {mwAvailableCount > 0 && tthAvailableCount > 0 ? (
-                  <span className="font-bold text-emerald-700">MW and TTh Available</span>
+                  <span className="font-bold text-emerald-700">Mon-Wed and Tue-Thur Available</span>
                 ) : mwAvailableCount > 0 ? (
-                  <span className="font-bold text-emerald-700">MW Available</span>
+                  <span className="font-bold text-emerald-700">Mon-Wed Available</span>
                 ) : tthAvailableCount > 0 ? (
-                  <span className="font-bold text-emerald-700">TTh Available</span>
+                  <span className="font-bold text-emerald-700">Tue-Thur Available</span>
                 ) : (
                   <span className="font-bold text-amber-700">Patterns Congested (Single 3h / Online Fallback Ready)</span>
                 )}
@@ -2133,7 +2199,7 @@ function GenerationTimeline({ steps, activeIndex, running, activeTerm, sections,
         <GenerationInfoCard icon={BookOpen} label="Courses" value={courseCount} />
       </div>
       <div className="mt-2 grid min-h-0 flex-1">
-        <section className="flex min-h-0 flex-col rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-black ${running ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{running ? "Processing" : "Ready"}</span></div><div className="flex flex-1 flex-col items-center justify-center py-3 text-center"><span className="flex h-16 w-16 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700">{running ? <LoadingSpinner size={48} label="Generating" /> : <Clock3 className="h-8 w-8" />}</span><h4 className="mt-2 text-xl font-black text-slate-950">{running ? steps[activeIndex] : "Ready to generate"}</h4><p className="mt-1 max-w-lg text-xs font-semibold leading-5 text-slate-600">{running ? descriptions[activeIndex] : "Start generation when you are ready. The status will continue updating until the timetable is ready."}</p><button type="button" onClick={onGenerate} disabled={running} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#7a0008] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[#90000a] disabled:cursor-not-allowed disabled:opacity-70"><Play className="h-4 w-4" />{running ? "Generating" : "Generate Schedule"}</button></div><div className="flex items-center gap-3"><div className="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-100">{running && <div className="absolute h-full w-1/3 rounded-full bg-[#7a121c] animate-indeterminate" />}</div><span className="text-xs font-black text-slate-600">{running ? "Working..." : "Ready"}</span></div><div className="mt-3 grid grid-cols-3 gap-2"><GenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><GenerationMetric icon={Building2} label="Rooms Available" value={roomCount} tone="emerald" /><GenerationMetric icon={ShieldCheck} label="Active Rules" value={activeRuleCount} tone="violet" /></div></section>
+        <section className="flex min-h-0 flex-col rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between gap-3"><h4 className="text-base font-black text-slate-950">Generation Status</h4><span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-black ${running ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{running ? "Processing" : "Ready"}</span></div><div className="flex flex-1 flex-col items-center justify-center py-3 text-center"><span className="flex h-16 w-16 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700">{running ? <LoadingSpinner size={48} label="Generating" /> : <Clock3 className="h-8 w-8" />}</span><h4 className="mt-2 text-xl font-black text-slate-950">{running ? steps[activeIndex] : "Ready to generate"}</h4><p className="mt-1 max-w-lg text-xs font-semibold leading-5 text-slate-600">{running ? descriptions[activeIndex] : "Start generation when you are ready. The status will continue updating until the timetable is ready."}</p><button type="button" onClick={onGenerate} disabled={running} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#7a0008] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-[#90000a] disabled:cursor-not-allowed disabled:opacity-70"><Play className="h-4 w-4" />{running ? "Generating" : "Generate Schedule"}</button></div><div className="mt-3 grid grid-cols-3 gap-2"><GenerationMetric icon={BookOpen} label="Courses" value={courseCount} tone="blue" /><GenerationMetric icon={Building2} label="Rooms Available" value={roomCount} tone="emerald" /><GenerationMetric icon={ShieldCheck} label="Active Rules" value={activeRuleCount} tone="violet" /></div></section>
       </div>
       <section className="mt-2 shrink-0 rounded-xl border border-slate-200 px-3 py-3"><div className="grid gap-3 md:grid-cols-[auto_repeat(3,minmax(0,1fr))] md:items-center"><h4 className="text-sm font-black text-slate-950">What happens next</h4><GenerationNextStep icon={CalendarDays} number={1} title="Generate preview" text="Create a timetable preview." /><GenerationNextStep icon={List} number={2} title="Review" text="Check rooms and conflicts." /><GenerationNextStep icon={Download} number={3} title="Save as draft" text="Apply when satisfied." /></div></section>
     </div>

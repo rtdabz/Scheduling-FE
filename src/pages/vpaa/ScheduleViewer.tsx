@@ -148,7 +148,6 @@ interface DepartmentSummary {
   sections: number;
   faculty: number;
   rooms: number;
-  conflicts: number;
   missingAssignments: number;
 }
 
@@ -255,8 +254,14 @@ const isUnassignedFaculty = (schedule: Schedule) => (
   !schedule.facultyName.trim() || schedule.facultyName.trim().toLowerCase() === "unassigned"
 );
 
+const isVirtualRoom = (schedule: Schedule) => {
+  const mode = schedule.mode?.trim().toLowerCase();
+  const room = schedule.roomName.trim().toLowerCase();
+  return mode === "online" || mode === "field" || room === "online" || room === "field";
+};
+
 const isUnassignedRoom = (schedule: Schedule) => (
-  !schedule.roomName.trim() || schedule.roomName.trim().toLowerCase() === "unassigned"
+  !isVirtualRoom(schedule) && (!schedule.roomName.trim() || schedule.roomName.trim().toLowerCase() === "unassigned")
 );
 
 const schedulesOverlap = (left: Schedule, right: Schedule) => {
@@ -297,7 +302,7 @@ const buildConflictMap = (items: Schedule[]) => {
         rightInfo.faculty = true;
         hasPairConflict = true;
       }
-      if (!isUnassignedRoom(left) && left.roomId === right.roomId && left.roomName !== "Online" && left.roomName !== "Field") {
+      if (!isUnassignedRoom(left) && !isVirtualRoom(left) && left.roomId === right.roomId) {
         leftInfo.room = true;
         rightInfo.room = true;
         hasPairConflict = true;
@@ -538,8 +543,11 @@ export default function VpaaScheduleViewer() {
           const sectionId = item.section_id ? item.section_id.toString() : "";
           const departmentId = item.department_id ? item.department_id.toString() : sectionDepartmentById.get(sectionId) ?? "";
           const department = mappedDepts.find((dept) => dept.id === departmentId);
+          const mode = (item.mode ?? "on-site").trim().toLowerCase() as Schedule["mode"];
           let roomName = "";
-          if (item.room) {
+          if (mode === "online") roomName = "Online";
+          else if (mode === "field") roomName = "Field";
+          else if (item.room) {
             if (item.room.room_code === "ONLINE") roomName = "Online";
             else if (item.room.room_code === "FIELD") roomName = "Field";
             else roomName = item.room.room_code ?? "";
@@ -564,7 +572,7 @@ export default function VpaaScheduleViewer() {
             day: DAYS_MAP[dayIndex] || "Mon",
             startTime: slotToTimeStr12h(startSlot),
             endTime: slotToTimeStr12h(endSlot),
-            mode: item.mode ?? "on-site",
+            mode,
             meetingType: item.meeting_type ?? null
           };
         });
@@ -742,7 +750,6 @@ export default function VpaaScheduleViewer() {
     const departmentSections = new Set(departmentSchedules.map((schedule) => schedule.sectionId).filter(Boolean)).size;
     const departmentFaculty = new Set(departmentSchedules.map((schedule) => schedule.facultyId).filter(Boolean)).size;
     const departmentRooms = new Set(departmentSchedules.map((schedule) => schedule.roomId).filter(Boolean)).size;
-    const departmentConflicts = departmentSchedules.filter((schedule) => getConflictLabels(conflictMap.get(schedule.id)).length > 0).length;
     const missingAssignments = departmentSchedules.filter((schedule) => isUnassignedFaculty(schedule) || isUnassignedRoom(schedule)).length;
 
     return {
@@ -751,10 +758,9 @@ export default function VpaaScheduleViewer() {
       sections: departmentSections,
       faculty: departmentFaculty,
       rooms: departmentRooms,
-      conflicts: departmentConflicts,
       missingAssignments
     };
-  }).sort((left, right) => right.schedules - left.schedules), [departments, schedules, conflictMap]);
+  }).sort((left, right) => right.schedules - left.schedules), [departments, schedules]);
 
   const sortedSchedules = useMemo(() => {
     const sorted = [...filteredSchedules].sort((left, right) => {
@@ -857,7 +863,6 @@ export default function VpaaScheduleViewer() {
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <h2 className="text-xl font-extrabold text-[#4e0a10] tracking-tight font-display">All Schedules</h2>
               {activeTerm && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#C9952A]/10 text-[#4e0a10] border border-[#C9952A]/20">
                   {activeTerm.semester ? `${activeTerm.semester} Sem` : ""} {activeTerm.academic_year ?? "Active Term"}
@@ -1102,7 +1107,6 @@ export default function VpaaScheduleViewer() {
                       <th className="px-4 py-3 text-center">Sections</th>
                       <th className="px-4 py-3 text-center">Faculty</th>
                       <th className="px-4 py-3 text-center">Rooms</th>
-                      <th className="px-4 py-3 text-center">Conflicts</th>
                       <th className="px-4 py-3 text-center">Missing</th>
                       <th className="px-5 py-3 text-right">Action</th>
                     </tr>
@@ -1129,15 +1133,6 @@ export default function VpaaScheduleViewer() {
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           {summary.rooms}
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {summary.conflicts > 0 ? (
-                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-100 font-bold">
-                              {summary.conflicts}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-semibold">-</span>
-                          )}
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           {summary.missingAssignments > 0 ? (

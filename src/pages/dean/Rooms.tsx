@@ -306,9 +306,9 @@ export default function DeanRooms() {
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
-        toast.success('Deleted', 'Room removed successfully');
+        toast.success('Archived', 'Room archived successfully');
       } catch {
-        toast.error('Error', 'Failed to delete room');
+        toast.error('Error', 'Failed to archive room');
       } finally {
         setIsDeleteModalOpen(false);
         setIdToDelete(null);
@@ -816,7 +816,7 @@ export default function DeanRooms() {
                           className="px-3 py-1.5 bg-white border border-gray-250 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
                         >
                           <Trash2 size={13} />
-                          <span>Delete</span>
+                          <span>Archive</span>
                         </button>
                       </div>
                     )}
@@ -917,7 +917,7 @@ export default function DeanRooms() {
                                 <button
                                   onClick={() => triggerDeleteConfirmation(room.id)}
                                   className="p-1 text-red-500 hover:text-red-700 transition-colors"
-                                  title="Delete Room"
+                                  title="Archive Room"
                                 >
                                   <Trash2 size={15} />
                                 </button>
@@ -1126,9 +1126,9 @@ export default function DeanRooms() {
                 <AlertTriangle size={24} />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Delete Room</h3>
+                <h3 className="text-lg font-bold text-gray-800 font-display">Archive Room</h3>
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to delete this room? This action is permanent and cannot be undone.
+                  This room will be hidden from active lists and can be restored by the VPAA from the Archive.
                 </p>
               </div>
               <div className="flex gap-3 pt-2">
@@ -1142,7 +1142,7 @@ export default function DeanRooms() {
                   onClick={confirmDeleteRoom}
                   className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
                 >
-                  Confirm Delete
+                  Confirm Archive
                 </button>
               </div>
             </div>

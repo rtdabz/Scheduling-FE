@@ -86,7 +86,7 @@ export function useCurriculum() {
     });
   }, [curriculumList, statusFilter, departmentFilter, searchQuery]);
 
-  const handleCreateOrUpdate = async (data: Partial<Curriculum>, editingCurriculum: Curriculum | null) => {
+  const handleCreateOrUpdate = async (data: Partial<Curriculum>, editingCurriculum: Curriculum | null): Promise<Curriculum> => {
     try {
       if (editingCurriculum) {
         const updated = await curriculumService.updateCurriculum(editingCurriculum.id, data);
@@ -110,6 +110,7 @@ export function useCurriculum() {
         });
         clearDataCache();
         toast.success('Success', 'Curriculum updated successfully.');
+        return updated;
       } else {
         const created = await curriculumService.createCurriculum(data);
         setCurriculumList((prev) => {
@@ -130,6 +131,7 @@ export function useCurriculum() {
         });
         clearDataCache();
         toast.success('Success', 'Curriculum created successfully.');
+        return created;
       }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
 import { BookOpen } from 'lucide-react';
 
@@ -10,12 +10,14 @@ import { useCurriculumDetail } from '../../hooks/curriculum/useCurriculumDetail'
 export default function CurriculumDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [selectedSemester, setSelectedSemester] = useState(1);
 
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userRole = user?.role?.toLowerCase() || 'user';
   const canManageCurriculum = userRole === 'vpaa';
+  const canEditCourses = canManageCurriculum && searchParams.get('mode') === 'edit';
 
   const {
     curriculum,
@@ -74,7 +76,7 @@ export default function CurriculumDetailPage() {
             curriculum={curriculum}
             overallStats={overallStats}
             isActivating={isActivating}
-            canActivate={canManageCurriculum}
+            canActivate={canEditCourses}
             onBack={() => navigate(userRole === 'vpaa' ? '/curriculum' : `/${userRole}/curriculum`)}
             onActivate={handleActivate}
           />
@@ -94,7 +96,7 @@ export default function CurriculumDetailPage() {
               highlightedCourseId={highlightedCourseId}
               removingCourseId={removingCourseId}
               isRemoving={isRemoving}
-              canEdit={canManageCurriculum}
+              canEdit={canEditCourses}
               programs={programs}
               onInitiateRemove={(cId) => setRemovingCourseId(cId)}
               onCancelRemove={() => setRemovingCourseId(null)}

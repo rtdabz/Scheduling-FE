@@ -28,8 +28,9 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
 
   return (
     <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
       className={`
-        relative min-w-[320px] max-w-[400px] bg-parchment backdrop-blur-md 
+        relative w-full min-w-0 max-w-[400px] bg-parchment backdrop-blur-md sm:min-w-[320px]
         rounded-2xl shadow-xl border border-border border-l-4
         overflow-hidden px-4 py-3.5 flex items-start gap-3
         ${toast.exiting ? 'animate-toastOut' : 'animate-toastIn'}
@@ -40,11 +41,13 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
       
       <div className="flex-1 min-w-0">
         <h4 className="text-sm font-semibold text-text">{toast.title}</h4>
-        <p className="text-xs text-muted">{toast.message}</p>
+        <p className="mt-0.5 line-clamp-2 text-xs text-muted">{toast.message}</p>
       </div>
 
       <button
+        type="button"
         onClick={() => onDismiss(toast.id)}
+        aria-label={`Dismiss ${toast.title}`}
         className="text-muted hover:text-text transition-colors p-1"
       >
         <X size={16} />

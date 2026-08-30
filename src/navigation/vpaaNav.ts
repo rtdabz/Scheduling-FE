@@ -10,7 +10,8 @@ import {
   Users,
   Settings,
   Building2,
-  BookOpen
+  BookOpen,
+  Archive
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -50,6 +51,7 @@ export const vpaaNav: NavSection[] = [
       { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
       { label: 'Schedule History', path: '/schedule-history', icon: History, id: 'sidebar-schedule-history' },
+      { label: 'Archive', path: '/archive', icon: Archive, id: 'sidebar-archive' },
       { label: 'Settings', path: '/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

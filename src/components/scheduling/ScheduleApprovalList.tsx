@@ -13,8 +13,8 @@ export interface ApprovalScheduleItem {
   split_group_id?: string | null;
   is_hybrid?: boolean | number | string;
   meeting_index?: number | null;
-  course?: { course_code?: string; course_name?: string } | null;
-  subject?: { subject_code?: string; subject_name?: string } | null;
+  course?: { course_code?: string; course_name?: string; lecture_hours?: number | string | null; lab_hours?: number | string | null } | null;
+  subject?: { subject_code?: string; subject_name?: string; lecture_hours?: number | string | null; lab_hours?: number | string | null } | null;
   faculty?: { first_name?: string; last_name?: string } | null;
   room?: { room_code?: string; building?: string | null } | null;
   department?: { department_name?: string; logo?: string | null } | null;

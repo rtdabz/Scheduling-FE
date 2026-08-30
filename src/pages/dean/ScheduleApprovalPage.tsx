@@ -31,6 +31,7 @@ import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleAp
 
 interface ScheduleApproval {
   id: number;
+  submissionId: number;
   department: string;
   section: string;
   subjectsScheduled: number;
@@ -40,7 +41,7 @@ interface ScheduleApproval {
   status: 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'rejected_by_dean' | 'approved' | 'rejected' | 'revision';
   mode: 'on-site' | 'online' | 'field';
   requestType: 'approval' | 'withdrawal' | 'revision';
-  withdrawnSectionIds?: string[];
+  workflowSectionIds?: string[];
 }
 
 interface StoredUser {
@@ -100,6 +101,25 @@ interface RawSchedule extends ApprovalScheduleItem {
   } | null;
 }
 
+interface RawScheduleSubmissionSection extends RawSection {
+  pivot?: { state?: 'included' | 'withdrawn' };
+}
+
+interface RawScheduleSubmission {
+  id: number;
+  department_id: number | string;
+  term_id: number | string;
+  revision_number: number;
+  status: 'pending_dean' | 'pending_vpaa' | 'approved' | 'withdrawn' | 'partially_withdrawn' | 'rejected_by_dean' | 'rejected_by_vpaa';
+  submitted_at: string | null;
+  dean_reviewed_at: string | null;
+  approval_override?: boolean;
+  sections: RawScheduleSubmissionSection[];
+  submitter?: { name?: string } | null;
+}
+
+type DeanQueueTab = 'pending' | 'approved' | 'withdrawn' | 'rejected';
+
 const getScheduleCourseCode = (s: RawSchedule) => s.course?.course_code ?? s.subject?.subject_code ?? 'Course';
 const getScheduleCourseName = (s: RawSchedule) => s.course?.course_name ?? s.subject?.subject_name ?? 'Untitled course';
 const getScheduleCourseId = (s: RawSchedule) => s.course_id ?? s.subject_id;
@@ -123,39 +143,17 @@ const dayOrder: Record<string, number> = {
 
 const APPROVAL_SLOT_HEIGHT_PX = 24;
 
-const getDepartmentApprovalStatus = (items: RawSchedule[]): ScheduleApproval['status'] => {
-  const statuses = items.map((item) => item.status);
-  if (statuses.includes('submitted')) return 'submitted';
-  if (statuses.includes('revision')) return 'revision';
-  if (statuses.includes('rejected_by_dean')) return 'rejected_by_dean';
-  if (statuses.includes('conditionally_approved')) return 'conditionally_approved';
-  if (statuses.includes('approved_by_dean')) return 'approved_by_dean';
-  if (statuses.includes('rejected')) return 'rejected';
-  return 'approved';
-};
-
 interface ScheduleApprovalPageData {
   schedules: ScheduleApproval[];
   rawSchedules: RawSchedule[];
   rawSections: RawSection[];
-  withdrawalDepartmentIds: number[];
+  activeTerm: ApprovalTerm | null;
 }
 
-interface NotificationResponse {
-  data: Array<{
-    id: number;
-    type: string;
-    department_id: number | null;
-    title: string;
-    created_at: string;
-    actor?: {
-      name?: string;
-    } | null;
-    department?: {
-      department_name?: string;
-    } | null;
-    metadata?: Record<string, unknown> | null;
-  }>;
+interface ApprovalTerm {
+  id: number | string;
+  academic_year: string;
+  semester: string;
 }
 
 const normalizeDepartmentKey = (dept: string) => {
@@ -169,15 +167,6 @@ const normalizeDepartmentKey = (dept: string) => {
   if (value.includes('criminal')) return 'CRIM';
   if (value.includes('library')) return 'LIS';
   return '';
-};
-
-const readMetadataSectionIds = (metadata?: Record<string, unknown> | null): string[] => {
-  const value = metadata?.selected_section_ids;
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((id) => String(id))
-    .filter((id) => id.length > 0);
 };
 
 const formatSectionSummary = (sections: RawSection[], sectionIds?: string[]): string => {
@@ -199,12 +188,23 @@ const formatSectionSummary = (sections: RawSection[], sectionIds?: string[]): st
   return visibleSections.map((section) => section.section_name).join(', ');
 };
 
-const isNewerWorkflowNotification = (
-  next: { created_at: string },
-  current?: { created_at: string }
-): boolean => {
-  if (!current) return true;
-  return new Date(next.created_at).getTime() > new Date(current.created_at).getTime();
+const submissionDisplayStatus = (submission: RawScheduleSubmission): ScheduleApproval['status'] => {
+  switch (submission.status) {
+    case 'pending_dean': return 'submitted';
+    case 'pending_vpaa': return submission.approval_override ? 'conditionally_approved' : 'approved_by_dean';
+    case 'approved': return 'approved';
+    case 'rejected_by_dean': return 'rejected_by_dean';
+    case 'rejected_by_vpaa': return 'rejected';
+    default: return 'revision';
+  }
+};
+
+const submissionSectionIds = (submission: RawScheduleSubmission): string[] => {
+  const withdrawn = submission.sections.filter((section) => section.pivot?.state === 'withdrawn');
+  const sections = ['withdrawn', 'partially_withdrawn'].includes(submission.status) && withdrawn.length > 0
+    ? withdrawn
+    : submission.sections;
+  return sections.map((section) => String(section.id));
 };
 
 const parseApiDate = (value: string): Date => {
@@ -313,10 +313,11 @@ export default function DeanScheduleApprovalPage() {
   const [schedules, setSchedules] = useState<ScheduleApproval[]>(cachedApprovalData?.schedules ?? []);
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>(cachedApprovalData?.rawSchedules ?? []);
   const [rawSections, setRawSections] = useState<RawSection[]>(cachedApprovalData?.rawSections ?? []);
+  const [activeTerm, setActiveTerm] = useState<ApprovalTerm | null>(cachedApprovalData?.activeTerm ?? null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(approvalCacheKey));
   
   // Filters
-  const [selectedRequestType, setSelectedRequestType] = useState<'approval' | 'withdrawal' | 'revision'>('approval');
+  const [selectedQueueTab, setSelectedQueueTab] = useState<DeanQueueTab>('pending');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [selectedMode, setSelectedMode] = useState('All Modes');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -341,37 +342,14 @@ export default function DeanScheduleApprovalPage() {
     const loadData = async () => {
       try {
         setIsLoading(!hasCachedData(approvalCacheKey));
-        const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
-          const [response, notificationResponse] = await Promise.all([
-            api.get<{
-            active_term: { id: number | string } | null;
+          const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
+          const response = await api.get<{
+            active_term: ApprovalTerm | null;
             sections: RawSection[];
             schedules: RawSchedule[];
-            }>('/initial-data'),
-            api.get<NotificationResponse>('/notifications', { params: { limit: 50 } }).catch(() => ({ data: { data: [] } })),
-          ]);
+            schedule_submissions: RawScheduleSubmission[];
+          }>('/initial-data');
           const term = response.data.active_term;
-          const withdrawalDepartmentIds = notificationResponse.data.data
-            .filter((notification) => notification.type === 'schedule_withdrawn' && notification.department_id !== null)
-            .map((notification) => Number(notification.department_id));
-          const withdrawalDepartmentSet = new Set(withdrawalDepartmentIds);
-          const workflowNotifications = notificationResponse.data.data.filter((notification) =>
-            notification.department_id !== null &&
-            ['schedule_submitted', 'schedule_withdrawn', 'schedule_returned_by_dean', 'schedule_returned_by_vpaa'].includes(notification.type)
-          );
-          const latestWorkflowByDepartmentAndType = new Map<string, (typeof workflowNotifications)[number]>();
-          workflowNotifications.forEach((notification) => {
-            const requestType: ScheduleApproval['requestType'] =
-              notification.type === 'schedule_submitted'
-                ? 'approval'
-                : notification.type === 'schedule_withdrawn'
-                ? 'withdrawal'
-                : 'revision';
-            const key = `${notification.department_id}:${requestType}`;
-            if (isNewerWorkflowNotification(notification, latestWorkflowByDepartmentAndType.get(key))) {
-              latestWorkflowByDepartmentAndType.set(key, notification);
-            }
-          });
 
           let filteredSections = response.data.sections;
           if (term) {
@@ -410,97 +388,51 @@ export default function DeanScheduleApprovalPage() {
             schedulesByDepartment[departmentId].push(s);
           });
 
-          const mappedApprovals: ScheduleApproval[] = [];
-          Object.entries(schedulesByDepartment).forEach(([departmentId, deptSchedules]) => {
-            if (deptSchedules.length === 0) return;
+          const mappedApprovals = response.data.schedule_submissions
+            .filter((submission) => !term || Number(submission.term_id) === Number(term.id))
+            .filter((submission) => !userDeptId || Number(submission.department_id) === Number(userDeptId))
+            .map((submission): ScheduleApproval => {
+              const departmentId = String(submission.department_id);
+              const workflowSectionIds = submissionSectionIds(submission);
+              const deptSchedules = schedulesByDepartment[departmentId] ?? [];
+              const visibleDeptSchedules = deptSchedules.filter((schedule) =>
+                workflowSectionIds.includes(String(schedule.section_id))
+              );
+              const firstSchedule = visibleDeptSchedules[0] ?? deptSchedules[0];
+              const status = submissionDisplayStatus(submission);
+              const requestType: ScheduleApproval['requestType'] = ['withdrawn', 'partially_withdrawn'].includes(submission.status)
+                ? 'withdrawal'
+                : submission.status.startsWith('rejected_')
+                  ? 'revision'
+                  : 'approval';
 
-            const firstSched = deptSchedules[0];
-            const status = getDepartmentApprovalStatus(deptSchedules);
-            if (status === 'approved') return;
-            const requestType: ScheduleApproval['requestType'] = withdrawalDepartmentSet.has(Number(departmentId))
-              && status === 'revision'
-              ? 'withdrawal'
-              : status === 'submitted'
-              ? 'approval'
-              : 'revision';
-            const workflowNotification = latestWorkflowByDepartmentAndType.get(`${departmentId}:${requestType}`);
-            const withdrawnSectionIds = requestType === 'withdrawal'
-              ? readMetadataSectionIds(workflowNotification?.metadata)
-              : [];
-            const departmentSections = sectionsByDepartment[departmentId] ?? [];
-            const visibleDeptSchedules = withdrawnSectionIds.length > 0
-              ? deptSchedules.filter((schedule) => withdrawnSectionIds.includes(String(schedule.section_id)))
-              : deptSchedules;
-            mappedApprovals.push({
-              id: Number(departmentId),
-              department: firstSched.department?.department_name ?? userDeptName ?? "",
-              section: formatSectionSummary(departmentSections, withdrawnSectionIds),
-              subjectsScheduled: new Set(visibleDeptSchedules.map((s) => getScheduleCourseId(s))).size,
-              submittedBy: workflowNotification?.actor?.name ?? "Secretary",
-              submittedAt: workflowNotification?.created_at ?? firstSched.created_at ?? "",
-              deanReviewedAt: firstSched.reviewed_at_dean ?? null,
-              status: status,
-              mode: firstSched.mode ?? "on-site",
-              requestType,
-              withdrawnSectionIds,
+              return {
+                id: Number(submission.department_id),
+                submissionId: submission.id,
+                department: firstSchedule?.department?.department_name ?? userDeptName ?? '',
+                section: formatSectionSummary(sectionsByDepartment[departmentId] ?? [], workflowSectionIds),
+                subjectsScheduled: new Set(visibleDeptSchedules.map((schedule) => getScheduleCourseId(schedule))).size,
+                submittedBy: submission.submitter?.name ?? 'Secretary',
+                submittedAt: submission.submitted_at ?? '',
+                deanReviewedAt: submission.dean_reviewed_at,
+                status,
+                mode: firstSchedule?.mode ?? 'on-site',
+                requestType,
+                workflowSectionIds,
+              };
             });
-          });
-
-          latestWorkflowByDepartmentAndType.forEach((notification, key) => {
-            const [departmentIdValue, requestTypeValue] = key.split(':');
-            const departmentId = Number(departmentIdValue);
-            const requestType = requestTypeValue as ScheduleApproval['requestType'];
-            const latestWithdrawal = latestWorkflowByDepartmentAndType.get(`${departmentId}:withdrawal`);
-            if (
-              requestType === 'approval'
-              && latestWithdrawal
-              && isNewerWorkflowNotification(latestWithdrawal, notification)
-            ) {
-              return;
-            }
-            const alreadyMapped = mappedApprovals.some(
-              (approval) => approval.id === departmentId && approval.requestType === requestType
-            );
-            if (alreadyMapped) return;
-
-            const deptSchedules = schedulesByDepartment[String(departmentId)] ?? [];
-            const departmentSections = sectionsByDepartment[String(departmentId)] ?? [];
-            const firstSched = deptSchedules[0];
-            const currentStatus = deptSchedules.length > 0 ? getDepartmentApprovalStatus(deptSchedules) : 'revision';
-            const withdrawnSectionIds = requestType === 'withdrawal'
-              ? readMetadataSectionIds(notification.metadata)
-              : [];
-            const visibleDeptSchedules = withdrawnSectionIds.length > 0
-              ? deptSchedules.filter((schedule) => withdrawnSectionIds.includes(String(schedule.section_id)))
-              : deptSchedules;
-
-            mappedApprovals.push({
-              id: departmentId,
-              department: notification.department?.department_name ?? firstSched?.department?.department_name ?? userDeptName ?? '',
-              section: formatSectionSummary(departmentSections, withdrawnSectionIds),
-              subjectsScheduled: firstSched
-                ? new Set(visibleDeptSchedules.map((s) => getScheduleCourseId(s))).size
-                : Number(notification.metadata?.schedules_updated ?? 0),
-              submittedBy: notification.actor?.name ?? 'Secretary',
-              submittedAt: notification.created_at,
-              deanReviewedAt: firstSched?.reviewed_at_dean ?? null,
-              status: currentStatus,
-              mode: firstSched?.mode ?? 'on-site',
-              requestType,
-              withdrawnSectionIds,
-            });
-          });
 
           return {
             schedules: mappedApprovals,
             rawSchedules: dbSchedules,
             rawSections: filteredSections,
-            withdrawalDepartmentIds,
+            activeTerm: term,
           };
-        });
+        }, true);
 
         setRawSchedules(data.rawSchedules);
         setRawSections(data.rawSections);
+        setActiveTerm(data.activeTerm);
         setSchedules(data.schedules);
       } catch {
         toast.error('Load Failed', 'Could not load schedules for approval.');
@@ -513,14 +445,20 @@ export default function DeanScheduleApprovalPage() {
   }, [approvalCacheKey, userDeptId, userDeptName]);
 
   const resetFilters = () => {
-    setSelectedRequestType('approval');
+    setSelectedQueueTab('pending');
     setSelectedStatus('All Status');
     setSelectedMode('All Modes');
   };
 
   const handleApprove = (sched: ScheduleApproval) => {
     setApproveConfirm(sched);
-    const hasTba = rawSchedules.some((row) => Number(row.department_id) === Number(sched.id) && row.mode === 'on-site' && !row.room);
+    const sectionIds = new Set(sched.workflowSectionIds ?? []);
+    const hasTba = rawSchedules.some((row) =>
+      Number(row.department_id) === Number(sched.id)
+      && (sectionIds.size === 0 || sectionIds.has(String(row.section_id)))
+      && row.mode === 'on-site'
+      && !row.room
+    );
     setApproveWithTba(hasTba);
     setApprovalOverrideReason('');
   };
@@ -533,7 +471,7 @@ export default function DeanScheduleApprovalPage() {
 
         setSchedules((prev) =>
           prev.map((s) =>
-            s.id === approveConfirm.id
+            s.submissionId === approveConfirm.submissionId
               ? { ...s, status: approveWithTba ? 'conditionally_approved' : 'approved_by_dean', deanReviewedAt: now }
               : s
           )
@@ -541,6 +479,8 @@ export default function DeanScheduleApprovalPage() {
         setRawSchedules((prev) =>
           prev.map((s) =>
             Number(s.department_id) === Number(approveConfirm.id)
+              && (approveConfirm.workflowSectionIds?.includes(String(s.section_id)) ?? true)
+              && s.status === 'submitted'
               ? { ...s, status: approveWithTba ? 'conditionally_approved' : 'approved_by_dean', reviewed_by_dean: userId, reviewed_at_dean: now }
               : s
           )
@@ -576,7 +516,7 @@ export default function DeanScheduleApprovalPage() {
 
         setSchedules((prev) =>
           prev.map((s) =>
-            s.id === rejectConfirm.id
+            s.submissionId === rejectConfirm.submissionId
               ? { ...s, status: 'rejected_by_dean', deanReviewedAt: now }
               : s
           )
@@ -584,6 +524,8 @@ export default function DeanScheduleApprovalPage() {
         setRawSchedules((prev) =>
           prev.map((s) =>
             Number(s.department_id) === Number(rejectConfirm.id)
+              && (rejectConfirm.workflowSectionIds?.includes(String(s.section_id)) ?? true)
+              && s.status === 'submitted'
               ? { ...s, status: 'rejected_by_dean', rejection_reason: rejectReason, reviewed_by_dean: userId, reviewed_at_dean: now }
               : s
           )
@@ -603,7 +545,14 @@ export default function DeanScheduleApprovalPage() {
   // Filter schedules
   const filteredData = useMemo(() => {
     return schedules.filter(s => {
-      if (s.requestType !== selectedRequestType) {
+      const matchesQueueTab = selectedQueueTab === 'pending'
+        ? s.status === 'submitted'
+        : selectedQueueTab === 'approved'
+          ? ['approved_by_dean', 'conditionally_approved', 'approved'].includes(s.status)
+          : selectedQueueTab === 'withdrawn'
+            ? s.requestType === 'withdrawal'
+            : ['rejected', 'rejected_by_dean', 'revision'].includes(s.status) && s.requestType !== 'withdrawal';
+      if (!matchesQueueTab) {
         return false;
       }
 
@@ -622,7 +571,7 @@ export default function DeanScheduleApprovalPage() {
       
       return matchStatus && matchMode;
     });
-  }, [schedules, selectedRequestType, selectedStatus, selectedMode]);
+  }, [schedules, selectedQueueTab, selectedStatus, selectedMode]);
 
   // Format date helper
   const formatDate = (dateStr: string | null) => {
@@ -725,14 +674,16 @@ export default function DeanScheduleApprovalPage() {
 
   const modalSchedules = useMemo(() => {
     if (!viewSchedule) return [];
-    const withdrawnSectionIds = new Set(viewSchedule.withdrawnSectionIds ?? []);
+    const workflowSectionIds = new Set(viewSchedule.workflowSectionIds ?? []);
     return rawSchedules
       .filter((schedule) => (
         Number(schedule.department_id) === Number(viewSchedule.id)
         && (
-          viewSchedule.requestType !== 'withdrawal'
-          || withdrawnSectionIds.size === 0
-          || withdrawnSectionIds.has(String(schedule.section_id))
+          workflowSectionIds.size > 0
+            ? workflowSectionIds.has(String(schedule.section_id))
+            : viewSchedule.status === 'submitted'
+              ? schedule.status === 'submitted'
+              : true
         )
       ))
       .sort((left, right) => (
@@ -745,15 +696,14 @@ export default function DeanScheduleApprovalPage() {
   const modalSections = useMemo<ScheduleSectionOption[]>(() => {
     if (!viewSchedule) return [];
     const sectionMap = new Map<string, string>();
-    const withdrawnSectionIds = new Set(viewSchedule.withdrawnSectionIds ?? []);
+    const workflowSectionIds = new Set(viewSchedule.workflowSectionIds ?? []);
 
     rawSections
       .filter((section) => (
         Number(section.department_id) === Number(viewSchedule.id)
         && (
-          viewSchedule.requestType !== 'withdrawal'
-          || withdrawnSectionIds.size === 0
-          || withdrawnSectionIds.has(String(section.id))
+          workflowSectionIds.size === 0
+          || workflowSectionIds.has(String(section.id))
         )
       ))
       .forEach((section) => sectionMap.set(String(section.id), section.section_name));
@@ -812,11 +762,6 @@ export default function DeanScheduleApprovalPage() {
         cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
       },
       {
-        accessorKey: 'section',
-        header: 'Submission',
-        cell: info => <span className="text-gray-700 font-semibold">{info.getValue() as string}</span>
-      },
-      {
         accessorKey: 'subjectsScheduled',
         header: () => <div className="text-center">Subjects Scheduled</div>,
         cell: info => <div className="text-center font-semibold text-gray-700">{info.getValue() as number}</div>
@@ -828,12 +773,12 @@ export default function DeanScheduleApprovalPage() {
       },
       {
         accessorKey: 'submittedAt',
-        header: 'Submitted At',
+        header: 'Submitted',
         cell: info => <span className="text-gray-500 font-medium">{formatDate(info.getValue() as string)}</span>
       },
       {
         accessorKey: 'deanReviewedAt',
-        header: 'Dean Reviewed At',
+        header: 'Reviewed',
         cell: info => <span className="text-gray-500 font-medium">{formatDate(info.getValue() as string | null)}</span>
       },
       {
@@ -893,28 +838,37 @@ export default function DeanScheduleApprovalPage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  const requestTabs = [
-    { id: 'approval' as const, label: 'Approval Requests' },
-    { id: 'withdrawal' as const, label: 'Withdrawal Schedule' },
-    { id: 'revision' as const, label: 'Rejected/Revision Requests' },
+  const requestTabs: Array<{ id: DeanQueueTab; label: string }> = [
+    { id: 'pending', label: 'Pending Approval' },
+    { id: 'approved', label: 'Schedule Approved' },
+    { id: 'withdrawn', label: 'Withdrawn' },
+    { id: 'rejected', label: 'Rejected' },
   ];
 
-  const requestCounts = requestTabs.reduce<Record<ScheduleApproval['requestType'], number>>((counts, tab) => {
-    counts[tab.id] = schedules.filter((schedule) => schedule.requestType === tab.id).length;
+  const matchesQueueTab = (schedule: ScheduleApproval, tab: DeanQueueTab): boolean => tab === 'pending'
+    ? schedule.status === 'submitted'
+    : tab === 'approved'
+      ? ['approved_by_dean', 'conditionally_approved', 'approved'].includes(schedule.status)
+      : tab === 'withdrawn'
+        ? schedule.requestType === 'withdrawal'
+        : ['rejected', 'rejected_by_dean', 'revision'].includes(schedule.status) && schedule.requestType !== 'withdrawal';
+
+  const requestCounts = requestTabs.reduce<Record<DeanQueueTab, number>>((counts, tab) => {
+    counts[tab.id] = schedules.filter((schedule) => matchesQueueTab(schedule, tab.id)).length;
     return counts;
-  }, { approval: 0, withdrawal: 0, revision: 0 });
+  }, { pending: 0, approved: 0, withdrawn: 0, rejected: 0 });
 
   return (
     <div className="p-6 relative">
       <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
         {requestTabs.map((tab) => {
-          const active = selectedRequestType === tab.id;
+          const active = selectedQueueTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => {
-                setSelectedRequestType(tab.id);
+                setSelectedQueueTab(tab.id);
                 setPagination((prev) => ({ ...prev, pageIndex: 0 }));
               }}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold uppercase tracking-wide transition-colors ${
@@ -1021,9 +975,6 @@ export default function DeanScheduleApprovalPage() {
                       <Skeleton className="h-4 w-32" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-20" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
                       <Skeleton className="h-4 w-12 mx-auto" />
                     </td>
                     <td className="px-4 py-2.5 align-middle text-xs">
@@ -1038,9 +989,6 @@ export default function DeanScheduleApprovalPage() {
                     <td className="px-4 py-2.5 align-middle text-xs">
                       <Skeleton className="h-4 w-24 rounded-full" />
                     </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16 rounded-full" />
-                    </td>
                     <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
                       <div className="flex justify-end gap-2">
                         <Skeleton className="h-8 w-8 rounded-lg" />
@@ -1051,7 +999,7 @@ export default function DeanScheduleApprovalPage() {
                 ))
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <p className="text-base font-semibold">No schedules found.</p>
                       <p className="text-xs">Adjust your status or mode filters and try again.</p>
@@ -1067,7 +1015,7 @@ export default function DeanScheduleApprovalPage() {
                     }`}
                   >
                     {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['section', 'subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(cell.column.id);
+                      const isNoWrap = ['subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(cell.column.id);
                       return (
                         <td 
                           key={cell.id} 
@@ -1168,6 +1116,7 @@ export default function DeanScheduleApprovalPage() {
           getModeLabel={getModeLabel}
           formatTime={formatTime24hTo12h}
           departmentLogoUrl={modalSchedules[0]?.department?.logo}
+          activeTerm={activeTerm}
           canAct={viewSchedule.status === 'submitted' && viewSchedule.requestType === 'approval'}
           onApprove={() => { handleApprove(viewSchedule); setViewSchedule(null); }}
           onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}
