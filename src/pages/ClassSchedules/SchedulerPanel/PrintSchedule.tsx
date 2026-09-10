@@ -7,6 +7,7 @@ import municipalLogo from "../../../assets/municipal-logo.png";
 import type { ApiDepartmentRecord, ScheduleItem, Section, Term, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 import { semesterLabel } from "../../../lib/termLabel";
+import { formatTime12h } from "../../../lib/timeGrid";
 
 interface PrintScheduleProps {
   sections: Section[];
@@ -17,6 +18,7 @@ interface PrintScheduleProps {
   departments: ApiDepartmentRecord[];
   users: UserSummary[];
   activeTerm: Term | null;
+  printAllSections?: boolean;
 }
 
 interface AutoTableDocument extends jsPDF {
@@ -54,27 +56,6 @@ const buildSignatories = (settings: InstitutionSettings, preparedByName: string,
   { label: "Approved by:", name: settings.president_name, role: settings.president_title },
 ];
 
-const formatPrintTime = (timeStr: string): string => {
-  if (!timeStr) return "";
-  const ampmMatch = timeStr.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
-  if (ampmMatch) {
-    const hours = ampmMatch[1];
-    const minutes = ampmMatch[2] || "00";
-    const ampm = ampmMatch[3].toUpperCase();
-    return `${hours}:${minutes.padStart(2, "0")} ${ampm}`;
-  }
-  const time24hMatch = timeStr.match(/^(\d{2}):(\d{2})/);
-  if (time24hMatch) {
-    let hours = parseInt(time24hMatch[1], 10);
-    const minutes = time24hMatch[2];
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12;
-    if (hours === 0) hours = 12;
-    return `${hours}:${minutes} ${ampm}`;
-  }
-  return timeStr;
-};
-
 const getFullDayName = (day: string): string => {
   if (!day) return "";
   const d = day.trim().toLowerCase();
@@ -97,6 +78,7 @@ export default function PrintSchedule({
   departments,
   users,
   activeTerm,
+  printAllSections = false,
 }: PrintScheduleProps) {
 
   const activeSection = sections.find((section) => section.id === selectedSectionId);
@@ -107,7 +89,7 @@ export default function PrintSchedule({
   const preparer = byRole("program_head") ?? byRole("secretary");
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {
-    const name = activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY";
+    const name = printAllSections ? "ALL DEPARTMENTS" : (activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY");
     return /^college\s+of\s+/i.test(name) ? name.toUpperCase() : `COLLEGE OF ${name.toUpperCase()}`;
   })();
 
@@ -290,7 +272,9 @@ export default function PrintSchedule({
     const activeTermSections = activeTerm
       ? sections.filter((section) => Number(section.termId) === Number(activeTerm.id))
       : sections;
-    const unfilteredSections = activeSection
+    const unfilteredSections = printAllSections
+      ? activeTermSections
+      : activeSection
       ? activeTermSections.filter((section) => section.departmentId === activeSection.departmentId)
       : activeTermSections;
 
@@ -407,7 +391,7 @@ export default function PrintSchedule({
             }
           ]),
           getFullDayName(item.day),
-          `${formatPrintTime(item.startTime)} – ${formatPrintTime(item.endTime)}`,
+          `${formatTime12h(item.startTime)} – ${formatTime12h(item.endTime)}`,
           {
             content: roomLabel,
             styles: { halign: "center" as const, valign: "middle" as const }

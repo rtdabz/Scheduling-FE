@@ -639,7 +639,7 @@ export default function ProgramHeadFaculty() {
   return (
     <div className="space-y-6 font-sans pb-12">
       {/* Summary Statistics Dashboard Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
+      <div id="instructors-summary" className="grid grid-cols-2 md:grid-cols-5 gap-5">
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
           {isLoading ? (
@@ -695,7 +695,7 @@ export default function ProgramHeadFaculty() {
       </div>
 
       {/* Search and Filters Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+      <div id="instructors-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />

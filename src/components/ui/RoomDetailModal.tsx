@@ -54,9 +54,13 @@ interface RoomDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   roomId: number | null;
+  initialViewMode?: 'list' | 'grid';
+  className?: string;
+  initialRoom?: Room | null;
+  initialSchedules?: Schedule[];
 }
 
-export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailModalProps) {
+export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = [] }: RoomDetailModalProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,6 +76,15 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
       setSchedules([]);
       setIsLoading(true);
       return;
+    }
+
+    // The Rooms page already has the room and timetable payload. Seed the
+    // detail view synchronously so printing never captures an async skeleton,
+    // including for rooms whose schedule list is empty.
+    if (initialRoom && initialRoom.id === roomId) {
+      setRoom(initialRoom);
+      setSchedules(initialSchedules);
+      setIsLoading(false);
     }
 
     const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -96,7 +109,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
         try {
           const [roomRes, initialRes] = await Promise.all([
             api.get<Room>(`/rooms/${roomId}`),
-            api.get<{ schedules: Schedule[] }>('/initial-data'),
+            api.get<{ schedules: Schedule[] }>('/initial-data?include=schedules'),
           ]);
           setRoom(roomRes.data);
           setSchedules(initialRes.data.schedules);
@@ -109,12 +122,12 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
     }
 
     const fetchRoom = async () => {
-      setIsLoading(true);
-      setRoom(null);
+      setIsLoading(!initialRoom || initialRoom.id !== roomId);
+      if (!initialRoom || initialRoom.id !== roomId) setRoom(null);
       try {
         const [roomRes, initialRes] = await Promise.all([
           api.get<Room>(`/rooms/${roomId}`),
-          api.get<{ schedules: Schedule[] }>('/initial-data'),
+          api.get<{ schedules: Schedule[] }>('/initial-data?include=schedules'),
         ]);
         setRoom(roomRes.data);
         setSchedules(initialRes.data.schedules);
@@ -125,7 +138,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
       }
     };
     fetchRoom();
-  }, [roomId, isOpen]);
+  }, [roomId, isOpen, initialRoom, initialSchedules]);
 
   if (!isOpen) return null;
 
@@ -136,10 +149,10 @@ export default function RoomDetailModal({ isOpen, onClose, roomId }: RoomDetailM
       title="Classroom Details"
       description="Weekly schedule and room information"
       size="xl"
-      className="max-h-[95vh]"
+      className={`max-h-[95vh] ${className}`}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
-        <RoomDetailContent room={room} schedules={schedules} isLoading={isLoading} />
+        <RoomDetailContent room={room} schedules={schedules} isLoading={isLoading} initialViewMode={initialViewMode} />
       </div>
     </Modal>
   );

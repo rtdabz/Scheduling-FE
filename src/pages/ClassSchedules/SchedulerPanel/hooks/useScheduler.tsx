@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import {
+  DEPARTMENT_WITHDRAWABLE_STATUSES,
   DAYS,
   getSubjectClassification,
+  isDepartmentSectionWithdrawable,
   slotToTimeStr
 } from "../constants";
 import type {
@@ -17,12 +19,15 @@ import type {
   Room,
   ScheduleItem,
   Section,
+  SectionDoneCandidate,
   Subject,
   Term,
   UserSummary,
   WithdrawalStage
 } from "../types";
+import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
 import { getCourseSlotPlan } from "../courseSlotPlan";
+import { buildSectionDoneCandidates } from "../sectionDoneCandidates";
 import { getSubjectTotalSlots } from "../types";
 import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
 
@@ -40,10 +45,12 @@ import { requiredRoomTypeForMeeting, useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
-import { getCachedData, loadCachedData, setCachedData, clearCachedKey, clearDataCache } from "../../../../lib/dataCache";
-import { getStoredUser } from "../../../../lib/storedUser";
+import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
+import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
+import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { buildPreferredPattern, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
+import { resolveManualOperationStatus } from "../manualScheduleOperation";
 
 const isNotFoundError = (err: unknown): boolean => {
   return (
@@ -58,14 +65,25 @@ const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DA
 
 const ROOM_TBA = "tba";
 
-const sortSplitMeetingsForEdit = (items: ScheduleItem[], subject?: Subject | null): ScheduleItem[] => {
+export interface ManualSchedulingSettings {
+  lecture_lab_schedule_override_enabled?: boolean;
+  gec_split_schedule_override_enabled?: boolean;
+  forced_day_rules?: Array<{ course_id: number; day: string }>;
+  field_course_codes?: string[];
+}
+
+const sortSplitMeetingsForEdit = (
+  items: ScheduleItem[],
+  subject?: Subject | null,
+  laboratoryFirst = false,
+): ScheduleItem[] => {
   const lectureSlots = Number(subject?.lectureHours ?? 0) * 2;
   const labSlots = Number(subject?.labHours ?? 0) * 6;
   const meetingRank = (item: ScheduleItem): number => {
-    if (item.meetingType === "lecture") return 0;
-    if (item.meetingType === "laboratory") return 1;
-    if (lectureSlots > 0 && item.durationSlots === lectureSlots) return 0;
-    if (labSlots > 0 && item.durationSlots === labSlots) return 1;
+    if (item.meetingType === "laboratory") return laboratoryFirst ? 0 : 1;
+    if (item.meetingType === "lecture") return laboratoryFirst ? 1 : 0;
+    if (labSlots > 0 && item.durationSlots === labSlots) return laboratoryFirst ? 0 : 1;
+    if (lectureSlots > 0 && item.durationSlots === lectureSlots) return laboratoryFirst ? 1 : 0;
     return 2;
   };
 
@@ -82,6 +100,7 @@ const departmentReadyStatuses: ScheduleItem["status"][] = [
   "approved_by_dean",
   "approved",
   "faculty_assignment",
+  "reassignment",
   "finalized"
 ];
 
@@ -90,15 +109,11 @@ const departmentSubmittedStatuses: ScheduleItem["status"][] = [
   "approved_by_dean",
   "approved",
   "faculty_assignment",
+  "reassignment",
   "finalized"
 ];
 
-const departmentWithdrawableStatuses: ScheduleItem["status"][] = [
-  "submitted",
-  "approved_by_dean",
-  "approved",
-  "faculty_assignment"
-];
+const departmentWithdrawableStatuses = DEPARTMENT_WITHDRAWABLE_STATUSES;
 
 const departmentProtectedStatuses: ScheduleItem["status"][] = [
   "submitted",
@@ -106,11 +121,13 @@ const departmentProtectedStatuses: ScheduleItem["status"][] = [
   "conditionally_approved",
   "approved",
   "faculty_assignment",
+  "reassignment",
   "finalized"
 ];
 
 const deriveSectionProgressStatus = (items: ScheduleItem[]): ScheduleItem["status"] => {
   const statuses = new Set(items.map((item) => item.status));
+  if (statuses.has("reassignment")) return "reassignment";
   if (statuses.has("finalized")) return "finalized";
 
   const conservativeOrder: ScheduleItem["status"][] = [
@@ -123,7 +140,8 @@ const deriveSectionProgressStatus = (items: ScheduleItem[]): ScheduleItem["statu
     "approved_by_dean",
     "conditionally_approved",
     "approved",
-    "faculty_assignment"
+    "faculty_assignment",
+    "reassignment"
   ];
   return conservativeOrder.find((status) => statuses.has(status)) ?? "draft";
 };
@@ -198,8 +216,12 @@ export const useScheduler = () => {
   const { toast } = useToast();
   const user = getStoredUser();
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const canWithdrawSubmission = ['secretary', 'program_head'].includes(user?.role?.toLowerCase() ?? '');
-  const schedulerCacheKey = `scheduler:v15:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
+  const canUpdateSchedule = hasStoredCapability('schedule.update');
+  const canGenerateSchedule = hasStoredCapability('schedule.generate');
+  const canSubmitSchedule = hasStoredCapability('schedule.submit');
+  const canWithdrawSubmission = hasStoredCapability('schedule.withdraw');
+  const canAssignInstructor = hasStoredCapability('schedule.assign_instructor');
+  const schedulerCacheKey = `scheduler:v16:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -208,6 +230,10 @@ export const useScheduler = () => {
   const [faculties, setFaculties] = useState<Faculty[]>(canUseInitialCache ? cachedSchedulerData.faculties : []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(canUseInitialCache ? cachedSchedulerData.activeTerm : null);
   const [departments, setDepartments] = useState<Department[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
+  const [schedulingReady, setSchedulingReady] = useState(canUseInitialCache ? cachedSchedulerData.schedulingReady !== false : true);
+  // Assume a Dean until the payload says otherwise, so a cold cache never
+  // blocks submitting on its own. The backend enforces it regardless.
+  const [hasDean, setHasDean] = useState(canUseInitialCache ? cachedSchedulerData.hasDean !== false : true);
   const [users, setUsers] = useState<UserSummary[]>(canUseInitialCache ? cachedSchedulerData.users : []);
   const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
   const [fieldCourseAssignmentEnabled, setFieldCourseAssignmentEnabled] = useState<boolean>(
@@ -217,8 +243,10 @@ export const useScheduler = () => {
     canUseInitialCache ? cachedSchedulerData.fieldCourseCodes : []
   );
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
-  const [isMarkingSectionDone, setIsMarkingSectionDone] = useState(false);
+  const [isMarkSectionsDoneModalOpen, setIsMarkSectionsDoneModalOpen] = useState(false);
+  const [isMarkingSectionsDone, setIsMarkingSectionsDone] = useState(false);
   const [isEditingSection, setIsEditingSection] = useState(false);
+
   const [isResubmittingSection, setIsResubmittingSection] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [selectedSectionId, setSelectedSectionId] = useState<string>(() => {
@@ -254,6 +282,8 @@ export const useScheduler = () => {
       setFaculties(cachedData.faculties);
       setActiveTerm(cachedData.activeTerm);
       setDepartments(cachedData.departments);
+      setSchedulingReady(cachedData.schedulingReady !== false);
+      setHasDean(cachedData.hasDean !== false);
       setUsers(cachedData.users);
       setSections(cachedData.sections);
       setSchedules(cachedData.schedules);
@@ -287,6 +317,8 @@ export const useScheduler = () => {
         setFaculties(data.faculties);
         setActiveTerm(data.activeTerm);
         setDepartments(data.departments);
+        setSchedulingReady(data.schedulingReady);
+        setHasDean(data.hasDean);
         setUsers(data.users);
         setSections(data.sections);
         setSchedules(data.schedules);
@@ -464,6 +496,10 @@ export const useScheduler = () => {
   const [modalDay2RoomId, setModalDay2RoomId] = useState<string>("");
   const [modalDay2ClassMode, setModalDay2ClassMode] = useState<DeliveryMode>("on-site");
   const [modalIsHybrid, setModalIsHybrid] = useState<boolean>(false);
+  const [modalSplitEnabled, setModalSplitEnabled] = useState<boolean>(false);
+  const [modalFieldEnabled, setModalFieldEnabled] = useState<boolean>(false);
+  const [modalForceDayEnabled, setModalForceDayEnabled] = useState<boolean>(false);
+  const [modalForcedDayIndex, setModalForcedDayIndex] = useState<number>(0);
   const [modalPreferredPattern, setModalPreferredPattern] = useState<string | null>(null);
   const [modalDay1Index, setModalDay1Index] = useState<number>(0);
   const [modalDay2Index, setModalDay2Index] = useState<number>(2);
@@ -474,9 +510,28 @@ export const useScheduler = () => {
   const [isDay2ModifiedByUser, setIsDay2ModifiedByUser] = useState<boolean>(false);
   const [modalValidationError, setModalValidationError] = useState<string>("");
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
+  const [manualSchedulingSettings, setManualSchedulingSettings] = useState<ManualSchedulingSettings | null>(null);
+
+  useEffect(() => {
+    if (!selectedSectionId) return;
+
+    let active = true;
+    api.get<ManualSchedulingSettings>("/scheduling-settings", {
+      params: { section_id: Number(selectedSectionId) },
+    }).then((response) => {
+      if (active) setManualSchedulingSettings(response.data);
+    }).catch(() => {
+      if (active) setManualSchedulingSettings(null);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedSectionId]);
 
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
   const [facultyActionSlotId, setFacultyActionSlotId] = useState<string | null>(null);
+  const [isClearingSectionInstructors, setIsClearingSectionInstructors] = useState(false);
   const [popupValidationError, setPopupValidationError] = useState<string>("");
   const [popupConflictWarning, setPopupConflictWarning] = useState<string>("");
   // The server decides when an assignment crosses an instructor's Basic Load, so
@@ -565,9 +620,9 @@ export const useScheduler = () => {
     );
   }, []);
 
-  const isPhase2Active = ["approved", "faculty_assignment", "finalized"].includes(currentStatus);
-  const isEditable = currentStatus === "draft" || currentStatus === "revision";
-  const isPhase1Completed = ["completed", "approved", "faculty_assignment", "finalized"].includes(currentStatus);
+  const isPhase2Active = ["approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus);
+  const isEditable = canUpdateSchedule && (currentStatus === "draft" || currentStatus === "revision");
+  const isPhase1Completed = ["completed", "approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
   const facultyAssignmentDone = sectionSchedules.length > 0 && sectionSchedules.every((schedule) => schedule.facultyAssignmentDone);
 
@@ -692,10 +747,19 @@ export const useScheduler = () => {
           status,
           isDone: isFullyPlotted && departmentReadyStatuses.includes(status),
           isSelected: section.id === selectedSectionId,
-          assignedInstructorBlocks: sectionScheduleItems.filter((schedule) => Boolean(schedule.facultyId)).length
+          assignedInstructorBlocks: sectionScheduleItems.filter((schedule) => Boolean(schedule.facultyId)).length,
+          facultyAssignmentDone: sectionScheduleItems.length > 0
+            && sectionScheduleItems.every((schedule) => Boolean(schedule.facultyAssignmentDone))
         };
       });
   }, [schedules, sections, selectedDepartmentId, selectedSectionId, semesterSubjects]);
+
+  // Sections still open for plotting, with everything the bulk "mark done"
+  // checklist needs so the user does not have to visit each section in turn.
+  const sectionDoneCandidates = useMemo<SectionDoneCandidate[]>(
+    () => buildSectionDoneCandidates(departmentSectionProgress, schedules),
+    [departmentSectionProgress, schedules]
+  );
 
   const departmentTotalSections = departmentSectionProgress.length;
   const departmentDoneSections = departmentSectionProgress.filter((section) => section.isDone).length;
@@ -707,10 +771,20 @@ export const useScheduler = () => {
     departmentSubmittedStatuses.includes(section.status)
   );
   const departmentHasWithdrawableSubmission = departmentSectionProgress.some((section) =>
-    departmentWithdrawableStatuses.includes(section.status)
+    isDepartmentSectionWithdrawable(
+      section.status,
+      section.assignedInstructorBlocks,
+      section.facultyAssignmentDone,
+    )
   );
   const departmentWithdrawalStage: WithdrawalStage = departmentSectionProgress.some((section) =>
-    section.status === "approved" || section.status === "faculty_assignment"
+    section.status === "approved"
+      || section.status === "faculty_assignment"
+      || (section.status === "reassignment" && isDepartmentSectionWithdrawable(
+        section.status,
+        section.assignedInstructorBlocks,
+        section.facultyAssignmentDone,
+      ))
   )
     ? "vpaa_approved"
     : departmentSectionProgress.some((section) => section.status === "approved_by_dean")
@@ -772,6 +846,8 @@ export const useScheduler = () => {
   });
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
+    if (!canAssignInstructor) return false;
+
     const subject = subjects.find((item) => item.id === schedule.subjectId);
 
     // A major is assigned by the department that offers it; a GEC service course
@@ -788,7 +864,7 @@ export const useScheduler = () => {
       user?.department_id &&
       Number(user.department_id) === Number(assignedDepartmentId)
     );
-  }, [subjects, user?.department_id]);
+  }, [canAssignInstructor, subjects, user?.department_id]);
 
   const getFacultyRestrictionMessage = useCallback((schedule: ScheduleItem): string => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
@@ -819,11 +895,11 @@ export const useScheduler = () => {
 
   // Read-only snapshot for the init effect: it needs current reference data
   // when a session opens, but must not re-run when that data changes.
-  const placementDataRef = useRef({ schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext });
-  placementDataRef.current = { schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext };
+  const placementDataRef = useRef({ schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext, manualSchedulingSettings });
+  placementDataRef.current = { schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext, manualSchedulingSettings };
 
   useEffect(() => {
-    const { schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext } = placementDataRef.current;
+    const { schedules, subjects, rooms, fieldCourseAssignmentEnabled, fieldCourseCodes, dropContext, manualSchedulingSettings } = placementDataRef.current;
 
     if (dropContext) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
@@ -842,13 +918,25 @@ export const useScheduler = () => {
       const plan = getCourseSlotPlan(subject);
       const singleSlots = plan.singleBlockSlots || totalSlots;
       const splitDay2Slots = singleSlots;
+      const forcedDay = manualSchedulingSettings?.forced_day_rules?.find(
+        (rule) => Number(rule.course_id) === Number(subject?.id)
+      )?.day;
+      const forcedDayIndex = forcedDay ? FULL_DAY_NAMES.findIndex((day) => day === forcedDay) : -1;
+      const configuredField = Boolean(subject && manualSchedulingSettings?.field_course_codes?.some(
+        (code) => code.trim().toUpperCase() === subject.code.trim().toUpperCase()
+      ));
+
+      setModalForceDayEnabled(forcedDayIndex >= 0);
+      setModalForcedDayIndex(forcedDayIndex >= 0 ? forcedDayIndex : dropContext.dayIndex);
+      setModalFieldEnabled(isFieldSubject || configuredField);
+      setModalSplitEnabled(false);
 
 
 
       if (isFieldSubject) {
         setModalClassMode("field");
-        setModalRoomId("");
-        setModalDay2RoomId("");
+        setModalRoomId("field");
+        setModalDay2RoomId("field");
         setModalDay2ClassMode("field");
         setModalIsHybrid(false);
         setModalPreferredPattern(null);
@@ -873,9 +961,10 @@ export const useScheduler = () => {
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
           );
-          const sorted = sortSplitMeetingsForEdit(existing, subject);
+          const sorted = sortSplitMeetingsForEdit(existing, subject, Boolean(targetSched.isHybrid));
 
           if (sorted.length >= 2) {
+            setModalSplitEnabled(!targetSched.isHybrid && ["MW", "TTh"].includes(targetSched.preferredPattern ?? ""));
             // Preserve each stored meeting exactly. Editing must not silently
             // convert a saved on-site lecture to Online just because it is the
             // lecture component of a split course.
@@ -948,6 +1037,7 @@ export const useScheduler = () => {
         setModalRoomId(resolvedRoomId || (requiredRoomType === "laboratory" ? ROOM_TBA : ""));
         setModalClassMode("on-site");
         setModalIsHybrid(false);
+        setModalSplitEnabled(false);
         setModalPreferredPattern(null);
         setModalDay1Index(dropContext.dayIndex);
         setModalDay2Index(getNextMeetingDayIndex(dropContext.dayIndex));
@@ -959,10 +1049,22 @@ export const useScheduler = () => {
         setModalDay2ClassMode("on-site");
         setIsDay2ModifiedByUser(false);
       }
+
+      if (forcedDayIndex >= 0) {
+        setModalDay1Index(forcedDayIndex);
+        setModalPreferredPattern(null);
+        setModalIsHybrid(false);
+        setModalSplitEnabled(false);
+        setModalDay2Duration(0);
+      }
     } else {
       setModalRoomId("");
       setModalClassMode("on-site");
       setModalIsHybrid(false);
+      setModalSplitEnabled(false);
+      setModalFieldEnabled(false);
+      setModalForceDayEnabled(false);
+      setModalForcedDayIndex(0);
       setModalPreferredPattern(null);
       setModalDay1Index(0);
       setModalDay2Index(2);
@@ -1223,6 +1325,9 @@ export const useScheduler = () => {
     const subject = subjects.find((s) => s.id === dropContext.subjectId);
     if (!subject) return;
 
+    const section = sections.find((s) => s.id === selectedSectionId);
+    if (!section) return;
+
     const totalSlots = getSubjectTotalSlots(subject);
     const singleSlots = getCourseSlotPlan(subject).singleBlockSlots || totalSlots;
 
@@ -1317,9 +1422,6 @@ export const useScheduler = () => {
       return;
     }
 
-    const section = sections.find((s) => s.id === selectedSectionId);
-    if (!section) return;
-
     let resolvedRoom1Id: string | null = modalRoomId === ROOM_TBA ? null : modalRoomId;
     if (modalRoomId === "online" || modalClassMode === "online") {
       const onlineRoom = rooms.find(r => r.roomType === "online");
@@ -1365,8 +1467,44 @@ export const useScheduler = () => {
     setIsModalLoading(true);
     let shouldCloseModal = true;
     try {
+      if (manualSchedulingSettings !== null) {
+        const currentForcedRules = manualSchedulingSettings.forced_day_rules ?? [];
+        const nextForcedRules = modalForceDayEnabled
+          ? [
+              ...currentForcedRules.filter((rule) => Number(rule.course_id) !== Number(subject.id)),
+              { course_id: Number(subject.id), day: FULL_DAY_NAMES[modalForcedDayIndex] },
+            ]
+          : currentForcedRules.filter((rule) => Number(rule.course_id) !== Number(subject.id));
+        const currentFieldCodes = manualSchedulingSettings.field_course_codes ?? fieldCourseCodes;
+        const normalizedSubjectCode = subject.code.trim().toUpperCase();
+        const nextFieldCodes = modalFieldEnabled
+          ? Array.from(new Set([...currentFieldCodes, subject.code]))
+          : currentFieldCodes.filter((code) => code.trim().toUpperCase() !== normalizedSubjectCode);
+
+        const settingsChanged = JSON.stringify(nextForcedRules) !== JSON.stringify(currentForcedRules)
+          || JSON.stringify(nextFieldCodes) !== JSON.stringify(currentFieldCodes);
+        if (settingsChanged) {
+          const settingsResponse = await api.patch<ManualSchedulingSettings>("/scheduling-settings", {
+            section_id: Number(selectedSectionId),
+            forced_day_rules: nextForcedRules,
+            field_course_codes: nextFieldCodes,
+          });
+          setManualSchedulingSettings(settingsResponse.data);
+          setFieldCourseCodes(settingsResponse.data.field_course_codes ?? nextFieldCodes);
+          setFieldCourseAssignmentEnabled((settingsResponse.data.field_course_codes ?? nextFieldCodes).length > 0);
+        }
+      } else if (modalForceDayEnabled || modalFieldEnabled !== dropSubjectIsField) {
+        setModalValidationError("Scheduling configurations are still loading. Close and reopen the placement dialog, then try again.");
+        shouldCloseModal = false;
+        return;
+      }
+
       const existingRecords = dropContext.isRescheduling
-        ? sortSplitMeetingsForEdit(schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)), subject)
+        ? sortSplitMeetingsForEdit(
+            schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)),
+            subject,
+            modalIsHybrid,
+          )
         : [];
 
       const sharedSplitGroupId = targetDays.length > 1
@@ -1378,7 +1516,9 @@ export const useScheduler = () => {
         const hasLab = Number(subject.labHours ?? 0) > 0;
         let meetingType: "lecture" | "laboratory" | null = null;
         if (isSplit) {
-          if (hasLab) {
+          if (modalIsHybrid) {
+            meetingType = index === 0 ? "laboratory" : "lecture";
+          } else if (hasLab) {
             const duration = targetDay.duration;
             const labSlots = Number(subject.labHours ?? 0) * 6;
             const lecSlots = Number(subject.lectureHours ?? 0) * 2;
@@ -1398,7 +1538,7 @@ export const useScheduler = () => {
           ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
           term_id: activeTerm.id,
           section_id: Number(selectedSectionId),
-          subject_id: Number(subject.id),
+          course_id: Number(subject.id),
           faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
           room_id: (() => {
             const resolved = index === 0 ? resolvedRoom1Id : resolvedRoom2Id;
@@ -1409,12 +1549,12 @@ export const useScheduler = () => {
           start_time: slotToTime24h(targetDay.startSlot),
           end_time: slotToTime24h(targetDay.startSlot + targetDay.duration),
           mode: index === 0 ? modalClassMode : modalDay2ClassMode,
-          is_hybrid: false,
+          is_hybrid: modalIsHybrid,
           preferred_pattern: modalPreferredPattern,
           split_group_id: sharedSplitGroupId,
           meeting_type: meetingType,
           meeting_index: index + 1,
-          status: existingRecords[index]?.status ?? currentStatus
+          status: resolveManualOperationStatus(existingRecords[index]?.status)
         };
       });
 
@@ -1661,16 +1801,36 @@ export const useScheduler = () => {
     );
 
     try {
-      if (validSchedules.length > 0) {
+      const targetSectionIds = Array.from(
+        scope === "all" ? departmentSectionIds : new Set([targetSecId]),
+      )
+        .map(Number)
+        .filter((id) => id > 0);
+
+      if (targetSectionIds.length > 0 && activeTerm) {
+        // Use the server-side replacement scope so clear-all removes every
+        // replaceable row for the term, including rows beyond the UI page limit.
         await api.post('/schedules/batch', {
           operations: [],
-          delete_ids: validSchedules.map((s) => Number(s.id))
+          delete_ids: validSchedules.map((s) => Number(s.id)),
+          replace_section_ids: targetSectionIds,
+          replace_term_id: Number(activeTerm.id),
+        });
+      } else if (validSchedules.length > 0) {
+        await api.post('/schedules/batch', {
+          operations: [],
+          delete_ids: validSchedules.map((s) => Number(s.id)),
         });
       }
-      await refreshSchedules();
+      // Clear-all changes the persisted schedule set, so refresh the complete
+      // scheduler snapshot before reopening generation. A schedule-only refresh
+      // can leave cached sections/configuration and eligibility state stale.
+      await refreshData();
     } catch (err) {
       const apiMsg = getApiErrorMessage(err);
       toast.error("Failed to clear schedules", apiMsg || "An error occurred.");
+      // Restore the optimistic state from the database when deletion failed.
+      await refreshSchedules();
     } finally {
       setIsClearingAll(false);
     }
@@ -1680,8 +1840,14 @@ export const useScheduler = () => {
 
   const handleSubmitForApproval = useCallback(async () => {
     if (!selectedSectionId) return;
+    // Refuse before opening the modal: there is nobody to submit to, and the
+    // backend rejects this with the same message anyway.
+    if (!hasDean) {
+      toast.error('Submission unavailable', DEAN_REQUIRED_MESSAGE);
+      return;
+    }
     setIsSubmitApprovalModalOpen(true);
-  }, [selectedSectionId]);
+  }, [hasDean, selectedSectionId, toast]);
 
   const confirmSubmitForApproval = async () => {
     if (!selectedSectionId || isSubmittingSchedule) return;
@@ -1698,7 +1864,7 @@ export const useScheduler = () => {
       await api.post(`/departments/${section.departmentId}/submit-schedules`, {
         section_ids: submittedSectionIds
       });
-      clearDataCache();
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty');
 
       // Only the current revision cohort re-enters approval. Finalized and
       // previously approved sections remain at their existing workflow stage.
@@ -1747,48 +1913,29 @@ export const useScheduler = () => {
 
     try {
       setIsWithdrawingSubmission(true);
-      const response = await api.post<{ instructors_released?: number }>(
+      await api.post<{ instructors_preserved?: number }>(
         `/departments/${section.departmentId}/withdraw-submission`,
         { section_ids: sectionIds.map((id) => Number(id)) }
       );
 
-      const deptSectionIds = new Set(
-        sections
-          .filter((s) => s.departmentId === section.departmentId)
-          .map((s) => s.id)
-      );
       const selectedRevisionSectionIds = new Set(sectionIds);
       setSchedules((prev) =>
-        prev.map((item) => {
-          if (!deptSectionIds.has(item.sectionId) || !departmentWithdrawableStatuses.includes(item.status)) {
-            return item;
-          }
-
-          const isUnlocked = selectedRevisionSectionIds.has(item.sectionId);
-
-          // Sections unlocked for revision lose their instructor server-side —
-          // the assignment is remade after re-approval — so drop it here too
-          // instead of showing one the backend has already released.
-          return isUnlocked
-            ? { ...item, status: "revision", facultyId: null, facultyName: null }
-            : { ...item, status: "completed" };
-        })
+        prev.map((item) =>
+          selectedRevisionSectionIds.has(item.sectionId)
+            && departmentWithdrawableStatuses.includes(item.status)
+            ? { ...item, status: "revision" }
+            : item
+        )
       );
-
-      const releasedInstructors = Number(response.data?.instructors_released ?? 0);
-      const releasedNote = releasedInstructors > 0
-        ? ` ${releasedInstructors} instructor ${releasedInstructors === 1 ? "assignment was" : "assignments were"} released and must be made again after re-approval.`
-        : "";
 
       toast.success(
         "Submission Withdrawn",
         (departmentWithdrawalStage === "vpaa_approved"
           ? "VPAA approval was revoked and only the selected sections were unlocked for revision."
           : "Only the selected sections were unlocked for revision.")
-          + " After revision, mark the section done and submit it again for Dean and VPAA approval."
-          + releasedNote
+          + " Existing instructor assignments were preserved. After revision, mark the section done and submit it again for Dean and VPAA approval."
       );
-      clearDataCache();
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty');
       refreshSchedules().catch(() => {});
       setIsWithdrawSubmissionModalOpen(false);
     } catch (err) {
@@ -1804,38 +1951,73 @@ export const useScheduler = () => {
     }
   }, [isWithdrawingSubmission]);
 
-  const handleMarkSectionDone = useCallback(async () => {
-    if (!selectedSectionId) return;
-    if (isMarkingSectionDone) return;
-    if (sectionSchedules.length === 0) {
-      toast.error("Nothing to Mark Done", "Plot at least one subject before marking this section done.");
+  const openMarkSectionsDone = useCallback(() => {
+    setIsMarkSectionsDoneModalOpen(true);
+  }, []);
+
+  const cancelMarkSectionsDone = useCallback(() => {
+    if (!isMarkingSectionsDone) setIsMarkSectionsDoneModalOpen(false);
+  }, [isMarkingSectionsDone]);
+
+  // One batch call for every selected section: the endpoint takes schedule ids
+  // across sections, so bulk done costs the same round trip as a single section.
+  const confirmMarkSectionsDone = useCallback(async (sectionIds: string[]) => {
+    if (isMarkingSectionsDone) return;
+
+    const chosen = sectionDoneCandidates.filter(
+      (candidate) => candidate.isReady && sectionIds.includes(candidate.sectionId)
+    );
+    const ids = chosen.flatMap((candidate) => candidate.scheduleIds);
+    if (ids.length === 0) {
+      toast.error("Nothing to Mark Done", "Select at least one fully plotted section.");
       return;
     }
 
     try {
-      setIsMarkingSectionDone(true);
-      const ids = sectionSchedules.map((s) => Number(s.id));
+      setIsMarkingSectionsDone(true);
       await api.patch("/schedules/batch-status", { ids, status: "completed" });
 
-      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      const updatedScheduleIds = new Set(ids.map(String));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
-          sectionScheduleIds.has(schedule.id)
+          updatedScheduleIds.has(String(schedule.id))
             ? { ...schedule, status: "completed" }
             : schedule
         )
       );
-      toast.success("Section Done", "This section is now locked for plotting.");
+      toast.success(
+        chosen.length === 1 ? "Section Done" : `${chosen.length} Sections Done`,
+        chosen.length === 1
+          ? `${chosen[0].sectionName} is now locked for plotting.`
+          : "The selected sections are now locked for plotting."
+      );
+      setIsMarkSectionsDoneModalOpen(false);
       refreshSchedules().catch(() => {});
     } catch (err) {
-      toast.error("Failed to mark section done", getApiErrorMessage(err) ?? "An error occurred.");
+      toast.error("Failed to mark sections done", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
-      setIsMarkingSectionDone(false);
+      setIsMarkingSectionsDone(false);
     }
-  }, [selectedSectionId, isMarkingSectionDone, sectionSchedules, refreshSchedules, toast]);
+  }, [isMarkingSectionsDone, sectionDoneCandidates, refreshSchedules, toast]);
 
   const handleEditSection = useCallback(async () => {
     if (!selectedSectionId || isEditingSection) return;
+
+    if (currentStatus === "finalized") {
+      try {
+        setIsEditingSection(true);
+        const ids = sectionSchedules.map((s) => Number(s.id));
+        const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-status", { ids, status: "reassignment" });
+        applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
+        toast.success("Reassignment Enabled", "Reassignment unlocks faculty assignments for each section. Timetable details remain locked.");
+        void refreshSchedules();
+      } catch (err) {
+        toast.error("Failed to enable reassignment", getApiErrorMessage(err) ?? "Please try again.");
+      } finally {
+        setIsEditingSection(false);
+      }
+      return;
+    }
 
     try {
       setIsEditingSection(true);
@@ -1857,7 +2039,7 @@ export const useScheduler = () => {
     } finally {
       setIsEditingSection(false);
     }
-  }, [selectedSectionId, isEditingSection, sectionSchedules, refreshSchedules, toast]);
+  }, [selectedSectionId, isEditingSection, currentStatus, sectionSchedules, applyUpdatedSchedules, refreshSchedules, toast]);
 
   const handleResubmit = useCallback(async () => {
     if (!selectedSectionId || isResubmittingSection) return;
@@ -2049,6 +2231,7 @@ export const useScheduler = () => {
       } else {
         applyUpdatedSchedules(outcome.schedules);
         facultySuccessToast(facultyId);
+        void refreshSchedules();
       }
     } finally {
       setFacultyActionSlotId(null);
@@ -2076,6 +2259,7 @@ export const useScheduler = () => {
       } else if (outcome.status === "ok") {
         applyUpdatedSchedules(outcome.schedules);
         facultySuccessToast(facultyId);
+        void refreshSchedules();
       }
     } finally {
       setFacultyActionSlotId(null);
@@ -2215,6 +2399,38 @@ export const useScheduler = () => {
       return false;
     }
   }, [applyUpdatedSchedules, refreshSchedules, sectionSchedules, toast]);
+
+  const clearableSectionInstructorCount = sectionSchedules.filter(
+    (schedule) => Boolean(schedule.facultyId)
+      && !schedule.facultyAssignmentDone
+      && schedule.status !== "finalized"
+      && canManageScheduleFaculty(schedule)
+  ).length;
+
+  const handleClearSectionInstructors = useCallback(async (): Promise<boolean> => {
+    if (!selectedSectionId || isClearingSectionInstructors || clearableSectionInstructorCount === 0) return false;
+    setIsClearingSectionInstructors(true);
+    try {
+      const response = await api.delete<{
+        schedules?: ApiScheduleRecord[];
+        courses_cleared?: number;
+      }>(`/instructor-assignments/sections/${selectedSectionId}`);
+      applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
+      const coursesCleared = Number(response.data.courses_cleared ?? 0);
+      toast.success(
+        "Instructors Cleared",
+        `${coursesCleared} course ${coursesCleared === 1 ? "assignment was" : "assignments were"} cleared for this section.`,
+      );
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty');
+      void refreshSchedules();
+      return true;
+    } catch (err) {
+      toast.error("Unable to clear instructors", getApiErrorMessage(err) ?? "Please try again.");
+      return false;
+    } finally {
+      setIsClearingSectionInstructors(false);
+    }
+  }, [applyUpdatedSchedules, canManageScheduleFaculty, clearableSectionInstructorCount, isClearingSectionInstructors, refreshSchedules, selectedSectionId, toast]);
 
   const getClassesCountForDay = useCallback((dayIdx: number) =>
     sectionSchedules.filter((s) => s.dayIndex === dayIdx).length, [sectionSchedules]);
@@ -2377,6 +2593,7 @@ export const useScheduler = () => {
   return {
     userDepartmentId: user?.department_id ?? null,
     userProgramId: user?.program_id ?? null,
+    schedulingReady,
     placed,
     activeTermText,
     dragSubjectId,
@@ -2416,6 +2633,15 @@ export const useScheduler = () => {
     setModalDay2ClassMode: applyModalDay2ClassMode,
     modalIsHybrid,
     setModalIsHybrid,
+    modalSplitEnabled,
+    setModalSplitEnabled,
+    modalFieldEnabled,
+    setModalFieldEnabled,
+    modalForceDayEnabled,
+    setModalForceDayEnabled,
+    modalForcedDayIndex,
+    setModalForcedDayIndex,
+    manualSchedulingSettings,
     modalPreferredPattern,
     setModalPreferredPattern: applyModalPreferredPattern,
     modalDay1Index,
@@ -2440,6 +2666,7 @@ export const useScheduler = () => {
     handleEditMovingSchedule,
     facultyAssignmentPopup,
     facultyActionSlotId,
+    isClearingSectionInstructors,
     setFacultyAssignmentPopup,
     popupValidationError,
     popupConflictWarning,
@@ -2488,6 +2715,7 @@ export const useScheduler = () => {
     totalSlotsCount,
     assignedSlotsCount,
     unassignedSlotsCount,
+    clearableSectionInstructorCount,
     departmentSectionProgress,
     departmentTotalSections,
     departmentDoneSections,
@@ -2514,11 +2742,19 @@ export const useScheduler = () => {
     handleSubmitForApproval,
     handleWithdrawSubmission,
     canWithdrawSubmission,
+    canGenerateSchedule,
+    canSubmitSchedule,
+    canAssignInstructor,
+    canUpdateSchedule,
     handleResubmit,
     handleFinalize,
-    handleMarkSectionDone,
+    sectionDoneCandidates,
+    isMarkSectionsDoneModalOpen,
+    isMarkingSectionsDone,
+    openMarkSectionsDone,
+    cancelMarkSectionsDone,
+    confirmMarkSectionsDone,
     handleEditSection,
-    isMarkingSectionDone,
     isEditingSection,
     isResubmittingSection,
     isFinalizing,
@@ -2528,6 +2764,7 @@ export const useScheduler = () => {
     handleInlineFacultyAssign,
     handleBulkFacultyAssign,
     handleFacultyAssignmentDone,
+    handleClearSectionInstructors,
     handleRemoveInlineFaculty,
     handleAcceptedRecommendation,
     refreshSchedules,

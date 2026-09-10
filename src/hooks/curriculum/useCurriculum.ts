@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearDataCache } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, Department, Program } from '../../types/curriculum';
+import { annotateCurriculumLifecycle } from '../../types/curriculum';
 
 interface CurriculumPageData {
   curriculumList: Curriculum[];
@@ -72,8 +74,15 @@ export function useCurriculum() {
     fetchCurriculumList();
   }, [fetchCurriculumList]);
 
+  // Ranked before filtering: new-vs-old is relative to a curriculum's siblings,
+  // and a status filter would hide the ones the ranking depends on.
+  const annotatedCurriculumList = useMemo(
+    () => annotateCurriculumLifecycle(curriculumList),
+    [curriculumList],
+  );
+
   const filteredCurriculumList = useMemo(() => {
-    return curriculumList.filter((item) => {
+    return annotatedCurriculumList.filter((item) => {
       if (item.status === 'archived') return false;
       const matchStatus = statusFilter === 'all' || item.status === statusFilter;
       const matchDept =
@@ -84,52 +93,33 @@ export function useCurriculum() {
         item.code.toLowerCase().includes(searchQuery.toLowerCase());
       return matchStatus && matchDept && matchSearch;
     });
-  }, [curriculumList, statusFilter, departmentFilter, searchQuery]);
+  }, [annotatedCurriculumList, statusFilter, departmentFilter, searchQuery]);
 
   const handleCreateOrUpdate = async (data: Partial<Curriculum>, editingCurriculum: Curriculum | null): Promise<Curriculum> => {
     try {
       if (editingCurriculum) {
         const updated = await curriculumService.updateCurriculum(editingCurriculum.id, data);
         setCurriculumList((prev) => {
-          const next = prev.map((c) => {
-            if (c.id === editingCurriculum.id) {
-              return updated;
-            }
-            if (
-              updated.status === 'active' &&
-              c.department_id === updated.department_id &&
-              c.program_id === updated.program_id &&
-              c.status === 'active'
-            ) {
-              return { ...c, status: 'draft' as const };
-            }
-            return c;
-          });
+          // Activating no longer demotes the department's other curricula: a
+          // department mid-transition runs the old and the new one side by side,
+          // and each year level chooses which it follows.
+          const next = prev.map((c) => (c.id === editingCurriculum.id ? updated : c));
           setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
           return next;
         });
-        clearDataCache();
+        invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Success', 'Curriculum updated successfully.');
         return updated;
       } else {
         const created = await curriculumService.createCurriculum(data);
         setCurriculumList((prev) => {
-          const next = [created, ...prev].map((c) => {
-            if (
-              created.status === 'active' &&
-              c.id !== created.id &&
-              c.department_id === created.department_id &&
-              c.program_id === created.program_id &&
-              c.status === 'active'
-            ) {
-              return { ...c, status: 'draft' as const };
-            }
-            return c;
-          });
+          // A new active curriculum joins the department's existing ones rather
+          // than replacing them.
+          const next = [created, ...prev];
           setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
           return next;
         });
-        clearDataCache();
+        invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Success', 'Curriculum created successfully.');
         return created;
       }
@@ -144,55 +134,33 @@ export function useCurriculum() {
     let previousCurriculumList: Curriculum[] = [];
     setCurriculumList((prev) => {
       previousCurriculumList = prev;
-      const targetDeptId = prev.find((x) => x.id === id)?.department_id;
-      const next = prev.map((c) => {
-        if (c.id === id) {
-          return { ...c, status: status as any };
-        }
-        if (
-          status === 'active' &&
-          c.department_id === targetDeptId &&
-          c.program_id === prev.find((x) => x.id === id)?.program_id &&
-          c.status === 'active'
-        ) {
-          return { ...c, status: 'draft' as const };
-        }
-        return c;
-      });
+      // Only the row that was clicked changes. Activating a curriculum used to
+      // demote its department's other active one here, mirroring a backend rule
+      // that no longer exists — a department may now run several at once.
+      const next = prev.map((c) => (c.id === id ? { ...c, status: status as Curriculum['status'] } : c));
       setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
       return next;
     });
 
-    toast.success(
-      'Status Updated',
-      `Curriculum status changed to ${status}.`
-    );
-
     try {
       const updated = await curriculumService.updateStatus(id, status);
       setCurriculumList((prev) => {
-        const next = prev.map((c) => {
-          if (c.id === id) {
-            return updated;
-          }
-          if (
-            status === 'active' &&
-            c.department_id === updated.department_id &&
-            c.program_id === updated.program_id &&
-            c.status === 'active'
-          ) {
-            return { ...c, status: 'draft' as const };
-          }
-          return c;
-        });
+        const next = prev.map((c) => (c.id === id ? updated : c));
         setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
         return next;
       });
-      clearDataCache();
-    } catch {
+      invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
+      // No refetch: one row changed, and annotateCurriculumLifecycle re-ranks
+      // the new/old badges from the list already in state. Reloading the table
+      // for this would replace it with a skeleton for a single-row edit.
+      toast.success('Status Updated', `Curriculum status changed to ${status}.`);
+    } catch (error: unknown) {
       setCurriculumList(previousCurriculumList);
       setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: previousCurriculumList, departments, programs });
-      toast.error('Error', 'Failed to update curriculum status.');
+      // The server refuses to retire a curriculum that cohorts still follow, and
+      // its message names them. Show that instead of a generic failure.
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error('Error', err?.response?.data?.message || 'Failed to update curriculum status.');
     }
   };
 
@@ -204,20 +172,18 @@ export function useCurriculum() {
         setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: next, departments, programs });
         return next;
       });
-      clearDataCache();
-      toast.success('Success', 'Curriculum duplicated as draft.');
+      invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
+      toast.success('Success', 'Curriculum duplicated. The copy is deactivated until you activate it.');
     } catch {
       toast.error('Error', 'Failed to duplicate curriculum.');
     }
   };
 
   const handleArchive = async (id: number) => {
-    const target = curriculumList.find((c) => c.id === id);
-    if (target && target.status === 'active') {
-      toast.error('Error', 'Cannot archive an active curriculum. Please deactivate it first.');
-      return;
-    }
-
+    // Both views hide Archive while a curriculum is active, so this is only
+    // reached for a deactivated one. The server is the real guard either way: it
+    // refuses to retire a curriculum that cohorts still follow, and its message
+    // names them — surfaced in the catch below.
     let previousCurriculumList: Curriculum[] = [];
     setCurriculumList((prev) => {
       previousCurriculumList = prev;
@@ -226,11 +192,13 @@ export function useCurriculum() {
       return next;
     });
 
-    toast.success('Archived', 'Curriculum has been archived.');
-
     try {
       await curriculumService.updateStatus(id, 'archived');
-      clearDataCache();
+      invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
+      // Announced only once the server has accepted it. Archiving can be
+      // refused — a cohort may still follow this curriculum — and claiming
+      // success first would be immediately contradicted by the error.
+      toast.success('Archived', 'Curriculum has been archived.');
     } catch (error: unknown) {
       setCurriculumList(previousCurriculumList);
       setCachedData<CurriculumPageData>(curriculumCacheKey, { curriculumList: previousCurriculumList, departments, programs });
@@ -241,7 +209,9 @@ export function useCurriculum() {
 
   return {
     curriculumList: filteredCurriculumList,
-    rawCurriculumList: curriculumList,
+    // Unfiltered but still ranked, so the archive view badges rows the same way
+    // the main table does.
+    rawCurriculumList: annotatedCurriculumList,
     departments,
     isLoading,
     userRole,

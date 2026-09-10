@@ -33,7 +33,7 @@ const humanizePath = (pathname: string): string[] => pathname
 
 const descriptions: Record<string, string> = {
   Dashboard: 'Review scheduling activity, progress, and the next actions for your role.',
-  Schedules: 'Create, review, and manage academic schedules for the active term.',
+  Schedules: 'Review section timetables and academic schedules for the active term.',
   'Schedule Approval': 'Review submitted schedules and continue the approval workflow.',
   'Schedule Builder': 'Plot classes, resolve conflicts, and prepare the schedule for submission.',
   'Schedule Generator': 'Configure, review, and generate a conflict-checked draft schedule.',

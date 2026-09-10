@@ -26,6 +26,7 @@ interface TimetableGridProps {
   isEditable: boolean;
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
+  isFinalizedFacultyEditing?: boolean;
   schedules: ScheduleItem[];
   sectionSchedules: ScheduleItem[];
   hoveredCell: string | null;
@@ -77,6 +78,7 @@ export default function TimetableGrid({
   isEditable,
   isPhase2Active,
   currentStatus,
+  isFinalizedFacultyEditing = false,
   schedules,
   sectionSchedules,
   hoveredCell,
@@ -109,7 +111,7 @@ export default function TimetableGrid({
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerTerm = activeTerm?.semester === "summer";
-  const isFacultyAssignment = currentStatus === "faculty_assignment";
+  const isFacultyAssignment = ["approved", "faculty_assignment", "reassignment"].includes(currentStatus);
   const subjectsById = React.useMemo(() => buildSubjectIndex(subjects), [subjects]);
   const timetableSlotCount = React.useMemo(
     () => Math.max(
@@ -124,7 +126,7 @@ export default function TimetableGrid({
       ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
       : "";
   return (
-    <div id="schedule-builder-timetable" className="flex min-h-[48rem] min-w-0 flex-1 flex-col overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-auto lg:min-h-[48rem]">
+    <div id="schedule-builder-timetable" className="flex min-h-[48rem] min-w-0 flex-1 flex-col overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-auto lg:min-h-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 shrink-0">
         <div>
           <h2 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
@@ -236,7 +238,10 @@ export default function TimetableGrid({
               headerHeight={GRID_HEADER_HEIGHT_PX}
               rowTemplate={`repeat(${timetableSlotCount}, ${SLOT_HEIGHT_PX}px)`}
               minWidth={isWideView ? 0 : 900}
-              className="flex-1 shrink-0"
+              // Never `flex-1`: the rows are fixed pixels, so growing the grid
+              // past their total only paints blank space inside its border when
+              // the row is stretched by a taller Course Bank.
+              className="shrink-0"
               isLoading={isLoading}
               disabledDayIndexes={isSummerTerm ? [5, 6] : []}
               getTimeLabel={slotToTimeStr}
@@ -307,6 +312,7 @@ export default function TimetableGrid({
                       isEditable={isEditable}
                       isPhase2Active={isPhase2Active}
                       currentStatus={currentStatus}
+                      isFinalizedFacultyEditing={isFinalizedFacultyEditing}
                       draggedScheduleId={draggedScheduleId}
                       isMoving={movingScheduleId === schedule.id}
                       deleteConfirmScheduleId={deleteConfirmScheduleId}

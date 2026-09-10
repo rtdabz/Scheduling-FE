@@ -29,6 +29,18 @@ export const coachMarkOptions = {
   zIndex: 120,
 } satisfies Partial<Options>;
 
+/**
+ * Task tours reuse every coach-mark visual but render above modal portals
+ * (e.g. the curriculum form at z-9999) so spotlight + tooltip stay visible
+ * while the user works inside a dialog. Interaction stays open because
+ * `blockTargetInteraction` is false: clicks reach the spotlighted element.
+ */
+export const taskTourOptions = {
+  ...coachMarkOptions,
+  spotlightPadding: 8,
+  zIndex: 20000,
+} satisfies Partial<Options>;
+
 export const coachMarkStyles = {
   buttonBack: {
     borderRadius: '0.7rem',

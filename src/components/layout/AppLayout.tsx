@@ -1,34 +1,70 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import PageHeader from './PageHeader'
 import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
+import Skeleton from '../ui/Skeleton'
 import { useActiveTerm } from '../../hooks/useActiveTerm'
-import { getStoredUser } from '../../lib/storedUser'
+import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
+import api from '../../lib/api'
 import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
+import { directorNav } from '../../navigation/directorNav'
+import type { NavItem, NavSection } from '../../navigation/types'
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
   const location = useLocation()
   const { term: activeTerm } = useActiveTerm()
 
-  const user = getStoredUser()
+  const [user, setUser] = useState<StoredUser | null>(() => getStoredUser())
 
-  const getNavItems = () => {
+  useEffect(() => {
+    api.get<StoredUser>('/me')
+      .then(({ data }) => {
+        if (!data) return
+        const storage = localStorage.getItem('token') ? localStorage : sessionStorage
+        storage.setItem('user', JSON.stringify(data))
+        setUser(data)
+      })
+      .catch(() => {})
+  }, [])
+
+  const annotateItems = (items: NavItem[]): NavItem[] => {
+    return items.map((item) => {
+      const isItemLocked = Boolean(item.requiredCapability && !hasStoredCapability(item.requiredCapability));
+      const children = item.children ? annotateItems(item.children) : undefined;
+      const allChildrenLocked = Boolean(children && children.length > 0 && children.every((c) => c.isLocked));
+      return {
+        ...item,
+        isLocked: isItemLocked || allChildrenLocked,
+        children,
+      };
+    });
+  };
+
+  const processNav = (nav: NavSection[]): NavSection[] => {
+    return nav.map((section) => ({
+      ...section,
+      items: annotateItems(section.items),
+    }));
+  };
+
+  const getNavItems = (): NavSection[] => {
     const role = user?.role?.toLowerCase();
 
-    if (role === 'vpaa') return vpaaNav;
-    if (role === 'dean') return deanNav;
-    if (role === 'secretary') return secretaryNav;
-    if (role === 'program_head') return programHeadNav;
+    if (role === 'vpaa') return processNav(vpaaNav);
+    if (role === 'dean') return processNav(deanNav);
+    if (role === 'secretary') return processNav(secretaryNav);
+    if (role === 'program_head') return processNav(programHeadNav);
+    if (role === 'director') return processNav(directorNav);
 
-    if (location.pathname.startsWith('/dean')) return deanNav;
-    if (location.pathname.startsWith('/secretary')) return secretaryNav;
-    if (location.pathname.startsWith('/program_head')) return programHeadNav;
-    return vpaaNav;
+    if (location.pathname.startsWith('/dean')) return processNav(deanNav);
+    if (location.pathname.startsWith('/secretary')) return processNav(secretaryNav);
+    if (location.pathname.startsWith('/program_head')) return processNav(programHeadNav);
+    return processNav(vpaaNav);
   }
 
   const navItems = getNavItems()
@@ -37,9 +73,11 @@ export default function AppLayout() {
     ? '/dean/dashboard'
     : role === 'secretary'
       ? '/secretary/dashboard'
-      : role === 'program_head'
+        : role === 'program_head'
         ? '/program_head/dashboard'
-        : '/dashboard'
+        : role === 'director'
+          ? '/director/dashboard'
+          : '/dashboard'
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && sidebarOpen) {
@@ -92,7 +130,18 @@ export default function AppLayout() {
         <SystemHeader activeTerm={activeTerm} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
         <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4 md:px-8 md:pb-8 md:pt-4">
           <PageHeader navItems={navItems} homePath={homePath} />
-          <Outlet />
+          <Suspense fallback={
+            <div className="space-y-4" aria-busy="true" aria-label="Loading module">
+              <Skeleton className="h-8 w-64 rounded-lg" />
+              <Skeleton className="h-4 w-96 max-w-full rounded" />
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
+              </div>
+              <Skeleton className="h-64 w-full rounded-2xl" />
+            </div>
+          }>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

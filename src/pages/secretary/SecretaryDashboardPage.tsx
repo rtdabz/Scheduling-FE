@@ -27,14 +27,15 @@ import {
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
 import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
-import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
-import { getStoredUser } from '../../lib/storedUser';
+import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
 import { MILESTONE_TITLES, SUBMISSION_MILESTONES, submissionProgress } from '../../lib/submissionStage';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 
 interface Schedule { id:number; term_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; course?:{course_code:string;course_category?:string|null}|null; subject?:{subject_code:string;subject_category?:string|null}|null; faculty?:{first_name:string;last_name:string}|null; room?:{room_code:string;room_type?:string}|null; section?:{section_name:string}|null; department_id?:number|null }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null; department_id?:number|null }
@@ -101,23 +102,24 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 
   const user = useMemo(() => getStoredUser(), []);
   const departmentId = user?.department_id;
+  const canViewSchedules = hasStoredCapability('schedule.view');
+  const canUpdateSchedules = hasStoredCapability('schedule.update');
+  const canAssignInstructors = hasStoredCapability('schedule.assign_instructor');
   const isProgramHead = role === 'program_head';
   const paths = isProgramHead
     ? {
         sections: '/program_head/sections',
-        schedules: '/program_head/schedules',
+        schedules: '/program_head/schedule-builder',
         instructors: '/program_head/faculty',
-        courses: '/program_head/courses',
+        courses: '/program_head/course-list',
         rooms: '/program_head/rooms',
-        instructorAssignment: '/program_head/instructor-assignment',
       }
     : {
         sections: '/secretary/sections',
-        schedules: '/secretary/schedules',
+        schedules: '/secretary/schedule-builder',
         instructors: '/secretary/instructors',
-        courses: '/secretary/courses',
+        courses: '/secretary/course-list',
         rooms: '/secretary/rooms',
-        instructorAssignment: '/secretary/instructor-assignment',
       };
   const cacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? departmentId ?? 'current'}`;
   const cached = getCachedData<Overview>(cacheKey);
@@ -177,6 +179,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     yearLevels,
     stageCounts,
     canSubmit,
+    hasDean,
     error: statusError,
     refetch: refetchStatus,
   } = useDepartmentScheduleStatus(departmentId);
@@ -250,6 +253,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     ['All on-site classes have rooms', noRoom === 0],
     ['Required schedule information is complete', incomplete === 0],
     ['Every year level has left the draft stage', canSubmit],
+    ['A Department Dean is assigned to receive the submission', hasDean],
   ];
   const doneChecks = checks.filter(([, done]) => done).length;
   const ready = percent(doneChecks, checks.length);
@@ -262,11 +266,15 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     : 0;
 
   const pendingYears = yearLevels.filter(y => !y.isComplete).map(y => y.label);
-  const submitHint = canSubmit
-    ? 'Every year level has left the draft stage. Schedules are ready for the Dean.'
-    : pendingYears.length
-      ? `Finish drafting ${pendingYears.join(', ')} before submitting.`
-      : 'No active sections found for this department yet.';
+  // A missing Dean outranks drafting progress: there is nobody to submit to, so
+  // say that rather than pointing at year levels the user cannot act on.
+  const submitHint = !hasDean
+    ? DEAN_REQUIRED_MESSAGE
+    : canSubmit
+      ? 'Every year level has left the draft stage. Schedules are ready for the Dean.'
+      : pendingYears.length
+        ? `Finish drafting ${pendingYears.join(', ')} before submitting.`
+        : 'No active sections found for this department yet.';
 
   // ── Current status ──
   const progress = submissionProgress(currentStage);
@@ -315,21 +323,21 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 
   const tiles: Tile[] = [
     { label:'Total Sections', value:visibleSections.length, detail:'Department scope', icon:Users, path:paths.sections, tone:'brand' },
-    { label:'Scheduled Sections', value:scheduledSections, detail:`${sectionCoverage}% of ${visibleSections.length} sections`, icon:ShieldCheck, path:paths.schedules, tone:remaining === 0 && visibleSections.length > 0 ? 'good' : 'brand' },
-    { label:'Remaining Sections', value:remaining, detail:'Still to schedule', icon:FileClock, path:paths.schedules, tone:remaining ? 'warn' : 'good' },
+    ...(canViewSchedules ? [{ label:'Scheduled Sections', value:scheduledSections, detail:`${sectionCoverage}% of ${visibleSections.length} sections`, icon:ShieldCheck, path:paths.schedules, tone:remaining === 0 && visibleSections.length > 0 ? 'good' : 'brand' } as Tile] : []),
+    ...(canUpdateSchedules ? [{ label:'Remaining Sections', value:remaining, detail:'Still to schedule', icon:FileClock, path:paths.schedules, tone:remaining ? 'warn' : 'good' } as Tile] : []),
     { label:'Total Faculty', value:visibleFaculty.length, detail:'Active faculty', icon:GraduationCap, path:paths.instructors, tone:'brand' },
     { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:paths.courses, tone:'brand' },
     { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:paths.rooms, tone:'info' },
-    { label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.instructorAssignment, tone:noInstructor ? 'alert' : 'good' },
-    { label:'Draft Schedules', value:draftClasses, detail:'Not yet submitted', icon:FileText, path:paths.schedules, tone:draftClasses ? 'warn' : 'good' },
+    ...(canAssignInstructors ? [{ label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.schedules, tone:noInstructor ? 'alert' : 'good' } as Tile] : []),
+    ...(canViewSchedules ? [{ label:'Draft Schedules', value:draftClasses, detail:'Not yet submitted', icon:FileText, path:paths.schedules, tone:draftClasses ? 'warn' : 'good' } as Tile] : []),
   ];
 
   const queue: QueueRow[] = [
-    { label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules },
-    { label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.instructorAssignment },
+    ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
+    ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
     { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:paths.rooms },
-    { label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules },
-    { label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules },
+    ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
+    ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
   ];
 
   /** Outstanding work first, biggest first; a settled row can wait at the bottom. */
@@ -343,30 +351,18 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 
   if (loading) return <DashboardSkeleton variant="secretary" />;
 
-  return <div className="space-y-4 pb-8 text-slate-800">
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0"/>
       <span className="flex-1">{loadError || statusError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3"/> Retry</button>
     </div>}
 
-    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
-      {tiles.map(({label, value, detail, icon:Icon, path, tone}) => <button
-        key={label}
-        type="button"
-        onClick={() => navigate(path)}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
-      >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}><Icon className="h-4 w-4"/></span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="text-lg font-bold leading-5 text-primary">{value}</div>
-          <div className="mt-1 break-words text-[11px] font-bold leading-tight">{label}</div>
-          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{detail}</div>
-        </div>
-      </button>)}
+    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
+      {tiles.map(({label, value, detail, icon, path, tone}) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
     </section>
 
-    <section className="grid gap-4 xl:grid-cols-12">
+    <section id="dashboard-work-queue" className="grid gap-4 xl:grid-cols-12">
       <Panel title="Scheduling Work Queue" className="xl:col-span-4" action="View all items" onAction={() => navigate(paths.schedules)}>
         <div className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${openItems ? 'border-amber-200 bg-amber-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
           <div className="flex min-w-0 items-center gap-2.5">
@@ -399,7 +395,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         </ul>
       </Panel>
 
-      <Panel title="Department Drafting Progress" className="flex flex-col xl:col-span-4">
+      {canViewSchedules && <Panel title="Department Drafting Progress" className="flex flex-col xl:col-span-4">
         <div className="grid gap-5 sm:grid-cols-[144px_1fr] sm:items-center">
           <div className="relative mx-auto h-32 w-32">
             <ResponsiveContainer width="100%" height="100%">
@@ -454,25 +450,25 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
           </div>
           <button type="button" onClick={() => navigate(paths.schedules)} className="mt-3 w-full rounded-md border border-primary px-3 py-2 text-[10px] font-bold text-primary transition hover:bg-primary/5">Open Department Schedule</button>
         </div>
-      </Panel>
+      </Panel>}
 
-      <Panel title="Instructor Assignment" className="xl:col-span-4" action="View all" onAction={() => navigate(paths.instructorAssignment)}>
+      {canAssignInstructors && <Panel title="Faculty Assignment" className="xl:col-span-4" action="Open Schedule Builder" onAction={() => navigate(paths.schedules)}>
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Workload Progress</span>
           <span className="text-[9px] text-slate-400">Assigned / Max units</span>
         </div>
         <InstructorWorkloadChart instructors={workload}/>
-      </Panel>
+      </Panel>}
     </section>
 
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0">
+      {canViewSchedules && <div className="min-w-0">
         <DashboardTimetableGrid
           schedules={visibleSchedules}
           sectionLabel={`${visibleSections.length} Sections`}
           onOpenSchedule={() => navigate(paths.schedules)}
         />
-      </div>
+      </div>}
 
       <div className="flex min-w-0 flex-col gap-4">
       <Panel title="Room Assignment" action="View all" onAction={() => navigate(paths.rooms)}>

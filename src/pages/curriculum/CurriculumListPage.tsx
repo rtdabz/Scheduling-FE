@@ -39,13 +39,14 @@ import TableActionButton from '../../components/ui/TableActionButton';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import type { Curriculum } from '../../types/curriculum';
+import { curriculumLifecycleBadge } from '../../types/curriculum';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import { printCurriculum } from '../../lib/curriculumPrintable';
 import { useToast } from '../../context/ToastContext';
 
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  draft: 'bg-gray-100 text-gray-700 border-gray-200',
+  deactivated: 'bg-slate-200 text-slate-700 border-slate-300',
   archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
@@ -193,16 +194,29 @@ export default function CurriculumListPage() {
       {
         accessorKey: 'status',
         header: 'Status',
-        cell: (info) => {
-          const val = (info.getValue() as string) || 'draft';
+        cell: ({ row, getValue }) => {
+          const val = (getValue() as string) || 'deactivated';
+          // Old/new is a statement about the department's other curricula, so it
+          // sits beside the status rather than replacing it — a curriculum can
+          // be both "active" and "the old one".
+          const lifecycle = curriculumLifecycleBadge(row.original);
           return (
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                statusColors[val] || statusColors.draft
-              }`}
-            >
-              {val}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                  statusColors[val] || statusColors.deactivated
+                }`}
+              >
+                {val}
+              </span>
+              {lifecycle && (
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap ${lifecycle.className}`}
+                >
+                  {lifecycle.label}
+                </span>
+              )}
+            </div>
           );
         },
       },
@@ -267,12 +281,14 @@ export default function CurriculumListPage() {
                         label={item.status === 'active' ? 'Deactivate' : 'Activate'}
                         variant={item.status === 'active' ? 'success' : 'danger'}
                         onClick={() =>
-                          handleStatusChange(item.id, item.status === 'active' ? 'draft' : 'active')
+                          handleStatusChange(item.id, item.status === 'active' ? 'deactivated' : 'active')
                         }
                         aria-label={`${item.status === 'active' ? 'Deactivate' : 'Activate'} ${item.name}`}
                       >
                         <CheckCircle2 size={15} strokeWidth={item.status === 'active' ? 2.5 : 2} />
                       </TableActionButton>
+                      {/* Archiving is offered only once a curriculum is out of
+                          service; deactivate it first. */}
                       {item.status !== 'active' && (
                         <TableActionButton
                           label="Archive Curriculum"
@@ -311,11 +327,14 @@ export default function CurriculumListPage() {
   });
 
   const curriculumGuideSteps = useMemo(() => [
-    { element: '#curriculum-create-button', title: 'Create a curriculum', description: 'Select Create Curriculum to add a curriculum for your department or program.', side: 'bottom' as const },
-    { element: '#curriculum-filters', title: 'Find a curriculum', description: 'Search or filter by department and status.', side: 'bottom' as const },
-    { element: '#curriculum-list', title: 'Manage the curriculum', description: 'Open a curriculum to edit its courses. Publish it before assigning teaching departments.', side: 'top' as const },
+    { element: '#curriculum-create-button', action: 'click' as const, taskHint: 'Click Create Curriculum to open the form.', title: 'Start a curriculum', description: 'New curricula begin from this page. Open the form to see every field.', side: 'bottom' as const },
+    { element: '#curriculum-name-input', action: 'input' as const, taskHint: 'Type a curriculum name to continue.', title: 'Name the curriculum', description: 'Use the official program name and curriculum year.', side: 'bottom' as const },
+    { element: '#curriculum-code-input', action: 'input' as const, taskHint: 'Type a curriculum code to continue.', title: 'Give it a code', description: 'The code appears on lists, cards, and printouts.', side: 'bottom' as const },
+    { element: '#curriculum-department-select', action: 'select' as const, taskHint: 'Choose a department to continue.', title: 'Select a department', description: 'The department scopes who can manage this curriculum.', side: 'bottom' as const },
+    { element: '#curriculum-program-select', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose the program you want to manage.', title: 'Select a program', description: 'Programs appear after a department with programs is chosen.', side: 'bottom' as const },
+    { element: '#curriculum-form', action: 'submit' as const, taskHint: 'Click Create Curriculum to save it.', title: 'Save the curriculum', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps });
+  useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps, mission: 'Create a Curriculum' });
 
   return (
     <div className="w-full">
@@ -393,7 +412,7 @@ export default function CurriculumListPage() {
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
-              <option value="draft">Draft</option>
+              <option value="deactivated">Deactivated</option>
             </select>
           </div>
         </div>
@@ -536,7 +555,8 @@ export default function CurriculumListPage() {
         isEditMode={isEditMode}
         curriculum={editingCurriculum}
         onClose={() => setIsFormModalOpen(false)}
-        programs={programs.filter((program) => !editingCurriculum || program.department_id === editingCurriculum.department_id)}
+        departments={departments}
+        programs={programs}
         onSubmit={async (data) => {
           const saved = await handleCreateOrUpdate(data, editingCurriculum);
           setIsFormModalOpen(false);

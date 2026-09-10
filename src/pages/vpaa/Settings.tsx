@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useToast } from '../../context/ToastContext';
 import {
   ArrowRight,
@@ -22,7 +22,7 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { operatingHoursError, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
 import {
   academicYearError,
@@ -65,6 +65,15 @@ interface ActivationHistoryEntry {
   academic_year: string;
   is_active: boolean;
   activatedAt: string;
+}
+
+interface ApiActivationHistoryEntry {
+  id: number;
+  term_id: number;
+  semester: Term['semester'];
+  academic_year: string;
+  is_active: boolean;
+  activated_at: string;
 }
 
 interface SettingsPageData {
@@ -154,6 +163,13 @@ export default function Settings() {
   const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '' });
   const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
   const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
+  // State-driven disabled props update after a render. These synchronous
+  // guards also reject a second click that arrives in the same event loop.
+  const savingYearIdsRef = useRef(new Set<number>());
+  const togglingIdsRef = useRef(new Set<number>());
+  const activatingRef = useRef(false);
+  const savingSignatoryRef = useRef(false);
+  const savingOperatingHoursRef = useRef(false);
 
   // Table States
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -165,6 +181,7 @@ export default function Settings() {
   // Modal states
   const [isActivateModalOpen, setIsActivateModalOpen] = useState(false);
   const [idToActivate, setIdToActivate] = useState<number | null>(null);
+  const [isActivating, setIsActivating] = useState(false);
 
   const rememberTerms = useCallback((next: Term[]) => {
     setCachedData<SettingsPageData>(settingsCacheKey, { terms: next });
@@ -189,9 +206,25 @@ export default function Settings() {
     }
   }, [settingsCacheKey, toast]);
 
+  const fetchActivationHistory = useCallback(async () => {
+    try {
+      const { data } = await api.get<ApiActivationHistoryEntry[]>('/terms/activation-history');
+      setHistory((data ?? []).map(entry => ({
+        id: entry.id,
+        semester: entry.semester,
+        academic_year: entry.academic_year,
+        is_active: entry.is_active,
+        activatedAt: new Date(entry.activated_at).toLocaleString(),
+      })));
+    } catch {
+      setHistory([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTerms();
-  }, [fetchTerms]);
+    fetchActivationHistory();
+  }, [fetchTerms, fetchActivationHistory]);
 
   useEffect(() => {
     let active = true;
@@ -263,7 +296,9 @@ export default function Settings() {
     const draft = draftFor(term);
     const joined = joinAcademicYear(draft);
     if (!isValidAcademicYear(draft) || !joined) return;
+    if (savingYearIdsRef.current.has(term.id)) return;
 
+    savingYearIdsRef.current.add(term.id);
     setSavingYearId(term.id);
     try {
       const { data } = await api.patch<{ term: ApiTerm }>(`/terms/${term.id}`, { academic_year: joined });
@@ -274,11 +309,14 @@ export default function Settings() {
     } catch (error) {
       toast.error('Not saved', apiMessage(error, 'Failed to update the academic year.'));
     } finally {
+      savingYearIdsRef.current.delete(term.id);
       setSavingYearId(null);
     }
   };
 
   const handleToggleEnabled = async (term: Term, enabled: boolean) => {
+    if (togglingIdsRef.current.has(term.id)) return;
+    togglingIdsRef.current.add(term.id);
     setTogglingId(term.id);
     try {
       await api.patch(`/terms/${term.id}`, { is_enabled: enabled });
@@ -289,6 +327,7 @@ export default function Settings() {
     } catch (error) {
       toast.error('Not saved', apiMessage(error, 'Failed to update the summer term.'));
     } finally {
+      togglingIdsRef.current.delete(term.id);
       setTogglingId(null);
     }
   };
@@ -300,29 +339,26 @@ export default function Settings() {
 
   const confirmActivateTerm = async () => {
     if (idToActivate === null) return;
+    if (activatingRef.current) return;
+    activatingRef.current = true;
+    setIsActivating(true);
     try {
       await api.patch<{ term: ApiTerm }>(`/terms/${idToActivate}/activate`);
 
+      // The active term scopes scheduler sections, courses, and schedules.
+      // Discard snapshots created for the previous term before navigating back.
+      clearDataCache();
       setTerms(prev => rememberTerms(prev.map(t => ({ ...t, is_active: t.id === idToActivate }))));
 
       const termToActivate = terms.find(t => t.id === idToActivate);
-      if (termToActivate) {
-        setHistory(prev => [
-          {
-            id: prev.length + 1,
-            semester: termToActivate.semester,
-            academic_year: termToActivate.academic_year,
-            is_active: true,
-            activatedAt: new Date().toLocaleString(),
-          },
-          ...prev.map(h => ({ ...h, is_active: false })),
-        ]);
-      }
+      await fetchActivationHistory();
 
       toast.success('Activated', 'Academic term is now active');
     } catch (error) {
       toast.error('Error', apiMessage(error, 'Failed to activate academic term'));
     } finally {
+      activatingRef.current = false;
+      setIsActivating(false);
       setIsActivateModalOpen(false);
       setIdToActivate(null);
     }
@@ -336,7 +372,9 @@ export default function Settings() {
 
   const saveSignatories = async () => {
     if (!signatoryDirty || !signatoryComplete) return;
+    if (savingSignatoryRef.current) return;
 
+    savingSignatoryRef.current = true;
     setIsSavingSignatory(true);
     try {
       const payload = {
@@ -352,12 +390,14 @@ export default function Settings() {
     } catch (error) {
       toast.error('Not saved', apiMessage(error, 'Failed to update the signatory.'));
     } finally {
+      savingSignatoryRef.current = false;
       setIsSavingSignatory(false);
     }
   };
 
   const saveOperatingHours = async () => {
     if (!operatingHours) return;
+    if (savingOperatingHoursRef.current) return;
 
     const validationError = operatingHoursError(
       operatingHoursDraft.opening_time,
@@ -368,6 +408,7 @@ export default function Settings() {
       return;
     }
 
+    savingOperatingHoursRef.current = true;
     setIsSavingOperatingHours(true);
     try {
       const { data } = await api.patch<TimeslotResponse>('/timeslots/settings', {
@@ -384,6 +425,7 @@ export default function Settings() {
     } catch (error) {
       toast.error('Not saved', apiMessage(error, 'Failed to update operating hours.'));
     } finally {
+      savingOperatingHoursRef.current = false;
       setIsSavingOperatingHours(false);
     }
   };
@@ -430,7 +472,7 @@ export default function Settings() {
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-bold text-gray-500">
-            Superseded
+            End
           </span>
         )
       },
@@ -460,7 +502,7 @@ export default function Settings() {
   });
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div id="settings-page" className="space-y-6 p-4 sm:p-6">
       <SectionCard
         icon={CalendarRange}
         title="Academic Terms"
@@ -643,6 +685,7 @@ export default function Settings() {
         </div>
       </SectionCard>
 
+      <div className="grid items-start gap-6 xl:grid-cols-2">
       <SectionCard
         icon={Clock3}
         title="Institution Operating Hours"
@@ -653,51 +696,50 @@ export default function Settings() {
           </span>
         )}
       >
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Opening time</span>
-              <input
-                type="time"
-                step={1800}
-                value={operatingHoursDraft.opening_time}
-                onChange={event => setOperatingHoursDraft(current => ({ ...current, opening_time: event.target.value }))}
-                disabled={isLoadingOperatingHours || isSavingOperatingHours}
-                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Closing time</span>
-              <input
-                type="time"
-                step={1800}
-                value={operatingHoursDraft.closing_time}
-                onChange={event => setOperatingHoursDraft(current => ({ ...current, closing_time: event.target.value }))}
-                disabled={isLoadingOperatingHours || isSavingOperatingHours}
-                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-              />
-            </label>
-            <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
-              Extending the closing time expands the valid daily scheduling range. Explicit duration-specific start-time overrides remain authoritative.
+        <div className="grid gap-4 p-5 sm:grid-cols-2 sm:items-end">
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Opening time</span>
+            <input
+              type="time"
+              step={1800}
+              value={operatingHoursDraft.opening_time}
+              onChange={event => setOperatingHoursDraft(current => ({ ...current, opening_time: event.target.value }))}
+              disabled={isLoadingOperatingHours || isSavingOperatingHours}
+              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Closing time</span>
+            <input
+              type="time"
+              step={1800}
+              value={operatingHoursDraft.closing_time}
+              onChange={event => setOperatingHoursDraft(current => ({ ...current, closing_time: event.target.value }))}
+              disabled={isLoadingOperatingHours || isSavingOperatingHours}
+              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
+            />
+          </label>
+          <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
+            Extending the closing time expands the valid daily scheduling range. Explicit duration-specific start-time overrides remain authoritative.
+          </p>
+          {operatingHoursValidationError && !isLoadingOperatingHours && (
+            <p className="flex items-center gap-1 text-xs font-semibold text-red-600 sm:col-span-2">
+              <TriangleAlert className="h-3.5 w-3.5" />
+              {operatingHoursValidationError}
             </p>
-            {operatingHoursValidationError && !isLoadingOperatingHours && (
-              <p className="flex items-center gap-1 text-xs font-semibold text-red-600 sm:col-span-2">
-                <TriangleAlert className="h-3.5 w-3.5" />
-                {operatingHoursValidationError}
-              </p>
-            )}
-          </div>
+          )}
           <button
             type="button"
             onClick={saveOperatingHours}
             disabled={!operatingHoursDirty || !!operatingHoursValidationError || isLoadingOperatingHours || isSavingOperatingHours}
-            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50 sm:col-start-2 sm:justify-self-end"
           >
             {isSavingOperatingHours ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
             {isSavingOperatingHours ? 'Saving' : 'Save operating hours'}
           </button>
         </div>
       </SectionCard>
+      </div>
 
       <SectionCard
         icon={Signature}
@@ -784,7 +826,7 @@ export default function Settings() {
       <SectionCard
         icon={History}
         title="Term Activation History"
-        description="Activations made since this page was opened. This log is not stored on the server yet, so it resets on reload."
+        description="Every term activation recorded by the system, including the currently active term."
         aside={
           <span className="text-xs font-semibold text-gray-500">{history.length} logged</span>
         }
@@ -820,9 +862,10 @@ export default function Settings() {
                 </button>
                 <button
                   onClick={confirmActivateTerm}
-                  className="flex-1 cursor-pointer rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A]"
+                  disabled={isActivating}
+                  className="flex-1 cursor-pointer rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Confirm Activate
+                  {isActivating ? 'Activating' : 'Confirm Activate'}
                 </button>
               </div>
             </div>

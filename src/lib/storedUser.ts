@@ -17,6 +17,22 @@ export interface StoredUser {
   department_id?: number;
   program_id?: number;
   role?: string;
+  permissions?: string[];
+  capability_catalog?: Array<{
+    id: string;
+    module: string;
+    title: string;
+    description: string;
+    assignable?: boolean;
+  }>;
+  modules?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    granted: boolean;
+    capabilities: Array<{ id: string; title: string; description: string; granted: boolean }>;
+  }>;
+  scheduling_ready?: boolean;
 }
 
 const readRawStoredUser = (): string | null => {
@@ -47,6 +63,15 @@ export const getStoredUser = (): StoredUser | null => {
 
 /** Lowercased role of the stored user, or "" when unknown. */
 export const getStoredUserRole = (): string => getStoredUser()?.role?.toLowerCase() ?? "";
+
+/** Returns true when the signed-in user has at least one requested capability. */
+export const hasStoredCapability = (capability: string | string[]): boolean => {
+  const user = getStoredUser();
+  const permissions = user?.permissions ?? [];
+  const requested = Array.isArray(capability) ? capability : [capability];
+  if (user?.scheduling_ready === false && requested.some((name) => name.startsWith('schedule.'))) return false;
+  return requested.some((name) => permissions.includes(name));
+};
 
 /** Numeric department id of the stored user, or null when unknown. */
 export const getStoredUserDepartmentId = (): number | null => {

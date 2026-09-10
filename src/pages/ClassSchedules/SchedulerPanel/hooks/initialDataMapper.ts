@@ -37,6 +37,9 @@ export interface SchedulerCacheData {
   schedules: ScheduleItem[];
   fieldCourseAssignmentEnabled: boolean;
   fieldCourseCodes: string[];
+  schedulingReady: boolean;
+  /** False when no active Dean is assigned; submitting is refused server-side. */
+  hasDean: boolean;
 }
 
 export interface InitialDataResponse {
@@ -49,6 +52,8 @@ export interface InitialDataResponse {
   sections: ApiSectionRecord[];
   schedules: ApiScheduleRecord[];
   departments: ApiDepartmentRecord[];
+  scheduling_ready?: boolean;
+  has_dean?: boolean;
   users: UserSummary[];
   field_course_assignment_enabled?: boolean;
   field_course_codes?: string[];
@@ -233,6 +238,50 @@ export const generatedScheduleSectionId = (
  * hardcoded fallback in useConflict) and used a looser section filter that
  * admitted sections from other academic years.
  */
+/**
+ * One API course row to the scheduler's Subject shape.
+ *
+ * Exported because the generator re-fetches courses scoped to a single
+ * curriculum — the initial-data payload flattens each course to one year level
+ * across all of a department's active curricula, which is the wrong answer for
+ * a cohort still on the old one.
+ */
+export const mapApiCourse = (s: ApiCourseRecord): Subject => {
+  // A secretary can delegate a non-major to another college, and that override
+  // decides who teaches it. With no override a GEC subject is taught by the
+  // college that offers it, and anything else — a major, or a shared minor such
+  // as PATH FIT — carries no teaching college: majors are held to their own
+  // department and program instead, and a shared minor is open to every
+  // department by design.
+  const delegatedTo = s.teaching_department_id ?? null;
+  const servesOwnCollege = delegatedTo === null && isGecServiceCourse(s) && s.department_id !== null;
+  // Whichever college the two branches above landed on, so the labels cannot
+  // drift from the id the eligibility check reads.
+  const teachingDepartment = delegatedTo !== null ? s.teaching_department : (servesOwnCollege ? s.department : null);
+
+  return {
+    id: s.id.toString(),
+    code: s.course_code ?? s.subject_code ?? "",
+    name: s.course_name ?? s.subject_name ?? "",
+    units: toNumber(s.units),
+    lectureHours: toNumber(s.lecture_hours),
+    labHours: toNumber(s.lab_hours),
+    category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
+    semester: s.semester,
+    departmentId: s.department_id ?? null,
+    programId: s.program_id ?? null,
+    teachingProgramId: s.teaching_program_id ?? null,
+    programCode: s.program?.code ?? null,
+    teachingDepartmentId: delegatedTo ?? (servesOwnCollege ? s.department_id : null),
+    teachingDepartmentCode: teachingDepartment?.department_code,
+    teachingDepartmentName: teachingDepartment?.department_name,
+    categories: s.categories ?? [],
+    yearLevel: normalizeYearLevel(s.year_level),
+    roomTypeRequired: s.room_type_required,
+    status: s.status ?? "active"
+  };
+};
+
 export const mapInitialData = (
   initialData: InitialDataResponse,
   options: { isVpaa: boolean; userDepartmentId?: number | null },
@@ -262,41 +311,7 @@ export const mapInitialData = (
   }));
 
   const rawCourses = initialData.courses ?? initialData.subjects ?? [];
-  const mappedSubjects = rawCourses.map((s): Subject => {
-    // A secretary can delegate a non-major to another college, and that override
-    // decides who teaches it. With no override a GEC subject is taught by the
-    // college that offers it, and anything else — a major, or a shared minor such
-    // as PATH FIT — carries no teaching college: majors are held to their own
-    // department and program instead, and a shared minor is open to every
-    // department by design.
-    const delegatedTo = s.teaching_department_id ?? null;
-    const servesOwnCollege = delegatedTo === null && isGecServiceCourse(s) && s.department_id !== null;
-    // Whichever college the two branches above landed on, so the labels cannot
-    // drift from the id the eligibility check reads.
-    const teachingDepartment = delegatedTo !== null ? s.teaching_department : (servesOwnCollege ? s.department : null);
-
-    return {
-      id: s.id.toString(),
-      code: s.course_code ?? s.subject_code ?? "",
-      name: s.course_name ?? s.subject_name ?? "",
-      units: toNumber(s.units),
-      lectureHours: toNumber(s.lecture_hours),
-      labHours: toNumber(s.lab_hours),
-      category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
-      semester: s.semester,
-      departmentId: s.department_id ?? null,
-      programId: s.program_id ?? null,
-      teachingProgramId: s.teaching_program_id ?? null,
-      programCode: s.program?.code ?? null,
-      teachingDepartmentId: delegatedTo ?? (servesOwnCollege ? s.department_id : null),
-      teachingDepartmentCode: teachingDepartment?.department_code,
-      teachingDepartmentName: teachingDepartment?.department_name,
-      categories: s.categories ?? [],
-      yearLevel: normalizeYearLevel(s.year_level),
-      roomTypeRequired: s.room_type_required,
-      status: s.status ?? "active"
-    };
-  });
+  const mappedSubjects = rawCourses.map(mapApiCourse);
 
   const mappedFaculties = initialData.faculties.map((f): Faculty => ({
     id: f.id.toString(),
@@ -339,6 +354,9 @@ export const mapInitialData = (
       yearLevel: normalizeYearLevel(s.year_level),
       semester: s.semester,
       departmentId: s.department_id,
+      programId: s.program_id == null ? null : Number(s.program_id),
+      curriculumId: s.curriculum_id == null ? null : Number(s.curriculum_id),
+      curriculumName: s.curriculum?.name ?? null,
       termId: Number(s.term_id),
       status: s.status ?? "active"
     }));
@@ -358,5 +376,7 @@ export const mapInitialData = (
     schedules: filteredSchedules,
     fieldCourseAssignmentEnabled: !!initialData.field_course_assignment_enabled,
     fieldCourseCodes: initialData.field_course_codes ?? [],
+    schedulingReady: initialData.scheduling_ready !== false,
+    hasDean: initialData.has_dean !== false,
   };
 };

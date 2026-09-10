@@ -11,7 +11,7 @@ import { SIZE, bottom, drawTextLines, left, right, top } from "./teachingLoadFor
 
 /** The body rows of table A; row 20 is its first. */
 const BODY_ROW = 20;
-const SPLIT_TIMES = ["7:00 AM\u201310:00 AM", "7:00 AM\u20139:00 AM"];
+const SPLIT_TIMES = ["7:00 AM \u2013 10:00 AM", "7:00 AM \u2013 9:00 AM"];
 
 /** Draws into column E and reports where each line landed and at what size. */
 const drawIntoTimeCell = (times: string[]) => {
@@ -22,7 +22,11 @@ const drawIntoTimeCell = (times: string[]) => {
     return doc;
   }) as typeof doc.text);
 
-  drawTextLines(doc, times, { from: "E", row: BODY_ROW }, { size: SIZE.body, align: "center" });
+  drawTextLines(doc, times, { from: "E", row: BODY_ROW }, {
+    size: SIZE.body,
+    align: "center",
+    fixedSize: true,
+  });
 
   // The fitted size is still set on the document, so widths measured here are
   // the widths that were drawn.
@@ -46,7 +50,7 @@ describe("drawTextLines", () => {
     const { placed } = drawIntoTimeCell(SPLIT_TIMES);
     const centre = (top(BODY_ROW) + bottom(BODY_ROW)) / 2;
 
-    expect((placed[0].y + placed[1].y) / 2).toBeCloseTo(centre + 0.5, 0);
+    expect((placed[0].y + placed[1].y) / 2).toBeCloseTo(centre + 0.6, 0);
   });
 
   it("shrinks until the longest range fits the column", () => {
@@ -54,10 +58,9 @@ describe("drawTextLines", () => {
     const cellWidth = right("E") - left("E");
 
     placed.forEach(({ text }) => expect(widthOf(text)).toBeLessThanOrEqual(cellWidth));
-    // Legible in print: the stack is smaller than the body size but not the 4pt
-    // floor the shrink loop stops at.
-    expect(size).toBeLessThan(SIZE.body);
-    expect(size).toBeGreaterThan(5);
+    // The widened Time column and available cell height keep the stack at the
+    // regular body size instead of shrinking it to fit.
+    expect(size).toBe(SIZE.body);
   });
 
   it("draws a lone range as an ordinary centred cell", () => {
@@ -65,6 +68,26 @@ describe("drawTextLines", () => {
 
     expect(placed).toHaveLength(1);
     expect(placed[0].x).toBeCloseTo((left("E") + right("E")) / 2, 1);
-    expect(size).toBeLessThan(SIZE.body);
+    expect(size).toBe(SIZE.body);
+  });
+
+  it("draws a full-width rule between stacked times when requested", () => {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "legal" });
+    const separators: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+    vi.spyOn(doc, "line").mockImplementation(((x1: number, y1: number, x2: number, y2: number) => {
+      separators.push({ x1, y1, x2, y2 });
+      return doc;
+    }) as typeof doc.line);
+
+    drawTextLines(doc, SPLIT_TIMES, { from: "E", row: BODY_ROW }, {
+      size: SIZE.body,
+      align: "center",
+      separator: "cellRule",
+    });
+
+    expect(separators).toHaveLength(1);
+    expect(separators[0].x1).toBeCloseTo(left("E"), 1);
+    expect(separators[0].x2).toBeCloseTo(right("E"), 1);
+    expect(separators[0].y1).toBe(separators[0].y2);
   });
 });

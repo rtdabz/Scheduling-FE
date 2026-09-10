@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Layers3, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import type { Faculty, ScheduleItem, Subject } from "../types";
+import { INSTRUCTOR_ASSIGNABLE_STATUSES, type Faculty, type ScheduleItem, type Subject } from "../types";
+import ProfileAvatar from "../../../../components/ui/ProfileAvatar";
 import { facultyEligibilityForSubject } from "../facultyEligibility";
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances } from "../../../../lib/facultyLoad";
 import type { LoadTier } from "../../../../lib/overloadConfirmation";
@@ -176,7 +177,7 @@ export default function AutoAssignModal({
   const groups = useMemo<SectionGroup[]>(() => {
     const map = new Map<string, SectionGroup>();
     schedules
-      .filter((schedule) => ["approved", "faculty_assignment"].includes(schedule.status))
+      .filter((schedule) => INSTRUCTOR_ASSIGNABLE_STATUSES.includes(schedule.status))
       .forEach((schedule) => {
         const key = `${schedule.courseId}:${schedule.sectionId}`;
         const existing = map.get(key);
@@ -504,7 +505,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
               {faculty.profilePicture ? (
                   <img src={faculty.profilePicture} alt={faculty.name} loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-full border border-slate-200 object-cover" />
               ) : (
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UserRound className="h-6 w-6" /></span>
+                <ProfileAvatar className="h-12 w-12 shrink-0 rounded-full" iconClassName="h-6 w-6" />
               )}
               <span className="min-w-0">
                 <span className="block break-words text-sm font-black leading-5 text-slate-900">{faculty.name}</span>
@@ -725,7 +726,7 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
               const load = facultyLoads.get(facultyId) ?? 0;
               const display = loadDisplay(faculty, load);
               const selected = selectedGroup?.facultyId === facultyId;
-              return <button key={facultyId} type="button" onClick={() => setSelectedFacultyId(facultyId)} aria-pressed={selected} className={`w-full rounded-lg border p-3 text-left transition-colors ${selected ? "border-blue-500 bg-blue-50/70" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}><div className="flex items-center gap-3">{faculty?.profilePicture ? <img src={faculty.profilePicture} alt="" loading="lazy" decoding="async" className="h-11 w-11 shrink-0 rounded-full border border-slate-200 object-cover" /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UserRound className="h-5 w-5" /></span>}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-900">{faculty?.name ?? items[0].facultyName}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"}</span></span><span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">{items.length} sections</span></div><div className="mt-3 flex items-center justify-between text-[11px]"><span className="font-semibold text-slate-500">{load} / {display.bands.basicLoad} units</span><span className="font-bold text-slate-500">{display.label}</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div></button>;
+              return <button key={facultyId} type="button" onClick={() => setSelectedFacultyId(facultyId)} aria-pressed={selected} className={`w-full rounded-lg border p-3 text-left transition-colors ${selected ? "border-blue-500 bg-blue-50/70" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}><div className="flex items-center gap-3"><ProfileAvatar src={faculty?.profilePicture} className="h-11 w-11 shrink-0 rounded-full border border-slate-200" iconClassName="h-5 w-5" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-900">{faculty?.name ?? items[0].facultyName}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"}</span></span><span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">{items.length} sections</span></div><div className="mt-3 flex items-center justify-between text-[11px]"><span className="font-semibold text-slate-500">{load} / {display.bands.basicLoad} units</span><span className="font-bold text-slate-500">{display.label}</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div></button>;
             })}
             {filteredGroups.length === 0 && <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">No matching instructors.</p>}
           </div>
@@ -772,11 +773,10 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
             const load = facultyLoads.get(facultyId) ?? 0;
             const display = loadDisplay(faculty, load);
             const name = faculty?.name ?? items[0].facultyName;
-            const initials = name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
             return (
               <article key={facultyId} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                 <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#4e0a10] text-xs font-black text-white">{initials}</span>
+                  <ProfileAvatar src={faculty?.profilePicture} alt={name} className="h-10 w-10 rounded-full" iconClassName="h-5 w-5" />
                   <div className="min-w-[160px] flex-1"><p className="text-sm font-black text-slate-900">{name}</p><p className="mt-0.5 text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"}<span className={`ml-2 rounded-full border px-2 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span></p></div>
                   <div className="text-right"><p className="text-sm font-black text-slate-900">{load} / {display.bands.basicLoad} units</p><p className="text-xs text-slate-500">{items.length} section{items.length === 1 ? "" : "s"} assigned</p></div>
                   <button type="button" onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-md border border-[#4e0a10]/20 px-3 py-2 text-xs font-bold text-[#4e0a10] hover:bg-[#4e0a10]/5"><Pencil className="h-3.5 w-3.5" /> Edit Assignment</button>

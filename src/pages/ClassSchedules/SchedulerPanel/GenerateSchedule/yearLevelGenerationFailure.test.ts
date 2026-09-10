@@ -162,4 +162,12 @@ describe("describeAdjustment", () => {
     expect(describeAdjustment({ type: "set_pattern", section_id: 5, course_id: 11, value: "MW" }))
       .toBe("course 11 in section 5: pattern set to MW");
   });
+
+  it("explains when a selected Split Session course uses a single-meeting fallback", () => {
+    expect(describeAdjustment(adjustment({
+      type: "split_session_single_meeting_fallback",
+      value: "single_meeting",
+      reason: "Some GEC courses cannot be split because the available meeting slots are full.",
+    }))).toBe("GEC 101 in IT 1A: Can't split, switched to one meeting.");
+  });
 });

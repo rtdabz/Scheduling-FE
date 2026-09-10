@@ -16,7 +16,7 @@ import type jsPDF from "jspdf";
 
 /** Widths of columns A..K, in Excel character units. */
 const COLUMN_CHARS = [
-  13, 10.77734375, 24.21875, 7.77734375, 10.77734375, 8.77734375,
+  13, 10.77734375, 14.5, 7.77734375, 20.5, 8.77734375,
   10.5546875, 7.21875, 7.44140625, 5.44140625, 6.88671875,
 ] as const;
 
@@ -32,11 +32,11 @@ const ROW_POINTS = [
   19.5, // 16    TEACHING LOAD
   14.25, // 17    A. Basic Load/Built-In
   14.25, 19.8, // 18-19 table A header
-  18.6, 18.6, 18.6, 18.6, 18.6, 18.6, 18.6, // 20-26 table A body
+  24.5, 24.5, 24.5, 24.5, 24.5, 24.5, 24.5, // 20-26 table A body
   16.2, // 27    total (basic)
   14.25, // 28    B. Overload/Part Time Load
   14.25, 21, // 29-30 table B header
-  18.6, 18.6, 18.6, 18.6, 18.6, 18.6, // 31-36 table B body
+  24.5, 24.5, 24.5, 24.5, 24.5, 24.5, // 31-36 table B body
   14.25, // 37    total (overload)
   14.25, // 38    grand total
   14.25, // 39    C. Other Designation/Functions
@@ -84,6 +84,9 @@ export type Column = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" |
 
 /** Last row of the form box, and so the last row of its outer border. */
 export const LAST_ROW = ROW_POINTS.length;
+
+/** The expanded load rows need a little more vertical page room than legal paper. */
+export const FORM_PAGE_SIZE: [number, number] = [216, 390];
 
 export const left = (column: Column): number => COLUMN_X[column.charCodeAt(0) - 65];
 export const right = (column: Column): number => COLUMN_X[column.charCodeAt(0) - 64];
@@ -136,6 +139,10 @@ interface TextStyle {
   color?: readonly [number, number, number];
   /** Cell padding, in mm. Defaults to a hair over Excel's own. */
   padding?: number;
+  /** Draw a separator between stacked lines. */
+  separator?: "none" | "underline" | "cellRule";
+  /** Keep stacked values at the requested size, allowing the cell to grow. */
+  fixedSize?: boolean;
 }
 
 /** Leading between stacked lines in one cell, as a multiple of the font size. */
@@ -218,7 +225,7 @@ export const drawTextLines = (
   const available = x2 - x1;
   const throughRow = span.throughRow ?? span.row;
   // Leave the cell's own rules clear above the first line and below the last.
-  const headroom = bottom(throughRow) - top(span.row) - 1.2;
+  const headroom = bottom(throughRow) - top(span.row) - 0.2;
 
   // Step down rather than scale, as drawText does, and hold every line at the
   // one size: a stack set in two sizes reads as two separate entries.
@@ -226,17 +233,37 @@ export const drawTextLines = (
   const overflows = () =>
     lines.some((line) => doc.getTextWidth(line) > available) ||
     lines.length * fitted * POINTS_TO_MM * LINE_HEIGHT > headroom;
-  while (fitted > 4 && overflows()) {
+  while (!style.fixedSize && fitted > 4 && overflows()) {
     fitted -= 0.25;
     doc.setFontSize(fitted);
   }
 
-  const lineHeight = fitted * POINTS_TO_MM * LINE_HEIGHT;
+  const cellTop = top(span.row);
+  const cellBottom = bottom(throughRow);
+  const cellHeight = cellBottom - cellTop;
+  const lineHeight = style.separator === "cellRule" ? cellHeight / lines.length : fitted * POINTS_TO_MM * LINE_HEIGHT;
   const align = style.align ?? "left";
   const x = align === "center" ? (x1 + x2) / 2 : align === "right" ? x2 : x1;
-  const firstBaseline =
-    baselineOf(span.row, throughRow, fitted) - ((lines.length - 1) * lineHeight) / 2;
-  lines.forEach((line, index) => doc.text(line, x, firstBaseline + index * lineHeight, { align }));
+  const firstBaseline = style.separator === "cellRule"
+    ? baselineAt(cellTop + lineHeight / 2, fitted)
+    : baselineOf(span.row, throughRow, fitted) - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, index) => {
+    const baseline = firstBaseline + index * lineHeight;
+    doc.text(line, x, baseline, { align });
+
+    if (style.separator === "cellRule" && index < lines.length - 1) {
+      doc.setDrawColor(...(style.color ?? BLACK));
+      doc.setLineWidth(MEDIUM);
+      const boundary = cellTop + lineHeight * (index + 1);
+      doc.line(left(span.from), boundary, right(span.to ?? span.from), boundary);
+    } else if (style.separator === "underline" && index < lines.length - 1) {
+      const width = doc.getTextWidth(line);
+      const start = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
+      doc.setDrawColor(...(style.color ?? BLACK));
+      doc.setLineWidth(THIN);
+      doc.line(start, baseline + 0.45, start + width, baseline + 0.45);
+    }
+  });
 };
 
 /** Two stacked lines in one cell -- the form's "Units / (lec)" style headers. */

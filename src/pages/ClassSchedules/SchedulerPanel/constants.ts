@@ -1,5 +1,9 @@
 import type { ScheduleItem, Subject } from "./types";
 import { FULL_DAY_NAMES, slotToTimeLabel } from "../../../lib/timeGrid";
+import {
+  GRID_HEADER_HEIGHT_PX as SHARED_GRID_HEADER_HEIGHT_PX,
+  GRID_SLOT_HEIGHT_PX,
+} from "../../../components/scheduling/WeeklyTimetableGrid";
 
 export const DAYS: string[] = [...FULL_DAY_NAMES];
 
@@ -14,6 +18,27 @@ export const INSTRUCTOR_ASSIGNED_STATUSES: ScheduleItem["status"][] = [
   "faculty_assignment",
   "finalized"
 ];
+
+/**
+ * Approval stages that can be withdrawn into revision. Reassignment requires
+ * an additional current-state check because it starts from a finalized cohort.
+ */
+export const DEPARTMENT_WITHDRAWABLE_STATUSES: ScheduleItem["status"][] = [
+  "submitted",
+  "approved_by_dean",
+  "conditionally_approved",
+  "approved",
+  "faculty_assignment",
+  "reassignment"
+];
+
+export const isDepartmentSectionWithdrawable = (
+  status: ScheduleItem["status"],
+  assignedInstructorBlocks = 0,
+  facultyAssignmentDone = false,
+): boolean => status === "reassignment"
+  ? assignedInstructorBlocks === 0 && !facultyAssignmentDone
+  : DEPARTMENT_WITHDRAWABLE_STATUSES.includes(status);
 
 export const yearLevelLabel = (year: number): string => {
   switch (year) {
@@ -31,8 +56,12 @@ export const getSubjectClassification = (
   category: Subject["category"]
 ): Exclude<SubjectClassification, "all"> => (category === "major" ? "major" : "minor");
 
-export const SLOT_HEIGHT_PX = 24;
-export const GRID_HEADER_HEIGHT_PX = 48;
+/**
+ * Re-exported from WeeklyTimetableGrid so the builder cannot drift away from the
+ * geometry every other timetable in the system renders at.
+ */
+export const SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
+export const GRID_HEADER_HEIGHT_PX = SHARED_GRID_HEADER_HEIGHT_PX;
 
 /** @deprecated Prefer importing slotToTimeLabel from lib/timeGrid directly. */
 export const slotToTimeStr = slotToTimeLabel;

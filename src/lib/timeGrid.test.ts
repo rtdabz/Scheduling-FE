@@ -115,6 +115,11 @@ describe("formatTime12h", () => {
     expect(formatTime12h("9")).toBe("9:00 AM");
   });
 
+  it("normalizes values that already include AM or PM", () => {
+    expect(formatTime12h("7 AM")).toBe("7:00 AM");
+    expect(formatTime12h("1:00 pm")).toBe("1:00 PM");
+  });
+
   it("returns an empty string for a missing time", () => {
     expect(formatTime12h(null)).toBe("");
     expect(formatTime12h(undefined)).toBe("");
@@ -171,13 +176,13 @@ afterEach(() => {
 
 /**
  * Guards the fix for finding #33: the window is a stored setting, so the client
- * must read it rather than assume 07:00-19:00.
+ * must read it rather than assume a fixed operating window.
  */
 describe("configureTimeGrid", () => {
   it("defaults to the server defaults", () => {
-    expect(slotCount()).toBe(24);
+    expect(slotCount()).toBe(27);
     expect(timeToSlot("07:00")).toBe(0);
-    expect(closingTimeLabel()).toBe("19:00");
+    expect(closingTimeLabel()).toBe("20:30");
   });
 
   it("widens the grid when the server opens earlier and closes later", () => {
@@ -214,9 +219,9 @@ describe("configureTimeGrid", () => {
 
   it("ignores a malformed or empty payload", () => {
     configureTimeGrid({ opening_time: "nonsense", closing_time: null, slot_minutes: 0 });
-    expect(slotCount()).toBe(24);
+    expect(slotCount()).toBe(27);
 
     configureTimeGrid(null);
-    expect(slotCount()).toBe(24);
+    expect(slotCount()).toBe(27);
   });
 });

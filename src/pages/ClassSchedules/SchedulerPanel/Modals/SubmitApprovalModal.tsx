@@ -143,7 +143,7 @@ export default function SubmitApprovalModal({
             </div>
             <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
               {departmentSectionProgress.map((section) => {
-                const isProtected = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "finalized"].includes(section.status);
+                const isProtected = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "reassignment", "finalized"].includes(section.status);
                 const statusLabel = section.status === "completed"
                   ? "Will submit"
                   : section.status === "finalized"

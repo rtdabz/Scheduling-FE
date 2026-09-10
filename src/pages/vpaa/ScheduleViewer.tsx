@@ -22,7 +22,8 @@ import {
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
-import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
+import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
+import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
 // TypeScript Interfaces
 export interface Department {
@@ -164,31 +165,18 @@ const dayMapToIndex: Record<string, number> = {
 const DAYS_MAP = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const timeStrToSlot = (timeStr: string): number => {
-  const parts = timeStr.split(':');
-  if (parts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  const totalMinutes = hours * 60 + minutes;
-  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
+  return timeToSlot(timeStr);
 };
 
 const slotToTimeStr12h = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  let hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const ampm = hours >= 12 ? "PM" : "AM";
-  if (hours > 12) hours -= 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  return slotToTimeLabel(slotIndex);
 };
 
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-// Grid configuration
-const START_HOUR = 7; // 7:00 AM
-const END_HOUR = 19; // 7:00 PM
-const VIEWER_SLOT_HEIGHT_PX = 24;
+/** Aliased to the shared geometry so cards keep matching the rows they sit on. */
+const VIEWER_SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
 
 const normalizeDepartmentKey = (code: string, name = "") => {
   const normalizedCode = code.trim().toUpperCase();
@@ -341,13 +329,11 @@ const parseTimeToSlotIndex = (timeStr: string): number => {
 
   const slotFraction = minutes >= 30 ? 1 : 0;
   const totalHalfHours = (hour * 2) + slotFraction;
-  const startHalfHours = START_HOUR * 2;
-
-  return Math.max(0, totalHalfHours - startHalfHours);
+  return Math.max(0, Math.round(((totalHalfHours * 30) - gridOpeningMinutes()) / slotMinutes()));
 };
 
 // Generates time slot structures for grid row labeling
-const generateTimeSlots = (startSlot = 0, endSlot = (END_HOUR - START_HOUR) * 2) => {
+const generateTimeSlots = (startSlot = 0, endSlot = slotCount()) => {
   const slots = [];
   for (let slot = startSlot; slot < endSlot; slot += 1) {
     slots.push({
@@ -842,13 +828,18 @@ export default function VpaaScheduleViewer() {
     searchTerm.trim() ? `Search: ${searchTerm.trim()}` : "",
   ].filter(Boolean);
 
+  /**
+   * Every timetable in the system shows the same 7:00 AM-8:30 PM window. This
+   * screen used to crop the grid to the extent of whatever was filtered in, so
+   * the same class sat at a different height depending on the filter and did
+   * not line up with the builder it was scheduled on.
+   */
   const gridRange = useMemo(() => {
-    if (filteredSchedules.length === 0) return { start: 0, end: 8 };
-    const starts = filteredSchedules.map((schedule) => parseTimeToSlotIndex(schedule.startTime));
-    const ends = filteredSchedules.map((schedule) => parseTimeToSlotIndex(schedule.endTime));
-    const start = Math.max(0, Math.min(...starts) - 1);
-    const end = Math.min((END_HOUR - START_HOUR) * 2, Math.max(...ends) + 1);
-    return { start, end: Math.max(end, start + 4) };
+    const latestEnd = filteredSchedules.reduce(
+      (max, schedule) => Math.max(max, parseTimeToSlotIndex(schedule.endTime)),
+      0,
+    );
+    return { start: 0, end: Math.max(slotCount(), latestEnd) };
   }, [filteredSchedules]);
 
   const timeSlots = useMemo(() => generateTimeSlots(gridRange.start, gridRange.end), [gridRange]);
@@ -1394,8 +1385,6 @@ export default function VpaaScheduleViewer() {
                 days={DAYS}
                 slotCount={timeSlots.length}
                 startSlot={gridRange.start}
-                slotHeight={VIEWER_SLOT_HEIGHT_PX}
-                timeColumnWidth={96}
                 minWidth={1120}
                 getTimeLabel={slotToTimeStr12h}
                 getDayCount={(dayIndex) => filteredSchedules.filter((schedule) => schedule.day === DAYS[dayIndex]).length}

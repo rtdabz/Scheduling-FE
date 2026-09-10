@@ -1,4 +1,5 @@
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import ProfileAvatar from '../ui/ProfileAvatar';
 
 export interface InstructorWorkload {
   id: number | string;
@@ -13,7 +14,6 @@ export interface InstructorWorkload {
 
 interface WorkloadDatum {
   name: string;
-  initials: string;
   photo: string | null;
   progress: number;
   units: string;
@@ -30,7 +30,6 @@ const toDatum = (instructor: InstructorWorkload): WorkloadDatum => {
 
   return {
     name: `${first} ${last}`.trim() || 'Instructor',
-    initials: `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase() || '?',
     photo: instructor.profile_picture ?? null,
     // Capped so an over-allocated instructor cannot run the bar past the track.
     progress: instructor.max > 0 ? Math.min(100, Math.round((instructor.assigned / instructor.max) * 100)) : 0,
@@ -46,7 +45,7 @@ const toDatum = (instructor: InstructorWorkload): WorkloadDatum => {
  * category tick's `payload` carries only {coordinate, value, index, offset} —
  * recharts does not hand the datum to the tick, so the previous
  * `payload.payload.profilePicture` read was always undefined and every
- * instructor fell back to initials. And the contents are laid out left to right
+ * instructor fell back to the default avatar. And the contents are laid out left to right
  * from the axis origin (`x` is the tick anchor, so `-x` is the plot's left
  * edge); anchoring them to the axis line instead made each avatar's position
  * depend on the width of the name beside it, which is what made the column
@@ -60,13 +59,7 @@ function InstructorAxisTick({ x = 0, y = 0, index = 0, rows = [] }: { x?: number
     <g transform={`translate(${x},${y})`}>
       <foreignObject x={-x} y={-ROW_HEIGHT / 2} width={Math.max(0, x - 4)} height={ROW_HEIGHT}>
         <div className="flex h-full items-center gap-2">
-          {row.photo ? (
-            <img src={row.photo} alt="" className="h-7 w-7 shrink-0 rounded-full border border-slate-200 object-cover" />
-          ) : (
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-              {row.initials}
-            </span>
-          )}
+          <ProfileAvatar src={row.photo} className="h-7 w-7 shrink-0 rounded-full border border-slate-200" iconClassName="h-4 w-4" />
           <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-700" title={row.name}>{row.name}</span>
           <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-500">{row.units}</span>
         </div>

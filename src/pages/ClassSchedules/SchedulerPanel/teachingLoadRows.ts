@@ -8,6 +8,7 @@
  * there, and units must be counted once for the pair rather than once per row.
  */
 import type { Faculty, ScheduleItem } from "./types";
+import { formatTime12h } from "../../../lib/timeGrid";
 
 /** Rows the blank form provides in each table; anything past this spills to a second sheet. */
 export const BASIC_LINE_COUNT = 7;
@@ -40,27 +41,12 @@ export interface LoadLine {
   totalHours: number;
 }
 
-const to12Hour = (value: string): { clock: string; meridiem: string } => {
-  const [rawHour, rawMinute] = value.split(":");
-  const hour24 = Number(rawHour);
-  if (!Number.isFinite(hour24)) return { clock: value, meridiem: "" };
-  const hour = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return { clock: `${hour}:${(rawMinute ?? "00").slice(0, 2)}`, meridiem: hour24 >= 12 ? "PM" : "AM" };
-};
-
-/** En dash. Reads as a range at the size these cells print at; a hyphen does not. */
-const EN_DASH = "–";
-
 /**
- * "7:00 AM–9:00 AM". Both ends carry their meridiem even when they agree,
- * because a split-day class prints one range per line and lines that dropped
- * the opening "AM" would not read as the same kind of thing as the ones that
- * kept it -- "7:00-9:00 AM" over "11:00 AM-1:00 PM" scans as two columns.
+ * Matches Print Schedule's "7:00 AM – 9:00 AM" format. Both ends carry their
+ * meridiem so every stacked line remains independently readable.
  */
 const formatTimeRange = (startTime: string, endTime: string): string => {
-  const stamp = ({ clock, meridiem }: { clock: string; meridiem: string }) =>
-    meridiem ? `${clock} ${meridiem}` : clock;
-  return `${stamp(to12Hour(startTime))}${EN_DASH}${stamp(to12Hour(endTime))}`;
+  return `${formatTime12h(startTime)} – ${formatTime12h(endTime)}`;
 };
 
 /** Half-hour slots, as clock hours. */

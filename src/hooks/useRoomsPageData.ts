@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../lib/api';
-import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../lib/dataCache';
+import { invalidateCacheGroups } from '../lib/cacheGroups';
 
 export interface RoomsPageDepartment {
   id: number;
@@ -74,7 +75,7 @@ export function useRoomsPageData(role: string | undefined, departmentId: number 
     setIsLoading(forceRefresh || !hasCachedData(cacheKey));
     try {
       const next = await loadCachedData<RoomsPageData>(cacheKey, async () => {
-        const response = await api.get<{ rooms?: ApiRoom[]; departments?: RoomsPageDepartment[]; schedules?: RoomsPageSchedule[]; active_term?: unknown }>('/initial-data');
+        const response = await api.get<{ rooms?: ApiRoom[]; departments?: RoomsPageDepartment[]; schedules?: RoomsPageSchedule[]; active_term?: unknown }>('/initial-data?include=rooms,departments,schedules');
         return {
           rooms: (response.data.rooms ?? []).map(mapRoom),
           departments: response.data.departments ?? [],
@@ -93,7 +94,9 @@ export function useRoomsPageData(role: string | undefined, departmentId: number 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const commit = useCallback((next: RoomsPageData) => {
-    clearDataCache();
+    // A room write changes the room lists, the builder's room options and the
+    // dashboard counts — not curriculum, faculty, users or sections.
+    invalidateCacheGroups('rooms', 'schedules', 'dashboards');
     setData(next);
     setCachedData(cacheKey, next);
   }, [cacheKey]);

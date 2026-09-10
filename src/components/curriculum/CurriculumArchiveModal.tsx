@@ -7,7 +7,7 @@ interface CurriculumArchiveModalProps {
   isOpen: boolean;
   onClose: () => void;
   curriculumList: Curriculum[];
-  onRestore: (id: number, status: 'draft') => Promise<void>;
+  onRestore: (id: number, status: 'deactivated') => Promise<void>;
 }
 
 export default function CurriculumArchiveModal({
@@ -42,7 +42,10 @@ export default function CurriculumArchiveModal({
   const handleRestoreClick = async (id: number) => {
     setHiddenIds((prev) => [...prev, id]);
     try {
-      await onRestore(id, 'draft');
+      // Restored out of the archive, not back to unfinished: an archived
+      // curriculum was published once, so it returns as deactivated and the
+      // owner activates it deliberately.
+      await onRestore(id, 'deactivated');
     } catch {
       setHiddenIds((prev) => prev.filter((rid) => rid !== id));
     }

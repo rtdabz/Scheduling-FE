@@ -17,6 +17,7 @@ import { getStoredUserDepartmentId, getStoredUserRole } from "../../../lib/store
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 import { BASIC_LINE_COUNT, OVERLOAD_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
+import { FORM_PAGE_SIZE } from "./teachingLoadForm";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -171,7 +172,7 @@ export default function TeachingLoad({
     // department-scoped ones.
     const vpaaAccount = users.find((u) => u.role?.toLowerCase() === "vpaa");
 
-    const doc = new PdfDocument({ orientation: "portrait", unit: "mm", format: "legal" });
+    const doc = new PdfDocument({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
     let isFirstSheet = true;
 
     targetFaculties.forEach((faculty) => {

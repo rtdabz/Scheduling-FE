@@ -30,6 +30,7 @@ import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { physicalRooms } from '../../lib/roomUsage';
 import { termLabel } from '../../lib/termLabel';
+import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 
 interface Schedule {
   id:number; term_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
@@ -56,18 +57,7 @@ interface InitialDataResponse {
   departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_term?:Term;
 }
 
-type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
-
-interface Tile { label:string; value:number; detail:string; icon:LucideIcon; path:string; tone:Tone }
-
-const TONES: Record<Tone, string> = {
-  brand: 'bg-primary/10 text-primary',
-  info: 'bg-slate-100 text-slate-600',
-  good: 'bg-emerald-50 text-emerald-600',
-  warn: 'bg-amber-50 text-amber-700',
-  alert: 'bg-rose-50 text-rose-600',
-  accent: 'bg-violet-50 text-violet-600',
-};
+interface Tile { label:string; value:number; detail:string; icon:LucideIcon; path:string; tone:'brand'|'info'|'good'|'warn'|'alert'|'accent' }
 
 const ATTENTION_COLUMNS = 'minmax(0,1.4fr) minmax(0,1.3fr) minmax(0,0.95fr) minmax(0,0.85fr) 74px';
 const WORKFLOW_COLUMNS = 'minmax(0,1.5fr) minmax(0,1.35fr) minmax(0,0.95fr) 84px';
@@ -228,10 +218,6 @@ export default function VpaaDashboardPage() {
 
   // ── Executive overview ──
   const totalSectionsCount = sections.length;
-  /** Sections carrying at least one schedule row this term. */
-  const scheduledSectionCount = scheduleStatusMap.size;
-  const schedulingCompletion = percent(scheduledSectionCount, totalSectionsCount);
-
   // ── Overall section status spread ──
   const overallStats = useMemo(() => {
     let draftCount = 0;
@@ -256,6 +242,11 @@ export default function VpaaDashboardPage() {
       progressPercent: percent(approvedCount, sections.length),
     };
   }, [sections, scheduleStatusMap]);
+
+  // Draft timetable rows are preparation data, not approval completion.
+  // Completion must match the approval-state rollup shown below.
+  const scheduledSectionCount = overallStats.approvedCount;
+  const schedulingCompletion = percent(scheduledSectionCount, totalSectionsCount);
 
   /** Sections the Dean cleared that the VPAA has not — the final-approval queue. */
   const awaitingVpaaReview = useMemo(() => {
@@ -544,29 +535,15 @@ export default function VpaaDashboardPage() {
 
   if (loading) return <DashboardSkeleton variant="vpaa" />;
 
-  return <div className="space-y-4 pb-8 text-slate-800">
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
     {loadError && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">{loadError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3" /> Retry</button>
     </div>}
 
-    <SectionLabel>Executive Overview</SectionLabel>
-
-    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
-      {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button
-        key={label}
-        type="button"
-        onClick={() => navigate(path)}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
-      >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}><Icon className="h-4 w-4" /></span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="text-lg font-bold leading-5 text-primary">{grouped(value)}</div>
-          <div className="mt-1 break-words text-[11px] font-bold leading-tight">{label}</div>
-          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{detail}</div>
-        </div>
-      </button>)}
+    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
+      {tiles.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={grouped(value)} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
 
       <button
         type="button"
@@ -594,7 +571,7 @@ export default function VpaaDashboardPage() {
           <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold leading-none tabular-nums text-primary">{schedulingCompletion}%</span>
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="break-words text-[11px] font-bold leading-tight">Overall Scheduling Completion</div>
+          <div className="break-words text-[11px] font-bold leading-tight">Overall Approval Completion</div>
           <div className="mt-1 h-7 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[{ readiness: schedulingCompletion, label: `${schedulingCompletion}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
@@ -606,7 +583,7 @@ export default function VpaaDashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{grouped(scheduledSectionCount)} / {grouped(totalSectionsCount)} sections scheduled</div>
+          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{grouped(scheduledSectionCount)} / {grouped(totalSectionsCount)} sections approved</div>
         </div>
       </button>
 
@@ -615,7 +592,7 @@ export default function VpaaDashboardPage() {
         onClick={() => navigate('/departments')}
         className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
       >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${fullyApprovedDepartments === departments.length && departments.length > 0 ? TONES.good : TONES.info}`}><CheckCircle2 className="h-4 w-4" /></span>
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${fullyApprovedDepartments === departments.length && departments.length > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}><CheckCircle2 className="h-4 w-4" /></span>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="text-lg font-bold leading-5 text-primary">{fullyApprovedDepartments} / {departments.length}</div>
           <div className="mt-1 break-words text-[11px] font-bold leading-tight">Fully Approved Departments</div>
@@ -634,7 +611,7 @@ export default function VpaaDashboardPage() {
         className="xl:col-span-6"
       >
         <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${awaitingVpaaReview ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${awaitingVpaaReview ? TONES.alert : TONES.good}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${awaitingVpaaReview ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
             {awaitingVpaaReview ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
           </span>
           <div className="min-w-0 flex-1">
@@ -726,8 +703,6 @@ export default function VpaaDashboardPage() {
       </Panel>
     </section>
 
-    <SectionLabel>Tactical · Operational Overview</SectionLabel>
-
     <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
@@ -770,11 +745,6 @@ export default function VpaaDashboardPage() {
       </div>
     </section>
   </div>;
-}
-
-/** Small eyebrow label grouping a band of panels, as in the reference layout. */
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <h2 className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary/70">{children}</h2>;
 }
 
 function Panel({ title, subtitle, badge, tone = 'brand', children, action, onAction, className = '' }: {

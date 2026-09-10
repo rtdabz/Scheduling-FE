@@ -4,7 +4,8 @@ import Skeleton from '../ui/Skeleton';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
 import campusBg from '../../assets/campus-bg.jpg';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Lock, X } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 
 interface SidebarProps {
@@ -59,6 +60,7 @@ const getStoredUser = (): StoredUser | null => {
 
 export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   const location = useLocation();
+  const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
   const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
   const user = currentUser ?? getStoredUser();
@@ -232,15 +234,23 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                     <div key={item.label} className="flex flex-col gap-1">
                       <button
                         type="button"
-                        onClick={() => toggleExpand(item.label)}
+                        onClick={() => {
+                          if (item.isLocked) {
+                            toast.warning('Access Restricted', 'Access restricted. Ask an administrator to grant access to this module.');
+                            return;
+                          }
+                          toggleExpand(item.label);
+                        }}
                         id={item.id}
                         className={`
                           w-full flex items-center h-10 rounded-lg
                           transition-all duration-200 cursor-pointer text-left
                           ${isOpen ? 'gap-3 px-3 justify-between' : 'justify-center px-0'}
                           ${hasActiveChild ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                          ${item.isLocked ? 'opacity-50' : ''}
                         `}
                         aria-expanded={expanded}
+                        title={item.isLocked ? `Locked: Requires permission` : item.label}
                       >
                         <div className="flex items-center gap-3">
                           {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
@@ -251,7 +261,10 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                           )}
                         </div>
                         {isOpen && (
-                          expanded ? <ChevronUp size={16} className="text-[#E8D5C4]/60" /> : <ChevronDown size={16} className="text-[#E8D5C4]/60" />
+                          <div className="flex items-center gap-1.5">
+                            {item.isLocked && <Lock size={12} className="text-[#E8D5C4]/50 shrink-0" />}
+                            {expanded ? <ChevronUp size={16} className="text-[#E8D5C4]/60" /> : <ChevronDown size={16} className="text-[#E8D5C4]/60" />}
+                          </div>
                         )}
                       </button>
 
@@ -265,24 +278,34 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                             return (
                               <NavLink
                                 key={child.path}
-                                to={child.path || ''}
+                                to={child.isLocked ? '#' : child.path || ''}
                                 id={child.id}
                                 className={`
                                   flex items-center h-9 rounded-lg pl-8 pr-3 gap-2.5
-                                  transition-all duration-200 cursor-pointer
+                                  transition-all duration-200
                                   ${isChildPathActive ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                                  ${child.isLocked ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : 'cursor-pointer'}
                                 `}
-                                onClick={() => {
+                                onClick={(e) => {
+                                  if (child.isLocked) {
+                                    e.preventDefault();
+                                    toast.warning('Access Restricted', `${child.label} is currently locked for your account. Please coordinate with the VPAA.`);
+                                    return;
+                                  }
                                   if (window.innerWidth < 768) {
                                     onClose();
                                   }
                                 }}
+                                title={child.isLocked ? `Locked: Requires permission` : child.label}
                               >
                                 {child.icon && <child.icon size={16} className="flex-shrink-0" aria-hidden="true" />}
                                 <span className="whitespace-nowrap text-xs font-medium">
                                   {child.label}
                                 </span>
-                                {child.id === 'sidebar-schedule-approval' && pendingCount > 0 && (
+                                {child.isLocked && (
+                                  <Lock size={12} className="ml-auto text-[#E8D5C4]/50 shrink-0" />
+                                )}
+                                {child.id === 'sidebar-schedule-approval' && pendingCount > 0 && !child.isLocked && (
                                   isCountLoading ? (
                                     <Skeleton className="ml-auto h-4 w-6 rounded-full bg-white/20" />
                                   ) : (
@@ -303,25 +326,35 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                 return (
                   <NavLink
                     key={item.path}
-                    to={item.path || ''}
+                    to={item.isLocked ? '#' : item.path || ''}
                     id={item.id}
                     className={({ isActive }) => `
                       flex items-center h-10 rounded-lg
-                      transition-all duration-200 cursor-pointer
+                      transition-all duration-200
                       ${isOpen ? 'gap-3 px-3' : 'justify-center px-0'}
-                      ${isActive ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                      ${isActive && !item.isLocked ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                      ${item.isLocked ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : 'cursor-pointer'}
                     `}
-                    onClick={() => {
+                    onClick={(e) => {
+                      if (item.isLocked) {
+                        e.preventDefault();
+                        toast.warning('Access Restricted', 'Access restricted. Ask an administrator to grant access to this module.');
+                        return;
+                      }
                       if (window.innerWidth < 768) {
                         onClose();
                       }
                     }}
+                    title={item.isLocked ? `Locked: Requires permission` : item.label}
                   >
                     {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
                     {isOpen && (
                       <span className="whitespace-nowrap text-sm font-medium">
                         {item.label}
                       </span>
+                    )}
+                    {isOpen && item.isLocked && (
+                      <Lock size={13} className="ml-auto text-[#E8D5C4]/50 shrink-0" />
                     )}
                   </NavLink>
                 );

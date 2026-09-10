@@ -263,10 +263,10 @@ export default function CourseManager() {
   });
 
   const courseGuideSteps = useMemo(() => [
-    { element: '#course-list-filters', title: 'Find a course', description: 'Search by code or name. Filter by year, category, or semester.', side: 'bottom' as const },
+    { element: '#course-list-filters input[type="text"]', action: 'input' as const, taskHint: 'Type in the search box to continue.', title: 'Find a course', description: 'Search by code or name. Filter by year, category, or semester.', side: 'bottom' as const },
     { element: '#course-list-table', title: 'Check course details', description: 'Review units, category, semester, and department.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'course-list', isReady: true, steps: courseGuideSteps });
+  useWorkflowGuide({ id: 'course-list', isReady: true, steps: courseGuideSteps, mission: 'Manage Courses' });
 
   return (
     <div className="w-full">

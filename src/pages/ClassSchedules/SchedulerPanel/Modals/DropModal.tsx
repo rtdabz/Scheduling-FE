@@ -1,13 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Building2, CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
+import { AlertTriangle, Building2, CalendarPlus, CheckCircle2, ChevronDown, Clock, Lightbulb, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
 import { getStoredUserRole } from "../../../../lib/storedUser";
 import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
-import { FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
+import { FULL_DAY_NAMES, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Term } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { slotsToHours } from "../courseSlotPlan";
+import {
+  isFieldSchedulingEligible,
+  isHybridSchedulingEligible,
+  isMinorSplitSchedulingEligible,
+} from "../schedulingConfigurationEligibility";
 
 interface DropRecommendationRow {
   term_id: number;
@@ -29,7 +34,6 @@ interface DropRecommendation {
   rank: number;
   score: number;
   schedules: DropRecommendationRow[];
-  isSingleMeeting?: boolean;
 }
 
 interface DropRecommendationResponse {
@@ -43,28 +47,38 @@ interface SelectedRecommendationResponse {
   };
 }
 
-interface SplitSlotRecommendation {
-  rank: number;
-  score: number;
-  day: string;
-  start_time: string;
-  end_time: string;
-  room_id: number | null;
-  room_name: string;
-  room_type: string;
-  mode: DeliveryMode;
+interface ConfigurationConfirmation {
+  schema_version: 1;
+  configuration_fingerprint: string;
+  confirmed_warning_rule_ids: string[];
 }
 
-interface SplitRecommendResponse {
-  status: string;
+interface ConfigurationConfirmationError {
+  error_code?: string;
   message?: string;
-  recommendations: SplitSlotRecommendation[];
+  configuration_confirmation?: {
+    schema_version?: number;
+    configuration_fingerprint?: string;
+    required_warning_rule_ids?: string[];
+  };
 }
+
+type ConfigurationConfirmationPrompt = NonNullable<ConfigurationConfirmationError["configuration_confirmation"]>;
 
 const recommendationRoomId = (row: DropRecommendationRow): string => {
   if (row.mode === "online") return "online";
   if (row.mode === "field") return "field";
   return row.room_id == null ? "tba" : String(row.room_id);
+};
+
+const stableRecommendationSeed = (value: unknown): number => {
+  const serialized = JSON.stringify(value);
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (Math.abs(hash) % 1_000_000) + 1;
 };
 
 interface DropModalProps {
@@ -86,6 +100,18 @@ interface DropModalProps {
   setModalDay2ClassMode: (value: "on-site" | "online" | "field") => void;
   modalIsHybrid: boolean;
   setModalIsHybrid: (value: boolean) => void;
+  modalSplitEnabled: boolean;
+  setModalSplitEnabled: (value: boolean) => void;
+  modalFieldEnabled: boolean;
+  setModalFieldEnabled: (value: boolean) => void;
+  modalForceDayEnabled: boolean;
+  setModalForceDayEnabled: (value: boolean) => void;
+  modalForcedDayIndex: number;
+  setModalForcedDayIndex: (value: number) => void;
+  manualSchedulingSettings: {
+    lecture_lab_schedule_override_enabled?: boolean;
+    gec_split_schedule_override_enabled?: boolean;
+  } | null;
   modalPreferredPattern: string | null;
   setModalPreferredPattern: (value: string | null) => void;
   modalDay1Index: number;
@@ -142,7 +168,6 @@ const ROOM_TBA = "tba";
 
 export default function DropModal({
   rooms,
-  sections,
   schedules,
   selectedSectionId,
   activeTerm,
@@ -159,6 +184,15 @@ export default function DropModal({
   setModalDay2ClassMode,
   modalIsHybrid,
   setModalIsHybrid,
+  modalSplitEnabled,
+  setModalSplitEnabled,
+  modalFieldEnabled,
+  setModalFieldEnabled,
+  modalForceDayEnabled,
+  setModalForceDayEnabled,
+  modalForcedDayIndex,
+  setModalForcedDayIndex,
+  manualSchedulingSettings,
   modalPreferredPattern,
   setModalPreferredPattern,
   modalDay1Index,
@@ -181,16 +215,17 @@ export default function DropModal({
   selectedRecommendationId,
   setSelectedRecommendationId,
   setDropContext,
-  handleModalConfirm,
-  checkConflict
+  handleModalConfirm
 }: DropModalProps) {
   const isSummerTerm = activeTerm?.semester === "summer";
   const availableDays = isSummerTerm ? DAYS.slice(0, 5) : DAYS;
-  const isMajor = dropSubject?.category === "major";
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
+  const hasLaboratoryUnits = Number(dropSubject?.labHours ?? 0) > 0;
   const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
   const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [confirmationPrompt, setConfirmationPrompt] = useState<ConfigurationConfirmationPrompt | null>(null);
+  const [confirmedConfiguration, setConfirmedConfiguration] = useState<ConfigurationConfirmation | null>(null);
   const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
   const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
 
@@ -203,6 +238,67 @@ export default function DropModal({
   }, []);
   const hasConflict = !!modalConflict;
   const shouldShowRecommendations = canUseRecommendations && hasConflict;
+  const isTwoMeetingPattern = modalIsHybrid || modalSplitEnabled;
+  const tentativeSchedules = useMemo(() => schedules
+    .filter((schedule) => !(
+      String(schedule.sectionId) === String(selectedSectionId)
+      && String(schedule.courseId ?? schedule.subjectId) === String(dropSubject?.id)
+    ))
+    .map((schedule) => {
+      const numericId = Number(schedule.id);
+      const numericRoomId = Number(schedule.roomId);
+      const virtualRoom = rooms.find((room) => room.roomType === schedule.mode);
+
+      return {
+        ...(!Number.isNaN(numericId) ? { id: numericId } : {}),
+        term_id: schedule.termId,
+        section_id: Number(schedule.sectionId),
+        course_id: Number(schedule.courseId ?? schedule.subjectId),
+        faculty_id: schedule.facultyId ? Number(schedule.facultyId) : null,
+        room_id: !Number.isNaN(numericRoomId) && numericRoomId > 0
+          ? numericRoomId
+          : (schedule.mode === "online" || schedule.mode === "field")
+            ? Number(virtualRoom?.id) || null
+            : null,
+        department_id: schedule.departmentId,
+        day: schedule.day || FULL_DAY_NAMES[schedule.dayIndex],
+        start_time: slotToTime24h(schedule.startSlot),
+        end_time: slotToTime24h(schedule.startSlot + schedule.durationSlots),
+        mode: schedule.mode,
+      };
+    }), [dropSubject?.id, rooms, schedules, selectedSectionId]);
+
+  const recommendationPayload = useMemo(() => {
+    if (!dropSubject || !selectedSectionId) return null;
+
+    const payload = {
+      section_id: Number(selectedSectionId),
+      course_ids: [Number(dropSubject.id)],
+      mode: dropSubjectIsField ? "field" : modalClassMode,
+      is_hybrid: modalIsHybrid,
+      split_session_enabled: modalIsHybrid,
+      selected_split_session_course_ids: modalIsHybrid ? [Number(dropSubject.id)] : [],
+      split_gec_enabled: modalSplitEnabled,
+      selected_gec_course_ids: modalSplitEnabled ? [Number(dropSubject.id)] : [],
+      preferred_patterns: modalPreferredPattern
+        ? { [dropSubject.id]: modalPreferredPattern }
+        : {},
+      tentative_schedules: tentativeSchedules,
+      max_solutions: 3,
+      timeout_seconds: 5,
+    };
+
+    return { ...payload, seed: stableRecommendationSeed(payload) };
+  }, [
+    dropSubject,
+    dropSubjectIsField,
+    modalClassMode,
+    modalIsHybrid,
+    modalPreferredPattern,
+    modalSplitEnabled,
+    selectedSectionId,
+    tentativeSchedules,
+  ]);
 
   useEffect(() => {
     if (!dropContext || !dropSubject) return;
@@ -228,7 +324,25 @@ export default function DropModal({
   }, [dropContext, dropSubject, setDropContext, setSelectedRecommendationId]);
 
   useEffect(() => {
-    if (!dropContext || !dropSubject || !selectedSectionId || !shouldShowRecommendations) return;
+    if (!dropSubject || modalIsHybrid || !hasLaboratoryUnits || modalClassMode !== "online") return;
+
+    setModalClassMode("on-site");
+    setModalRoomId(
+      rooms.find((room) => room.roomType === "laboratory" && room.status === "available")?.id
+        ?? ROOM_TBA
+    );
+  }, [
+    dropSubject,
+    hasLaboratoryUnits,
+    modalClassMode,
+    modalIsHybrid,
+    rooms,
+    setModalClassMode,
+    setModalRoomId,
+  ]);
+
+  useEffect(() => {
+    if (!dropContext || !dropSubject || !selectedSectionId || !shouldShowRecommendations || !recommendationPayload) return;
 
     const controller = new AbortController();
 
@@ -236,242 +350,33 @@ export default function DropModal({
       setIsRecommendationLoading(true);
       setRecommendationError(null);
 
-      const patternDays = parsePreferredPattern(modalPreferredPattern);
-      const excludeIds = schedules
-        .filter((item) => String(item.sectionId) === String(selectedSectionId) && String(item.courseId ?? item.subjectId) === String(dropSubject.id))
-        .map((item) => String(item.id));
-
-      const conflictDay1 = patternDays && modalDay1Duration > 0
-        ? checkConflict(
-            dropSubject.id,
-            selectedSectionId,
-            null,
-            modalRoomId,
-            patternDays[0],
-            modalDay1StartSlot,
-            modalDay1Duration,
-            excludeIds,
-            modalPreferredPattern
-          )
-        : null;
-
-      const conflictDay2 = patternDays && modalDay2Duration > 0
-        ? checkConflict(
-            dropSubject.id,
-            selectedSectionId,
-            null,
-            modalDay2RoomId,
-            patternDays[1],
-            modalDay2StartSlot,
-            modalDay2Duration,
-            excludeIds,
-            modalPreferredPattern
-          )
-        : null;
-
-      const isMeeting1Conflicted = !!conflictDay1;
-      const isMeeting2Conflicted = !!conflictDay2;
-
       try {
-        if (isTwoMeetingPattern && (isMeeting1Conflicted || isMeeting2Conflicted)) {
-          const existingSched = schedules.find(
-            (item) => String(item.sectionId) === String(selectedSectionId) && String(item.courseId ?? item.subjectId) === String(dropSubject.id)
-          );
-          const facultyId = existingSched?.facultyId ?? null;
-
-          const cleanFacultyId = facultyId && !isNaN(Number(facultyId)) ? Number(facultyId) : null;
-          const cleanTermId = activeTerm?.id && !isNaN(Number(activeTerm.id)) ? Number(activeTerm.id) : null;
-          const cleanSectionId = selectedSectionId && !isNaN(Number(selectedSectionId)) ? Number(selectedSectionId) : null;
-          const cleanCourseId = dropSubject?.id && !isNaN(Number(dropSubject.id)) ? Number(dropSubject.id) : null;
-          const cleanDeptId = departmentId && !isNaN(Number(departmentId)) ? Number(departmentId) : null;
-
-          const buildCurrentMeetingRow = (
-            dayIndex: number,
-            startSlot: number,
-            durationSlots: number,
-            roomIdValue: string,
-            modeValue: DeliveryMode
-          ): DropRecommendationRow => {
-            let resolvedRoomId: number | null = null;
-            if (roomIdValue === "online" || modeValue === "online") {
-              const onlineRoom = rooms.find(r => r.roomType === "online");
-              resolvedRoomId = onlineRoom ? Number(onlineRoom.id) : null;
-            } else if (roomIdValue === "field" || modeValue === "field") {
-              const fieldRoom = rooms.find(r => r.roomType === "field");
-              resolvedRoomId = fieldRoom ? Number(fieldRoom.id) : null;
-            } else if (roomIdValue && !isNaN(Number(roomIdValue))) {
-              resolvedRoomId = Number(roomIdValue);
-            }
-
-            return {
-              term_id: cleanTermId!,
-              section_id: cleanSectionId!,
-              course_id: cleanCourseId!,
-              faculty_id: cleanFacultyId,
-              room_id: resolvedRoomId!,
-              department_id: cleanDeptId!,
-              day: FULL_DAY_NAMES[dayIndex],
-              start_time: slotToTime24h(startSlot),
-              end_time: slotToTime24h(startSlot + durationSlots),
-              mode: modeValue,
-              is_hybrid: false,
-              preferred_pattern: modalPreferredPattern,
-              status: "draft"
-            };
-          };
-
-          const recommendMeeting = async (
-            duration: number,
-            roomIdVal: string,
-            modeVal: DeliveryMode,
-            dayIndex: number,
-            startSlot: number
-          ): Promise<SplitSlotRecommendation[]> => {
-            const cleanRoomId = roomIdVal && !isNaN(Number(roomIdVal)) ? Number(roomIdVal) : null;
-            const meetingType = dropSubject.labHours > 0
-              ? (duration === dropSubject.labHours * 6 ? "laboratory" : "lecture")
-              : "lecture";
-
-            const response = await api.post<SplitRecommendResponse>(
-              "/schedule-recommendations/recommend-split",
-              {
-                term_id: cleanTermId,
-                section_id: cleanSectionId,
-                course_id: cleanCourseId,
-                department_id: cleanDeptId,
-                duration_slots: duration,
-                room_id: cleanRoomId,
-                mode: modeVal,
-                faculty_id: cleanFacultyId,
-                delete_ids: excludeIds.map(Number).filter((id) => !isNaN(id)),
-                meeting_type: meetingType,
-                preferred_day: FULL_DAY_NAMES[dayIndex],
-                preferred_start_time: slotToTime24h(startSlot),
-                max_solutions: 5,
-                timeout_seconds: 5
-              },
-              { signal: controller.signal }
-            );
-
-            return response.data.recommendations;
-          };
-
-          const toRecommendedRow = (rec: SplitSlotRecommendation): DropRecommendationRow => ({
-            term_id: cleanTermId!,
-            section_id: cleanSectionId!,
-            course_id: cleanCourseId!,
-            faculty_id: cleanFacultyId,
-            room_id: rec.room_id,
-            department_id: cleanDeptId!,
-            day: rec.day,
-            start_time: rec.start_time,
-            end_time: rec.end_time,
-            mode: rec.mode,
-            is_hybrid: false,
-            preferred_pattern: modalPreferredPattern,
-            status: "draft"
-          });
-
-          const rowsOverlap = (left: DropRecommendationRow, right: DropRecommendationRow): boolean => {
-            if (getDayIndex(left.day) !== getDayIndex(right.day)) return false;
-            const leftStart = timeToSlot(left.start_time);
-            const leftEnd = timeToSlot(left.end_time);
-            const rightStart = timeToSlot(right.start_time);
-            const rightEnd = timeToSlot(right.end_time);
-            return leftStart < rightEnd && rightStart < leftEnd;
-          };
-
-          let mappedRecommendations: DropRecommendation[] = [];
-
-          if (isMeeting1Conflicted && isMeeting2Conflicted) {
-            const [day1Recommendations, day2Recommendations] = await Promise.all([
-              recommendMeeting(modalDay1Duration, modalRoomId, modalClassMode, modalDay1Index, modalDay1StartSlot),
-              recommendMeeting(modalDay2Duration, modalDay2RoomId, modalDay2ClassMode, modalDay2Index, modalDay2StartSlot)
-            ]);
-
-            const pairLimit = Math.min(day1Recommendations.length, day2Recommendations.length);
-            mappedRecommendations = Array.from({ length: pairLimit }, (_, index) => {
-              const schedulesList = [
-                toRecommendedRow(day1Recommendations[index]),
-                toRecommendedRow(day2Recommendations[index])
-              ];
-
-              const sortedForPattern = [...schedulesList].sort((left, right) => (
-                getDayIndex(left.day) - getDayIndex(right.day) ||
-                timeToSlot(left.start_time) - timeToSlot(right.start_time)
-              ));
-              const sortedDay1Index = getDayIndex(sortedForPattern[0].day);
-              const sortedDay2Index = getDayIndex(sortedForPattern[1].day);
-              const sortedPattern = `days:${sortedDay1Index}-${sortedDay2Index}`;
-              schedulesList[0].preferred_pattern = sortedPattern;
-              schedulesList[1].preferred_pattern = sortedPattern;
-
-              return {
-                rank: index + 1,
-                score: day1Recommendations[index].score + day2Recommendations[index].score,
-                schedules: schedulesList,
-                isSingleMeeting: true
-              };
-            }).filter((recommendation) => !rowsOverlap(recommendation.schedules[0], recommendation.schedules[1]));
-          } else {
-            const conflictedRecommendations = await recommendMeeting(
-              isMeeting1Conflicted ? modalDay1Duration : modalDay2Duration,
-              isMeeting1Conflicted ? modalRoomId : modalDay2RoomId,
-              isMeeting1Conflicted ? modalClassMode : modalDay2ClassMode,
-              isMeeting1Conflicted ? modalDay1Index : modalDay2Index,
-              isMeeting1Conflicted ? modalDay1StartSlot : modalDay2StartSlot
-            );
-
-            const unchangedRow = isMeeting1Conflicted
-              ? buildCurrentMeetingRow(modalDay2Index, modalDay2StartSlot, modalDay2Duration, modalDay2RoomId, modalDay2ClassMode)
-              : buildCurrentMeetingRow(modalDay1Index, modalDay1StartSlot, modalDay1Duration, modalRoomId, modalClassMode);
-
-            mappedRecommendations = conflictedRecommendations.map((rec) => {
-              const schedulesList = isMeeting1Conflicted
-                ? [toRecommendedRow(rec), unchangedRow]
-                : [unchangedRow, toRecommendedRow(rec)];
-
-              const sortedForPattern = [...schedulesList].sort((left, right) => (
-                getDayIndex(left.day) - getDayIndex(right.day) ||
-                timeToSlot(left.start_time) - timeToSlot(right.start_time)
-              ));
-              const sortedDay1Index = getDayIndex(sortedForPattern[0].day);
-              const sortedDay2Index = getDayIndex(sortedForPattern[1].day);
-              const sortedPattern = `days:${sortedDay1Index}-${sortedDay2Index}`;
-              schedulesList[0].preferred_pattern = sortedPattern;
-              schedulesList[1].preferred_pattern = sortedPattern;
-
-              return {
-                rank: rec.rank,
-                score: rec.score,
-                schedules: schedulesList,
-                isSingleMeeting: true
-              };
-            }).filter((recommendation) => !rowsOverlap(recommendation.schedules[0], recommendation.schedules[1]));
-          }
-
-          setRecommendations(mappedRecommendations);
-        } else {
-          const response = await api.post<DropRecommendationResponse>(
-            "/schedule-recommendations/preview",
-            {
-              section_id: Number(selectedSectionId),
-              course_ids: [Number(dropSubject.id)],
-              mode: dropSubjectIsField ? "field" : modalClassMode,
-              is_hybrid: modalIsHybrid,
-              preferred_patterns: modalPreferredPattern
-                ? { [dropSubject.id]: modalPreferredPattern }
-                : {},
-              max_solutions: 3,
-              timeout_seconds: 2
-            },
-            { signal: controller.signal }
-          );
-          setRecommendations(response.data.recommendations);
-        }
-      } catch {
+        const response = await api.post<DropRecommendationResponse>(
+          "/schedule-recommendations/preview",
+          {
+            ...recommendationPayload,
+            ...(confirmedConfiguration ? { configuration_confirmation: confirmedConfiguration } : {}),
+          },
+          { signal: controller.signal }
+        );
+        setRecommendations(response.data.recommendations);
+        setConfirmationPrompt(null);
+      } catch (error) {
         if (!controller.signal.aborted) {
-          setRecommendationError("Recommendations are unavailable right now.");
+          const payload = (error as { response?: { data?: ConfigurationConfirmationError } }).response?.data;
+          const prompt = payload?.configuration_confirmation;
+          if (
+            payload?.error_code?.startsWith("configuration_confirmation_")
+            && prompt?.configuration_fingerprint
+            && Array.isArray(prompt.required_warning_rule_ids)
+          ) {
+            setConfirmationPrompt(prompt);
+            setConfirmedConfiguration(null);
+            setRecommendationError(payload.message ?? "Review the configuration warning before continuing.");
+          } else {
+            setConfirmationPrompt(null);
+            setRecommendationError("Recommendations are unavailable right now.");
+          }
           setRecommendations([]);
         }
       } finally {
@@ -494,33 +399,25 @@ export default function DropModal({
     modalPreferredPattern,
     selectedSectionId,
     shouldShowRecommendations,
-    modalDay1Duration,
-    modalDay2Duration,
-    modalRoomId,
-    modalDay2RoomId,
-    modalDay1Index,
-    modalDay2Index,
-    modalDay1StartSlot,
-    modalDay2StartSlot,
-    schedules,
-    checkConflict,
-    activeTerm,
-    modalDay2ClassMode
+    recommendationPayload,
+    confirmedConfiguration,
   ]);
 
-  // department_id for the recommend-split endpoint, derived from the selected
-  // section via the spreaded scheduler props.
-  const selectedSection = sections.find((s) => String(s.id) === String(selectedSectionId));
-  const departmentId = selectedSection?.departmentId ?? null;
-
-  /**
-   * Call the Rule Engine + CSP backend to find the best conflict-free
-   * (day, time, room, mode) combinations for one split block.
-   */
   if (!dropContext || !dropSubject) return null;
 
   const totalSlots = getSubjectTotalSlots(dropSubject);
-  const isTwoMeetingPattern = !!modalPreferredPattern;
+  const hybridEligible = isHybridSchedulingEligible(
+    dropSubject,
+    Boolean(manualSchedulingSettings?.lecture_lab_schedule_override_enabled),
+  );
+  const splitEligible = isMinorSplitSchedulingEligible(
+    dropSubject,
+    Boolean(manualSchedulingSettings?.gec_split_schedule_override_enabled),
+  );
+  // A course may be designated as Field by department settings even when its
+  // stored room_type_required value is still lecture/laboratory.
+  const fieldEligible = dropSubjectIsField || isFieldSchedulingEligible(dropSubject);
+  const fieldRequired = dropSubjectIsField || dropSubject.roomTypeRequired === "field";
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
     : "Single meeting";
@@ -537,11 +434,7 @@ export default function DropModal({
 
   const updateTwoMeetingPattern = (day1Index: number, day2Index: number) => {
     discardSelectedRecommendation();
-    setModalPreferredPattern(`days:${day1Index}-${day2Index}`);
-  };
-
-  const clampStartSlotForDuration = (startSlot: number, durationSlots: number): number => {
-    return Math.min(startSlot, Math.max(0, slotCount() - durationSlots));
+    if (modalIsHybrid) setModalPreferredPattern(`days:${day1Index}-${day2Index}`);
   };
 
   const getFallbackMeetingDayIndex = (excludedDayIndex: number): number => {
@@ -550,18 +443,20 @@ export default function DropModal({
   };
 
   const handleDay1Change = (nextDayIndex: number) => {
+    if (modalSplitEnabled || modalForceDayEnabled) return;
     if (nextDayIndex === modalDay2Index) return;
     setModalDay1Index(nextDayIndex);
     updateTwoMeetingPattern(nextDayIndex, modalDay2Index);
   };
 
   const handleDay2Change = (nextDayIndex: number) => {
+    if (modalSplitEnabled) return;
     if (nextDayIndex === modalDay1Index) return;
     setModalDay2Index(nextDayIndex);
     updateTwoMeetingPattern(modalDay1Index, nextDayIndex);
   };
 
-  const courseMaxSlots = isTwoMeetingPattern && hasBoth ? 6 : totalSlots;
+  const courseMaxSlots = isTwoMeetingPattern ? Math.max(modalDay1Duration, modalDay2Duration) : totalSlots;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
@@ -573,17 +468,17 @@ export default function DropModal({
     // A mixed split needs both room types on offer, one per meeting.
     const hasLectureAndLabComponents =
       Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
-    if (modalPreferredPattern && hasLectureAndLabComponents) return true;
+    if (modalIsHybrid && hasLectureAndLabComponents) return r.roomType === "laboratory";
 
-    const requiredRoomType = requiredRoomTypeForMeeting(dropSubject);
+    const requiredRoomType = dropSubjectIsField ? "field" : requiredRoomTypeForMeeting(dropSubject);
 
     return !requiredRoomType || r.roomType === requiredRoomType;
   });
 
   const allowsRoomTba = modalRoomId === ROOM_TBA
     || modalDay2RoomId === ROOM_TBA
-    || requiredRoomTypeForMeeting(dropSubject) === "laboratory"
-    || (hasBoth && !!modalPreferredPattern);
+    || (!dropSubjectIsField && requiredRoomTypeForMeeting(dropSubject) === "laboratory")
+    || (hasBoth && modalIsHybrid);
 
 
 
@@ -595,7 +490,11 @@ export default function DropModal({
     : modalClassMode === "online"
     ? "Online"
     : "Field";
-  const deliveryModeLabel = modalIsHybrid ? "On-Site + Online" : modalClassMode.replace("-", " ");
+  const deliveryModeLabel = modalIsHybrid
+    ? "Online lecture + on-site laboratory"
+    : modalFieldEnabled
+      ? "Field"
+      : modalClassMode.replace("-", " ");
 
   /**
    * Push one recommendation's rows into the modal's meeting state.
@@ -611,7 +510,10 @@ export default function DropModal({
     recommendationId: number | null,
   ): void => {
     const sortedRows = [...rows].sort((left, right) => (
-      getDayIndex(left.day) - getDayIndex(right.day)
+      (left.is_hybrid || right.is_hybrid
+        ? Number(left.mode === "online") - Number(right.mode === "online")
+        : 0)
+      || getDayIndex(left.day) - getDayIndex(right.day)
       || timeToSlot(left.start_time) - timeToSlot(right.start_time)
     ));
     const firstRow = sortedRows[0];
@@ -624,6 +526,7 @@ export default function DropModal({
     setModalRoomId(recommendationRoomId(firstRow));
     setModalClassMode(firstRow.mode);
     setModalIsHybrid(firstRow.is_hybrid);
+    setModalSplitEnabled(!firstRow.is_hybrid && ["MW", "TTh"].includes(firstRow.preferred_pattern ?? ""));
 
     if (sortedRows.length > 1) {
       const secondRow = sortedRows[1];
@@ -667,26 +570,14 @@ export default function DropModal({
     setIsApplyingRecommendation(true);
 
     try {
-      if (recommendation.isSingleMeeting) {
-        // Already-resolved rows: nothing to reserve server-side, so no id.
-        applyRecommendationRows(recommendation.schedules, recommendation.rank, null);
-
-        return;
-      }
+      if (!recommendationPayload) return;
 
       const response = await api.post<SelectedRecommendationResponse>(
         "/schedule-recommendations/select",
         {
-          section_id: Number(selectedSectionId),
-          course_ids: [Number(dropSubject.id)],
-          mode: dropSubjectIsField ? "field" : modalClassMode,
-          is_hybrid: modalIsHybrid,
-          preferred_patterns: modalPreferredPattern
-            ? { [dropSubject.id]: modalPreferredPattern }
-            : {},
-          max_solutions: 3,
-          timeout_seconds: 2,
-          selected_rank: recommendation.rank
+          ...recommendationPayload,
+          ...(confirmedConfiguration ? { configuration_confirmation: confirmedConfiguration } : {}),
+          selected_rank: recommendation.rank,
         }
       );
 
@@ -707,7 +598,7 @@ export default function DropModal({
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
     >
-      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col gap-4 xl:flex-row xl:items-stretch">
+      <div className={`flex max-h-[92vh] w-full max-w-[96vw] flex-col gap-4 xl:flex-row xl:items-stretch ${isTwoMeetingPattern ? "2xl:max-w-[1440px]" : "2xl:max-w-6xl"}`}>
       <div
         role="dialog"
         aria-modal="true"
@@ -791,64 +682,144 @@ export default function DropModal({
 
 
 
-          {/* Meeting Pattern Card */}
           <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-            <label className="flex items-center gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isTwoMeetingPattern}
-                onChange={(event) => {
-                  const isChecked = event.target.checked;
-                  const nextPattern = isChecked
-                    ? `days:${modalDay1Index}-${modalDay2Index}`
-                    : null;
-                  setIsDay2ModifiedByUser(false);
-
-                  const singleSlots = (isMajor && hasBoth) ? 6 : totalSlots;
-                  const dayOneSlots = (isMajor && hasBoth) ? 6 : totalSlots;
-                  const dayTwoSlots = (isMajor && hasBoth) ? 6 : totalSlots;
-
-
-                  if (nextPattern) {
-                    const nextDay2Index = modalDay1Index === modalDay2Index
-                      ? getFallbackMeetingDayIndex(modalDay1Index)
-                      : modalDay2Index;
-                    setModalDay2Index(nextDay2Index);
-                    setModalPreferredPattern(`days:${modalDay1Index}-${nextDay2Index}`);
-                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayOneSlots));
-                    setModalDay1Duration(dayOneSlots);
-                    setModalDay2Duration(dayTwoSlots);
-                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, dayTwoSlots));
-                    setModalDay2RoomId(modalRoomId);
-                    setModalDay2ClassMode(modalClassMode);
-                  } else {
-                    setModalPreferredPattern(null);
-                    setModalDay1StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
-                    setModalDay1Duration(singleSlots);
-                    setModalDay2Duration(0);
-                    setModalDay2StartSlot(clampStartSlotForDuration(modalDay1StartSlot, singleSlots));
-                  }
-                }}
-                className="h-4.5 w-4.5 rounded border-gray-300 text-[#4e0a10] focus:ring-[#4e0a10] cursor-pointer"
-              />
-              <div>
-                <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">
-                  Schedule Twice a Week
-                </span>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Split this course into two separate meetings.
-                </p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Scheduling configurations</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-2">
+              {hybridEligible && (
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2.5">
+                  <input type="checkbox" checked={modalIsHybrid} onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setModalSplitEnabled(false);
+                    setModalForceDayEnabled(false);
+                    setIsDay2ModifiedByUser(false);
+                    if (enabled) {
+                      const preservedDayIndex = modalDay1Index;
+                      const lectureSlots = Number(dropSubject.lectureHours) * 2;
+                      const laboratorySlots = Number(dropSubject.labHours) * 6;
+                      const secondDay = preservedDayIndex === modalDay2Index
+                        ? getFallbackMeetingDayIndex(preservedDayIndex)
+                        : modalDay2Index;
+                      setModalPreferredPattern(`days:${preservedDayIndex}-${secondDay}`);
+                      // Preferred-pattern setters may synchronize both day
+                      // fields. The day chosen before enabling Hybrid remains
+                      // the laboratory day unless the user changes it explicitly.
+                      setModalDay1Index(preservedDayIndex);
+                      setModalDay2Index(secondDay);
+                      setModalDay1Duration(laboratorySlots);
+                      setModalDay2Duration(lectureSlots);
+                      setModalClassMode("on-site");
+                      setModalRoomId(rooms.find((room) => room.roomType === "laboratory" && room.status === "available")?.id ?? ROOM_TBA);
+                      setModalDay2ClassMode("online");
+                      setModalDay2RoomId("online");
+                      // Keep Hybrid active after configuring both required
+                      // component meetings so the second card stays open.
+                      setModalIsHybrid(true);
+                    } else {
+                      setModalIsHybrid(false);
+                      setModalPreferredPattern(null);
+                      setModalDay1Duration(totalSlots);
+                      setModalDay2Duration(0);
+                    }
+                  }} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#4e0a10]" />
+                  <span><span className="block text-xs font-bold text-gray-800">Hybrid</span><span className="block text-[11px] text-gray-500">Online lecture and on-site laboratory.</span></span>
+                </label>
+              )}
+              {splitEligible && (
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2.5">
+                  <input type="checkbox" checked={modalSplitEnabled} onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setModalSplitEnabled(enabled);
+                    setModalIsHybrid(false);
+                    setModalForceDayEnabled(false);
+                    setIsDay2ModifiedByUser(false);
+                    if (enabled) {
+                      const firstSlots = Math.floor(totalSlots / 2);
+                      setModalPreferredPattern("MW");
+                      setModalDay1Index(0);
+                      setModalDay2Index(2);
+                      setModalDay1Duration(firstSlots);
+                      setModalDay2Duration(totalSlots - firstSlots);
+                      setModalDay2StartSlot(modalDay1StartSlot);
+                      setModalDay2RoomId(modalRoomId);
+                      setModalDay2ClassMode(modalClassMode);
+                    } else {
+                      setModalPreferredPattern(null);
+                      setModalDay1Duration(totalSlots);
+                      setModalDay2Duration(0);
+                    }
+                  }} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#4e0a10]" />
+                  <span><span className="block text-xs font-bold text-gray-800">Split Session</span><span className="block text-[11px] text-gray-500">Two balanced MW or TTh meetings.</span></span>
+                </label>
+              )}
+              {fieldEligible && (
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2.5">
+                  <input type="checkbox" checked={modalFieldEnabled} disabled={fieldRequired} onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setModalFieldEnabled(enabled);
+                    if (enabled) {
+                      setModalClassMode("field");
+                      setModalRoomId("field");
+                      setModalDay2ClassMode("field");
+                      setModalDay2RoomId("field");
+                    } else {
+                      setModalClassMode("on-site");
+                      setModalRoomId(rooms.find((room) => room.roomType === "lecture" && room.status === "available")?.id ?? "");
+                      setModalDay2ClassMode("on-site");
+                      setModalDay2RoomId(rooms.find((room) => room.roomType === "lecture" && room.status === "available")?.id ?? "");
+                    }
+                  }} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#4e0a10]" />
+                  <span><span className="block text-xs font-bold text-gray-800">Field Course</span><span className="block text-[11px] text-gray-500">{fieldRequired ? "Required by the course classification." : "Use field delivery and field capacity rules."}</span></span>
+                </label>
+              )}
+              <div className="rounded-lg border border-gray-200 p-2.5">
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="checkbox" checked={modalForceDayEnabled} onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setModalForceDayEnabled(enabled);
+                    if (enabled) {
+                      setModalIsHybrid(false);
+                      setModalSplitEnabled(false);
+                      setModalPreferredPattern(null);
+                      setModalDay1Index(modalForcedDayIndex);
+                      setModalDay1Duration(totalSlots);
+                      setModalDay2Duration(0);
+                    }
+                  }} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#4e0a10]" />
+                  <span><span className="block text-xs font-bold text-gray-800">Force Day</span><span className="block text-[11px] text-gray-500">Require this course on one day.</span></span>
+                </label>
+                <select value={modalForcedDayIndex} disabled={!modalForceDayEnabled} onChange={(event) => {
+                  const nextDay = Number(event.target.value);
+                  setModalForcedDayIndex(nextDay);
+                  setModalDay1Index(nextDay);
+                }} className="mt-2 h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-xs font-semibold disabled:bg-gray-100">
+                  {availableDays.map((day, index) => <option key={day} value={index}>{day}</option>)}
+                </select>
               </div>
-            </label>
+            </div>
+            {modalSplitEnabled && (
+              <label className="mt-2 flex items-center gap-2 text-xs font-bold text-gray-600">
+                Split pattern
+                <select value={modalPreferredPattern ?? "MW"} onChange={(event) => {
+                  const pattern = event.target.value;
+                  const [firstDay, secondDay] = pattern === "TTh" ? [1, 3] : [0, 2];
+                  setModalPreferredPattern(pattern);
+                  setModalDay1Index(firstDay);
+                  setModalDay2Index(secondDay);
+                }} className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs font-semibold">
+                  <option value="MW">Monday-Wednesday</option>
+                  <option value="TTh">Tuesday-Thursday</option>
+                </select>
+              </label>
+            )}
           </div>
 
           {/* Meetings Cards Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${isTwoMeetingPattern ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
             {/* First Meeting */}
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
               <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
                 <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
-                First Meeting
+                {modalIsHybrid ? "Laboratory Meeting" : "First Meeting"}
               </h4>
 
               {/* Class Mode */}
@@ -864,13 +835,18 @@ export default function DropModal({
                   ]).map(({ value: m, label, Icon, selectedCls }) => {
                     const isSelected = modalClassMode === m;
                     const isDisabledMode =
-                      (dropSubjectIsField && m !== "field") ||
-                      (!dropSubjectIsField && m === "field");
+                      (modalIsHybrid && m !== "on-site") ||
+                      (!modalIsHybrid && hasLaboratoryUnits && m === "online") ||
+                      (modalFieldEnabled && m !== "field") ||
+                      (!modalFieldEnabled && !modalIsHybrid && m === "field");
                     return (
                       <button
                         key={m}
                         type="button"
                         disabled={isDisabledMode}
+                        title={!modalIsHybrid && hasLaboratoryUnits && m === "online"
+                          ? "Use Hybrid to configure an online lecture with an on-site laboratory."
+                          : undefined}
                         onClick={() => {
                           if (isDisabledMode) return;
                           discardSelectedRecommendation();
@@ -946,7 +922,9 @@ export default function DropModal({
                 </label>
                 {isTwoMeetingPattern ? (
                   <select
+                    aria-label="First meeting day"
                     value={modalDay1Index}
+                    disabled={modalSplitEnabled || modalForceDayEnabled}
                     onChange={(event) => {
                       const nextDay = Number(event.target.value);
                       handleDay1Change(nextDay);
@@ -961,7 +939,9 @@ export default function DropModal({
                   </select>
                 ) : (
                   <select
+                    aria-label="First meeting day"
                     value={modalDay1Index}
+                    disabled={modalForceDayEnabled}
                     onChange={(event) => {
                       setModalDay1Index(Number(event.target.value));
                     }}
@@ -1051,7 +1031,7 @@ export default function DropModal({
               <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm animate-in fade-in zoom-in-95">
                 <h4 className="text-sm font-extrabold text-[#4e0a10] uppercase tracking-wide flex items-center gap-1.5 border-b pb-2">
                   <span className="w-2 h-2 rounded-full bg-[#4e0a10]" />
-                  Second Meeting
+                  {modalIsHybrid ? "Lecture Meeting" : "Second Meeting"}
                 </h4>
 
                 {/* Class Mode */}
@@ -1067,13 +1047,18 @@ export default function DropModal({
                     ]).map(({ value: m, label, Icon, selectedCls }) => {
                       const isSelected = modalDay2ClassMode === m;
                       const isDisabledMode =
-                        (dropSubjectIsField && m !== "field") ||
-                        (!dropSubjectIsField && m === "field");
+                        (modalIsHybrid && m !== "online") ||
+                        (!modalIsHybrid && hasLaboratoryUnits && m === "online") ||
+                        (modalFieldEnabled && m !== "field") ||
+                        (!modalFieldEnabled && !modalIsHybrid && m === "field");
                       return (
                         <button
                           key={m}
                           type="button"
                           disabled={isDisabledMode}
+                          title={!modalIsHybrid && hasLaboratoryUnits && m === "online"
+                            ? "Use Hybrid to configure an online lecture with an on-site laboratory."
+                            : undefined}
                           onClick={() => {
                             if (isDisabledMode) return;
                             discardSelectedRecommendation();
@@ -1147,8 +1132,10 @@ export default function DropModal({
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
                     Meeting Day
                   </label>
-                  <select
-                    value={modalDay2Index}
+                    <select
+                      aria-label="Second meeting day"
+                      value={modalDay2Index}
+                      disabled={modalSplitEnabled}
                     onChange={(event) => {
                       const nextDay = Number(event.target.value);
                       handleDay2Change(nextDay);
@@ -1216,13 +1203,7 @@ export default function DropModal({
 
 
             </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center p-8 border border-dashed border-gray-200 rounded-xl bg-gray-50/30 text-gray-400">
-                <CalendarDays className="w-8 h-8 mb-2 opacity-50" />
-                <p className="text-xs font-semibold text-center">Single Meeting selected.</p>
-                <p className="text-[10px] text-center mt-1">Change pattern to Twice a Week to configure a second meeting.</p>
-              </div>
-            )}
+            ) : null}
 
             
 
@@ -1310,7 +1291,7 @@ export default function DropModal({
       </div>
 
       {shouldShowRecommendations && (
-        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[92vh] xl:w-80">
+        <aside className="flex max-h-72 min-h-0 w-full shrink-0 flex-col rounded-2xl border border-[#C9952A]/30 bg-[#fff8e8] p-4 shadow-2xl xl:max-h-[92vh] xl:w-[360px]">
           <div className="flex items-start gap-2 border-b border-[#C9952A]/20 pb-3">
             <div className="rounded-lg bg-white p-2 shadow-sm">
               <Lightbulb className="w-4 h-4 text-[#7a4c08]" />
@@ -1333,7 +1314,23 @@ export default function DropModal({
               ))}
             </div>
           ) : recommendationError ? (
-            <p className="mt-3 text-sm text-red-600">{recommendationError}</p>
+            <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+              <p className="text-sm leading-5 text-amber-900">{recommendationError}</p>
+              {confirmationPrompt?.configuration_fingerprint && (
+                <button
+                  type="button"
+                  className="mt-3 inline-flex h-9 items-center justify-center rounded-md bg-[#7a4c08] px-3 text-xs font-semibold text-white hover:bg-[#633d06] disabled:opacity-60"
+                  onClick={() => setConfirmedConfiguration({
+                    schema_version: 1,
+                    configuration_fingerprint: confirmationPrompt.configuration_fingerprint as string,
+                    confirmed_warning_rule_ids: confirmationPrompt.required_warning_rule_ids ?? [],
+                  })}
+                  disabled={isRecommendationLoading}
+                >
+                  Confirm and continue
+                </button>
+              )}
+            </div>
           ) : recommendations.length === 0 ? (
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-white/70 p-3 text-sm leading-5 text-gray-600">
               <Sparkles className="mt-0.5 w-4 h-4 shrink-0 text-[#C9952A]" />

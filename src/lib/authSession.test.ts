@@ -3,10 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   apiPost: vi.fn(),
   clearDataCache: vi.fn(),
+  beginLogout: vi.fn(),
+  cancelPendingRequests: vi.fn(),
 }));
 
 vi.mock('./api', () => ({
   default: { post: (...args: unknown[]) => mocks.apiPost(...args) },
+  beginLogout: () => mocks.beginLogout(),
+  cancelPendingRequests: () => mocks.cancelPendingRequests(),
 }));
 
 vi.mock('./dataCache', () => ({

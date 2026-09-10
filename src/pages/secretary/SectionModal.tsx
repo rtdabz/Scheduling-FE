@@ -8,6 +8,7 @@ interface Department {
   department_name: string;
   department_code: string;
 }
+interface Program { id: number; code: string; name: string | null; department_id: number; }
 
 interface Term {
   id: number;
@@ -22,6 +23,7 @@ interface Section {
   year_level: '1' | '2' | '3' | '4';
   semester: '1st' | '2nd' | 'summer';
   department_id: number;
+  program_id: number | null;
   department: Department | null;
   term_id: number;
   term: Term | null;
@@ -41,11 +43,12 @@ interface SectionModalProps {
   editingSection?: Section | null;
   activeTerm: Term | null;
   departments: Department[];
+  programs: Program[];
   userDepartmentId?: number | null;
   isVpaa: boolean;
   onClose: () => void;
-  onSaveSingle: (sectionName: string, yearLevel: '1' | '2' | '3' | '4', departmentId: number) => Promise<void>;
-  onSaveBatch: (sections: Array<{ section_name: string; year_level: '1' | '2' | '3' | '4' }>, departmentId: number) => Promise<void>;
+  onSaveSingle: (sectionName: string, yearLevel: '1' | '2' | '3' | '4', departmentId: number, programId: number) => Promise<void>;
+  onSaveBatch: (sections: Array<{ section_name: string; year_level: '1' | '2' | '3' | '4' }>, departmentId: number, programId: number) => Promise<void>;
 }
 
 export default function SectionModal({
@@ -54,6 +57,7 @@ export default function SectionModal({
   editingSection,
   activeTerm,
   departments,
+  programs,
   userDepartmentId,
   isVpaa,
   onClose,
@@ -63,6 +67,7 @@ export default function SectionModal({
   const [sectionName, setSectionName] = useState('');
   const [yearLevel, setYearLevel] = useState<'1' | '2' | '3' | '4'>('1');
   const [departmentId, setDepartmentId] = useState('');
+  const [programId, setProgramId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [batchRows, setBatchRows] = useState<SectionBatchRow[]>([
@@ -78,10 +83,12 @@ export default function SectionModal({
         setSectionName(editingSection.section_name);
         setYearLevel(editingSection.year_level);
         setDepartmentId(editingSection.department_id ? editingSection.department_id.toString() : '');
+        setProgramId(editingSection.program_id ? editingSection.program_id.toString() : '');
       } else {
         setSectionName('');
         setYearLevel('1');
         setDepartmentId(isVpaa ? '' : (userDepartmentId?.toString() || ''));
+        setProgramId('');
         setBatchRows([{ id: '1', section_name: '', year_level: '1' }]);
       }
       setNameError('');
@@ -140,6 +147,11 @@ export default function SectionModal({
     } else {
       setDepartmentError('');
     }
+    const validProgram = programs.some((program) => String(program.id) === programId && String(program.department_id) === deptVal);
+    if (!validProgram) {
+      setDepartmentError('A Program is required before scheduling sections');
+      hasError = true;
+    }
 
     if (isEditMode) {
       const trimmedName = sectionName.trim();
@@ -154,7 +166,7 @@ export default function SectionModal({
 
       setIsSubmitting(true);
       try {
-        await onSaveSingle(trimmedName, yearLevel, Number(deptVal));
+        await onSaveSingle(trimmedName, yearLevel, Number(deptVal), Number(programId));
         onClose();
       } catch {
         // error handled in parent
@@ -186,7 +198,7 @@ export default function SectionModal({
     try {
       await onSaveBatch(
         validatedRows.map((row) => ({ section_name: row.section_name, year_level: row.year_level })),
-        Number(deptVal)
+        Number(deptVal), Number(programId)
       );
       onClose();
     } catch {
@@ -235,9 +247,9 @@ export default function SectionModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form id="section-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {/* Shared Top Settings: System-Controlled Department, Term & Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-gray-50/80 rounded-2xl border border-gray-200/80 mb-2">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 bg-gray-50/80 rounded-2xl border border-gray-200/80 mb-2">
             <div>
               <label className="block text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-1 font-sans">
                 Academic Term
@@ -295,6 +307,16 @@ export default function SectionModal({
                 />
               </div>
             )}
+
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-1 font-sans">
+                Program <span className="text-red-500">*</span>
+              </label>
+              <select id="section-program-select" value={programId} onChange={(e) => { setProgramId(e.target.value); setDepartmentError(''); }} disabled={!departmentId && isVpaa} className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-xs bg-white font-semibold">
+                <option value="">Select Program</option>
+                {programs.filter((program) => String(program.department_id) === String(isVpaa ? departmentId : userDepartmentId)).map((program) => <option key={program.id} value={program.id}>{program.code} - {program.name}</option>)}
+              </select>
+            </div>
 
             <div>
               <label className="block text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-1 font-sans">
@@ -377,6 +399,7 @@ export default function SectionModal({
                     </label>
                     <input
                       type="text"
+                      data-tour={index === 0 ? "section-row-name" : undefined}
                       value={row.section_name}
                       onChange={(e) => updateBatchRow(row.id, 'section_name', e.target.value.toUpperCase())}
                       placeholder="e.g. BSIT 1A"
@@ -392,6 +415,7 @@ export default function SectionModal({
                       YEAR LEVEL <span className="text-red-500">*</span>
                     </label>
                     <select
+                      data-tour={index === 0 ? "section-row-year" : undefined}
                       value={row.year_level}
                       onChange={(e) => updateBatchRow(row.id, 'year_level', e.target.value as any)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-xs bg-white font-semibold focus:ring-2 focus:ring-[#C9952A]"

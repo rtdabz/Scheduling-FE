@@ -1,5 +1,6 @@
-import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen } from 'lucide-react';
+import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen, Users } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
+import { curriculumLifecycleBadge } from '../../types/curriculum';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 
 interface CurriculumCardProps {
@@ -14,13 +15,13 @@ interface CurriculumCardProps {
 
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  draft: 'bg-gray-100 text-gray-700 border-gray-200',
+  deactivated: 'bg-slate-200 text-slate-700 border-slate-300',
   archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
 const statusDots: Record<string, string> = {
   active: 'bg-emerald-500',
-  draft: 'bg-gray-400',
+  deactivated: 'bg-slate-500',
   archived: 'bg-red-400',
 };
 
@@ -34,9 +35,16 @@ export default function CurriculumCard({
   onArchive,
 }: CurriculumCardProps) {
   const handleStatusToggle = () => {
-    const newStatus = curriculum.status === 'active' ? 'draft' : 'active';
+    // A curriculum is either in service or out of it; there is no third state.
+    const newStatus = curriculum.status === 'active' ? 'deactivated' : 'active';
     onStatusChange(curriculum.id, newStatus);
   };
+
+  const lifecycleBadge = curriculumLifecycleBadge(curriculum);
+  const inUseBy = curriculum.active_sections_count ?? 0;
+  // Retiring a curriculum that cohorts still follow would strand them, so the
+  // API refuses it. Reflect that here rather than offering a button that 422s.
+  const retirable = inUseBy === 0;
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative ${GRID_CARD_HOVER}`}>
@@ -49,10 +57,20 @@ export default function CurriculumCard({
               {curriculum.code}
             </span>
           </div>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1 ${statusColors[curriculum.status] || statusColors.draft}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${statusDots[curriculum.status] || statusDots.draft}`}></span>
-            {curriculum.status}
-          </span>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1 ${statusColors[curriculum.status] || statusColors.deactivated}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusDots[curriculum.status] || statusDots.deactivated}`}></span>
+              {curriculum.status}
+            </span>
+            {lifecycleBadge && (
+              <span
+                title="Ranked by effective school year against the other curricula this department runs."
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap ${lifecycleBadge.className}`}
+              >
+                {lifecycleBadge.label}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Info Grid */}
@@ -71,6 +89,15 @@ export default function CurriculumCard({
         <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl mb-3">
           <BookOpen size={14} className="text-[#C9952A]" />
           <span className="text-xs font-bold text-gray-700">{curriculum.courses_count} Courses</span>
+          {inUseBy > 0 && (
+            <>
+              <span className="text-gray-300">|</span>
+              <Users size={14} className="text-[#C9952A]" />
+              <span className="text-xs font-bold text-gray-700">
+                {inUseBy} Section{inUseBy === 1 ? '' : 's'}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Description */}
@@ -102,7 +129,7 @@ export default function CurriculumCard({
             </button>
             <button
               onClick={() => onDuplicate(curriculum.id)}
-              title="Create a copy of this curriculum as a draft"
+              title="Create a deactivated copy of this curriculum"
               className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
             >
               <Copy size={14} />
@@ -110,8 +137,15 @@ export default function CurriculumCard({
             </button>
             <button
               onClick={handleStatusToggle}
-              title={curriculum.status === 'active' ? 'Set status to draft' : 'Set status to active (deactivates the other curriculum in the same department)'}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+              disabled={curriculum.status === 'active' && !retirable}
+              title={
+                curriculum.status === 'active'
+                  ? retirable
+                    ? 'Withdraw this curriculum from service'
+                    : `${inUseBy} section${inUseBy === 1 ? '' : 's'} still follow this curriculum. Move them to another curriculum first.`
+                  : 'Publish this curriculum. Other active curricula in this department stay active — each year level chooses which one it follows.'
+              }
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 curriculum.status === 'active'
                   ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
                   : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
@@ -120,11 +154,19 @@ export default function CurriculumCard({
               <CheckCircle2 size={14} />
               {curriculum.status === 'active' ? 'Deactivate' : 'Activate'}
             </button>
+            {/* Archiving is offered only once a curriculum is out of service.
+                Deactivate it first — retiring something the department is still
+                running should be a deliberate two-step. */}
             {curriculum.status !== 'active' && (
               <button
                 onClick={() => onArchive(curriculum.id)}
-                title="Archive this curriculum"
-                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100"
+                disabled={!retirable}
+                title={
+                  retirable
+                    ? 'Archive this curriculum'
+                    : `${inUseBy} section${inUseBy === 1 ? '' : 's'} still follow this curriculum. Move them to another curriculum first.`
+                }
+                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Archive size={14} />
                 Archive

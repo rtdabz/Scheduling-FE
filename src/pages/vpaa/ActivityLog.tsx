@@ -116,7 +116,7 @@ export default function ActivityLog() {
   };
 
   return (
-    <div className="space-y-5 pb-8">
+    <div id="activity-log-page" className="space-y-5 pb-8">
       <div className="flex justify-end">
         <div className="flex gap-2"><button onClick={() => void exportCsv()} disabled={loading || meta.total === 0} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"><Download className="h-4 w-4" />Export CSV</button><button onClick={() => void loadEntries()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button></div>
       </div>

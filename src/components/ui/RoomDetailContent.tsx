@@ -75,6 +75,7 @@ interface RoomDetailContentProps {
   room: Room | null;
   schedules: Schedule[];
   isLoading: boolean;
+  initialViewMode?: 'list' | 'grid';
 }
 
 const formatTime = (timeStr: string) => {
@@ -96,12 +97,12 @@ const getMinutes = (timeStr: string) => {
 
 const noop = () => undefined;
 
-export default function RoomDetailContent({ room, schedules, isLoading }: RoomDetailContentProps) {
+export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list' }: RoomDetailContentProps) {
   const [activeTabDay, setActiveTabDay] = useState<string>(() => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[getPhilippineNowParts().weekdayIndex];
   });
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(initialViewMode);
 
   const activeRoomSchedules = useMemo(() => {
     if (!room) return [];
@@ -222,7 +223,7 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Room Info Block */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans border-b border-gray-150 pb-3">
+      <div className="room-detail-print-info flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans border-b border-gray-150 pb-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-[#5A1220]/10 text-[#5A1220] flex items-center justify-center border border-[#5A1220]/25">
             <Building2 size={18} />
@@ -247,7 +248,7 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
       </div>
 
       {/* Quick Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-sans mt-3">
+      <div className="room-detail-print-info grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-sans mt-3">
         <div className="bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
           <p className="text-[9px] font-bold uppercase tracking-wider text-gray-450 mb-0.5">Building</p>
           <p className="text-xs font-bold text-gray-700">{room.building || 'N/A'}</p>
@@ -276,8 +277,11 @@ export default function RoomDetailContent({ room, schedules, isLoading }: RoomDe
       </div>
 
       {/* Weekly Timetable Section */}
-      <div className="flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 bg-gray-50/50 flex-wrap gap-3">
+      <div className="room-detail-print-grid flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">
+        <div className="room-print-title hidden px-2 pb-2 text-base font-bold uppercase text-slate-900">
+          {room.room_code} {room.building ? `- ${room.building}` : ''}
+        </div>
+        <div className="room-detail-print-toolbar flex items-center justify-between border-b border-gray-200 px-6 py-4 bg-gray-50/50 flex-wrap gap-3">
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Weekly Classroom Schedule</h3>
           
           {/* View Mode Switcher */}

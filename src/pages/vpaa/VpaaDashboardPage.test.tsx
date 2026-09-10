@@ -111,8 +111,8 @@ describe('VpaaDashboardPage', () => {
 
     await waitFor(() => expect(screen.getByText('VPAA Dashboard')).toBeTruthy());
 
-    ['Executive Overview', 'Requires Attention', 'Workflow · Department Scheduling Progress',
-      'Tactical · Operational Overview', 'Institutional Master Timetable (Preview)',
+    ['Requires Attention', 'Workflow · Department Scheduling Progress',
+      'Institutional Master Timetable (Preview)',
       'Faculty Load Overview', 'Institutional Readiness', 'Recent Administrative Activity'].forEach(title =>
       expect(screen.getByText(title)).toBeTruthy());
 

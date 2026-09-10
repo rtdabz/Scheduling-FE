@@ -52,6 +52,20 @@ export default {
           '0%':   { transform: 'translateY(20px)', opacity: '0' },
           '100%': { transform: 'translateY(0)',    opacity: '1' },
         },
+        // Wizard step changes. The offset is deliberately small: inside a
+        // modal a full-width slide reads as the whole panel moving.
+        stepInRight: {
+          '0%':   { transform: 'translateX(1.5rem)',  opacity: '0' },
+          '100%': { transform: 'translateX(0)',       opacity: '1' },
+        },
+        stepInLeft: {
+          '0%':   { transform: 'translateX(-1.5rem)', opacity: '0' },
+          '100%': { transform: 'translateX(0)',       opacity: '1' },
+        },
+        modalIn: {
+          '0%':   { transform: 'scale(0.97)', opacity: '0' },
+          '100%': { transform: 'scale(1)',    opacity: '1' },
+        },
       },
       animation: {
         float:        'float 8s ease-in-out infinite',
@@ -60,6 +74,9 @@ export default {
         shimmer:      'shimmer 3s linear infinite',
         slideInLeft:  'slideInLeft 0.3s ease-out',
         fadeInUp:     'fadeInUp 0.5s ease-out',
+        stepInRight:  'stepInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+        stepInLeft:   'stepInLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+        modalIn:      'modalIn 0.16s ease-out',
       },
     },
   },

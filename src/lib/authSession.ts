@@ -1,4 +1,4 @@
-import api from './api';
+import api, { beginLogout, cancelPendingRequests } from './api';
 import { clearDataCache } from './dataCache';
 
 const clearStoredSession = (): void => {
@@ -10,10 +10,13 @@ const clearStoredSession = (): void => {
 };
 
 export const logoutCurrentSession = (): void => {
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-  const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
-  // Preserve the captured token for server-side revocation while the UI signs out immediately.
-  void api.post('/logout', undefined, { headers }).catch(() => undefined);
-  clearStoredSession();
+    beginLogout();
+    cancelPendingRequests();
+
+    // Preserve the captured token for server-side revocation while the UI signs out immediately.
+    void api.post('/logout', undefined, { headers }).catch(() => undefined);
+    clearStoredSession();
 };

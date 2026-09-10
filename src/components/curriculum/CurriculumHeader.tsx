@@ -17,7 +17,7 @@ interface CurriculumHeaderProps {
 
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  draft: 'bg-amber-50 text-amber-800 border-amber-200',
+  deactivated: 'bg-slate-200 text-slate-700 border-slate-300',
   archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
@@ -50,7 +50,7 @@ export default function CurriculumHeader({
               </span>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${
-                  statusColors[curriculum.status] || statusColors.draft
+                  statusColors[curriculum.status] || statusColors.deactivated
                 }`}
               >
                 {curriculum.status}
@@ -60,7 +60,7 @@ export default function CurriculumHeader({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {curriculum.status === 'draft' && canActivate && (
+            {curriculum.status === 'deactivated' && canActivate && (
               <button
                 onClick={onActivate}
                 disabled={isActivating}

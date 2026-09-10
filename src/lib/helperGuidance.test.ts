@@ -12,12 +12,12 @@ describe("getHelperReply", () => {
     const reply = getHelperReply("What should I do next?", context({ draftCount: 2 }));
     expect(reply.intent).toBe("next_step");
     expect(reply.text).toContain("2 remaining draft sections");
-    expect(reply.action?.path).toBe("/secretary/schedules");
+    expect(reply.action?.path).toBe("/secretary/schedule-builder");
   });
 
   it("guides a program head to the correct role route", () => {
     const reply = getHelperReply("Help with a conflict", context({ role: "program_head" }));
-    expect(reply.action?.path).toBe("/program_head/schedules");
+    expect(reply.action?.path).toBe("/program_head/schedule-builder");
   });
 
   it("guides a dean to the approval workspace", () => {
@@ -28,7 +28,7 @@ describe("getHelperReply", () => {
   it("moves approved schedules to instructor assignment", () => {
     const reply = getHelperReply("What is next?", context({ scheduleStatus: "approved" }));
     expect(reply.text).toContain("instructor assignment");
-    expect(reply.action?.path).toBe("/secretary/instructor-assignment");
+    expect(reply.action?.path).toBe("/secretary/schedule-builder");
   });
 
   it("refuses coding and unrelated prompts", () => {

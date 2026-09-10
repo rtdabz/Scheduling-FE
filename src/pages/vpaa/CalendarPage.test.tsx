@@ -105,8 +105,9 @@ describe('VpaaCalendarPage timetable grid', () => {
   });
 
   it('stretches the grid past the shared window so evening classes are not clipped', async () => {
-    // The shared window closes at 19:00 (slot 24). A class ending 20:00 needs 26 rows.
-    mockApi([schedule({ id: 3, start_time: '18:30:00', end_time: '20:00:00' })]);
+    // The shared window closes at 20:30 (slot 27). Historical data ending at
+    // 21:30 still expands the viewer rather than being clipped.
+    mockApi([schedule({ id: 3, start_time: '20:00:00', end_time: '21:30:00' })]);
     const { container } = renderPage();
 
     await waitFor(() => expect(screen.getAllByText('IT 101').length).toBeGreaterThan(0));
@@ -115,7 +116,7 @@ describe('VpaaCalendarPage timetable grid', () => {
     expect(grid).toBeTruthy();
     const rows = (grid!.style.gridTemplateRows.match(/repeat\((\d+)/) ?? [])[1];
     expect(Number(rows)).toBeGreaterThan(slotCount());
-    expect(Number(rows)).toBe(26);
+    expect(Number(rows)).toBe(29);
   });
 
   it('uses the shared window when every class fits inside it', async () => {

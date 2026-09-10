@@ -28,6 +28,14 @@ export const academicYearLabel = (academicYear?: string | null): string => {
   return year ? `AY ${year}` : '';
 };
 
+export const yearLevelLabel = (yearLevel?: number | string | null): string => {
+  const year = Number(yearLevel);
+  if (!Number.isInteger(year) || year < 1) return '—';
+  const suffix = year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th';
+
+  return `${year}${suffix} Year`;
+};
+
 /** '1st Semester, AY 2026-2027' -- the year is dropped when unknown. */
 export const termLabel = (term?: LabelledTerm | null): string => {
   if (!term) return 'No active term';

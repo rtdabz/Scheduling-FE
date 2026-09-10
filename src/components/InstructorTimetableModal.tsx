@@ -4,7 +4,8 @@ import { Calendar, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react
 import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
 import { getCachedData, loadCachedData } from "../lib/dataCache";
-import WeeklyTimetableGrid from "./scheduling/WeeklyTimetableGrid";
+import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "./scheduling/WeeklyTimetableGrid";
+import { slotCount, slotToTimeLabel, timeToSlot } from "../lib/timeGrid";
 import Skeleton from "./ui/Skeleton";
 import { scheduleLocationLabel } from "../lib/scheduleLocation";
 
@@ -83,25 +84,14 @@ const DAY_MAP: Record<string, number> = {
   Sunday: 6, Sun: 6,
 };
 
-const parseTimeToSlot = (timeStr: string): number => {
-  if (!timeStr) return 0;
-  const parts = timeStr.split(":");
-  if (parts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  const totalMinutes = hours * 60 + minutes;
-  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
-};
+/**
+ * Aliases onto lib/timeGrid. The local copies hardcoded a 07:00 opening and a
+ * 30-minute slot, and rendered the axis as "7:00 AM" while every other
+ * timetable in the system renders it as "7 AM".
+ */
+const parseTimeToSlot = (timeStr: string): number => (timeStr ? timeToSlot(timeStr) : 0);
 
-const slotToTimeStr12h = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  let hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const ampm = hours >= 12 ? "PM" : "AM";
-  if (hours > 12) hours -= 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
-};
+const slotToTimeStr12h = (slotIndex: number): string => slotToTimeLabel(slotIndex);
 
 const slotToTime24hStr = (slotIndex: number): string => {
   const totalMinutes = 7 * 60 + slotIndex * 30;
@@ -135,7 +125,9 @@ export default function InstructorTimetableModal({
   const [isComfortView, setIsComfortView] = useState(false);
   const [schedules, setSchedules] = useState<TimetableSlotItem[]>([]);
 
-  const slotHeight = isComfortView ? 34 : 26;
+  // Compact matches the system-wide row height; comfort is an exact 1.5x of it
+  // so cards keep landing on whole pixels.
+  const slotHeight = isComfortView ? GRID_SLOT_HEIGHT_PX * 1.5 : GRID_SLOT_HEIGHT_PX;
 
   useEffect(() => {
     if (!isOpen || !facultyId) return;
@@ -222,7 +214,7 @@ export default function InstructorTimetableModal({
       ? `${lastName.toUpperCase()}_${firstName.toUpperCase()}`
       : lastName.toUpperCase();
 
-    const totalSlots = 24;
+    const totalSlots = slotCount();
 
     const gridCells: (TimetableSlotItem | null)[][] = Array.from({ length: totalSlots }, () =>
       Array(7).fill(null)
@@ -471,11 +463,8 @@ export default function InstructorTimetableModal({
             <div className="overflow-x-auto">
               <WeeklyTimetableGrid
                 days={DAYS}
-                slotCount={24}
                 slotHeight={slotHeight}
-                headerHeight={40}
                 minWidth={900}
-                getTimeLabel={slotToTimeStr12h}
                 getDayCount={getClassesCountForDay}
               >
                 {/* Schedule Cards placed using CSS Grid matching Schedule Builder ScheduleCard */}

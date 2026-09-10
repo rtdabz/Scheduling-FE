@@ -639,7 +639,7 @@ export default function DeanFaculty() {
   }, [filteredFaculties]);
 
   return (
-    <div className="space-y-6 font-sans pb-12">
+    <div id="faculty-page" className="space-y-6 font-sans pb-12">
       {/* Summary Statistics Dashboard Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
         <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">

@@ -51,18 +51,18 @@ describe('InstructorWorkloadChart', () => {
     expect(getByText('3/21u')).toBeTruthy();
   });
 
-  it('shows the photo when there is one and initials otherwise', () => {
-    const { container, getByText } = render(<InstructorWorkloadChart instructors={[
+  it('shows the photo when there is one and the default avatar otherwise', () => {
+    const { container, getByLabelText } = render(<InstructorWorkloadChart instructors={[
       instructor({ id: 1, first_name: 'Richie', last_name: 'Dadubo', profile_picture: 'https://example.test/rd.png' }),
       instructor({ id: 2, first_name: 'Margaret', last_name: 'Hamilton', profile_picture: null }),
     ]}/>);
 
     // The tick reads its row by index; recharts never passes the datum itself,
-    // which is what silently forced every avatar to initials before.
+    // which is what silently forced every avatar to its fallback before.
     const photos = container.querySelectorAll('img');
     expect(photos).toHaveLength(1);
     expect(photos[0].getAttribute('src')).toBe('https://example.test/rd.png');
-    expect(getByText('MH')).toBeTruthy();
+    expect(getByLabelText('Profile photo')).toBeTruthy();
   });
 
   it('keeps every avatar on the same left edge regardless of name length', () => {

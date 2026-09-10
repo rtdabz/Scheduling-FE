@@ -10,7 +10,8 @@ export type AdjustmentType =
   | "set_pattern"
   | "clear_pattern"
   | "disable_lecture_lab_split"
-  | "set_delivery_mode";
+  | "set_delivery_mode"
+  | "split_session_single_meeting_fallback";
 
 export type GenerationAdjustment = {
   type: AdjustmentType | string;
@@ -19,6 +20,7 @@ export type GenerationAdjustment = {
   value: string | null;
   section_name?: string;
   course_code?: string;
+  reason?: string;
 };
 
 export type GenerationRecommendation = {
@@ -207,6 +209,8 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
       return `${course} in ${section}: lecture/lab split turned off`;
     case "set_delivery_mode":
       return `${course} in ${section}: mode set to ${adjustment.value === "automatic" ? "Automatic" : adjustment.value}`;
+    case "split_session_single_meeting_fallback":
+      return `${course} in ${section}: Can't split, switched to one meeting.`;
     default:
       return `${course} in ${section}: configuration updated`;
   }

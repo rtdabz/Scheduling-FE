@@ -11,8 +11,31 @@ const api = axios.create({
     },
 });
 
+// Logout is a short-lived transition in which requests from the page being
+// left must not publish stale errors into the still-mounted toast provider.
+let loggingOut = false;
+const pendingControllers = new Set<AbortController>();
+
+const releaseController = (signal?: unknown): void => {
+    if (!signal) return;
+    pendingControllers.forEach((controller) => {
+        if (controller.signal === signal) pendingControllers.delete(controller);
+    });
+};
+
+export const beginLogout = (): void => {
+    loggingOut = true;
+};
+
+export const cancelPendingRequests = (): void => {
+    pendingControllers.forEach((controller) => controller.abort());
+    pendingControllers.clear();
+};
+
 api.interceptors.request.use((config) => {
-    if (config.url === '/login') {
+    if (config.url === '/login' || config.url === '/auth/google/exchange') {
+        // A subsequent login starts a fresh authenticated lifecycle.
+        loggingOut = false;
         return config;
     }
 
@@ -20,15 +43,31 @@ api.interceptors.request.use((config) => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+
+    if (!config.signal) {
+        const controller = new AbortController();
+        config.signal = controller.signal;
+        pendingControllers.add(controller);
+    }
     return config;
 });
 
 api.interceptors.response.use(
     (response) => {
+        releaseController(response.config.signal);
         return response;
     },
     (error) => {
         const requestUrl = error.config?.url;
+        releaseController(error.config?.signal);
+
+        // Requests canceled or rejected while the old route is being torn
+        // down must not reach page-level catch handlers and show a flash of
+        // an error after the user has already signed out.
+        if (loggingOut && requestUrl !== '/logout') {
+            return new Promise(() => undefined);
+        }
+
         if (error.response?.status === 401 && requestUrl !== '/login' && requestUrl !== '/logout') {
             clearDataCache();
             localStorage.removeItem('token');

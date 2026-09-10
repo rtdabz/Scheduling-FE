@@ -21,10 +21,12 @@ import {
   LayoutGrid,
   List,
   Filter,
-  Plus
+  Plus,
+  Printer
 } from 'lucide-react';
 import api from '../../lib/api';
-import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -83,6 +85,7 @@ interface Schedule {
     id: number;
     course_code: string;
     course_name: string;
+    units?: number | string | null;
   } | null;
   faculty?: {
     id: number;
@@ -125,6 +128,7 @@ export default function SecretaryRooms() {
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [printAfterOpen, setPrintAfterOpen] = useState(false);
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const canManageRooms = isVpaa;
@@ -175,7 +179,7 @@ export default function SecretaryRooms() {
     setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
     try {
       const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data');
+        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data?include=rooms,departments,schedules');
         const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
         const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
         const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
@@ -246,7 +250,7 @@ export default function SecretaryRooms() {
         const updatedRoom = mapApiRoom(res.data.room);
         setRooms(prev => {
           const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
-          clearDataCache();
+          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
@@ -256,7 +260,7 @@ export default function SecretaryRooms() {
         const createdRoom = mapApiRoom(res.data.room);
         setRooms(prev => {
           const nextRooms = [createdRoom, ...prev];
-          clearDataCache();
+          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
@@ -306,7 +310,7 @@ export default function SecretaryRooms() {
         await api.delete(`/rooms/${idToDelete}`);
         setRooms(prev => {
           const nextRooms = prev.filter(r => r.id !== idToDelete);
-          clearDataCache();
+          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
@@ -451,11 +455,51 @@ export default function SecretaryRooms() {
       .sort((a, b) => getMinutes(a.start_time) - getMinutes(b.start_time));
   }, [selectedRoom, schedules, activeTabDay]);
 
+  const handlePrintRoom = (room: Room) => {
+    setSelectedRoomIdForDetail(room.id);
+    setPrintAfterOpen(true);
+    setIsDetailModalOpen(true);
+    document.body.classList.add('room-timetable-printing');
+  };
+
+  useEffect(() => {
+    if (!isDetailModalOpen || !printAfterOpen) return;
+    let attempts = 0;
+    let frameId = 0;
+    const printWhenReady = () => {
+      const grid = document.querySelector('.room-timetable-modal .timetable-grid-root');
+      if (grid || attempts >= 120) {
+        document.body.classList.add('room-timetable-printing');
+        window.print();
+        return;
+      }
+      attempts += 1;
+      frameId = window.requestAnimationFrame(printWhenReady);
+    };
+    frameId = window.requestAnimationFrame(printWhenReady);
+    const afterPrint = () => {
+      document.body.classList.remove('room-timetable-printing');
+      setPrintAfterOpen(false);
+      setIsDetailModalOpen(false);
+      setSelectedRoomIdForDetail(null);
+    };
+    window.addEventListener('afterprint', afterPrint);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('afterprint', afterPrint);
+      document.body.classList.remove('room-timetable-printing');
+    };
+  }, [isDetailModalOpen, printAfterOpen]);
+
   const roomGuideSteps = useMemo(() => [
-    { element: '#rooms-filters', title: 'Find a room', description: 'Search by room or building. Use the type filter to narrow the list.', side: 'bottom' as const },
-    { element: '#rooms-workspace', title: 'Check room details', description: 'Select a building to see rooms, capacity, status, and schedules.', side: 'top' as const },
+    { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search by room or building. Use the type filter to narrow the list.', side: 'bottom' as const },
+    { element: '[data-tour="building-card"]', waitFor: '#rooms-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a building to see its rooms.', title: 'Check room details', description: 'Select a building to see rooms, capacity, status, and schedules.', side: 'top' as const },
+    { element: '#rooms-add-button', action: 'click' as const, taskHint: 'Click Add to open the form.', title: 'Add a room or building', description: 'New spaces are created from this page.', side: 'bottom' as const },
+    { element: '#room-form input[type="text"]:not([disabled])', waitFor: '#room-form', action: 'input' as const, taskHint: 'Type a name or code to continue.', title: 'Enter the details', description: 'Name the building, or code the room.', side: 'bottom' as const },
+    { element: '#room-form select', waitFor: '#room-form', action: 'select' as const, taskHint: 'Choose an option to continue.', title: 'Set type and status', description: 'Room type and availability constrain every placement.', side: 'bottom' as const },
+    { element: '#room-form', action: 'submit' as const, taskHint: 'Click Create to save it.', title: 'Save it', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'rooms', isReady: true, steps: roomGuideSteps });
+  useWorkflowGuide({ id: 'rooms', isReady: true, steps: roomGuideSteps, mission: 'Manage Rooms' });
 
   return (
     <div className="space-y-6">
@@ -531,6 +575,7 @@ export default function SecretaryRooms() {
           {/* Add button inside filter bar */}
           {canManageRooms && (
             <button
+              id="rooms-add-button"
               onClick={() => {
                 setIsEditMode(false);
                 setEditingId(null);
@@ -614,6 +659,7 @@ export default function SecretaryRooms() {
                 return (
                   <div
                     key={building.name}
+                    data-tour="building-card"
                     onClick={() => setSelectedBuilding(building.name)}
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
                   >
@@ -671,6 +717,7 @@ export default function SecretaryRooms() {
                       return (
                         <tr
                           key={building.name}
+                          data-tour="building-card"
                           onClick={() => setSelectedBuilding(building.name)}
                           className="group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer"
                         >
@@ -855,7 +902,7 @@ export default function SecretaryRooms() {
                       <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Room Type</th>
                       <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
                       <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Today's Status</th>
-                      {canManageRooms && <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>}
+                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -923,9 +970,16 @@ export default function SecretaryRooms() {
                               </p>
                             )}
                           </td>
-                          {canManageRooms && (
-                            <td className="px-6 py-4 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
+                          <td className="px-6 py-4 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-2">
+                                <TableActionButton
+                                  label="Print Room Timetable"
+                                  variant="print"
+                                  onClick={() => handlePrintRoom(room)}
+                                >
+                                  <Printer size={15} />
+                                </TableActionButton>
+                                {canManageRooms && <>
                                 <TableActionButton
                                   label="Edit Room"
                                   variant="edit"
@@ -940,9 +994,9 @@ export default function SecretaryRooms() {
                                 >
                                   <Trash2 size={15} />
                                 </TableActionButton>
+                                </>}
                               </div>
-                            </td>
-                          )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -973,7 +1027,7 @@ export default function SecretaryRooms() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
+            <form id="room-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
               {!selectedBuilding && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -1156,7 +1210,33 @@ export default function SecretaryRooms() {
           setSelectedRoomIdForDetail(null);
         }}
         roomId={selectedRoomIdForDetail}
+        initialViewMode="grid"
+        className="room-timetable-modal"
+        initialRoom={rooms.find(room => room.id === selectedRoomIdForDetail) ?? null}
+        initialSchedules={schedules}
       />
+      <style>{`body.room-timetable-printing > div[role="presentation"] { visibility: hidden; }
+      @page { size: landscape; margin: 0.35in; }
+      @media print {
+        body.room-timetable-printing #root { display: none !important; }
+        body.room-timetable-printing > div[role="presentation"] { display: flex !important; position: static !important; inset: auto !important; overflow: visible !important; padding: 0 !important; background: white !important; visibility: visible !important; }
+        body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal { display: flex !important; width: 100% !important; max-width: none !important; max-height: none !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
+        body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal > header { display: none !important; }
+        body.room-timetable-printing .room-detail-print-info,
+        body.room-timetable-printing .room-detail-print-toolbar { display: none !important; }
+        body.room-timetable-printing .room-print-title { display: block !important; }
+        body.room-timetable-printing .room-detail-print-grid { margin: 0 !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
+        body.room-timetable-printing .room-detail-print-grid > div:last-child { overflow: visible !important; padding: 0 !important; }
+        body.room-timetable-printing .timetable-grid-root { width: 100% !important; min-height: 0 !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.room-timetable-printing .timetable-grid-root,
+        body.room-timetable-printing .timetable-grid-root * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.room-timetable-printing .timetable-grid-root > div:last-child { border-left: 1px solid #cbd5e1 !important; border-bottom: 1px solid #cbd5e1 !important; }
+        body.room-timetable-printing .timetable-grid-root [style*="grid-column: 1"] { border-left: 1px solid #cbd5e1 !important; border-right: 1px solid #cbd5e1 !important; }
+        body.room-timetable-printing .timetable-grid-root { border: 1px solid #cbd5e1 !important; border-left: 1px solid #cbd5e1 !important; min-width: 0 !important; width: 100% !important; }
+        body.room-timetable-printing .timetable-grid-header { background: #4e0a10 !important; background-color: #4e0a10 !important; background-image: none !important; box-shadow: inset 0 0 0 1000px #4e0a10 !important; color: #ffffff !important; border-color: #c9952a !important; }
+        body.room-timetable-printing .timetable-grid-root > [style*="grid-column: 1"] { border-left: 1px solid #cbd5e1 !important; }
+      }
+      `}</style>
     </div>
   );
 };

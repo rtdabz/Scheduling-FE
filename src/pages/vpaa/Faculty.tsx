@@ -34,6 +34,7 @@ import InstructorTimetableButton from '../../components/InstructorTimetableButto
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
 import FacultyAvailabilityPanel from '../../components/faculty/FacultyAvailabilityPanel';
 import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
+import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 
 const DEPARTMENT_COLORS: Record<string, string> = {
   'INFORMATION TECHNOLOGY':      'bg-blue-100 border-blue-400 text-blue-900',
@@ -269,6 +270,9 @@ export default function VpaaFaculty() {
   const [middleName, setMiddleName] = useState('');
   const [employmentType, setEmploymentType] = useState<'full-time' | 'part-time'>('full-time');
   const [maxUnits, setMaxUnits] = useState<number>(21);
+  // Which column the Load (Units) input writes to. Basic Load is the contract
+  // ceiling; Overload is the allowance granted on top of it.
+  const [loadType, setLoadType] = useState<'basic' | 'overload'>('basic');
   const [overloadUnits, setOverloadUnits] = useState<number>(0);
   const [deloadUnits, setDeloadUnits] = useState<number>(0);
   const [probonoUnits, setProbonoUnits] = useState<number>(0);
@@ -386,6 +390,7 @@ export default function VpaaFaculty() {
     setMiddleName(faculty.middle_name || '');
     setEmploymentType(faculty.employment_type);
     setMaxUnits(faculty.max_units);
+    setLoadType(faculty.overload_units > 0 ? 'overload' : 'basic');
     setOverloadUnits(faculty.overload_units);
     setDeloadUnits(faculty.deload_units);
     setProbonoUnits(faculty.probono_units);
@@ -491,8 +496,13 @@ export default function VpaaFaculty() {
       setLastNameError('');
     }
 
-    if (!isVpaa && maxUnits <= 0) {
-      setMaxUnitsError('Maximum units must be greater than 0');
+    const enteredUnits = loadType === 'overload' ? overloadUnits : maxUnits;
+    if (!Number.isFinite(enteredUnits) || enteredUnits <= 0) {
+      setMaxUnitsError(
+        loadType === 'overload'
+          ? 'Overload units must be greater than 0'
+          : 'Basic load units must be greater than 0'
+      );
       hasError = true;
     } else {
       setMaxUnitsError('');
@@ -518,9 +528,9 @@ export default function VpaaFaculty() {
       program_id: programId ? Number(programId) : null,
       status,
       profile_picture: profilePicture,
+      max_units: maxUnits,
+      overload_units: overloadUnits,
       ...(!isVpaa ? {
-        max_units: maxUnits,
-        overload_units: overloadUnits,
         deload_units: deloadUnits,
         probono_units: probonoUnits,
       } : {}),
@@ -649,61 +659,16 @@ export default function VpaaFaculty() {
   }, [filteredFaculties]);
 
   return (
-    <div className="space-y-6 font-sans pb-12">
+    <div id="faculty-page" className="space-y-6 font-sans pb-12">
       {/* Summary Statistics Dashboard Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-gray-900 mt-0.5">{summaryStats.total}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <CheckCircle2 size={12} className="text-emerald-500" />
-            Available
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{summaryStats.available}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Info size={12} className="text-blue-500" />
-            Fully Loaded
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{summaryStats.fullyLoaded}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <AlertCircle size={12} className="text-red-500" />
-            Overloaded
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-red-700 mt-0.5">{summaryStats.overloaded}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200 col-span-2 md:col-span-1">
-          <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Award size={12} className="text-purple-500" />
-            Pro Bono
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-purple-700 mt-0.5">{summaryStats.probono}</p>
-          )}
-        </div>
+      <div className="grid grid-cols-2 gap-3.5 md:grid-cols-5">
+        <DashboardMetricCard label="Total Instructors" value={isLoading ? '—' : summaryStats.total} detail="Active faculty" icon={UserRound} tone="brand" />
+        <DashboardMetricCard label="Available" value={isLoading ? '—' : summaryStats.available} detail="Ready for assignment" icon={CheckCircle2} tone="good" />
+        <DashboardMetricCard label="Fully Loaded" value={isLoading ? '—' : summaryStats.fullyLoaded} detail="At required capacity" icon={Info} tone="info" />
+        <DashboardMetricCard label="Overloaded" value={isLoading ? '—' : summaryStats.overloaded} detail="Over required capacity" icon={AlertCircle} tone="alert" />
+        <DashboardMetricCard label="Pro Bono" value={isLoading ? '—' : summaryStats.probono} detail="Additional service load" icon={Award} tone="accent"
+          className="col-span-2 md:col-span-1"
+        />
       </div>
 
       {/* Search and Filters Bar */}
@@ -807,6 +772,7 @@ export default function VpaaFaculty() {
                 setMiddleName('');
                 setEmploymentType('full-time');
                 setMaxUnits(21);
+                setLoadType('basic');
                 setOverloadUnits(0);
                 setDeloadUnits(0);
                 setProbonoUnits(0);
@@ -1539,27 +1505,55 @@ export default function VpaaFaculty() {
                   </select>
                 </div>
 
-                {!isVpaa && (
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                      Max Units <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={maxUnits}
-                      onChange={(e) => {
-                        setMaxUnits(Number(e.target.value));
-                        setMaxUnitsError('');
-                      }}
-                      min="1"
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${maxUnitsError
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-200 focus:ring-[#C9952A]'
-                        }`}
-                    />
-                    {maxUnitsError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{maxUnitsError}</p>}
-                  </div>
-                )}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    Load Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={loadType}
+                    onChange={(e) => {
+                      setLoadType(e.target.value as 'basic' | 'overload');
+                      setMaxUnitsError('');
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                  >
+                    <option value="basic">Basic Load</option>
+                    <option value="overload">Overload</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  {loadType === 'overload'
+                    ? 'Overload (Units)'
+                    : `${employmentType === 'full-time' ? 'Full-Time' : 'Part-Time'} Load (Units)`}{' '}
+                  <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={loadType === 'overload' ? overloadUnits : maxUnits}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (loadType === 'overload') {
+                      setOverloadUnits(value);
+                    } else {
+                      setMaxUnits(value);
+                    }
+                    setMaxUnitsError('');
+                  }}
+                  min="1"
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${maxUnitsError
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                />
+                {maxUnitsError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{maxUnitsError}</p>}
+                <p className="text-xs text-gray-500 mt-1 font-sans">
+                  {loadType === 'overload'
+                    ? `Units granted on top of the ${maxUnits}-unit basic load.`
+                    : 'The units this instructor is expected to carry each term.'}
+                </p>
               </div>
 
               {!isVpaa && <div className="grid grid-cols-3 gap-4">
@@ -1666,20 +1660,6 @@ export default function VpaaFaculty() {
                 <p className="text-xs text-gray-500 mt-1 font-sans">
                   Major subjects tied to a program can only be assigned to instructors of that program.
                 </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Status <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
               </div>
 
               {/* Form Buttons */}

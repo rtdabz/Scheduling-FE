@@ -21,7 +21,7 @@ try {
 
 const getStorageKey = (key: string): string => `${STORAGE_PREFIX}${key}`;
 
-const readStoredData = <T>(key: string): T | undefined => {
+const readStoredData = <T>(key: string, allowStale = false): T | undefined => {
   try {
     const raw = sessionStorage.getItem(getStorageKey(key));
     if (!raw) return undefined;
@@ -30,8 +30,10 @@ const readStoredData = <T>(key: string): T | undefined => {
       sessionStorage.removeItem(getStorageKey(key));
       return undefined;
     }
-    // Check if expired
-    if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    const isExpired = Date.now() - entry.timestamp > CACHE_TTL_MS;
+    // Expired entries remain available as a render fallback. The request path
+    // still treats them as stale and refreshes them before returning.
+    if (isExpired && !allowStale) {
       sessionStorage.removeItem(getStorageKey(key));
       dataCache.delete(key);
       return undefined;
@@ -60,20 +62,37 @@ const writeStoredData = <T>(key: string, data: T): void => {
 export const hasCachedData = (key: string): boolean => {
   if (dataCache.has(key)) {
     const entry = dataCache.get(key);
-    if (entry && Date.now() - entry.timestamp <= CACHE_TTL_MS) {
-      return true;
-    }
-    dataCache.delete(key);
+    return entry?.data !== undefined;
   }
-  return readStoredData(key) !== undefined;
+  return readStoredData(key, true) !== undefined;
 };
 
 export const getCachedData = <T>(key: string): T | undefined => {
   const mem = dataCache.get(key);
+  if (mem && mem.data !== undefined) {
+    return mem.data as T;
+  }
+  return readStoredData<T>(key, true);
+};
+
+const getFreshCachedData = <T>(key: string): T | undefined => {
+  const mem = dataCache.get(key);
   if (mem && Date.now() - mem.timestamp <= CACHE_TTL_MS) {
     return mem.data as T;
   }
-  return readStoredData<T>(key);
+
+  try {
+    const raw = sessionStorage.getItem(getStorageKey(key));
+    if (!raw) return undefined;
+    const entry = JSON.parse(raw) as CacheEntry<T>;
+    if (!entry || typeof entry.timestamp !== 'number' || Date.now() - entry.timestamp > CACHE_TTL_MS) {
+      return undefined;
+    }
+    dataCache.set(key, entry as CacheEntry<unknown>);
+    return entry.data;
+  } catch {
+    return undefined;
+  }
 };
 
 export const setCachedData = <T>(key: string, data: T): void => {
@@ -87,6 +106,38 @@ export const clearCachedKey = (key: string): void => {
     sessionStorage.removeItem(getStorageKey(key));
   } catch {
     // Ignore
+  }
+};
+
+/**
+ * Drop every cached key that starts with one of `prefixes`.
+ *
+ * Mutations used to call clearDataCache(), which wiped the cache for every
+ * module — renaming one room evicted curriculum, faculty, dashboards and the
+ * scheduler, so the next visit to each refetched the whole ~180KB
+ * /initial-data payload. Prefer this and invalidate only what the write
+ * actually changed; see lib/cacheGroups.ts for the named groups.
+ */
+export const clearCachedKeysByPrefix = (prefixes: readonly string[]): void => {
+  if (prefixes.length === 0) return;
+
+  const matches = (key: string): boolean => prefixes.some((prefix) => key.startsWith(prefix));
+
+  for (const key of Array.from(dataCache.keys())) {
+    if (matches(key)) dataCache.delete(key);
+  }
+
+  for (const key of Array.from(pendingRequests.keys())) {
+    if (matches(key)) pendingRequests.delete(key);
+  }
+
+  try {
+    Object.keys(sessionStorage)
+      .filter((storageKey) => storageKey.startsWith(STORAGE_PREFIX)
+        && matches(storageKey.slice(STORAGE_PREFIX.length)))
+      .forEach((storageKey) => sessionStorage.removeItem(storageKey));
+  } catch {
+    // Ignore storage access errors
   }
 };
 
@@ -108,7 +159,7 @@ export const loadCachedData = async <T>(
   forceRefresh = false
 ): Promise<T> => {
   if (!forceRefresh) {
-    const cached = getCachedData<T>(key);
+    const cached = getFreshCachedData<T>(key);
     if (cached !== undefined) {
       return cached;
     }

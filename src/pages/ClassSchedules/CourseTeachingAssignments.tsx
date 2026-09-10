@@ -42,6 +42,14 @@ interface PageData {
   currentDepartmentId: number | null;
   /** False when the department has published no curriculum, so there is nothing to offer. */
   hasActiveCurriculum: boolean;
+  /** The term the list is scoped to; null when no term is active and nothing is narrowed. */
+  activeTerm: ActiveTerm | null;
+}
+
+interface ActiveTerm {
+  id: number;
+  academic_year?: string | null;
+  semester?: string | null;
 }
 
 interface IndexResponse {
@@ -49,11 +57,17 @@ interface IndexResponse {
   departments?: DepartmentOption[];
   current_department_id?: number | null;
   has_active_curriculum?: boolean;
+  active_term?: ActiveTerm | null;
   programs?: PageData['programs'];
 }
 
-// v7 includes programs from every available receiving department.
-const cacheKey = 'page:course-teaching-assignments:v7';
+// v9 scopes the listing to the active term's semester.
+const cacheKey = 'page:course-teaching-assignments:v9';
+
+const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
+const termLabel = (term: ActiveTerm | null) => (term
+  ? [SEMESTER_LABELS[term.semester ?? ''] ?? term.semester, term.academic_year].filter(Boolean).join(', ')
+  : '');
 
 const YEAR_LEVELS = [1, 2, 3, 4];
 const YEAR_LABELS: Record<number, string> = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' };
@@ -90,6 +104,7 @@ export default function CourseTeachingAssignments() {
   const [programs, setPrograms] = useState<PageData['programs']>(cached?.programs ?? []);
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(cached?.currentDepartmentId ?? null);
   const [hasActiveCurriculum, setHasActiveCurriculum] = useState(cached?.hasActiveCurriculum ?? true);
+  const [activeTerm, setActiveTerm] = useState<ActiveTerm | null>(cached?.activeTerm ?? null);
   const [target, setTarget] = useState<string | null>(null);
   const [targetProgramId, setTargetProgramId] = useState('');
   const [yearLevel, setYearLevel] = useState<number | null>(null);
@@ -100,12 +115,12 @@ export default function CourseTeachingAssignments() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const courseTeachingGuideSteps = useMemo(() => [
-    { element: '#course-teaching-target', title: 'Choose the teaching department', description: 'Select who will teach the minor courses.', side: 'right' as const },
-    { element: '#course-teaching-filters', title: 'Choose a year and program', description: 'Work on one year level. You can also select a receiving program.', side: 'bottom' as const },
-    { element: '#course-teaching-courses', title: 'Select minor courses', description: 'Choose the minor courses you want to assign.', side: 'top' as const },
+    { element: '#course-teaching-target button', action: 'click' as const, taskHint: 'Click a department card to continue.', title: 'Choose the teaching department', description: 'Select who will teach the minor courses.', side: 'right' as const },
+    { element: '#course-teaching-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Choose a year and program', description: 'Work on one year level. You can also select a receiving program.', side: 'bottom' as const },
+    { element: '#course-teaching-courses input[type="checkbox"]:not([disabled])', waitFor: '#course-teaching-courses', action: 'toggle' as const, skipIfMissing: true, taskHint: 'Tick a course checkbox to continue.', title: 'Select minor courses', description: 'Choose the minor courses you want to assign.', side: 'top' as const },
     { element: '#course-teaching-save', title: 'Save the assignment', description: 'Save before creating schedules or assigning instructors.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'course-teaching', isReady: !loading, steps: courseTeachingGuideSteps });
+  useWorkflowGuide({ id: 'course-teaching', isReady: !loading, steps: courseTeachingGuideSteps, mission: 'Assign Course Teaching' });
 
   useEffect(() => {
     let active = true;
@@ -117,6 +132,7 @@ export default function CourseTeachingAssignments() {
         programs: Array.isArray(response.data.programs) ? response.data.programs : [],
         currentDepartmentId: response.data.current_department_id ?? null,
         hasActiveCurriculum: response.data.has_active_curriculum ?? false,
+        activeTerm: response.data.active_term ?? null,
       };
     }, true).then((data) => {
       if (!active) return;
@@ -125,6 +141,7 @@ export default function CourseTeachingAssignments() {
       setPrograms(data.programs);
       setCurrentDepartmentId(data.currentDepartmentId);
       setHasActiveCurriculum(data.hasActiveCurriculum);
+      setActiveTerm(data.activeTerm);
       setError(null);
     }).catch((loadError) => {
       if (active) setError(errorMessage(loadError, 'Unable to load course teaching assignments.'));
@@ -133,12 +150,7 @@ export default function CourseTeachingAssignments() {
   }, []);
 
   const ownDepartment = departments.find((department) => department.id === currentDepartmentId) ?? null;
-  const availableDepartments = useMemo(
-    () => departments.filter((department) => Number(department.id) !== Number(currentDepartmentId)),
-    [currentDepartmentId, departments],
-  );
-  // Cross-department teaching must always be an explicit hand-off to another
-  // college. Never default to, or retain, the acting department as a target.
+  const availableDepartments = useMemo(() => departments, [departments]);
   const activeTarget = target && availableDepartments.some((department) => String(department.id) === target)
     ? target
     : String(availableDepartments[0]?.id ?? '');
@@ -252,7 +264,7 @@ export default function CourseTeachingAssignments() {
     setCourses(next);
     // The live flag, not the mount-time `cached` snapshot: writing that back would
     // record "no curriculum published" for a department that has one.
-    setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum });
+    setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeTerm });
     setSelectedIds((current) => current.filter((id) => !savedIds.includes(id)));
   };
 
@@ -317,7 +329,9 @@ export default function CourseTeachingAssignments() {
               <Building2 className="h-5 w-5 text-blue-600" />
               <div>
                 <h2 className="text-base font-black text-slate-900">Responsible Department</h2>
-                <p className="mt-0.5 text-xs text-slate-500">Choose who will handle the selected minor courses.</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Choose the department that will handle selected minor courses.
+              </p>
               </div>
             </div>
             <div className="space-y-2 p-3">
@@ -365,6 +379,13 @@ export default function CourseTeachingAssignments() {
               <span className="flex items-center gap-1.5 px-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
                 <GraduationCap className="h-4 w-4" />Year Level
               </span>
+              {/* The list is the active term's, not the whole curriculum's — say so
+                  here, where the counts it changes are read. */}
+              {activeTerm && (
+                <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                  {termLabel(activeTerm)}
+                </span>
+              )}
               {YEAR_LEVELS.map((year) => {
                 const count = byYear.minors.get(year)?.length ?? 0;
                 const selected = activeYear === year;
@@ -461,7 +482,9 @@ export default function CourseTeachingAssignments() {
                       // different problem from an empty year — and a different fix.
                       ? `${ownDepartment?.department_code ?? 'Your department'} has no active curriculum, so there are no courses to assign yet. Publish one to manage its minor courses here.`
                       : yearCourses.length === 0
-                        ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum.`
+                        // The list is one semester's, so name it — otherwise an empty
+                        // year reads as a curriculum that is missing courses.
+                        ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeTerm ? ` for ${termLabel(activeTerm)}` : ''}.`
                         : 'No courses match this filter.'}
                   </p>
                 )}

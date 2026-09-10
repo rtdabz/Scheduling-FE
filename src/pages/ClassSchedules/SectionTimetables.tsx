@@ -9,6 +9,7 @@ import {
   type SchedulerCacheData,
 } from "./SchedulerPanel/hooks/initialDataMapper";
 import type { ScheduleItem } from "./SchedulerPanel/types";
+import { yearLevelLabel } from "../../lib/termLabel";
 
 type DeliveryModeFilter = "all" | ScheduleItem["mode"];
 
@@ -23,6 +24,8 @@ const emptyData: SchedulerCacheData = {
   schedules: [],
   fieldCourseAssignmentEnabled: false,
   fieldCourseCodes: [],
+  schedulingReady: true,
+  hasDean: true,
 };
 
 const formatActiveTerm = (data: SchedulerCacheData): string => {
@@ -114,7 +117,7 @@ export default function SectionTimetables() {
 
   return (
     <div className="mt-6 space-y-4">
-      <div className="flex flex-col gap-3 border-y border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div id="section-timetables-filters" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
           <label className="flex min-w-0 items-center gap-2 text-xs font-bold text-slate-600">
             <CalendarDays className="h-4 w-4 shrink-0 text-[#4e0a10]" />
@@ -128,7 +131,7 @@ export default function SectionTimetables() {
               {data.sections.length === 0 && <option value="">No sections available</option>}
               {data.sections.map((section) => (
                 <option key={section.id} value={section.id}>
-                  {section.name} - Year {section.yearLevel}
+                  {section.name} - {yearLevelLabel(section.yearLevel)}
                 </option>
               ))}
             </select>

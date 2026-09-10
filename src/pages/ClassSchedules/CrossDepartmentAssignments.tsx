@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Pencil, UserCheck } from 'lucide-react';
 import InstructorAssignment from './InstructorAssignment';
 import type { InstructorAssignmentWorkspaceState } from './InstructorAssignment';
@@ -27,6 +27,7 @@ export default function CrossDepartmentAssignments() {
     allAssigned: false,
     assignmentDone: false,
   });
+  const selectedDepartmentRef = useRef<number | null>(null);
   const receivingFaculties = useMemo(
     () => scheduler.faculties.filter((faculty) => (
       scheduler.userDepartmentId !== null
@@ -48,22 +49,22 @@ export default function CrossDepartmentAssignments() {
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
   const crossDepartmentGuideSteps = useMemo(() => [
-    { element: '#cross-department-guide', title: 'Assign delegated courses', description: 'This page shows courses your department was asked to teach.', side: 'bottom' as const },
-    { element: '#instructor-assignment-departments', title: 'Choose a source department', description: 'Open the department that owns the course.', side: 'top' as const },
+    { element: '[data-tour="department-card"]', waitFor: '#instructor-assignment-departments', action: 'click' as const, taskHint: 'Click a department card to continue.', title: 'Choose a source department', description: 'Open the department that owns the course.', side: 'top' as const },
+    { element: '#assignment-section-filter', action: 'select' as const, taskHint: 'Change the section filter to continue.', title: 'Filter by section', description: 'Show one section at a time when needed.', side: 'bottom' as const },
     { element: '#instructor-assignment-timetable', title: 'Assign an instructor', description: 'Select an unassigned class, choose an eligible instructor, and save.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'cross-department-assignment', isReady: !scheduler.isLoading && isAssignmentWorkspaceReady, steps: crossDepartmentGuideSteps });
+  useWorkflowGuide({ id: 'cross-department-assignment', isReady: !scheduler.isLoading && isAssignmentWorkspaceReady, steps: crossDepartmentGuideSteps, mission: 'Cover Delegated Courses' });
   const allAssigned = workspaceState.allAssigned;
   const visibleDelegatedSchedules = useMemo(
     () => delegatedSchedules.filter((schedule) => workspaceState.scheduleIds.includes(Number(schedule.id))),
     [delegatedSchedules, workspaceState.scheduleIds],
   );
 
-  useEffect(() => {
-    setCompletionOverride(null);
-  }, [workspaceState.selectedDepartmentId]);
-
   const handleWorkspaceStateChange = useCallback((state: InstructorAssignmentWorkspaceState) => {
+    if (selectedDepartmentRef.current !== state.selectedDepartmentId) {
+      selectedDepartmentRef.current = state.selectedDepartmentId;
+      setCompletionOverride(null);
+    }
     setWorkspaceState(state);
   }, []);
   const handleWorkflowReady = useCallback(() => setIsAssignmentWorkspaceReady(true), []);
@@ -95,26 +96,41 @@ export default function CrossDepartmentAssignments() {
         assignmentLocked={assignmentDone}
         onWorkspaceStateChange={handleWorkspaceStateChange}
         headerActions={(
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            disabled={assignmentDone || visibleDelegatedSchedules.length === 0 || !visibleDelegatedSchedules.some((schedule) => ['approved', 'faculty_assignment'].includes(schedule.status))}
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#4e0a10] px-3 text-xs font-black text-white shadow-sm transition hover:bg-[#6b1118] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <UserCheck className="h-4 w-4" />
-            Auto-Assign Instructor
-          </button>
-        )}
-        footerActions={(
-          <button
-            type="button"
-            onClick={() => { void handleDoneToggle(); }}
-            disabled={isUpdatingDone || (!assignmentDone && !allAssigned)}
-            className="inline-flex items-center gap-2 rounded-md border border-[#4e0a10] px-4 py-2 text-xs font-bold text-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isUpdatingDone ? <LoadingSpinner className="h-4 w-4" /> : assignmentDone ? <Pencil className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-            {isUpdatingDone ? 'Updating...' : assignmentDone ? 'Edit Assignments' : 'Done Assigning'}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setIsOpen(true)}
+              disabled={assignmentDone || visibleDelegatedSchedules.length === 0 || !visibleDelegatedSchedules.some((schedule) => ['approved', 'faculty_assignment', 'reassignment'].includes(schedule.status))}
+              className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#4e0a10] px-3 text-xs font-black text-white shadow-sm transition hover:bg-[#6b1118] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <UserCheck className="h-4 w-4" />
+              Auto-Assign Instructor
+            </button>
+            {assignmentDone && (
+              <button
+                type="button"
+                onClick={() => { void handleDoneToggle(); }}
+                disabled={isUpdatingDone}
+                title="Reassign instructors for this timetable"
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#C9952A] px-3 text-xs font-black text-white shadow-sm transition hover:bg-[#b8841f] disabled:cursor-wait disabled:opacity-70"
+              >
+                {isUpdatingDone ? <LoadingSpinner className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                {isUpdatingDone ? 'Unlocking...' : 'Reassignment'}
+              </button>
+            )}
+            {!assignmentDone && (
+              <button
+                type="button"
+                onClick={() => { void handleDoneToggle(); }}
+                disabled={isUpdatingDone || !allAssigned}
+                title={!allAssigned ? 'Assign all instructors before marking done' : undefined}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#4e0a10] bg-white px-3 text-xs font-black text-[#4e0a10] shadow-sm transition hover:bg-[#4e0a10]/5 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isUpdatingDone ? <LoadingSpinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                {isUpdatingDone ? 'Updating...' : 'Done Assigning'}
+              </button>
+            )}
+          </>
         )}
       />
       <AutoAssignModal

@@ -3,12 +3,15 @@ import { CalendarClock, ChevronDown, DoorOpen, LayoutGrid, List, MapPin, X } fro
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
+  SLOT_HEIGHT_PX,
   getGridCardStyles,
   slotToTimeStr
 } from "../constants";
 import type { Department, ScheduleItem, Room } from "../types";
 import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
+import { slotCount } from "../../../../lib/timeGrid";
+import { UNLIMITED_SHARED_SLOT_LIMIT } from "../hooks/useConflict";
 
 interface RoomViewModalProps {
   rooms: Room[];
@@ -20,7 +23,7 @@ interface RoomViewModalProps {
   departments: Department[];
 }
 
-const SLOT_COUNT = 24;
+
 export default function RoomViewModal({
   rooms,
   isRoomViewOpen,
@@ -30,6 +33,13 @@ export default function RoomViewModal({
   schedules,
   departments,
 }: RoomViewModalProps) {
+  /**
+   * The room grid renders the same window as every other timetable. It was
+   * pinned at 24 slots, which cut the day off at 7:00 PM and hid any evening
+   * booking in the room it was meant to prove was free. Read during render, not
+   * at module scope: `/initial-data` configures the window after import.
+   */
+  const SLOT_COUNT = slotCount();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState(10);
@@ -118,7 +128,14 @@ export default function RoomViewModal({
     : room?.roomType === "field"
       ? currentDepartment?.field_slot_limit
       : null;
-  const sharedRoomCapacity = Math.max(1, Number(configuredSharedCapacity ?? room?.maxConcurrentClasses ?? 1) || 1);
+  // No configured limit means the shared resource is uncapped, matching the
+  // scheduler. Only fall back to the room's own concurrency when one is set.
+  const sharedRoomCapacity = configuredSharedCapacity == null
+    ? UNLIMITED_SHARED_SLOT_LIMIT
+    : Math.max(1, Number(configuredSharedCapacity) || 1);
+  const sharedRoomCapacityLabel = Number.isFinite(sharedRoomCapacity)
+    ? String(sharedRoomCapacity)
+    : "no limit";
   const peakSharedOccupancy = useMemo(() => {
     if (!isSharedRoom) return 0;
 
@@ -216,7 +233,7 @@ export default function RoomViewModal({
                 ? "bg-red-50 text-red-700 border-red-200"
                 : "bg-emerald-50 text-emerald-700 border-emerald-200"
             }`}>
-              Department capacity {peakSharedOccupancy}/{sharedRoomCapacity}
+              Department capacity {peakSharedOccupancy}/{sharedRoomCapacityLabel}
             </span>
           )}
           <div className="ml-auto flex items-center rounded-lg border border-slate-200 bg-white p-0.5" role="group" aria-label="Room view mode">
@@ -345,13 +362,14 @@ export default function RoomViewModal({
               )}
             </div>
           ) : (
+          <div className="min-h-0 flex-1 overflow-auto">
           <WeeklyTimetableGrid
             days={DAYS}
             slotCount={SLOT_COUNT}
             headerHeight={GRID_HEADER_HEIGHT_PX}
-            rowTemplate={`repeat(${SLOT_COUNT}, minmax(0, 1fr))`}
+            rowTemplate={`repeat(${SLOT_COUNT}, ${SLOT_HEIGHT_PX}px)`}
             minWidth={0}
-            className="min-h-0 flex-1 w-full"
+            className="w-full shrink-0"
             getTimeLabel={slotToTimeStr}
             getDayCount={(dayIndex) => roomClasses.filter((item) => item.dayIndex === dayIndex).length}
           >
@@ -412,7 +430,7 @@ export default function RoomViewModal({
                       <div className={`absolute right-1 top-1 rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${
                         exceedsCapacity ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
                       }`}>
-                        {groupOverlapCount}/{sharedRoomCapacity}
+                        {groupOverlapCount}/{sharedRoomCapacityLabel}
                       </div>
                     )}
                     {subgroups.map((sub) => (
@@ -435,6 +453,7 @@ export default function RoomViewModal({
               );
             })}
           </WeeklyTimetableGrid>
+          </div>
           )}
         </div>
       </div>

@@ -11,3 +11,5 @@ export { default as SectionHeader } from './SectionHeader';
 export { default as SummaryMetricCard } from './SummaryMetricCard';
 export { default as TeachingLoadCard } from './TeachingLoadCard';
 export type { TeachingLoadItem } from './TeachingLoadCard';
+export { default as DashboardMetricCard } from './DashboardMetricCard';
+export type { DashboardMetricTone } from './DashboardMetricCard';

@@ -3,7 +3,8 @@ import { AlertTriangle, Calendar, Clock, Info, Layers, MapPin, RefreshCw, User, 
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
-import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
+import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
+import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
 interface Section {
   id: string;
@@ -132,37 +133,19 @@ const dayMapToIndex: Record<string, number> = {
 const DAYS_MAP: Schedule["day"][] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const timeStrToSlot = (timeStr: string): number => {
-  const parts = timeStr.split(':');
-  if (parts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  const totalMinutes = hours * 60 + minutes;
-  return Math.max(0, Math.floor((totalMinutes - 420) / 30));
+  return timeToSlot(timeStr);
 };
 
 const slotToTimeStr12h = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  let hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const ampm = hours >= 12 ? "PM" : "AM";
-  if (hours > 12) hours -= 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  return slotToTimeLabel(slotIndex);
 };
 
 const DAYS: Schedule["day"][] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const START_HOUR = 7;
-const END_HOUR = 19;
-const SLOT_HEIGHT_PX = 24;
+/** Aliased to the shared geometry so cards keep matching the rows they sit on. */
+const SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
 
 const slotToTime = (slotIndex: number): string => {
-  const totalMinutes = START_HOUR * 60 + slotIndex * 30;
-  let hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+  return slotToTimeLabel(slotIndex);
 };
 
 const parseTimeToSlot = (time: string): number => {
@@ -173,7 +156,7 @@ const parseTimeToSlot = (time: string): number => {
   const ampm = match[3].toUpperCase();
   if (ampm === "PM" && hour !== 12) hour += 12;
   if (ampm === "AM" && hour === 12) hour = 0;
-  return Math.max(0, ((hour * 60 + minutes) - START_HOUR * 60) / 30);
+  return Math.max(0, ((hour * 60 + minutes) - gridOpeningMinutes()) / slotMinutes());
 };
 
 const getModeLabel = (mode: Schedule["mode"]) => {
@@ -465,13 +448,18 @@ export default function DeanScheduleViewer() {
 
   const conflictMap = useMemo(() => buildConflictMap(filteredSchedules), [filteredSchedules]);
 
+  /**
+   * Every timetable in the system shows the same 7:00 AM-8:30 PM window. This
+   * screen used to crop the grid to the extent of whatever was filtered in, so
+   * the same class sat at a different height depending on the filter and did
+   * not line up with the builder it was scheduled on.
+   */
   const gridRange = useMemo(() => {
-    if (filteredSchedules.length === 0) {
-      return { start: 0, end: 8 };
-    }
-    const start = Math.max(0, Math.min(...filteredSchedules.map((schedule) => parseTimeToSlot(schedule.startTime))) - 1);
-    const end = Math.min((END_HOUR - START_HOUR) * 2, Math.max(...filteredSchedules.map((schedule) => parseTimeToSlot(schedule.endTime))) + 1);
-    return { start, end: Math.max(end, start + 4) };
+    const latestEnd = filteredSchedules.reduce(
+      (max, schedule) => Math.max(max, parseTimeToSlot(schedule.endTime)),
+      0,
+    );
+    return { start: 0, end: Math.max(slotCount(), latestEnd) };
   }, [filteredSchedules]);
 
   const timeSlots = useMemo(() => (
@@ -501,8 +489,8 @@ export default function DeanScheduleViewer() {
 
 
   return (
-    <div>
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+    <div id="schedules-page">
+      <div id="schedules-list" className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-row items-center justify-between gap-4">
           <div className="flex flex-row items-center gap-3">
             <select
@@ -593,8 +581,6 @@ export default function DeanScheduleViewer() {
               days={DAYS}
               slotCount={timeSlots.length}
               startSlot={gridRange.start}
-              slotHeight={SLOT_HEIGHT_PX}
-              timeColumnWidth={88}
               minWidth={1100}
               getTimeLabel={(slot) => slotToTime(slot)}
               getDayCount={(dayIndex) => filteredSchedules.filter((schedule) => schedule.day === DAYS[dayIndex]).length}

@@ -21,8 +21,10 @@ interface SchedulingSettings {
   gec_split_schedule_override_enabled: boolean;
   field_evening_schedule_enabled: boolean;
   sunday_online_only_enabled: boolean;
-  online_slot_limit: number;
-  field_slot_limit: number;
+  // Null means the resource is not capped, which is the default. Neither is a
+  // room: an online class occupies no space and the field is shared ground.
+  online_slot_limit: number | null;
+  field_slot_limit: number | null;
   lecture_lab_available: boolean;
 }
 
@@ -278,11 +280,11 @@ export default function SecretarySettings() {
   };
   const settingsGuideSteps = useMemo(() => [
     { element: '#secretary-settings-overview', title: 'Check the department profile', description: 'See the active profile and its recommended settings.', side: 'bottom' as const, align: 'start' as const },
-    { element: '#configuration-override', title: 'Set scheduling rules', description: 'Open this section to change splitting, evening, Sunday, and lab rules.', side: 'bottom' as const },
+    { element: '#configuration-override > button', action: 'click' as const, taskHint: 'Click the section header to open it.', title: 'Set scheduling rules', description: 'Open this section to change splitting, evening, Sunday, and lab rules.', side: 'bottom' as const },
     { element: '#resource-slot-limits', title: 'Set slot limits', description: 'Choose how many online or field classes can use the same time slot.', side: 'top' as const },
     { element: '#secretary-settings-profile-guide', title: 'Read the profile guide', description: 'Use these tips to choose the right settings.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'secretary-settings', isReady: true, steps: settingsGuideSteps });
+  useWorkflowGuide({ id: 'secretary-settings', isReady: true, steps: settingsGuideSteps, mission: 'Configure Scheduling Rules' });
   return (
     <div className="min-h-full p-1">
       <section id="secretary-settings-overview" className="mb-3 border border-slate-200 bg-white px-5 py-5 shadow-sm" style={{ borderRadius: 10 }}>
@@ -478,12 +480,17 @@ export default function SecretarySettings() {
                   min={1}
                   max={100}
                   disabled={isLoading || isSaving || !settings}
-                  value={settings?.online_slot_limit ?? 3}
+                  placeholder="None"
+                  value={settings?.online_slot_limit ?? ""}
                   onChange={(event) => {
-                    const value = Math.max(1, Math.min(100, Number(event.target.value) || 1));
+                    const raw = event.target.value.trim();
+                    const value = raw === "" ? null : Math.max(1, Math.min(100, Number(raw) || 1));
                     setSettings((current) => current ? { ...current, online_slot_limit: value } : current);
                   }}
-                  onBlur={(event) => updateSetting({ online_slot_limit: Math.max(1, Math.min(100, Number(event.target.value) || 1)) })}
+                  onBlur={(event) => {
+                    const raw = event.target.value.trim();
+                    updateSetting({ online_slot_limit: raw === "" ? null : Math.max(1, Math.min(100, Number(raw) || 1)) });
+                  }}
                   className="h-9 w-20 border border-slate-300 px-2 text-center text-sm font-semibold text-slate-900 outline-none focus:border-[#6b0f1a]"
                   style={{ borderRadius: 8 }}
                 />
@@ -503,12 +510,17 @@ export default function SecretarySettings() {
                   min={1}
                   max={100}
                   disabled={isLoading || isSaving || !settings}
-                  value={settings?.field_slot_limit ?? 3}
+                  placeholder="None"
+                  value={settings?.field_slot_limit ?? ""}
                   onChange={(event) => {
-                    const value = Math.max(1, Math.min(100, Number(event.target.value) || 1));
+                    const raw = event.target.value.trim();
+                    const value = raw === "" ? null : Math.max(1, Math.min(100, Number(raw) || 1));
                     setSettings((current) => current ? { ...current, field_slot_limit: value } : current);
                   }}
-                  onBlur={(event) => updateSetting({ field_slot_limit: Math.max(1, Math.min(100, Number(event.target.value) || 1)) })}
+                  onBlur={(event) => {
+                    const raw = event.target.value.trim();
+                    updateSetting({ field_slot_limit: raw === "" ? null : Math.max(1, Math.min(100, Number(raw) || 1)) });
+                  }}
                   className="h-9 w-20 border border-slate-300 px-2 text-center text-sm font-semibold text-slate-900 outline-none focus:border-[#6b0f1a]"
                   style={{ borderRadius: 8 }}
                 />
@@ -633,13 +645,21 @@ export default function SecretarySettings() {
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className="border border-sky-200 bg-sky-50 p-3" style={{ borderRadius: 7 }}>
                 <div className="text-[10px] font-bold uppercase text-sky-700">Online</div>
-                <div className="mt-1 text-2xl font-bold text-slate-950">{settings?.online_slot_limit ?? 3}</div>
-                <div className="text-[11px] text-slate-600">sections per slot</div>
+                <div className="mt-1 text-2xl font-bold text-slate-950">
+                  {settings?.online_slot_limit ?? <span className="text-lg">No limit</span>}
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  {settings?.online_slot_limit == null ? 'not capped' : 'sections per slot'}
+                </div>
               </div>
               <div className="border border-emerald-200 bg-emerald-50 p-3" style={{ borderRadius: 7 }}>
                 <div className="text-[10px] font-bold uppercase text-emerald-700">Field</div>
-                <div className="mt-1 text-2xl font-bold text-slate-950">{settings?.field_slot_limit ?? 3}</div>
-                <div className="text-[11px] text-slate-600">sections per slot</div>
+                <div className="mt-1 text-2xl font-bold text-slate-950">
+                  {settings?.field_slot_limit ?? <span className="text-lg">No limit</span>}
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  {settings?.field_slot_limit == null ? 'not capped' : 'sections per slot'}
+                </div>
               </div>
             </div>
           </section>

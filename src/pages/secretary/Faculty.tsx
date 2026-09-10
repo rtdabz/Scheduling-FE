@@ -36,6 +36,7 @@ import FacultyAvailabilityPanel from '../../components/faculty/FacultyAvailabili
 import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 
 const DEPARTMENT_COLORS: Record<string, string> = {
   'INFORMATION TECHNOLOGY':      'bg-blue-100 border-blue-400 text-blue-900',
@@ -649,68 +650,24 @@ export default function SecretaryFaculty() {
   }, [filteredFaculties]);
 
   const instructorGuideSteps = useMemo(() => [
-    { element: '#instructors-filters', title: 'Find an instructor', description: 'Search by name or filter by department, job type, or workload.', side: 'bottom' as const },
+    { element: '#instructors-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Find an instructor', description: 'Search by name or filter by department, job type, or workload.', side: 'bottom' as const },
     { element: '#instructors-summary', title: 'Check teaching loads', description: 'See who is available, fully loaded, overloaded, or pro bono.', side: 'bottom' as const },
-    { element: '#instructors-workspace', title: 'Manage instructors', description: 'Open an instructor to update details, load, and availability.', side: 'top' as const },
+    { element: '#instructors-add-button', action: 'click' as const, taskHint: 'Click Add Instructor to open the form.', title: 'Add an instructor', description: 'New faculty records start from this page.', side: 'bottom' as const },
+    { element: '#instructor-first-name', waitFor: '#instructor-form', action: 'input' as const, taskHint: 'Type the first name to continue.', title: 'Enter the details', description: 'Start with the official first name.', side: 'bottom' as const },
+    { element: '#instructor-last-name', waitFor: '#instructor-form', action: 'input' as const, taskHint: 'Type the last name to continue.', title: 'Add the last name', description: 'Family name as it appears on official records.', side: 'bottom' as const },
+    { element: '#instructor-form', action: 'submit' as const, taskHint: 'Click Add Instructor to save the record.', title: 'Save the instructor', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'instructors', isReady: true, steps: instructorGuideSteps });
+  useWorkflowGuide({ id: 'instructors', isReady: true, steps: instructorGuideSteps, mission: 'Manage Instructors' });
 
   return (
     <div className="space-y-6 font-sans pb-12">
       {/* Summary Statistics Dashboard Row */}
-      <div id="instructors-summary" className="grid grid-cols-2 md:grid-cols-5 gap-5">
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-gray-900 mt-0.5">{summaryStats.total}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <CheckCircle2 size={12} className="text-emerald-500" />
-            Available
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{summaryStats.available}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Info size={12} className="text-blue-500" />
-            Fully Loaded
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{summaryStats.fullyLoaded}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <AlertCircle size={12} className="text-red-500" />
-            Overloaded
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-red-700 mt-0.5">{summaryStats.overloaded}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200 col-span-2 md:col-span-1">
-          <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Award size={12} className="text-purple-500" />
-            Pro Bono
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-purple-700 mt-0.5">{summaryStats.probono}</p>
-          )}
-        </div>
+      <div id="instructors-summary" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-5">
+        <DashboardMetricCard label="Total Instructors" value={isLoading ? '—' : summaryStats.total} detail="Active faculty" icon={UserRound} tone="brand" />
+        <DashboardMetricCard label="Available" value={isLoading ? '—' : summaryStats.available} detail="Ready for assignment" icon={CheckCircle2} tone="good" />
+        <DashboardMetricCard label="Fully Loaded" value={isLoading ? '—' : summaryStats.fullyLoaded} detail="At required capacity" icon={Info} tone="info" />
+        <DashboardMetricCard label="Overloaded" value={isLoading ? '—' : summaryStats.overloaded} detail="Over required capacity" icon={AlertCircle} tone="alert" />
+        <DashboardMetricCard label="Pro Bono" value={isLoading ? '—' : summaryStats.probono} detail="Additional service load" icon={Award} tone="accent" className="col-span-2 md:col-span-1" />
       </div>
 
       {/* Search and Filters Bar */}
@@ -806,6 +763,7 @@ export default function SecretaryFaculty() {
           {/* Add button inside filter bar */}
           {canManageFaculty && (
             <button
+              id="instructors-add-button"
               onClick={() => {
                 setIsEditMode(false);
                 setEditingId(null);
@@ -998,6 +956,7 @@ export default function SecretaryFaculty() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleViewDetails(f)}
+                        data-tour="view-details"
                         className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
                       >
                         View Details
@@ -1141,6 +1100,7 @@ export default function SecretaryFaculty() {
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleViewDetails(f)}
+                              data-tour="view-details"
                               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-[#5A1220] hover:border-[#C9952A] hover:bg-amber-50 hover:text-[#410b15] cursor-pointer"
                               aria-label="View Details"
                               title="View Details"
@@ -1433,7 +1393,7 @@ export default function SecretaryFaculty() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
+            <form id="instructor-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
               {/* Photo Upload Section */}
               <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
                 <div className="relative group">
@@ -1484,6 +1444,7 @@ export default function SecretaryFaculty() {
                     First Name <span className="text-red-500">*</span>
                   </label>
                   <input
+                    id="instructor-first-name"
                     type="text"
                     value={firstName}
                     onChange={(e) => {
@@ -1504,6 +1465,7 @@ export default function SecretaryFaculty() {
                     Last Name <span className="text-red-500">*</span>
                   </label>
                   <input
+                    id="instructor-last-name"
                     type="text"
                     value={lastName}
                     onChange={(e) => {

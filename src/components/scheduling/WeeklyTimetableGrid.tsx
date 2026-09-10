@@ -1,6 +1,23 @@
 import React from "react";
 import { Clock } from "lucide-react";
 import Skeleton from "../ui/Skeleton";
+import { slotCount as gridSlotCount, slotToTimeLabel } from "../../lib/timeGrid";
+
+/**
+ * Canonical grid geometry, shared by every timetable in the system.
+ *
+ * Each screen used to pick its own row height, header height and time-column
+ * width (24/26/28/34px rows, 40/44/48/54px headers, 62/80/88/96px gutters), so
+ * the same 7:00 AM-8:30 PM window rendered at a different scale in the builder,
+ * the approval modals, the room view and the dashboards. Cards are positioned
+ * by grid row, so a screen that overrode the row height also had to repeat that
+ * number in its card `height` calculation - and the two drifted apart.
+ *
+ * Override these per call site only when a layout genuinely cannot fit them.
+ */
+export const GRID_SLOT_HEIGHT_PX = 24;
+export const GRID_HEADER_HEIGHT_PX = 48;
+export const GRID_TIME_COLUMN_WIDTH_PX = 80;
 
 // Shared by calendar views that must use the same weekday ordering as the grid.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -16,7 +33,8 @@ export const WEEK_DAYS = [
 
 interface WeeklyTimetableGridProps {
   days?: readonly string[];
-  slotCount: number;
+  /** Defaults to the configured 7:00 AM-8:30 PM window. */
+  slotCount?: number;
   startSlot?: number;
   headerHeight?: number;
   timeColumnWidth?: number;
@@ -26,7 +44,7 @@ interface WeeklyTimetableGridProps {
   className?: string;
   style?: React.CSSProperties;
   disabledDayIndexes?: number[];
-  getTimeLabel: (slot: number) => string;
+  getTimeLabel?: (slot: number) => string;
   getDayCount?: (dayIndex: number) => number;
   renderCell?: (dayIndex: number, slot: number) => React.ReactNode;
   children?: React.ReactNode;
@@ -35,17 +53,17 @@ interface WeeklyTimetableGridProps {
 
 export default function WeeklyTimetableGrid({
   days = WEEK_DAYS,
-  slotCount,
+  slotCount = gridSlotCount(),
   startSlot = 0,
-  headerHeight = 48,
-  timeColumnWidth = 80,
-  slotHeight = 24,
+  headerHeight = GRID_HEADER_HEIGHT_PX,
+  timeColumnWidth = GRID_TIME_COLUMN_WIDTH_PX,
+  slotHeight = GRID_SLOT_HEIGHT_PX,
   rowTemplate,
   minWidth = 840,
   className = "",
   style,
   disabledDayIndexes = [],
-  getTimeLabel,
+  getTimeLabel = slotToTimeLabel,
   getDayCount,
   renderCell,
   children,
@@ -55,7 +73,7 @@ export default function WeeklyTimetableGrid({
 
   return (
     <div
-      className={`relative grid select-none overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`timetable-grid-root relative grid select-none overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
       style={{
         minHeight: `${headerHeight + slotCount * slotHeight}px`,
         minWidth,
@@ -65,7 +83,7 @@ export default function WeeklyTimetableGrid({
       }}
     >
       <div
-        className="sticky left-0 top-0 z-30 flex items-center justify-center border-b border-r border-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] p-2 text-center text-[10px] font-black uppercase tracking-wider text-[#c9952a]"
+        className="timetable-grid-header sticky left-0 top-0 z-30 flex items-center justify-center border-b border-r border-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] p-2 text-center text-[10px] font-black uppercase tracking-wider text-[#c9952a]"
         style={{ gridColumn: 1, gridRow: 1 }}
       >
         {isLoading ? <><Skeleton className="mr-1 h-3.5 w-3.5 rounded-full" /><Skeleton className="h-2.5 w-8" /></> : <><Clock className="mr-1 h-3.5 w-3.5" />Time</>}
@@ -78,7 +96,7 @@ export default function WeeklyTimetableGrid({
         return (
           <div
             key={day}
-            className={`sticky top-0 z-20 flex flex-col items-center justify-center border-b border-r p-1.5 text-center text-xs font-bold uppercase tracking-wider ${
+            className={`timetable-grid-header sticky top-0 z-20 flex flex-col items-center justify-center border-b border-r p-1.5 text-center text-xs font-bold uppercase tracking-wider ${
               isDisabled
                 ? "border-slate-700/30 bg-slate-800/90 text-slate-500"
                 : "border-[#c9952a]/20 border-b-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white"

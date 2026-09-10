@@ -23,7 +23,13 @@ export interface DepartmentScheduleStatusData {
   department_id: number;
   department_name: string;
   sections: SectionStatusItem[];
+  /** Whether an active Dean is assigned to this department. */
+  has_dean?: boolean;
 }
+
+/** Shown wherever submitting is blocked for want of a Dean. */
+export const DEAN_REQUIRED_MESSAGE =
+  'Submission unavailable. Please assign a Department Dean before submitting the schedule.';
 
 interface StageCounts {
   /** draft + revision — sections that still need drafting work */
@@ -46,6 +52,8 @@ interface UseDepartmentScheduleStatusReturn {
   totalSections: number;
   draftingProgress: number;
   canSubmit: boolean;
+  /** False when no active Dean is assigned; submitting is refused server-side. */
+  hasDean: boolean;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -65,6 +73,9 @@ export function useDepartmentScheduleStatus(
   const cachedStatus = statusCacheKey ? getCachedData<DepartmentScheduleStatusData>(statusCacheKey) : undefined;
   const [sections, setSections] = useState<SectionStatusItem[]>(cachedStatus?.sections ?? []);
   const [departmentName, setDepartmentName] = useState(cachedStatus?.department_name ?? '');
+  // Assume a Dean until told otherwise, so a stale cache or a failed fetch never
+  // blocks submitting on its own -- the backend is the authority either way.
+  const [hasDean, setHasDean] = useState(cachedStatus?.has_dean ?? true);
   const [loading, setLoading] = useState(!!departmentId && !hasCachedData(statusCacheKey));
   const [error, setError] = useState<string | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
@@ -93,6 +104,7 @@ export function useDepartmentScheduleStatus(
         if (!cancelled) {
           setSections(data.sections);
           setDepartmentName(data.department_name);
+          setHasDean(data.has_dean ?? true);
         }
       } catch {
         if (!cancelled) {
@@ -149,10 +161,11 @@ export function useDepartmentScheduleStatus(
     });
   }, [sections]);
 
-  // Submit is allowed only when every year level is complete (no drafts remaining)
+  // Submit is allowed only when every year level is complete (no drafts
+  // remaining) and the department has a Dean to receive the submission.
   const canSubmit = useMemo(() =>
-    yearLevels.length > 0 && yearLevels.every(yl => yl.isComplete)
-  , [yearLevels]);
+    hasDean && yearLevels.length > 0 && yearLevels.every(yl => yl.isComplete)
+  , [hasDean, yearLevels]);
 
   return {
     sections,
@@ -163,6 +176,7 @@ export function useDepartmentScheduleStatus(
     totalSections,
     draftingProgress,
     canSubmit,
+    hasDean,
     loading,
     error,
     refetch,

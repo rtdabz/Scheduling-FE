@@ -161,7 +161,12 @@ const drawTableBody = (doc: jsPDF, firstRow: number, lineCount: number, lines: L
     drawText(doc, line.code, { from: "A", row }, cell);
     drawText(doc, line.title, { from: "B", to: "C", row }, { ...cell, align: "left", padding: 1.4 });
     drawText(doc, line.day, { from: "D", row }, cell);
-    drawTextLines(doc, line.times, { from: "E", row }, cell);
+    drawTextLines(doc, line.times, { from: "E", row }, {
+      ...cell,
+      padding: 0.25,
+      separator: "cellRule",
+      fixedSize: true,
+    });
     drawText(doc, line.section, { from: "F", row }, cell);
     drawText(doc, formatQuantity(line.lectureUnits), { from: "H", row }, cell);
     drawText(doc, formatQuantity(line.laboratoryUnits), { from: "I", row }, cell);

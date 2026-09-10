@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, RotateCcw, UserMinus, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, UserCheck, X } from "lucide-react";
+import { isDepartmentSectionWithdrawable } from "../constants";
 import type { DepartmentSectionProgress, WithdrawalStage } from "../types";
 
 interface WithdrawSubmissionModalProps {
@@ -24,14 +25,15 @@ export default function WithdrawSubmissionModal({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selectableSections = useMemo(
-    () => sections.filter((section) => ["submitted", "approved_by_dean", "approved", "faculty_assignment"].includes(section.status)),
+    () => sections.filter((section) => isDepartmentSectionWithdrawable(
+      section.status,
+      section.assignedInstructorBlocks,
+      section.facultyAssignmentDone,
+    )),
     [sections]
   );
 
-  // Unlocking a section for revision releases its instructor assignments: the
-  // schedule they were made against is about to change, and assignment is only
-  // valid once the schedule is VPAA-approved again.
-  const releasedInstructorBlocks = useMemo(
+  const preservedInstructorBlocks = useMemo(
     () => selectableSections
       .filter((section) => selectedIds.includes(section.sectionId))
       .reduce((total, section) => total + (section.assignedInstructorBlocks ?? 0), 0),
@@ -49,8 +51,8 @@ export default function WithdrawSubmissionModal({
   if (!isOpen) return null;
 
   const withdrawalDescription = withdrawalStage === "vpaa_approved"
-    ? "VPAA approval will be revoked. Sections you select below will be unlocked for revision; unselected sections will return to Done."
-    : `The department submission will be pulled back from ${withdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review. Sections you select below will be unlocked for revision; unselected sections remain Done.`;
+    ? "VPAA approval will be revoked for the sections you select below. Unselected sections keep their current workflow status."
+    : `The selected sections will be pulled back from ${withdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review and unlocked for revision. Unselected sections remain unchanged.`;
 
   const toggleSection = (sectionId: string) => {
     setSelectedIds((current) =>
@@ -100,14 +102,14 @@ export default function WithdrawSubmissionModal({
         <div className="px-5 pb-5">
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            Select only the sections that need changes. All other sections will stay completed.
+            Select only the sections that need changes. All other sections remain unchanged.
           </div>
-          {releasedInstructorBlocks > 0 && (
-            <div className="mb-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-800">
-              <UserMinus className="mt-0.5 h-4 w-4 shrink-0" />
-              {releasedInstructorBlocks === 1
-                ? "1 instructor assignment in the selected sections will be released and must be made again after re-approval."
-                : `${releasedInstructorBlocks} instructor assignments in the selected sections will be released and must be made again after re-approval.`}
+          {preservedInstructorBlocks > 0 && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+              <UserCheck className="mt-0.5 h-4 w-4 shrink-0" />
+              {preservedInstructorBlocks === 1
+                ? "1 instructor assignment in the selected sections will remain assigned during revision."
+                : `${preservedInstructorBlocks} instructor assignments in the selected sections will remain assigned during revision.`}
             </div>
           )}
           <div className="overflow-hidden rounded-xl border border-slate-200">

@@ -14,8 +14,10 @@ import {
   Plus,
   Link2Off,
   LayoutGrid,
-  List
+  List,
+  ShieldCheck
 } from 'lucide-react';
+import UserAccessMatrixModal, { type MatrixUser } from './UserAccessMatrixModal';
 import {
   useReactTable,
   getCoreRowModel,
@@ -33,6 +35,9 @@ import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 interface User {
   id: number;
   name: string;
+  first_name: string;
+  middle_initial: string;
+  last_name: string;
   username: string;
   email: string;
   role: string;
@@ -46,6 +51,9 @@ interface User {
   googleLinked: boolean;
   facultyProfileId?: number | null;
   createdAt: string;
+  permissions?: string[];
+  direct_permissions?: string[];
+  inherited_permissions?: string[];
 }
 
 interface Department {
@@ -73,6 +81,9 @@ interface Program {
 interface ApiUser {
   id: number;
   name: string;
+  first_name?: string | null;
+  middle_initial?: string | null;
+  last_name?: string | null;
   username: string;
   email: string | null;
   role: string;
@@ -85,6 +96,9 @@ interface ApiUser {
   google_id?: string | null;
   faculty_profile?: { id: number; administrative_role?: string | null } | null;
   created_at: string;
+  permissions?: string[];
+  direct_permissions?: string[];
+  inherited_permissions?: string[];
 }
 
 interface UsersPageData {
@@ -97,17 +111,22 @@ const DISPLAY_ROLE_MAP: Record<string, string> = {
   'dean': 'Dean',
   'program_head': 'Program Head',
   'secretary': 'Secretary',
+  'director': 'Director',
 };
 
 const API_ROLE_MAP: Record<string, string> = {
   'Dean': 'dean',
   'Program Head': 'program_head',
   'Secretary': 'secretary',
+  'Director': 'director',
 };
 
 const mapApiUser = (u: ApiUser): User => ({
   id: u.id,
   name: u.name,
+  first_name: u.first_name ?? '',
+  middle_initial: u.middle_initial ?? '',
+  last_name: u.last_name ?? '',
   username: u.username,
   email: u.email || '',
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
@@ -121,6 +140,9 @@ const mapApiUser = (u: ApiUser): User => ({
   googleLinked: Boolean(u.google_id),
   facultyProfileId: u.faculty_profile?.id ?? null,
   createdAt: u.created_at,
+  permissions: u.permissions ?? [],
+  direct_permissions: u.direct_permissions ?? [],
+  inherited_permissions: u.inherited_permissions ?? [],
 });
 
 export default function VpaaUsers() {
@@ -131,6 +153,25 @@ export default function VpaaUsers() {
   const [departments, setDepartments] = useState<Department[]>(cachedUsersData?.departments ?? []);
   const [programs, setPrograms] = useState<Program[]>(cachedUsersData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(usersCacheKey));
+
+  const [isAccessMatrixOpen, setIsAccessMatrixOpen] = useState(false);
+  const [selectedUserForAccess, setSelectedUserForAccess] = useState<MatrixUser | null>(null);
+
+  const handleOpenAccessMatrix = (user: User) => {
+    setSelectedUserForAccess({
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      department: user.department,
+      program_id: user.program_id,
+      profile_picture: user.profile_picture,
+      status: user.status,
+      permissions: user.permissions ?? [],
+    });
+    setIsAccessMatrixOpen(true);
+  };
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -146,7 +187,9 @@ export default function VpaaUsers() {
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const [formData, setFormData] = useState({
-    name: '',
+    first_name: '',
+    middle_initial: '',
+    last_name: '',
     username: '',
     email: '',
     password: '',
@@ -157,16 +200,11 @@ export default function VpaaUsers() {
     allow_google_login: false,
   });
 
-  const [nameError, setNameError] = useState('');
+  const [firstNameError, setFirstNameError] = useState('');
+  const [lastNameError, setLastNameError] = useState('');
+  const [middleInitialError, setMiddleInitialError] = useState('');
   const [deptError, setDeptError] = useState('');
   const [programError, setProgramError] = useState('');
-  const [newProgram, setNewProgram] = useState({
-    cluster: '',
-    code: '',
-    name: '',
-  });
-  const [programFormError, setProgramFormError] = useState('');
-  const [isCreatingProgram, setIsCreatingProgram] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -257,48 +295,6 @@ export default function VpaaUsers() {
     [programs, formData.department_id]
   );
 
-  const createProgram = async () => {
-    if (!formData.department_id) {
-      setProgramFormError('Select a department before adding a program.');
-      return;
-    }
-
-    const code = newProgram.code.trim();
-    const name = newProgram.name.trim();
-    if (!code || !name) {
-      setProgramFormError('Program code and name are required.');
-      return;
-    }
-
-    setIsCreatingProgram(true);
-    setProgramFormError('');
-    try {
-      const response = await api.post<{ data: Program }>('/programs', {
-        department_id: parseInt(formData.department_id),
-        cluster: newProgram.cluster.trim() || null,
-        code,
-        name,
-      });
-      const createdProgram = response.data.data;
-      setPrograms((prev) => {
-        const nextPrograms = [...prev, createdProgram].sort((a, b) =>
-          (a.cluster ?? '').localeCompare(b.cluster ?? '') || a.code.localeCompare(b.code)
-        );
-        setCachedData<UsersPageData>(usersCacheKey, { users, departments, programs: nextPrograms });
-        return nextPrograms;
-      });
-      setFormData((prev) => ({ ...prev, program_id: String(createdProgram.id) }));
-      setNewProgram({ cluster: '', code: '', name: '' });
-      setProgramError('');
-      toast.success('Program Added', 'Program assignment option is now available.');
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
-      setProgramFormError(err?.response?.data?.message || 'Failed to add program.');
-    } finally {
-      setIsCreatingProgram(false);
-    }
-  };
-
   const fetchData = async (forceRefresh = false) => {
     setIsLoading(forceRefresh || !hasCachedData(usersCacheKey));
     try {
@@ -332,14 +328,33 @@ export default function VpaaUsers() {
       toast.error('Email required', 'Enter a valid institutional email address.');
       hasError = true;
     }
-    if (!formData.name.trim()) {
-      setNameError('Full name is required');
+    if (!formData.last_name.trim()) {
+      setLastNameError('Last name is required');
       hasError = true;
-    } else if (formData.name.trim().length > 50) {
-      setNameError('Full name must not exceed 50 characters');
+    } else if (formData.last_name.trim().length > 100) {
+      setLastNameError('Last name must not exceed 100 characters');
       hasError = true;
     } else {
-      setNameError('');
+      setLastNameError('');
+    }
+
+    if (!formData.first_name.trim()) {
+      setFirstNameError('First name is required');
+      hasError = true;
+    } else if (formData.first_name.trim().length > 100) {
+      setFirstNameError('First name must not exceed 100 characters');
+      hasError = true;
+    } else {
+      setFirstNameError('');
+    }
+
+    // The API stores a single initial: one letter, no punctuation.
+    const middleInitial = formData.middle_initial.trim();
+    if (middleInitial && !/^[A-Za-z]$/.test(middleInitial)) {
+      setMiddleInitialError('Use a single letter');
+      hasError = true;
+    } else {
+      setMiddleInitialError('');
     }
 
     if (!formData.department_id) {
@@ -365,7 +380,9 @@ export default function VpaaUsers() {
 
       if (isEditMode && editingId !== null) {
         const res = await api.put<{ data: ApiUser }>(`/user/${editingId}`, {
-          name: formData.name.trim(),
+          first_name: formData.first_name.trim(),
+          middle_initial: formData.middle_initial.trim() || null,
+          last_name: formData.last_name.trim(),
           email: formData.email.trim(),
           password: formData.password,
           role: apiRole,
@@ -384,7 +401,9 @@ export default function VpaaUsers() {
         toast.success('Success', 'User account updated successfully');
       } else {
         const res = await api.post<{ data: ApiUser }>('/user', {
-          name: formData.name.trim(),
+          first_name: formData.first_name.trim(),
+          middle_initial: formData.middle_initial.trim() || null,
+          last_name: formData.last_name.trim(),
           username: formData.username,
           email: formData.email.trim(),
           password: formData.password,
@@ -404,7 +423,7 @@ export default function VpaaUsers() {
         toast.success('Success', 'User account created successfully');
       }
 
-      setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+      setFormData({ first_name: '', middle_initial: '', last_name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
@@ -421,7 +440,9 @@ export default function VpaaUsers() {
     setIsDetailModalOpen(false);
     setIsDeleteModalOpen(false);
     setFormData({
-      name: user.name,
+      first_name: user.first_name,
+      middle_initial: user.middle_initial,
+      last_name: user.last_name,
       username: user.username,
       email: user.email,
       password: '••••••••',
@@ -432,11 +453,11 @@ export default function VpaaUsers() {
       allow_google_login: user.allowGoogleLogin,
     });
     setProfilePicture(user.profile_picture || null);
-    setNameError('');
+    setFirstNameError('');
+    setLastNameError('');
+    setMiddleInitialError('');
     setDeptError('');
     setProgramError('');
-    setProgramFormError('');
-    setNewProgram({ cluster: '', code: '', name: '' });
     setEditingId(user.id);
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -599,6 +620,21 @@ export default function VpaaUsers() {
           <div className="flex justify-end gap-1.5">
             <div className="relative group/tooltip">
               <TableActionButton
+                label="Manage Access"
+                variant="neutral"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleOpenAccessMatrix(row.original);
+                }}
+              >
+                <ShieldCheck size={17} className="text-[#5A1220]" />
+              </TableActionButton>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                Manage Access
+              </span>
+            </div>
+            <div className="relative group/tooltip">
+              <TableActionButton
                 label="Edit"
                 variant="edit"
                 onClick={(event) => {
@@ -700,8 +736,10 @@ export default function VpaaUsers() {
               setEditingId(null);
               setIsDetailModalOpen(false);
               setIsDeleteModalOpen(false);
-              setFormData({ name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
-              setNameError('');
+              setFormData({ first_name: '', middle_initial: '', last_name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+              setFirstNameError('');
+              setLastNameError('');
+              setMiddleInitialError('');
               setDeptError('');
               setIsModalOpen(true);
             }}
@@ -817,6 +855,16 @@ export default function VpaaUsers() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          handleOpenAccessMatrix(u);
+                        }}
+                        className="p-1.5 text-[#5A1220] hover:bg-[#5A1220]/10 rounded-lg transition-colors cursor-pointer"
+                        title="Manage Access"
+                      >
+                        <ShieldCheck size={16} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleEditClick(u);
                         }}
                         className="p-1.5 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
@@ -912,23 +960,64 @@ export default function VpaaUsers() {
                   {profilePicture ? 'Click photo to change' : 'Click to upload user profile photo'}
                 </p>
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Full Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => {
-                    setFormData({ ...formData, name: e.target.value });
-                    setNameError('');
-                  }}
-                  placeholder="e.g. Juan dela Cruz"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    nameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
-                {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
+              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_0.4fr]">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    Last Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.last_name}
+                    onChange={(e) => {
+                      setFormData({ ...formData, last_name: e.target.value });
+                      setLastNameError('');
+                    }}
+                    placeholder="e.g. dela Cruz"
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                      lastNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                  />
+                  {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold">{lastNameError}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    First Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.first_name}
+                    onChange={(e) => {
+                      setFormData({ ...formData, first_name: e.target.value });
+                      setFirstNameError('');
+                    }}
+                    placeholder="e.g. Juan"
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                      firstNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                  />
+                  {firstNameError && <p className="text-xs text-red-500 mt-1 font-semibold">{firstNameError}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    M.I.
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={1}
+                    value={formData.middle_initial}
+                    onChange={(e) => {
+                      setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
+                      setMiddleInitialError('');
+                    }}
+                    placeholder="D"
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white uppercase transition-all ${
+                      middleInitialError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                  />
+                  {middleInitialError && <p className="text-xs text-red-500 mt-1 font-semibold">{middleInitialError}</p>}
+                </div>
               </div>
 
               <div>
@@ -986,6 +1075,7 @@ export default function VpaaUsers() {
                     <option value="Dean">Dean</option>
                     <option value="Program Head">Program Head</option>
                     <option value="Secretary">Secretary</option>
+                    <option value="Director">Director</option>
                   </select>
                 </div>
                 <div>
@@ -1018,8 +1108,7 @@ export default function VpaaUsers() {
                     setFormData({ ...formData, department_id: e.target.value, program_id: '' });
                     setDeptError('');
                     setProgramError('');
-                    setProgramFormError('');
-                  }}
+                                  }}
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm cursor-pointer transition-all ${
                     deptError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
                   }`}
@@ -1066,60 +1155,11 @@ export default function VpaaUsers() {
                       ))}
                     </select>
                     {programError && <p className="text-xs text-red-500 mt-1 font-semibold">{programError}</p>}
-                  </div>
-
-                  <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-[1fr_0.8fr]">
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                        Program Cluster
-                      </label>
-                      <input
-                        type="text"
-                        value={newProgram.cluster}
-                        onChange={(e) => setNewProgram({ ...newProgram, cluster: e.target.value })}
-                        placeholder="e.g. Teacher Education"
-                        disabled={!formData.department_id}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                        Code
-                      </label>
-                      <input
-                        type="text"
-                        value={newProgram.code}
-                        onChange={(e) => setNewProgram({ ...newProgram, code: e.target.value.toUpperCase() })}
-                        placeholder="e.g. BSED-ENG"
-                        disabled={!formData.department_id}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm font-mono outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                        Program / Major Name
-                      </label>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          type="text"
-                          value={newProgram.name}
-                          onChange={(e) => setNewProgram({ ...newProgram, name: e.target.value })}
-                          placeholder="e.g. BSED Major in English"
-                          disabled={!formData.department_id}
-                          className="min-w-0 flex-1 px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-sm outline-none focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-                        />
-                        <button
-                          type="button"
-                          disabled={isCreatingProgram || !formData.department_id}
-                          onClick={createProgram}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#4e0a10]/20 bg-[#4e0a10] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isCreatingProgram ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-                          Add Program
-                        </button>
-                      </div>
-                      {programFormError && <p className="text-xs text-red-500 mt-1 font-semibold">{programFormError}</p>}
-                    </div>
+                    {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
+                      <p className="text-xs text-gray-500 mt-1 font-semibold">
+                        This department has no programs yet. Add one in Department Management first.
+                      </p>
+                    )}
                   </div>
                 </section>
               )}
@@ -1267,6 +1307,17 @@ export default function VpaaUsers() {
                   <Link2Off size={14} /> Unlink Google
                 </button>
                 <button
+                  onClick={() => {
+                    const target = selectedUserForDetail;
+                    setIsDetailModalOpen(false);
+                    handleOpenAccessMatrix(target);
+                  }}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <ShieldCheck size={14} className="text-[#5A1220]" />
+                  <span>Manage Access</span>
+                </button>
+                <button
                   onClick={() => setIsDetailModalOpen(false)}
                   className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
                 >
@@ -1286,6 +1337,34 @@ export default function VpaaUsers() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* User Access Matrix Modal */}
+      {isAccessMatrixOpen && selectedUserForAccess && (
+        <UserAccessMatrixModal
+          isOpen={isAccessMatrixOpen}
+          onClose={() => {
+            setIsAccessMatrixOpen(false);
+            setSelectedUserForAccess(null);
+          }}
+          user={selectedUserForAccess}
+          onSuccess={(updatedPermissions) => {
+            setUsers((prev) => {
+              const nextUsers = prev.map((u) =>
+                u.id === selectedUserForAccess.id ? { ...u, permissions: updatedPermissions } : u
+              );
+              setCachedData<UsersPageData>(usersCacheKey, {
+                users: nextUsers,
+                departments,
+                programs,
+              });
+              return nextUsers;
+            });
+            setSelectedUserForAccess((prev) =>
+              prev ? { ...prev, permissions: updatedPermissions } : null
+            );
+          }}
+        />
       )}
     </div>
   );

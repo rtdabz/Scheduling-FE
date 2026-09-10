@@ -28,6 +28,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [showForgot, setShowForgot] = useState(false);
@@ -99,6 +100,8 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    if (isLoading || isGoogleLoading) return;
+    setIsGoogleLoading(true);
     try {
       const { data } = await api.get<{ url: string; state: string }>('/auth/google/redirect');
       sessionStorage.setItem('google_oauth_state', data.state);
@@ -106,6 +109,7 @@ export default function LoginPage() {
     } catch (error) {
       const axiosError = error as AxiosError<ApiErrorResponse>;
       toast.error('Google Login Unavailable', axiosError.response?.data?.message || 'Google login is not configured.');
+      setIsGoogleLoading(false);
     }
   };
 
@@ -298,7 +302,24 @@ export default function LoginPage() {
               </button>
             </div>
             <div className="relative flex items-center py-2"><div className="grow border-t border-gray-300" /><span className="px-3 text-xs text-muted">OR</span><div className="grow border-t border-gray-300" /></div>
-            <button type="button" onClick={handleGoogleLogin} className="w-full h-12 bg-white border border-gray-300 text-text font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50"><img src={googleLogo} alt="" className="h-5 w-5" /> Continue with Google</button>
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isLoading || isGoogleLoading}
+              className="w-full h-12 bg-white border border-gray-300 text-text font-semibold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50 transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {isGoogleLoading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <img src={googleLogo} alt="" className="h-5 w-5" />
+                  Continue with Google
+                </>
+              )}
+            </button>
           </form>}
 
           <div 

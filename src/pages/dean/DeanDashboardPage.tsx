@@ -547,14 +547,14 @@ export default function DeanDashboardPage() {
 
   if (loading) return <DashboardSkeleton variant="dean" />;
 
-  return <div className="space-y-4 pb-8 text-slate-800">
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">{loadError || statusError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3" /> Retry</button>
     </div>}
 
-    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
+    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
       {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button
         key={label}
         type="button"

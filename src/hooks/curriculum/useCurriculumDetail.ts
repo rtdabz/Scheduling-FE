@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
-import { getCachedData, hasCachedData, loadCachedData, setCachedData, clearDataCache } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, CurriculumTerm, CurriculumCourse, Program } from '../../types/curriculum';
 import type { CourseOption } from '../../components/curriculum/AddCourseForm';
 
@@ -192,7 +193,7 @@ export function useCurriculumDetail(id: string | undefined) {
     try {
       await curriculumService.updateStatus(Number(id), 'active');
       setCurriculum((prev) => (prev ? { ...prev, status: 'active' } : prev));
-      clearDataCache();
+      invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
       toast.success('Activated', 'Curriculum is now active.');
     } catch {
       toast.error('Error', 'Failed to activate curriculum.');
@@ -335,7 +336,7 @@ export function useCurriculumDetail(id: string | undefined) {
           });
 
           setHighlightedCourseId(successfulNewCourses[0].id);
-          clearDataCache();
+          invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
           toast.success(
             'Courses Saved',
             `${successfulNewCourses.length} course${successfulNewCourses.length > 1 ? 's' : ''} saved successfully.`
@@ -386,7 +387,7 @@ export function useCurriculumDetail(id: string | undefined) {
 
       try {
         await curriculumService.detachCourse(id, courseId);
-        clearDataCache();
+        invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Course Removed', `${courseCode} removed from curriculum.`);
       } catch {
         toast.error('Error', 'Failed to remove course.');
@@ -469,7 +470,7 @@ export function useCurriculumDetail(id: string | undefined) {
 
         try {
           await curriculumService.attachCourse(id, existingCourse.id, currentTerm.year_level, currentTerm.semester, courseId);
-          clearDataCache();
+          invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
           toast.success('Course Updated', `${normalizedCode} linked successfully.`);
         } catch {
           toast.error('Error', 'Failed to update course.');
@@ -542,7 +543,7 @@ export function useCurriculumDetail(id: string | undefined) {
           room_type_required: labUnits > 0 ? 'laboratory' : 'lecture',
           program_id: programId,
         });
-        clearDataCache();
+        invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Course Updated', `${courseCode} updated successfully.`);
       } catch {
         toast.error('Error', 'Failed to update course.');

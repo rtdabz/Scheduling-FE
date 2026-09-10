@@ -20,8 +20,8 @@ export interface HelperReply {
 const unsupportedPattern = /\b(code|coding|program|programming|javascript|typescript|php|laravel|python|sql|api|debug|bug|developer|function|component)\b/i;
 
 const schedulesPath = (role: HelperRole): string => {
-  if (role === "program_head") return "/program_head/schedules";
-  if (role === "secretary") return "/secretary/schedules";
+  if (role === "program_head") return "/program_head/schedule-builder";
+  if (role === "secretary") return "/secretary/schedule-builder";
   if (role === "dean") return "/dean/schedules";
   return "/schedules";
 };
@@ -78,8 +78,8 @@ export function getHelperReply(prompt: string, context: HelperContext): HelperRe
   if (/next|continue|start|do i do|help/.test(normalized)) {
     if (context.role === "dean") return { intent: "next_step", text: "Your next step is to review pending department schedules and either approve them or return them for revision.", action: { label: "Review Approvals", path: "/dean/schedules/approval" } };
     if (context.role === "vpaa") return { intent: "next_step", text: "Your next step is to review schedules that have already been approved by the Dean.", action: { label: "Review Approvals", path: "/schedules/approval" } };
-    if (context.scheduleStatus === "approved") return { intent: "next_step", text: "The schedule is approved. Continue with instructor assignment before finalization.", action: { label: "Assign Instructors", path: context.role === "program_head" ? "/program_head/instructor-assignment" : "/secretary/instructor-assignment" } };
-    if (context.scheduleStatus === "faculty_assignment") return { intent: "next_step", text: "Complete the remaining instructor assignments, then continue to finalization.", action: { label: "Assign Instructors", path: context.role === "program_head" ? "/program_head/instructor-assignment" : "/secretary/instructor-assignment" } };
+    if (context.scheduleStatus === "approved") return { intent: "next_step", text: "The schedule is approved. Continue with instructor assignment before finalization.", action: { label: "Assign Instructors", path: context.role === "program_head" ? "/program_head/schedule-builder" : "/secretary/schedule-builder" } };
+    if (context.scheduleStatus === "faculty_assignment") return { intent: "next_step", text: "Complete the remaining instructor assignments, then continue to finalization.", action: { label: "Assign Instructors", path: context.role === "program_head" ? "/program_head/schedule-builder" : "/secretary/schedule-builder" } };
     return { intent: "next_step", text: context.draftCount ? `Complete the ${context.draftCount} remaining draft section${context.draftCount === 1 ? "" : "s"}, then check conflicts before submitting.` : "Open the Schedule Builder and complete the required sections before submitting for approval.", action: { label: "Open Schedule Builder", path: schedulesPath(context.role) } };
   }
 

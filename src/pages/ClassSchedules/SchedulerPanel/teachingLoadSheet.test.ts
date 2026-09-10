@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import jsPDF from "jspdf";
-import { LAST_ROW, bottom, left, right, top } from "./teachingLoadForm";
+import { FORM_PAGE_SIZE, LAST_ROW, bottom, left, right, top } from "./teachingLoadForm";
 import { classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
 import type { Faculty, ScheduleItem } from "./types";
@@ -53,7 +53,7 @@ const meeting = (overrides: Partial<ScheduleItem>): ScheduleItem =>
 
 /** Draws a whole sheet and reports every line, rect and string it drew. */
 const renderSheet = () => {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "legal" });
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
   const lines: Line[] = [];
   const rects: Rect[] = [];
   const texts: Array<{ text: string; x: number; y: number }> = [];

@@ -1,8 +1,8 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, RotateCcw, Send, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, RotateCcw, Send, UserCheck, UserMinus, Users } from "lucide-react";
 import { yearLevelLabel } from "./constants";
-import type { DepartmentSectionProgress, ScheduleItem, Section, WithdrawalStage } from "./types";
+import type { DepartmentSectionProgress, ScheduleItem, SectionDoneCandidate, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
 import SearchField from "./components/SearchField";
 import GenerateScheduleButton from "./GenerateSchedule/GenerateScheduleButton";
@@ -30,6 +30,8 @@ interface TopBarProps {
   totalSlotsCount: number;
   unassignedSlotsCount: number;
   departmentSectionProgress: DepartmentSectionProgress[];
+  sectionDoneCandidates: SectionDoneCandidate[];
+  openMarkSectionsDone: () => void;
   departmentTotalSections: number;
   departmentDoneSections: number;
   departmentRemainingSections: number;
@@ -44,13 +46,17 @@ interface TopBarProps {
   onPrint: () => void;
   onGenerateYearLevel?: () => void;
   onAutoAssign?: () => void;
+  onClearInstructors?: () => void;
+  clearableSectionInstructorCount: number;
+  isClearingSectionInstructors: boolean;
   isLoading?: boolean;
+  canUpdateSchedule: boolean;
+  canSubmitSchedule: boolean;
+  canAssignInstructor: boolean;
 
-  isMarkingSectionDone: boolean;
   isEditingSection: boolean;
   isResubmittingSection: boolean;
   isFinalizing: boolean;
-  handleMarkSectionDone: () => Promise<void>;
   handleEditSection: () => Promise<void>;
   handleResubmit: () => Promise<void>;
   handleFinalize: () => Promise<void>;
@@ -66,6 +72,7 @@ const statusBadgeConfigs: Record<string, { cls: string; label: string }> = {
   rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
   approved: { cls: "bg-green-600 text-white", label: "Approved" },
   faculty_assignment: { cls: "bg-purple-600 text-white", label: "Faculty Assignment" },
+  reassignment: { cls: "bg-amber-600 text-white", label: "Reassignment" },
   finalized: { cls: "bg-emerald-800 text-white", label: "Finalized" },
   rejected: { cls: "bg-red-600 text-white", label: "Rejected" },
   revision: { cls: "bg-orange-600 text-white", label: "Under Revision" }
@@ -88,15 +95,17 @@ interface ActionButtonProps {
   currentStatus: ScheduleItem["status"];
   totalSubjects: number;
   totalScheduled: number;
-  isMarkingSectionDone: boolean;
+  readySectionCount: number;
   isEditingSection: boolean;
   isResubmittingSection: boolean;
   isFinalizing: boolean;
-  handleMarkSectionDone: () => Promise<void>;
+  openMarkSectionsDone: () => void;
   handleEditSection: () => Promise<void>;
   handleResubmit: () => Promise<void>;
   handleFinalize: () => Promise<void>;
   sectionSchedules: ScheduleItem[];
+  canUpdateSchedule: boolean;
+  canAssignInstructor: boolean;
 }
 
 function ActionButton({
@@ -104,41 +113,46 @@ function ActionButton({
   currentStatus,
   totalSubjects,
   totalScheduled,
-  isMarkingSectionDone,
+  readySectionCount,
   isEditingSection,
   isResubmittingSection,
   isFinalizing,
-  handleMarkSectionDone,
+  openMarkSectionsDone,
   handleEditSection,
   handleResubmit,
   handleFinalize,
-  sectionSchedules
+  sectionSchedules,
+  canUpdateSchedule,
+  canAssignInstructor
 }: ActionButtonProps) {
   if (!selectedSectionId) return null;
   switch (currentStatus) {
     case "draft":
     case "revision": {
+      if (!canUpdateSchedule) return null;
       const remaining = Math.max(0, totalSubjects - totalScheduled);
       const canMarkDone = totalSubjects > 0 && remaining === 0;
       return (
         <button
-          onClick={handleMarkSectionDone}
-          disabled={!canMarkDone || isMarkingSectionDone}
-          title={!canMarkDone ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement` : "Mark this section as done"}
+          onClick={openMarkSectionsDone}
+          disabled={!canMarkDone}
+          title={!canMarkDone
+            ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement`
+            : readySectionCount > 1
+              ? `Review and mark ${readySectionCount} ready sections done`
+              : "Mark this section as done"}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-            canMarkDone && !isMarkingSectionDone
+            canMarkDone
               ? "bg-[#4e0a10] hover:bg-[#3a0809] text-white cursor-pointer"
-              : canMarkDone
-              ? "bg-[#4e0a10] text-white cursor-wait opacity-80"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
         >
-          {isMarkingSectionDone && <LoadingSpinner className="h-4 w-4" />}
-          {canMarkDone ? (isMarkingSectionDone ? "Marking..." : "Done") : `${remaining} unplaced`}
+          {canMarkDone ? (readySectionCount > 1 ? `Done (${readySectionCount})` : "Done") : `${remaining} unplaced`}
         </button>
       );
     }
     case "completed":
+      if (!canUpdateSchedule) return null;
       return (
         <button
           onClick={handleEditSection}
@@ -161,6 +175,7 @@ function ActionButton({
       return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending VPAA Approval</button>;
     case "rejected_by_dean":
     case "rejected":
+      if (!canUpdateSchedule) return null;
       return (
         <button
           onClick={handleResubmit}
@@ -176,14 +191,22 @@ function ActionButton({
         </button>
       );
     case "approved":
-    case "faculty_assignment": {
+    case "faculty_assignment":
+    case "reassignment": {
+      if (!canAssignInstructor) return null;
       const unassigned = sectionSchedules.filter((s) => !s.facultyId).length;
       const allAssigned = unassigned === 0;
+      const missingFacultyCourses = [...new Set(
+        sectionSchedules.filter((s) => !s.facultyId).map((s) => s.courseCode),
+      )];
+      const missingFacultyLabel = missingFacultyCourses.length > 0
+        ? `Missing faculty: ${missingFacultyCourses.join(", ")}`
+        : undefined;
       return (
         <button
           onClick={handleFinalize}
           disabled={!allAssigned || isFinalizing}
-          title={!allAssigned ? `${unassigned} slot${unassigned !== 1 ? "s" : ""} still need faculty` : undefined}
+          title={!allAssigned ? missingFacultyLabel : undefined}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
             allAssigned && !isFinalizing
               ? "bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer"
@@ -193,12 +216,27 @@ function ActionButton({
           }`}
         >
           {isFinalizing && <LoadingSpinner className="h-4 w-4" />}
-          {allAssigned ? (isFinalizing ? "Finalizing..." : "Mark as Finalized") : `${unassigned} slots still need faculty`}
+          {allAssigned ? (isFinalizing ? "Finalizing..." : "Finalized") : `${unassigned} slots still need faculty`}
         </button>
       );
     }
     case "finalized":
-      return <button disabled className="px-4 py-2 bg-emerald-800 text-white text-sm font-semibold rounded-lg cursor-not-allowed opacity-75">Schedule Finalized</button>;
+      if (!canAssignInstructor) return null;
+      return (
+        <button
+          onClick={handleEditSection}
+          disabled={isEditingSection}
+          title="Reassign faculty for this finalized section"
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
+            isEditingSection
+              ? "bg-[#C9952A] text-white cursor-wait opacity-80"
+              : "bg-[#C9952A] hover:bg-[#b8841f] text-white cursor-pointer"
+          }`}
+        >
+          {isEditingSection && <LoadingSpinner className="h-4 w-4" />}
+          {isEditingSection ? "Unlocking..." : "Reassignment"}
+        </button>
+      );
     default:
       return null;
   }
@@ -221,6 +259,8 @@ export default function TopBar({
   totalSlotsCount,
   unassignedSlotsCount,
   departmentSectionProgress,
+  sectionDoneCandidates,
+  openMarkSectionsDone,
   departmentTotalSections,
   departmentDoneSections,
   departmentRemainingSections,
@@ -235,12 +275,16 @@ export default function TopBar({
   onPrint,
   onGenerateYearLevel,
   onAutoAssign,
+  onClearInstructors,
+  clearableSectionInstructorCount,
+  isClearingSectionInstructors,
   isLoading = false,
-  isMarkingSectionDone,
+  canUpdateSchedule,
+  canSubmitSchedule,
+  canAssignInstructor,
   isEditingSection,
   isResubmittingSection,
   isFinalizing,
-  handleMarkSectionDone,
   handleEditSection,
   handleResubmit,
   handleFinalize,
@@ -253,6 +297,7 @@ export default function TopBar({
 
   const [sectionSearch, setSectionSearch] = useState("");
   const [isReadinessOpen, setIsReadinessOpen] = useState(false);
+  const readySectionCount = sectionDoneCandidates.filter((candidate) => candidate.isReady).length;
   const [isPrintDropdownOpen, setIsPrintDropdownOpen] = useState(false);
 
   const handleSectionListScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -337,10 +382,17 @@ export default function TopBar({
       };
     }
 
+    if (currentStatus === "reassignment") {
+      return {
+        title: "Faculty reassignment in progress",
+        description: "Assign an instructor to every class before finalizing. Timetable details remain locked.",
+      };
+    }
+
     if (currentStatus === "finalized") {
       return {
         title: "Schedule finalized",
-        description: "This section is complete and ready for printing or review.",
+        description: "Reassignment unlocks faculty assignment for each section. Timetable details remain locked.",
       };
     }
 
@@ -554,23 +606,37 @@ export default function TopBar({
               guideId={
                 ["draft", "revision"].includes(currentStatus)
                   ? "schedule-builder-plotting"
-                  : ["approved", "faculty_assignment"].includes(currentStatus)
+                  : ["approved", "faculty_assignment", "reassignment"].includes(currentStatus)
                     ? "schedule-builder-faculty-assignment"
                     : "schedule-builder-review"
               }
             />
           )}
-          {isLoading ? <><Skeleton className="h-8 w-28 rounded-xl" /><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>{onAutoAssign && ["approved", "faculty_assignment"].includes(currentStatus) ? (
-            <button
-              id="schedule-builder-auto-assign"
-              type="button"
-              onClick={onAutoAssign}
-              className="flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
-            >
-              <UserCheck className="h-3.5 w-3.5" />
-              <span>Auto-Assign</span>
-            </button>
-          ) : onGenerateYearLevel && (
+          {isLoading ? <><Skeleton className="h-8 w-28 rounded-xl" /><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>{onAutoAssign && ["approved", "faculty_assignment", "reassignment"].includes(currentStatus) ? (
+            <>
+              <button
+                id="schedule-builder-auto-assign"
+                type="button"
+                onClick={onAutoAssign}
+                className="flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                <span>Auto-Assign</span>
+              </button>
+              {onClearInstructors && (
+                <button
+                  type="button"
+                  onClick={onClearInstructors}
+                  disabled={clearableSectionInstructorCount === 0 || isClearingSectionInstructors}
+                  className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Remove all manageable instructor assignments from this section"
+                >
+                  <UserMinus className="h-3.5 w-3.5" />
+                  <span>{isClearingSectionInstructors ? "Clearing..." : "Clear Instructor"}</span>
+                </button>
+              )}
+            </>
+              ) : onGenerateYearLevel && ["draft", "revision"].includes(currentStatus) && (
             <div id="schedule-builder-generate">
               <GenerateScheduleButton
                 onClick={onGenerateYearLevel}
@@ -704,7 +770,7 @@ export default function TopBar({
                             ? "Withdraw Schedule"
                             : "Withdraw Submission"}
                       </button>
-                    ) : departmentReadyToSubmit ? (
+                    ) : departmentReadyToSubmit && canSubmitSchedule ? (
                       <button
                         type="button"
                         onClick={handleSubmitForApproval}
@@ -758,15 +824,17 @@ export default function TopBar({
               currentStatus={currentStatus}
               totalSubjects={totalSubjects}
               totalScheduled={totalScheduled}
-              isMarkingSectionDone={isMarkingSectionDone}
+              readySectionCount={readySectionCount}
               isEditingSection={isEditingSection}
               isResubmittingSection={isResubmittingSection}
               isFinalizing={isFinalizing}
-              handleMarkSectionDone={handleMarkSectionDone}
+              openMarkSectionsDone={openMarkSectionsDone}
               handleEditSection={handleEditSection}
               handleResubmit={handleResubmit}
               handleFinalize={handleFinalize}
               sectionSchedules={sectionSchedules}
+              canUpdateSchedule={canUpdateSchedule}
+              canAssignInstructor={canAssignInstructor}
             />
           )}
         </div>

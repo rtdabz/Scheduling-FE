@@ -24,8 +24,10 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
-import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import SectionModal from './SectionModal';
+import { yearLevelLabel } from '../../lib/termLabel';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
@@ -34,6 +36,7 @@ interface Department {
   department_name: string;
   department_code: string;
 }
+interface Program { id: number; code: string; name: string | null; department_id: number; }
 
 interface Term {
   id: number;
@@ -48,6 +51,7 @@ interface Section {
   year_level: '1' | '2' | '3' | '4';
   semester: '1st' | '2nd' | 'summer';
   department_id: number;
+  program_id: number | null;
   department: Department | null;
   term_id: number;
   term: Term | null;
@@ -61,6 +65,7 @@ interface ApiSection {
   year_level: '1' | '2' | '3' | '4';
   semester: '1st' | '2nd' | 'summer';
   department_id: number;
+  program_id: number | null;
   department?: Department | null;
   term_id: number;
   term?: Term | null;
@@ -72,6 +77,7 @@ interface ApiSection {
 interface SectionsPageData {
   sections: Section[];
   departments: Department[];
+  programs: Program[];
   terms: Term[];
 }
 
@@ -81,6 +87,7 @@ const mapApiSection = (s: ApiSection): Section => ({
   year_level: s.year_level,
   semester: s.semester,
   department_id: s.department_id,
+  program_id: s.program_id ?? null,
   department: s.department || null,
   term_id: s.term_id,
   term: s.term || null,
@@ -96,6 +103,7 @@ export default function SecretarySections() {
   const cachedSectionsData = getCachedData<SectionsPageData>(sectionsCacheKey);
   const [sections, setSections] = useState<Section[]>(cachedSectionsData?.sections ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedSectionsData?.departments ?? []);
+  const [programs, setPrograms] = useState<Program[]>(cachedSectionsData?.programs ?? []);
   const [terms, setTerms] = useState<Term[]>(cachedSectionsData?.terms ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
 
@@ -136,20 +144,23 @@ export default function SecretarySections() {
     setIsLoading(forceRefresh || !hasCachedData(sectionsCacheKey));
     try {
       const data = await loadCachedData<SectionsPageData>(sectionsCacheKey, async () => {
-        const [sectionsRes, deptsRes, termsRes] = await Promise.all([
+        const [sectionsRes, deptsRes, termsRes, programsRes] = await Promise.all([
           api.get<ApiSection[]>('/sections'),
           api.get<Department[]>('/departments'),
-          api.get<Term[]>('/terms')
+          api.get<Term[]>('/terms'),
+          api.get<Program[]>('/programs')
         ]);
         return {
           sections: sectionsRes.data.map(mapApiSection),
           departments: deptsRes.data,
           terms: termsRes.data,
+          programs: programsRes.data,
         };
       }, forceRefresh);
       setSections(data.sections);
       setDepartments(data.departments);
       setTerms(data.terms);
+      setPrograms(data.programs);
     } catch {
       toast.error('Error', 'Failed to load sections, departments, and terms data.');
     } finally {
@@ -172,10 +183,10 @@ export default function SecretarySections() {
     if (idToDelete !== null) {
       try {
         await api.delete(`/sections/${idToDelete}`);
-        clearDataCache();
+        invalidateCacheGroups('sections', 'schedules', 'approvals', 'dashboards');
         setSections(prev => {
           const nextSections = prev.filter(s => s.id !== idToDelete);
-          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, terms });
           return nextSections;
         });
         toast.success('Archived', 'Section archived successfully');
@@ -191,20 +202,21 @@ export default function SecretarySections() {
   const handleSaveSingle = async (
     secName: string,
     yrLevel: '1' | '2' | '3' | '4',
-    deptId: number
+    deptId: number, programId: number
   ) => {
     if (isEditMode && editingId !== null) {
       const payload = {
         section_name: secName,
         year_level: yrLevel,
         department_id: deptId,
+        program_id: programId,
       };
       const res = await api.put<ApiSection>(`/sections/${editingId}`, payload);
       const updatedSection = mapApiSection(res.data);
-      clearDataCache();
+      invalidateCacheGroups('sections', 'schedules', 'approvals', 'dashboards');
       setSections((prev) => {
         const nextSections = prev.map((s) => (s.id === editingId ? updatedSection : s));
-        setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+        setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, terms });
         return nextSections;
       });
       toast.success('Updated', 'Section updated successfully');
@@ -213,21 +225,22 @@ export default function SecretarySections() {
 
   const handleSaveBatch = async (
     batchSections: Array<{ section_name: string; year_level: '1' | '2' | '3' | '4' }>,
-    deptId: number
+    deptId: number, programId: number
   ) => {
     const batchPayload = {
       sections: batchSections.map((s) => ({
         section_name: s.section_name,
         year_level: s.year_level,
         department_id: deptId,
+        program_id: programId,
       })),
     };
     const res = await api.post<{ message: string; sections: ApiSection[] }>('/sections/batch', batchPayload);
     const createdSections = res.data.sections.map(mapApiSection);
-    clearDataCache();
+    invalidateCacheGroups('sections', 'schedules', 'approvals', 'dashboards');
     setSections((prev) => {
       const nextSections = [...createdSections, ...prev];
-      setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, terms });
+      setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, terms });
       return nextSections;
     });
     toast.success('Sections Saved', res.data.message || `${createdSections.length} sections created successfully.`);
@@ -248,7 +261,7 @@ export default function SecretarySections() {
         {
           accessorKey: 'year_level',
           header: 'Year Level',
-          cell: info => <span className="font-bold text-gray-800">Year {info.getValue() as string}</span>
+          cell: info => <span className="font-bold text-gray-800">{yearLevelLabel(info.getValue() as string)}</span>
         },
         {
           accessorKey: 'semester',
@@ -363,10 +376,14 @@ export default function SecretarySections() {
   });
 
   const sectionGuideSteps = useMemo(() => [
-    { element: '#sections-toolbar', title: 'Find or add a section', description: 'Search for a section or add a new one before scheduling.', side: 'bottom' as const },
-    { element: '#sections-table', title: 'Check section details', description: 'Review the name, year level, term, and status.', side: 'top' as const },
+    { element: '#sections-toolbar input[type="text"]', action: 'input' as const, taskHint: 'Type in the search box to continue.', title: 'Find a section', description: 'Search for a section by name or term before scheduling.', side: 'bottom' as const },
+    { element: '#sections-add-button', action: 'click' as const, taskHint: 'Click Add Section to open the form.', title: 'Add a section', description: 'New sections are created from this page.', side: 'bottom' as const },
+    { element: '#section-program-select', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the program to continue.', title: 'Select a program', description: 'The section belongs to a program in your department.', side: 'bottom' as const },
+    { element: '[data-tour="section-row-name"]', waitFor: '#section-form', action: 'input' as const, taskHint: 'Type a section name to continue.', title: 'Name the section', description: 'Use the official section code, e.g. BSIT 1A.', side: 'bottom' as const },
+    { element: '[data-tour="section-row-year"]', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the year level to continue.', title: 'Set the year level', description: 'Year level decides which courses the section takes.', side: 'bottom' as const },
+    { element: '#section-form', action: 'submit' as const, taskHint: 'Click Save Sections to create it.', title: 'Save the section', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
-  useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps });
+  useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps, mission: 'Manage Sections' });
 
   return (
     <div>
@@ -384,6 +401,7 @@ export default function SecretarySections() {
         </div>
         {canManageSections && (
           <button
+            id="sections-add-button"
             onClick={() => {
               setIsEditMode(false);
               setEditingId(null);
@@ -582,6 +600,7 @@ export default function SecretarySections() {
         editingSection={sections.find((s) => s.id === editingId)}
         activeTerm={activeTerm ?? null}
         departments={departments}
+        programs={programs}
         userDepartmentId={user?.department_id}
         isVpaa={isVpaa}
         onClose={() => setIsModalOpen(false)}

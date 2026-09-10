@@ -6,6 +6,8 @@ export interface NavItem {
   icon?: LucideIcon     // optional for child items
   id?: string           // optional, used for onboarding tour targeting
   children?: NavItem[]  // optional submenu items
+  requiredCapability?: string | string[]
+  isLocked?: boolean
 }
 
 export interface NavSection {

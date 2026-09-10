@@ -48,7 +48,11 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
  * with no configured limit saw a capacity conflict on the second concurrent class
  * while the server would have accepted three (audit finding #39).
  */
-const DEFAULT_SHARED_SLOT_LIMIT = 3;
+// A field is open ground and an online class occupies no room, so neither is
+// capped unless a department deliberately sets a limit. The backend treats an
+// absent limit the same way; keeping the two in step stops the board flagging
+// conflicts the generator does not consider conflicts.
+export const UNLIMITED_SHARED_SLOT_LIMIT = Number.POSITIVE_INFINITY;
 
 const getRoomCapacity = (room: Room | undefined): number => {
   return Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
@@ -70,7 +74,7 @@ const getDepartmentRoomCapacity = (
     : department?.online_slot_limit;
 
   return configuredLimit == null
-    ? DEFAULT_SHARED_SLOT_LIMIT
+    ? UNLIMITED_SHARED_SLOT_LIMIT
     : Math.max(1, Number(configuredLimit) || 1);
 };
 

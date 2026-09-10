@@ -20,30 +20,33 @@ export const deanNav: NavSection[] = [
         label: 'Schedules',
         icon: CalendarDays,
         id: 'sidebar-schedules',
+        requiredCapability: ['schedule.view', 'schedule.approve_dean'],
         children: [
           {
             label: 'All Schedules',
             path: '/dean/schedules',
             icon: Calendar,
-            id: 'sidebar-all-schedules'
+            id: 'sidebar-all-schedules',
+            requiredCapability: 'schedule.view',
           },
           {
             label: 'Schedule Approval',
             path: '/dean/schedules/approval',
             icon: ClipboardCheck,
-            id: 'sidebar-schedule-approval'
+            id: 'sidebar-schedule-approval',
+            requiredCapability: 'schedule.approve_dean',
           },
         ]
       },
-      { label: 'Instructor', path: '/dean/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
-      { label: 'Rooms', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Instructor', path: '/dean/faculty', icon: GraduationCap, id: 'sidebar-faculty', requiredCapability: 'schedule.view' },
+      { label: 'Rooms', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
     ]
   },
   {
     section: 'SYSTEM',
     items: [
-      { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports' },
-      { label: 'Schedule History', path: '/dean/schedule-history', icon: History, id: 'sidebar-schedule-history' },
+      { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports', requiredCapability: 'schedule.view' },
+      { label: 'Schedule History', path: '/dean/schedule-history', icon: History, id: 'sidebar-schedule-history', requiredCapability: 'schedule.view' },
       { label: 'Settings', path: '/dean/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

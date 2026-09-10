@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutGrid, CheckCircle2, Lock, ArrowRight, AlertTriangle } from 'lucide-react';
-import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from './Skeleton';
 import api from '../../lib/api';
@@ -217,7 +217,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
                 </span>
                 {!yl.isComplete && (
                   <button
-                    onClick={() => navigate('/secretary/schedules')}
+                    onClick={() => navigate('/secretary/schedule-builder')}
                     className="text-[10px] font-bold text-[#4e0a10] bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 border border-[#4e0a10]/10 px-2.5 py-1 rounded-lg transition-colors"
                   >
                     Continue drafting

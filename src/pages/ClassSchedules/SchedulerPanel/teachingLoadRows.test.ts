@@ -35,13 +35,13 @@ describe("buildLoadLines", () => {
   it("writes the meridiem on both ends of a range", () => {
     const [line] = buildLoadLines([meeting({ startTime: "07:00", endTime: "09:00" })]);
 
-    expect(line.times).toEqual(["7:00 AM\u20139:00 AM"]);
+    expect(line.times).toEqual(["7:00 AM \u2013 9:00 AM"]);
   });
 
   it("keeps the meridiem on both ends when the range crosses noon", () => {
     const [line] = buildLoadLines([meeting({ startTime: "10:00", endTime: "13:00" })]);
 
-    expect(line.times).toEqual(["10:00 AM\u20131:00 PM"]);
+    expect(line.times).toEqual(["10:00 AM \u2013 1:00 PM"]);
   });
 
   it("gives a split day one line per meeting time, in day order", () => {
@@ -51,7 +51,7 @@ describe("buildLoadLines", () => {
     ]);
 
     expect(line.day).toBe("MTh");
-    expect(line.times).toEqual(["7:00 AM\u201310:00 AM", "7:00 AM\u20139:00 AM"]);
+    expect(line.times).toEqual(["7:00 AM \u2013 10:00 AM", "7:00 AM \u2013 9:00 AM"]);
   });
 
   it("collapses the repeated range when a split day keeps one time", () => {
@@ -61,7 +61,7 @@ describe("buildLoadLines", () => {
     ]);
 
     expect(line.day).toBe("TF");
-    expect(line.times).toEqual(["7:00 AM\u20139:00 AM"]);
+    expect(line.times).toEqual(["7:00 AM \u2013 9:00 AM"]);
   });
 
   it("leaves the day codes alone for the other split pairings", () => {
@@ -71,6 +71,6 @@ describe("buildLoadLines", () => {
     ]);
 
     expect(line.day).toBe("TTh");
-    expect(line.times).toEqual(["9:00 AM\u201311:00 AM", "10:00 AM\u20131:00 PM"]);
+    expect(line.times).toEqual(["9:00 AM \u2013 11:00 AM", "10:00 AM \u2013 1:00 PM"]);
   });
 });

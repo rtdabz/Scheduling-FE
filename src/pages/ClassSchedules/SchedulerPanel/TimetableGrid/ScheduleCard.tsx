@@ -15,6 +15,7 @@ interface ScheduleCardProps {
   isEditable: boolean;
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
+  isFinalizedFacultyEditing?: boolean;
   draggedScheduleId: string | null;
   isMoving: boolean;
   deleteConfirmScheduleId: string | null;
@@ -47,6 +48,7 @@ const ScheduleCard = memo(function ScheduleCard({
   isEditable,
   isPhase2Active,
   currentStatus,
+  isFinalizedFacultyEditing = false,
   draggedScheduleId,
   isMoving,
   deleteConfirmScheduleId,
@@ -75,14 +77,19 @@ const ScheduleCard = memo(function ScheduleCard({
     ? "LEC"
     : "";
   const displayModeLabel = schedule.isHybrid
-    ? meetingTypeLabel ? `Hybrid ${meetingTypeLabel}` : "Hybrid"
+    ? inferredMeetingType === "lecture"
+      ? "Online"
+      : inferredMeetingType === "laboratory"
+        ? "On-Site LAB"
+        : modeLabel
     : meetingTypeLabel && schedule.mode === "on-site"
     ? `${modeLabel} ${meetingTypeLabel}`
     : modeLabel;
   const isDraggingThis = draggedScheduleId === schedule.id;
   const hasFaculty = !!schedule.facultyId;
   const cardHeight = schedule.durationSlots * (slotHeight ?? 0);
-  const canAssignFaculty = isPhase2Active && currentStatus !== "finalized";
+  const canAssignFaculty = isPhase2Active && (currentStatus !== "finalized" || isFinalizedFacultyEditing);
+  const isInteractive = canAssignFaculty || (isEditable && !isPhase2Active);
   const isAwaitingFaculty = canAssignFaculty && !hasFaculty;
   const isFacultyAssigned = isPhase2Active && hasFaculty;
   const rawRoomName = (room?.name ?? schedule.roomName ?? "").trim();
@@ -110,10 +117,11 @@ const ScheduleCard = memo(function ScheduleCard({
 
   return (
     <div
+      data-tour={isAwaitingFaculty ? "unassigned-class" : undefined}
       draggable={isEditable && !isPhase2Active}
       onDragStart={(e) => !isPhase2Active && onDragStart(e, schedule)}
       onDragEnd={onDragEnd}
-      onClick={() => onCardClick(schedule.id)}
+      onClick={isInteractive ? () => onCardClick(schedule.id) : undefined}
       className={`w-full rounded-xl border-2 border-l-4 box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible ${
         slotHeight ? "" : "h-full"
       } ${paddingClasses} ${gridStyles.container} ${
@@ -130,7 +138,7 @@ const ScheduleCard = memo(function ScheduleCard({
           : isReadOnlyViewer
           ? "cursor-default"
           : "cursor-not-allowed"
-      } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-20" : ""} ${currentStatus === "finalized" ? "cursor-default" : ""}`}
+      } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-20" : ""} ${currentStatus === "finalized" && !isFinalizedFacultyEditing ? "cursor-default" : ""}`}
       style={{
         gridColumn: schedule.dayIndex + 2,
         gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}`,
@@ -223,9 +231,7 @@ const ScheduleCard = memo(function ScheduleCard({
             </span>
             <div className="flex flex-wrap items-start justify-end gap-0.5 shrink-0 max-w-[58%]">
               <span
-                className={`text-[7px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${
-                  schedule.isHybrid ? "bg-blue-50 text-blue-700 border border-blue-100" : modeBadgeClass
-                }`}
+                className={`text-[7px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}
               >
                 {displayModeLabel}
               </span>
@@ -257,11 +263,7 @@ const ScheduleCard = memo(function ScheduleCard({
             <span
               className={`shrink-0 whitespace-nowrap rounded py-0.5 text-[8px] font-bold ${
                 isWideView ? "" : "text-right leading-tight"
-              } ${
-                schedule.isHybrid
-                  ? "border border-blue-100 bg-blue-50 px-1.5 text-blue-700"
-                  : `px-1 ${modeBadgeClass}`
-              }`}
+              } px-1 ${modeBadgeClass}`}
             >
               {displayModeLabel}
             </span>

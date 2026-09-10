@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, } from 'lucide-react';
-import type { Curriculum, Program } from '../../types/curriculum';
+import type { Curriculum, CurriculumStatus, Department, Program } from '../../types/curriculum';
 
 interface CurriculumFormModalProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface CurriculumFormModalProps {
   curriculum: Curriculum | null;
   onClose: () => void;
   onSubmit: (data: Partial<Curriculum>) => Promise<void>;
+  departments: Department[];
   programs: Program[];
 }
 
@@ -18,18 +19,21 @@ export default function CurriculumFormModal({
   curriculum,
   onClose,
   onSubmit,
+  departments,
   programs,
 }: CurriculumFormModalProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [effectiveSchoolYear, setEffectiveSchoolYear] = useState('');
-  const [status, setStatus] = useState<'draft' | 'active' | 'archived'>('draft');
+  const [status, setStatus] = useState<CurriculumStatus>('deactivated');
   const [description, setDescription] = useState('');
   const [programId, setProgramId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState('');
   const [codeError, setCodeError] = useState('');
   const [effectiveYearError, setEffectiveYearError] = useState('');
+  const departmentPrograms = programs.filter((program) => String(program.department_id) === departmentId);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,13 +43,15 @@ export default function CurriculumFormModal({
         setEffectiveSchoolYear(curriculum.effective_school_year);
         setStatus(curriculum.status);
         setDescription(curriculum.description || '');
+        setDepartmentId(curriculum.department_id ? String(curriculum.department_id) : '');
         setProgramId(curriculum.program_id ? String(curriculum.program_id) : '');
       } else {
         setName('');
         setCode('');
         setEffectiveSchoolYear('');
-        setStatus('draft');
+        setStatus('deactivated');
         setDescription('');
+        setDepartmentId('');
         setProgramId('');
       }
       setNameError('');
@@ -88,6 +94,7 @@ export default function CurriculumFormModal({
         code: code.trim().toUpperCase(),
         effective_school_year: effectiveSchoolYear.trim(),
         status,
+        department_id: departmentId ? Number(departmentId) : null,
         program_id: programId ? Number(programId) : null,
         description: description.trim() || null,
       });
@@ -113,13 +120,14 @@ export default function CurriculumFormModal({
             <X size={20} />
           </button>
         </div>
-        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form id="curriculum-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                 Curriculum Name <span className="text-red-500">*</span>
               </label>
               <input
+                id="curriculum-name-input"
                 type="text"
                 value={name}
                 onChange={(e) => { setName(e.target.value); setNameError(''); }}
@@ -136,6 +144,7 @@ export default function CurriculumFormModal({
                 Code <span className="text-red-500">*</span>
               </label>
               <input
+                id="curriculum-code-input"
                 type="text"
                 value={code}
                 onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeError(''); }}
@@ -171,11 +180,11 @@ export default function CurriculumFormModal({
               </label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as 'draft' | 'active' | 'archived')}
+                onChange={(e) => setStatus(e.target.value as CurriculumStatus)}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
               >
-                <option value="draft">Draft</option>
                 <option value="active">Active</option>
+                <option value="deactivated">Deactivated</option>
                 <option value="archived">Archived</option>
               </select>
             </div>
@@ -183,21 +192,46 @@ export default function CurriculumFormModal({
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-              Program / Major <span className="text-gray-400 normal-case">(optional for shared curriculum)</span>
+              Department <span className="text-gray-400 normal-case">(optional for institution-wide curriculum)</span>
             </label>
             <select
-              value={programId}
-              onChange={(e) => setProgramId(e.target.value)}
+              id="curriculum-department-select"
+              value={departmentId}
+              onChange={(e) => {
+                setDepartmentId(e.target.value);
+                setProgramId('');
+              }}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
             >
-              <option value="">Shared / department-wide curriculum</option>
-              {programs.map((program) => (
-                <option key={program.id} value={program.id}>
-                  {program.code} - {program.name || program.cluster || 'Unnamed program'}
+              <option value="">Institution-wide curriculum</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.department_code} - {department.department_name}
                 </option>
               ))}
             </select>
           </div>
+
+          {departmentPrograms.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                Program / Major <span className="text-gray-400 normal-case">(optional)</span>
+              </label>
+              <select
+                id="curriculum-program-select"
+                value={programId}
+                onChange={(e) => setProgramId(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+              >
+                <option value="">Department-wide curriculum (no program)</option>
+                {departmentPrograms.map((program) => (
+                  <option key={program.id} value={program.id}>
+                    {program.code} - {program.name || program.cluster || 'Unnamed program'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -212,7 +246,7 @@ export default function CurriculumFormModal({
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+          <div id="curriculum-form-actions" className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}

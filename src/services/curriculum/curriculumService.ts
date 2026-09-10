@@ -9,6 +9,30 @@ export const curriculumService = {
     return res.data.map(mapApiCurriculum);
   },
 
+  /**
+   * The curricula a department is currently running. Several may be active at
+   * once while a department transitions, so callers must choose rather than
+   * assume the first is "the" curriculum.
+   */
+  async getActiveCurricula(departmentId: number): Promise<Curriculum[]> {
+    const res = await api.get<ApiCurriculum[]>('/curriculum', {
+      params: { department_id: departmentId, status: 'active' },
+    });
+    return res.data.map(mapApiCurriculum);
+  },
+
+  /** Points every active section of a year level at one curriculum. */
+  async assignCurriculumToYearLevel(payload: {
+    term_id: number;
+    department_id: number;
+    year_level: number;
+    curriculum_id: number;
+    section_ids?: number[];
+  }): Promise<{ message: string; curriculum_id: number; section_ids: number[] }> {
+    const res = await api.post('/sections/assign-curriculum', payload);
+    return res.data;
+  },
+
   async getCurriculumFull(id: number | string): Promise<CurriculumDetail> {
     const res = await api.get<CurriculumDetail>(`/curriculum/${id}/full`);
     return res.data;

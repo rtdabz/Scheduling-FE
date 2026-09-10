@@ -1,7 +1,7 @@
 import React from 'react';
 import { BookOpen, CalendarDays, Globe2, MapPin } from 'lucide-react';
 import WeeklyTimetableGrid from './WeeklyTimetableGrid';
-import { FULL_DAY_NAMES, timeToSlot, slotCount, slotToTimeLabel, formatTime12h } from '../../lib/timeGrid';
+import { FULL_DAY_NAMES, timeToSlot, slotCount, formatTime12h } from '../../lib/timeGrid';
 import { scheduleLocationLabel } from '../../lib/scheduleLocation';
 
 export interface DashboardSchedule {
@@ -165,11 +165,7 @@ export default function DashboardTimetableGrid({
         <WeeklyTimetableGrid
           days={[todayName]}
           slotCount={slotCount()}
-          headerHeight={54}
-          timeColumnWidth={88}
-          slotHeight={24}
           minWidth={0}
-          getTimeLabel={slotToTimeLabel}
           getDayCount={() => visibleSchedules.length}
         >
           {visibleSchedules.map(schedule => {

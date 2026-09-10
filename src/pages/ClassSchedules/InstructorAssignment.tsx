@@ -4,24 +4,32 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
-  Check,
   ChevronRight,
-  X,
-  UserRound,
-  Users,
+  UserMinus,
 } from "lucide-react";
 import axios from "axios";
 import api from "../../lib/api";
+import { yearLevelLabel } from "../../lib/termLabel";
+import { useToast } from "../../context/ToastContext";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
 import { apiErrorMessage } from "../../lib/apiError";
 import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
 import type { LoadTier, OverloadConfirmation } from "../../lib/overloadConfirmation";
-import { LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits } from "../../lib/facultyLoad";
 import OverloadConfirmationModal from "../../components/faculty/OverloadConfirmationModal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
+import { gridOpeningMinutes, slotCount, slotMinutes } from "../../lib/timeGrid";
 import WorkflowGuideButton from "../../components/help/WorkflowGuideButton";
 import { useWorkflowGuide } from "../../hooks/useWorkflowGuide";
+import FacultyModal from "./SchedulerPanel/Modals/FacultyModal";
+import type {
+  Faculty,
+  FacultyAssignmentPopupState,
+  ScheduleItem,
+  Subject,
+} from "./SchedulerPanel/types";
+import { INSTRUCTOR_ASSIGNABLE_STATUSES } from "./SchedulerPanel/types";
 
 interface StoredUser {
   department_id?: number | null;
@@ -49,15 +57,26 @@ interface ApiTerm {
 
 interface ApiSubject {
   id: number;
+  course_code?: string;
   subject_code: string;
+  course_name?: string;
   subject_name: string;
+  course_category?: string;
   subject_category: string;
+  units?: number | null;
+  lecture_hours?: number | null;
+  lab_hours?: number | null;
+  semester?: string;
+  year_level?: number | string | null;
+  room_type_required?: string | null;
+  status?: "active" | "inactive";
   department_id: number | null;
   teaching_department_id?: number | null;
   teaching_program_id?: number | null;
   program_id?: number | null;
   program?: { id?: number; code?: string; name?: string } | null;
   department?: ApiDepartment | null;
+  teaching_department?: ApiDepartment | null;
 }
 
 interface ApiFaculty {
@@ -76,6 +95,8 @@ interface ApiFaculty {
   probono_units?: number | null;
   assigned_units?: number | null;
   profile_picture?: string | null;
+  department?: ApiDepartment | null;
+  program?: { id?: number; code?: string; name?: string } | null;
   required_units?: number | null;
   unit_ceiling?: number | null;
   availabilities?: Array<{
@@ -94,9 +115,17 @@ interface ApiSchedule {
   subject_id?: number;
   faculty_id: number | null;
   faculty_assignment_done?: boolean | number;
+  section_id?: number;
+  room_id?: number | null;
   day: string;
   start_time: string;
   end_time: string;
+  mode?: "on-site" | "online" | "field";
+  is_hybrid?: boolean | number;
+  preferred_pattern?: string | null;
+  split_group_id?: string | null;
+  meeting_type?: "lecture" | "laboratory" | null;
+  meeting_index?: number | null;
   status: string;
   section?: { section_name?: string } | null;
   room?: { room_code?: string; building?: string | null } | null;
@@ -142,7 +171,7 @@ interface AssignmentUpdateResponse {
   schedules?: ApiSchedule[];
   /** Soft rules the assignment broke without being refused, e.g. a unit ceiling. */
   warnings?: AssignmentWarning[];
-  load?: AssignmentLoad;
+  load?: AssignmentLoad | null;
 }
 
 interface AssignmentSchedule extends ApiSchedule {
@@ -151,7 +180,7 @@ interface AssignmentSchedule extends ApiSchedule {
 }
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const ASSIGNMENT_STATUSES = ["approved", "faculty_assignment", "finalized"];
+const ASSIGNMENT_STATUSES = [...INSTRUCTOR_ASSIGNABLE_STATUSES, "finalized"];
 
 const getStoredUser = (): StoredUser => {
   const raw = localStorage.getItem("user") || sessionStorage.getItem("user");
@@ -210,62 +239,6 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
   });
 };
 
-/** Why a part-timer is unselectable for this meeting, in their own recorded terms. */
-const availabilityHint = (faculty: ApiFaculty, schedule: ApiSchedule): string => {
-  const windows = (faculty.availabilities ?? []).filter(
-    (a) => Number(a.day_index) === DAYS.indexOf(schedule.day)
-  );
-
-  if (windows.length === 0) {
-    return " - no availability recorded for " + schedule.day;
-  }
-
-  const hours = windows
-    .map((w) => `${formatTime(w.start_time)}-${formatTime(w.end_time)}`)
-    .join(", ");
-
-  return ` - available ${hours}`;
-};
-
-/**
- * The instructor's live load beside their name, so an overload is visible while
- * choosing rather than only once the confirmation appears. Advisory only — the
- * server decides what gets confirmed.
- */
-const facultyLoadHint = (faculty: ApiFaculty): string => {
-  const basic = faculty.required_units ?? basicLoadOf(faculty.max_units, faculty.deload_units);
-  if (basic <= 0) return "";
-
-  const assigned = faculty.assigned_units ?? 0;
-  const tier = loadTierForUnits(
-    {
-      basicLoad: basic,
-      overloadUnits: faculty.overload_units ?? 0,
-      probonoUnits: faculty.probono_units ?? 0,
-    },
-    assigned
-  );
-
-  return ` · ${assigned}/${basic} units${tier === "basic" ? "" : ` · ${LOAD_TIER_LABELS[tier]}`}`;
-};
-
-const facultyLoadDisplay = (faculty: ApiFaculty) => {
-  const basic = faculty.required_units ?? basicLoadOf(faculty.max_units, faculty.deload_units);
-  const assigned = faculty.assigned_units ?? 0;
-  const tier = loadTierForUnits({
-    basicLoad: basic,
-    overloadUnits: faculty.overload_units ?? 0,
-    probonoUnits: faculty.probono_units ?? 0,
-  }, assigned);
-  return {
-    basic,
-    assigned,
-    label: LOAD_TIER_LABELS[tier],
-    percentage: basic > 0 ? Math.min(100, (assigned / basic) * 100) : 0,
-    barClass: tier === "basic" ? "bg-blue-600" : tier === "beyond_ceiling" ? "bg-rose-500" : "bg-amber-500",
-  };
-};
-
 const getRoomName = (schedule: ApiSchedule): string =>
   schedule.room?.room_code || "Room not set";
 
@@ -273,6 +246,86 @@ const getFacultyName = (schedule: ApiSchedule): string | null => {
   if (!schedule.faculty) return null;
   return [schedule.faculty.first_name, schedule.faculty.last_name].filter(Boolean).join(" ") || null;
 };
+
+function InstructorAssignmentTimetableSkeleton({
+  hasFooter,
+}: {
+  hasFooter: boolean;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-busy="true" aria-label="Loading instructor assignments">
+      <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
+          <div>
+            <Skeleton className="h-4 w-64 max-w-[70vw]" />
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <Skeleton className="h-4 w-40 rounded-full" />
+              <Skeleton className="h-2 w-24" />
+              <Skeleton className="h-2 w-16" />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-9 w-24 rounded-xl" />
+          <Skeleton className="h-9 w-40 rounded-xl" />
+          <Skeleton className="h-9 w-32 rounded-xl" />
+        </div>
+      </div>
+
+      <div id="instructor-assignment-timetable" className="overflow-x-auto p-3">
+        <div className="max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white">
+          <WeeklyTimetableGrid
+            days={DAYS}
+            slotCount={slotCount()}
+            minWidth={1120}
+            isLoading
+          >
+            {[
+              { id: "assignment-skeleton-1", dayIndex: 0, startSlot: 2, durationSlots: 4 },
+              { id: "assignment-skeleton-2", dayIndex: 2, startSlot: 7, durationSlots: 3 },
+              { id: "assignment-skeleton-3", dayIndex: 4, startSlot: 11, durationSlots: 4 },
+            ].map((item) => (
+              <div
+                key={item.id}
+                className="z-10 box-border flex h-full flex-col justify-between overflow-hidden rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 shadow-sm animate-pulse"
+                style={{
+                  gridColumn: item.dayIndex + 2,
+                  gridRow: `${item.startSlot + 2} / span ${item.durationSlots}`,
+                  height: `${item.durationSlots * 24 - 4}px`,
+                }}
+              >
+                <div className="flex h-full flex-col justify-between">
+                  <div>
+                    <Skeleton className="mb-1.5 h-3 w-16" />
+                    <Skeleton className="mb-1 h-2.5 w-24" />
+                    <Skeleton className="h-2 w-12" />
+                  </div>
+                  <div className="mt-1 flex items-center gap-1">
+                    <Skeleton className="h-3.5 w-12 rounded-full" />
+                    <Skeleton className="h-3.5 w-12 rounded-full" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </WeeklyTimetableGrid>
+        </div>
+      </div>
+      {hasFooter && (
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50/70 px-4 py-3">
+          <Skeleton className="h-9 w-32 rounded-xl" />
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface ClearSectionResponse {
+  schedules_updated: number;
+  courses_cleared: number;
+  schedules: ApiSchedule[];
+  faculties: ApiFaculty[];
+}
 
 interface InstructorAssignmentProps {
   assignmentLocked?: boolean;
@@ -292,6 +345,7 @@ export interface InstructorAssignmentWorkspaceState {
 }
 
 export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", onWorkflowReady, refreshToken = 0 }: InstructorAssignmentProps = {}) {
+  const { toast } = useToast();
   const user = getStoredUser();
   const assignmentsCacheKey = `page:instructor-assignments:v5:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
@@ -304,8 +358,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
   const [selectedSection, setSelectedSection] = useState("all");
-  const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null);
-  const [selectedFacultyId, setSelectedFacultyId] = useState("");
+  const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
   // The assignment the server is asking about, kept whole so confirming replays
   // exactly what the user reviewed.
   const [overloadPrompt, setOverloadPrompt] = useState<{
@@ -315,15 +368,21 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   } | null>(null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(assignmentsCacheKey));
   const [isSaving, setIsSaving] = useState(false);
+  const [isClearingSection, setIsClearingSection] = useState(false);
+  const [clearSectionTarget, setClearSectionTarget] = useState<{
+    id: number;
+    name: string;
+    assignedCount: number;
+  } | null>(null);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<AssignmentWarning[]>([]);
   const instructorGuideSteps = useMemo(() => [
     { element: "#instructor-assignment-overview", title: "Review approved schedules", description: "This page shows approved classes that still need your instructors.", side: "bottom" as const },
-    { element: "#instructor-assignment-departments", title: "Choose a department", description: "Open a department with classes that need your instructors.", side: "top" as const },
-    { element: "#instructor-assignment-timetable", title: "Select an unassigned class", description: "Choose a class without an instructor to see eligible faculty.", side: "top" as const },
-    { element: "#instructor-assignment-section-filter", title: "Filter by section", description: "Show one section at a time when needed.", side: "bottom" as const },
+    { element: '[data-tour="department-card"]', waitFor: "#instructor-assignment-departments", action: "click" as const, taskHint: "Click a department card to continue.", title: "Choose a department", description: "Open a department with classes that need your instructors.", side: "top" as const },
+    { element: "#assignment-section-filter", action: "select" as const, taskHint: "Change the section filter to continue.", title: "Filter by section", description: "Show one section at a time when needed.", side: "bottom" as const },
+    { element: '#instructor-assignment-timetable button[aria-label$="needs instructor"]:not([disabled])', waitFor: "#instructor-assignment-timetable", action: "click" as const, skipIfMissing: true, taskHint: "Click a highlighted class that needs an instructor.", title: "Select an unassigned class", description: "Choose a class without an instructor to see eligible faculty.", side: "top" as const },
   ], []);
-  useWorkflowGuide({ id: "instructor-assignment", isReady: !isLoading && workflowGuideId === "instructor-assignment", steps: instructorGuideSteps });
+  useWorkflowGuide({ id: "instructor-assignment", isReady: !isLoading && workflowGuideId === "instructor-assignment", steps: instructorGuideSteps, mission: "Staff the Classes" });
 
   useEffect(() => {
     if (!isLoading) onWorkflowReady?.();
@@ -437,6 +496,13 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const visibleSchedules = departmentSchedules.filter((schedule) =>
     selectedSection === "all" || schedule.section?.section_name === selectedSection,
   );
+  const clearableSectionSchedules = selectedSection === "all"
+    ? []
+    : visibleSchedules.filter((schedule) => (
+        schedule.faculty_id !== null
+        && schedule.status !== "finalized"
+        && !Boolean(schedule.faculty_assignment_done)
+      ));
   const scheduleLayouts = useMemo(() => {
     const layouts: Array<{
       schedule: AssignmentSchedule;
@@ -466,8 +532,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         return {
           schedule,
           dayIndex,
-          startSlot: Math.max(0, Math.floor((startMinutes - 7 * 60) / 30)),
-          durationSlots: Math.max(1, Math.ceil((endMinutes - startMinutes) / 30)),
+          startSlot: Math.max(0, Math.floor((startMinutes - gridOpeningMinutes()) / slotMinutes())),
+          durationSlots: Math.max(1, Math.ceil((endMinutes - startMinutes) / slotMinutes())),
           lane,
         };
       });
@@ -478,26 +544,100 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     return layouts;
   }, [visibleSchedules]);
   const selectedSchedule = assignmentSchedules.find(
-    (schedule) => schedule.id === selectedScheduleId,
+    (schedule) => String(schedule.id) === facultyAssignmentPopup?.scheduleId,
   ) ?? null;
-  // A major tied to a program is taught only by instructors of that program, so
-  // the picker offers nobody the save would refuse.
-  const requiredProgramId = selectedSchedule
-    ? ((selectedSchedule.subject.subject_category ?? "major") === "major"
-      ? selectedSchedule.subject.program_id ?? null
-      : selectedSchedule.subject.teaching_program_id ?? null)
-    : null;
-  const eligibleFaculty = faculties.filter((faculty) =>
-    Number(faculty.department_id) === Number(currentDepartmentId)
-    && faculty.status !== "inactive"
-    && (user?.role?.toLowerCase() !== "program_head" || Number(faculty.program_id ?? 0) === Number(user?.program_id ?? 0))
-    && (requiredProgramId === null || Number(faculty.program_id ?? 0) === Number(requiredProgramId)),
-  );
-  const programRestrictionNote = requiredProgramId === null
-    ? null
-    : eligibleFaculty.length === 0
-      ? `No instructor in the ${selectedSchedule?.subject.program?.code ?? "assigned"} program is available yet — set the program on the instructor's profile first.`
-      : `Only ${selectedSchedule?.subject.program?.code ?? "assigned"} program instructors can teach this course.`;
+
+  const modalSubjects = useMemo<Subject[]>(() => subjects.map((subject) => ({
+    id: String(subject.id),
+    code: subject.course_code ?? subject.subject_code,
+    name: subject.course_name ?? subject.subject_name,
+    units: Number(subject.units ?? 0),
+    lectureHours: Number(subject.lecture_hours ?? 0),
+    labHours: Number(subject.lab_hours ?? 0),
+    category: (subject.course_category ?? subject.subject_category) === "major" ? "major" : "minor",
+    semester: subject.semester === "2nd" || subject.semester === "summer" ? subject.semester : "1st",
+    departmentId: subject.department_id,
+    teachingDepartmentId: subject.teaching_department_id ?? null,
+    teachingDepartmentCode: subject.teaching_department?.department_code,
+    teachingDepartmentName: subject.teaching_department?.department_name,
+    teachingProgramId: subject.teaching_program_id ?? null,
+    programId: subject.program_id ?? null,
+    programCode: subject.program?.code ?? null,
+    yearLevel: ([1, 2, 3, 4].includes(Number(subject.year_level)) ? Number(subject.year_level) : 1) as 1 | 2 | 3 | 4,
+    roomTypeRequired: subject.room_type_required === "laboratory"
+      || subject.room_type_required === "field"
+      || subject.room_type_required === "online"
+      ? subject.room_type_required
+      : "lecture",
+    status: subject.status ?? "active",
+  })), [subjects]);
+
+  const modalFaculties = useMemo<Faculty[]>(() => faculties.map((faculty) => ({
+    id: String(faculty.id),
+    name: `${faculty.first_name} ${faculty.last_name}`,
+    profilePicture: faculty.profile_picture ?? null,
+    employmentType: faculty.employment_type,
+    departmentId: faculty.department_id,
+    departmentCode: faculty.department?.department_code,
+    departmentName: faculty.department?.department_name,
+    programId: faculty.program_id ?? null,
+    programCode: faculty.program?.code ?? null,
+    maxUnits: faculty.max_units ?? undefined,
+    deloadUnits: faculty.deload_units ?? undefined,
+    overloadUnits: faculty.overload_units ?? undefined,
+    probonoUnits: faculty.probono_units ?? undefined,
+    assignedUnits: faculty.assigned_units ?? undefined,
+    requiredUnits: faculty.required_units ?? undefined,
+    unitCeiling: faculty.unit_ceiling ?? undefined,
+    status: faculty.status,
+    availabilities: (faculty.availabilities ?? []).map((availability, index) => ({
+      id: index,
+      faculty_id: faculty.id,
+      ...availability,
+    })),
+  })), [faculties]);
+
+  const modalSchedules = useMemo<ScheduleItem[]>(() => assignmentSchedules.map((schedule) => {
+    const subject = schedule.subject;
+    const startMinutes = timeToMinutes(schedule.start_time);
+    const endMinutes = timeToMinutes(schedule.end_time);
+    return {
+      id: String(schedule.id),
+      termId: Number(schedule.term_id),
+      departmentId: Number(schedule.department_id),
+      courseId: String(subject.id),
+      subjectId: String(subject.id),
+      courseCode: subject.course_code ?? subject.subject_code,
+      subjectCode: subject.course_code ?? subject.subject_code,
+      courseName: subject.course_name ?? subject.subject_name,
+      subjectName: subject.course_name ?? subject.subject_name,
+      courseType: (subject.course_category ?? subject.subject_category) === "major" ? "major" : "minor",
+      subjectType: (subject.course_category ?? subject.subject_category) === "major" ? "major" : "minor",
+      lectureUnits: Number(subject.lecture_hours ?? 0),
+      laboratoryUnits: Number(subject.lab_hours ?? 0),
+      totalUnits: Number(subject.units ?? 0),
+      sectionName: schedule.section?.section_name ?? "Unspecified section",
+      roomName: getRoomName(schedule),
+      day: schedule.day,
+      startTime: formatTime(schedule.start_time),
+      endTime: formatTime(schedule.end_time),
+      mode: schedule.mode ?? "on-site",
+      facultyName: getFacultyName(schedule),
+      facultyId: schedule.faculty_id === null ? null : String(schedule.faculty_id),
+      facultyAssignmentDone: Boolean(schedule.faculty_assignment_done),
+      status: schedule.status as ScheduleItem["status"],
+      dayIndex: DAYS.indexOf(schedule.day),
+      startSlot: Math.max(0, Math.floor((startMinutes - gridOpeningMinutes()) / slotMinutes())),
+      durationSlots: Math.max(1, Math.ceil((endMinutes - startMinutes) / slotMinutes())),
+      sectionId: String(schedule.section_id ?? schedule.section?.section_name ?? ""),
+      roomId: schedule.room_id === null || schedule.room_id === undefined ? "" : String(schedule.room_id),
+      isHybrid: Boolean(schedule.is_hybrid),
+      preferredPattern: schedule.preferred_pattern ?? null,
+      splitGroupId: schedule.split_group_id ?? null,
+      meetingType: schedule.meeting_type ?? null,
+      meetingIndex: schedule.meeting_index ?? 1,
+    };
+  }), [assignmentSchedules]);
 
   const openDepartment = (departmentId: number) => {
     if (assignmentLocked) return;
@@ -507,16 +647,17 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
 
   const openAssignment = (schedule: AssignmentSchedule) => {
     if (assignmentLocked || schedule.status === "finalized" || Boolean(schedule.faculty_assignment_done)) return;
-    setSelectedScheduleId(schedule.id);
-    setSelectedFacultyId(schedule.faculty_id ? String(schedule.faculty_id) : "");
+    setFacultyAssignmentPopup({
+      scheduleId: String(schedule.id),
+      facultyId: schedule.faculty_id ? String(schedule.faculty_id) : "",
+    });
     setError("");
     setWarnings([]);
   };
 
   const closeAssignment = () => {
     if (isSaving) return;
-    setSelectedScheduleId(null);
-    setSelectedFacultyId("");
+    setFacultyAssignmentPopup(null);
   };
 
   /**
@@ -526,7 +667,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
    */
   const submitAssignment = async (
     schedule: AssignmentSchedule,
-    facultyId: number,
+    facultyId: number | null,
     confirmOverload: boolean
   ) => {
     setIsSaving(true);
@@ -568,13 +709,18 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       });
 
       setOverloadPrompt(null);
-      setSelectedScheduleId(null);
-      setSelectedFacultyId("");
+      setFacultyAssignmentPopup(null);
+      toast.success(
+        facultyId === null ? "Instructor Removed" : "Instructor Assigned",
+        facultyId === null
+          ? "The instructor assignment was removed successfully."
+          : "The instructor was assigned successfully.",
+      );
     } catch (err) {
       // Past the Basic Load the server asks rather than refuses, so this is a
       // question to put to the user — not an error to report.
       const confirmation = overloadConfirmationFrom(err);
-      if (confirmation) {
+      if (confirmation && facultyId !== null) {
         setOverloadPrompt({ confirmation, schedule, facultyId });
         return;
       }
@@ -587,13 +733,101 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   };
 
   const saveAssignment = () => {
-    if (!selectedSchedule || !selectedFacultyId) {
+    if (!selectedSchedule || !facultyAssignmentPopup?.facultyId) {
       setError("Select an instructor before saving.");
       return;
     }
 
-    void submitAssignment(selectedSchedule, Number(selectedFacultyId), false);
+    void submitAssignment(selectedSchedule, Number(facultyAssignmentPopup.facultyId), false);
   };
+
+  const removeAssignment = () => {
+    if (!selectedSchedule?.faculty_id) return;
+    void submitAssignment(selectedSchedule, null, false);
+  };
+
+  const requestClearSection = () => {
+    const sectionId = Number(clearableSectionSchedules[0]?.section_id ?? 0);
+    if (!sectionId || selectedSection === "all" || clearableSectionSchedules.length === 0) return;
+    setClearSectionTarget({
+      id: sectionId,
+      name: selectedSection,
+      assignedCount: clearableSectionSchedules.length,
+    });
+  };
+
+  const clearSectionInstructors = async () => {
+    if (!clearSectionTarget || isClearingSection) return;
+    setIsClearingSection(true);
+    setError("");
+    try {
+      const response = await api.delete<ClearSectionResponse>(
+        `/instructor-assignments/sections/${clearSectionTarget.id}`,
+      );
+      const updatedScheduleMap = new Map(response.data.schedules.map((schedule) => [schedule.id, schedule]));
+      const updatedFacultyMap = new Map(response.data.faculties.map((faculty) => [faculty.id, faculty]));
+      const nextSchedules = schedules.map((schedule) => updatedScheduleMap.get(schedule.id) ?? schedule);
+      const nextFaculties = faculties.map((faculty) => updatedFacultyMap.get(faculty.id) ?? faculty);
+
+      setSchedules(nextSchedules);
+      setFaculties(nextFaculties);
+      setCachedData<AssignmentResponse>(assignmentsCacheKey, {
+        active_term: activeTerm,
+        current_department_id: currentDepartmentId,
+        departments,
+        subjects,
+        faculties: nextFaculties,
+        schedules: nextSchedules,
+        incoming_courses: incomingCourses,
+      });
+      setClearSectionTarget(null);
+      toast.success(
+        "Instructors Cleared",
+        `${response.data.courses_cleared} course ${response.data.courses_cleared === 1 ? "assignment was" : "assignments were"} cleared for ${selectedSection}.`,
+      );
+    } catch (err) {
+      setError(apiErrorMessage(err, "Unable to clear the section's instructors. Please try again."));
+    } finally {
+      setIsClearingSection(false);
+    }
+  };
+
+  const handlePopupFacultyChange = (facultyId: string) => {
+    if (!facultyAssignmentPopup) return;
+    setFacultyAssignmentPopup({ ...facultyAssignmentPopup, facultyId });
+    setError("");
+  };
+
+  const checkModalFacultyConflict = (facultyId: string, scheduleId: string): string | null => {
+    const faculty = faculties.find((item) => String(item.id) === facultyId);
+    const schedule = assignmentSchedules.find((item) => String(item.id) === scheduleId);
+    if (!faculty || !schedule) return null;
+
+    if (isPartTimeOutsideAvailability(faculty, schedule)) {
+      return `Outside the instructor's availability on ${schedule.day}.`;
+    }
+
+    const start = timeToMinutes(schedule.start_time);
+    const end = timeToMinutes(schedule.end_time);
+    const conflict = schedules.some((item) => (
+      String(item.id) !== scheduleId
+      && String(item.faculty_id ?? "") === facultyId
+      && Number(item.term_id) === Number(schedule.term_id)
+      && item.day === schedule.day
+      && start < timeToMinutes(item.end_time)
+      && timeToMinutes(item.start_time) < end
+    ));
+
+    return conflict ? "Instructor has an overlapping class at this time." : null;
+  };
+
+  if (isLoading && selectedDepartmentId !== null) {
+    return (
+      <InstructorAssignmentTimetableSkeleton
+        hasFooter={Boolean(footerActions)}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -741,7 +975,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
                   <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
                     {incomingCourses.map((course) => (
                       <div key={course.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-                        <div><p className="text-sm font-black text-slate-900">{course.course_code} · {course.course_name}</p><p className="text-xs text-slate-500">Source: {course.department?.department_code ?? course.department?.department_name ?? 'Shared'} · {course.units ?? 0} units · Year {course.year_level ?? '—'}</p></div>
+                        <div><p className="text-sm font-black text-slate-900">{course.course_code} · {course.course_name}</p><p className="text-xs text-slate-500">Source: {course.department?.department_code ?? course.department?.department_name ?? 'Shared'} · {course.units ?? 0} units · {yearLevelLabel(course.year_level)}</p></div>
                         <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Schedule required</span>
                       </div>
                     ))}
@@ -758,6 +992,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
                   <button
                     key={department.id}
                     type="button"
+                    data-tour="department-card"
                     onClick={() => openDepartment(department.id)}
                     className={`group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#C9952A]/60 hover:shadow-md ${
                       items.length >= 4 ? "xl:row-span-2" : ""
@@ -828,6 +1063,18 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
                 <option value="all">All sections</option>
                 {sections.map((section) => <option key={section}>{section}</option>)}
               </select>
+              {selectedSection !== "all" && (
+                <button
+                  type="button"
+                  onClick={requestClearSection}
+                  disabled={Boolean(assignmentLocked) || isSaving || isClearingSection || clearableSectionSchedules.length === 0}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Remove every instructor assignment you can manage in this section"
+                >
+                  <UserMinus className="h-4 w-4" />
+                  Clear Instructor
+                </button>
+              )}
               <span className="flex h-9 items-center rounded-xl bg-[#4e0a10] px-3 text-xs font-bold text-[#E8D5C4]">
                 {departmentSchedules.filter((schedule) => schedule.faculty_id).length} of {departmentSchedules.length} assigned
               </span>
@@ -838,12 +1085,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
             <div className="max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white">
               <WeeklyTimetableGrid
                 days={DAYS}
-                slotCount={24}
-                slotHeight={24}
-                headerHeight={44}
-                timeColumnWidth={80}
+                slotCount={slotCount()}
                 minWidth={1120}
-                getTimeLabel={(slot) => formatTime(`${String(7 + slot / 2).padStart(2, "0")}:00:00`)}
                 getDayCount={(dayIndex) => visibleSchedules.filter(
                   (schedule) => schedule.day === DAYS[dayIndex],
                 ).length}
@@ -893,63 +1136,45 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         </section>
       )}
 
-      {selectedSchedule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-2xl">
-            <div className="flex items-start justify-between border-b border-[#3a0809] bg-[#4e0a10] p-5 text-white">
-              <div>
-                <h2 className="text-base font-black text-white">Assign Instructor</h2>
-                <p className="mt-1 text-xs font-semibold text-white/75">
-                  {selectedSchedule.subject.subject_code} · {selectedSchedule.subject.subject_name}
-                </p>
-              </div>
-              <button type="button" onClick={closeAssignment} disabled={isSaving} className="rounded-lg p-2 text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-50" aria-label="Close assignment dialog">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="grid min-h-0 flex-1 gap-3 overflow-hidden p-3 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
-              <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3">
-                <div className="flex shrink-0 items-center gap-2 pb-2 text-base font-black text-slate-900"><Users className="h-5 w-5 text-blue-600" /> Select Instructor</div>
-                <p className="mb-2 shrink-0 text-xs font-medium text-slate-500">Choose an eligible instructor, then review the assignment details.</p>
-                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                  {eligibleFaculty.map((faculty) => {
-                    const unavailable = isPartTimeOutsideAvailability(faculty, selectedSchedule);
-                    const selected = selectedFacultyId === String(faculty.id);
-                    const load = facultyLoadDisplay(faculty);
-                    const name = `${faculty.first_name} ${faculty.last_name}`;
-                    return <button key={faculty.id} type="button" onClick={() => setSelectedFacultyId(String(faculty.id))} disabled={unavailable || isSaving} aria-pressed={selected} className={`grid w-full grid-cols-[minmax(0,1fr)_132px_24px] items-center gap-3 rounded-lg border px-3 py-3 text-left shadow-sm transition-colors ${selected ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"} disabled:cursor-not-allowed disabled:opacity-50`}>
-                      <span className="flex min-w-0 items-center gap-3">{faculty.profile_picture ? <img src={faculty.profile_picture} alt={name} className="h-12 w-12 shrink-0 rounded-full border border-slate-200 object-cover" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UserRound className="h-6 w-6" /></span>}<span className="min-w-0"><span className="block break-words text-sm font-black leading-5 text-slate-900">{name}</span><span className={`mt-1 flex items-center gap-2 text-xs font-medium ${selected ? "text-blue-600" : unavailable ? "text-amber-700" : "text-slate-500"}`}><span className={`h-2 w-2 rounded-full ${selected ? "bg-blue-600" : unavailable ? "bg-amber-500" : "bg-emerald-500"}`} />{selected ? "Selected" : unavailable ? "Unavailable" : "Available"}</span></span></span>
-                      <span className="block min-w-0"><span className="flex justify-between gap-2 text-xs text-slate-500"><span>Basic Load</span><span className="whitespace-nowrap font-bold text-slate-800">{load.assigned} / {load.basic}</span></span><span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${load.barClass}`} style={{ width: `${load.percentage}%` }} /></span><span className="mt-1.5 inline-flex text-[10px] font-bold text-slate-500">{load.label}</span></span>
-                      <span className={`flex h-6 w-6 items-center justify-center rounded-full ${selected ? "bg-blue-600 text-white" : "text-transparent"}`}><Check className="h-4 w-4" /></span>
-                    </button>;
-                  })}
-                  {eligibleFaculty.length === 0 && <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">No eligible instructors are available.</p>}
-                </div>
-              </aside>
-              <main className="min-h-0 space-y-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-4">
-                <h3 className="text-sm font-black text-slate-900">Assignment Details</h3>
-              <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
-                <div><div className="font-semibold text-slate-400">Section</div><div className="mt-1 font-bold text-slate-700">{selectedSchedule.section?.section_name}</div></div>
-                <div><div className="font-semibold text-slate-400">Offering department</div><div className="mt-1 font-bold text-slate-700">{selectedSchedule.department.department_code}</div></div>
-                <div><div className="font-semibold text-slate-400">Schedule</div><div className="mt-1 font-bold text-slate-700">{selectedSchedule.day}, {formatTime(selectedSchedule.start_time)}</div></div>
-                <div><div className="font-semibold text-slate-400">Room</div><div className="mt-1 font-bold text-slate-700">{getRoomName(selectedSchedule)}</div></div>
-              </div>
-              {programRestrictionNote && (
-                <p className="text-xs font-semibold text-[#7a4c08]">{programRestrictionNote}</p>
-              )}
-              {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
-              <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={closeAssignment} disabled={isSaving} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-                <button type="button" onClick={() => void saveAssignment()} disabled={isSaving} className="flex items-center gap-2 rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-bold text-[#E8D5C4] hover:bg-[#3a0809] disabled:opacity-70">
-                  {isSaving ? <LoadingSpinner className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {isSaving ? "Saving..." : "Assign Instructor"}
-                </button>
-              </div>
-              </main>
-            </div>
-          </div>
-        </div>
-      )}
+      <FacultyModal
+        facultyAssignmentPopup={facultyAssignmentPopup}
+        facultyActionSlotId={isSaving && facultyAssignmentPopup ? facultyAssignmentPopup.scheduleId : null}
+        schedules={modalSchedules}
+        popupConflictWarning={facultyAssignmentPopup?.facultyId
+          ? checkModalFacultyConflict(facultyAssignmentPopup.facultyId, facultyAssignmentPopup.scheduleId) ?? ""
+          : ""}
+        popupValidationError={error}
+        setFacultyAssignmentPopup={(value) => {
+          if (isSaving) return;
+          setFacultyAssignmentPopup(value);
+          if (value === null) closeAssignment();
+        }}
+        handlePopupFacultyChange={handlePopupFacultyChange}
+        handleAssignFaculty={(event) => {
+          event.preventDefault();
+          saveAssignment();
+        }}
+        handleRemoveFaculty={removeAssignment}
+        canManageScheduleFaculty={() => !assignmentLocked}
+        getFacultyRestrictionMessage={() => "Only the assigned teaching department can change this instructor."}
+        checkFacultyConflict={checkModalFacultyConflict}
+        subjects={modalSubjects}
+        faculties={modalFaculties}
+      />
+
+      <ConfirmModal
+        isOpen={clearSectionTarget !== null}
+        eyebrow="Section Instructor Assignment"
+        title="Clear all instructors?"
+        message={clearSectionTarget
+          ? `Remove all ${clearSectionTarget.assignedCount} assigned course sessions/components from ${clearSectionTarget.name}? Timetable placements and approval status will remain unchanged.`
+          : ""}
+        confirmLabel="Clear Instructors"
+        variant="danger"
+        isConfirming={isClearingSection}
+        onConfirm={clearSectionInstructors}
+        onCancel={() => !isClearingSection && setClearSectionTarget(null)}
+      />
 
       {overloadPrompt && (
         <OverloadConfirmationModal
@@ -966,4 +1191,3 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     </div>
   );
 }
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

@@ -22,9 +22,10 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
-import { clearDataCache, getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
-import WeeklyTimetableGrid, { WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
+import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX, WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
+import { slotCount, timeToSlot } from '../../lib/timeGrid';
 import ScheduleApprovalList from '../../components/scheduling/ScheduleApprovalList';
 import type { ApprovalScheduleItem } from '../../components/scheduling/ScheduleApprovalList';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
@@ -147,7 +148,8 @@ const dayOrder: Record<string, number> = {
   Sunday: 7,
 };
 
-const APPROVAL_SLOT_HEIGHT_PX = 24;
+/** Aliased to the shared geometry so cards keep matching the rows they sit on. */
+const APPROVAL_SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
 
 const submissionDisplayStatus = (submission: RawScheduleSubmission): ScheduleApproval['status'] => {
   switch (submission.status) {
@@ -157,6 +159,20 @@ const submissionDisplayStatus = (submission: RawScheduleSubmission): ScheduleApp
     case 'rejected_by_dean': return 'rejected_by_dean';
     case 'rejected_by_vpaa': return 'rejected';
     default: return 'revision';
+  }
+};
+
+const scheduleStatusesForSubmission = (status: RawScheduleSubmission['status']): string[] => {
+  switch (status) {
+    case 'pending_dean': return ['submitted'];
+    case 'pending_vpaa': return ['approved_by_dean', 'conditionally_approved'];
+    case 'approved': return ['faculty_assignment', 'reassignment', 'finalized'];
+    case 'withdrawn':
+    case 'partially_withdrawn':
+    case 'rejected_by_dean':
+    case 'rejected_by_vpaa':
+      return ['draft', 'completed', 'revision', 'rejected', 'rejected_by_dean', 'rejected_by_vpaa'];
+    default: return [];
   }
 };
 
@@ -182,14 +198,6 @@ const parseApiDate = (value: string): Date => {
   const normalized = value.includes('T') ? value : value.replace(' ', 'T');
   return new Date(hasTimezone ? normalized : `${normalized}Z`);
 };
-
-interface ScheduleApprovalPageData {
-  schedules: ScheduleApproval[];
-  rawSchedules: RawSchedule[];
-  rawSections: RawSection[];
-  departments: DepartmentOption[];
-  activeTerm: ApprovalTerm | null;
-}
 
 interface ApprovalTerm {
   id: number | string;
@@ -278,14 +286,12 @@ const getDeptColorClasses = (dept: string) => {
   }
 };
 
-const getSlotIndexFrom24h = (timeStr: string): number => {
-  const parts = timeStr.split(':');
-  if (parts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  const totalMinutes = (hours * 60 + minutes) - (7 * 60);
-  return Math.max(0, Math.floor(totalMinutes / 30));
-};
+/**
+ * Kept as a thin alias so the approval grid places cards on exactly the rows
+ * WeeklyTimetableGrid drew. The local copy hardcoded a 07:00 opening and a
+ * 30-minute slot, which silently disagreed with a reconfigured grid window.
+ */
+const getSlotIndexFrom24h = (timeStr: string): number => timeToSlot(timeStr);
 
 const formatTime24hTo12h = (timeStr: string): string => {
   const parts = timeStr.split(':');
@@ -300,14 +306,12 @@ const formatTime24hTo12h = (timeStr: string): string => {
 
 export default function VpaaScheduleApprovalPage() {
   const { toast } = useToast();
-  const approvalCacheKey = 'page:vpaa-schedule-approval';
-  const cachedApprovalData = getCachedData<ScheduleApprovalPageData>(approvalCacheKey);
-  const [schedules, setSchedules] = useState<ScheduleApproval[]>(cachedApprovalData?.schedules ?? []);
-  const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>(cachedApprovalData?.rawSchedules ?? []);
-  const [rawSections, setRawSections] = useState<RawSection[]>(cachedApprovalData?.rawSections ?? []);
-  const [departments, setDepartments] = useState<DepartmentOption[]>(cachedApprovalData?.departments ?? []);
-  const [activeTerm, setActiveTerm] = useState<ApprovalTerm | null>(cachedApprovalData?.activeTerm ?? null);
-  const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(approvalCacheKey));
+  const [schedules, setSchedules] = useState<ScheduleApproval[]>([]);
+  const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>([]);
+  const [rawSections, setRawSections] = useState<RawSection[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [activeTerm, setActiveTerm] = useState<ApprovalTerm | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Filters
   const [selectedQueueTab, setSelectedQueueTab] = useState<VpaaQueueTab>('pending');
@@ -337,8 +341,8 @@ export default function VpaaScheduleApprovalPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        setIsLoading(!hasCachedData(approvalCacheKey));
-          const data = await loadCachedData<ScheduleApprovalPageData>(approvalCacheKey, async () => {
+        setIsLoading(true);
+        const data = await (async () => {
           const response = await api.get<{
             active_term: ApprovalTerm | null;
             departments: RawDepartment[];
@@ -395,8 +399,10 @@ export default function VpaaScheduleApprovalPage() {
               const departmentId = String(submission.department_id);
               const workflowSectionIds = submissionSectionIds(submission);
               const deptSchedules = schedulesByDepartment[departmentId] ?? [];
+              const allowedStatuses = new Set(scheduleStatusesForSubmission(submission.status));
               const visibleDeptSchedules = deptSchedules.filter((schedule) =>
                 workflowSectionIds.includes(String(schedule.section_id))
+                && allowedStatuses.has(String(schedule.status))
               );
               const firstSchedule = visibleDeptSchedules[0] ?? deptSchedules[0];
 
@@ -422,7 +428,7 @@ export default function VpaaScheduleApprovalPage() {
             departments: mappedDepts,
             activeTerm: term,
           };
-        }, true);
+        })();
 
         setDepartments(data.departments);
         setRawSchedules(data.rawSchedules);
@@ -470,7 +476,7 @@ export default function VpaaScheduleApprovalPage() {
               : s
           )
         );
-        clearDataCache();
+        invalidateCacheGroups('schedules', 'approvals', 'dashboards');
 
         toast.success('Success', `${approveConfirm.department} schedule has been approved successfully.`);
       } catch (err) {
@@ -513,7 +519,7 @@ export default function VpaaScheduleApprovalPage() {
               : s
           )
         );
-        clearDataCache();
+        invalidateCacheGroups('schedules', 'approvals', 'dashboards');
 
         toast.error('Rejected', `${rejectConfirm.department} schedule has been returned for revision.`);
       } catch (err) {
@@ -632,34 +638,32 @@ export default function VpaaScheduleApprovalPage() {
     return 'Field';
   };
 
-  // Timetable Grid Slot Generator (7:00 AM to 9:00 PM)
-  const timeSlots = useMemo(() => {
-    const slots = [];
-    let hour = 7;
-    let mins = 0;
-    while (hour < 21 || (hour === 21 && mins === 0)) {
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const displayHr = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-      const slotStr = `${displayHr}:${mins === 0 ? '00' : '30'} ${ampm}`;
-      slots.push(slotStr);
-      mins += 30;
-      if (mins === 60) {
-        mins = 0;
-        hour += 1;
-      }
-    }
-    return slots;
-  }, []);
+  /**
+   * The approval grid renders the same 7:00 AM-8:30 PM window as every other
+   * timetable. It used to build its own 7:00 AM-9:00 PM label list, so an
+   * approver compared a 29-row grid against the 27-row builder grid the
+   * schedule was actually created on.
+   */
+  const approvalSlotCount = useMemo(() => slotCount(), []);
 
   const modalSchedules = useMemo(() => {
     if (!viewSchedule) return [];
     const workflowSectionIds = new Set(viewSchedule.workflowSectionIds ?? []);
     const pendingVpaaReview = viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved';
+    const allowedStatuses = new Set(
+      pendingVpaaReview
+        ? ['approved_by_dean', 'conditionally_approved']
+        : viewSchedule.status === 'approved'
+          ? ['faculty_assignment', 'reassignment', 'finalized']
+          : viewSchedule.status === 'revision'
+            ? ['draft', 'completed', 'revision', 'rejected', 'rejected_by_dean', 'rejected_by_vpaa']
+            : ['submitted'],
+    );
     return rawSchedules
       .filter((schedule) => (
         Number(schedule.department_id) === Number(viewSchedule.id)
         && (workflowSectionIds.size === 0 || workflowSectionIds.has(String(schedule.section_id)))
-        && (!pendingVpaaReview || schedule.status === 'approved_by_dean' || schedule.status === 'conditionally_approved')
+        && allowedStatuses.has(String(schedule.status))
       ))
       .sort((left, right) => (
         getSectionName(left).localeCompare(getSectionName(right))
@@ -832,7 +836,7 @@ export default function VpaaScheduleApprovalPage() {
 
   return (
     <div className="relative">
-      <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
+      <div id="schedule-approval-tabs" className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
         {queueTabs.map((tab) => {
           const active = selectedQueueTab === tab.id;
           return (
@@ -852,7 +856,7 @@ export default function VpaaScheduleApprovalPage() {
         })}
       </div>
       {/* Filter Row */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
+      <div id="schedule-approval-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">
           <select 
             value={selectedDept}
@@ -907,7 +911,7 @@ export default function VpaaScheduleApprovalPage() {
       </div>
 
       {/* Table Card wrapper */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+      <div id="schedule-approval-list" className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -1198,10 +1202,9 @@ export default function VpaaScheduleApprovalPage() {
                 <div className="flex-1 min-h-0 overflow-auto overscroll-contain w-full">
                     <WeeklyTimetableGrid
                       days={WEEK_DAYS}
-                      slotCount={timeSlots.length}
+                      slotCount={approvalSlotCount}
                       slotHeight={APPROVAL_SLOT_HEIGHT_PX}
                       minWidth={750}
-                      getTimeLabel={(slot) => timeSlots[slot] ?? ''}
                       getDayCount={(dayIndex) => selectedSectionSchedules.filter((item) => item.day === WEEK_DAYS[dayIndex]).length}
                     >
                       {selectedSectionSchedules.map((item) => {

@@ -31,6 +31,17 @@ interface CourseBankProps {
   isLoading?: boolean;
 }
 
+/**
+ * Whether the bank has anything to offer for the current workflow step.
+ *
+ * The panel animates the bank open and closed, so its column is laid out by
+ * the parent - which has to know the bank would render nothing before it
+ * reserves and animates that space.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const isCourseBankAvailable = (isPhase2Active: boolean, currentStatus: string): boolean =>
+  !isPhase2Active || currentStatus === "approved";
+
 export default function CourseBank({
   sections,
   isPhase2Active,
@@ -55,7 +66,7 @@ export default function CourseBank({
   handleDragEnd,
   isLoading = false
 }: CourseBankProps) {
-  if (isPhase2Active && currentStatus !== "approved") return null;
+  if (!isCourseBankAvailable(isPhase2Active, currentStatus)) return null;
 
   const visibleCategories = listCategories.filter((c) =>
     filteredSubjects.some((s) => s.category === c)
@@ -68,7 +79,7 @@ export default function CourseBank({
   ];
 
   return (
-    <div id="schedule-builder-course-bank" className="flex h-[min(34rem,70vh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white lg:h-full lg:w-1/4 lg:min-w-[280px] lg:rounded-none lg:border-y-0 lg:border-l-0">
+    <div id="schedule-builder-course-bank" className="flex h-[min(34rem,70vh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white lg:h-full lg:min-h-[24rem] lg:w-full lg:rounded-none lg:border-y-0 lg:border-l-0">
       <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
         <div className="flex items-center gap-2">
           <BookOpen className="w-5 h-5 text-[#4e0a10]" />

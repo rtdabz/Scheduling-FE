@@ -17,9 +17,17 @@ export type ScheduleStatus =
   | "rejected_by_dean"
   | "approved"
   | "faculty_assignment"
+  | "reassignment"
   | "finalized"
   | "rejected"
   | "revision";
+
+/** Workflow stages in which instructor assignment may be changed. */
+export const INSTRUCTOR_ASSIGNABLE_STATUSES: ScheduleStatus[] = [
+  "approved",
+  "faculty_assignment",
+  "reassignment",
+];
 
 export interface Department {
   id: number;
@@ -99,6 +107,14 @@ export interface Section {
   yearLevel: YearLevel;
   semester: Semester;
   departmentId: number;
+  programId?: number | null;
+  /**
+   * The curriculum this cohort follows. A department mid-transition runs an old
+   * and a new curriculum at once, so this cannot be inferred from the
+   * department — null means nobody has chosen yet and generation is blocked.
+   */
+  curriculumId?: number | null;
+  curriculumName?: string | null;
   termId: number;
   status: "active" | "inactive";
 }
@@ -216,6 +232,22 @@ export interface DepartmentSectionProgress {
   isSelected: boolean;
   /** Meeting blocks in this section that currently have an instructor. */
   assignedInstructorBlocks: number;
+  /** True only when every schedule row has completed the instructor handoff. */
+  facultyAssignmentDone: boolean;
+}
+
+/** One department section offered in the bulk "mark sections done" checklist. */
+export interface SectionDoneCandidate {
+  sectionId: string;
+  sectionName: string;
+  yearLevel: number;
+  requiredSubjects: number;
+  plottedSubjects: number;
+  /** Schedule row ids that would move to "completed" for this section. */
+  scheduleIds: number[];
+  isReady: boolean;
+  /** Why the section cannot be marked done yet; empty when isReady. */
+  blockedReason: string;
 }
 
 export interface DropContext {
@@ -305,6 +337,9 @@ export interface ApiSectionRecord {
   year_level: string | number;
   semester: Semester;
   department_id: number;
+  program_id?: number | null;
+  curriculum_id?: number | null;
+  curriculum?: { id: number; name: string; code?: string } | null;
   term_id: number;
   status?: "active" | "inactive";
   term?: ApiTermRecord | null;

@@ -24,7 +24,8 @@ import {
   Plus
 } from 'lucide-react';
 import api from '../../lib/api';
-import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
 
@@ -173,7 +174,7 @@ export default function VpaaRooms() {
     setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
     try {
       const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data');
+        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data?include=rooms,departments,schedules');
         const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
         const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
         const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
@@ -244,7 +245,7 @@ export default function VpaaRooms() {
         const updatedRoom = mapApiRoom(res.data.room);
         setRooms(prev => {
           const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
-          clearDataCache();
+          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
@@ -254,7 +255,7 @@ export default function VpaaRooms() {
         const createdRoom = mapApiRoom(res.data.room);
         setRooms(prev => {
           const nextRooms = [createdRoom, ...prev];
-          clearDataCache();
+          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
@@ -304,7 +305,7 @@ export default function VpaaRooms() {
         await api.delete(`/rooms/${idToDelete}`);
         setRooms(prev => {
           const nextRooms = prev.filter(r => r.id !== idToDelete);
-          clearDataCache();
+          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
           return nextRooms;
         });
@@ -450,7 +451,7 @@ export default function VpaaRooms() {
   }, [selectedRoom, schedules, activeTabDay]);
 
   return (
-    <div className="space-y-6">
+    <div id="rooms-page" className="space-y-6">
       {/* Search and Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         {/* Search */}

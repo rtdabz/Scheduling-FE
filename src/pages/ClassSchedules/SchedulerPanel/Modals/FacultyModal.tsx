@@ -88,6 +88,30 @@ export default function FacultyModal({
       item.subjectId === schedule.subjectId
     )
     .sort((left, right) => left.dayIndex - right.dayIndex || left.startSlot - right.startSlot);
+  const meetingLabel = (meeting: ScheduleItem) => {
+    if (meeting.meetingType === "laboratory") return "Laboratory";
+    if (meeting.meetingType === "lecture" && meeting.mode === "online") return "Online Lecture";
+    if (meeting.meetingType === "lecture") return "Lecture";
+    const laboratorySlots = Number(subject?.labHours ?? 0) * 2;
+    if (laboratorySlots > 0 && meeting.durationSlots === laboratorySlots) return "Laboratory";
+    return meeting.mode === "online" ? "Online Lecture" : "Session";
+  };
+  const meetingDuration = (meeting: ScheduleItem) => {
+    const durationMinutes = Math.max(0, meeting.durationSlots) * 30;
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+    return minutes === 0 ? `${hours} hr${hours === 1 ? "" : "s"}` : `${hours} hr ${minutes} min`;
+  };
+  const meetingRoom = (meeting: ScheduleItem) => meeting.mode === "online" ? "Online" : meeting.roomName || "Room TBA";
+  const shortDay = (day: string) => ({
+    Monday: "Mon",
+    Tuesday: "Tue",
+    Wednesday: "Wed",
+    Thursday: "Thur",
+    Friday: "Fri",
+    Saturday: "Sat",
+    Sunday: "Sun",
+  } as Record<string, string>)[day] ?? day.slice(0, 3);
 
   return (
     <div
@@ -144,23 +168,17 @@ export default function FacultyModal({
                     <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Section</p>
                     <p className="mt-0.5 truncate text-sm font-bold text-gray-800">{schedule.sectionName}</p>
                   </div>
-                  <div className="min-w-0 sm:col-span-2">
-                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Schedule</p>
-                    <div className="mt-0.5 space-y-1">
+                  <div className="min-w-0 sm:col-span-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Sessions</p>
+                    <div className="mt-1 space-y-1.5">
                       {meetingSchedules.map((meeting) => (
-                        <p key={meeting.id} className="truncate text-sm font-bold text-gray-800">
-                          {meeting.day} <span className="text-xs font-semibold text-gray-500">{meeting.startTime} - {meeting.endTime}</span>
-                        </p>
+                        <div key={meeting.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 text-sm font-bold text-gray-800">
+                          <span className="rounded-md bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[#4e0a10]">{meetingLabel(meeting)}</span>
+                          <span className="truncate">{shortDay(meeting.day)} {meeting.startTime} - {meeting.endTime}</span>
+                          <span className="truncate text-xs font-semibold text-gray-500">{meetingRoom(meeting)} · {meetingDuration(meeting)}</span>
+                        </div>
                       ))}
                     </div>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Room</p>
-                    <p className="mt-0.5 truncate text-sm font-bold text-gray-800">{schedule.roomName}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Delivery</p>
-                    <p className="mt-0.5 truncate text-sm font-bold capitalize text-gray-800">{schedule.mode.replace("-", " ")}</p>
                   </div>
                 </div>
               </div>
@@ -215,7 +233,7 @@ export default function FacultyModal({
                 <div key={meeting.id} className="grid grid-cols-1 gap-2 sm:grid-cols-[0.8fr_1fr_1fr]">
                   <div className="flex min-w-0 items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
                     <CalendarDays className="w-3.5 h-3.5 shrink-0 text-[#4e0a10]" />
-                    <span className="truncate">{meeting.day}</span>
+                    <span className="truncate">{shortDay(meeting.day)}</span>
                   </div>
                   <div className="flex min-w-0 items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
                     <Clock className="w-3.5 h-3.5 shrink-0 text-[#4e0a10]" />
@@ -223,7 +241,7 @@ export default function FacultyModal({
                   </div>
                   <div className="flex min-w-0 items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
                     <MapPin className="w-3.5 h-3.5 shrink-0 text-[#4e0a10]" />
-                    <span className="truncate">{meeting.roomName}</span>
+                    <span className="truncate">{meetingLabel(meeting)} · {meetingRoom(meeting)} · {meeting.mode === "online" ? "Online" : "Face-to-face"} · {meetingDuration(meeting)}</span>
                   </div>
                 </div>
               ))}

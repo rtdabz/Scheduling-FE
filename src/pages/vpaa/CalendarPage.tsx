@@ -24,8 +24,11 @@ import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
-import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
-import { formatTime12h, gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import WeeklyTimetableGrid, {
+  GRID_HEADER_HEIGHT_PX,
+  GRID_SLOT_HEIGHT_PX,
+} from '../../components/scheduling/WeeklyTimetableGrid';
+import { formatTime12h, gridOpeningMinutes, slotCount, slotMinutes, timeToSlot } from '../../lib/timeGrid';
 import { scheduleLocationLabel } from '../../lib/scheduleLocation';
 
 interface Department {
@@ -75,9 +78,8 @@ interface ScheduleItem {
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** Card geometry, shared with the dashboard timetable grid. */
-const HEADER_HEIGHT = 54;
-const SLOT_HEIGHT = 24;
-const TIME_COLUMN_WIDTH = 88;
+const HEADER_HEIGHT = GRID_HEADER_HEIGHT_PX;
+const SLOT_HEIGHT = GRID_SLOT_HEIGHT_PX;
 
 const matchesDayOfWeek = (scheduleDay?: string | null, fullDayName?: string | null): boolean => {
   if (!scheduleDay || !fullDayName) return false;
@@ -394,7 +396,7 @@ export default function VpaaCalendarPage() {
   const currentDayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
 
   /**
-   * Rows the grid renders. The shared window (07:00-19:00 by default) is the floor,
+   * Rows the grid renders. The shared window (07:00-20:30 by default) is the floor,
    * but it is only applied globally by the Schedule Builder's initial-data mapper,
    * and this page loads from /schedules. Stretching to the latest class keeps an
    * evening section on the grid instead of clipping it off the bottom.
@@ -453,11 +455,7 @@ export default function VpaaCalendarPage() {
         <WeeklyTimetableGrid
           days={visibleDays}
           slotCount={gridSlotCount}
-          headerHeight={HEADER_HEIGHT}
-          timeColumnWidth={TIME_COLUMN_WIDTH}
           minWidth={850}
-          slotHeight={SLOT_HEIGHT}
-          getTimeLabel={slotToTimeLabel}
           getDayCount={(dayIndex) => filteredSchedules.filter(s => getShortDay(s.day) === visibleDays[dayIndex]).length}
         >
             {visibleDays.map((day, dayIndex) => {
@@ -555,7 +553,7 @@ export default function VpaaCalendarPage() {
   );
 
   return (
-    <div className="space-y-6 font-sans pb-12">
+    <div id="calendar-page" className="space-y-6 font-sans pb-12">
       <div className="bg-gradient-to-r from-[#5A1220] via-[#7B1113] to-[#410b15] rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#C9952A]/30">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2.5">

@@ -7,10 +7,9 @@
  * conversion (floor-clamped, round-unclamped, and hour/minute arithmetic). For
  * times on a 30-minute boundary they agree; for anything else they did not.
  *
- * The window itself is still hardcoded here. The server treats opening and
- * closing time as configurable (`schedule_settings`, PATCH /timeslots/settings),
- * which the client does not yet read — see finding #33 in the audit report.
- * Centralising the constants is the prerequisite for fixing that.
+ * The server treats opening and closing time as configurable
+ * (`schedule_settings`, PATCH /timeslots/settings). The initial-data mapper
+ * applies those values at runtime; these constants are the startup fallback.
  */
 
 /**
@@ -18,16 +17,17 @@
  *
  * `schedule_settings` stores opening time, closing time and slot interval, and
  * `PATCH /timeslots/settings` changes them — but the client used to hardcode
- * 07:00–19:00 in about forty places, so widening the window silently
+ * 07:00–20:30 in about forty places, so widening the window silently
  * desynchronised the builder: a 06:00 class clamped onto the 07:00 row, and
- * anything after 19:00 was conflict-checked against the wrong slot (finding #33).
+ * anything after the old 19:00 cutoff was conflict-checked against the wrong
+ * slot (finding #33).
  *
  * Defaults match the server defaults, so behaviour is unchanged until
  * `/initial-data` reports something else.
  */
 const DEFAULT_GRID = {
   openingMinutes: 7 * 60,
-  closingMinutes: 19 * 60,
+  closingMinutes: 20 * 60 + 30,
   slotMinutes: 30,
 } as const;
 
@@ -172,6 +172,13 @@ export const slotToTimeLabel = (slot: number): string => {
  */
 export const formatTime12h = (time: string | null | undefined): string => {
   if (!time) return "";
+
+  const ampmMatch = time.trim().match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    const hours = Number(ampmMatch[1]);
+    const minutes = (ampmMatch[2] ?? "00").padStart(2, "0").slice(0, 2);
+    return `${hours}:${minutes} ${ampmMatch[3].toUpperCase()}`;
+  }
 
   const [rawHours, rawMinutes] = time.split(":");
   const hours = Number(rawHours);
