@@ -196,7 +196,7 @@ export function useCurriculum() {
       await curriculumService.updateStatus(id, 'archived');
       invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
       // Announced only once the server has accepted it. Archiving can be
-      // refused — a cohort may still follow this curriculum — and claiming
+      // refused — a cohort may already be scheduled from it — and claiming
       // success first would be immediately contradicted by the error.
       toast.success('Archived', 'Curriculum has been archived.');
     } catch (error: unknown) {

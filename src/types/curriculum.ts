@@ -45,8 +45,12 @@ export interface Curriculum {
   status: CurriculumStatus;
   description: string | null;
   courses_count: number;
-  /** Cohorts still following this curriculum; blocks archiving while non-zero. */
+  /** Cohorts pointed at this curriculum. Informational: an assignment on its
+   *  own is undone with a dropdown and does not block retirement. */
   active_sections_count?: number;
+  /** The subset of those with a schedule already plotted from it. Blocks
+   *  deactivating and archiving while non-zero. */
+  scheduled_sections_count?: number;
   lifecycle?: CurriculumLifecycle | null;
   lifecycle_label?: string | null;
   department?: Department | null;
@@ -65,6 +69,7 @@ export interface ApiCurriculum {
   description: string | null;
   courses_count: number;
   active_sections_count?: number;
+  scheduled_sections_count?: number;
   lifecycle?: CurriculumLifecycle | null;
   lifecycle_label?: string | null;
   department?: Department | null;
@@ -111,6 +116,7 @@ export const mapApiCurriculum = (c: ApiCurriculum): Curriculum => ({
   description: c.description,
   courses_count: c.courses_count ?? 0,
   active_sections_count: c.active_sections_count ?? 0,
+  scheduled_sections_count: c.scheduled_sections_count ?? 0,
   lifecycle: c.lifecycle ?? null,
   lifecycle_label: c.lifecycle_label ?? null,
   department: c.department,

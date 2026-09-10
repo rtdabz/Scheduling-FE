@@ -5,7 +5,7 @@ import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
 import api from './lib/api';
 import { clearDataCache } from './lib/dataCache';
-import { getStoredUser, getStoredUserRole } from './lib/storedUser';
+import { getStoredUser, getStoredUserRole, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
 import LockedModuleView from './components/ui/LockedModuleView';
 
 // VPAA Pages
@@ -56,15 +56,17 @@ interface ApiErrorLike {
   };
 }
 
-type CapabilityUser = { permissions?: string[]; scheduling_ready?: boolean };
+type CapabilityUser = Pick<StoredUser, 'permissions' | 'scheduling_ready' | 'capability_catalog'>;
 
 const hasRequestedCapability = (user: CapabilityUser | null, capability: string | string[]): boolean => {
   if (!user) return false;
   const requested = Array.isArray(capability) ? capability : [capability];
-  if (user.scheduling_ready === false && requested.some((name) => name.startsWith('schedule.'))) {
-    return false;
-  }
-  return requested.some((name) => (user.permissions ?? []).includes(name));
+  // Only the capabilities the server declares as program-dependent are withheld
+  // from a program-less department; the rest stay usable, as the API allows.
+  const usable = user.scheduling_ready === false
+    ? requested.filter((name) => !requiresDepartmentProgram(name, user.capability_catalog))
+    : requested;
+  return usable.some((name) => (user.permissions ?? []).includes(name));
 };
 
 const getStoredRole = (): string => {

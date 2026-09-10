@@ -11,14 +11,15 @@ interface FacultyAvailabilityPanelProps {
   facultyId: number;
   facultyName: string;
   employmentType: 'full-time' | 'part-time';
-  /** Only the VPAA and the secretary may write; everyone else reads. */
+  /** True for an account holding schedule.assign_instructor; everyone else reads. */
   canEdit?: boolean;
   onNotify?: (kind: 'success' | 'error', title: string, message: string) => void;
 }
 
 /**
- * Reads and, for the roles allowed to, edits the weekly availability windows the
- * scheduler honours for this instructor (`faculty_availabilities`).
+ * Reads and, for accounts granted instructor assignment, edits the weekly
+ * availability windows the scheduler honours for this instructor
+ * (`faculty_availabilities`).
  */
 export default function FacultyAvailabilityPanel({
   facultyId,
@@ -108,7 +109,7 @@ export default function FacultyAvailabilityPanel({
         <p className="rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-semibold text-red-700 font-sans">
           No windows recorded. A part-time instructor is only scheduled inside their windows,
           so this instructor cannot be assigned to any class until windows are set
-          {canEdit ? '.' : ' by the secretary or the VPAA.'}
+          {canEdit ? '.' : ' by an account with instructor-assignment access.'}
         </p>
       ) : isUnrestricted ? (
         <p className="rounded-xl border border-gray-100 bg-white p-3 text-xs text-gray-500 font-sans">

@@ -26,6 +26,7 @@ import {
   Eye
 } from 'lucide-react';
 import api from '../../lib/api';
+import { hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { apiErrorMessage } from '../../lib/apiError';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
@@ -244,10 +245,13 @@ export default function DeanFaculty() {
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageFaculty = isVpaa;
-  // The secretary owns the unit allowances and the weekly availability windows;
-  // the roster itself (identity, department, program, status) is the VPAA's.
-  const canEditLoad = isVpaa || isSecretary;
-  const canEditAvailability = isVpaa || isSecretary;
+  // The roster itself (identity, department, program, status) is the VPAA's.
+  // The unit allowances and the weekly availability windows are instructor
+  // assignment data, so they follow schedule.assign_instructor -- naming the
+  // secretary here meant a Program Head the VPAA had granted every capability
+  // never saw the editors at all, matching the 403 the API used to return.
+  const canEditLoad = isVpaa || hasStoredCapability('schedule.assign_instructor');
+  const canEditAvailability = canEditLoad;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');

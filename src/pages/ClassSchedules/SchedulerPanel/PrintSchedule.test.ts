@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPrintTermTitle } from "./PrintSchedule";
+import { buildPrintTermTitle } from "./printScheduleFormat";
 
 describe("buildPrintTermTitle", () => {
   it("uses the scheduler active term in the print heading", () => {

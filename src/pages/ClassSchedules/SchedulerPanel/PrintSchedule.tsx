@@ -6,8 +6,13 @@ import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
 import type { ApiDepartmentRecord, ScheduleItem, Section, Term, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
-import { semesterLabel } from "../../../lib/termLabel";
 import { formatTime12h } from "../../../lib/timeGrid";
+import {
+  buildPrintTermTitle,
+  getFullDayName,
+  groupPrintMeetings,
+  type PrintMeetingGroup,
+} from "./printScheduleFormat";
 
 interface PrintScheduleProps {
   sections: Section[];
@@ -44,10 +49,6 @@ const SIGNATORIES = {
   recommendedBy: { name: "KHAREN JANE S. UNGAB, DM", role: "Vice-President for Academic Affairs" },
 };
 
-export const buildPrintTermTitle = (term: Term | null): string => term
-  ? `CLASS SCHEDULE AY ${term.academic_year}    ${semesterLabel(term.semester)}`
-  : "CLASS SCHEDULE";
-
 /** The approving signatory is whatever the VPAA saved in Settings. */
 const buildSignatories = (settings: InstitutionSettings, preparedByName: string, reviewedByName: string) => [
   { label: "Prepared by:", ...SIGNATORIES.preparedBy, name: preparedByName },
@@ -55,19 +56,6 @@ const buildSignatories = (settings: InstitutionSettings, preparedByName: string,
   { label: "Recommended by:", ...SIGNATORIES.recommendedBy },
   { label: "Approved by:", name: settings.president_name, role: settings.president_title },
 ];
-
-const getFullDayName = (day: string): string => {
-  if (!day) return "";
-  const d = day.trim().toLowerCase();
-  if (d === "mon" || d === "monday") return "Monday";
-  if (d === "tue" || d === "tuesday") return "Tuesday";
-  if (d === "wed" || d === "wednesday") return "Wednesday";
-  if (d === "thu" || d === "thursday") return "Thursday";
-  if (d === "fri" || d === "friday") return "Friday";
-  if (d === "sat" || d === "saturday") return "Saturday";
-  if (d === "sun" || d === "sunday") return "Sunday";
-  return day;
-};
 
 export default function PrintSchedule({
   sections,
@@ -332,11 +320,21 @@ export default function PrintSchedule({
         return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
       });
 
-      const filledRows = sortedSubjects.flatMap((subjectSchedules) =>
-        subjectSchedules.sort((left, right) => (
-          left.dayIndex - right.dayIndex || left.startSlot - right.startSlot
-        ))
-      );
+      // Grouped per subject, so a subject's row span counts printed lines
+      // rather than raw meeting rows.
+      const groupsBySubject = new Map<string, PrintMeetingGroup[]>();
+      for (const [key, subjectSchedules] of schedulesBySubject) {
+        groupsBySubject.set(
+          key,
+          groupPrintMeetings(subjectSchedules, formatTime12h, getFullDayName),
+        );
+      }
+
+      const filledRows = sortedSubjects.flatMap((subjectSchedules) => {
+        const key = subjectSchedules[0]?.courseId ?? subjectSchedules[0]?.subjectId ?? "";
+
+        return (groupsBySubject.get(key) ?? []).map((group) => ({ key, group }));
+      });
 
       const head: RowInput[] = [
         [
@@ -354,13 +352,10 @@ export default function PrintSchedule({
         ]
       ];
 
-      const body: RowInput[] = filledRows.map((item, index) => {
-        const previousItem = filledRows[index - 1];
-        const itemKey = item.courseId ?? item.subjectId ?? "";
-        const prevKey = previousItem ? (previousItem.courseId ?? previousItem.subjectId ?? "") : "";
-        const isAdditionalMeeting = prevKey === itemKey;
-        const subjectMeetingCount = schedulesBySubject.get(itemKey)?.length ?? 1;
-        const roomLabel = item.roomName || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "");
+      const body: RowInput[] = filledRows.map(({ key: itemKey, group }, index) => {
+        const item = group.first;
+        const isAdditionalMeeting = filledRows[index - 1]?.key === itemKey;
+        const subjectMeetingCount = groupsBySubject.get(itemKey)?.length ?? 1;
 
         return [
           ...(isAdditionalMeeting ? [] : [
@@ -390,10 +385,10 @@ export default function PrintSchedule({
               styles: { halign: "center" as const, valign: "middle" as const }
             }
           ]),
-          getFullDayName(item.day),
-          `${formatTime12h(item.startTime)} – ${formatTime12h(item.endTime)}`,
+          group.dayLabel,
+          group.timeLabel,
           {
-            content: roomLabel,
+            content: group.room,
             styles: { halign: "center" as const, valign: "middle" as const }
           }
         ];

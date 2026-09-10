@@ -42,9 +42,12 @@ export default function CurriculumCard({
 
   const lifecycleBadge = curriculumLifecycleBadge(curriculum);
   const inUseBy = curriculum.active_sections_count ?? 0;
-  // Retiring a curriculum that cohorts still follow would strand them, so the
-  // API refuses it. Reflect that here rather than offering a button that 422s.
-  const retirable = inUseBy === 0;
+  // Only a plotted schedule blocks retirement. A cohort merely assigned to this
+  // curriculum is repointed with a dropdown and strands nothing, so it must not
+  // disable the button — that was the bug. Mirror the API's guard exactly.
+  const scheduledSections = curriculum.scheduled_sections_count ?? 0;
+  const retirable = scheduledSections === 0;
+  const blockedReason = `${scheduledSections} section${scheduledSections === 1 ? '' : 's'} already ${scheduledSections === 1 ? 'has' : 'have'} a schedule plotted from this curriculum. Archive or clear those schedules first.`;
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative ${GRID_CARD_HOVER}`}>
@@ -142,7 +145,7 @@ export default function CurriculumCard({
                 curriculum.status === 'active'
                   ? retirable
                     ? 'Withdraw this curriculum from service'
-                    : `${inUseBy} section${inUseBy === 1 ? '' : 's'} still follow this curriculum. Move them to another curriculum first.`
+                    : blockedReason
                   : 'Publish this curriculum. Other active curricula in this department stay active — each year level chooses which one it follows.'
               }
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -164,7 +167,7 @@ export default function CurriculumCard({
                 title={
                   retirable
                     ? 'Archive this curriculum'
-                    : `${inUseBy} section${inUseBy === 1 ? '' : 's'} still follow this curriculum. Move them to another curriculum first.`
+                    : blockedReason
                 }
                 className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
