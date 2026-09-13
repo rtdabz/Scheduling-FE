@@ -62,6 +62,12 @@ export default {
           '0%':   { transform: 'translateX(-1.5rem)', opacity: '0' },
           '100%': { transform: 'translateX(0)',       opacity: '1' },
         },
+        // Menus and expanding panels: a short drop from just above, so the
+        // content reads as unfolding from its trigger rather than popping in.
+        dropdownIn: {
+          '0%':   { transform: 'translateY(-6px) scale(0.98)', opacity: '0' },
+          '100%': { transform: 'translateY(0) scale(1)',       opacity: '1' },
+        },
         modalIn: {
           '0%':   { transform: 'scale(0.97)', opacity: '0' },
           '100%': { transform: 'scale(1)',    opacity: '1' },
@@ -77,6 +83,7 @@ export default {
         stepInRight:  'stepInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
         stepInLeft:   'stepInLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
         modalIn:      'modalIn 0.16s ease-out',
+        dropdownIn:   'dropdownIn 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
       },
     },
   },

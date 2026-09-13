@@ -16,6 +16,7 @@ import {
   FlaskConical,
   Globe2,
   GraduationCap,
+  Handshake,
   MapPin,
   RotateCcw,
   Send,
@@ -332,13 +333,24 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:paths.courses, tone:'brand' },
     { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:paths.rooms, tone:'info' },
     ...(canAssignInstructors ? [{ label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.schedules, tone:noInstructor ? 'alert' : 'good' } as Tile] : []),
-    ...(canAssignCrossDepartment ? [{ label:'Delegated Classes', value:crossDepartmentPending, detail:'Taught for other colleges', icon:Building2, path:paths.crossDepartment, tone:crossDepartmentPending ? 'alert' : 'good' } as Tile] : []),
+    ...(canAssignCrossDepartment ? [{ label:'Delegated Classes', value:crossDepartmentPending, detail:'Other colleges, awaiting instructors', icon:Handshake, path:paths.crossDepartment, tone:crossDepartmentPending ? 'alert' : 'good' } as Tile] : []),
   ];
+
+  // Widest layout per tile count that keeps every row full. Literal class
+  // names because Tailwind cannot see computed ones.
+  const TILE_GRID: Record<number, string> = {
+    4: 'lg:grid-cols-4',
+    5: 'sm:grid-cols-3 xl:grid-cols-5',
+    6: 'sm:grid-cols-3',
+    7: 'sm:grid-cols-4',
+    8: 'sm:grid-cols-4',
+  };
+  const tileGrid = TILE_GRID[tiles.length] ?? 'sm:grid-cols-3 lg:grid-cols-4';
 
   const queue: QueueRow[] = [
     ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
     ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
-    ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Building2, path:paths.crossDepartment } as QueueRow] : []),
+    ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Handshake, path:paths.crossDepartment } as QueueRow] : []),
     { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:paths.rooms },
     ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
     ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
@@ -367,10 +379,11 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
       eight for a full one), so the column count has to read well for any count
       in that range. Eight columns squeezed labels like "Curriculum Courses"
       onto three lines and stranded the last tile whenever the count was not a
-      multiple of eight. Capping at five keeps every tile wide enough for its
-      label.
+      multiple of eight, and a fixed five stranded tiles on a half-empty second
+      row. `tileGrid` picks at most five columns and, where it can, a count
+      that divides the tiles into full rows.
     */}
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+    <section id="dashboard-metrics" className={`grid grid-cols-2 gap-2.5 ${tileGrid}`}>
       {tiles.map(({label, value, detail, icon, path, tone}) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
     </section>
 

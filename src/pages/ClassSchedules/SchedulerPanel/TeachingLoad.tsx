@@ -44,6 +44,7 @@ const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   dean: "Department Dean",
   secretary: "Department Secretary",
   program_head: "Program Head",
+  director: "Director",
   vpaa: "Vice President for Academic Affairs",
 };
 

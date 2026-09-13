@@ -2,30 +2,15 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, Filter, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
-
-type Row = {
-  key: string;
-  sectionId: string;
-  sectionName: string;
-  courseId: string;
-  courseCode: string;
-  courseName: string;
-  day: string;
-  start: string;
-  end: string;
-  mode: string;
-  room: string;
-  meeting: string;
-};
-
-const timeLabel = (value: string) => {
-  const [hourText, minuteText] = value.split(":");
-  const hour = Number(hourText);
-  const suffix = hour >= 12 ? "PM" : "AM";
-  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-
-  return `${displayHour}:${minuteText ?? "00"} ${suffix}`;
-};
+import { buildSummaryClasses, timeRangeLabel, type SummaryMeeting } from "./summaryRows";
+import GenerationChangesPanel from "./GenerationChangesPanel";
+import {
+  changeBadgeLabel,
+  changeBadgesByClass,
+  classKey,
+  type GenerationChange,
+  type GenerationChangeItem,
+} from "./generationChanges";
 
 const ALL = "all";
 
@@ -42,16 +27,22 @@ export default function ScheduleSummaryStep({
   sections,
   courses,
   roomCodeById,
+  changes,
 }: {
   preview: ApiScheduleRecord[];
   sections: Section[];
   courses: Course[];
   roomCodeById: Map<string, string>;
+  /** `null` when the run predates change reports and its changes are unknown. */
+  changes: GenerationChange[] | null;
 }) {
   const [sectionFilter, setSectionFilter] = useState(ALL);
   const [dayFilter, setDayFilter] = useState(ALL);
   const [courseFilter, setCourseFilter] = useState(ALL);
   const [modeFilter, setModeFilter] = useState(ALL);
+  const [changedOnly, setChangedOnly] = useState(false);
+
+  const badgesByClass = useMemo(() => changeBadgesByClass(changes ?? []), [changes]);
 
   const sectionNameById = useMemo(
     () => new Map(sections.map((section) => [String(section.id), section.name])),
@@ -62,15 +53,14 @@ export default function ScheduleSummaryStep({
     [courses],
   );
 
-  const rows = useMemo<Row[]>(
+  const rows = useMemo<SummaryMeeting[]>(
     () =>
-      preview.map((record, index) => {
+      preview.map((record) => {
         const courseId = String(record.course_id ?? record.subject_id ?? "");
         const course = courseById.get(courseId);
         const roomId = record.room_id === null ? "" : String(record.room_id);
 
         return {
-          key: `${record.id ?? "row"}-${index}`,
           sectionId: String(record.section_id),
           sectionName:
             sectionNameById.get(String(record.section_id)) ??
@@ -96,20 +86,19 @@ export default function ScheduleSummaryStep({
     [courseById, preview, roomCodeById, sectionNameById],
   );
 
+  const classes = useMemo(() => buildSummaryClasses(rows), [rows]);
+
+  // A class matches when any of its meetings does, and is then shown whole:
+  // hiding its other days would misstate when the class actually meets.
   const filtered = useMemo(
     () =>
-      rows
-        .filter((row) => sectionFilter === ALL || row.sectionId === sectionFilter)
-        .filter((row) => dayFilter === ALL || row.day === dayFilter)
-        .filter((row) => courseFilter === ALL || row.courseId === courseFilter)
-        .filter((row) => modeFilter === ALL || row.mode === modeFilter)
-        .sort(
-          (left, right) =>
-            left.sectionName.localeCompare(right.sectionName) ||
-            DAYS.indexOf(left.day) - DAYS.indexOf(right.day) ||
-            left.start.localeCompare(right.start),
-        ),
-    [courseFilter, dayFilter, modeFilter, rows, sectionFilter],
+      classes
+        .filter((item) => sectionFilter === ALL || item.sectionId === sectionFilter)
+        .filter((item) => courseFilter === ALL || item.courseId === courseFilter)
+        .filter((item) => dayFilter === ALL || item.parts.some((part) => part.days.includes(dayFilter)))
+        .filter((item) => modeFilter === ALL || item.modes.some((mode) => mode === modeFilter))
+        .filter((item) => !changedOnly || badgesByClass.has(classKey(item.sectionId, item.courseId))),
+    [badgesByClass, changedOnly, classes, courseFilter, dayFilter, modeFilter, sectionFilter],
   );
 
   const usedCourses = useMemo(
@@ -132,13 +121,22 @@ export default function ScheduleSummaryStep({
     sectionFilter !== ALL ||
     dayFilter !== ALL ||
     courseFilter !== ALL ||
-    modeFilter !== ALL;
+    modeFilter !== ALL ||
+    changedOnly;
 
   const clearFilters = () => {
     setSectionFilter(ALL);
     setDayFilter(ALL);
     setCourseFilter(ALL);
     setModeFilter(ALL);
+    setChangedOnly(false);
+  };
+
+  // Narrow the table to exactly one class; any other filter could hide it.
+  const focusClass = (item: GenerationChangeItem) => {
+    clearFilters();
+    setSectionFilter(String(item.section_id));
+    setCourseFilter(String(item.course_id));
   };
 
   return (
@@ -146,10 +144,15 @@ export default function ScheduleSummaryStep({
       <section className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
         <p className="flex items-center gap-2 text-sm font-black text-emerald-900">
           <CheckCircle2 className="h-4 w-4" />
-          {rows.length} class meetings generated across {sections.length}{" "}
-          section{sections.length === 1 ? "" : "s"}
+          {rows.length} class meetings generated for {classes.length} class
+          {classes.length === 1 ? "" : "es"} across {sections.length} section
+          {sections.length === 1 ? "" : "s"}
         </p>
       </section>
+
+      {changes !== null && (
+        <GenerationChangesPanel changes={changes} onFocusClass={focusClass} />
+      )}
 
       <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
         <div className="flex flex-wrap items-end gap-2">
@@ -187,6 +190,17 @@ export default function ScheduleSummaryStep({
             options={usedModes.map((mode) => [mode, mode])}
             allLabel="All modes"
           />
+          {badgesByClass.size > 0 && (
+            <label className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+              <input
+                type="checkbox"
+                checked={changedOnly}
+                onChange={(event) => setChangedOnly(event.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300"
+              />
+              Changed only
+            </label>
+          )}
           {filtersActive && (
             <button
               type="button"
@@ -197,7 +211,7 @@ export default function ScheduleSummaryStep({
             </button>
           )}
           <span className="mb-1 ml-auto text-[11px] font-bold text-slate-500">
-            Showing {filtered.length} of {rows.length}
+            Showing {filtered.length} of {classes.length} classes
           </span>
         </div>
       </section>
@@ -229,33 +243,65 @@ export default function ScheduleSummaryStep({
                 </td>
               </tr>
             )}
-            {filtered.map((row) => (
-              <tr key={row.key} className="border-t border-slate-100">
-                <td className="px-3 py-2 text-xs font-black text-slate-900">
-                  {row.sectionName}
+            {filtered.map((item) => (
+              <tr key={item.key} className="border-t border-slate-100 align-top">
+                <td className="px-3 py-2.5 text-xs font-black text-slate-900">
+                  {item.sectionName}
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <span className="block text-xs font-black text-slate-900">
-                    {row.courseCode}
+                    {item.courseCode}
                   </span>
                   <span className="block truncate text-[11px] font-semibold text-slate-600">
-                    {row.courseName}
-                    {row.meeting && ` · ${row.meeting}`}
+                    {item.courseName}
                   </span>
+                  {badgesByClass.get(classKey(item.sectionId, item.courseId))?.map((change) => (
+                    <span
+                      key={change.kind}
+                      className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                        change.severity === "critical"
+                          ? "bg-rose-100 text-rose-700"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {changeBadgeLabel(change)}
+                    </span>
+                  ))}
                 </td>
-                <td className="px-3 py-2 text-xs font-semibold text-slate-700">
-                  {row.day}
+                {/* One line per part, so each day lines up with its own time and room. */}
+                <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">
+                  {item.parts.map((part, index) => (
+                    <span key={index} className="block leading-5">
+                      {part.dayLabel}
+                    </span>
+                  ))}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-xs font-semibold text-slate-700">
-                  {timeLabel(row.start)} - {timeLabel(row.end)}
+                <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-700">
+                  {item.parts.map((part, index) => (
+                    <span key={index} className="block leading-5">
+                      {timeRangeLabel(part.start, part.end)}
+                      {part.meeting && (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase text-slate-400">
+                          {part.meeting === "laboratory" ? "Lab" : part.meeting === "lecture" ? "Lec" : part.meeting}
+                        </span>
+                      )}
+                    </span>
+                  ))}
                 </td>
-                <td className="px-3 py-2 text-xs font-semibold text-slate-700">
-                  {row.room}
+                <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">
+                  {item.parts.map((part, index) => (
+                    <span key={index} className="block leading-5">
+                      {part.room}
+                    </span>
+                  ))}
                 </td>
-                <td className="px-3 py-2">
-                  <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-700">
-                    {row.mode}
-                  </span>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase text-slate-700">
+                  {item.modes.map((mode, index) => (
+                    <span key={mode}>
+                      {index > 0 && <span className="mx-1 text-slate-300">|</span>}
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5">{mode}</span>
+                    </span>
+                  ))}
                 </td>
               </tr>
             ))}

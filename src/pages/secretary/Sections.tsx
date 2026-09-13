@@ -381,7 +381,7 @@ export default function SecretarySections() {
     { element: '#section-program-select', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the program to continue.', title: 'Select a program', description: 'The section belongs to a program in your department.', side: 'bottom' as const },
     { element: '[data-tour="section-row-name"]', waitFor: '#section-form', action: 'input' as const, taskHint: 'Type a section name to continue.', title: 'Name the section', description: 'Use the official section code, e.g. BSIT 1A.', side: 'bottom' as const },
     { element: '[data-tour="section-row-year"]', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the year level to continue.', title: 'Set the year level', description: 'Year level decides which courses the section takes.', side: 'bottom' as const },
-    { element: '#section-form', action: 'submit' as const, taskHint: 'Click Save Sections to create it.', title: 'Save the section', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
+    { element: '#section-form', action: 'submit' as const, taskHint: 'Click Save section to create it.', title: 'Save the section', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps, mission: 'Manage Sections' });
 
@@ -606,6 +606,7 @@ export default function SecretarySections() {
         onClose={() => setIsModalOpen(false)}
         onSaveSingle={handleSaveSingle}
         onSaveBatch={handleSaveBatch}
+        existingSections={sections}
       />
 
       <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Archive Record" title="Archive Section" message="This section will be hidden from active lists and can be restored from the Archive." confirmLabel="Archive" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteSection} />

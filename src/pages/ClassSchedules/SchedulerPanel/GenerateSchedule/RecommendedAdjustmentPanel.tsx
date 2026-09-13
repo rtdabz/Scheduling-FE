@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Ban, Check, RefreshCw, Settings2, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, Check, Settings2, Wrench } from "lucide-react";
 import {
   describeAdjustment,
   failureStageLabel,
@@ -216,35 +216,4 @@ function Tag({ label }: { label: string }) {
   );
 }
 
-export function AppliedAdjustmentNotice({
-  strategy,
-  adjustments,
-  onDismiss,
-}: {
-  strategy: { label: string; description: string };
-  adjustments: { type: string; section_id: number; course_id: number; value: string | null; section_name?: string; course_code?: string }[];
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="mb-2 flex shrink-0 items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
-      <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-black text-sky-900">
-          {adjustments.length > 0
-            ? `Generated after an automatic adjustment: ${strategy.label}`
-            : `Generated on a retry: ${strategy.label}`}
-        </p>
-        <p className="mt-0.5 text-[11px] font-semibold leading-relaxed text-sky-800">{strategy.description}</p>
-        {adjustments.length > 0 && (
-          <p className="mt-0.5 text-[11px] font-bold text-sky-700">
-            {adjustments.map((adjustment) => describeAdjustment(adjustment)).join(" · ")}
-          </p>
-        )}
-      </div>
-      <button type="button" onClick={onDismiss} className="text-[11px] font-black uppercase text-sky-700 hover:underline">
-        Dismiss
-      </button>
-    </div>
-  );
-}
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

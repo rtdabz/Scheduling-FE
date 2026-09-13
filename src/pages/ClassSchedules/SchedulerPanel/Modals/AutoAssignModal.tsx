@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Layers3, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import { INSTRUCTOR_ASSIGNABLE_STATUSES, type Faculty, type ScheduleItem, type Subject } from "../types";
 import ProfileAvatar from "../../../../components/ui/ProfileAvatar";
+import TableActionButton from "../../../../components/ui/TableActionButton";
+import { useToast } from "../../../../context/ToastContext";
 import { facultyEligibilityForSubject } from "../facultyEligibility";
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances } from "../../../../lib/facultyLoad";
 import type { LoadTier } from "../../../../lib/overloadConfirmation";
 import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 
 /* Opening the wizard resets its local draft state. */
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -29,6 +32,8 @@ interface AutoAssignModalProps {
   canManageScheduleFaculty: (schedule: ScheduleItem) => boolean;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   onAssign: (assignments: AssignmentBatch[]) => Promise<boolean>;
+  /** Clears the instructor from one class; omitted where removal is not offered. */
+  onRemoveAssignment?: (scheduleIds: string[]) => Promise<boolean>;
   /** Cross-department assignment is restricted to the receiving department. */
   allowExternalInstructors?: boolean;
 }
@@ -124,7 +129,7 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
     label: LOAD_TIER_LABELS[tier],
     badgeClass: LOAD_TIER_BADGE_CLASSES[tier],
     percentage: Math.min(100, (units / bands.basicLoad) * 100),
-    barClass: tier === "basic" ? "bg-blue-600" : tier === "beyond_ceiling" ? "bg-rose-500" : "bg-amber-500",
+    barClass: tier === "basic" ? "bg-emerald-500" : tier === "beyond_ceiling" ? "bg-rose-500" : "bg-amber-500",
   };
 };
 
@@ -139,11 +144,45 @@ const isPastBasicLoad = (faculty: Faculty | undefined, units: number): boolean =
   return tier !== null && tier !== "basic";
 };
 
-const scheduleLabel = (group: SectionGroup): string => group.schedules
-  .slice()
-  .sort((left, right) => left.dayIndex - right.dayIndex || left.startSlot - right.startSlot)
-  .map((schedule) => `${schedule.day} ${schedule.startTime}-${schedule.endTime}`)
+const MODE_ORDER: Record<string, number> = { "on-site": 0, field: 1, online: 2 };
+const MODE_LABELS: Record<string, string> = { "on-site": "On-site", field: "Field", online: "Online" };
+
+/**
+ * 'Mon/Wed 7 PM-8:30 PM | Tue 9 AM-11 AM'. `schedules.day` is one row per
+ * meeting, so meetings at the same time and mode fold into one entry, and
+ * in-person entries come before online ones.
+ */
+const scheduleLabel = (group: SectionGroup): string => {
+  const entries = new Map<string, ScheduleItem[]>();
+  group.schedules
+    .slice()
+    .sort((left, right) => left.dayIndex - right.dayIndex || left.startSlot - right.startSlot)
+    .forEach((schedule) => {
+      const key = `${schedule.startTime}|${schedule.endTime}|${schedule.mode ?? ""}`;
+      entries.set(key, [...(entries.get(key) ?? []), schedule]);
+    });
+  return [...entries.values()]
+    .sort((left, right) => (MODE_ORDER[left[0].mode ?? ""] ?? 3) - (MODE_ORDER[right[0].mode ?? ""] ?? 3))
+    .map((meetings) => {
+      const days = meetings.length === 1 ? meetings[0].day : meetings.map((meeting) => meeting.day.slice(0, 3)).join("/");
+      return `${days} ${meetings[0].startTime}-${meetings[0].endTime}`;
+    })
+    .join(" | ");
+};
+
+/** 'On-site | Online': every delivery mode the class uses, in-person first. */
+const modesLabel = (group: SectionGroup): string => [...new Set(group.schedules.map((schedule) => schedule.mode ?? "on-site"))]
+  .sort((left, right) => (MODE_ORDER[left] ?? 3) - (MODE_ORDER[right] ?? 3))
+  .map((mode) => MODE_LABELS[mode] ?? mode)
   .join(" | ");
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+const STEP_HELP: Record<number, string> = {
+  1: "Pick an instructor, tick sections of a course, then add them to the list. Repeat for other courses or instructors.",
+  2: "Check each instructor's load and remove anything that should not be assigned.",
+  3: "Nothing is saved until you click Save Assignments.",
+};
 
 export default function AutoAssignModal({
   isOpen,
@@ -157,8 +196,10 @@ export default function AutoAssignModal({
   canManageScheduleFaculty,
   checkFacultyConflict,
   onAssign,
+  onRemoveAssignment,
   allowExternalInstructors = true,
 }: AutoAssignModalProps) {
+  const { confirm } = useToast();
   // The server scopes Program Heads too, but keep the modal fail-closed so a
   // stale scheduler cache cannot expose another program's instructors.
   const faculties = useMemo(
@@ -389,11 +430,35 @@ export default function AutoAssignModal({
         sectionName: group.sectionName,
         units: group.units,
         schedule: scheduleLabel(group),
-        mode: group.schedules[0]?.mode ?? "Lecture",
+        mode: modesLabel(group),
         scheduleIds: group.schedules.filter((schedule) => !schedule.facultyId).map((schedule) => schedule.id),
       })),
     ]);
     setSelectedKeys([]);
+  };
+
+  /** Why an assigned class cannot be cleared here, or null when it can. */
+  const removalBlockedReason = (group: SectionGroup): string | null => {
+    const assigned = group.schedules.filter((schedule) => schedule.facultyId);
+    if (assigned.some((schedule) => schedule.status === "finalized")) return "A finalized schedule cannot be changed.";
+    if (assigned.some((schedule) => schedule.facultyAssignmentDone)) return "Assignments are marked done. Choose Reassignment first.";
+    if (!assigned.every(canManageScheduleFaculty)) return "Only the assigned teaching department can change this instructor.";
+    return null;
+  };
+
+  const removeClassAssignment = async (group: SectionGroup) => {
+    if (!onRemoveAssignment || removalBlockedReason(group)) return;
+    const holder = group.schedules.find((schedule) => schedule.facultyId);
+    const name = faculties.find((faculty) => faculty.id === holder?.facultyId)?.name ?? holder?.facultyName ?? "the instructor";
+    const confirmed = await confirm({
+      title: "Remove instructor",
+      message: `Remove ${name} from ${group.courseCode} ${group.sectionName}? Every meeting of this class loses its instructor, and it can be assigned again right away.`,
+      eyebrow: "Reassignment",
+      confirmLabel: "Remove instructor",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    await onRemoveAssignment(group.schedules.filter((schedule) => schedule.facultyId).map((schedule) => schedule.id));
   };
 
   const removeAssignment = (key: string) => setAssignments((current) => current.filter((assignment) => assignment.key !== key));
@@ -413,51 +478,84 @@ export default function AutoAssignModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:items-center" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" className="flex min-h-[calc(100dvh-1rem)] w-full max-w-none flex-col overflow-hidden rounded-lg bg-slate-50 shadow-2xl sm:h-[calc(100vh-16px)] sm:min-h-0 sm:w-[calc(100vw-16px)]">
-        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[#3a0809] bg-[#4e0a10] px-4 py-3 text-white sm:px-5 sm:py-4">
-          <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white"><UserCheck className="h-5 w-5" /></div><div><h2 id="auto-assign-title" className="text-base font-black text-white">Assign Instructors</h2><p className="text-xs text-white/75">Queue compatible sections, review loads, then save all assignments together.</p></div></div>
-          <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="rounded-lg p-2 text-white/75 hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
+      <div role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" className="flex min-h-[calc(100dvh-1rem)] w-full max-w-none flex-col overflow-hidden rounded-lg bg-white shadow-2xl sm:h-[calc(100vh-16px)] sm:min-h-0 sm:w-[calc(100vw-16px)]">
+        <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-4 py-3 sm:px-5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"><UserCheck className="h-5 w-5" /></span>
+          <div className="min-w-0 flex-1">
+            <h2 id="auto-assign-title" className="truncate text-base font-black text-white sm:text-lg">Assign Instructors</h2>
+            <p className="truncate text-xs font-semibold text-white/70">{steps[step - 1].title} &middot; Step {step} of {steps.length}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="rounded-lg bg-white/10 p-2 text-white transition hover:bg-white/20 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-2 sm:overflow-hidden sm:p-3">
+        <div className="shrink-0 bg-white px-3 py-2.5 sm:px-4">
           <WizardProgressStepper currentStep={step} steps={steps} ariaLabel="Auto-assign instructor steps" />
+        </div>
 
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-parchment p-3 sm:p-4 lg:overflow-hidden">
           {step === 1 && (
-            <div className="mt-3 grid min-h-0 flex-1 gap-3 overflow-visible lg:overflow-hidden lg:grid-cols-[440px_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[400px_minmax(0,1fr)]">
               <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} allowExternalInstructors={allowExternalInstructors} />
-              <main className="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-200 bg-white p-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <SelectField label="Year Level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
-                  <SelectField label="Select Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => ({ value: course.id, label: `${course.code} - ${course.name}` }))} placeholder="Select course" />
+              <section className="flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="grid shrink-0 gap-3 border-b border-slate-100 p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
+                  <SelectField label="Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => ({ value: course.id, label: `${course.code} - ${course.name}` }))} placeholder="Select course" />
                 </div>
-                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} />
-                <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
-                  {selectedFaculty && (
-                    <p className="mr-auto text-xs font-semibold text-slate-600">
-                      {currentLoad}
-                      {selectedUnits > 0 && <span className="text-slate-500"> + {selectedUnits}</span>}
-                      {" / "}{projectedLoad.bands.basicLoad} units
+                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
+                <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                  {selectedFaculty ? (
+                    <div className="mr-auto min-w-0 text-xs text-slate-600">
+                      <span className="font-bold text-slate-900">{selectedFaculty.name}</span>
+                      <span className="mx-1.5 text-slate-300">|</span>
+                      <span className="font-semibold tabular-nums">{currentLoad}{selectedUnits > 0 && <span className="text-[#4e0a10]"> + {selectedUnits}</span>} / {projectedLoad.bands.basicLoad} units</span>
                       <span className={`ml-2 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${projectedLoad.badgeClass}`}>{projectedLoad.label}</span>
-                    </p>
+                    </div>
+                  ) : (
+                    <p className="mr-auto text-xs font-semibold text-slate-500">Select an instructor to see which sections they can take.</p>
                   )}
-                  <button type="button" onClick={addToAssignmentList} disabled={selectedGroups.length === 0} className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-3.5 w-3.5" /> Assign</button>
+                  <button type="button" onClick={addToAssignmentList} disabled={selectedGroups.length === 0} className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3.5 py-2 text-xs font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-40">
+                    <Plus className="h-3.5 w-3.5" /> {selectedGroups.length ? `Add ${plural(selectedGroups.length, "section")} to list` : "Add to list"}
+                  </button>
                 </div>
-              </main>
+              </section>
             </div>
           )}
 
           {step === 2 && <ReviewAssignments assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} onRemove={removeAssignment} />}
 
           {step === 3 && <ConfirmAssignments assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} onEdit={() => setStep(2)} />}
-        </div>
+        </main>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
-          {step === 3 ? <ConfirmValidationSummary assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} /> : <span />}
-          <div className="ml-auto flex w-full flex-wrap justify-end gap-2 sm:w-auto">
-            <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : onClose()} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"><ChevronLeft className="h-4 w-4" /> {step > 1 ? "Back" : "Cancel"}</button>
-            {step === 1 && assignments.length > 0 && <button type="button" onClick={() => setStep(2)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Review Assignments <ChevronRight className="h-4 w-4" /></button>}
-            {step === 2 && <button type="button" onClick={() => setStep(3)} disabled={assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Continue <ChevronRight className="h-4 w-4" /></button>}
-            {step === 3 && <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} {isSaving ? "Saving..." : "Save Assignments"}</button>}
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+          {step === 3 ? (
+            <ConfirmValidationSummary assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} />
+          ) : step === 1 && assignments.length > 0 ? (
+            <p className="flex min-w-0 flex-1 items-center gap-2 truncate text-xs font-bold text-[#4e0a10]">
+              <ListChecks className="h-4 w-4 shrink-0" />
+              {plural(assignments.length, "section")} on the list for {plural(new Set(assignments.map((assignment) => assignment.facultyId)).size, "instructor")}
+            </p>
+          ) : (
+            <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">{STEP_HELP[step]}</p>
+          )}
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : onClose()} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+              {step > 1 ? <><ChevronLeft className="h-4 w-4" /> Back</> : "Cancel"}
+            </button>
+            {step === 1 && (
+              <button type="button" onClick={() => setStep(2)} disabled={assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+                Review {assignments.length > 0 && `(${assignments.length})`} <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+            {step === 2 && (
+              <button type="button" onClick={() => setStep(3)} disabled={assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+                Continue <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+            {step === 3 && (
+              <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+                {isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} {isSaving ? "Saving..." : "Save Assignments"}
+              </button>
+            )}
           </div>
         </footer>
       </div>
@@ -495,33 +593,33 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
             onClick={() => onSelect(faculty.id)}
             aria-pressed={selected}
             style={{ contentVisibility: "auto", containIntrinsicSize: "84px" }}
-            className={`grid w-full grid-cols-[minmax(0,1fr)_132px_24px] items-center gap-3 rounded-lg border px-3 py-3 text-left shadow-sm transition-colors ${
+            className={`grid w-full grid-cols-[minmax(0,1fr)_120px_20px] items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
               selected
-                ? "border-blue-500 bg-blue-50"
+                ? "border-[#4e0a10]/40 bg-[#4e0a10]/[0.04] ring-1 ring-[#4e0a10]/20"
                 : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
             }`}
           >
             <span className="flex min-w-0 items-center gap-3">
               {faculty.profilePicture ? (
-                  <img src={faculty.profilePicture} alt={faculty.name} loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-full border border-slate-200 object-cover" />
+                  <img src={faculty.profilePicture} alt={faculty.name} loading="lazy" decoding="async" className="h-10 w-10 shrink-0 rounded-full border border-slate-200 object-cover" />
               ) : (
-                <ProfileAvatar className="h-12 w-12 shrink-0 rounded-full" iconClassName="h-6 w-6" />
+                <ProfileAvatar className="h-10 w-10 shrink-0 rounded-full" iconClassName="h-5 w-5" />
               )}
               <span className="min-w-0">
                 <span className="block break-words text-sm font-black leading-5 text-slate-900">{faculty.name}</span>
-                <span className={`mt-1 flex items-center gap-2 text-xs font-medium ${selected ? "text-blue-600" : "text-slate-500"}`}>
-                  <span className={`h-2 w-2 rounded-full ${selected ? "bg-blue-600" : faculty.status === "inactive" ? "bg-slate-300" : "bg-emerald-500"}`} />
-                  {selected ? "Selected" : faculty.status === "inactive" ? "Inactive" : "Current"}
+                <span className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                  <span className={`h-1.5 w-1.5 rounded-full ${faculty.status === "inactive" ? "bg-slate-300" : "bg-emerald-500"}`} />
+                  {faculty.status === "inactive" ? "Inactive" : "Active"}
                   {tab === "external" && <span className="truncate text-slate-400">· {faculty.departmentCode ?? faculty.departmentName ?? "External"}</span>}
                 </span>
               </span>
             </span>
             <span className="block min-w-0">
-              <span className="flex justify-between gap-2 text-xs text-slate-500"><span>Basic Load</span><span className="whitespace-nowrap font-bold text-slate-800">{load} / {display.bands.basicLoad}</span></span>
+              <span className="flex justify-between gap-2 text-[11px] text-slate-500"><span>Load</span><span className="whitespace-nowrap font-bold tabular-nums text-slate-800">{load} / {display.bands.basicLoad}</span></span>
               <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></span>
               {display.tier !== "basic" && <span className={`mt-1.5 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>}
             </span>
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full ${selected ? "bg-blue-600 text-white" : "text-transparent"}`}><Check className="h-4 w-4" /></span>
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full ${selected ? "bg-[#4e0a10] text-white" : "border border-slate-200 text-transparent"}`}><Check className="h-3 w-3" /></span>
           </button>
         );
       },
@@ -531,14 +629,15 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
   const table = useReactTable({ data: visibleFaculties, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3">
-      <div className="flex shrink-0 items-center gap-2 pb-2 text-base font-black text-slate-900">
-        <Users className="h-5 w-5 text-blue-600" /> Select Instructor
+    <aside className="flex max-h-[420px] min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
+      <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 text-sm font-black text-slate-900">
+        <Users className="h-4 w-4 text-[#4e0a10]" /> Instructor
+        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{visibleFaculties.length}</span>
       </div>
-      {allowExternalInstructors && <div className="mb-2 flex shrink-0 border-b border-slate-200">
+      {allowExternalInstructors && <div className="flex shrink-0 border-b border-slate-200 px-3">
         {([
-          ["department", "Department Instructors"],
-          ["external", "External Instructors"],
+          ["department", "My department"],
+          ["external", "Other departments"],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -559,7 +658,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
           </button>
         ))}
       </div>}
-      <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto overflow-x-hidden pr-1" style={{ contain: "layout paint" }}>
+      <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto overflow-x-hidden px-3 pb-2" style={{ contain: "layout paint" }}>
         <table className="w-full table-fixed border-separate border-spacing-y-2">
           <tbody>
             {table.getRowModel().rows.map((row) => (
@@ -578,10 +677,10 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
 }
 
 function SelectField({ label, value, onChange, options, placeholder, allValue }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder: string; allValue?: string }) {
-  return <label className="text-xs font-bold text-slate-700">{label}<div className="relative mt-1.5"><select value={value} onChange={(event) => onChange(event.target.value)} className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-8 text-sm font-semibold outline-none focus:border-blue-500"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
+  return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
 }
 
-function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, selectAllChecked, selectAllDisabled }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean }) {
+function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
   const columns = useMemo<ColumnDef<SectionGroup>[]>(() => [
     {
       id: "selected",
@@ -594,7 +693,7 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
             alreadyAssigned
               ? "border-slate-400 bg-slate-400 text-white"
               : selected
-                ? "border-blue-600 bg-blue-600 text-white"
+                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
                 : "border-slate-300 bg-white"
           }`}>
             {selected && <Check className="h-3 w-3" />}
@@ -623,17 +722,35 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
       cell: ({ row }) => {
         const issue = getIssue(row.original);
         return (
-          <span className={`inline-flex rounded-md border px-2.5 py-1 text-[11px] font-bold ${
-            issue
-              ? "border-amber-200 bg-amber-100 text-amber-800"
-              : "border-emerald-200 bg-emerald-100 text-emerald-800"
-          }`}>
+          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${issue ? "text-slate-500" : "text-emerald-700"}`}>
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${issue ? "bg-amber-400" : "bg-emerald-500"}`} />
             {issue ?? "Available"}
           </span>
         );
       },
     },
-  ], [getIssue, selectedKeys]);
+    ...(onRemove ? [{
+      id: "actions",
+      header: () => <span className="block text-right">Actions</span>,
+      cell: ({ row }: { row: { original: SectionGroup } }) => {
+        if (!row.original.assignedFacultyId) return null;
+        const blocked = removalBlockedReason(row.original);
+        return (
+          <div className="flex justify-end">
+            <TableActionButton
+              label={blocked ?? "Remove instructor"}
+              aria-label={`Remove instructor from ${row.original.courseCode} ${row.original.sectionName}`}
+              variant="danger"
+              disabled={Boolean(blocked) || busy}
+              onClick={(event) => { event.stopPropagation(); onRemove(row.original); }}
+            >
+              <Trash2 size={15} />
+            </TableActionButton>
+          </div>
+        );
+      },
+    } satisfies ColumnDef<SectionGroup>] : []),
+  ], [busy, getIssue, onRemove, removalBlockedReason, selectedKeys]);
 
   const table = useReactTable({
     data: groups,
@@ -642,16 +759,16 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
   });
 
   return (
-    <section className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200">
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-2.5"><div className="flex items-center gap-2 text-sm font-black text-slate-800"><UserCheck className="h-4 w-4 text-blue-600" /> Compatible Sections</div><div className="flex items-center gap-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">{selectedKeys.length} selected</span><label className={`inline-flex items-center gap-1.5 text-xs font-bold ${selectAllDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700"}`}><input type="checkbox" checked={selectAllChecked} onChange={onSelectAll} disabled={selectAllDisabled} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" /> Select all</label></div></div>
-      {groups.length === 0 ? <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">No compatible sections are available for this course.</div> : (
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2.5"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><Layers3 className="h-4 w-4 text-[#4e0a10]" /> Sections <span className="text-xs font-semibold text-slate-400">{groups.length}</span></div><div className="flex items-center gap-3">{selectedKeys.length > 0 && <span className="rounded-full bg-[#4e0a10]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#4e0a10]">{selectedKeys.length} selected</span>}<label className={`inline-flex items-center gap-1.5 text-xs font-bold ${selectAllDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700"}`}><input type="checkbox" checked={selectAllChecked} onChange={onSelectAll} disabled={selectAllDisabled} className="h-4 w-4 rounded border-slate-300 accent-[#4e0a10]" /> Select all available</label></div></div>
+      {groups.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center"><Layers3 className="h-6 w-6 text-slate-300" /><p className="text-sm font-semibold text-slate-600">No sections to assign</p><p className="text-xs text-slate-500">Pick another course or year level.</p></div> : (
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[650px] text-left">
-            <thead className="sticky top-0 z-10 bg-[#4e0a10] text-[11px] uppercase text-white">
+            <thead className="sticky top-0 z-10 border-y border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <th key={header.id} className={`px-3 py-3 font-black ${header.column.id === "selected" ? "w-12 pl-4" : ""}`}>
+                    <th key={header.id} className={`px-3 py-2 font-bold ${header.column.id === "selected" ? "w-12 pl-4" : header.column.id === "actions" ? "w-20 pr-4" : ""}`}>
                       {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                     </th>
                   ))}
@@ -662,9 +779,9 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
               {table.getRowModel().rows.map((row) => {
                 const issue = getIssue(row.original);
                 return (
-                  <tr key={row.id} aria-disabled={!!issue} onClick={() => onToggle(row.original)} className={issue ? "cursor-not-allowed bg-slate-50/70" : "cursor-pointer hover:bg-blue-50/40"}>
+                  <tr key={row.id} aria-disabled={!!issue} onClick={() => onToggle(row.original)} className={issue ? "cursor-not-allowed" : selectedKeys.includes(row.original.key) ? "cursor-pointer bg-[#4e0a10]/[0.04]" : "cursor-pointer hover:bg-slate-50"}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={`px-3 py-2.5 ${cell.column.id === "selected" ? "pl-4" : ""}`}>
+                      <td key={cell.id} className={`px-3 py-2.5 ${cell.column.id === "selected" ? "pl-4" : cell.column.id === "actions" ? "pr-4" : ""}`}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -709,32 +826,140 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
     else if (selectedGroup && !filteredGroups.some((group) => group.facultyId === selectedGroup.facultyId) && filteredGroups[0]) setSelectedFacultyId(filteredGroups[0].facultyId);
   }, [filteredGroups, facultyGroups, selectedGroup]);
 
-  if (assignments.length === 0) return <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-sm font-semibold text-slate-500">No assignments queued. Go back and add compatible sections.</div>;
+  if (assignments.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+        <ListChecks className="h-7 w-7 text-slate-300" />
+        <p className="text-sm font-bold text-slate-700">The assignment list is empty</p>
+        <p className="text-xs text-slate-500">Go back and add sections to an instructor.</p>
+      </div>
+    );
+  }
 
   return (
-    <section className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
-        <h3 className="text-sm font-black text-slate-900">Review Instructor Load, Courses, and Sections</h3>
-        <p className="mt-1 text-xs text-slate-500">Assignments remain editable until the final save step.</p>
-      </div>
-      <div className="grid min-h-0 flex-1 gap-3 overflow-hidden p-3 lg:grid-cols-[330px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-4 py-3"><h4 className="text-sm font-black text-slate-900">Instructors</h4><span className="ml-auto rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">{facultyGroups.length}</span></div>
-          <div className="flex shrink-0 gap-2 border-b border-slate-100 p-3"><label className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search instructors..." aria-label="Search instructors" className="w-full rounded-md border border-slate-200 py-2 pl-8 pr-2 text-xs outline-none focus:border-blue-500" /></label><div className="relative"><button type="button" onClick={() => setShowSortMenu((current) => !current)} aria-label="Sort instructors" aria-expanded={showSortMenu} title="Sort instructors" className={`h-full rounded-md border px-2.5 hover:bg-slate-50 ${showSortMenu ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}><SlidersHorizontal className="h-4 w-4" /></button>{showSortMenu && <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg">{([['name', 'Name'], ['sections', 'Most sections'], ['load', 'Highest load']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortMode(value); setShowSortMenu(false); }} className={`block w-full rounded px-2.5 py-2 text-left text-xs font-semibold ${sortMode === value ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}>{label}</button>)}</div>}</div></div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-            {filteredGroups.map(({ facultyId, faculty, items }) => {
-              const load = facultyLoads.get(facultyId) ?? 0;
-              const display = loadDisplay(faculty, load);
-              const selected = selectedGroup?.facultyId === facultyId;
-              return <button key={facultyId} type="button" onClick={() => setSelectedFacultyId(facultyId)} aria-pressed={selected} className={`w-full rounded-lg border p-3 text-left transition-colors ${selected ? "border-blue-500 bg-blue-50/70" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}><div className="flex items-center gap-3"><ProfileAvatar src={faculty?.profilePicture} className="h-11 w-11 shrink-0 rounded-full border border-slate-200" iconClassName="h-5 w-5" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-900">{faculty?.name ?? items[0].facultyName}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"}</span></span><span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">{items.length} sections</span></div><div className="mt-3 flex items-center justify-between text-[11px]"><span className="font-semibold text-slate-500">{load} / {display.bands.basicLoad} units</span><span className="font-bold text-slate-500">{display.label}</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div></button>;
-            })}
-            {filteredGroups.length === 0 && <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">No matching instructors.</p>}
+    <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <aside className="flex max-h-[420px] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
+        <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3">
+          <Users className="h-4 w-4 text-[#4e0a10]" />
+          <h4 className="text-sm font-black text-slate-900">Instructors</h4>
+          <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{facultyGroups.length}</span>
+        </div>
+        <div className="flex shrink-0 gap-2 border-b border-slate-100 px-3 pb-3">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search instructor, course, section" aria-label="Search instructors" className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-2 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25" />
+          </label>
+          <div className="relative">
+            <button type="button" onClick={() => setShowSortMenu((current) => !current)} aria-label="Sort instructors" aria-expanded={showSortMenu} title="Sort instructors" className={`flex h-9 items-center rounded-lg border px-2.5 transition ${showSortMenu ? "border-[#4e0a10]/30 bg-[#4e0a10]/5 text-[#4e0a10]" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+            {showSortMenu && (
+              <div className="absolute right-0 top-full z-20 mt-1 w-40 origin-top-right rounded-lg border border-slate-200 bg-white p-1 shadow-lg motion-safe:animate-dropdownIn">
+                {([["name", "Name"], ["sections", "Most sections"], ["load", "Highest load"]] as const).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => { setSortMode(value); setShowSortMenu(false); }} className={`block w-full rounded-md px-2.5 py-2 text-left text-xs font-semibold ${sortMode === value ? "bg-[#4e0a10]/5 text-[#4e0a10]" : "text-slate-600 hover:bg-slate-50"}`}>{label}</button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="shrink-0 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">Showing {filteredGroups.length} of {facultyGroups.length} instructors</div>
-        </aside>
-        {selectedGroup ? (() => { const { facultyId, faculty, items } = selectedGroup; const load = facultyLoads.get(facultyId) ?? 0; const display = loadDisplay(faculty, load); return <main className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto"><div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-[minmax(210px,1.2fr)_repeat(3,minmax(110px,1fr))] sm:items-center"><div className="flex items-center gap-3">{faculty?.profilePicture ? <img src={faculty.profilePicture} alt="" className="h-14 w-14 rounded-full border border-slate-200 object-cover" /> : <span className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UserRound className="h-7 w-7" /></span>}<div className="min-w-0"><h4 className="truncate text-base font-black text-slate-900">{faculty?.name ?? items[0].facultyName}</h4><p className="mt-1 text-sm text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"}</p></div></div><div><p className="text-xs font-semibold text-slate-500">Current load</p><p className="mt-1 text-base font-black text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.bands.basicLoad} units</span></p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div></div><div><p className="text-xs font-semibold text-slate-500">Sections assigned</p><p className="mt-1 text-xl font-black text-slate-900">{items.length}</p></div><div><p className="text-xs font-semibold text-slate-500">Load status</p><span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-bold ${display.badgeClass}`}>{display.label}</span></div></div><section className="rounded-lg border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 px-4 py-3"><div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600"><BookOpen className="h-4 w-4" /></span><h4 className="text-sm font-black text-slate-900">Assigned Courses</h4></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">{items.length} sections assigned</span></div><div className="space-y-2 p-3">{items.map((assignment) => <div key={assignment.key} className="grid items-center gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[minmax(180px,1fr)_minmax(120px,0.9fr)_minmax(100px,0.8fr)_80px_auto]"><div className="min-w-0"><p className="text-sm font-black text-slate-900">{assignment.courseCode}</p><p className="truncate text-xs text-slate-500">{assignment.courseName}</p></div><div><p className="text-[11px] font-semibold text-slate-500">Schedule</p><p className="mt-1 text-xs font-semibold leading-5 text-slate-700">{assignment.schedule}</p></div><div><p className="text-[11px] font-semibold text-slate-500">Section</p><span className="mt-1 inline-flex rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{assignment.sectionName}</span></div><div><p className="text-[11px] font-semibold text-slate-500">Units</p><span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">{assignment.units} units</span></div><button type="button" onClick={() => onRemove(assignment.key)} aria-label={`Remove ${assignment.courseCode} ${assignment.sectionName}`} title="Remove assignment" className="justify-self-end rounded-md border border-red-200 p-2 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button></div>)}</div></section><div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs text-blue-900"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p><span className="font-bold">Review the instructor's load and assigned sections before proceeding to final save.</span><br /><span className="text-blue-700">Anything past Basic Load is allowed — it runs into the overload allowance, then pro bono — and is confirmed once when you save.</span></p></div></main>; })() : <main className="flex items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-8 text-sm font-semibold text-slate-500">Select an instructor to review assignments.</main>}
-      </div>
-    </section>
+        </div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          {filteredGroups.map(({ facultyId, faculty, items }) => {
+            const load = facultyLoads.get(facultyId) ?? 0;
+            const display = loadDisplay(faculty, load);
+            const selected = selectedGroup?.facultyId === facultyId;
+            return (
+              <button key={facultyId} type="button" onClick={() => setSelectedFacultyId(facultyId)} aria-pressed={selected} className={`w-full rounded-lg border p-2.5 text-left transition-colors ${selected ? "border-[#4e0a10]/40 bg-[#4e0a10]/[0.04] ring-1 ring-[#4e0a10]/20" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}>
+                <div className="flex items-center gap-2.5">
+                  <ProfileAvatar src={faculty?.profilePicture} className="h-9 w-9 shrink-0 rounded-full border border-slate-200" iconClassName="h-4 w-4" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black text-slate-900">{faculty?.name ?? items[0].facultyName}</span>
+                    <span className="block truncate text-[11px] text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"} &middot; {plural(items.length, "section")}</span>
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px]">
+                  <span className="font-semibold tabular-nums text-slate-600">{load} / {display.bands.basicLoad} units</span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div>
+              </button>
+            );
+          })}
+          {filteredGroups.length === 0 && <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">No matching instructors.</p>}
+        </div>
+        {search.trim() && <div className="shrink-0 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">Showing {filteredGroups.length} of {facultyGroups.length} instructors</div>}
+      </aside>
+
+      {selectedGroup ? (() => {
+        const { facultyId, faculty, items } = selectedGroup;
+        const load = facultyLoads.get(facultyId) ?? 0;
+        const display = loadDisplay(faculty, load);
+        const name = faculty?.name ?? items[0].facultyName;
+        return (
+          <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="grid shrink-0 gap-4 border-b border-slate-100 p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-center">
+              <div className="flex min-w-0 items-center gap-3">
+                {faculty?.profilePicture ? <img src={faculty.profilePicture} alt="" className="h-12 w-12 shrink-0 rounded-full border border-slate-200 object-cover" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UserRound className="h-6 w-6" /></span>}
+                <div className="min-w-0">
+                  <h4 className="truncate text-base font-black text-slate-900">{name}</h4>
+                  <p className="truncate text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"} &middot; {plural(items.length, "section")} on the list</p>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between text-xs">
+                  <span className="font-semibold text-slate-500">Load after saving</span>
+                  <span className="font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.bands.basicLoad}</span></span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div>
+              </div>
+              <span className={`inline-flex w-fit rounded-md border px-2 py-1 text-xs font-bold ${display.badgeClass}`}>{display.label}</span>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="w-full min-w-[640px] text-left">
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2 font-bold">Course</th>
+                    <th className="px-3 py-2 font-bold">Section</th>
+                    <th className="px-3 py-2 font-bold">Schedule</th>
+                    <th className="px-3 py-2 font-bold">Mode</th>
+                    <th className="px-3 py-2 text-right font-bold">Units</th>
+                    <th className="w-20 px-4 py-2 text-right font-bold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {items.map((assignment) => (
+                    <tr key={assignment.key} className="align-top hover:bg-slate-50/60">
+                      <td className="px-4 py-2.5">
+                        <p className="text-sm font-black text-slate-900">{assignment.courseCode}</p>
+                        <p className="max-w-[260px] truncate text-xs text-slate-500">{assignment.courseName}</p>
+                      </td>
+                      <td className="px-3 py-2.5 text-sm font-bold text-slate-800">{assignment.sectionName}</td>
+                      <td className="px-3 py-2.5 text-xs font-medium leading-5 text-slate-600">{assignment.schedule}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-600">{assignment.mode}</td>
+                      <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-800">{assignment.units}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex justify-end">
+                          <TableActionButton label="Remove from list" aria-label={`Remove ${assignment.courseCode} ${assignment.sectionName}`} variant="danger" onClick={() => onRemove(assignment.key)}>
+                            <Trash2 size={15} />
+                          </TableActionButton>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="flex shrink-0 items-start gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-600">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+              Going past Basic Load is allowed: it uses the overload allowance, then pro bono, and you confirm it once when saving.
+            </p>
+          </section>
+        );
+      })() : (
+        <section className="flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-8 text-sm font-semibold text-slate-500">Select an instructor to review their assignments.</section>
+      )}
+    </div>
   );
 }
 
@@ -754,42 +979,97 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
     : [...current, facultyId]);
 
   return (
-    <section className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg border border-emerald-200 bg-white">
-      <div className="border-b border-slate-200 p-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(260px,1.3fr)_repeat(4,minmax(120px,1fr))] lg:items-center">
-          <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></span><div><h3 className="text-lg font-black text-slate-900">Ready to Save Assignments</h3><p className="mt-1 text-xs leading-5 text-slate-600">Confirm instructor loads and assigned sections before saving.</p></div></div>
-          <ConfirmMetric icon={<Users className="h-5 w-5" />} value={groups.length} label="Instructors" detail="All assigned" color="blue" />
-          <ConfirmMetric icon={<Layers3 className="h-5 w-5" />} value={assignments.length} label="Sections" detail="All assigned" color="green" />
-          <ConfirmMetric icon={<BookOpen className="h-5 w-5" />} value={totalUnits} label="Units" detail="Total load" color="purple" />
-          <ConfirmMetric icon={<Scale className="h-5 w-5" />} value={overloaded.length ? "Overload" : "Balanced"} label="Load Status" detail={overloaded.length ? `${overloaded.length} instructor${overloaded.length === 1 ? "" : "s"} past Basic Load — you will be asked to confirm` : "No overload detected"} color="green" />
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+      <section className="grid shrink-0 gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(0,1fr))] lg:items-center">
+        <div className="flex items-start gap-3">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${overloaded.length ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+            {overloaded.length ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
+          </span>
+          <div>
+            <h3 className="text-base font-black text-slate-900">Ready to save</h3>
+            <p className="mt-0.5 text-xs leading-5 text-slate-600">
+              {overloaded.length
+                ? "Some loads go past Basic Load. You will be asked to confirm them."
+                : "Every instructor stays within Basic Load."}
+            </p>
+          </div>
         </div>
-      </div>
+        <ConfirmMetric icon={<Users className="h-4 w-4" />} value={groups.length} label={groups.length === 1 ? "Instructor" : "Instructors"} />
+        <ConfirmMetric icon={<Layers3 className="h-4 w-4" />} value={assignments.length} label={assignments.length === 1 ? "Section" : "Sections"} />
+        <ConfirmMetric icon={<BookOpen className="h-4 w-4" />} value={totalUnits} label="Total units" />
+        <ConfirmMetric icon={<Scale className="h-4 w-4" />} value={overloaded.length ? `${overloaded.length} past Basic` : "Balanced"} label="Load status" warn={overloaded.length > 0} />
+      </section>
 
-      <div className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-3"><h4 className="text-xs font-black uppercase tracking-wide text-[#4e0a10]">Final Assignment Review</h4><button type="button" onClick={() => setExpandedIds(allExpanded ? [] : groups.map((group) => group.facultyId))} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">{allExpanded ? "Collapse All" : "Expand All"}<ChevronDown className="h-3.5 w-3.5" /></button></div>
-        <div className="space-y-2">
-          {groups.map(({ facultyId, faculty, items }) => {
-            const expanded = expandedIds.includes(facultyId);
-            const load = facultyLoads.get(facultyId) ?? 0;
-            const display = loadDisplay(faculty, load);
-            const name = faculty?.name ?? items[0].facultyName;
-            return (
-              <article key={facultyId} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <ProfileAvatar src={faculty?.profilePicture} alt={name} className="h-10 w-10 rounded-full" iconClassName="h-5 w-5" />
-                  <div className="min-w-[160px] flex-1"><p className="text-sm font-black text-slate-900">{name}</p><p className="mt-0.5 text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"}<span className={`ml-2 rounded-full border px-2 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span></p></div>
-                  <div className="text-right"><p className="text-sm font-black text-slate-900">{load} / {display.bands.basicLoad} units</p><p className="text-xs text-slate-500">{items.length} section{items.length === 1 ? "" : "s"} assigned</p></div>
-                  <button type="button" onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-md border border-[#4e0a10]/20 px-3 py-2 text-xs font-bold text-[#4e0a10] hover:bg-[#4e0a10]/5"><Pencil className="h-3.5 w-3.5" /> Edit Assignment</button>
-                  <button type="button" onClick={() => toggleGroup(facultyId)} aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`} className="rounded-md p-2 text-[#4e0a10] hover:bg-slate-50">{expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
+      <section className="flex shrink-0 flex-col gap-2">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <h4 className="text-[11px] font-black uppercase tracking-wide text-slate-500">Assignments by instructor</h4>
+          {groups.length > 1 && (
+            <button type="button" onClick={() => setExpandedIds(allExpanded ? [] : groups.map((group) => group.facultyId))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-[#4e0a10] hover:bg-[#4e0a10]/5">
+              {allExpanded ? "Collapse all" : "Expand all"}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${allExpanded ? "-rotate-180" : ""}`} />
+            </button>
+          )}
+        </div>
+
+        {groups.map(({ facultyId, faculty, items }) => {
+          const expanded = expandedIds.includes(facultyId);
+          const load = facultyLoads.get(facultyId) ?? 0;
+          const display = loadDisplay(faculty, load);
+          const name = faculty?.name ?? items[0].facultyName;
+          return (
+            <article key={facultyId} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <button type="button" onClick={() => toggleGroup(facultyId)} aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`} className="flex min-w-[200px] flex-1 items-center gap-3 text-left">
+                  <ProfileAvatar src={faculty?.profilePicture} alt={name} className="h-10 w-10 shrink-0 rounded-full" iconClassName="h-5 w-5" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black text-slate-900">{name}</span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"} &middot; {plural(items.length, "section")}</span>
+                  </span>
+                </button>
+                <div className="text-right">
+                  <p className="text-sm font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.bands.basicLoad} units</span></p>
+                  <span className={`mt-0.5 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>
                 </div>
-                {expanded && <div className="border-t border-slate-200 p-3"><div className="hidden grid-cols-[0.7fr_1.2fr_1.2fr_70px_90px] gap-3 px-3 pb-2 text-[10px] font-black uppercase tracking-wide text-slate-500 sm:grid"><span>Course</span><span>Course Title</span><span>Section / Schedule</span><span>Units</span><span>Type</span></div><div className="divide-y divide-slate-100 rounded-md border border-slate-200">{items.map((assignment) => <div key={assignment.key} className="grid gap-2 px-3 py-3 text-xs sm:grid-cols-[0.7fr_1.2fr_1.2fr_70px_90px] sm:items-center"><span className="font-black text-slate-900">{assignment.courseCode}</span><span className="text-slate-600">{assignment.courseName}</span><span><span className="font-bold text-slate-800">{assignment.sectionName}</span><span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{assignment.schedule}</span></span><span className="font-black text-slate-800">{assignment.units}</span><span className="inline-flex w-fit rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold capitalize text-slate-700">{assignment.mode}</span></div>)}<div className="flex justify-end border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-800">Total Load: {items.reduce((total, item) => total + item.units, 0)} units</div></div></div>}
-              </article>
-            );
-          })}
-        </div>
-      </div>
-
-    </section>
+                <TableActionButton label="Edit assignments" aria-label={`Edit assignments for ${name}`} variant="edit" onClick={onEdit}><Pencil size={15} /></TableActionButton>
+                <button type="button" onClick={() => toggleGroup(facultyId)} aria-hidden="true" tabIndex={-1} className="rounded-lg p-2 text-slate-500 hover:bg-slate-50"><ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "-rotate-180" : ""}`} /></button>
+              </div>
+              {expanded && (
+                <div className="overflow-x-auto border-t border-slate-100 motion-safe:animate-dropdownIn">
+                  <table className="w-full min-w-[640px] text-left text-xs">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2 font-bold">Course</th>
+                        <th className="px-3 py-2 font-bold">Section</th>
+                        <th className="px-3 py-2 font-bold">Schedule</th>
+                        <th className="px-3 py-2 font-bold">Mode</th>
+                        <th className="px-4 py-2 text-right font-bold">Units</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {items.map((assignment) => (
+                        <tr key={assignment.key} className="align-top">
+                          <td className="px-4 py-2.5"><span className="block font-black text-slate-900">{assignment.courseCode}</span><span className="block max-w-[260px] truncate text-slate-500">{assignment.courseName}</span></td>
+                          <td className="px-3 py-2.5 font-bold text-slate-800">{assignment.sectionName}</td>
+                          <td className="px-3 py-2.5 leading-5 text-slate-600">{assignment.schedule}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">{assignment.mode}</td>
+                          <td className="px-4 py-2.5 text-right font-black tabular-nums text-slate-800">{assignment.units}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200 bg-slate-50/70">
+                        <td colSpan={4} className="px-4 py-2 text-right font-bold text-slate-500">Units added</td>
+                        <td className="px-4 py-2 text-right font-black tabular-nums text-slate-900">{items.reduce((total, item) => total + item.units, 0)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </section>
+    </div>
   );
 }
 
@@ -800,16 +1080,26 @@ function ConfirmValidationSummary({ assignments, faculties, facultyLoads }: { as
     facultyLoads.get(facultyId) ?? 0,
   )).length;
   const totalUnits = assignments.reduce((total, assignment) => total + assignment.units, 0);
-  return <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-[11px] text-slate-700"><span className="flex items-center gap-1.5 font-black text-slate-800"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Validation Summary</span><span className="flex items-center gap-1"><Check className="h-3 w-3 text-emerald-600" /> {overloadCount ? `${overloadCount} instructor${overloadCount === 1 ? "" : "s"} past Basic Load` : "Every instructor is within Basic Load"}</span><span className="flex items-center gap-1"><Check className="h-3 w-3 text-emerald-600" /> All {assignments.length} sections assigned</span><span className="flex items-center gap-1"><Check className="h-3 w-3 text-emerald-600" /> {totalUnits} units will be saved</span></div>;
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
+      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-amber-700" : ""}`}>
+        {overloadCount ? <AlertTriangle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5 text-emerald-600" />}
+        {overloadCount ? `${plural(overloadCount, "instructor")} past Basic Load` : "All within Basic Load"}
+      </span>
+      <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(assignments.length, "section")}</span>
+      <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(totalUnits, "unit")} to save</span>
+    </div>
+  );
 }
 
-function ConfirmMetric({ icon, value, label, detail, color }: { icon: React.ReactNode; value: string | number; label: string; detail: string; color: "blue" | "green" | "purple" }) {
-  const colors = { blue: "bg-blue-50 text-blue-700", green: "bg-emerald-50 text-emerald-700", purple: "bg-purple-50 text-purple-700" };
-  return <div className="flex items-center gap-3 rounded-lg border border-slate-200 p-3"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${colors[color]}`}>{icon}</span><div className="min-w-0"><p className="text-lg font-black text-slate-900">{value}</p><p className="text-xs font-bold text-slate-700">{label}</p><p className="truncate text-[11px] text-slate-500">{detail}</p></div></div>;
+function ConfirmMetric({ icon, value, label, warn = false }: { icon: React.ReactNode; value: string | number; label: string; warn?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${warn ? "bg-amber-100 text-amber-700" : "bg-white text-[#4e0a10]"}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className={`truncate text-base font-black tabular-nums ${warn ? "text-amber-700" : "text-slate-900"}`}>{value}</p>
+        <p className="truncate text-[11px] font-semibold text-slate-500">{label}</p>
+      </div>
+    </div>
+  );
 }
-
-
-function SummaryTile({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-xl font-black text-slate-900">{value}</p></div>;
-}
-import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

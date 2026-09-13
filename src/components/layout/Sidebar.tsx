@@ -133,13 +133,20 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
     }));
   };
 
-  const isChildActive = (item: NavItem) => {
-    if (!item.children) return false;
-    return item.children.some((child) => {
-      if (!child.path) return false;
-      return location.pathname === child.path || location.pathname.startsWith(`${child.path}/`);
-    });
+  /**
+   * The one child that owns the current page. Sibling paths nest
+   * ('/dean/schedules' and '/dean/schedules/approval'), so a plain prefix test
+   * lit both; the most specific match wins instead.
+   */
+  const activeChildPath = (item: NavItem): string | null => {
+    const matches = (item.children ?? [])
+      .map((child) => child.path)
+      .filter((path): path is string => Boolean(path)
+        && (location.pathname === path || location.pathname.startsWith(`${path}/`)));
+    return matches.sort((a, b) => b.length - a.length)[0] ?? null;
   };
+
+  const isChildActive = (item: NavItem) => activeChildPath(item) !== null;
 
   const isExpanded = (item: NavItem) => {
     if (expandedItems[item.label] !== undefined) {
@@ -230,6 +237,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                 if (item.children) {
                   const expanded = isExpanded(item);
                   const hasActiveChild = isChildActive(item);
+                  const currentChildPath = activeChildPath(item);
                   return (
                     <div key={item.label} className="flex flex-col gap-1">
                       <button
@@ -246,7 +254,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                           w-full flex items-center h-10 rounded-lg
                           transition-all duration-200 cursor-pointer text-left
                           ${isOpen ? 'gap-3 px-3 justify-between' : 'justify-center px-0'}
-                          ${hasActiveChild ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                          ${hasActiveChild ? 'sidebar-parent-active' : 'sidebar-item-hover text-[#E8D5C4]'}
                           ${item.isLocked ? 'opacity-50' : ''}
                         `}
                         aria-expanded={expanded}
@@ -274,10 +282,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                       {expanded && isOpen && (
                         <div className="mt-1 flex flex-col gap-1">
                           {item.children.map((child, childIdx) => {
-                            const isChildPathActive = Boolean(
-                              child.path
-                              && (location.pathname === child.path || location.pathname.startsWith(`${child.path}/`))
-                            );
+                            const isChildPathActive = Boolean(child.path) && child.path === currentChildPath;
                             return (
                               <NavLink
                                 key={child.path}

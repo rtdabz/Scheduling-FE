@@ -55,6 +55,28 @@ interface User {
   inherited_permissions?: string[];
 }
 
+/** How a new account relates to the instructor roster. Mirrors UserFacultyProfileService::MODES. */
+type FacultyMode = 'create' | 'link' | 'none';
+
+interface LinkableFaculty {
+  id: number;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+  employment_type: string | null;
+  program_id: number | null;
+  status: string | null;
+}
+
+interface DesignationOption {
+  id: number;
+  name: string;
+  deload_units: number;
+}
+
+const linkableFacultyName = (f: LinkableFaculty) =>
+  [f.last_name && `${f.last_name},`, f.first_name, f.middle_name].filter(Boolean).join(' ');
+
 interface Department {
   id: number;
   department_name: string;
@@ -205,6 +227,28 @@ export default function VpaaUsers() {
   const [deptError, setDeptError] = useState('');
   const [programError, setProgramError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Teaching profile. Kept apart from formData because it only exists on create:
+  // an edit syncs whatever profile the account already has.
+  const [facultyMode, setFacultyMode] = useState<FacultyMode>('create');
+  // Until the VPAA picks a mode, a name match on the roster may switch it to
+  // `link`; once they choose, the suggestion never overrides them.
+  const [facultyModeTouched, setFacultyModeTouched] = useState(false);
+  const [linkFacultyId, setLinkFacultyId] = useState('');
+  const [designationId, setDesignationId] = useState('');
+  const [linkableFaculty, setLinkableFaculty] = useState<LinkableFaculty[]>([]);
+  const [isLoadingLinkable, setIsLoadingLinkable] = useState(false);
+  const [designations, setDesignations] = useState<DesignationOption[]>([]);
+  const [facultyLinkError, setFacultyLinkError] = useState('');
+
+  const resetTeachingProfile = () => {
+    setFacultyMode('create');
+    setFacultyModeTouched(false);
+    setLinkFacultyId('');
+    setDesignationId('');
+    setFacultyLinkError('');
+  };
+
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -283,6 +327,64 @@ export default function VpaaUsers() {
       }
     }
   }, [formData.role, formData.department_id, departments, isEditMode]);
+
+  const isCreatingAccount = isModalOpen && !isEditMode;
+
+  useEffect(() => {
+    if (!isCreatingAccount || !formData.department_id) {
+      setLinkableFaculty([]);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingLinkable(true);
+    api.get<LinkableFaculty[]>('/user/linkable-faculty', { params: { department_id: formData.department_id } })
+      .then((res) => {
+        if (cancelled) return;
+        setLinkableFaculty(res.data);
+        // A selection from the previous department is not linkable here.
+        setLinkFacultyId((current) => (res.data.some((f) => String(f.id) === current) ? current : ''));
+      })
+      .catch(() => {
+        if (!cancelled) setLinkableFaculty([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingLinkable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreatingAccount, formData.department_id]);
+
+  useEffect(() => {
+    if (!isCreatingAccount || designations.length > 0) return;
+    api.get<DesignationOption[]>('/designations', { params: { active_only: 1 } })
+      .then((res) => setDesignations(res.data))
+      .catch(() => setDesignations([]));
+  }, [isCreatingAccount, designations.length]);
+
+  const matchingInstructor = useMemo(() => {
+    const first = formData.first_name.trim().toLowerCase();
+    const last = formData.last_name.trim().toLowerCase();
+    if (!first || !last) return null;
+    return linkableFaculty.find(
+      (f) => f.first_name.trim().toLowerCase() === first && f.last_name.trim().toLowerCase() === last,
+    ) ?? null;
+  }, [linkableFaculty, formData.first_name, formData.last_name]);
+
+  // Suggest linking when the person already appears on the roster, so the
+  // default path does not create a second instructor for them.
+  useEffect(() => {
+    if (!isCreatingAccount || facultyModeTouched) return;
+    if (matchingInstructor) {
+      setFacultyMode('link');
+      setLinkFacultyId(String(matchingInstructor.id));
+    } else {
+      setFacultyMode('create');
+      setLinkFacultyId('');
+    }
+  }, [isCreatingAccount, facultyModeTouched, matchingInstructor]);
+
+  const selectedDesignation = designations.find((d) => String(d.id) === designationId) ?? null;
 
   const isProgramHeadRole = formData.role === 'Program Head';
   const selectedDepartmentPrograms = useMemo(
@@ -366,6 +468,13 @@ export default function VpaaUsers() {
       setProgramError('');
     }
 
+    if (!isEditMode && facultyMode === 'link' && !linkFacultyId) {
+      setFacultyLinkError('Select the instructor this account belongs to');
+      hasError = true;
+    } else {
+      setFacultyLinkError('');
+    }
+
     if (hasError) return;
 
     setIsSubmitting(true);
@@ -408,6 +517,9 @@ export default function VpaaUsers() {
           is_active: formData.status === 'Active',
           allow_google_login: formData.allow_google_login,
           profile_picture: profilePicture,
+          faculty_mode: facultyMode,
+          faculty_id: facultyMode === 'link' ? parseInt(linkFacultyId) : null,
+          designation_id: facultyMode !== 'none' && designationId ? parseInt(designationId) : null,
         });
         const createdUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -419,6 +531,7 @@ export default function VpaaUsers() {
       }
 
       setFormData({ first_name: '', middle_initial: '', last_name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+      resetTeachingProfile();
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
@@ -734,6 +847,7 @@ export default function VpaaUsers() {
               setLastNameError('');
               setMiddleInitialError('');
               setDeptError('');
+              resetTeachingProfile();
               setIsModalOpen(true);
             }}
             className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
@@ -1154,6 +1268,118 @@ export default function VpaaUsers() {
                       </p>
                     )}
                   </div>
+                </section>
+              )}
+
+              {!isEditMode && (
+                <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-bold text-[#4e0a10]">Teaching Profile</h3>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Decide whether this account teaches. Link it if the person is already on the instructor roster, so they are not scheduled twice.
+                    </p>
+                  </div>
+
+                  <div role="radiogroup" aria-label="Teaching profile" className="grid gap-2">
+                    {([
+                      { mode: 'link', title: 'Link existing instructor', hint: 'Use the roster record, keeping its load and class history.' },
+                      { mode: 'create', title: 'Create new instructor profile', hint: 'Adds a new full-time instructor (21 units) to the roster.' },
+                      { mode: 'none', title: 'Non-teaching account', hint: 'No instructor profile. Classes cannot be assigned to this account.' },
+                    ] as { mode: FacultyMode; title: string; hint: string }[]).map((option) => (
+                      <label
+                        key={option.mode}
+                        className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+                          facultyMode === option.mode ? 'border-[#5A1220] bg-[#5A1220]/5' : 'border-gray-200 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="faculty_mode"
+                          value={option.mode}
+                          checked={facultyMode === option.mode}
+                          onChange={() => {
+                            setFacultyModeTouched(true);
+                            setFacultyMode(option.mode);
+                            setFacultyLinkError('');
+                          }}
+                          className="mt-0.5 h-4 w-4 accent-[#5A1220]"
+                        />
+                        <span>
+                          <span className="block text-sm font-bold text-gray-800">{option.title}</span>
+                          <span className="block text-xs text-gray-500 mt-0.5">{option.hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {facultyMode === 'link' && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Instructor <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={linkFacultyId}
+                        disabled={!formData.department_id || isLoadingLinkable}
+                        onChange={(e) => {
+                          setFacultyModeTouched(true);
+                          setLinkFacultyId(e.target.value);
+                          setFacultyLinkError('');
+                        }}
+                        className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
+                          facultyLinkError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                        }`}
+                      >
+                        <option value="">
+                          {!formData.department_id
+                            ? 'Select a department first'
+                            : isLoadingLinkable
+                              ? 'Loading instructors...'
+                              : 'Select an instructor...'}
+                        </option>
+                        {linkableFaculty.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {linkableFacultyName(f)}{f.status === 'inactive' ? ' (inactive)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {facultyLinkError && <p className="text-xs text-red-500 mt-1 font-semibold">{facultyLinkError}</p>}
+                      {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
+                        <p className="text-xs text-[#8a6412] mt-1 font-semibold">
+                          Matched by name to an instructor already on this department's roster.
+                        </p>
+                      )}
+                      {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
+                        <p className="text-xs text-gray-500 mt-1 font-semibold">
+                          Every instructor in this department is already linked to an account.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {facultyMode !== 'none' && designations.length > 0 && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                        Designation
+                      </label>
+                      <select
+                        value={designationId}
+                        onChange={(e) => setDesignationId(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
+                      >
+                        <option value="">{facultyMode === 'link' ? 'Keep current designation' : 'No designation'}</option>
+                        {designations.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}{d.deload_units > 0 ? ` (-${d.deload_units} units)` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {selectedDesignation
+                          ? `Deloads the instructor by ${selectedDesignation.deload_units} unit${selectedDesignation.deload_units === 1 ? '' : 's'}.`
+                          : 'A dean or program head usually carries a reduced load. Pick their post so it is scheduled correctly.'}
+                      </p>
+                    </div>
+                  )}
                 </section>
               )}
 

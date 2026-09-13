@@ -170,6 +170,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         canManageScheduleFaculty={scheduler.canManageScheduleFaculty}
         checkFacultyConflict={scheduler.checkFacultyConflict}
         onAssign={scheduler.handleBulkFacultyAssign}
+        onRemoveAssignment={scheduler.handleRemoveFacultyFromClass}
       />
       <SubmitApprovalModal {...scheduler} />
       {scheduler.isMarkSectionsDoneModalOpen && (

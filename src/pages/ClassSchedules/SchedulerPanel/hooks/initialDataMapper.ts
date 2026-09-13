@@ -282,6 +282,35 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
   };
 };
 
+/**
+ * One API faculty row to the scheduler's Faculty shape. Exported so an
+ * instructor change can refetch just `?include=faculties` for fresh loads.
+ */
+export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Faculty => ({
+  id: f.id.toString(),
+  name: `${f.first_name} ${f.last_name}`,
+  profilePicture: f.profile_picture ?? null,
+  employmentType: f.employment_type,
+  administrativeRole: normalizeAdministrativePost(f.administrative_role),
+  departmentId: f.department_id,
+  departmentCode: f.department?.department_code,
+  departmentName: f.department?.department_name,
+  programId: f.program_id ?? null,
+  programCode: f.program?.code ?? null,
+  maxUnits: f.max_units ? Number(f.max_units) : undefined,
+  // Zero is a real allowance, so these coerce rather than falling back:
+  // treating 0 as "unknown" would make the Auto-Assign labels invent room the
+  // instructor does not have.
+  deloadUnits: numberOrUndefined(f.deload_units),
+  overloadUnits: numberOrUndefined(f.overload_units),
+  probonoUnits: numberOrUndefined(f.probono_units),
+  assignedUnits: numberOrUndefined(f.assigned_units),
+  requiredUnits: numberOrUndefined(f.required_units),
+  unitCeiling: numberOrUndefined(f.unit_ceiling),
+  status: f.status,
+  availabilities: f.availabilities
+});
+
 export const mapInitialData = (
   initialData: InitialDataResponse,
   options: { isVpaa: boolean; userDepartmentId?: number | null },
@@ -320,30 +349,7 @@ export const mapInitialData = (
   const rawCourses = initialData.courses ?? initialData.subjects ?? [];
   const mappedSubjects = rawCourses.map(mapApiCourse);
 
-  const mappedFaculties = initialData.faculties.map((f): Faculty => ({
-    id: f.id.toString(),
-    name: `${f.first_name} ${f.last_name}`,
-    profilePicture: f.profile_picture ?? null,
-    employmentType: f.employment_type,
-    administrativeRole: normalizeAdministrativePost(f.administrative_role),
-    departmentId: f.department_id,
-    departmentCode: f.department?.department_code,
-    departmentName: f.department?.department_name,
-    programId: f.program_id ?? null,
-    programCode: f.program?.code ?? null,
-    maxUnits: f.max_units ? Number(f.max_units) : undefined,
-    // Zero is a real allowance, so these coerce rather than falling back:
-    // treating 0 as "unknown" would make the Auto-Assign labels invent room the
-    // instructor does not have.
-    deloadUnits: numberOrUndefined(f.deload_units),
-    overloadUnits: numberOrUndefined(f.overload_units),
-    probonoUnits: numberOrUndefined(f.probono_units),
-    assignedUnits: numberOrUndefined(f.assigned_units),
-    requiredUnits: numberOrUndefined(f.required_units),
-    unitCeiling: numberOrUndefined(f.unit_ceiling),
-    status: f.status,
-    availabilities: f.availabilities
-  }));
+  const mappedFaculties = initialData.faculties.map(mapApiFaculty);
 
   const semester = initialData.active_semester;
 

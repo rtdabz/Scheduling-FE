@@ -16,6 +16,7 @@ import {
   type GenerationAdjustment,
   type YearLevelGenerationFailure,
 } from "../GenerateSchedule/yearLevelGenerationFailure";
+import type { GenerationChange } from "../GenerateSchedule/generationChanges";
 
 /**
  * Year-level generation runs on a queue worker and regularly outlives the
@@ -35,6 +36,7 @@ export type GenerationResult = {
   schedules?: ApiScheduleRecord[];
   applied_strategy?: AppliedStrategy | null;
   applied_adjustments?: GenerationAdjustment[];
+  generation_changes?: GenerationChange[];
 };
 
 type GenerationRunRecord = {
@@ -45,11 +47,6 @@ type GenerationRunRecord = {
   error_message?: string | null;
   started_at?: string | null;
   created_at?: string | null;
-};
-
-export type AppliedNotice = {
-  strategy: AppliedStrategy;
-  adjustments: GenerationAdjustment[];
 };
 
 export type GenerationRunMeta = {

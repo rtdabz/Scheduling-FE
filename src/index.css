@@ -77,6 +77,14 @@
     border-left: 3px solid #C9952A;
     color: #F5C842;
   }
+  /* A group whose page is open: highlighted text only, so the accent bar
+     marks the one item that is the current page. */
+  .sidebar-parent-active {
+    color: #F5C842;
+  }
+  .sidebar-parent-active:hover {
+    background: rgba(255,255,255,0.05);
+  }
   .sidebar-item-hover:hover {
     background: rgba(255,255,255,0.05);
     border-left: 3px solid rgba(201,149,42,0.4);

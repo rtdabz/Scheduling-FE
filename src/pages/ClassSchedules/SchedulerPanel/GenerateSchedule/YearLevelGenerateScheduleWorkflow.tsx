@@ -26,9 +26,8 @@ import type {
   Section,
   Semester,
 } from "../types";
-import RecommendedAdjustmentPanel, {
-  AppliedAdjustmentNotice,
-} from "./RecommendedAdjustmentPanel";
+import RecommendedAdjustmentPanel from "./RecommendedAdjustmentPanel";
+import { resolveGenerationChanges } from "./generationChanges";
 import {
   applyAdjustments,
   describeAdjustment,
@@ -211,17 +210,10 @@ export default function YearLevelGenerateScheduleWorkflow({
     [run.result],
   );
   const failure = run.failure;
-  // Dismissal is per run: the next generation shows its own notice again.
-  const [dismissedNoticeRunId, setDismissedNoticeRunId] = useState<
-    string | null
-  >(null);
-  const appliedNotice =
-    run.result?.applied_strategy && dismissedNoticeRunId !== run.runId
-      ? {
-          strategy: run.result.applied_strategy,
-          adjustments: run.result.applied_adjustments ?? [],
-        }
-      : null;
+  const generationChanges = useMemo(
+    () => resolveGenerationChanges(run.result),
+    [run.result],
+  );
 
   const storageKey = useMemo(
     () =>
@@ -1025,14 +1017,6 @@ export default function YearLevelGenerateScheduleWorkflow({
 
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-parchment p-3 sm:p-4">
         <div className="mx-auto flex min-h-0 w-full flex-1 flex-col gap-3">
-          {appliedNotice && (
-            <AppliedAdjustmentNotice
-              strategy={appliedNotice.strategy}
-              adjustments={appliedNotice.adjustments}
-              onDismiss={() => setDismissedNoticeRunId(run.runId)}
-            />
-          )}
-
           {failure ? (
             <RecommendedAdjustmentPanel
               failure={failure}
@@ -1119,6 +1103,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   sections={scopedSections}
                   courses={scopedCourses}
                   roomCodeById={roomCodeById}
+                  changes={generationChanges}
                 />
               )}
             </div>

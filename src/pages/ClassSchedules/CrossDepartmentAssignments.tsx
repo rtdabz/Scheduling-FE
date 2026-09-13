@@ -73,6 +73,11 @@ export default function CrossDepartmentAssignments() {
     if (success) setAssignmentRefreshToken((current) => current + 1);
     return success;
   }, [scheduler]);
+  const handleRemoveAssignment = useCallback(async (scheduleIds: string[]) => {
+    const success = await scheduler.handleRemoveFacultyFromClass(scheduleIds);
+    if (success) setAssignmentRefreshToken((current) => current + 1);
+    return success;
+  }, [scheduler]);
 
   const handleDoneToggle = async () => {
     if (isUpdatingDone || (!assignmentDone && !allAssigned)) return;
@@ -145,6 +150,7 @@ export default function CrossDepartmentAssignments() {
         canManageScheduleFaculty={scheduler.canManageScheduleFaculty}
         checkFacultyConflict={scheduler.checkFacultyConflict}
         onAssign={handleAutoAssign}
+        onRemoveAssignment={handleRemoveAssignment}
         allowExternalInstructors={false}
       />
       {scheduler.overloadPrompt && (

@@ -15,8 +15,6 @@ import {
   AlertCircle,
   HelpCircle,
   Award,
-  BookOpen,
-  Layers,
   Info,
   LayoutGrid,
   List,
@@ -29,11 +27,10 @@ import { hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { apiErrorMessage } from '../../lib/apiError';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
-import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
 import { describeDeload, fetchDesignations, type Designation } from '../../lib/designations';
-import FacultyAvailabilityPanel from '../../components/faculty/FacultyAvailabilityPanel';
+import FacultyDetailsModal from '../../components/faculty/FacultyDetailsModal';
 import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 
@@ -1268,163 +1265,16 @@ export default function VpaaFaculty() {
         </div>
       )}
 
-      {/* View Details Modal Overlay */}
-      {isDetailsModalOpen && detailsFaculty && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200 flex shrink-0 justify-between items-center bg-gray-50/50">
-              <div className="flex items-center gap-3.5">
-                {detailsFaculty.profile_picture ? (
-                  <img src={detailsFaculty.profile_picture} alt={detailsFaculty.first_name} className="w-12 h-12 rounded-full object-cover border-2 border-[#5A1220]/30 shadow-md shrink-0" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
-                    <UserRound className="w-6 h-6" aria-hidden="true" />
-                  </div>
-                )}
-                <div>
-                  <h2 className="text-base font-bold text-[#1A1410] font-sans">
-                    {detailsFaculty.first_name} {detailsFaculty.last_name}
-                  </h2>
-                  <span className="text-[10px] text-gray-500 font-semibold block mt-0.5 font-sans">
-                    {detailsFaculty.department ? `${detailsFaculty.department.department_code} - ${detailsFaculty.department.department_name}` : 'No Department'}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDetailsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6 min-h-0 flex-1 overflow-y-auto font-sans">
-              {/* Load Metrics Breakdown Card */}
-              <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm space-y-3 font-sans">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Required Load Balance</h3>
-
-                <div className="grid grid-cols-2 gap-4 text-xs font-sans">
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Max Units (Base)</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.max_units} Units</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Deload Units</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.deload_units} Units</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Overload Units</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.overload_units} Units</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Pro Bono Units</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.probono_units} Units</span>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-100 pt-3 grid grid-cols-3 gap-3 text-xs font-sans">
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Assigned Load</span>
-                    <span
-                      className={`font-bold ${
-                        detailsFaculty.unit_ceiling > 0 && detailsFaculty.assigned_units > detailsFaculty.unit_ceiling
-                          ? 'text-red-600'
-                          : 'text-gray-800'
-                      }`}
-                    >
-                      {detailsFaculty.assigned_units} Units
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Net Required Load</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.required_units} Units</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 block font-semibold">Ceiling</span>
-                    <span className="font-bold text-gray-800">{detailsFaculty.unit_ceiling} Units</span>
-                  </div>
-                </div>
-
-                {detailsFaculty.unit_ceiling > 0
-                  && detailsFaculty.assigned_units > detailsFaculty.unit_ceiling && (
-                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-semibold text-amber-800 font-sans">
-                    Above the {detailsFaculty.unit_ceiling}-unit ceiling. Further assignments are blocked.
-                  </p>
-                )}
-              </div>
-
-              {/* Assigned Subjects Panel */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-gray-600 uppercase tracking-wider font-sans">
-                  <BookOpen size={14} className="text-gray-400" />
-                  <span>Assigned Subjects ({detailsFaculty.assigned_subjects.length})</span>
-                </div>
-                {detailsFaculty.assigned_subjects.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No assigned subjects scheduled for this semester.</p>
-                ) : (
-                  <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-100 overflow-hidden font-sans">
-                    {detailsFaculty.assigned_subjects.map(s => (
-                      <div key={s.id} className="p-3 flex justify-between items-center text-xs font-sans">
-                        <span className="font-mono bg-slate-50 border border-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold uppercase">
-                          {s.subject_code}
-                        </span>
-                        <span className="font-semibold text-gray-600 text-right truncate max-w-[240px]" title={s.subject_name}>
-                          {s.subject_name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Assigned Classes Panel */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-gray-600 uppercase tracking-wider font-sans">
-                  <Layers size={14} className="text-gray-400" />
-                  <span>Assigned Section Classes ({detailsFaculty.assigned_classes.length})</span>
-                </div>
-                {detailsFaculty.assigned_classes.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No assigned classes scheduled for this semester.</p>
-                ) : (
-                  <div className="bg-white border border-gray-100 rounded-xl p-3 flex flex-wrap gap-2 font-sans">
-                    {detailsFaculty.assigned_classes.map(c => (
-                      <span key={c.id} className="text-xs bg-slate-50 border border-slate-200 text-slate-700 px-2.5 py-1 rounded font-bold uppercase font-sans">
-                        {c.section_name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Weekly teaching windows the scheduler honours (faculty_availabilities) */}
-              <FacultyAvailabilityPanel
-                facultyId={detailsFaculty.id}
-                facultyName={`${detailsFaculty.first_name} ${detailsFaculty.last_name}`}
-                employmentType={detailsFaculty.employment_type}
-                canEdit={canEditAvailability}
-                onNotify={(kind, title, message) =>
-                  kind === 'success' ? toast.success(title, message) : toast.error(title, message)
-                }
-              />
-            </div>
-
-            <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex shrink-0 justify-end gap-3">
-              {canEditLoad && !canManageFaculty && (
-                <button
-                  type="button"
-                  onClick={() => setLoadEditorFaculty(detailsFaculty)}
-                  className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 cursor-pointer font-sans"
-                >
-                  <Pencil size={14} />
-                  <span>Edit Load</span>
-                </button>
-              )}
-              <InstructorTeachingLoadButton facultyId={detailsFaculty.id} />
-            </div>
-          </div>
-        </div>,
-        document.body
+      {isDetailsModalOpen && detailsFaculty && (
+        <FacultyDetailsModal
+          faculty={detailsFaculty}
+          onClose={() => setIsDetailsModalOpen(false)}
+          onEditLoad={canEditLoad && !canManageFaculty ? () => setLoadEditorFaculty(detailsFaculty) : undefined}
+          canEditAvailability={canEditAvailability}
+          onNotify={(kind, title, message) =>
+            kind === 'success' ? toast.success(title, message) : toast.error(title, message)
+          }
+        />
       )}
 
       {/* Create / Edit Modal */}

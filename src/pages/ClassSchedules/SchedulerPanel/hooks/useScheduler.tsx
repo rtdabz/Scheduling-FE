@@ -36,6 +36,7 @@ import type { InitialDataResponse, SchedulerCacheData } from "./initialDataMappe
 import {
   generatedScheduleSectionId,
   hasUsableSchedulerCache,
+  mapApiFaculty,
   mapApiScheduleToItem,
   mapInitialData,
   slotToTime24h
@@ -291,6 +292,11 @@ export const useScheduler = () => {
     });
   }, []);
 
+  const schedulesRef = useRef<ScheduleItem[]>([]);
+  useEffect(() => {
+    schedulesRef.current = schedules;
+  }, [schedules]);
+
   // Single parallel fetch for all reference data on mount
   useEffect(() => {
     let active = true;
@@ -316,24 +322,23 @@ export const useScheduler = () => {
         setSelectedSectionId(cachedData.sections[0].id);
       }
       setIsLoading(false);
-      return () => {
-        active = false;
-        controller.abort();
-      };
-    }
-
-    const fetchInitialData = api.get<InitialDataResponse>('/initial-data', { signal });
-
-    if (subjects.length === 0) {
+    } else if (subjects.length === 0) {
       setIsLoading(true);
     }
 
+    // A usable cache renders immediately but is still revalidated once it is
+    // past the cache TTL. This used to return early on any cached copy, and
+    // getCachedData serves entries of any age, so a tab kept its first payload
+    // for the whole session: a teaching college removed elsewhere still read
+    // "Assigned teaching department only", and instructor loads never moved.
+    // loadCachedData hands back the very same cached object while it is fresh,
+    // which is how the no-op case is recognised below.
     loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
-      const response = await fetchInitialData;
+      const response = await api.get<InitialDataResponse>('/initial-data', { signal });
       return mapInitialData(response.data, { isVpaa, userDepartmentId: user?.department_id });
     }, !canUseCachedData)
       .then((data) => {
-        if (!active) return;
+        if (!active || (canUseCachedData && data === cachedData)) return;
 
         setRooms(data.rooms);
         setSubjects(data.subjects);
@@ -344,13 +349,18 @@ export const useScheduler = () => {
         setHasDean(data.hasDean);
         setUsers(data.users);
         setSections(data.sections);
-        setSchedules(data.schedules);
+        // A background revalidation must not clobber an edit made while it was
+        // in flight; the edit already merged the server's own rows.
+        if (!canUseCachedData || schedulesRef.current === cachedData.schedules) {
+          setSchedules(data.schedules);
+        }
         setFieldCourseAssignmentEnabled(data.fieldCourseAssignmentEnabled);
         setFieldCourseCodes(data.fieldCourseCodes);
         setSelectedSectionId((prev) => (prev && data.sections.some((sec) => sec.id === prev) ? prev : (data.sections[0]?.id ?? "")));
       })
       .catch(() => {
-        if (active && !signal.aborted) {
+        // Only a first load with nothing on screen is a failure worth raising.
+        if (active && !signal.aborted && !canUseCachedData) {
           toast.error("Load Failed", "Could not load scheduler data from the database.");
         }
       })
@@ -395,11 +405,6 @@ export const useScheduler = () => {
     (dayIndex: number) => activeSemester?.semester === "summer" && dayIndex >= 5,
     [activeSemester?.semester],
   );
-
-  const schedulesRef = useRef<ScheduleItem[]>([]);
-  useEffect(() => {
-    schedulesRef.current = schedules;
-  }, [schedules]);
 
   const refreshSchedules = useCallback(async () => {
     try {
@@ -495,8 +500,34 @@ export const useScheduler = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVpaa, schedulerCacheKey, user?.department_id]);
 
+  /**
+   * Refetches only the instructor list. `assignedUnits` is the server's figure
+   * for the whole semester, so it cannot be recomputed from the schedules this
+   * page holds; after an assignment changes it has to be asked for again, or
+   * Auto-Assign keeps reporting the load the page was opened with.
+   */
+  const refreshFaculties = useCallback(async () => {
+    try {
+      const response = await api.get<Pick<InitialDataResponse, "faculties">>('/initial-data', { params: { include: 'faculties' } });
+      if (!Array.isArray(response.data.faculties)) return;
+      const fresh = response.data.faculties.map(mapApiFaculty);
+      setFaculties(fresh);
+      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
+      if (cachedData) {
+        setCachedData<SchedulerCacheData>(schedulerCacheKey, { ...cachedData, faculties: fresh });
+      }
+    } catch {
+      // Loads are advisory here; the save itself already succeeded.
+    }
+  }, [schedulerCacheKey]);
+
   const applyUpdatedSchedules = useCallback((updatedSchedules: ScheduleItem[]) => {
     const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));
+    const instructorChanged = updatedSchedules.some((schedule) => {
+      const previous = schedulesRef.current.find((item) => item.id === schedule.id);
+      return (previous?.facultyId ?? null) !== (schedule.facultyId ?? null);
+    });
+    if (instructorChanged) void refreshFaculties();
     setSchedules((previousSchedules) => {
       const nextSchedules = previousSchedules.map((schedule) =>
         updatedScheduleMap.get(schedule.id) ?? schedule
@@ -510,7 +541,7 @@ export const useScheduler = () => {
       }
       return nextSchedules;
     });
-  }, [schedulerCacheKey]);
+  }, [refreshFaculties, schedulerCacheKey]);
 
   const isInitialLoadedRef = useRef(false);
 
@@ -2341,6 +2372,41 @@ export const useScheduler = () => {
   };
 
   /**
+   * Clears the instructor from every meeting of one class (a section's
+   * course). The server already clears a meeting's related rows alongside it,
+   * so this usually takes one request; any meeting still holding an instructor
+   * afterwards (an unrelated block of a split class) gets its own.
+   */
+  const handleRemoveFacultyFromClass = async (scheduleIds: string[]): Promise<boolean> => {
+    if (scheduleIds.length === 0 || facultyActionSlotId !== null) return false;
+
+    setFacultyActionSlotId("bulk");
+    const cleared = new Set<string>();
+    try {
+      for (const slotId of scheduleIds) {
+        if (cleared.has(slotId)) continue;
+        const outcome = await mutateScheduleFaculty(slotId, null);
+        if (outcome.status === "restricted") throw new Error(outcome.message);
+        if (outcome.status === "failed") throw new Error(outcome.message);
+        if (outcome.status !== "ok") return false;
+        applyUpdatedSchedules(outcome.schedules);
+        outcome.schedules.filter((schedule) => !schedule.facultyId).forEach((schedule) => cleared.add(schedule.id));
+        cleared.add(slotId);
+      }
+      toast.success("Instructor Removed", "The class no longer has an instructor and can be assigned again.");
+      invalidateCacheGroups('schedules', 'dashboards', 'faculty');
+      void refreshSchedules();
+      return true;
+    } catch (err: unknown) {
+      toast.error("Unable to remove instructor", err instanceof Error ? err.message : "Please try again.");
+      void refreshSchedules();
+      return false;
+    } finally {
+      setFacultyActionSlotId(null);
+    }
+  };
+
+  /**
    * The batch request on its own: no toasts, no loading flag, and it reports the
    * overload question rather than mistaking it for a failure. Separate from the
    * handler so the confirmed retry can reuse it without re-entering the guard
@@ -2813,6 +2879,7 @@ export const useScheduler = () => {
     handleRemoveFaculty,
     handleInlineFacultyAssign,
     handleBulkFacultyAssign,
+    handleRemoveFacultyFromClass,
     handleFacultyAssignmentDone,
     handleClearSectionInstructors,
     handleRemoveInlineFaculty,

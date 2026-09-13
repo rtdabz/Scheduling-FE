@@ -131,9 +131,9 @@ export interface FacultyAvailability {
  * Administrative post a faculty profile holds, mirrored from its linked user
  * account by UserFacultyProfileService. Null for a plain instructor.
  */
-export type FacultyAdministrativePost = "dean" | "secretary" | "program_head" | "vpaa";
+export type FacultyAdministrativePost = "dean" | "secretary" | "program_head" | "director" | "vpaa";
 
-const ADMINISTRATIVE_POSTS: readonly FacultyAdministrativePost[] = ["dean", "secretary", "program_head", "vpaa"];
+const ADMINISTRATIVE_POSTS: readonly FacultyAdministrativePost[] = ["dean", "secretary", "program_head", "director", "vpaa"];
 
 /** Narrows the raw `administrative_role` column, which is a free string server-side. */
 export const normalizeAdministrativePost = (
