@@ -13,7 +13,8 @@ import {
   Settings,
   Building2,
   BookOpen,
-  Archive
+  Archive,
+  DoorClosed,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -49,7 +50,15 @@ export const vpaaNav: NavSection[] = [
           { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
         ],
       },
-      { label: 'Rooms', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
+      {
+        label: 'Rooms',
+        icon: DoorOpen,
+        id: 'sidebar-rooms',
+        children: [
+          { label: 'Room List', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms-list' },
+          { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.review_requests' },
+        ],
+      },
       { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
     ]
   },

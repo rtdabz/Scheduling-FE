@@ -16,6 +16,7 @@ import {
   Info,
   Layers,
   CheckCircle2,
+  DoorOpen,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
@@ -77,6 +78,7 @@ const MODULE_ICONS: Record<string, typeof CalendarDays> = {
   instructor_assignment: GraduationCap,
   submission_workflow: Send,
   approval_workflow: ShieldCheck,
+  room_requests: DoorOpen,
 };
 
 export default function UserAccessMatrixModal({

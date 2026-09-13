@@ -292,9 +292,15 @@ export const mapInitialData = (
   let apiRooms = initialData.rooms;
   if (!options.isVpaa && options.userDepartmentId) {
     apiRooms = apiRooms.filter(
-      (r) => r.department_id === null || Number(r.department_id) === Number(options.userDepartmentId)
+      (r) => r.department_id === null
+        || Number(r.department_id) === Number(options.userDepartmentId)
+        || (r.grant_windows?.length ?? 0) > 0
     );
   }
+  // Borrowed rooms go last so a default room pick prefers the department's own.
+  apiRooms = [...apiRooms].sort(
+    (a, b) => Number((a.grant_windows?.length ?? 0) > 0) - Number((b.grant_windows?.length ?? 0) > 0)
+  );
 
   // maxConcurrentClasses stays the room's own column. It used to be overwritten
   // with the *requesting* department's slot limit, which then served as the
@@ -307,7 +313,8 @@ export const mapInitialData = (
     departmentId: r.department_id,
     roomType: r.room_type,
     status: r.status,
-    maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1
+    maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1,
+    ...(r.grant_windows?.length ? { grantWindows: r.grant_windows } : {}),
   }));
 
   const rawCourses = initialData.courses ?? initialData.subjects ?? [];

@@ -12,6 +12,8 @@ import {
   Settings,
   Layers,
   History,
+  FileBarChart,
+  DoorClosed,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -29,7 +31,16 @@ export const secretaryNav: NavSection[] = [
           { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
         ],
       },
-      { label: 'Rooms', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
+      {
+        label: 'Rooms',
+        icon: DoorOpen,
+        id: 'sidebar-rooms',
+        requiredCapability: ['schedule.view', 'room.request'],
+        children: [
+          { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
+          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
+        ],
+      },
       { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },
       {
         label: 'Timetabling',
@@ -57,6 +68,7 @@ export const secretaryNav: NavSection[] = [
   {
     section: 'SYSTEM',
     items: [
+      { label: 'Reports', path: '/secretary/reports', icon: FileBarChart, id: 'sidebar-reports', requiredCapability: 'schedule.view' },
       { label: 'Schedule History', path: '/secretary/schedule-history', icon: History, id: 'sidebar-schedule-history', requiredCapability: 'schedule.view' },
       { label: 'Settings', path: '/secretary/settings', icon: Settings, id: 'sidebar-settings' },
     ]

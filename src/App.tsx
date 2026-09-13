@@ -16,7 +16,8 @@ const VpaaFaculty = lazy(() => import('./pages/vpaa/Faculty'));
 const VpaaRooms = lazy(() => import('./pages/vpaa/Rooms'));
 const VpaaUsers = lazy(() => import('./pages/vpaa/Users'));
 const Departments = lazy(() => import('./pages/vpaa/Departments'));
-const VpaaReports = lazy(() => import('./pages/vpaa/Reports'));
+const Reports = lazy(() => import('./pages/shared/Reports'));
+const RoomRequests = lazy(() => import('./pages/shared/RoomRequests'));
 const VpaaActivityLog = lazy(() => import('./pages/vpaa/ActivityLog'));
 const VpaaScheduleHistory = lazy(() => import('./pages/vpaa/ScheduleHistory'));
 const VpaaArchive = lazy(() => import('./pages/vpaa/Archive'));
@@ -28,7 +29,6 @@ const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
 const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprovalPage'));
 const DeanFaculty = lazy(() => import('./pages/dean/Faculty'));
 const DeanRooms = lazy(() => import('./pages/dean/Rooms'));
-const DeanReports = lazy(() => import('./pages/dean/Reports'));
 const SecretaryScheduleBuilder = lazy(() => import('./pages/secretary/ScheduleBuilder'));
 const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
 const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
@@ -192,7 +192,8 @@ export default function App() {
             <Route path="/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/users" element={<RoleRoute role="vpaa" moduleName="User Management"><VpaaUsers /></RoleRoute>} />
             <Route path="/departments" element={<RoleRoute role="vpaa" moduleName="Department Management"><Departments /></RoleRoute>} />
-            <Route path="/reports" element={<RoleRoute role="vpaa" moduleName="Reports"><VpaaReports /></RoleRoute>} />
+            <Route path="/reports" element={<RoleRoute role="vpaa" moduleName="Reports"><Reports /></RoleRoute>} />
+            <Route path="/room-requests" element={<CapabilityRoute capability="room.review_requests" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
             <Route path="/activity-log" element={<RoleRoute role="vpaa" moduleName="Activity Log"><VpaaActivityLog /></RoleRoute>} />
             <Route path="/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/archive" element={<RoleRoute role="vpaa" moduleName="Archive"><VpaaArchive /></RoleRoute>} />
@@ -207,7 +208,7 @@ export default function App() {
 
             <Route path="/dean/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
             <Route path="/dean/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
-            <Route path="/dean/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><DeanReports /></CapabilityRoute>} />
+            <Route path="/dean/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/dean/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/dean/settings" element={<AccountSettingsPage />} />
 
@@ -217,6 +218,7 @@ export default function App() {
             <Route path="/secretary/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><SecretarySchedules /></CapabilityRoute>} />
             <Route path="/secretary/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><SecretarySectionTimetables /></CapabilityRoute>} />
             <Route path="/secretary/rooms" element={<CapabilityRoute capability="schedule.view" moduleName="Rooms"><SecretaryRooms /></CapabilityRoute>} />
+            <Route path="/secretary/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
 
             <Route path="/secretary/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/secretary/course-list" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
@@ -226,6 +228,7 @@ export default function App() {
             <Route path="/secretary/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/secretary/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><SecretaryFaculty /></CapabilityRoute>} />
             <Route path="/secretary/instructor-assignment" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Instructor Assignment"><InstructorAssignment /></CapabilityRoute>} />
+            <Route path="/secretary/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/secretary/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             {/* Cross-Department is the receiving-department instructor workspace;
                 keep the old URL as a compatibility alias after the menu rename. */}
@@ -241,6 +244,7 @@ export default function App() {
             <Route path="/program_head/faculty" element={<CapabilityRoute capability="schedule.view" moduleName="Faculty"><ProgramHeadFaculty /></CapabilityRoute>} />
             <Route path="/program_head/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><ProgramHeadFaculty /></CapabilityRoute>} />
             <Route path="/program_head/rooms" element={<CapabilityRoute capability="schedule.view" moduleName="Rooms"><ProgramHeadRooms /></CapabilityRoute>} />
+            <Route path="/program_head/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
 
             <Route path="/program_head/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/program_head/course-list" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
@@ -248,6 +252,7 @@ export default function App() {
             <Route path="/program_head/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/program_head/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/program_head/instructor-assignment" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Instructor Assignment"><InstructorAssignment /></CapabilityRoute>} />
+            <Route path="/program_head/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/program_head/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross Department Assignments"><CrossDepartmentAssignments /></CapabilityRoute>} />
             <Route path="/program_head/course-teaching-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Teaching Assignments"><CourseTeachingAssignments /></CapabilityRoute>} />

@@ -47,9 +47,6 @@ const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   vpaa: "Vice President for Academic Affairs",
 };
 
-/** Standing VPAA, used only when no account with that role reaches the client. */
-const FALLBACK_VPAA_NAME = "DR. KHAREN JANE S. UNGAB";
-
 const parseFacultyName = (name: string) => {
   const parts = name.trim().split(/\s+/);
   let surname = "";
@@ -224,7 +221,9 @@ export default function TeachingLoad({
           instructorName: faculty.name.toUpperCase(),
           preparedBy: preparer?.name ?? "",
           verifiedBy: byRole("dean")?.name ?? "",
-          vpaaName: vpaaAccount?.name ?? FALLBACK_VPAA_NAME,
+          // Left blank rather than defaulting to a past VPAA: a stale name on
+          // an official form is worse than an empty signature line.
+          vpaaName: vpaaAccount?.name ?? "",
           presidentName: settings.president_name,
           presidentTitle: settings.president_title,
           load,

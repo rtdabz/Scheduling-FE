@@ -14,6 +14,7 @@ import {
   balancedSplitSettingsOf,
   isBalancedSplitSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
+import { describeWindow } from "../../../../lib/roomRequests";
 
 interface DropRecommendationRow {
   term_id: number;
@@ -895,7 +896,7 @@ export default function DropModal({
                               disabled={isUnavailable}
                               className={isUnavailable ? "text-gray-400 bg-gray-100 italic" : ""}
                             >
-                              {r.name} {isUnavailable ? " — (Not Available)" : ""}
+                              {r.name}{r.grantWindows ? ` — Granted: ${r.grantWindows.map(describeWindow).join(", ")}` : ""} {isUnavailable ? " — (Not Available)" : ""}
                             </option>
                           );
                         })}
@@ -1107,7 +1108,7 @@ export default function DropModal({
                                 disabled={isUnavailable}
                                 className={isUnavailable ? "text-gray-400 bg-gray-100 italic" : ""}
                               >
-                                {r.name} {isUnavailable ? " — (Not Available)" : ""}
+                                {r.name}{r.grantWindows ? ` — Granted: ${r.grantWindows.map(describeWindow).join(", ")}` : ""} {isUnavailable ? " — (Not Available)" : ""}
                               </option>
                             );
                           })}

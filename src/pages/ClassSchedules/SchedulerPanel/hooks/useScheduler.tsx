@@ -68,6 +68,7 @@ import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
 import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
+import { roomGrantFits } from "../../../../lib/roomRequests";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { buildPreferredPattern, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
@@ -1050,6 +1051,7 @@ export const useScheduler = () => {
             (r.roomType === "lecture" || r.roomType === "laboratory")
           );
           const nonConflictingRoom = matchingTypeRooms.find(r => {
+            if (!roomGrantFits(r, dropContext.dayIndex, dropContext.startSlot, singleSlots)) return false;
             const conflict = checkConflict(
               subject.id,
               selectedSectionId,
@@ -1063,7 +1065,10 @@ export const useScheduler = () => {
             );
             return !conflict || conflict.conflictType !== "room";
           });
-          resolvedRoomId = nonConflictingRoom?.id || (matchingTypeRooms.length > 0 ? matchingTypeRooms[0].id : (availableRooms.length > 0 ? availableRooms[0].id : ""));
+          // A borrowed room is never a blind fallback: it is only usable in its windows.
+          const ownMatchingRooms = matchingTypeRooms.filter(r => !r.grantWindows);
+          const ownAvailableRooms = availableRooms.filter(r => !r.grantWindows);
+          resolvedRoomId = nonConflictingRoom?.id || (ownMatchingRooms.length > 0 ? ownMatchingRooms[0].id : (ownAvailableRooms.length > 0 ? ownAvailableRooms[0].id : ""));
         }
 
         const requiredRoomType = requiredRoomTypeForMeeting(subject);
@@ -1124,12 +1129,12 @@ export const useScheduler = () => {
     const isUsable = (room: Room) => room.status === "available" || !room.status;
     const requiredRoomType = requiredRoomTypeForMeeting(subject ?? undefined);
     const matchingTypeRooms = rooms.filter(
-      (room) => isUsable(room) && (!requiredRoomType || room.roomType === requiredRoomType)
+      (room) => isUsable(room) && !room.grantWindows && (!requiredRoomType || room.roomType === requiredRoomType)
     );
     if (matchingTypeRooms.length > 0) return matchingTypeRooms[0].id;
 
     const physicalRooms = rooms.filter(
-      (room) => isUsable(room) && (room.roomType === "lecture" || room.roomType === "laboratory")
+      (room) => isUsable(room) && !room.grantWindows && (room.roomType === "lecture" || room.roomType === "laboratory")
     );
 
     if (physicalRooms.length > 0) return physicalRooms[0].id;

@@ -43,17 +43,20 @@ const PAGE_FOOTER_Y = 192;
 const CONTENT_BOTTOM_Y = 185;
 const MIN_SECTION_START_SPACE = 28;
 
-const SIGNATORIES = {
-  preparedBy: { name: "", role: "Program Head" },
-  reviewedBy: { name: "", role: "Dean" },
-  recommendedBy: { name: "KHAREN JANE S. UNGAB, DM", role: "Vice-President for Academic Affairs" },
-};
-
-/** The approving signatory is whatever the VPAA saved in Settings. */
-const buildSignatories = (settings: InstitutionSettings, preparedByName: string, reviewedByName: string) => [
-  { label: "Prepared by:", ...SIGNATORIES.preparedBy, name: preparedByName },
-  { label: "Reviewed by:", ...SIGNATORIES.reviewedBy, name: reviewedByName },
-  { label: "Recommended by:", ...SIGNATORIES.recommendedBy },
+/**
+ * Every name is read from a live record: the department's own accounts, the
+ * VPAA account (so a change of VPAA reprints correctly without a code change),
+ * and the President saved in Settings.
+ */
+const buildSignatories = (
+  settings: InstitutionSettings,
+  preparedByName: string,
+  reviewedByName: string,
+  recommendedByName: string,
+) => [
+  { label: "Prepared by:", name: preparedByName, role: "Program Head" },
+  { label: "Reviewed by:", name: reviewedByName, role: "Dean" },
+  { label: "Recommended by:", name: recommendedByName, role: "Vice-President for Academic Affairs" },
   { label: "Approved by:", name: settings.president_name, role: settings.president_title },
 ];
 
@@ -121,6 +124,7 @@ export default function PrintSchedule({
       settings,
       preparer?.name?.trim().toUpperCase() ?? "",
       byRole("dean")?.name?.trim().toUpperCase() ?? "",
+      users.find((user) => user.role?.toLowerCase() === "vpaa")?.name?.trim().toUpperCase() ?? "",
     );
     const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
     // ── 1. Letterhead ──

@@ -180,6 +180,15 @@ export interface Room {
   roomType: RoomType;
   status: RoomStatus;
   maxConcurrentClasses?: number;
+  /** Set when another department lent this room for the term: the only windows it may be used in. */
+  grantWindows?: RoomGrantWindow[];
+}
+
+export interface RoomGrantWindow {
+  day: string;
+  /** HH:mm, 24-hour. */
+  start_time: string;
+  end_time: string;
 }
 
 export interface ScheduleItem {
@@ -385,6 +394,7 @@ export interface ApiRoomRecord {
   status: RoomStatus;
   department_id: number | null;
   max_concurrent_classes?: number | string | null;
+  grant_windows?: RoomGrantWindow[];
 }
 
 export interface ApiScheduleRecord {

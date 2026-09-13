@@ -380,17 +380,10 @@ export default function YearLevelGenerateScheduleWorkflow({
   );
   const roomCodeById = useMemo(
     () =>
-      new Map(
-        rooms
-          .filter(
-            (room) =>
-              room.department_id === null ||
-              departmentId === null ||
-              Number(room.department_id) === Number(departmentId),
-          )
-          .map((room) => [String(room.id), room.room_code]),
-      ),
-    [departmentId, rooms],
+      // Not narrowed to the department: a plan may place a class in a room
+      // another department lent it, and that row still needs its code.
+      new Map(rooms.map((room) => [String(room.id), room.room_code])),
+    [rooms],
   );
 
   const forcedDaysByCourseId = useMemo(
