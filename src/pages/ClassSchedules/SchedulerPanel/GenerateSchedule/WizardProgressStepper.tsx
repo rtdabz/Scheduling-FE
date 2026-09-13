@@ -6,18 +6,22 @@ export interface WizardStep {
 }
 
 interface WizardProgressStepperProps {
+  /** DOM id, so guided tours can anchor a step to the progress bar. */
+  id?: string;
   currentStep: number;
   steps: WizardStep[];
   ariaLabel: string;
 }
 
 export default function WizardProgressStepper({
+  id,
   currentStep,
   steps,
   ariaLabel,
 }: WizardProgressStepperProps) {
   return (
     <nav
+      id={id}
       className="border border-slate-200 bg-white px-4 py-3 shadow-sm"
       style={{ borderRadius: 8 }}
       aria-label={ariaLabel}

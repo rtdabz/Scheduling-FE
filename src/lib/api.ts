@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { clearDataCache } from './dataCache';
+import { announceSessionEnded, clearLastActivity } from './sessionTimeout';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -68,13 +69,25 @@ api.interceptors.response.use(
             return new Promise(() => undefined);
         }
 
+        // A rejected token ends the session wherever it is noticed. This is the
+        // one place that decides so, which is why the callers below are left
+        // hanging rather than each running its own sign-out.
         if (error.response?.status === 401 && requestUrl !== '/login' && requestUrl !== '/logout') {
+            beginLogout();
+            cancelPendingRequests();
             clearDataCache();
+            clearLastActivity();
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             sessionStorage.removeItem('token');
             sessionStorage.removeItem('user');
-            window.location.href = '/';
+
+            // The shell explains the expiry and offers the way back; without a
+            // shell on screen there is nothing to explain it, so leave directly.
+            if (!announceSessionEnded('expired')) {
+                window.location.href = '/';
+            }
+            return new Promise(() => undefined);
         }
         return Promise.reject(error);
     }

@@ -8,6 +8,7 @@ import googleLogo from '../assets/google-logo.svg';
 import { useToast } from '../context/ToastContext';
 import api from '../lib/api';
 import { clearDataCache } from '../lib/dataCache';
+import { writeLastActivity } from '../lib/sessionTimeout';
 import { AxiosError } from 'axios';
 
 interface LoginResponse {
@@ -54,6 +55,9 @@ export default function LoginPage() {
     const storage = rememberMe ? localStorage : sessionStorage;
     storage.setItem('token', response.token);
     storage.setItem('user', JSON.stringify(response.user));
+    // Start the inactivity window now, so a timestamp left by an earlier
+    // session cannot expire this one on its first screen.
+    writeLastActivity(Date.now());
     navigateAfterLogin(response.user);
   };
 

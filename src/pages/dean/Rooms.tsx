@@ -9,7 +9,6 @@ import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   X,
   Loader2,
   Building2,
@@ -112,7 +111,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
 
 export default function DeanRooms() {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
@@ -148,8 +147,6 @@ export default function DeanRooms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
 
   // Form state
   const [roomCode, setRoomCode] = useState('');
@@ -292,28 +289,27 @@ export default function DeanRooms() {
     setIsModalOpen(true);
   };
 
-  const triggerDeleteConfirmation = (id: number) => {
-    setIdToDelete(id);
-    setIsDeleteModalOpen(true);
-  };
+  const triggerDeleteConfirmation = async (id: number) => {
+    const confirmed = await confirm({
+      title: 'Archive Room',
+      message: 'This room will be hidden from active lists and can be restored by the VPAA from the Archive.',
+      eyebrow: 'Archive Record',
+      confirmLabel: 'Confirm Archive',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
-  const confirmDeleteRoom = async () => {
-    if (idToDelete !== null) {
-      try {
-        await api.delete(`/rooms/${idToDelete}`);
-        setRooms(prev => {
-          const nextRooms = prev.filter(r => r.id !== idToDelete);
-          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
-          return nextRooms;
-        });
-        toast.success('Archived', 'Room archived successfully');
-      } catch {
-        toast.error('Error', 'Failed to archive room');
-      } finally {
-        setIsDeleteModalOpen(false);
-        setIdToDelete(null);
-      }
+    try {
+      await api.delete(`/rooms/${id}`);
+      setRooms(prev => {
+        const nextRooms = prev.filter(r => r.id !== id);
+        invalidateCacheGroups('rooms', 'schedules', 'dashboards');
+        setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+        return nextRooms;
+      });
+      toast.success('Archived', 'Room archived successfully');
+    } catch {
+      toast.error('Error', 'Failed to archive room');
     }
   };
 
@@ -813,7 +809,7 @@ export default function DeanRooms() {
                           <span>Edit</span>
                         </button>
                         <button
-                          onClick={() => triggerDeleteConfirmation(room.id)}
+                          onClick={() => { void triggerDeleteConfirmation(room.id); }}
                           className="px-3 py-1.5 bg-white border border-gray-250 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
                         >
                           <Trash2 size={13} />
@@ -916,7 +912,7 @@ export default function DeanRooms() {
                                   <Pencil size={15} />
                                 </button>
                                 <button
-                                  onClick={() => triggerDeleteConfirmation(room.id)}
+                                  onClick={() => { void triggerDeleteConfirmation(room.id); }}
                                   className="p-1 text-red-500 hover:text-red-700 transition-colors"
                                   title="Archive Room"
                                 >
@@ -939,8 +935,8 @@ export default function DeanRooms() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode 
                   ? 'Edit Room Details' 
@@ -954,7 +950,7 @@ export default function DeanRooms() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
               {!selectedBuilding && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -1119,39 +1115,6 @@ export default function DeanRooms() {
       )}
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Archive Room</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  This room will be hidden from active lists and can be restored by the VPAA from the Archive.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteRoom}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Archive
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
       {/* Classroom Detail Modal */}
       <RoomDetailModal
         isOpen={isDetailModalOpen}

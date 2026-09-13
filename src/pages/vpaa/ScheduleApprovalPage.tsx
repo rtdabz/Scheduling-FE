@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Eye, 
-  Check, 
   X, 
   ArrowUpDown, 
   ArrowUp, 
@@ -305,7 +304,7 @@ const formatTime24hTo12h = (timeStr: string): string => {
 };
 
 export default function VpaaScheduleApprovalPage() {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const [schedules, setSchedules] = useState<ScheduleApproval[]>([]);
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>([]);
   const [rawSections, setRawSections] = useState<RawSection[]>([]);
@@ -327,7 +326,6 @@ export default function VpaaScheduleApprovalPage() {
   // Modals state
   const [viewSchedule, setViewScheduleState] = useState<ScheduleApproval>(null as unknown as ScheduleApproval);
   const setViewSchedule = (value: ScheduleApproval | null) => setViewScheduleState(value as ScheduleApproval);
-  const [approveConfirm, setApproveConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectConfirm, setRejectConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
@@ -452,38 +450,39 @@ export default function VpaaScheduleApprovalPage() {
     setSelectedMode('All Modes');
   };
 
-  const handleApprove = (sched: ScheduleApproval) => {
-    setApproveConfirm(sched);
-  };
+  const handleApprove = async (sched: ScheduleApproval) => {
+    const confirmed = await confirm({
+      title: 'Approve Schedule',
+      message: `Are you sure you want to approve the complete department schedule for ${sched.department}?`,
+      eyebrow: 'Approval Required',
+      confirmLabel: 'Confirm Approve',
+      variant: 'maroon',
+    });
+    if (!confirmed) return;
 
-  const confirmApprove = async () => {
-    if (approveConfirm) {
-      try {
-        const now = new Date().toISOString();
-        await api.post(`/departments/${approveConfirm.id}/approve-by-vpaa`);
+    try {
+      const now = new Date().toISOString();
+      await api.post(`/departments/${sched.id}/approve-by-vpaa`);
 
-        setSchedules((prev) =>
-          prev.map((s) =>
-            s.submissionId === approveConfirm.submissionId ? { ...s, status: 'approved' } : s
-          )
-        );
-        setRawSchedules((prev) =>
-          prev.map((s) =>
-            Number(s.department_id) === Number(approveConfirm.id)
-              && (approveConfirm.workflowSectionIds?.includes(String(s.section_id)) ?? true)
-              && (s.status === 'approved_by_dean' || s.status === 'conditionally_approved')
-              ? { ...s, status: 'approved', approved_by_vpaa: userId, approved_at_vpaa: now }
-              : s
-          )
-        );
-        invalidateCacheGroups('schedules', 'approvals', 'dashboards');
+      setSchedules((prev) =>
+        prev.map((s) =>
+          s.submissionId === sched.submissionId ? { ...s, status: 'approved' } : s
+        )
+      );
+      setRawSchedules((prev) =>
+        prev.map((s) =>
+          Number(s.department_id) === Number(sched.id)
+            && (sched.workflowSectionIds?.includes(String(s.section_id)) ?? true)
+            && (s.status === 'approved_by_dean' || s.status === 'conditionally_approved')
+            ? { ...s, status: 'approved', approved_by_vpaa: userId, approved_at_vpaa: now }
+            : s
+        )
+      );
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards');
 
-        toast.success('Success', `${approveConfirm.department} schedule has been approved successfully.`);
-      } catch (err) {
-        toast.error('Error', 'Failed to approve schedule.');
-      } finally {
-        setApproveConfirm(null);
-      }
+      toast.success('Success', `${sched.department} schedule has been approved successfully.`);
+    } catch {
+      toast.error('Error', 'Failed to approve schedule.');
     }
   };
 
@@ -1108,7 +1107,7 @@ export default function VpaaScheduleApprovalPage() {
           departmentLogoUrl={modalSchedules[0]?.department?.logo}
           activeTerm={activeTerm}
           canAct={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved'}
-          onApprove={() => { handleApprove(viewSchedule); setViewSchedule(null); }}
+          onApprove={() => { void handleApprove(viewSchedule); setViewSchedule(null); }}
           onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}
           onClose={() => setViewSchedule(null)}
         />
@@ -1122,7 +1121,7 @@ export default function VpaaScheduleApprovalPage() {
                   <h2 className="text-lg font-bold text-[#1A1410] font-display">
                     {viewSchedule!.department} Department Schedule
                   </h2>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusBadge(viewSchedule.status)}`}>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${getStatusBadge(viewSchedule.status)}`}>
                     {getStatusLabel(viewSchedule!.status)}
                   </span>
                 </div>
@@ -1219,7 +1218,7 @@ export default function VpaaScheduleApprovalPage() {
                           <div key={item.id} className={`${colors.bg} ${colors.border} ${colors.text} border-2 border-l-[4px] ${colors.accent} p-2 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between leading-snug box-border`} style={{ gridColumn: colIndex, gridRowStart: startRow, gridRowEnd: endRow, height: `${cardHeight}px`, zIndex: 5 }}>
                             <div className="min-w-0">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-[10px] uppercase tracking-wide">{getScheduleCourseCode(item)}</span>
+                                <span className="font-bold text-[11px] uppercase tracking-wide">{getScheduleCourseCode(item)}</span>
                                 <span className="px-1 rounded-[3px] text-[8px] font-bold border uppercase tracking-wide shrink-0 bg-white/70 border-current">{getModeLabel(item.mode)}</span>
                               </div>
                               <p className="font-semibold text-[9px] truncate opacity-90">{getScheduleCourseName(item)}</p>
@@ -1245,7 +1244,7 @@ export default function VpaaScheduleApprovalPage() {
                   <>
                     <button 
                       onClick={() => {
-                        handleApprove(viewSchedule!);
+                        void handleApprove(viewSchedule!);
                         setViewSchedule(null);
                       }}
                       className="px-4 py-2 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] text-xs font-semibold cursor-pointer transition-colors"
@@ -1276,38 +1275,6 @@ export default function VpaaScheduleApprovalPage() {
       ) : null}
 
       {/* Approve Confirmation Modal */}
-      {approveConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-[#C9952A]/10 text-[#C9952A] rounded-full flex items-center justify-center mx-auto border border-[#C9952A]/20">
-                <Check size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Approve Schedule</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to approve the complete department schedule for <strong>{approveConfirm.department}</strong>?
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setApproveConfirm(null)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer bg-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmApprove}
-                  className="flex-1 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Approve
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Reject Reason Modal */}
       {rejectConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">

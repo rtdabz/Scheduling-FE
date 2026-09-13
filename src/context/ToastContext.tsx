@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import { createContext, useContext, useRef, useState, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
+import type { ConfirmModalVariant } from '../components/ui/ConfirmModal'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
 
@@ -19,6 +20,23 @@ export interface ModalNoticeItem {
   message: string
 }
 
+/**
+ * A question asked through the same modal that renders error and warning
+ * notices, so every confirmation in the system looks and behaves identically.
+ */
+export interface ConfirmOptions {
+  title: string
+  message: string
+  eyebrow?: string
+  confirmLabel?: string
+  cancelLabel?: string
+  variant?: ConfirmModalVariant
+}
+
+export interface ConfirmRequest extends ConfirmOptions {
+  id: string
+}
+
 interface ToastContextValue {
   toasts: ToastItem[]
   modalNotices: ModalNoticeItem[]
@@ -30,6 +48,10 @@ interface ToastContextValue {
   }
   dismiss: (id: string) => void
   dismissModalNotice: (id: string) => void
+  /** Resolves true when the user confirms, false when they cancel or dismiss. */
+  confirm: (options: ConfirmOptions) => Promise<boolean>
+  confirmRequest: ConfirmRequest | null
+  resolveConfirm: (answer: boolean) => void
 }
 
 const ToastContext = createContext<ToastContextValue | undefined>(undefined)
@@ -37,6 +59,8 @@ const ToastContext = createContext<ToastContextValue | undefined>(undefined)
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [modalNotices, setModalNotices] = useState<ModalNoticeItem[]>([])
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
+  const pendingConfirm = useRef<((answer: boolean) => void) | null>(null)
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) =>
@@ -78,6 +102,25 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setModalNotices((prev) => prev.filter((notice) => notice.id !== id))
   }, [])
 
+  const confirm = useCallback(
+    (options: ConfirmOptions) =>
+      new Promise<boolean>((resolve) => {
+        // A question superseded before it is answered still has to settle, or the
+        // caller awaiting it would hang forever.
+        pendingConfirm.current?.(false)
+        pendingConfirm.current = resolve
+        setConfirmRequest({ ...options, id: crypto.randomUUID() })
+      }),
+    []
+  )
+
+  const resolveConfirm = useCallback((answer: boolean) => {
+    const resolve = pendingConfirm.current
+    pendingConfirm.current = null
+    setConfirmRequest(null)
+    resolve?.(answer)
+  }, [])
+
   const toastApi = useMemo(() => ({
     success: (title: string, message: string, duration?: number) => addToast(title, message, duration),
     error: (title: string, message: string, _duration?: number) => addModalNotice('error', title, message),
@@ -86,7 +129,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }), [addModalNotice, addToast])
 
   return (
-    <ToastContext.Provider value={{ toasts, modalNotices, toast: toastApi, dismiss, dismissModalNotice }}>
+    <ToastContext.Provider
+      value={{
+        toasts,
+        modalNotices,
+        toast: toastApi,
+        dismiss,
+        dismissModalNotice,
+        confirm,
+        confirmRequest,
+        resolveConfirm,
+      }}
+    >
       {children}
     </ToastContext.Provider>
   )

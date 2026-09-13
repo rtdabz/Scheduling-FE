@@ -3,8 +3,11 @@ import {
   ArrowLeft,
   Building2,
   CalendarDays,
+  CalendarRange,
   CheckCircle2,
   ChevronRight,
+  LayoutList,
+  Search,
   UserMinus,
 } from "lucide-react";
 import axios from "axios";
@@ -23,6 +26,9 @@ import { gridOpeningMinutes, slotCount, slotMinutes } from "../../lib/timeGrid";
 import WorkflowGuideButton from "../../components/help/WorkflowGuideButton";
 import { useWorkflowGuide } from "../../hooks/useWorkflowGuide";
 import FacultyModal from "./SchedulerPanel/Modals/FacultyModal";
+import AssignmentWorklist from "./AssignmentWorklist";
+import type { WorklistClass } from "./AssignmentWorklist";
+import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "./SchedulerPanel/facultyEligibility";
 import type {
   Faculty,
   FacultyAssignmentPopupState,
@@ -178,6 +184,19 @@ interface AssignmentSchedule extends ApiSchedule {
   subject: ApiSubject;
   department: ApiDepartment;
 }
+
+const VIEW_MODE_STORAGE_KEY = "instructor-assignment:view";
+
+type AssignmentView = "list" | "grid";
+
+/** Remembered per browser; a fresh workspace opens on the worklist. */
+const storedViewMode = (): AssignmentView => {
+  try {
+    return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "grid" ? "grid" : "list";
+  } catch {
+    return "list";
+  }
+};
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const ASSIGNMENT_STATUSES = [...INSTRUCTOR_ASSIGNABLE_STATUSES, "finalized"];
@@ -358,6 +377,9 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
   const [selectedSection, setSelectedSection] = useState("all");
+  const [viewMode, setViewMode] = useState<AssignmentView>(storedViewMode);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "assigned">("all");
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
   // The assignment the server is asking about, kept whole so confirming replays
   // exactly what the user reviewed.
@@ -368,6 +390,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   } | null>(null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(assignmentsCacheKey));
   const [isSaving, setIsSaving] = useState(false);
+  const [savingScheduleId, setSavingScheduleId] = useState<number | null>(null);
   const [isClearingSection, setIsClearingSection] = useState(false);
   const [clearSectionTarget, setClearSectionTarget] = useState<{
     id: number;
@@ -380,7 +403,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     { element: "#instructor-assignment-overview", title: "Review approved schedules", description: "This page shows approved classes that still need your instructors.", side: "bottom" as const },
     { element: '[data-tour="department-card"]', waitFor: "#instructor-assignment-departments", action: "click" as const, taskHint: "Click a department card to continue.", title: "Choose a department", description: "Open a department with classes that need your instructors.", side: "top" as const },
     { element: "#assignment-section-filter", action: "select" as const, taskHint: "Change the section filter to continue.", title: "Filter by section", description: "Show one section at a time when needed.", side: "bottom" as const },
-    { element: '#instructor-assignment-timetable button[aria-label$="needs instructor"]:not([disabled])', waitFor: "#instructor-assignment-timetable", action: "click" as const, skipIfMissing: true, taskHint: "Click a highlighted class that needs an instructor.", title: "Select an unassigned class", description: "Choose a class without an instructor to see eligible faculty.", side: "top" as const },
+    { element: "#assignment-status-filter", action: "select" as const, skipIfMissing: true, taskHint: "Choose \"Needs instructor\" to continue.", title: "Show only what is left", description: "Narrow the list to classes that still have nobody assigned.", side: "bottom" as const },
+    { element: "#instructor-assignment-worklist select[id^='worklist-faculty-']:not([disabled])", waitFor: "#instructor-assignment-worklist", skipIfMissing: true, title: "Assign an instructor", description: "Pick an eligible instructor straight from the row — it saves as you choose.", side: "top" as const },
   ], []);
   useWorkflowGuide({ id: "instructor-assignment", isReady: !isLoading && workflowGuideId === "instructor-assignment", steps: instructorGuideSteps, mission: "Staff the Classes" });
 
@@ -473,6 +497,25 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       && item.schedules.length > 0
     )), [assignmentSchedules, currentDepartmentId, departments]);
 
+  /**
+   * The department cards are a choice only when there is a choice. With one
+   * department offering work, the landing screen was a single card standing
+   * between the user and the timetable, so it opens itself.
+   */
+  useEffect(() => {
+    if (selectedDepartmentId !== null || isLoading || assignmentLocked) return;
+    const requested = Number(new URLSearchParams(window.location.search).get("department"));
+    const deepLinked = offeringDepartments.find(
+      (item) => Number(item.department.id) === requested,
+    );
+    if (deepLinked) {
+      setSelectedDepartmentId(Number(deepLinked.department.id));
+      return;
+    }
+    if (offeringDepartments.length === 1) {
+      setSelectedDepartmentId(Number(offeringDepartments[0].department.id));
+    }
+  }, [assignmentLocked, isLoading, offeringDepartments, selectedDepartmentId]);
   const selectedDepartment = selectedDepartmentId
     ? departmentMap.get(selectedDepartmentId) ?? null
     : null;
@@ -493,12 +536,27 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const sections = [...new Set(departmentSchedules.map(
     (schedule) => schedule.section?.section_name || "Unspecified section",
   ))].sort();
-  const visibleSchedules = departmentSchedules.filter((schedule) =>
+  // The section filter alone decides what "clear this section" covers, so a
+  // search or status narrowing never makes that button understate its reach.
+  const sectionSchedules = departmentSchedules.filter((schedule) =>
     selectedSection === "all" || schedule.section?.section_name === selectedSection,
   );
+  const visibleSchedules = sectionSchedules.filter((schedule) => {
+    if (statusFilter === "pending" && schedule.faculty_id !== null) return false;
+    if (statusFilter === "assigned" && schedule.faculty_id === null) return false;
+    const query = searchQuery.trim().toLowerCase();
+    if (query === "") return true;
+    return [
+      schedule.subject.course_code ?? schedule.subject.subject_code,
+      schedule.subject.course_name ?? schedule.subject.subject_name,
+      schedule.section?.section_name,
+      getRoomName(schedule),
+      getFacultyName(schedule),
+    ].some((field) => (field ?? "").toLowerCase().includes(query));
+  });
   const clearableSectionSchedules = selectedSection === "all"
     ? []
-    : visibleSchedules.filter((schedule) => (
+    : sectionSchedules.filter((schedule) => (
         schedule.faculty_id !== null
         && schedule.status !== "finalized"
         && !Boolean(schedule.faculty_assignment_done)
@@ -543,7 +601,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
 
     return layouts;
   }, [visibleSchedules]);
-  const selectedSchedule = assignmentSchedules.find(
+const selectedSchedule = assignmentSchedules.find(
     (schedule) => String(schedule.id) === facultyAssignmentPopup?.scheduleId,
   ) ?? null;
 
@@ -639,6 +697,14 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     };
   }), [assignmentSchedules]);
 
+  const changeViewMode = (next: AssignmentView) => {
+    setViewMode(next);
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+    } catch {
+      // A browser that refuses storage still gets the view for this session.
+    }
+  };
   const openDepartment = (departmentId: number) => {
     if (assignmentLocked) return;
     setSelectedDepartmentId(departmentId);
@@ -671,6 +737,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     confirmOverload: boolean
   ) => {
     setIsSaving(true);
+    setSavingScheduleId(schedule.id);
     setError("");
     try {
       const response = await api.patch<AssignmentUpdateResponse>(`/instructor-assignments/${schedule.id}`, {
@@ -729,6 +796,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       setError(apiErrorMessage(err, "Unable to assign the instructor. Please try again."));
     } finally {
       setIsSaving(false);
+      setSavingScheduleId(null);
     }
   };
 
@@ -746,6 +814,36 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     void submitAssignment(selectedSchedule, null, false);
   };
 
+  /**
+   * The worklist assigns straight from its row. It reuses submitAssignment, so
+   * overload confirmation, warnings and the split-group update behave exactly
+   * as they do from the modal.
+   */
+  /**
+   * Progress is counted in classes so it agrees with the worklist. Counting
+   * schedule rows made an MWF class look like three units of work.
+   */
+  const departmentClassTotals = useMemo(() => {
+    const assignedByClass = new Map<string, boolean>();
+    for (const schedule of departmentSchedules) {
+      const key = [
+        schedule.term_id,
+        schedule.section_id ?? schedule.section?.section_name ?? "none",
+        schedule.subject.id,
+      ].join(":");
+      assignedByClass.set(key, (assignedByClass.get(key) ?? true) && schedule.faculty_id !== null);
+    }
+    const total = assignedByClass.size;
+    const assigned = [...assignedByClass.values()].filter(Boolean).length;
+    return { total, assigned };
+  }, [departmentSchedules]);
+  const assignFromWorklist = (scheduleId: number, facultyId: number | null) => {
+    const schedule = assignmentSchedules.find((item) => Number(item.id) === scheduleId);
+    if (!schedule || assignmentLocked) return;
+    setError("");
+    setWarnings([]);
+    void submitAssignment(schedule, facultyId, false);
+  };
   const requestClearSection = () => {
     const sectionId = Number(clearableSectionSchedules[0]?.section_id ?? 0);
     if (!sectionId || selectedSection === "all" || clearableSectionSchedules.length === 0) return;
@@ -820,6 +918,71 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
 
     return conflict ? "Instructor has an overlapping class at this time." : null;
   };
+
+  /**
+   * One entry per class, not per meeting. The grouping key matches the one
+   * FacultyModal uses to gather a class's meetings (term + section + course),
+   * so both views agree on what a single assignment decision covers.
+   */
+  const worklistClasses = useMemo<WorklistClass[]>(() => {
+    const grouped = new Map<string, AssignmentSchedule[]>();
+    for (const schedule of visibleSchedules) {
+      const key = [
+        schedule.term_id,
+        schedule.section_id ?? schedule.section?.section_name ?? "none",
+        schedule.subject.id,
+      ].join(":");
+      grouped.set(key, [...(grouped.get(key) ?? []), schedule]);
+    }
+
+    return [...grouped.entries()].map(([key, meetings]) => {
+      const [primary] = meetings;
+      const subject = modalSubjects.find((item) => item.id === String(primary.subject.id)) ?? null;
+      const eligible = eligibleFacultiesForSubject(
+        modalFaculties,
+        subject,
+        Number(primary.department_id),
+      );
+      const requiredProgramId = requiredTeachingProgramId(subject);
+
+      return {
+        key,
+        scheduleId: primary.id,
+        courseCode: primary.subject.course_code ?? primary.subject.subject_code,
+        courseName: primary.subject.course_name ?? primary.subject.subject_name,
+        units: Number(primary.subject.units ?? 0),
+        sectionName: primary.section?.section_name ?? "Unspecified section",
+        facultyId: primary.faculty_id,
+        facultyName: getFacultyName(primary),
+        locked: Boolean(assignmentLocked)
+          || primary.status === "finalized"
+          || Boolean(primary.faculty_assignment_done),
+        meetings: meetings
+          .slice()
+          .sort((left, right) => DAYS.indexOf(left.day) - DAYS.indexOf(right.day))
+          .map((meeting) => ({
+            id: meeting.id,
+            day: meeting.day,
+            startTime: formatTime(meeting.start_time),
+            endTime: formatTime(meeting.end_time),
+            roomName: getRoomName(meeting),
+          })),
+        eligible: eligible.map((faculty) => ({
+          id: Number(faculty.id),
+          name: faculty.name,
+          conflict: checkModalFacultyConflict(faculty.id, String(primary.id))
+            ? "already scheduled"
+            : null,
+        })),
+        restrictionNote: requiredProgramId === null
+          ? null
+          : `Only ${subject?.programCode ?? "the assigned"} program instructors can teach this course.`,
+      };
+    }).sort((left, right) => left.courseCode.localeCompare(right.courseCode));
+    // checkModalFacultyConflict closes over the current schedules, which the
+    // visibleSchedules dependency already tracks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentLocked, modalFaculties, modalSubjects, visibleSchedules]);
 
   if (isLoading && selectedDepartmentId !== null) {
     return (
@@ -1024,19 +1187,43 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => !assignmentLocked && setSelectedDepartmentId(null)}
-                disabled={Boolean(assignmentLocked)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:border-[#C9952A] hover:text-[#4e0a10]"
-                aria-label="Back to departments"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
+              {/* Only a way back when there is somewhere to go: with a single
+                  offering department the card screen is a dead end. */}
+              {offeringDepartments.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => !assignmentLocked && setSelectedDepartmentId(null)}
+                  disabled={Boolean(assignmentLocked)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:border-[#C9952A] hover:text-[#4e0a10]"
+                  aria-label="Back to departments"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+              )}
               <div>
                 <h2 className="flex items-center gap-2 text-base font-black text-[#4e0a10]">
                   <CalendarDays className="h-4 w-4 text-[#C9952A]" />
-                  {selectedDepartment.department_code} Instructor Assignment
+                  {offeringDepartments.length > 1 ? (
+                    <>
+                      <label className="sr-only" htmlFor="assignment-department-switcher">Source department</label>
+                      <select
+                        id="assignment-department-switcher"
+                        value={String(selectedDepartment.id)}
+                        disabled={Boolean(assignmentLocked)}
+                        onChange={(event) => openDepartment(Number(event.target.value))}
+                        className="-ml-1 rounded-lg border border-transparent bg-transparent py-0.5 pl-1 pr-6 text-base font-black text-[#4e0a10] outline-none transition-colors hover:border-slate-200 focus:border-[#C9952A] disabled:cursor-not-allowed"
+                      >
+                        {offeringDepartments.map(({ department }) => (
+                          <option key={department.id} value={department.id}>
+                            {department.department_code}
+                          </option>
+                        ))}
+                      </select>
+                      Instructor Assignment
+                    </>
+                  ) : (
+                    `${selectedDepartment.department_code} Instructor Assignment`
+                  )}
                 </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
                   {activeTerm && (
@@ -1052,6 +1239,37 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {headerActions}
+              <span className="flex h-9 items-center rounded-xl bg-[#4e0a10] px-3 text-xs font-bold text-[#E8D5C4]">
+                {departmentClassTotals.assigned} of {departmentClassTotals.total} classes assigned
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <label className="sr-only" htmlFor="assignment-search">Search classes</label>
+                <input
+                  id="assignment-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search course, section, room, instructor"
+                  className="h-9 w-64 rounded-xl border border-slate-200 bg-white pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none focus:border-[#C9952A]"
+                />
+              </div>
+              <label className="sr-only" htmlFor="assignment-status-filter">Assignment status</label>
+              <select
+                id="assignment-status-filter"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-[#C9952A]"
+              >
+                <option value="all">All classes</option>
+                <option value="pending">Needs instructor</option>
+                <option value="assigned">Assigned</option>
+              </select>
               <label className="sr-only" htmlFor="assignment-section-filter">Section</label>
               <select
                 id="assignment-section-filter"
@@ -1075,12 +1293,43 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
                   Clear Instructor
                 </button>
               )}
-              <span className="flex h-9 items-center rounded-xl bg-[#4e0a10] px-3 text-xs font-bold text-[#E8D5C4]">
-                {departmentSchedules.filter((schedule) => schedule.faculty_id).length} of {departmentSchedules.length} assigned
-              </span>
+            </div>
+
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+              {([
+                { id: "list" as const, label: "List", Icon: LayoutList },
+                { id: "grid" as const, label: "Grid", Icon: CalendarRange },
+              ]).map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => changeViewMode(id)}
+                  aria-pressed={viewMode === id}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-black transition-colors ${
+                    viewMode === id
+                      ? "bg-white text-[#4e0a10] shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
+          {viewMode === "list" ? (
+            <div id="instructor-assignment-worklist" className="max-h-[calc(100vh-16rem)] overflow-y-auto p-3">
+              <AssignmentWorklist
+                classes={worklistClasses}
+                busyScheduleId={isSaving && facultyAssignmentPopup === null ? savingScheduleId : null}
+                onAssign={assignFromWorklist}
+                emptyMessage={departmentSchedules.length === 0
+                  ? "No classes from this department need your instructors."
+                  : "No class matches these filters."}
+              />
+            </div>
+          ) : (
           <div id="instructor-assignment-timetable" className="overflow-x-auto p-3">
             <div className="max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white">
               <WeeklyTimetableGrid
@@ -1128,6 +1377,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
               </WeeklyTimetableGrid>
             </div>
           </div>
+          )}
           {footerActions && (
             <div className="flex justify-end border-t border-slate-200 bg-slate-50/70 px-4 py-3">
               {footerActions}

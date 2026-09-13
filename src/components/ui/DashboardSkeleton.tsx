@@ -44,7 +44,11 @@ function SecretaryTimetableSkeleton() {
 }
 
 function SecretarySkeleton() {
-  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true"><div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">{Array.from({ length: 8 }).map((_, i) => <MetricCard key={i} />)}</div><div className="grid gap-4 xl:grid-cols-12"><QueueSkeleton /><ProgressSkeleton /><WorkloadSkeleton /></div><div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0"><SecretaryTimetableSkeleton /></div><div className="flex min-w-0 flex-col gap-4"><PanelFrame><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3 grid grid-cols-4 gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><Skeleton className="mt-3.5 h-3 w-full" /><Skeleton className="mt-2 h-[140px] w-full rounded" /><Skeleton className="mt-3 h-4 w-44" /></PanelFrame><PanelFrame className="flex-1"><Skeleton className="h-14 w-full rounded-lg" /><Skeleton className="mt-2.5 h-8 w-full" /><Skeleton className="mt-2.5 h-7 w-full" /><div className="mt-2 space-y-1.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-3.5 w-full" />)}</div><Skeleton className="mt-3 h-7 w-full rounded-md" /></PanelFrame></div></div></div>;
+  // Column count mirrors the secretary metric row in SecretaryDashboardPage;
+  // they have to stay in step or the tiles reflow when the data arrives. Eight
+  // tiles fill two rows at every breakpoint here, which is what the live row
+  // does for any capability set, so the reserved height is right either way.
+  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true"><div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">{Array.from({ length: 8 }).map((_, i) => <MetricCard key={i} />)}</div><div className="grid gap-4 xl:grid-cols-12"><QueueSkeleton /><ProgressSkeleton /><WorkloadSkeleton /></div><div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0"><SecretaryTimetableSkeleton /></div><div className="flex min-w-0 flex-col gap-4"><PanelFrame><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3 grid grid-cols-4 gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><Skeleton className="mt-3.5 h-3 w-full" /><Skeleton className="mt-2 h-[140px] w-full rounded" /><Skeleton className="mt-3 h-4 w-44" /></PanelFrame><PanelFrame className="flex-1"><Skeleton className="h-14 w-full rounded-lg" /><Skeleton className="mt-2.5 h-8 w-full" /><Skeleton className="mt-2.5 h-7 w-full" /><div className="mt-2 space-y-1.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-3.5 w-full" />)}</div><Skeleton className="mt-3 h-7 w-full rounded-md" /></PanelFrame></div></div></div>;
 }
 
 /** Table shell used by the Dean's Review Queue and Review Overview panels. */
@@ -69,8 +73,77 @@ function DeanSkeleton() {
   return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard"><div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">{Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}<MetricCard className="xl:col-span-2" /><MetricCard /></div><div className="grid gap-4 xl:grid-cols-12"><PanelFrame className="xl:col-span-4"><TableSkeleton columns={5} /><div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-2.5">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-2.5 w-20" />)}</div></PanelFrame><PanelFrame className="xl:col-span-4"><DonutSkeleton legendRows={5} /></PanelFrame><PanelFrame className="xl:col-span-4"><TableSkeleton columns={5} footer /></PanelFrame></div><div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0"><PanelFrame><div className="flex flex-wrap items-center gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-md" />)}<Skeleton className="ml-auto h-7 w-40 rounded-md" /><Skeleton className="h-7 w-7 rounded-md" /></div><div className="mt-3 grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><div className="mt-3"><SecretaryTimetableSkeleton /></div></PanelFrame></div><div className="flex min-w-0 flex-col gap-4"><PanelFrame><DonutSkeleton /><div className="mt-3.5 border-t border-slate-100 pt-3"><Skeleton className="h-2.5 w-28" /><div className="mt-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex h-[46px] items-center gap-2"><Skeleton className="h-7 w-7 shrink-0 rounded-full" /><Skeleton className="h-2.5 w-24" /><Skeleton className="h-3 flex-1 rounded-full" /></div>)}</div></div></PanelFrame><PanelFrame><DonutSkeleton legendRows={2} /><Skeleton className="mt-3.5 h-3 w-40" /><Skeleton className="mt-2 h-[140px] w-full rounded" /></PanelFrame></div></div></div>;
 }
 
+/**
+ * The campus peak-hour grid: a day column plus one cell per teaching hour.
+ *
+ * Six days and fourteen hours are the shape the server sends under the default
+ * 07:00-20:30 operating window, so the block reserves the height the real table
+ * takes rather than a generic bar.
+ */
+function HeatmapSkeleton({ days = 6, hours = 14 }: { days?: number; hours?: number }) {
+  const template = `4rem repeat(${hours}, minmax(0,1fr))`;
+  return <PanelFrame>
+    <div className="space-y-1">
+      <div className="grid gap-1" style={{ gridTemplateColumns: template }}>
+        <Skeleton className="h-2 w-8" />
+        {Array.from({ length: hours }).map((_, i) => <Skeleton key={i} className="h-2 w-full" />)}
+      </div>
+      {Array.from({ length: days }).map((_, row) => <div key={row} className="grid gap-1" style={{ gridTemplateColumns: template }}>
+        <Skeleton className="h-2.5 w-8 self-center" />
+        {Array.from({ length: hours }).map((_, col) => <Skeleton key={col} className="h-7 w-full rounded" />)}
+      </div>)}
+    </div>
+    <div className="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-2.5">
+      <Skeleton className="h-2.5 w-12" />
+      {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-3 w-3 rounded-sm" />)}
+      <Skeleton className="h-2.5 w-10" />
+      <Skeleton className="ml-auto h-2.5 w-44" />
+    </div>
+  </PanelFrame>;
+}
+
+/**
+ * Mirrors the VPAA dashboard's row order so the page does not reflow when the
+ * real content arrives: header bar, decision KPIs, inventory strip, the
+ * full-width approval queue, the workflow/utilisation row, the timetable beside
+ * its three side panels, then the full-width peak-hour heatmap.
+ */
 function VpaaSkeleton() {
-  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard"><Skeleton className="h-2.5 w-36" /><div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">{Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}<MetricCard className="xl:col-span-2" /><MetricCard /></div><div className="grid gap-4 xl:grid-cols-12"><PanelFrame className="xl:col-span-6"><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3"><TableSkeleton columns={5} rows={4} /></div></PanelFrame><PanelFrame className="xl:col-span-6"><TableSkeleton columns={4} rows={6} /><div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-2.5"><Skeleton className="h-2.5 w-24" /><Skeleton className="h-2.5 w-28" /></div></PanelFrame></div><Skeleton className="h-2.5 w-52" /><div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0"><PanelFrame><div className="flex flex-wrap items-center gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-md" />)}<Skeleton className="ml-auto h-7 w-40 rounded-md" /><Skeleton className="h-7 w-7 rounded-md" /></div><div className="mt-3 grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><div className="mt-3"><SecretaryTimetableSkeleton /></div></PanelFrame></div><div className="flex min-w-0 flex-col gap-4"><PanelFrame><DonutSkeleton legendRows={3} /><Skeleton className="mt-3.5 h-4 w-28" /></PanelFrame><PanelFrame><DonutSkeleton legendRows={4} /></PanelFrame></div></div></div>;
+  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard">
+    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"><Skeleton className="h-10 w-10 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-3 w-44" /><Skeleton className="mt-1.5 h-2.5 w-56" /></div><Skeleton className="h-7 w-24 rounded-md" /><Skeleton className="h-7 w-28 rounded-md" /></div>
+
+    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}<MetricCard className="xl:col-span-2" /></div>
+
+    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <MetricCard key={i} />)}</div>
+
+    <div className="grid gap-4">
+      <PanelFrame><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3"><TableSkeleton columns={5} rows={4} /></div></PanelFrame>
+    </div>
+
+    <div className="grid gap-4 xl:grid-cols-12">
+      <PanelFrame className="xl:col-span-6"><TableSkeleton columns={4} rows={6} /><div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-2.5"><Skeleton className="h-2.5 w-24" /><Skeleton className="h-2.5 w-28" /></div></PanelFrame>
+      <PanelFrame className="xl:col-span-6"><div className="grid grid-cols-4 gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-md" />)}</div><div className="mt-3"><TableSkeleton columns={4} rows={4} /></div></PanelFrame>
+    </div>
+
+    <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="min-w-0"><PanelFrame><div className="flex flex-wrap items-center gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-md" />)}<Skeleton className="ml-auto h-7 w-40 rounded-md" /><Skeleton className="h-7 w-7 rounded-md" /></div><div className="mt-3 grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><div className="mt-3"><SecretaryTimetableSkeleton /></div></PanelFrame></div>
+      {/* Faculty load, institutional readiness, then the activity trail that
+          fills the column down to the timetable's foot. */}
+      <div className="flex min-w-0 flex-col gap-4">
+        <PanelFrame><DonutSkeleton legendRows={4} /><Skeleton className="mt-3.5 h-4 w-28" /></PanelFrame>
+        <PanelFrame><DonutSkeleton legendRows={4} /></PanelFrame>
+        <PanelFrame className="min-h-[220px] flex-1"><PanelRows rows={5} /></PanelFrame>
+      </div>
+    </div>
+
+    <div className="grid gap-4">
+      <HeatmapSkeleton />
+    </div>
+  </div>;
+}
+
+function PanelRows({ rows }: { rows: number }) {
+  return <div className="divide-y divide-slate-100">{Array.from({ length: rows }).map((_, i) => <div key={i} className="flex items-start gap-2.5 py-2"><Skeleton className="h-4 w-20 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-2.5 w-4/5" /><Skeleton className="mt-1 h-2.5 w-3/5" /></div></div>)}</div>;
 }
 
 function TimetableSkeleton() {

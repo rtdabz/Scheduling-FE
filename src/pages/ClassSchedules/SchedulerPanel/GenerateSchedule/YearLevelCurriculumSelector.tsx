@@ -142,6 +142,7 @@ export default function YearLevelCurriculumSelector({
             Curriculum for this year level
           </span>
           <select
+            id="generator-curriculum-select"
             value={selected ?? ""}
             disabled={disabled || loading || applying || curricula.length === 0}
             onChange={(event) =>
@@ -169,6 +170,7 @@ export default function YearLevelCurriculumSelector({
         </label>
 
         <button
+          id="generator-apply-curriculum"
           type="button"
           onClick={apply}
           disabled={disabled || applying || selected === null || !dirty}

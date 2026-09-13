@@ -18,6 +18,10 @@ import YearLevelCurriculumSelector from "./YearLevelCurriculumSelector";
 import { getForcedDayConcentration } from "./forcedDayConcentration";
 import { setCachedData } from "../../../../lib/dataCache";
 import { schedulingSettingsCacheKey } from "./generatorCache";
+import {
+  balancedSplitSettingsOf,
+  isBalancedSplitSchedulingEligible,
+} from "../schedulingConfigurationEligibility";
 import type { TimeBlockOption } from "./generationTypes";
 
 export type ConstraintCourse = { id: number; code: string; name: string };
@@ -30,6 +34,7 @@ export type ConfigurationSettings = {
   field_course_options?: ConstraintCourse[];
   field_course_codes?: string[];
   gec_split_schedule_override_enabled?: boolean;
+  major_lecture_split_schedule_override_enabled?: boolean;
   lecture_lab_schedule_override_enabled?: boolean;
 };
 
@@ -129,6 +134,7 @@ function CourseChip({
 }
 
 function KanbanColumn({
+  id,
   icon: Icon,
   title,
   description,
@@ -136,6 +142,8 @@ function KanbanColumn({
   notice,
   children,
 }: {
+  /** DOM id, so guided tours can anchor a step to one column. */
+  id?: string;
   icon: typeof CalendarDays;
   title: string;
   description: string;
@@ -144,7 +152,7 @@ function KanbanColumn({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white/70">
+    <section id={id} className="flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white/70">
       <header className="flex items-start gap-2 border-b border-slate-200 px-3 py-2.5">
         <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#4e0a10]/10 text-[#4e0a10]">
           <Icon className="h-4 w-4" />
@@ -272,8 +280,15 @@ export default function ConfigurationStep({
   const fieldCandidates = fieldCourseOptions.filter((course) =>
     fieldEligibleCodes.has(course.code),
   );
-  const splitCandidates = courses.filter(
-    (course) => course.category === "minor",
+  const splitSettings = balancedSplitSettingsOf(settings);
+  // Listed as though both split settings were on, so a column whose setting is
+  // off shows the chips plus the notice that explains why they are inert --
+  // rather than looking as though the scope holds nothing splittable.
+  const splitCandidates = courses.filter((course) =>
+    isBalancedSplitSchedulingEligible(course, {
+      minorEnabled: true,
+      majorLectureEnabled: true,
+    }),
   );
 
   const forcedDayByCourseId = new Map(
@@ -282,8 +297,8 @@ export default function ConfigurationStep({
   // Piling every forced course onto one day is legal but rarely intended, so
   // the column says so where the choice is made.
   const concentration = getForcedDayConcentration(forcedDayRules, [], "");
-  const splitEnabled = settings?.gec_split_schedule_override_enabled === true;
-  const fieldEnabled = settings?.field_course_assignment_enabled === true;
+  const splitEnabled =
+    splitSettings.minorEnabled || splitSettings.majorLectureEnabled;
 
   const patchSettings = async (
     patch: Partial<ConfigurationSettings>,
@@ -431,6 +446,7 @@ export default function ConfigurationStep({
               Choose year level
             </span>
             <select
+              id="generator-year-level"
               aria-label="Year level"
               value={yearLevel}
               disabled={actionsDisabled || years.length === 0}
@@ -474,8 +490,12 @@ export default function ConfigurationStep({
         />
       </section>
 
-      <div className="grid min-h-0 flex-1 items-start gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div
+        id="generator-rules"
+        className="grid min-h-0 flex-1 items-start gap-3 md:grid-cols-2 xl:grid-cols-4"
+      >
         <KanbanColumn
+          id="generator-column-forced-day"
           icon={CalendarDays}
           title="Forced Day"
           description="Click a course, then pick the day it must meet."
@@ -532,16 +552,18 @@ export default function ConfigurationStep({
           )}
         </KanbanColumn>
 
+        {/*
+          No enablement gate here, unlike the split column: the backend derives
+          `field_course_assignment_enabled` from whether the department has any
+          codes configured, so gating this column on it made the first code
+          impossible to add - the only writer of the codes is right here.
+        */}
         <KanbanColumn
+          id="generator-column-field"
           icon={MapPin}
           title="Field Courses"
           description="Click the courses delivered in the field."
           count={fieldCourseCodes.length}
-          notice={
-            fieldEnabled
-              ? undefined
-              : "Enable Field Course Assignment in Settings before choosing field courses."
-          }
         >
           {fieldCandidates.length === 0 ? (
             <p className="px-1 py-2 text-[11px] font-semibold text-slate-500">
@@ -555,7 +577,7 @@ export default function ConfigurationStep({
                 code={course.code}
                 name={course.name}
                 selected={fieldCourseCodes.includes(course.code)}
-                disabled={disabled || !fieldEnabled}
+                disabled={disabled}
                 onClick={() => void toggleField(course.code)}
               />
             ))
@@ -563,19 +585,20 @@ export default function ConfigurationStep({
         </KanbanColumn>
 
         <KanbanColumn
+          id="generator-column-split"
           icon={Split}
           title="Allowed Split"
-          description="Click the minor courses that may split into two meetings."
+          description="Click the minor or lecture-only major courses that may split into two meetings."
           count={setupDraft.allowedSplitCourseIds.length}
           notice={
             splitEnabled
               ? undefined
-              : "Enable Minor Course Split Sessions in Settings before choosing split courses."
+              : "Enable Minor Course Split Sessions or Major Lecture Split Sessions in Settings before choosing split courses."
           }
         >
           {splitCandidates.length === 0 ? (
             <p className="px-1 py-2 text-[11px] font-semibold text-slate-500">
-              No split-eligible minor courses in this scope.
+              No split-eligible courses in this scope.
             </p>
           ) : (
             splitCandidates.map((course) => (
@@ -584,7 +607,10 @@ export default function ConfigurationStep({
                 code={course.code}
                 name={course.name}
                 selected={setupDraft.allowedSplitCourseIds.includes(course.id)}
-                disabled={disabled || !splitEnabled}
+                disabled={
+                  disabled
+                  || !isBalancedSplitSchedulingEligible(course, splitSettings)
+                }
                 onClick={() => claimCourse(course.id, course.code, "split")}
               />
             ))
@@ -592,6 +618,7 @@ export default function ConfigurationStep({
         </KanbanColumn>
 
         <KanbanColumn
+          id="generator-column-periods"
           icon={Clock3}
           title="Preferred Meetings"
           description="Click a period to keep a section inside it."

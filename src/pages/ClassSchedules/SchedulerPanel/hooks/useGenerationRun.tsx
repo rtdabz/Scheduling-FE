@@ -99,7 +99,10 @@ type GenerationRunContextValue = GenerationRunSnapshot & {
   workerStalled: boolean;
   start: (payload: unknown, meta: GenerationRunMeta) => Promise<void>;
   markReviewed: () => void;
+  /** Stop waiting locally without telling the server. */
   clear: () => void;
+  /** Stop the run itself: the worker unwinds at its next checkpoint. */
+  cancel: () => Promise<void>;
 };
 
 const GenerationRunContext = createContext<GenerationRunContextValue | null>(
@@ -230,6 +233,20 @@ export function GenerationRunProvider({
     setReviewed(true);
     setSnapshot(idleSnapshot);
   }, [persistRunId]);
+
+  // Cancel locally first so the spinner and the poll stop immediately; the
+  // request only has to reach the server eventually for the worker to notice.
+  const cancel = useCallback(async () => {
+    const runId = snapshot.runId;
+    const wasActive = isActiveStatus(snapshot.status);
+    clear();
+    if (!runId || !wasActive) return;
+    try {
+      await api.post(`/schedule-recommendations/generation-runs/${runId}/cancel`);
+    } catch {
+      // A run the server never cancelled still expires on its own limits.
+    }
+  }, [clear, snapshot.runId, snapshot.status]);
 
   const markReviewed = useCallback(() => setReviewed(true), []);
 
@@ -379,8 +396,9 @@ export function GenerationRunProvider({
       start,
       markReviewed,
       clear,
+      cancel,
     }),
-    [active, clear, elapsedMs, markReviewed, reviewed, snapshot, start],
+    [active, cancel, clear, elapsedMs, markReviewed, reviewed, snapshot, start],
   );
 
   return (

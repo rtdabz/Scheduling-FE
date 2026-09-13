@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X,
   Lock,
@@ -59,6 +59,8 @@ interface CapabilityDefinition {
   title: string;
   description: string;
   assignable?: boolean;
+  /** Capabilities this one cannot be exercised without; the server grants them alongside it. */
+  requires?: string[];
 }
 
 interface ModuleDefinition {
@@ -167,6 +169,32 @@ export default function UserAccessMatrixModal({
     return 'custom';
   }, [effectivePermissions, inheritedPermissions, directPermissions, presets]);
 
+  /** The capability plus everything it depends on, transitively. Mirrors CapabilityRegistry::expand. */
+  const withPrerequisites = useCallback(
+    (permissionIds: string[]): string[] => {
+      const resolved: string[] = [];
+      const queue = [...permissionIds];
+      while (queue.length > 0) {
+        const id = queue.shift() as string;
+        if (resolved.includes(id)) continue;
+        resolved.push(id);
+        const definition = catalogMetadata.find((capability) => capability.id === id);
+        queue.push(...(definition?.requires ?? []));
+      }
+      return resolved;
+    },
+    [catalogMetadata],
+  );
+
+  /** Capabilities currently selected that would break if `permissionId` were revoked. */
+  const dependentsOf = useCallback(
+    (permissionId: string, selected: string[]): string[] =>
+      selected.filter(
+        (id) => id !== permissionId && withPrerequisites([id]).includes(permissionId),
+      ),
+    [withPrerequisites],
+  );
+
   const toggleDirectPermission = (permissionId: string) => {
     // If inherited, locked and cannot be toggled off directly
     const definition = catalogMetadata.find((capability) => capability.id === permissionId);
@@ -174,10 +202,18 @@ export default function UserAccessMatrixModal({
 
     setDirectPermissions((prev) => {
       if (prev.includes(permissionId)) {
+        // Revoking a prerequisite would leave its dependents granted but unusable --
+        // the server expands the grant back anyway, so refuse the toggle instead of
+        // showing a state that will not survive the save.
+        if (dependentsOf(permissionId, prev).length > 0) {
+          return prev;
+        }
         return prev.filter((p) => p !== permissionId);
-      } else {
-        return [...prev, permissionId];
       }
+      // Granting pulls in what the capability cannot run without, matching what
+      // the server will store.
+      const additions = withPrerequisites([permissionId]).filter((id) => !prev.includes(id));
+      return [...prev, ...additions];
     });
   };
 
@@ -189,7 +225,7 @@ export default function UserAccessMatrixModal({
 
     const targetPermissions = presets[presetKey]?.permissions ?? [];
     // Keep only direct permissions that aren't already inherited (or set all target direct)
-    setDirectPermissions(targetPermissions);
+    setDirectPermissions(withPrerequisites(targetPermissions));
   };
 
   const handleResetToSaved = () => {
@@ -483,6 +519,9 @@ export default function UserAccessMatrixModal({
                       const isDirect = directPermissions.includes(capability.id);
                       const isEffective = isInherited || isDirect;
                       const isAssignable = capability.assignable !== false;
+                      // Held in place while something that needs it is still granted.
+                      const requiredBy = isDirect ? dependentsOf(capability.id, directPermissions) : [];
+                      const isRequired = requiredBy.length > 0;
 
                       return (
                         <div
@@ -534,7 +573,7 @@ export default function UserAccessMatrixModal({
                               type="button"
                               role="switch"
                               aria-checked={isEffective}
-                              disabled={isInherited || !isAssignable || isSaving}
+                              disabled={isInherited || !isAssignable || isRequired || isSaving}
                               onClick={() => toggleDirectPermission(capability.id)}
                               className={`
                                 relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent
@@ -544,6 +583,8 @@ export default function UserAccessMatrixModal({
                                     ? 'bg-amber-600/70 cursor-not-allowed opacity-80'
                                     : !isAssignable
                                     ? 'bg-gray-100 cursor-not-allowed opacity-60'
+                                    : isRequired
+                                    ? 'bg-emerald-600/70 cursor-not-allowed opacity-80'
                                     : isDirect
                                     ? 'bg-emerald-600 cursor-pointer'
                                     : 'bg-gray-200 cursor-pointer hover:bg-gray-300'
@@ -554,6 +595,8 @@ export default function UserAccessMatrixModal({
                                   ? `Inherited from ${user.role} role (locked)`
                                   : !isAssignable
                                   ? `Unavailable for the ${user.role} role`
+                                  : isRequired
+                                  ? `Required by ${requiredBy.join(', ')}. Revoke those first.`
                                   : isDirect
                                   ? 'Click to revoke direct grant'
                                   : 'Click to grant capability directly'

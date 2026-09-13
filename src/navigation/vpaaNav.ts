@@ -3,6 +3,8 @@ import {
   CalendarDays,
   Calendar,
   GraduationCap,
+  UserPlus,
+  Award,
   DoorOpen,
   FileBarChart,
   ClipboardList,
@@ -38,7 +40,15 @@ export const vpaaNav: NavSection[] = [
         ]
       },
       { label: 'Master Calendar', path: '/calendar', icon: Calendar, id: 'sidebar-calendar' },
-      { label: 'Faculty', path: '/faculty', icon: GraduationCap, id: 'sidebar-faculty' },
+      {
+        label: 'Faculty',
+        icon: GraduationCap,
+        id: 'sidebar-faculty',
+        children: [
+          { label: 'Instructors', path: '/faculty', icon: UserPlus, id: 'sidebar-instructors' },
+          { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
+        ],
+      },
       { label: 'Rooms', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
       { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
     ]

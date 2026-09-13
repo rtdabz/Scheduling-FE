@@ -105,6 +105,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const canViewSchedules = hasStoredCapability('schedule.view');
   const canUpdateSchedules = hasStoredCapability('schedule.update');
   const canAssignInstructors = hasStoredCapability('schedule.assign_instructor');
+  const canAssignCrossDepartment = hasStoredCapability('schedule.assign_instructor_cross_department');
   const isProgramHead = role === 'program_head';
   const paths = isProgramHead
     ? {
@@ -113,6 +114,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         instructors: '/program_head/faculty',
         courses: '/program_head/course-list',
         rooms: '/program_head/rooms',
+        crossDepartment: '/program_head/cross-department-assignments',
       }
     : {
         sections: '/secretary/sections',
@@ -120,6 +122,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         instructors: '/secretary/instructors',
         courses: '/secretary/course-list',
         rooms: '/secretary/rooms',
+        crossDepartment: '/secretary/cross-department-assignments',
       };
   const cacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? departmentId ?? 'current'}`;
   const cached = getCachedData<Overview>(cacheKey);
@@ -180,6 +183,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     stageCounts,
     canSubmit,
     hasDean,
+    crossDepartmentPending,
     error: statusError,
     refetch: refetchStatus,
   } = useDepartmentScheduleStatus(departmentId);
@@ -211,7 +215,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const onlineClasses = visibleSchedules.filter(s => deliveryOf(s) === 'online').length;
   const fieldClasses = visibleSchedules.filter(s => deliveryOf(s) === 'field').length;
   const incomplete = visibleSchedules.filter(s => (!s.course && !s.subject) || !s.start_time || !s.end_time).length;
-  const draftClasses = visibleSchedules.filter(s => !s.status || ['draft', 'revision'].includes(s.status.toLowerCase())).length;
 
   const loads = useMemo(() => visibleFaculty
     .map(f => {
@@ -329,12 +332,13 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:paths.courses, tone:'brand' },
     { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:paths.rooms, tone:'info' },
     ...(canAssignInstructors ? [{ label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.schedules, tone:noInstructor ? 'alert' : 'good' } as Tile] : []),
-    ...(canViewSchedules ? [{ label:'Draft Schedules', value:draftClasses, detail:'Not yet submitted', icon:FileText, path:paths.schedules, tone:draftClasses ? 'warn' : 'good' } as Tile] : []),
+    ...(canAssignCrossDepartment ? [{ label:'Delegated Classes', value:crossDepartmentPending, detail:'Taught for other colleges', icon:Building2, path:paths.crossDepartment, tone:crossDepartmentPending ? 'alert' : 'good' } as Tile] : []),
   ];
 
   const queue: QueueRow[] = [
     ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
     ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
+    ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Building2, path:paths.crossDepartment } as QueueRow] : []),
     { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:paths.rooms },
     ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
     ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
@@ -358,7 +362,15 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3"/> Retry</button>
     </div>}
 
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
+    {/*
+      Capabilities decide how many tiles render (four for a read-only account,
+      eight for a full one), so the column count has to read well for any count
+      in that range. Eight columns squeezed labels like "Curriculum Courses"
+      onto three lines and stranded the last tile whenever the count was not a
+      multiple of eight. Capping at five keeps every tile wide enough for its
+      label.
+    */}
+    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
       {tiles.map(({label, value, detail, icon, path, tone}) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
     </section>
 

@@ -1,8 +1,10 @@
 import api, { beginLogout, cancelPendingRequests } from './api';
 import { clearDataCache } from './dataCache';
+import { clearLastActivity } from './sessionTimeout';
 
 const clearStoredSession = (): void => {
   clearDataCache();
+  clearLastActivity();
   localStorage.removeItem('token');
   localStorage.removeItem('user');
   sessionStorage.removeItem('token');

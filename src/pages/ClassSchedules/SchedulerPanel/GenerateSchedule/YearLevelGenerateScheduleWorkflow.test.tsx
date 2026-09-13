@@ -143,7 +143,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     });
   });
 
-  it("polls the queued result, saves it, waits for refresh, and then closes", async () => {
+  it("polls the queued result, saves it, and closes on the click while the refresh finishes", async () => {
     const generatedSchedule = {
       id: 501,
       term_id: 1,
@@ -237,7 +237,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       }),
     ));
     expect(onAccepted).toHaveBeenCalledWith([generatedSchedule]);
-    expect(onClose).not.toHaveBeenCalled();
+    // The wizard leaves on the click, so the timetable refresh behind it is
+    // the only overlay the user sees.
+    expect(onClose).toHaveBeenCalledOnce();
 
     finishRefresh?.();
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());

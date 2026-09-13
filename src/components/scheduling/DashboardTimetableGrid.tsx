@@ -3,6 +3,7 @@ import { BookOpen, CalendarDays, Globe2, MapPin } from 'lucide-react';
 import WeeklyTimetableGrid from './WeeklyTimetableGrid';
 import { FULL_DAY_NAMES, timeToSlot, slotCount, formatTime12h } from '../../lib/timeGrid';
 import { scheduleLocationLabel } from '../../lib/scheduleLocation';
+import { isVpaaApproved } from '../../lib/scheduleStatus';
 
 export interface DashboardSchedule {
   id: number | string;
@@ -112,7 +113,12 @@ export default function DashboardTimetableGrid({
     // Dashboard timetables are published views. Draft, submitted, and
     // dean-approved rows remain available in their workflow screens, but must
     // not be plotted here until the VPAA approval transition is complete.
-    schedule.status?.toLowerCase() === 'approved'
+    //
+    // That transition does not leave the row at 'approved' — VPAA approval
+    // writes 'faculty_assignment', and the row moves on to 'reassignment' and
+    // 'finalized' afterwards. Matching only 'approved' emptied every portal's
+    // grid, so ask the shared predicate instead.
+    isVpaaApproved(schedule.status)
     && dayIndex(schedule.day) === todayIndex
     && (deliveryMode === 'online' ? isOnline(schedule) : !isOnline(schedule))
   );

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
+  ChevronRight,
   Filter,
   RefreshCw,
-  Clock,
   MapPin,
   User,
   Layers,
@@ -13,14 +13,17 @@ import {
   CalendarDays,
   Search,
   Building2,
-  Users,
-  DoorOpen,
   AlertTriangle,
   BookOpen,
   X
 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
+import DepartmentOverviewCards, { type OverviewFocus } from "../../components/scheduling/DepartmentOverviewCards";
+import SectionOverviewCards from "../../components/scheduling/SectionOverviewCards";
+import { useScheduleOverview } from "../../hooks/useScheduleOverview";
+import { getDeptBadgeStyles, getDeptStyles } from "../../lib/departmentTheme";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
@@ -130,7 +133,7 @@ interface ScheduleViewerData {
   activeTerm: Term | null;
 }
 
-type ViewMode = "overview" | "list" | "grid";
+type ViewMode = "overview" | "sections" | "list" | "grid";
 type SortKey = "department" | "section" | "subject" | "day" | "startTime" | "faculty" | "room";
 type SortDirection = "asc" | "desc";
 type GroupKey = "department" | "section" | "day" | "faculty" | "room";
@@ -141,15 +144,6 @@ interface ScheduleConflictInfo {
   faculty: boolean;
   room: boolean;
   section: boolean;
-}
-
-interface DepartmentSummary {
-  department: Department;
-  schedules: number;
-  sections: number;
-  faculty: number;
-  rooms: number;
-  missingAssignments: number;
 }
 
 const dayMapToIndex: Record<string, number> = {
@@ -175,60 +169,59 @@ const slotToTimeStr12h = (slotIndex: number): string => {
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+/** The most rows `/initial-data` will return; asking for more is refused. */
+const INITIAL_DATA_SCHEDULE_LIMIT = 2000;
+
+/**
+ * One `schedules` row as the viewer needs it. Module scope because two
+ * sources feed this screen: the bulk `/initial-data` payload, and a targeted
+ * per-section fetch used for the weekly grid.
+ */
+const mapRawSchedule = (
+  item: RawSchedule,
+  departments: Department[],
+  sectionDepartmentById: Map<string, string>,
+): Schedule => {
+  const sectionId = item.section_id ? item.section_id.toString() : "";
+  const departmentId = item.department_id ? item.department_id.toString() : sectionDepartmentById.get(sectionId) ?? "";
+  const department = departments.find((entry) => entry.id === departmentId);
+  const mode = (item.mode ?? "on-site").trim().toLowerCase() as Schedule["mode"];
+  let roomName = "";
+  if (mode === "online") roomName = "Online";
+  else if (mode === "field") roomName = "Field";
+  else if (item.room) {
+    if (item.room.room_code === "ONLINE") roomName = "Online";
+    else if (item.room.room_code === "FIELD") roomName = "Field";
+    else roomName = item.room.room_code ?? "";
+  }
+
+  const dayIndex = dayMapToIndex[item.day] ?? 0;
+  const startSlot = timeStrToSlot(item.start_time);
+  const endSlot = timeStrToSlot(item.end_time);
+  return {
+    id: item.id.toString(),
+    sectionId,
+    sectionName: item.section?.section_name ?? "",
+    departmentId,
+    departmentName: item.department?.department_name ?? department?.name ?? "",
+    departmentCode: item.department?.department_code ?? department?.code ?? "",
+    subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
+    subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
+    facultyId: item.faculty_id ? item.faculty_id.toString() : "",
+    facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : "Unassigned",
+    roomId: item.room_id ? item.room_id.toString() : "",
+    roomName,
+    day: DAYS_MAP[dayIndex] || "Mon",
+    startTime: slotToTimeStr12h(startSlot),
+    endTime: slotToTimeStr12h(endSlot),
+    mode,
+    meetingType: item.meeting_type ?? null
+  };
+};
+
+
 /** Aliased to the shared geometry so cards keep matching the rows they sit on. */
 const VIEWER_SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
-
-const normalizeDepartmentKey = (code: string, name = "") => {
-  const normalizedCode = code.trim().toUpperCase();
-  const value = name.toLowerCase();
-  if (["IT", "CIT"].includes(normalizedCode) || value.includes("information technology")) return "IT";
-  if (["AS", "CAS"].includes(normalizedCode) || value.includes("arts and sciences")) return "AS";
-  if (["EDUC", "CED"].includes(normalizedCode) || value.includes("education")) return "EDUC";
-  if (["BA", "CBA"].includes(normalizedCode) || value.includes("business")) return "BA";
-  if (["HM", "CHM"].includes(normalizedCode) || value.includes("hospitality")) return "HM";
-  if (["CM", "MID"].includes(normalizedCode) || value.includes("midwifery")) return "MID";
-  if (["CRIM", "CCJ", "CCJPS"].includes(normalizedCode) || value.includes("criminal")) return "CRIM";
-  if (["LIS", "CLIS"].includes(normalizedCode) || value.includes("library")) return "LIS";
-  return "";
-};
-
-// Department styling mapping
-const getDeptStyles = (code: string) => {
-  switch (normalizeDepartmentKey(code)) {
-    case "IT":
-      return "bg-blue-50 text-blue-800 border-blue-400 border-l-blue-700 hover:bg-blue-100/60";
-    case "AS":
-      return "bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/40 border-l-[#7C3AED] hover:bg-[#7C3AED]/20";
-    case "EDUC":
-      return "bg-orange-50 text-orange-800 border-orange-400 border-l-orange-600 hover:bg-orange-100/60";
-    case "BA":
-      return "bg-yellow-50 text-yellow-800 border-yellow-400 border-l-yellow-600 hover:bg-yellow-100/60";
-    case "HM":
-      return "bg-lime-50 text-lime-800 border-lime-400 border-l-lime-600 hover:bg-lime-100/60";
-    case "MID":
-      return "bg-green-50 text-green-800 border-green-400 border-l-green-600 hover:bg-green-100/60";
-    case "CRIM":
-      return "bg-[#4e0a10]/10 text-[#4e0a10] border-[#6b0f1a] border-l-[#4e0a10] hover:bg-[#4e0a10]/15";
-    case "LIS":
-      return "bg-pink-50 text-pink-800 border-pink-400 border-l-pink-600 hover:bg-pink-100/60";
-    default:
-      return "bg-purple-50 text-purple-800 border-purple-400 border-l-purple-600 hover:bg-purple-100/60";
-  }
-};
-
-const getDeptBadgeStyles = (code: string) => {
-  switch (normalizeDepartmentKey(code)) {
-    case "IT": return "bg-blue-100 text-blue-800 border-blue-200";
-    case "AS": return "bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/30";
-    case "EDUC": return "bg-orange-100 text-orange-800 border-orange-200";
-    case "BA": return "bg-yellow-100 text-yellow-800 border-yellow-200";
-    case "HM": return "bg-lime-100 text-lime-800 border-lime-200";
-    case "MID": return "bg-green-100 text-green-800 border-green-200";
-    case "CRIM": return "bg-[#4e0a10]/10 text-[#4e0a10] border-[#6b0f1a]/30";
-    case "LIS": return "bg-pink-100 text-pink-800 border-pink-200";
-    default: return "bg-purple-100 text-purple-800 border-purple-200";
-  }
-};
 
 const getModeLabel = (mode: Schedule["mode"]) => {
   if (mode === "on-site") return "On-Site";
@@ -313,11 +306,15 @@ const getConflictLabels = (info?: ScheduleConflictInfo) => {
 
 // Parse time string e.g. "09:30 AM" to half-hour slot index starting from 7:00 AM
 const parseTimeToSlotIndex = (timeStr: string): number => {
-  const match = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+  // slotToTimeLabel drops ":00" on the hour ("7 AM", not "7:00 AM"), so the
+  // minutes are optional here. Requiring them made every whole-hour time fall
+  // through to slot 0, which read as a mutual overlap and raised phantom
+  // room/section conflicts on rows that never overlapped.
+  const match = timeStr.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
   if (!match) return 0;
   
   let hour = parseInt(match[1]);
-  const minutes = parseInt(match[2]);
+  const minutes = match[2] ? parseInt(match[2]) : 0;
   const ampm = match[3].toUpperCase();
 
   if (ampm === "PM" && hour !== 12) {
@@ -436,11 +433,29 @@ export default function VpaaScheduleViewer() {
   const [schedules, setSchedules] = useState<Schedule[]>(cachedScheduleViewerData?.schedules ?? []);
   const [activeTerm, setActiveTerm] = useState<Term | null>(cachedScheduleViewerData?.activeTerm ?? null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(scheduleViewerCacheKey));
-  const [viewMode, setViewMode] = useState<ViewMode>("overview");
+  const [isScheduleListTruncated, setIsScheduleListTruncated] = useState(false);
+
+  /**
+   * Institution-wide counts come from a dedicated aggregate endpoint rather
+   * than from the `/initial-data` rows below: that payload is capped, so
+   * counting it reports part of the term as the whole of it.
+   */
+  const {
+    departments: overviewDepartments,
+    totals: overviewTotals,
+    isLoading: isOverviewLoading,
+    error: overviewError,
+    refresh: refreshOverview,
+  } = useScheduleOverview();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    searchParams.get("section") ? "grid" : searchParams.get("dept") ? "sections" : "overview",
+  );
 
   // Filters State
-  const [selectedDeptId, setSelectedDeptId] = useState<string>("All");
-  const [selectedSectionId, setSelectedSectionId] = useState<string>("All");
+  const [selectedDeptId, setSelectedDeptId] = useState<string>(searchParams.get("dept") ?? "All");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>(searchParams.get("section") ?? "All");
   const [selectedFacultyId, setSelectedFacultyId] = useState<string>("All");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("All");
   const [selectedMode, setSelectedMode] = useState<string>("All");
@@ -479,7 +494,7 @@ export default function VpaaScheduleViewer() {
           faculties: RawFaculty[];
           rooms: RawRoom[];
           schedules: RawSchedule[];
-        }>('/initial-data');
+        }>(`/initial-data?schedule_limit=${INITIAL_DATA_SCHEDULE_LIMIT}`);
         const term = response.data.active_term;
         setActiveTerm(term);
 
@@ -525,44 +540,14 @@ export default function VpaaScheduleViewer() {
           rawSchedules = rawSchedules.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
         }
 
-        const mappedSchedules: Schedule[] = rawSchedules.map((item) => {
-          const sectionId = item.section_id ? item.section_id.toString() : "";
-          const departmentId = item.department_id ? item.department_id.toString() : sectionDepartmentById.get(sectionId) ?? "";
-          const department = mappedDepts.find((dept) => dept.id === departmentId);
-          const mode = (item.mode ?? "on-site").trim().toLowerCase() as Schedule["mode"];
-          let roomName = "";
-          if (mode === "online") roomName = "Online";
-          else if (mode === "field") roomName = "Field";
-          else if (item.room) {
-            if (item.room.room_code === "ONLINE") roomName = "Online";
-            else if (item.room.room_code === "FIELD") roomName = "Field";
-            else roomName = item.room.room_code ?? "";
-          }
-
-          const dayIndex = dayMapToIndex[item.day] ?? 0;
-          const startSlot = timeStrToSlot(item.start_time);
-          const endSlot = timeStrToSlot(item.end_time);
-          return {
-            id: item.id.toString(),
-            sectionId,
-            sectionName: item.section?.section_name ?? "",
-            departmentId,
-            departmentName: item.department?.department_name ?? department?.name ?? "",
-            departmentCode: item.department?.department_code ?? department?.code ?? "",
-            subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
-            subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
-            facultyId: item.faculty_id ? item.faculty_id.toString() : "",
-            facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : "Unassigned",
-            roomId: item.room_id ? item.room_id.toString() : "",
-            roomName,
-            day: DAYS_MAP[dayIndex] || "Mon",
-            startTime: slotToTimeStr12h(startSlot),
-            endTime: slotToTimeStr12h(endSlot),
-            mode,
-            meetingType: item.meeting_type ?? null
-          };
-        });
+        const mappedSchedules: Schedule[] = rawSchedules.map(
+          (item) => mapRawSchedule(item, mappedDepts, sectionDepartmentById),
+        );
         setSchedules(mappedSchedules);
+        // The endpoint caps this payload. The aggregate counts above are
+        // unaffected, but the flat list below would silently show part of the
+        // term as all of it, so say so instead.
+        setIsScheduleListTruncated(rawSchedules.length >= INITIAL_DATA_SCHEDULE_LIMIT);
         setCachedData<ScheduleViewerData>(scheduleViewerCacheKey, {
           departments: mappedDepts,
           sections: mappedSections,
@@ -581,6 +566,47 @@ export default function VpaaScheduleViewer() {
     loadData();
   }, [scheduleViewerCacheKey]);
 
+  /**
+   * The bulk payload above is capped, so a section opened from the drill-down
+   * is not guaranteed to have all of its meetings in it. Fetch that one
+   * section's rows directly and merge them in, so the weekly grid always shows
+   * the whole week rather than whichever part of it arrived.
+   */
+  useEffect(() => {
+    if (selectedSectionId === "All") return;
+
+    let cancelled = false;
+
+    const loadSection = async () => {
+      try {
+        const response = await api.get<RawSchedule[]>(`/schedules/section/${selectedSectionId}`);
+        if (cancelled) return;
+
+        const sectionDepartmentById = new Map(sections.map((section) => [section.id, section.departmentId]));
+        const rows = response.data
+          .filter((row) => activeTerm == null || row.term_id == null || Number(row.term_id) === Number(activeTerm.id))
+          .map((row) => mapRawSchedule(row, departments, sectionDepartmentById));
+
+        setSchedules((current) => {
+          const fetchedIds = new Set(rows.map((row) => row.id));
+          const untouched = current.filter(
+            (row) => row.sectionId !== selectedSectionId && !fetchedIds.has(row.id),
+          );
+          return [...untouched, ...rows];
+        });
+      } catch {
+        // The bulk payload already loaded is a usable fallback; failing here
+        // should not blank out a grid the user is looking at.
+      }
+    };
+
+    void loadSection();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSectionId, sections, departments, activeTerm]);
+
   // Dynamic Options filtering based on department selection
   const filteredSections = sections.filter((sec) => {
     if (selectedDeptId === "All") return true;
@@ -592,12 +618,44 @@ export default function VpaaScheduleViewer() {
     return fac.departmentId === selectedDeptId;
   });
 
+  /**
+   * The three levels of the drill-down, as explicit moves rather than something
+   * inferred from whichever filter changed last. The level a filter change used
+   * to imply was set in three different places, which is what made it hard to
+   * tell what the screen would show next.
+   */
+  const openInstitution = () => {
+    setSelectedDeptId("All");
+    setSelectedSectionId("All");
+    setCurrentPage(1);
+    setViewMode("overview");
+  };
+
+  const openDepartment = (departmentId: number | string, focus?: OverviewFocus) => {
+    setSelectedDeptId(String(departmentId));
+    setSelectedSectionId("All");
+    setCurrentPage(1);
+    // A chip carries the reason it was clicked, so the level below opens on
+    // what the user was pointing at instead of everything.
+    setSelectedConflictStatus(focus === "conflicts" ? "Conflict" : "All");
+    setSelectedAssignmentStatus(
+      focus === "missing-faculty" ? "Missing Faculty" : focus === "missing-room" ? "Missing Room" : "All",
+    );
+    setViewMode("sections");
+  };
+
+  const openSection = (sectionId: number | string) => {
+    setSelectedSectionId(String(sectionId));
+    setCurrentPage(1);
+    setViewMode("grid");
+  };
+
   // Handle department change - cascading reset logic
   const handleDepartmentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const deptId = e.target.value;
     setSelectedDeptId(deptId);
     setCurrentPage(1);
-    setViewMode(deptId === "All" ? "overview" : "list");
+    setViewMode(deptId === "All" ? "overview" : "sections");
 
     // Reset section filter if the currently selected section does not belong to the new department
     if (deptId !== "All") {
@@ -629,16 +687,30 @@ export default function VpaaScheduleViewer() {
     setViewMode("overview");
   };
 
-  const { map: conflictMap, conflictPairs } = useMemo(() => buildConflictMap(schedules), [schedules]);
+  const { map: conflictMap } = useMemo(() => buildConflictMap(schedules), [schedules]);
 
-  const hasDepartmentOnlyScope = selectedDeptId !== "All" && selectedSectionId === "All" && selectedFacultyId === "All" && selectedRoomId === "All";
   const hasGridScope = selectedSectionId !== "All" || selectedFacultyId !== "All" || selectedRoomId !== "All";
+  const isFlatView = viewMode === "list" || viewMode === "grid";
 
   useEffect(() => {
     if (viewMode === "grid" && !hasGridScope) {
-      setViewMode(selectedDeptId !== "All" ? "list" : "overview");
+      setViewMode(selectedDeptId !== "All" ? "sections" : "overview");
     }
   }, [hasGridScope, selectedDeptId, viewMode]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (selectedDeptId === "All") next.delete("dept");
+    else next.set("dept", selectedDeptId);
+    if (selectedSectionId === "All") next.delete("section");
+    else next.set("section", selectedSectionId);
+
+    if (next.toString() !== searchParams.toString()) {
+      // Replace rather than push: changing a filter is not a navigation, and
+      // pushing would make Back step through every filter change.
+      setSearchParams(next, { replace: true });
+    }
+  }, [selectedDeptId, selectedSectionId, searchParams, setSearchParams]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -721,32 +793,48 @@ export default function VpaaScheduleViewer() {
   ]);
 
   const overviewStats = useMemo(() => ({
-    schedules: schedules.length,
-    departments: departments.length,
-    sections: sections.length,
-    faculty: faculties.length,
-    rooms: rooms.length,
-    unassignedFaculty: schedules.filter(isUnassignedFaculty).length,
-    unassignedRooms: schedules.filter(isUnassignedRoom).length,
-    conflicts: conflictPairs
-  }), [schedules, departments, sections, faculties, rooms, conflictPairs]);
+    classes: overviewTotals?.classes ?? 0,
+    sectionsScheduled: overviewTotals?.sections_scheduled ?? 0,
+    sectionsTotal: overviewTotals?.sections_total ?? 0,
+    unassignedFaculty: overviewTotals?.unassigned_faculty ?? 0,
+    unassignedRooms: overviewTotals?.unassigned_rooms ?? 0,
+    conflicts: overviewTotals?.conflicts ?? 0,
+  }), [overviewTotals]);
 
-  const departmentSummaries = useMemo<DepartmentSummary[]>(() => departments.map((department) => {
-    const departmentSchedules = schedules.filter((schedule) => schedule.departmentId === department.id);
-    const departmentSections = new Set(departmentSchedules.map((schedule) => schedule.sectionId).filter(Boolean)).size;
-    const departmentFaculty = new Set(departmentSchedules.map((schedule) => schedule.facultyId).filter(Boolean)).size;
-    const departmentRooms = new Set(departmentSchedules.map((schedule) => schedule.roomId).filter(Boolean)).size;
-    const missingAssignments = departmentSchedules.filter((schedule) => isUnassignedFaculty(schedule) || isUnassignedRoom(schedule)).length;
+  const selectedDepartment = useMemo(
+    () => overviewDepartments.find((department) => String(department.department_id) === selectedDeptId),
+    [overviewDepartments, selectedDeptId],
+  );
 
-    return {
-      department,
-      schedules: departmentSchedules.length,
-      sections: departmentSections,
-      faculty: departmentFaculty,
-      rooms: departmentRooms,
-      missingAssignments
-    };
-  }).sort((left, right) => right.schedules - left.schedules), [departments, schedules]);
+  const visibleDepartments = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    if (!search) return overviewDepartments;
+
+    return overviewDepartments.filter((department) => (
+      `${department.code} ${department.name}`.toLowerCase().includes(search)
+    ));
+  }, [overviewDepartments, searchTerm]);
+
+  /**
+   * The section level honours the chip that was clicked to reach it, and the
+   * search box, so arriving from "3 conflicts" shows those three sections
+   * rather than the whole department again.
+   */
+  const visibleSections = useMemo(() => {
+    const all = selectedDepartment?.sections ?? [];
+    const search = searchTerm.trim().toLowerCase();
+
+    return all.filter((section) => {
+      if (selectedConflictStatus === "Conflict" && section.conflicts.total === 0) return false;
+      if (selectedConflictStatus === "No Conflict" && section.conflicts.total > 0) return false;
+      if (selectedAssignmentStatus === "Missing Faculty" && section.unassigned_faculty === 0) return false;
+      if (selectedAssignmentStatus === "Missing Room" && section.unassigned_rooms === 0) return false;
+      if (selectedAssignmentStatus === "Missing Assignment" && section.unassigned_faculty === 0 && section.unassigned_rooms === 0) return false;
+      if (selectedAssignmentStatus === "Complete" && (section.unassigned_faculty > 0 || section.unassigned_rooms > 0)) return false;
+      if (search && !section.code.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }, [selectedDepartment, selectedConflictStatus, selectedAssignmentStatus, searchTerm]);
 
   const sortedSchedules = useMemo(() => {
     const sorted = [...filteredSchedules].sort((left, right) => {
@@ -792,30 +880,6 @@ export default function VpaaScheduleViewer() {
     return Array.from(groups.entries());
   }, [paginatedSchedules, groupKey]);
 
-  const sectionSummaries = useMemo(() => {
-    if (selectedDeptId === "All") return [];
-    return filteredSections.map((section) => {
-      const sectionSchedules = schedules.filter((schedule) => schedule.sectionId === section.id);
-      const conflictCount = sectionSchedules.filter((schedule) => getConflictLabels(conflictMap.get(schedule.id)).length > 0).length;
-      const missingAssignments = sectionSchedules.filter((schedule) => isUnassignedFaculty(schedule) || isUnassignedRoom(schedule)).length;
-      const status = sectionSchedules.length === 0
-        ? "No classes scheduled"
-        : conflictCount > 0
-        ? `${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`
-        : missingAssignments > 0
-        ? `${missingAssignments} class${missingAssignments === 1 ? "" : "es"} missing assignment`
-        : "Fully assigned";
-
-      return {
-        section,
-        schedules: sectionSchedules.length,
-        conflictCount,
-        missingAssignments,
-        status
-      };
-    });
-  }, [filteredSections, schedules, selectedDeptId, conflictMap, searchTerm]);
-
   const activeFilterChips = [
     selectedDeptId !== "All" ? departments.find((dept) => dept.id === selectedDeptId)?.code ?? "Department" : "",
     selectedSectionId !== "All" ? sections.find((section) => section.id === selectedSectionId)?.name ?? "Section" : "",
@@ -860,9 +924,51 @@ export default function VpaaScheduleViewer() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500 font-semibold mt-1">
-              Institution-wide schedule monitoring, conflict detection, and department management dashboard.
-            </p>
+            {/*
+              * The breadcrumb is the level indicator. It replaces having to
+              * read the filter selects to work out how deep the screen is.
+              */}
+            <nav aria-label="Breadcrumb" className="mt-1.5 flex flex-wrap items-center gap-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={openInstitution}
+                disabled={viewMode === "overview"}
+                className={`rounded-lg px-2 py-1 transition-colors ${
+                  viewMode === "overview"
+                    ? "text-[#4e0a10] cursor-default"
+                    : "text-slate-500 hover:bg-white hover:text-[#4e0a10] cursor-pointer"
+                }`}
+              >
+                All Schedules
+              </button>
+
+              {selectedDepartment && (
+                <>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <button
+                    type="button"
+                    onClick={() => openDepartment(selectedDepartment.department_id)}
+                    disabled={viewMode === "sections"}
+                    className={`rounded-lg px-2 py-1 transition-colors ${
+                      viewMode === "sections"
+                        ? "text-[#4e0a10] cursor-default"
+                        : "text-slate-500 hover:bg-white hover:text-[#4e0a10] cursor-pointer"
+                    }`}
+                  >
+                    {selectedDepartment.code}
+                  </button>
+                </>
+              )}
+
+              {selectedSectionId !== "All" && (
+                <>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="rounded-lg px-2 py-1 text-[#4e0a10]">
+                    {sections.find((section) => section.id === selectedSectionId)?.name ?? "Section"}
+                  </span>
+                </>
+              )}
+            </nav>
           </div>
 
           <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/80 shadow-inner w-fit">
@@ -877,7 +983,7 @@ export default function VpaaScheduleViewer() {
                   disabled={isDisabled}
                   onClick={() => !isDisabled && setViewMode(mode)}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
-                    viewMode === mode
+                    viewMode === mode || (mode === "overview" && viewMode === "sections")
                       ? "bg-[#4e0a10] text-[#E8D5C4] shadow-md scale-[1.02]"
                       : isDisabled
                       ? "text-slate-300 cursor-not-allowed opacity-50"
@@ -892,17 +998,24 @@ export default function VpaaScheduleViewer() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr_auto] gap-3 select-none">
+        <div className={`grid gap-3 select-none ${isFlatView ? "grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr_auto]" : "grid-cols-1"}`}>
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input 
               value={searchTerm} 
               onChange={(event) => setSearchTerm(event.target.value)} 
-              placeholder="Search subject, section, faculty, room..." 
+              placeholder={isFlatView ? "Search subject, section, faculty, room..." : "Search departments and sections..."} 
               className="w-full h-11 pl-10 pr-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] focus:ring-1 focus:ring-[#C9952A]/30" 
             />
           </div>
 
+          {/*
+            * Picking a department from a select duplicates clicking its card,
+            * and the rest of these narrow the flat list rather than the cards,
+            * so the drill-down levels keep only the search box.
+            */}
+          {isFlatView && (
+            <>
           <select 
             value={selectedDeptId} 
             onChange={handleDepartmentChange} 
@@ -914,7 +1027,7 @@ export default function VpaaScheduleViewer() {
 
           <select 
             value={selectedSectionId} 
-            onChange={(event) => { setSelectedSectionId(event.target.value); setViewMode(event.target.value === "All" ? (selectedDeptId === "All" ? "overview" : "list") : "grid"); }} 
+            onChange={(event) => { setSelectedSectionId(event.target.value); setViewMode(event.target.value === "All" ? (selectedDeptId === "All" ? "overview" : "sections") : "grid"); }} 
             className="h-11 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] cursor-pointer"
           >
             <option value="All">All Sections</option>
@@ -938,9 +1051,11 @@ export default function VpaaScheduleViewer() {
               </span>
             )}
           </button>
+            </>
+          )}
         </div>
 
-        {isMoreFiltersOpen && (
+        {isFlatView && isMoreFiltersOpen && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3.5 shadow-inner">
             <select 
               value={selectedFacultyId} 
@@ -1001,6 +1116,7 @@ export default function VpaaScheduleViewer() {
           </div>
         )}
         
+        {isFlatView && (
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500">
@@ -1031,33 +1147,49 @@ export default function VpaaScheduleViewer() {
             ))}
           </div>
         </div>
+        )}
       </div>
 
-      {viewMode === "overview" && (
+      {(viewMode === "overview" || viewMode === "sections") && (
         <div className="p-5 space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+          {overviewError && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs font-bold text-amber-800">
+              <span className="inline-flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                {overviewError} The figures below may be out of date.
+              </span>
+              <button
+                type="button"
+                onClick={refreshOverview}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-50 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retry
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             {[
-              { icon: Calendar, label: "Schedules", value: overviewStats.schedules, type: "normal" },
-              { icon: Building2, label: "Departments", value: overviewStats.departments, type: "normal" },
-              { icon: Layers, label: "Sections", value: overviewStats.sections, type: "normal" },
-              { icon: Users, label: "Faculty", value: overviewStats.faculty, type: "normal" },
-              { icon: DoorOpen, label: "Rooms", value: overviewStats.rooms, type: "normal" },
+              { icon: Layers, label: "Scheduled", value: `${overviewStats.sectionsScheduled}/${overviewStats.sectionsTotal}`, type: "normal" },
+              { icon: BookOpen, label: "Classes", value: overviewStats.classes, type: "normal" },
               { icon: User, label: "No Faculty", value: overviewStats.unassignedFaculty, type: "warning" },
               { icon: MapPin, label: "No Room", value: overviewStats.unassignedRooms, type: "warning" },
               { icon: AlertTriangle, label: "Conflicts", value: overviewStats.conflicts, type: "danger" },
             ].map(({ icon: Icon, label, value, type }) => {
+              const isFlagged = typeof value === "number" && value > 0;
               let cardStyles = "bg-white border border-slate-200/80 text-slate-800 hover:border-slate-300";
               let textStyles = "text-[#4e0a10]";
               let iconStyles = "text-[#C9952A]";
               
-              if (type === "warning" && value > 0) {
+              if (type === "warning" && isFlagged) {
                 cardStyles = "bg-amber-50/30 border border-amber-200 text-amber-900 hover:border-amber-300 hover:bg-amber-50/60";
                 textStyles = "text-amber-700";
                 iconStyles = "text-amber-500";
-              } else if (type === "danger" && value > 0) {
+              } else if (type === "danger" && isFlagged) {
                 cardStyles = "bg-rose-50/30 border border-rose-200 text-rose-900 hover:border-rose-300 hover:bg-rose-50/60";
                 textStyles = "text-rose-700";
-                iconStyles = "text-rose-500 animate-bounce";
+                iconStyles = "text-rose-500";
               }
               
               return (
@@ -1069,145 +1201,70 @@ export default function VpaaScheduleViewer() {
                     <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
                     <Icon className={`w-4 h-4 ${iconStyles}`} />
                   </div>
-                  <p className={`text-2xl font-black leading-tight mt-2 ${textStyles}`}>{value}</p>
+                  {isOverviewLoading && !overviewTotals ? (
+                    <Skeleton className="h-7 w-12 mt-2 rounded-lg" />
+                  ) : (
+                    <p className={`text-2xl font-black leading-tight mt-2 ${textStyles}`}>{value}</p>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          <div className="rounded-2xl border border-slate-200/85 bg-white overflow-hidden shadow-sm">
-            <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-800">Department Summaries</h3>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Monitoring Overview</span>
+          {viewMode === "overview" ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">Departments</h3>
+                  <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                    Sorted so departments needing attention come first. Open one, or jump straight to what it flags.
+                  </p>
+                </div>
+              </div>
+              <DepartmentOverviewCards
+                departments={visibleDepartments}
+                isLoading={isOverviewLoading && overviewDepartments.length === 0}
+                onOpen={openDepartment}
+              />
             </div>
-            {isLoading ? (
-              <div className="p-4 space-y-2">
-                {[0, 1, 2].map((item) => (
-                  <Skeleton key={item} className="h-14 w-full rounded-xl" />
-                ))}
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">
+                    {selectedDepartment ? `${selectedDepartment.code} sections` : "Sections"}
+                  </h3>
+                  <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                    Open a section to see its weekly timetable.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+                  {selectedDepartment?.sections.length ?? 0} section{(selectedDepartment?.sections.length ?? 0) === 1 ? "" : "s"}
+                </span>
               </div>
-            ) : departmentSummaries.length === 0 ? (
-              <div className="p-8 text-center text-sm text-slate-400 italic">No department schedules found.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-xs font-sans">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/50 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                      <th className="px-5 py-3">Department</th>
-                      <th className="px-4 py-3 text-center">Schedules</th>
-                      <th className="px-4 py-3 text-center">Sections</th>
-                      <th className="px-4 py-3 text-center">Faculty</th>
-                      <th className="px-4 py-3 text-center">Rooms</th>
-                      <th className="px-4 py-3 text-center">Missing</th>
-                      <th className="px-5 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
-                    {departmentSummaries.map((summary) => (
-                      <tr key={summary.department.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-5 py-3.5 font-sans">
-                          <p className="font-extrabold text-[#4e0a10] text-sm">
-                            {summary.department.code}
-                          </p>
-                          <p className="text-slate-400 text-[11px] font-semibold truncate max-w-xs md:max-w-md">
-                            {summary.department.name}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3.5 text-center font-bold text-slate-800">
-                          {summary.schedules}
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {summary.sections}
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {summary.faculty}
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {summary.rooms}
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {summary.missingAssignments > 0 ? (
-                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">
-                              {summary.missingAssignments}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-semibold">-</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedDeptId(summary.department.id);
-                              setViewMode("list");
-                            }}
-                            className="inline-flex items-center justify-center rounded-xl bg-[#4e0a10] hover:bg-[#C9952A] text-white px-3.5 py-1.5 text-xs font-bold shadow-sm transition-all duration-150 cursor-pointer"
-                          >
-                            Review
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+              <SectionOverviewCards
+                sections={visibleSections}
+                isLoading={isOverviewLoading && !selectedDepartment}
+                onOpen={openSection}
+              />
+            </div>
+          )}
         </div>
       )}
 
       {viewMode === "list" && (
         <div className="p-5 space-y-4 font-sans">
-          {hasDepartmentOnlyScope ? (
-            <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-sm">
-              <div className="bg-slate-50/80 px-5 py-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-extrabold text-[#4e0a10] tracking-tight">Section Timetables</h3>
-                  <p className="text-xs font-semibold text-slate-400 mt-0.5">Choose a class section below to view its complete weekly schedule grid.</p>
-                </div>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                  {sectionSummaries.length} section{sectionSummaries.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              {isLoading ? (
-                <div className="p-4 space-y-2">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div>
-              ) : sectionSummaries.length === 0 ? (
-                <div className="p-10 text-center text-sm text-slate-400 italic">This department has no section schedules.</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {sectionSummaries.map((summary) => {
-                    let badgeClass = "bg-slate-100 text-slate-600 border-slate-200";
-                    if (summary.status === "Fully assigned") badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
-                    else if (summary.status.includes("missing")) badgeClass = "bg-amber-50 text-amber-700 border-amber-100";
-                    else if (summary.status.includes("conflict")) badgeClass = "bg-rose-50 text-rose-700 border-rose-100";
-                    
-                    return (
-                      <div key={summary.section.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_1.2fr_auto] gap-3 px-5 py-4 text-sm items-center hover:bg-slate-50/40 transition-colors">
-                        <div>
-                          <p className="font-extrabold text-slate-800 text-base">{summary.section.name}</p>
-                        </div>
-                        <p className="font-semibold text-slate-500">{summary.schedules} class{summary.schedules === 1 ? "" : "es"}</p>
-                        <div>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeClass}`}>
-                            {summary.status}
-                          </span>
-                        </div>
-                        <button 
-                          type="button" 
-                          disabled={summary.schedules === 0} 
-                          onClick={() => { setSelectedSectionId(summary.section.id); setViewMode("grid"); }} 
-                          className="h-9 px-4 rounded-xl bg-[#4e0a10] hover:bg-[#C9952A] text-xs font-bold text-white shadow-sm transition-all duration-150 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-                        >
-                          View timetable
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+          {isScheduleListTruncated && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs font-bold text-amber-800">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <p>
+                This list shows the {INITIAL_DATA_SCHEDULE_LIMIT.toLocaleString()} most recent meetings of the term, not all of
+                them. Narrow it with a department, section or search to be sure you are seeing everything.
+                The counts above cover the whole term.
+              </p>
             </div>
-          ) : (
-            <>
+          )}
+          <>
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <select 
@@ -1355,7 +1412,6 @@ export default function VpaaScheduleViewer() {
                 </button>
               </div>
             </>
-          )}
         </div>
       )}
       {viewMode === "grid" && (
@@ -1516,7 +1572,7 @@ export default function VpaaScheduleViewer() {
                   <div key={label} className="flex gap-2.5 items-start">
                     <Icon className="w-4 h-4 text-[#C9952A] mt-0.5 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
                       <p className="font-bold text-slate-700 text-[11px] leading-tight mt-0.5 break-words">{value}</p>
                     </div>
                   </div>

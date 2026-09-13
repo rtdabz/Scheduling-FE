@@ -1,12 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  Filter,
-  Loader2,
-  RefreshCw,
-  Save,
-  X,
-} from "lucide-react";
+import { CheckCircle2, Filter, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
 
@@ -41,28 +34,19 @@ const ALL = "all";
  *
  * A year level produces several hundred rows, so the table is the primary
  * view: a scheduler checks one section, one day, or one course at a time
- * before committing the result.
+ * before committing the result. Save and Generate again live in the wizard
+ * footer, so the table keeps the full height of the step.
  */
 export default function ScheduleSummaryStep({
   preview,
   sections,
   courses,
   roomCodeById,
-  applying,
-  canApply,
-  onApply,
-  onGenerateAgain,
-  generating,
 }: {
   preview: ApiScheduleRecord[];
   sections: Section[];
   courses: Course[];
   roomCodeById: Map<string, string>;
-  applying: boolean;
-  canApply: boolean;
-  onApply: () => void;
-  onGenerateAgain: () => void;
-  generating: boolean;
 }) {
   const [sectionFilter, setSectionFilter] = useState(ALL);
   const [dayFilter, setDayFilter] = useState(ALL);
@@ -159,40 +143,12 @@ export default function ScheduleSummaryStep({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <section className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="flex items-center gap-2 text-sm font-black text-emerald-900">
-            <CheckCircle2 className="h-4 w-4" />
-            {rows.length} class meetings generated across {sections.length}{" "}
-            section{sections.length === 1 ? "" : "s"}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onGenerateAgain}
-              disabled={generating || applying}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Generate again
-            </button>
-            <button
-              type="button"
-              onClick={onApply}
-              disabled={applying || generating || !canApply}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {applying ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="h-3.5 w-3.5" /> Save &amp; View Timetable
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+      <section className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+        <p className="flex items-center gap-2 text-sm font-black text-emerald-900">
+          <CheckCircle2 className="h-4 w-4" />
+          {rows.length} class meetings generated across {sections.length}{" "}
+          section{sections.length === 1 ? "" : "s"}
+        </p>
       </section>
 
       <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
@@ -246,7 +202,7 @@ export default function ScheduleSummaryStep({
         </div>
       </section>
 
-      <div className="min-h-0 max-h-[55vh] flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[720px] border-collapse text-left">
           <thead className="sticky top-0 z-10 bg-slate-50">
             <tr>

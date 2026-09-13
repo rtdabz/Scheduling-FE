@@ -521,7 +521,7 @@ export default function CourseTeachingAssignments() {
                 Courses from another department's curriculum that your department teaches. They are not in the list above — that list is your own curriculum.
               </p>
             </div>
-            <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">{incoming.length}</span>
+            <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">{incoming.length}</span>
           </div>
           <div className="overflow-x-auto">
             <div className="grid min-w-[760px] grid-cols-[minmax(200px,1.3fr)_minmax(170px,1fr)_100px_80px_minmax(180px,1fr)] bg-[#4e0a10] px-4 py-3 text-[10px] font-black uppercase text-white">

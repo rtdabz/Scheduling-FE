@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Course } from "./types";
 import {
+  isBalancedSplitSchedulingEligible,
   isConfiguredFieldCourse,
   isHybridSchedulingEligible,
 } from "./schedulingConfigurationEligibility";
@@ -36,5 +37,56 @@ describe("scheduling configuration eligibility", () => {
         true,
       ),
     ).toBe(false);
+  });
+
+  describe("balanced split eligibility", () => {
+    const minorCourse: Course = {
+      ...fieldCapableCourse,
+      category: "minor",
+      lectureHours: 3,
+      labHours: 0,
+      units: 3,
+    };
+    const lectureOnlyMajor: Course = { ...minorCourse, category: "major" };
+    const labMajor: Course = { ...lectureOnlyMajor, labHours: 1, units: 4 };
+
+    it("offers a minor split only under the minor setting", () => {
+      expect(
+        isBalancedSplitSchedulingEligible(minorCourse, {
+          minorEnabled: true,
+          majorLectureEnabled: false,
+        }),
+      ).toBe(true);
+      expect(
+        isBalancedSplitSchedulingEligible(minorCourse, {
+          minorEnabled: false,
+          majorLectureEnabled: true,
+        }),
+      ).toBe(false);
+    });
+
+    it("offers a lecture-only major split only under the major setting", () => {
+      expect(
+        isBalancedSplitSchedulingEligible(lectureOnlyMajor, {
+          minorEnabled: false,
+          majorLectureEnabled: true,
+        }),
+      ).toBe(true);
+      expect(
+        isBalancedSplitSchedulingEligible(lectureOnlyMajor, {
+          minorEnabled: true,
+          majorLectureEnabled: false,
+        }),
+      ).toBe(false);
+    });
+
+    it("never offers a split for a major carrying laboratory units", () => {
+      expect(
+        isBalancedSplitSchedulingEligible(labMajor, {
+          minorEnabled: true,
+          majorLectureEnabled: true,
+        }),
+      ).toBe(false);
+    });
   });
 });

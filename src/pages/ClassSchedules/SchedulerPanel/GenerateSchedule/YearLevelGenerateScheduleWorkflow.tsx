@@ -2,11 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Compass,
   HelpCircle,
+  Loader2,
+  RefreshCw,
+  Save,
+  Sparkles,
   X,
 } from "lucide-react";
 import api from "../../../../lib/api";
 import { useToast } from "../../../../context/ToastContext";
+import {
+  useWorkflowGuide,
+  type WorkflowGuideStep,
+} from "../../../../hooks/useWorkflowGuide";
 import { mapApiCourse } from "../hooks/initialDataMapper";
 import type {
   ApiCourseRecord,
@@ -35,6 +44,8 @@ import {
   YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE,
 } from "./yearLevelGenerationEligibility";
 import {
+  balancedSplitSettingsOf,
+  isBalancedSplitSchedulingEligible,
   isConfiguredFieldCourse,
   isHybridSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
@@ -80,6 +91,7 @@ type SettingsResponse = {
   field_course_options?: ConstraintCourse[];
   field_course_codes?: string[];
   gec_split_schedule_override_enabled?: boolean;
+  major_lecture_split_schedule_override_enabled?: boolean;
   lecture_lab_schedule_override_enabled?: boolean;
 };
 
@@ -180,6 +192,14 @@ export default function YearLevelGenerateScheduleWorkflow({
   const [setupDraft, setSetupDraft] = useState<SetupDraft>(defaultSetupDraft);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
+  // The wizard is a modal: it hosts its own mission so the Schedule
+  // Builder tour underneath never narrates controls the dialog covers.
+  useWorkflowGuide({
+    id: "schedule-generator",
+    isReady: !loadingSettings,
+    steps: generatorGuideSteps,
+    mission: "Generate a Schedule",
+  });
   const [applying, setApplying] = useState(false);
   const [rooms, setRooms] = useState<ApiRoomRecord[]>([]);
   // The run itself is owned above this modal, so closing the wizard mid-run
@@ -499,17 +519,29 @@ export default function YearLevelGenerateScheduleWorkflow({
   }, [scopedCourses, scopedSections]);
 
   useEffect(() => {
-    if (settings?.gec_split_schedule_override_enabled !== false) return;
+    if (!settings) return;
 
+    // Pruned per course rather than cleared wholesale: two department settings
+    // now feed this one list -- minor splits and lecture-only major splits --
+    // so turning one off must not discard the other's selections.
+    const splitSettings = balancedSplitSettingsOf(settings);
     setConfigs((current) =>
       Object.fromEntries(
         Object.entries(current).map(([sectionId, config]) => [
           sectionId,
-          { ...config, gecSplitCourseIds: [] },
+          {
+            ...config,
+            gecSplitCourseIds: config.gecSplitCourseIds.filter((courseId) =>
+              isBalancedSplitSchedulingEligible(
+                scopedCourses.find((item) => item.id === courseId),
+                splitSettings,
+              ),
+            ),
+          },
         ]),
       ),
     );
-  }, [settings?.gec_split_schedule_override_enabled]);
+  }, [scopedCourses, settings]);
 
   useEffect(() => {
     if (!settings) return;
@@ -709,14 +741,16 @@ export default function YearLevelGenerateScheduleWorkflow({
                   !forcedDaysByCourseId.has(Number(courseId)),
               )
               .map(Number),
-            selected_gec_course_ids:
-              settings?.gec_split_schedule_override_enabled
-                ? config.gecSplitCourseIds
-                    .filter(
-                      (courseId) => !forcedDaysByCourseId.has(Number(courseId)),
-                    )
-                    .map(Number)
-                : [],
+            selected_gec_course_ids: config.gecSplitCourseIds
+              .filter(
+                (courseId) =>
+                  !forcedDaysByCourseId.has(Number(courseId)) &&
+                  isBalancedSplitSchedulingEligible(
+                    scopedCourses.find((item) => item.id === courseId),
+                    balancedSplitSettingsOf(settings),
+                  ),
+              )
+              .map(Number),
             preferred_patterns: Object.fromEntries(
               config.gecSplitCourseIds
                 .filter((id) => !forcedDaysByCourseId.has(Number(id)))
@@ -797,6 +831,13 @@ export default function YearLevelGenerateScheduleWorkflow({
 
   const apply = async () => {
     setApplying(true);
+    // The generator closes on the click rather than when the save resolves.
+    // Refreshing the timetable behind it raises its own loading overlay, and
+    // holding the wizard open stacked a second dialog on top of it. Nothing
+    // is lost by leaving early: a failure is reported by toast, and the error
+    // path clears neither the run nor the saved draft, so reopening the
+    // generator comes back to this same result.
+    onClose();
     try {
       const replaceableStatuses = new Set(["draft", "completed", "revision"]);
       const sectionIds = new Set(
@@ -855,7 +896,6 @@ export default function YearLevelGenerateScheduleWorkflow({
           "The timetable was saved, but the local timetable could not refresh automatically.",
         );
       }
-      onClose();
     } catch (error: unknown) {
       const apiError = error as {
         message?: string;
@@ -960,6 +1000,19 @@ export default function YearLevelGenerateScheduleWorkflow({
         />
         <button
           type="button"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("restart-workflow-guide:schedule-generator"),
+            )
+          }
+          aria-label="Replay the guided tutorial"
+          title="Replay the guided tutorial"
+          className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+        >
+          <Compass className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
           onClick={onClose}
           aria-label="Close schedule generator"
           className="rounded-lg bg-white/10 p-2 text-white transition hover:bg-white/20"
@@ -970,13 +1023,14 @@ export default function YearLevelGenerateScheduleWorkflow({
 
       <div className="shrink-0 bg-white px-3 py-2.5 sm:px-4">
         <WizardProgressStepper
+          id="generator-progress"
           currentStep={step}
           steps={wizardSteps}
           ariaLabel="Schedule generator steps"
         />
       </div>
 
-      <main className="min-h-0 flex-1 overflow-y-auto bg-parchment p-3 sm:p-4">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-parchment p-3 sm:p-4">
         <div className="mx-auto flex min-h-0 w-full flex-1 flex-col gap-3">
           {appliedNotice && (
             <AppliedAdjustmentNotice
@@ -997,6 +1051,7 @@ export default function YearLevelGenerateScheduleWorkflow({
           ) : (
             <div
               key={step}
+              id="generator-step-panel"
               className={`flex min-h-0 flex-1 flex-col ${
                 stepDirection === "back"
                   ? "motion-safe:animate-stepInLeft"
@@ -1061,9 +1116,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   fieldCourseCodes={settings?.field_course_codes ?? []}
                   activeRules={activeRules}
                   generating={generating}
-                  canGenerate={generationBlockedReason === null}
                   blockedReason={generationBlockedReason}
-                  onGenerate={() => void generate()}
                 />
               )}
 
@@ -1073,11 +1126,6 @@ export default function YearLevelGenerateScheduleWorkflow({
                   sections={scopedSections}
                   courses={scopedCourses}
                   roomCodeById={roomCodeById}
-                  applying={applying}
-                  canApply={preview.length > 0}
-                  onApply={apply}
-                  onGenerateAgain={() => void generate()}
-                  generating={generating}
                 />
               )}
             </div>
@@ -1086,20 +1134,41 @@ export default function YearLevelGenerateScheduleWorkflow({
       </main>
 
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
-        <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">
-          {helpText[step]}
+        <p
+          className={`min-w-0 flex-1 truncate text-xs font-semibold ${
+            !generating && step === 3 && generationBlockedReason
+              ? "text-rose-700"
+              : "text-slate-500"
+          }`}
+        >
+          {generating
+            ? "Cancel stops this run: the worker halts at its next checkpoint and returns you to the summary. Nothing is saved."
+            : step === 3 && generationBlockedReason
+              ? generationBlockedReason
+              : helpText[step]}
         </p>
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            disabled={step === 1 || generating || applying}
-            onClick={() => goToStep((step - 1) as Step)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
+          {generating ? (
+            <button
+              type="button"
+              onClick={() => void run.cancel()}
+              className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-50"
+            >
+              <X className="h-4 w-4" /> Cancel
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={step === 1 || applying}
+              onClick={() => goToStep((step - 1) as Step)}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+          )}
           {step < 3 && (
             <button
+              id="generator-continue"
               type="button"
               disabled={!canContinue}
               onClick={() => goToStep((step + 1) as Step)}
@@ -1108,16 +1177,231 @@ export default function YearLevelGenerateScheduleWorkflow({
               Continue <ArrowRight className="h-4 w-4" />
             </button>
           )}
+          {step === 3 && (
+            <button
+              id="generator-generate"
+              type="button"
+              onClick={() => void generate()}
+              disabled={generating || generationBlockedReason !== null}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating schedule...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Generate
+                </>
+              )}
+            </button>
+          )}
+          {step === 4 && (
+            <>
+              <button
+                type="button"
+                onClick={() => void generate()}
+                disabled={generating || applying}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw className="h-4 w-4" /> Generate again
+              </button>
+              <button
+                id="generator-save"
+                type="button"
+                onClick={apply}
+                disabled={applying || generating || preview.length === 0}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {applying ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" /> Save &amp; View Timetable
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </footer>
     </div>
   );
 }
 
+/**
+ * Guided mission for the generator wizard.
+ *
+ * The wizard opens as a modal over the Schedule Builder, so the builder's own
+ * tour cannot narrate it: the engine hides any step whose target a dialog
+ * covers, and this mission takes over from inside. Action steps advance only
+ * when the user really performs them; `complete` steps are read-and-continue.
+ *
+ * Steps that must wait for a control to become usable target
+ * `:not([disabled])` so the spotlight lands on a button the user can press
+ * rather than a greyed-out one.
+ */
+const generatorGuideSteps: WorkflowGuideStep[] = [
+  {
+    id: "overview",
+    element: "#generator-progress",
+    title: "Four steps to a schedule",
+    description:
+      "Configuration, Setup Courses, Review, then Summary. Nothing is saved until the last step, so you can explore freely.",
+    side: "bottom",
+  },
+  {
+    id: "year-level",
+    element: "#generator-year-level",
+    title: "Check the year level",
+    description:
+      "Everything below is scoped to this year level. The section and course counts underneath update with it.",
+    side: "bottom",
+  },
+  {
+    id: "curriculum",
+    element: "#generator-curriculum-select",
+    action: "select",
+    taskHint: "Choose a curriculum to continue.",
+    title: "Pick the curriculum",
+    description:
+      "Every section of this year level must share one curriculum — it decides which courses get scheduled.",
+    side: "bottom",
+  },
+  {
+    id: "apply-curriculum",
+    element: "#generator-apply-curriculum:not([disabled])",
+    action: "click",
+    // Already applied? The button stays disabled, the target never matches,
+    // and the step is skipped instead of stalling the mission.
+    skipIfMissing: true,
+    waitTimeoutMs: 2500,
+    taskHint: "Click Apply to year level to continue.",
+    title: "Apply it to every section",
+    description:
+      "This writes the curriculum onto each section in scope. Skip it if the button is greyed out — that means it is already applied.",
+    side: "bottom",
+    align: "end",
+  },
+  {
+    id: "rules",
+    element: "#generator-rules",
+    title: "Set the scheduling rules",
+    description:
+      "Four optional rule boards. Leave them all empty and the solver is free to place anything anywhere — each one you use narrows its choices. The next four steps walk through them.",
+    side: "top",
+  },
+  {
+    id: "rule-forced-day",
+    element: "#generator-column-forced-day",
+    title: "Forced Day",
+    description:
+      "Pins a course to one weekday. Click the course, then pick its day. Use it for courses that must share a day with something outside this schedule — the counter in the header shows how many are pinned.",
+    side: "top",
+    align: "start",
+  },
+  {
+    id: "rule-field",
+    element: "#generator-column-field",
+    title: "Field Courses",
+    description:
+      "Marks courses delivered off-campus, so the solver does not spend a room on them. Needs Field Course Assignment enabled in Settings; the column says so when it is off.",
+    side: "top",
+    align: "start",
+  },
+  {
+    id: "rule-split",
+    element: "#generator-column-split",
+    title: "Allowed Split",
+    description:
+      "Lets a minor course meet twice in the week instead of once. Only split-eligible minor courses are listed, and only when Minor Course Split Sessions is enabled in Settings.",
+    side: "top",
+    align: "end",
+  },
+  {
+    id: "rule-periods",
+    element: "#generator-column-periods",
+    title: "Preferred Meetings",
+    description:
+      "Keeps a section inside the morning, afternoon, or evening. Click a period to set it, click it again to clear it back to any time within operating hours. This one is per section, not per course.",
+    side: "top",
+    align: "end",
+  },
+  {
+    id: "to-setup",
+    element: "#generator-continue:not([disabled])",
+    action: "click",
+    taskHint: "Click Continue to move to Setup Courses.",
+    title: "Continue to Setup Courses",
+    description:
+      "Continue stays greyed out until this year level has a curriculum and courses to schedule.",
+    side: "top",
+    align: "end",
+  },
+  {
+    id: "setup-courses",
+    // Anchored to the column headers, not the whole panel: a tooltip centered
+    // over a full-height table hides the rows the step is describing.
+    element: "#generator-setup-head",
+    waitFor: "#generator-setup-head",
+    title: "Tune each course",
+    description:
+      "One row per course. Hybrid switches delivery between face-to-face and online, Split lets the course meet twice, and Configure sets the meeting period it prefers.",
+    side: "bottom",
+    align: "start",
+  },
+  {
+    id: "to-review",
+    element: "#generator-continue:not([disabled])",
+    action: "click",
+    taskHint: "Click Continue to move to Review.",
+    title: "Continue to Review",
+    description: "Setup is per course; the next step shows everything together before anything runs.",
+    side: "top",
+    align: "end",
+  },
+  {
+    id: "review",
+    element: "#generator-step-panel",
+    title: "Check every selection",
+    description:
+      "This is the last look before the solver runs: sections in scope, the courses it will place, and the rules it must respect. Still nothing saved.",
+    side: "center",
+  },
+  {
+    id: "generate",
+    element: "#generator-generate:not([disabled])",
+    action: "click",
+    taskHint: "Click Generate to run the solver.",
+    title: "Generate the schedule",
+    description:
+      "The run is queued on the server, so progress keeps going even if you close this window. A blocked run comes back with recommended adjustments instead of a timetable.",
+    side: "top",
+    align: "end",
+  },
+  {
+    id: "save",
+    element: "#generator-save",
+    // Generation is queued work: give it room, and end the mission cleanly if
+    // the run is still going (or came back blocked) rather than hanging on.
+    waitTimeoutMs: 300000,
+    skipIfMissing: true,
+    title: "Save it as drafts",
+    description:
+      "Review the generated meetings, then save. They land as draft schedules you can still edit in the builder — that is the whole flow.",
+    side: "top",
+    align: "end",
+  },
+];
+
 const helpText: Record<Step, string> = {
   1: "Pick the year level and curriculum, then set the forced-day, field and split rules.",
   2: "Turn hybrid and split sessions on per course, and set preferred meeting times.",
-  3: "Check every selection, then generate the year level's timetable.",
+  3: "Check every selection, then generate. Nothing is saved until you apply the result.",
   4: "Review the generated timetable, then save it as draft schedules.",
 };
 

@@ -2,6 +2,7 @@ import { createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { EVENTS, Joyride, type EventData, type Step } from "react-joyride";
 import { getStoredUser } from "../lib/storedUser";
+import type { TaskGuideOutcome } from "../onboarding/taskGuide";
 import "../styles/onboarding.css";
 import {
   announceJoyrideStart,
@@ -16,7 +17,8 @@ export interface WorkflowGuideStep {
   element: string;
   title: string;
   description: string;
-  side?: "top" | "right" | "bottom" | "left";
+  /** `"center"` renders an unanchored, centered tooltip — see TaskGuideStep. */
+  side?: "top" | "right" | "bottom" | "left" | "center";
   align?: "start" | "center" | "end";
   /**
    * Optional task-mode fields. When any step sets an `action` other than
@@ -28,8 +30,19 @@ export interface WorkflowGuideStep {
   action?: TourAction;
   taskHint?: string;
   waitFor?: string;
+  /**
+   * How long to wait for this step's target before giving up (default 12s).
+   * Raise it for a step that follows genuinely slow work, such as a queued
+   * generation run.
+   */
+  waitTimeoutMs?: number;
   skipIfMissing?: boolean;
   validate?: (element: Element) => boolean;
+  /**
+   * Selector of a collapsed parent (sidebar group, accordion, tab) to click
+   * once when `element` is not in the DOM yet.
+   */
+  reveal?: string;
 }
 
 interface UseWorkflowGuideOptions {
@@ -40,10 +53,13 @@ interface UseWorkflowGuideOptions {
   mission?: string;
 }
 
-const placement = (side: WorkflowGuideStep["side"], align: WorkflowGuideStep["align"]): "top" | "top-start" | "top-end" | "right" | "right-start" | "right-end" | "bottom" | "bottom-start" | "bottom-end" | "left" | "left-start" | "left-end" => {
+type Placement = "center" | "top" | "top-start" | "top-end" | "right" | "right-start" | "right-end" | "bottom" | "bottom-start" | "bottom-end" | "left" | "left-start" | "left-end";
+
+const placement = (side: WorkflowGuideStep["side"], align: WorkflowGuideStep["align"]): Placement => {
   const resolvedSide = side ?? "bottom";
+  if (resolvedSide === "center") return "center";
   if (!align || align === "center") return resolvedSide;
-  return (resolvedSide + "-" + align) as ReturnType<typeof placement>;
+  return (resolvedSide + "-" + align) as Placement;
 };
 
 const cleanTitle = (title: string): string => title.replace(/^\s*\d+\s*[.)-]?\s*/, "");
@@ -115,25 +131,43 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
         text: step.description,
         taskHint: step.taskHint,
         waitFor: step.waitFor ?? step.element,
+        waitTimeoutMs: step.waitTimeoutMs,
+        reveal: step.reveal,
         validate: step.validate,
         skipIfMissing: step.skipIfMissing,
         side: step.side,
         align: step.align,
       }));
 
-      const startTaskTour = () => {
+      // Nonce forces a fresh TaskGuideRunner on every restart: the runner
+      // keeps step/progress state internally, so re-rendering the same
+      // element would resume a finished mission instead of replaying it.
+      let runNonce = 0;
+
+      const renderTaskTour = () => {
         if (!mounted || !root) return;
+        runNonce += 1;
         root.render(createElement(TaskGuideRunner, {
+          key: "run-" + runNonce,
           tourId,
           mission: mission ?? "Guided tutorial",
           steps: taskSteps,
-          onFinish: () => {
-            try {
-              localStorage.setItem(completionKey, "true");
-            } catch {
-              // Non-persistent environments still finish the tour in-memory.
+          onFinish: (outcome: TaskGuideOutcome) => {
+            // An abort is the tour's own failure (target never mounted, a
+            // dialog closed under it), not a decision by the user: leave it
+            // unmarked so the next visit still offers the mission.
+            if (outcome !== "aborted") {
+              try {
+                localStorage.setItem(completionKey, "true");
+              } catch {
+                // Non-persistent environments still finish the tour in-memory.
+              }
             }
-            teardown();
+            // Unmount the runner but keep this root alive: tearing it down
+            // here left the help button with nothing to render into, so
+            // restart silently did nothing after the first run.
+            if (mounted && root) root.render(null);
+            else teardown();
           },
         }));
       };
@@ -142,7 +176,7 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
         if (frameId !== null) window.cancelAnimationFrame(frameId);
         frameId = window.requestAnimationFrame(() => {
           frameId = null;
-          startTaskTour();
+          renderTaskTour();
         });
       };
 

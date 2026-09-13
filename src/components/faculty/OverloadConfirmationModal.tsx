@@ -33,8 +33,8 @@ export default function OverloadConfirmationModal({
 }: OverloadConfirmationModalProps) {
   return createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-      <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-5 border-b border-gray-200 flex items-start gap-3 bg-amber-50/60">
+      <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+        <div className="p-5 border-b border-gray-200 flex shrink-0 items-start gap-3 bg-amber-50/60">
           <span className="mt-0.5 shrink-0 w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
             <AlertTriangle size={18} />
           </span>
@@ -46,7 +46,7 @@ export default function OverloadConfirmationModal({
           </div>
         </div>
 
-        <div className="p-5 space-y-3 max-h-[55vh] overflow-y-auto">
+        <div className="p-5 space-y-3 min-h-0 flex-1 overflow-y-auto">
           {confirmation.instructors.map(projection => (
             <div
               key={`${projection.faculty_id}-${projection.assignment_label ?? ''}`}

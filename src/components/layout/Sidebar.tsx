@@ -4,7 +4,7 @@ import Skeleton from '../ui/Skeleton';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
 import campusBg from '../../assets/campus-bg.jpg';
-import { ChevronDown, ChevronUp, Lock, X } from 'lucide-react';
+import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 
@@ -263,14 +263,17 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                         {isOpen && (
                           <div className="flex items-center gap-1.5">
                             {item.isLocked && <Lock size={12} className="text-[#E8D5C4]/50 shrink-0" />}
-                            {expanded ? <ChevronUp size={16} className="text-[#E8D5C4]/60" /> : <ChevronDown size={16} className="text-[#E8D5C4]/60" />}
+                            <ChevronDown
+                              size={16}
+                              className={`text-[#E8D5C4]/60 transition-transform duration-200 ${expanded ? '-rotate-180' : 'rotate-0'}`}
+                            />
                           </div>
                         )}
                       </button>
 
                       {expanded && isOpen && (
                         <div className="mt-1 flex flex-col gap-1">
-                          {item.children.map((child) => {
+                          {item.children.map((child, childIdx) => {
                             const isChildPathActive = Boolean(
                               child.path
                               && (location.pathname === child.path || location.pathname.startsWith(`${child.path}/`))
@@ -280,7 +283,9 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                 key={child.path}
                                 to={child.isLocked ? '#' : child.path || ''}
                                 id={child.id}
+                                style={{ animationDelay: `${childIdx * 45}ms` }}
                                 className={`
+                                  sidebar-submenu-item
                                   flex items-center h-9 rounded-lg pl-8 pr-3 gap-2.5
                                   transition-all duration-200
                                   ${isChildPathActive ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}

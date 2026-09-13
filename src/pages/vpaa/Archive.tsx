@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { clearDataCache } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
+import Skeleton from '../../components/ui/Skeleton';
 
 interface ArchivedRecord {
   id: number;
@@ -27,7 +28,7 @@ const typeLabels: Record<string, string> = {
 };
 
 export default function Archive() {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const [records, setRecords] = useState<ArchivedRecord[]>([]);
   const [search, setSearch] = useState('');
   const [type, setType] = useState('all');
@@ -68,6 +69,15 @@ export default function Archive() {
   }, [records, search, type]);
 
   const restore = async (record: ArchivedRecord) => {
+    const confirmed = await confirm({
+      title: 'Restore Record',
+      message: `${record.label} will be returned to the active lists and become usable again across the system.`,
+      eyebrow: 'Confirmation Required',
+      confirmLabel: 'Confirm Restore',
+      variant: 'maroon',
+    });
+    if (!confirmed) return;
+
     const key = `${record.type}:${record.id}`;
     setRestoringKey(key);
     try {
@@ -83,7 +93,7 @@ export default function Archive() {
   };
 
   return (
-    <div id="archive-page" className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div id="archive-page" className="mx-auto w-full max-w-7xl">
       <div className="mb-6 flex flex-col gap-4 border-b border-gray-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2 text-[#5A1220]">
@@ -116,7 +126,28 @@ export default function Archive() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-gray-500">Loading archived records...</div>
+        <div className="overflow-x-auto border border-gray-200 bg-white" aria-busy="true" aria-label="Loading archived records">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50 text-left text-xs font-bold uppercase text-gray-500">
+              <tr>
+                <th className="px-4 py-3">Record</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Archived</th>
+                <th className="w-24 px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <tr key={`archive-skeleton-${index}`}>
+                  <td className="px-4 py-3"><Skeleton className="h-4 w-56" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-4 w-40" /></td>
+                  <td className="px-4 py-3"><Skeleton className="ml-auto h-9 w-9 rounded-md" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : error ? (
         <div className="border-l-4 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}

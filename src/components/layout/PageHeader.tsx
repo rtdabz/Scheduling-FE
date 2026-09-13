@@ -31,23 +31,6 @@ const humanizePath = (pathname: string): string[] => pathname
   .filter((segment) => !/^\d+$/.test(segment))
   .map((segment) => segment.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()));
 
-const descriptions: Record<string, string> = {
-  Dashboard: 'Review scheduling activity, progress, and the next actions for your role.',
-  Schedules: 'Review section timetables and academic schedules for the active term.',
-  'Schedule Approval': 'Review submitted schedules and continue the approval workflow.',
-  'Schedule Builder': 'Plot classes, resolve conflicts, and prepare the schedule for submission.',
-  'Schedule Generator': 'Configure, review, and generate a conflict-checked draft schedule.',
-  'Course List': 'Review and maintain the courses available to the department.',
-  Curriculum: 'Manage academic curriculum, course structures, and active program frameworks.',
-  Sections: 'Manage sections and prepare them for schedule creation.',
-  Instructors: 'Review faculty records, availability, and teaching assignments.',
-  Faculty: 'Review faculty records, availability, and workload information.',
-  Rooms: 'Review available rooms and their scheduling assignments.',
-  Reports: 'Review scheduling reports and institutional activity.',
-  'Schedule History': 'Review previous schedule changes and snapshots.',
-  Settings: 'Configure system and department scheduling preferences.',
-};
-
 export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
   const { pathname } = useLocation();
   const match = navItems.map((section) => findMatch(section.items, pathname)).find(Boolean) ?? null;
@@ -63,13 +46,6 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
       : role === 'program_head' ? 'Program Head Dashboard'
         : role === 'dean' ? 'Dean Dashboard' : 'VPAA Dashboard'
     : rawTitle;
-  const description = rawTitle === 'Dashboard'
-    ? role === 'secretary' || role === 'program_head'
-      ? 'Prepare complete and validated department schedules for approval.'
-      : role === 'dean'
-        ? 'Review department scheduling activity, room assignments, and faculty workloads.'
-        : 'Review institution-wide scheduling activity and approval progress.'
-    : descriptions[rawTitle] ?? 'Manage this area of the academic scheduling system.';
 
   return (
     <header className="mb-5 flex flex-col gap-1">
@@ -89,7 +65,6 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
       })}
       </nav>
       <h1 className="mt-3 font-display text-2xl font-bold tracking-tight text-[#4e0a10] sm:text-3xl">{title}</h1>
-      <p className="text-sm text-slate-500">{description}</p>
     </header>
   );
 }

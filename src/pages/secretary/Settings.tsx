@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, SlidersHorizontal, TreePine, Wifi } from 'lucide-react';
+import { BookMarked, BookOpen, Building2, CalendarDays, CheckCircle2, ChevronDown, FlaskConical, Gauge, Info, SlidersHorizontal, TreePine, Wifi } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -19,6 +19,7 @@ interface SchedulingSettings {
   custom_lab_duration_5_hours_enabled: boolean;
   custom_lab_duration_other_enabled: boolean;
   gec_split_schedule_override_enabled: boolean;
+  major_lecture_split_schedule_override_enabled: boolean;
   field_evening_schedule_enabled: boolean;
   sunday_online_only_enabled: boolean;
   // Null means the resource is not capped, which is the default. Neither is a
@@ -26,6 +27,7 @@ interface SchedulingSettings {
   online_slot_limit: number | null;
   field_slot_limit: number | null;
   lecture_lab_available: boolean;
+  major_lecture_split_available: boolean;
 }
 
 interface PendingConfirmation {
@@ -227,7 +229,7 @@ export default function SecretarySettings() {
     };
   }, [toast]);
 
-  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled' | 'online_slot_limit' | 'field_slot_limit'>>) => {
+  const updateSetting = async (patch: Partial<Pick<SchedulingSettings, 'lecture_lab_schedule_override_enabled' | 'custom_lab_duration_override_enabled' | 'custom_lab_duration_minutes' | 'custom_lab_duration_6_hours_enabled' | 'custom_lab_duration_5_hours_enabled' | 'custom_lab_duration_other_enabled' | 'gec_split_schedule_override_enabled' | 'major_lecture_split_schedule_override_enabled' | 'field_evening_schedule_enabled' | 'sunday_online_only_enabled' | 'online_slot_limit' | 'field_slot_limit'>>) => {
     if (!settings) {
       return;
     }
@@ -256,6 +258,8 @@ export default function SecretarySettings() {
   const customLab5HoursEnabled = !!settings?.custom_lab_duration_5_hours_enabled;
   const customLabOtherEnabled = !!settings?.custom_lab_duration_other_enabled;
   const gecSplitEnabled = !!settings?.gec_split_schedule_override_enabled;
+  const majorLectureSplitEnabled = !!settings?.major_lecture_split_schedule_override_enabled;
+  const majorLectureSplitAvailable = !!settings?.major_lecture_split_available;
   const fieldEveningEnabled = !!settings?.field_evening_schedule_enabled;
   const sundayOnlineOnlyEnabled = settings?.sunday_online_only_enabled ?? true;
   const lectureLabAvailable = !!settings?.lecture_lab_available;
@@ -286,7 +290,7 @@ export default function SecretarySettings() {
   ], []);
   useWorkflowGuide({ id: 'secretary-settings', isReady: true, steps: settingsGuideSteps, mission: 'Configure Scheduling Rules' });
   return (
-    <div className="min-h-full p-1">
+    <div className="min-h-full">
       <section id="secretary-settings-overview" className="mb-3 border border-slate-200 bg-white px-5 py-5 shadow-sm" style={{ borderRadius: 10 }}>
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div className="flex min-w-0 items-start gap-3">
@@ -397,6 +401,44 @@ export default function SecretarySettings() {
             }}
           />
           <SettingToggleCard
+            title="Major Lecture Split Sessions"
+            recommendation="optional"
+            description="Allow selected lecture-only major courses to split into shorter meetings."
+            note={majorLectureSplitAvailable
+              ? "Example: a 3-unit lecture-only major becomes two 1.5-hour sessions. Majors with laboratory units are unaffected."
+              : "Unavailable: no active major courses with lecture units and no laboratory units."
+            }
+            enabled={majorLectureSplitEnabled}
+            isLoading={isLoading}
+            isSaving={isSaving}
+            disabled={!majorLectureSplitAvailable}
+            icon={BookMarked}
+            onToggle={() => {
+              if (!majorLectureSplitAvailable) return;
+              if (!majorLectureSplitEnabled) {
+                requestConfirmation({
+                  title: 'Enable Major Lecture Split Sessions?',
+                  message: 'Selected major courses with no laboratory units can split into shorter meetings.\n\nChoose the affected courses in the schedule generation modal.',
+                  confirmLabel: 'Enable Split Sessions',
+                  variant: 'warning',
+                  onConfirm: () => updateSetting({
+                    major_lecture_split_schedule_override_enabled: true,
+                  }),
+                });
+                return;
+              }
+              requestConfirmation({
+                title: 'Turn off Major Lecture Split Sessions?',
+                message: 'Selected major courses will stop splitting into shorter meetings during generation.\n\nExisting curriculum units remain unchanged.',
+                confirmLabel: 'Turn Off',
+                variant: 'maroon',
+                onConfirm: () => updateSetting({
+                  major_lecture_split_schedule_override_enabled: false,
+                }),
+              });
+            }}
+          />
+          <SettingToggleCard
             title="Allow Field Subjects in Evening"
             recommendation="optional"
             description="Allow field subjects to use the 5 PM to 7 PM range when daytime capacity is not enough."
@@ -429,7 +471,7 @@ export default function SecretarySettings() {
             title="Sunday Online Only"
             recommendation="recommended"
             description="Require Sunday major-course meetings to use online delivery."
-            note="Enabled by default: Sunday schedules are online. Turn off only if your department allows physical Sunday classes."
+            note="Enabled by default: Sunday major classes are online. Turn off to let Sunday be a normal teaching day for on-site major classes. Minor subjects stay Monday to Saturday either way."
             enabled={sundayOnlineOnlyEnabled}
             isLoading={isLoading}
             isSaving={isSaving}
@@ -438,7 +480,7 @@ export default function SecretarySettings() {
               if (!sundayOnlineOnlyEnabled) {
                 requestConfirmation({
                   title: 'Enable Sunday Online Only?',
-                  message: 'Major courses scheduled on Sunday will be required to use online delivery.',
+                  message: 'Major courses scheduled on Sunday will be required to use online delivery, and the generator will go back to using Sunday only as a last resort.',
                   confirmLabel: 'Enable Rule',
                   variant: 'info',
                   onConfirm: () => updateSetting({ sunday_online_only_enabled: true }),
@@ -447,7 +489,7 @@ export default function SecretarySettings() {
               }
               requestConfirmation({
                 title: 'Allow physical Sunday classes?',
-                message: 'The generator and validator may allow on-site major-course meetings on Sunday for this department.',
+                message: 'On-site major-course meetings become legal on Sunday, and the generator will schedule Sunday like any other teaching day instead of using it only as a last resort.',
                 confirmLabel: 'Allow Sunday On-site',
                 variant: 'warning',
                 onConfirm: () => updateSetting({ sunday_online_only_enabled: false }),
@@ -530,20 +572,24 @@ export default function SecretarySettings() {
           <SettingToggleCard
             title="Custom Lab Duration"
             recommendation={isLaboratoryProfile ? 'optional' : 'not-applicable'}
-            description="Allow selected lab courses to use custom lab meeting lengths."
-            note="If Apply Hybrid is already active, use this only when the lab needs longer time."
+            description="Set how long the laboratory half of a Lecture + Laboratory split meets. The lecture half always follows the course's lecture units."
+            note={
+              lectureLabEnabled
+                ? 'Replaces the usual three hours per laboratory unit with the length you pick.'
+                : 'Turn on Apply Hybrid first — this only changes the laboratory half of a split course.'
+            }
             noteTone="danger"
             enabled={customLabEnabled}
             isLoading={isLoading}
             isSaving={isSaving}
             icon={SlidersHorizontal}
-            disabled={!isLaboratoryProfile}
+            disabled={!isLaboratoryProfile || !lectureLabEnabled}
             onToggle={() => {
-              if (!isLaboratoryProfile) return;
+              if (!isLaboratoryProfile || !lectureLabEnabled) return;
               if (!customLabEnabled) {
                 requestConfirmation({
                   title: 'Enable Custom Lab Duration?',
-                  message: 'Use this only when selected lab courses need 5, 6, or custom-hour sessions.\n\nIt can increase lab time beyond the normal Apply Hybrid override.',
+                  message: 'The laboratory half of every split course will meet for the length you pick instead of three hours per laboratory unit.\n\nThe lecture half is unchanged.',
                   confirmLabel: 'Enable Custom Lab',
                   variant: 'danger',
                   onConfirm: () => updateSetting({ custom_lab_duration_override_enabled: true }),
@@ -565,21 +611,33 @@ export default function SecretarySettings() {
               {[
                 {
                   label: '6-hour duration',
-                  description: 'Allow 6-hour lab sessions.',
+                  description: 'Each laboratory meeting runs 6 hours.',
                   checked: customLab6HoursEnabled,
-                  patch: { custom_lab_duration_6_hours_enabled: !customLab6HoursEnabled },
+                  patch: {
+                    custom_lab_duration_6_hours_enabled: true,
+                    custom_lab_duration_5_hours_enabled: false,
+                    custom_lab_duration_other_enabled: false,
+                  },
                 },
                 {
                   label: '5-hour duration',
-                  description: 'Allow 5-hour lab sessions.',
+                  description: 'Each laboratory meeting runs 5 hours.',
                   checked: customLab5HoursEnabled,
-                  patch: { custom_lab_duration_5_hours_enabled: !customLab5HoursEnabled },
+                  patch: {
+                    custom_lab_duration_6_hours_enabled: false,
+                    custom_lab_duration_5_hours_enabled: true,
+                    custom_lab_duration_other_enabled: false,
+                  },
                 },
                 {
                   label: 'Other duration',
-                  description: 'Allow a custom lab duration.',
+                  description: 'Enter the number of hours below.',
                   checked: customLabOtherEnabled,
-                  patch: { custom_lab_duration_other_enabled: !customLabOtherEnabled },
+                  patch: {
+                    custom_lab_duration_6_hours_enabled: false,
+                    custom_lab_duration_5_hours_enabled: false,
+                    custom_lab_duration_other_enabled: true,
+                  },
                 },
               ].map((option) => {
                 return (
@@ -591,7 +649,8 @@ export default function SecretarySettings() {
                     style={{ borderRadius: 8 }}
                   >
                     <input
-                      type="checkbox"
+                      type="radio"
+                      name="custom-lab-duration-choice"
                       checked={option.checked}
                       disabled={isLoading || isSaving || !customLabEnabled}
                       onChange={() => updateSetting(option.patch)}
@@ -618,7 +677,9 @@ export default function SecretarySettings() {
                     onChange={(event) => {
                       const hours = Number(event.target.value);
                       if (!Number.isFinite(hours) || hours <= 0) return;
-                      updateSetting({ custom_lab_duration_minutes: Math.round(hours * 60) });
+                      const minutes = Math.round(hours * 2) * 30;
+                      if (minutes < 30) return;
+                      updateSetting({ custom_lab_duration_minutes: minutes });
                     }}
                     className="h-8 w-20 border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-[#6b0f1a] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                     style={{ borderRadius: 8 }}

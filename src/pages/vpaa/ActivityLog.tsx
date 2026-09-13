@@ -116,7 +116,7 @@ export default function ActivityLog() {
   };
 
   return (
-    <div id="activity-log-page" className="space-y-5 pb-8">
+    <div id="activity-log-page" className="space-y-5">
       <div className="flex justify-end">
         <div className="flex gap-2"><button onClick={() => void exportCsv()} disabled={loading || meta.total === 0} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"><Download className="h-4 w-4" />Export CSV</button><button onClick={() => void loadEntries()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button></div>
       </div>
@@ -152,7 +152,16 @@ export default function ActivityLog() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         {error ? <div role="alert" className="p-8 text-center"><p className="text-sm font-semibold text-red-700">{error}</p><button onClick={() => void loadEntries()} className="mt-3 text-sm font-bold text-[#5A1220] hover:underline">Try again</button></div>
-          : loading ? <div className="space-y-3 p-6" aria-busy="true" aria-label="Loading activity">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="flex items-center gap-3"><Skeleton className="h-4 w-32" /><Skeleton className="h-4 flex-1" /><Skeleton className="h-4 w-24" /><Skeleton className="h-4 w-20" /></div>)}</div>
+          : loading ? <div className="overflow-x-auto" aria-busy="true" aria-label="Loading activity"><table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500"><tr><th className="px-5 py-3">Date and time</th><th className="px-5 py-3">Event</th><th className="px-5 py-3">Actor</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Source</th></tr></thead>
+            <tbody className="divide-y divide-gray-100">{Array.from({ length: 6 }).map((_, index) => <tr key={`activity-skeleton-${index}`}>
+              <td className="whitespace-nowrap px-5 py-4"><Skeleton className="h-4 w-36" /></td>
+              <td className="px-5 py-4"><Skeleton className="h-4 w-40" /><Skeleton className="mt-1 h-3 w-24" /></td>
+              <td className="px-5 py-4"><Skeleton className="h-4 w-32" /><Skeleton className="mt-1 h-3 w-16" /></td>
+              <td className="px-5 py-4"><Skeleton className="h-4 w-28" /></td>
+              <td className="px-5 py-4"><Skeleton className="h-6 w-20 rounded-full" /></td>
+            </tr>)}</tbody>
+          </table></div>
           : entries.length === 0 ? <div className="p-12 text-center"><ClipboardList className="mx-auto h-10 w-10 text-gray-300" /><p className="mt-3 font-semibold text-gray-700">No activity found</p><p className="mt-1 text-sm text-gray-500">Try clearing the filters or check again after system activity occurs.</p></div>
           : <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500"><tr><th className="px-5 py-3">Date and time</th><th className="px-5 py-3">Event</th><th className="px-5 py-3">Actor</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Source</th></tr></thead>

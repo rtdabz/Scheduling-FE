@@ -111,7 +111,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
           <LayoutGrid className="w-5 h-5 text-[#4e0a10]" />
           <div>
             <h2 className="text-lg font-bold text-gray-800 leading-none">Department schedule status</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-[11px] text-gray-400 mt-0.5">
               {draftedCount}/{totalSections} sections drafted across {yearLevels.length} year levels
             </p>
           </div>

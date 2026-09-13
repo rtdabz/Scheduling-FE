@@ -861,7 +861,7 @@ export default function DeanScheduleApprovalPage() {
   }, { pending: 0, approved: 0, withdrawn: 0, rejected: 0 });
 
   return (
-    <div className="p-6 relative">
+    <div className="relative">
       <div id="schedule-approval-tabs" className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
         {requestTabs.map((tab) => {
           const active = selectedQueueTab === tab.id;
@@ -1134,7 +1134,7 @@ export default function DeanScheduleApprovalPage() {
                   <h2 className="text-lg font-bold text-[#1A1410] font-display">
                     {viewSchedule!.department} Department Schedule
                   </h2>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusBadge(viewSchedule.status)}`}>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${getStatusBadge(viewSchedule.status)}`}>
                     {getStatusLabel(viewSchedule!.status)}
                   </span>
                 </div>
@@ -1231,7 +1231,7 @@ export default function DeanScheduleApprovalPage() {
                           <div key={item.id} className={`${colors.bg} ${colors.border} ${colors.text} border-2 border-l-[4px] ${colors.accent} p-2 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between leading-snug box-border`} style={{ gridColumn: colIndex, gridRowStart: startRow, gridRowEnd: endRow, height: `${cardHeight}px`, zIndex: 5 }}>
                             <div className="min-w-0">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-[10px] uppercase tracking-wide">{getScheduleCourseCode(item)}</span>
+                                <span className="font-bold text-[11px] uppercase tracking-wide">{getScheduleCourseCode(item)}</span>
                                 <span className="px-1 rounded-[3px] text-[8px] font-bold border uppercase tracking-wide shrink-0 bg-white/70 border-current">{getModeLabel(item.mode)}</span>
                               </div>
                               <p className="font-semibold text-[9px] truncate opacity-90">{getScheduleCourseName(item)}</p>

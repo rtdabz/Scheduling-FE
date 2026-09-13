@@ -338,39 +338,18 @@ export default function CurriculumListPage() {
 
   return (
     <div className="w-full">
-      {/* Top Banner */}
-      <div id="curriculum-actions" className="mb-6 flex flex-col items-end gap-4 sm:flex-row sm:items-center sm:justify-end">
-        {canManageCurriculum && (
-          <div className="flex items-center gap-2 shrink-0">
-            <WorkflowGuideButton guideId="curriculum" />
-            <button
-              onClick={() => setIsArchiveOpen(true)}
-              className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-xs shadow-sm cursor-pointer"
-              title="View Archived Curriculum"
-            >
-              <Archive size={16} />
-              <span>Archive</span>
-            </button>
-            <button
-              id="curriculum-create-button"
-              onClick={() => {
-                setEditingCurriculum(null);
-                setIsEditMode(false);
-                setIsFormModalOpen(true);
-              }}
-              className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
-            >
-              <Plus size={16} />
-              Create Curriculum
-            </button>
-          </div>
-        )}
-        {!canManageCurriculum && <WorkflowGuideButton guideId="curriculum" />}
-      </div>
+      {/*
+        Toolbar, filters and page actions share one card: the actions used to
+        float in a bare strip above it, which read as though they belonged to
+        the page title rather than to the list they act on.
 
-      {/* Toolbar & Filters */}
-      <div id="curriculum-filters" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+        The row wraps instead of switching direction at a breakpoint — search,
+        filters and three buttons do not fit side by side at every width, and
+        wrapping lets the groups fall onto a second line inside the card while
+        staying on one line whenever there is room.
+      */}
+      <div id="curriculum-filters" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
           {/* Search */}
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -417,8 +396,8 @@ export default function CurriculumListPage() {
           </div>
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* View mode, then the page actions. */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div className="flex items-center bg-gray-100/90 border border-gray-200 p-1 rounded-xl">
             <button
               onClick={() => setViewMode('list')}
@@ -439,6 +418,37 @@ export default function CurriculumListPage() {
               <LayoutGrid size={16} />
             </button>
           </div>
+
+          {/* Separates the view control, which only changes how the list looks,
+              from the actions that change the data. */}
+          <span aria-hidden="true" className="hidden h-7 w-px bg-gray-200 sm:block" />
+
+          <WorkflowGuideButton guideId="curriculum" />
+
+          {canManageCurriculum && (
+            <>
+              <button
+                onClick={() => setIsArchiveOpen(true)}
+                className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-xs shadow-sm cursor-pointer"
+                title="View Archived Curriculum"
+              >
+                <Archive size={16} />
+                <span>Archive</span>
+              </button>
+              <button
+                id="curriculum-create-button"
+                onClick={() => {
+                  setEditingCurriculum(null);
+                  setIsEditMode(false);
+                  setIsFormModalOpen(true);
+                }}
+                className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
+              >
+                <Plus size={16} />
+                Create Curriculum
+              </button>
+            </>
+          )}
         </div>
       </div>
 

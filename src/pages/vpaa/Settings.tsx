@@ -3,7 +3,6 @@ import { useToast } from '../../context/ToastContext';
 import {
   ArrowRight,
   CalendarRange,
-  CheckCircle2,
   Clock3,
   History,
   Save,
@@ -143,7 +142,7 @@ function SectionCard({
 }
 
 export default function Settings() {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const settingsCacheKey = 'page:settings';
   const cachedSettingsData = getCachedData<SettingsPageData>(settingsCacheKey);
   const [terms, setTerms] = useState<Term[]>(cachedSettingsData?.terms ?? []);
@@ -179,9 +178,6 @@ export default function Settings() {
   });
 
   // Modal states
-  const [isActivateModalOpen, setIsActivateModalOpen] = useState(false);
-  const [idToActivate, setIdToActivate] = useState<number | null>(null);
-  const [isActivating, setIsActivating] = useState(false);
 
   const rememberTerms = useCallback((next: Term[]) => {
     setCachedData<SettingsPageData>(settingsCacheKey, { terms: next });
@@ -332,25 +328,28 @@ export default function Settings() {
     }
   };
 
-  const handleActivateClick = (id: number) => {
-    setIdToActivate(id);
-    setIsActivateModalOpen(true);
-  };
+  const handleActivateClick = async (id: number) => {
+    const confirmed = await confirm({
+      title: 'Activate Academic Term',
+      message: 'Are you sure you want to activate this academic term? This will set all other terms to inactive and apply this term system-wide.',
+      eyebrow: 'Confirmation Required',
+      confirmLabel: 'Confirm Activate',
+      variant: 'maroon',
+    });
+    if (!confirmed) return;
 
-  const confirmActivateTerm = async () => {
-    if (idToActivate === null) return;
+    // The dialog is gone by now, so this ref is what stops a second activation
+    // from overlapping the first.
     if (activatingRef.current) return;
     activatingRef.current = true;
-    setIsActivating(true);
     try {
-      await api.patch<{ term: ApiTerm }>(`/terms/${idToActivate}/activate`);
+      await api.patch<{ term: ApiTerm }>(`/terms/${id}/activate`);
 
       // The active term scopes scheduler sections, courses, and schedules.
       // Discard snapshots created for the previous term before navigating back.
       clearDataCache();
-      setTerms(prev => rememberTerms(prev.map(t => ({ ...t, is_active: t.id === idToActivate }))));
+      setTerms(prev => rememberTerms(prev.map(t => ({ ...t, is_active: t.id === id }))));
 
-      const termToActivate = terms.find(t => t.id === idToActivate);
       await fetchActivationHistory();
 
       toast.success('Activated', 'Academic term is now active');
@@ -358,9 +357,6 @@ export default function Settings() {
       toast.error('Error', apiMessage(error, 'Failed to activate academic term'));
     } finally {
       activatingRef.current = false;
-      setIsActivating(false);
-      setIsActivateModalOpen(false);
-      setIdToActivate(null);
     }
   };
 
@@ -502,7 +498,7 @@ export default function Settings() {
   });
 
   return (
-    <div id="settings-page" className="space-y-6 p-4 sm:p-6">
+    <div id="settings-page" className="space-y-6">
       <SectionCard
         icon={CalendarRange}
         title="Academic Terms"
@@ -667,7 +663,7 @@ export default function Settings() {
                     <button
                       type="button"
                       disabled={!isValidAcademicYear(draft) || isDirty}
-                      onClick={() => handleActivateClick(term.id)}
+                      onClick={() => { void handleActivateClick(term.id); }}
                       title={isDirty ? 'Save the academic year before activating this term' : undefined}
                       className={`w-full rounded-xl border border-gray-300 bg-white py-2 text-xs font-semibold text-gray-700 transition-colors ${
                         !isValidAcademicYear(draft) || isDirty
@@ -840,38 +836,6 @@ export default function Settings() {
         />
       </SectionCard>
 
-      {isActivateModalOpen && (
-        <div className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm duration-200">
-          <div className="animate-in zoom-in-95 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200/80 bg-[#F7F4F0] shadow-2xl duration-200">
-            <div className="space-y-4 p-6 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-amber-100 bg-amber-50 text-[#C9952A]">
-                <CheckCircle2 size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-display text-lg font-bold text-gray-800">Activate Academic Term</h3>
-                <p className="text-xs leading-relaxed text-gray-500">
-                  Are you sure you want to activate this academic term? This will set all other terms to inactive and apply this term system-wide.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsActivateModalOpen(false)}
-                  className="flex-1 cursor-pointer rounded-xl border border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmActivateTerm}
-                  disabled={isActivating}
-                  className="flex-1 cursor-pointer rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isActivating ? 'Activating' : 'Confirm Activate'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

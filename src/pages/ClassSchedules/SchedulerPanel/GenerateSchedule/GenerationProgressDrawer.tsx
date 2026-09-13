@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   AlertTriangle,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock3,
@@ -35,8 +34,14 @@ const yearLabel = (yearLevel: number) => {
 
 /**
  * The generator modal is no longer the only place a run is visible. This
- * drawer keeps a queued or finished run reachable while the user works on the
- * timetable, and survives closing the panel or reloading the page.
+ * drawer keeps a run reachable while the user works on the timetable, and
+ * survives closing the panel or reloading the page.
+ *
+ * A completed run is deliberately not shown. Saving applies the result to the
+ * timetable and closes the generator on the click, so a "ready to review"
+ * card would only flash in the corner behind the refresh it is announcing.
+ * A result that was never applied is still recovered by reopening the
+ * generator, which returns to the summary step.
  */
 export default function GenerationProgressDrawer({
   hidden = false,
@@ -48,7 +53,8 @@ export default function GenerationProgressDrawer({
   const run = useGenerationRun();
   const [collapsed, setCollapsed] = useState(false);
 
-  if (hidden || run.status === "idle") return null;
+  if (hidden || run.status === "idle" || run.status === "completed")
+    return null;
 
   const scope = run.meta
     ? [
@@ -68,26 +74,18 @@ export default function GenerationProgressDrawer({
           accent: "bg-rose-50",
           text: "text-rose-900",
         }
-      : run.status === "completed"
-        ? {
-            border: "border-emerald-200",
-            accent: "bg-emerald-50",
-            text: "text-emerald-900",
-          }
-        : {
-            border: "border-slate-200",
-            accent: "bg-[#fff8e8]",
-            text: "text-slate-900",
-          };
+      : {
+          border: "border-slate-200",
+          accent: "bg-[#fff8e8]",
+          text: "text-slate-900",
+        };
 
   const heading =
     run.status === "failed"
       ? "Generation unsuccessful"
-      : run.status === "completed"
-        ? "Timetable ready to review"
-        : run.status === "running"
-          ? "Generating timetable"
-          : "Waiting for the scheduling queue";
+      : run.status === "running"
+        ? "Generating timetable"
+        : "Waiting for the scheduling queue";
 
   return (
     <div
@@ -99,8 +97,6 @@ export default function GenerationProgressDrawer({
       <div className={`flex items-center gap-2 px-3 py-2.5 ${tone.accent}`}>
         {run.status === "failed" ? (
           <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-        ) : run.status === "completed" ? (
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
         ) : (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#4e0a10]" />
         )}
@@ -141,11 +137,6 @@ export default function GenerationProgressDrawer({
                 {elapsedLabel(run.elapsedMs)}
               </span>
             )}
-            {run.status === "completed" && (
-              <span>
-                {run.result?.schedules?.length ?? 0} class meetings prepared
-              </span>
-            )}
           </div>
 
           {run.workerStalled && (
@@ -174,11 +165,7 @@ export default function GenerationProgressDrawer({
               onClick={onOpenGenerator}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#3d080c]"
             >
-              {run.status === "completed"
-                ? "Review result"
-                : run.status === "failed"
-                  ? "Open details"
-                  : "View progress"}
+              {run.status === "failed" ? "Open details" : "View progress"}
             </button>
           </div>
         </div>

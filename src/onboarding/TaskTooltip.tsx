@@ -11,8 +11,24 @@ const readTaskData = (step: TooltipRenderProps["step"]): JoyrideTaskData | null 
     action: candidate.action ?? "complete",
     taskHint: candidate.taskHint ?? "",
     completed: candidate.completed === true,
+    satisfied: candidate.satisfied ?? null,
     mission: candidate.mission ?? "",
   };
+};
+
+/** What the status line says while a step is waiting on the user. */
+const waitingText = (task: JoyrideTaskData): string => {
+  switch (task.satisfied) {
+    // The step asks for something that is already true, or for a control the
+    // page has disabled here. Say so and point at Next, rather than leaving
+    // the user hunting for an action that cannot be performed.
+    case "value":
+      return "Already set — continue, or change it to update.";
+    case "unavailable":
+      return "Not available here — continue.";
+    default:
+      return task.taskHint || "Complete the highlighted task to continue.";
+  }
 };
 
 /**
@@ -25,7 +41,9 @@ export default function TaskTooltip(props: TooltipRenderProps) {
   const task = readTaskData(step);
   const requiresAction = task !== null && task.action !== "complete";
   const completed = task?.completed === true;
-  const canContinue = !requiresAction || completed;
+  // A step with nothing left to do still needs a way out of the mission.
+  const satisfied = task?.satisfied != null;
+  const canContinue = !requiresAction || completed || satisfied;
 
   return (
     <div {...tooltipProps} className="wicars-task-tip">
@@ -45,13 +63,13 @@ export default function TaskTooltip(props: TooltipRenderProps) {
 
         {requiresAction ? (
           <p
-            className={"wicars-task-tip-status" + (completed ? " is-done" : " is-waiting")}
+            className={"wicars-task-tip-status" + (completed || satisfied ? " is-done" : " is-waiting")}
             role="status"
             aria-live="polite"
           >
             <span aria-hidden="true" className="wicars-task-tip-verb">{task ? actionVerb(task.action) : "Do"}</span>
             <span aria-hidden="true" className="wicars-task-tip-dot" />
-            {completed ? "Task complete — continuing…" : task?.taskHint ?? "Complete the highlighted task to continue."}
+            {completed ? "Task complete — continuing…" : task ? waitingText(task) : "Complete the highlighted task to continue."}
           </p>
         ) : null}
       </div>

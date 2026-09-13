@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider, useToast } from '../../../context/ToastContext'
 import ToastContainer from './ToastContainer'
@@ -29,6 +29,93 @@ function NotificationTriggers() {
     </>
   )
 }
+
+function ConfirmTrigger({ onAnswer }: { onAnswer: (answer: boolean) => void }) {
+  const { confirm } = useToast()
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void confirm({
+          title: 'Archive Room',
+          message: 'This room will be hidden from active lists.',
+          confirmLabel: 'Confirm Archive',
+          variant: 'danger',
+        }).then(onAnswer)
+      }}
+    >
+      Trigger confirm
+    </button>
+  )
+}
+
+describe('ToastContainer confirmations', () => {
+  afterEach(cleanup)
+
+  it('asks through the shared modal and resolves true when confirmed', async () => {
+    const onAnswer = vi.fn()
+    render(
+      <ToastProvider>
+        <ConfirmTrigger onAnswer={onAnswer} />
+        <ToastContainer />
+      </ToastProvider>,
+    )
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger confirm' }))
+
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByText('Archive Room')).toBeTruthy()
+    expect(screen.getByText('This room will be hidden from active lists.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm Archive' }))
+    })
+
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(true))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('resolves false when cancelled', async () => {
+    const onAnswer = vi.fn()
+    render(
+      <ToastProvider>
+        <ConfirmTrigger onAnswer={onAnswer} />
+        <ToastContainer />
+      </ToastProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger confirm' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    })
+
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(false))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('settles a question that is superseded before it is answered', async () => {
+    const onAnswer = vi.fn()
+    render(
+      <ToastProvider>
+        <ConfirmTrigger onAnswer={onAnswer} />
+        <ToastContainer />
+      </ToastProvider>,
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Trigger confirm' })
+    await act(async () => {
+      fireEvent.click(trigger)
+      fireEvent.click(trigger)
+    })
+
+    // The first promise must not be left hanging when a second question replaces it.
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(false))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+})
 
 describe('ToastContainer notification presentation', () => {
   afterEach(() => {

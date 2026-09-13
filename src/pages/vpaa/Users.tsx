@@ -7,7 +7,6 @@ import {
   Pencil,
   Trash2,
   Search,
-  AlertTriangle,
   X,
   Loader2,
   Camera,
@@ -146,7 +145,7 @@ const mapApiUser = (u: ApiUser): User => ({
 });
 
 export default function VpaaUsers() {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const usersCacheKey = 'page:users';
   const cachedUsersData = getCachedData<UsersPageData>(usersCacheKey);
   const [users, setUsers] = useState<User[]>(cachedUsersData?.users ?? []);
@@ -251,9 +250,6 @@ export default function VpaaUsers() {
     reader.readAsDataURL(file);
   };
 
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
-
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
@@ -261,7 +257,6 @@ export default function VpaaUsers() {
   const openDetailModal = (user: User) => {
     setSelectedUserForDetail(user);
     setIsModalOpen(false);
-    setIsDeleteModalOpen(false);
     setIsDetailModalOpen(true);
   };
 
@@ -438,7 +433,6 @@ export default function VpaaUsers() {
 
   const handleEditClick = (user: User) => {
     setIsDetailModalOpen(false);
-    setIsDeleteModalOpen(false);
     setFormData({
       first_name: user.first_name,
       middle_initial: user.middle_initial,
@@ -463,29 +457,29 @@ export default function VpaaUsers() {
     setIsModalOpen(true);
   };
 
-  const triggerDeleteConfirmation = (id: number) => {
-    setIdToDelete(id);
+  const triggerDeleteConfirmation = async (id: number) => {
     setIsModalOpen(false);
     setIsDetailModalOpen(false);
-    setIsDeleteModalOpen(true);
-  };
 
-  const confirmDeleteUser = async () => {
-    if (idToDelete !== null) {
-      try {
-        await api.delete(`/user/${idToDelete}`);
-        setUsers(prev => {
-          const nextUsers = prev.filter(user => user.id !== idToDelete);
-          setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
-          return nextUsers;
-        });
-        toast.success('Archived', 'User archived successfully');
-      } catch {
-        toast.error('Error', 'Failed to archive user');
-      } finally {
-        setIsDeleteModalOpen(false);
-        setIdToDelete(null);
-      }
+    const confirmed = await confirm({
+      title: 'Archive User Account',
+      message: 'The account will be disabled and moved to the Archive. Its linked faculty profile and history will be preserved.',
+      eyebrow: 'Archive Record',
+      confirmLabel: 'Confirm Archive',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/user/${id}`);
+      setUsers(prev => {
+        const nextUsers = prev.filter(user => user.id !== id);
+        setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
+        return nextUsers;
+      });
+      toast.success('Archived', 'User archived successfully');
+    } catch {
+      toast.error('Error', 'Failed to archive user');
     }
   };
 
@@ -654,7 +648,7 @@ export default function VpaaUsers() {
                 variant="danger"
                 onClick={(event) => {
                   event.stopPropagation();
-                  triggerDeleteConfirmation(row.original.id);
+                  void triggerDeleteConfirmation(row.original.id);
                 }}
               >
                 <Trash2 size={17} />
@@ -735,7 +729,6 @@ export default function VpaaUsers() {
               setIsEditMode(false);
               setEditingId(null);
               setIsDetailModalOpen(false);
-              setIsDeleteModalOpen(false);
               setFormData({ first_name: '', middle_initial: '', last_name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
               setFirstNameError('');
               setLastNameError('');
@@ -875,7 +868,7 @@ export default function VpaaUsers() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          triggerDeleteConfirmation(u.id);
+                          void triggerDeleteConfirmation(u.id);
                         }}
                         className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         title="Archive User"
@@ -1189,37 +1182,6 @@ export default function VpaaUsers() {
         </div>
       )}
 
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Archive User Account</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  The account will be disabled and moved to the Archive. Its linked faculty profile and history will be preserved.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteUser}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Archive
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {/* User Detail Modal */}
       {isDetailModalOpen && selectedUserForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">

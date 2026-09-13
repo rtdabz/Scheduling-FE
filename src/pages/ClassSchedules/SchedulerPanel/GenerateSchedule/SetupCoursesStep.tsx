@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Course, Section } from "../types";
 import {
+  isBalancedSplitSchedulingEligible,
   isConfiguredFieldCourse,
   isHybridSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
@@ -30,6 +31,7 @@ export type CourseSetupConfig = {
 export type SetupCoursesSettings = {
   field_course_codes?: string[];
   gec_split_schedule_override_enabled?: boolean;
+  major_lecture_split_schedule_override_enabled?: boolean;
   lecture_lab_schedule_override_enabled?: boolean;
 };
 
@@ -105,7 +107,19 @@ export default function SetupCoursesStep({
   );
   const hybridEnabled =
     settings?.lecture_lab_schedule_override_enabled === true;
-  const splitEnabled = settings?.gec_split_schedule_override_enabled === true;
+  const minorSplitEnabled =
+    settings?.gec_split_schedule_override_enabled === true;
+  const majorLectureSplitEnabled =
+    settings?.major_lecture_split_schedule_override_enabled === true;
+  // Memoized because the rows below depend on it: a fresh object each render
+  // would defeat that memo.
+  const splitSettings = useMemo(
+    () => ({
+      minorEnabled: minorSplitEnabled,
+      majorLectureEnabled: majorLectureSplitEnabled,
+    }),
+    [majorLectureSplitEnabled, minorSplitEnabled],
+  );
 
   const rows = useMemo(
     () =>
@@ -115,8 +129,7 @@ export default function SetupCoursesStep({
           hybridEnabled &&
           isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes),
         split:
-          splitEnabled &&
-          course.category === "minor" &&
+          isBalancedSplitSchedulingEligible(course, splitSettings) &&
           allowedSplitCourseIds.has(course.id),
         isField: isConfiguredFieldCourse(course, fieldCourseCodes),
       })),
@@ -125,7 +138,7 @@ export default function SetupCoursesStep({
       courses,
       fieldCourseCodes,
       hybridEnabled,
-      splitEnabled,
+      splitSettings,
     ],
   );
 
@@ -161,7 +174,7 @@ export default function SetupCoursesStep({
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="min-h-0 max-h-[60vh] w-full flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[560px] border-collapse text-left">
-          <thead className="sticky top-0 z-10 bg-slate-50">
+          <thead id="generator-setup-head" className="sticky top-0 z-10 bg-slate-50">
             <tr>
               <th className="px-3 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
                 Courses

@@ -426,6 +426,85 @@ export default function VpaaCalendarPage() {
 
   const visibleDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter(d => selectedDay === 'all' || d === selectedDay);
 
+  // Mirrors whichever view is selected so the page does not reflow when the
+  // real calendar arrives: the weekly branch reuses the shared timetable grid
+  // with placeholder class cards, the monthly branch the 6x7 day matrix.
+  const weeklySkeletonCards = [
+    { id: 'cal-sk-1', dayIndex: 1, startSlot: 2, duration: 4 },
+    { id: 'cal-sk-2', dayIndex: 2, startSlot: 8, duration: 3 },
+    { id: 'cal-sk-3', dayIndex: 3, startSlot: 5, duration: 4 },
+    { id: 'cal-sk-4', dayIndex: 5, startSlot: 12, duration: 3 },
+  ].filter((card) => card.dayIndex < visibleDays.length);
+
+  const calendarSkeleton = viewMode === 'weekly' ? (
+    <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md font-sans flex-1 flex flex-col" aria-busy="true" aria-label="Loading calendar">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-5 w-5 rounded" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-9 w-56 rounded-xl" />
+          <Skeleton className="h-9 w-9 rounded-xl" />
+        </div>
+      </div>
+      <div className="mt-3 flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex-1 overflow-auto bg-slate-50/70 p-4">
+          <WeeklyTimetableGrid days={visibleDays} slotCount={gridSlotCount} minWidth={850} isLoading>
+            {weeklySkeletonCards.map((card) => (
+              <div
+                key={card.id}
+                className="z-10 m-0.5 flex flex-col overflow-hidden rounded-xl border-2 border-l-4 border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 shadow-sm"
+                style={{ gridColumn: card.dayIndex + 2, gridRow: `${card.startSlot + 2} / span ${card.duration}` }}
+              >
+                <div className="flex items-start justify-between gap-1">
+                  <Skeleton className="h-3 w-12" />
+                  <Skeleton className="h-3 w-8 rounded" />
+                </div>
+                <Skeleton className="mt-1 h-2.5 w-16" />
+                <div className="mt-auto flex items-center justify-between gap-1">
+                  <Skeleton className="h-2.5 w-14" />
+                  <Skeleton className="h-2.5 w-6 rounded" />
+                </div>
+              </div>
+            ))}
+          </WeeklyTimetableGrid>
+        </div>
+        <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 bg-slate-50/60 px-5 py-3">
+          <Skeleton className="h-3 w-20" />
+          {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-3 w-16" />)}
+        </footer>
+      </div>
+    </div>
+  ) : (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 font-sans" aria-busy="true" aria-label="Loading calendar">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-150 pb-4">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-6 w-44" />
+          <Skeleton className="h-9 w-36 rounded-xl" />
+        </div>
+        <Skeleton className="h-7 w-40 rounded-full" />
+      </div>
+      <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50/80 rounded-t-xl py-2.5 divide-x divide-gray-200">
+        {Array.from({ length: 7 }).map((_, index) => <Skeleton key={index} className="mx-auto h-3 w-8" />)}
+      </div>
+      <div className="grid grid-cols-7 border-l border-t border-gray-200 divide-x divide-y divide-gray-200 rounded-b-xl overflow-hidden bg-white">
+        {Array.from({ length: 35 }).map((_, index) => (
+          <div key={index} className="min-h-[130px] border border-gray-150 p-2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <Skeleton className="h-3 w-5" />
+              <Skeleton className="h-3 w-6 rounded-full" />
+            </div>
+            <div className="space-y-1">
+              <Skeleton className="h-4 w-full rounded" />
+              <Skeleton className="h-4 w-4/5 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   const timetableContent = (
     <div className={`${isFullscreen ? 'fixed inset-0 z-[999999] bg-white p-4 sm:p-6 flex flex-col w-screen h-screen m-0' : 'bg-white p-5 rounded-2xl border border-gray-300 shadow-md font-sans flex-1 flex flex-col'}`}>
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-gray-150 pb-3 flex-shrink-0">
@@ -553,7 +632,7 @@ export default function VpaaCalendarPage() {
   );
 
   return (
-    <div id="calendar-page" className="space-y-6 font-sans pb-12">
+    <div id="calendar-page" className="space-y-6 font-sans">
       <div className="bg-gradient-to-r from-[#5A1220] via-[#7B1113] to-[#410b15] rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#C9952A]/30">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2.5">
@@ -644,10 +723,7 @@ export default function VpaaCalendarPage() {
       </div>
 
       {isLoading ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm animate-pulse">
-          <Skeleton className="h-6 w-48" />
-          <div className="grid grid-cols-7 gap-3">{Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-xl" />)}</div>
-        </div>
+        calendarSkeleton
       ) : viewMode === 'weekly' ? (
         isFullscreen ? createPortal(timetableContent, document.body) : timetableContent
       ) : (

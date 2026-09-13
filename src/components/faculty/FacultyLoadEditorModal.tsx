@@ -108,8 +108,8 @@ export default function FacultyLoadEditorModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-      <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+      <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+        <div className="p-5 border-b border-gray-200 flex shrink-0 justify-between items-center bg-gray-50/50">
           <div>
             <h2 className="text-base font-bold text-[#1A1410]">Teaching Load</h2>
             <p className="text-[11px] text-gray-500 font-semibold mt-0.5">{facultyName}</p>
@@ -123,7 +123,7 @@ export default function FacultyLoadEditorModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+        <div className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
           <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] font-semibold text-slate-600">
             <Info size={14} className="mt-0.5 shrink-0 text-slate-400" />
             <span>
@@ -195,7 +195,7 @@ export default function FacultyLoadEditorModal({
           )}
         </div>
 
-        <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex justify-end gap-3">
+        <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex shrink-0 justify-end gap-3">
           <button
             type="button"
             onClick={onClose}

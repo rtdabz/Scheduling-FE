@@ -7,6 +7,7 @@ import {
   BookOpen,
   Users,
   UserPlus,
+  GraduationCap,
   UserRoundCheck,
   Settings,
   Layers,
@@ -38,11 +39,19 @@ export const secretaryNav: NavSection[] = [
         children: [
           { label: 'Schedule Builder', path: '/secretary/schedule-builder', icon: CalendarRange, id: 'sidebar-schedule-builder', requiredCapability: 'schedule.create' },
           { label: 'Schedules', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-section-timetables', requiredCapability: 'schedule.view' },
-          { label: 'Course Teaching', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
+          { label: 'Course Assignment', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
           { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
         ],
       },
-      { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
+      {
+        label: 'Faculty Management',
+        icon: GraduationCap,
+        id: 'sidebar-faculty',
+        requiredCapability: 'schedule.view',
+        children: [
+          { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
+        ],
+      },
     ]
   },
   {

@@ -262,7 +262,7 @@ export default function ScheduleHistory() {
   } : null, [printingEntry]);
 
   return (
-    <div id="schedule-history-page" className="space-y-5 pb-8">
+    <div id="schedule-history-page" className="space-y-5">
       <div className="flex justify-end">
         <button
           type="button"
@@ -284,18 +284,46 @@ export default function ScheduleHistory() {
           </div>
         ) : loading ? (
           <div
-            className="space-y-3 p-6"
+            className="overflow-x-auto"
             aria-busy="true"
             aria-label="Loading schedule history"
           >
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="flex items-center gap-3">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-4 flex-1" />
-                <Skeleton className="h-4 w-24" />
-              </div>
-            ))}
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-5 py-3">Semester</th>
+                  <th className="px-5 py-3">A.Y.</th>
+                  <th className="px-5 py-3">Date and time</th>
+                  <th className="px-5 py-3">Actor</th>
+                  <th className="px-5 py-3">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <tr key={`history-skeleton-${index}`}>
+                    <td className="px-5 py-4">
+                      <Skeleton className="h-4 w-28" />
+                    </td>
+                    <td className="px-5 py-4">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-4">
+                      <Skeleton className="h-4 w-36" />
+                    </td>
+                    <td className="px-5 py-4">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="mt-1 h-3 w-16" />
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-8 w-8 rounded-md" />
+                        <Skeleton className="h-8 w-8 rounded-md" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : entries.length === 0 ? (
           <div className="p-12 text-center">

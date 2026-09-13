@@ -210,9 +210,9 @@ export default function SectionModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150 font-sans">
-      <div className="bg-white border border-slate-200/80 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="bg-white border border-slate-200/80 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-150">
         {/* Header Banner */}
-        <div className="p-5 sm:p-6 bg-[#4e0a10] text-white flex justify-between items-center relative">
+        <div className="p-5 sm:p-6 bg-[#4e0a10] text-white flex shrink-0 justify-between items-center relative">
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-[#39060b] border border-[#C9952A]/40 flex items-center justify-center text-[#C9952A] shrink-0 shadow-inner">
               <Layers size={22} />
@@ -247,7 +247,7 @@ export default function SectionModal({
           </button>
         </div>
 
-        <form id="section-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form id="section-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
           {/* Shared Top Settings: System-Controlled Department, Term & Status */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 bg-gray-50/80 rounded-2xl border border-gray-200/80 mb-2">
             <div>

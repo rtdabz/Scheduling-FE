@@ -36,16 +36,21 @@ describe('DashboardSkeleton', () => {
     expect(dashboard.container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
   });
 
-  it('gives the dean and vpaa metric rows one double-width tile', () => {
+  it('gives the dean metric row one double-width tile', () => {
     // MetricCard grew a className prop so the composite completion tile can span
     // two columns; the other five tiles must stay single-width.
-    (['dean', 'vpaa'] as const).forEach(variant => {
-      const { container } = render(<DashboardSkeleton variant={variant} />);
-      const tiles = container.querySelectorAll('.min-h-\\[90px\\]');
-      expect(tiles.length).toBe(6);
-      expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(1);
-      cleanup();
-    });
+    const { container } = render(<DashboardSkeleton variant="dean" />);
+    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(6);
+    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(1);
+  });
+
+  it('gives the vpaa two metric rows: decision KPIs then the inventory strip', () => {
+    // The VPAA dashboard splits its tiles in two — four decision metrics plus the
+    // double-width completion tile, then five static inventory counts — so the
+    // skeleton has to reserve both rows or the page jumps when the data lands.
+    const { container } = render(<DashboardSkeleton variant="vpaa" />);
+    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(10);
+    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(1);
   });
 
   it('leaves the secretary metric row at eight single-width tiles', () => {

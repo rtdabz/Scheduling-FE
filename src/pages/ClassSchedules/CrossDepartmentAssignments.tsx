@@ -49,9 +49,9 @@ export default function CrossDepartmentAssignments() {
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
   const crossDepartmentGuideSteps = useMemo(() => [
-    { element: '[data-tour="department-card"]', waitFor: '#instructor-assignment-departments', action: 'click' as const, taskHint: 'Click a department card to continue.', title: 'Choose a source department', description: 'Open the department that owns the course.', side: 'top' as const },
-    { element: '#assignment-section-filter', action: 'select' as const, taskHint: 'Change the section filter to continue.', title: 'Filter by section', description: 'Show one section at a time when needed.', side: 'bottom' as const },
-    { element: '#instructor-assignment-timetable', title: 'Assign an instructor', description: 'Select an unassigned class, choose an eligible instructor, and save.', side: 'top' as const },
+    { element: '[data-tour="department-card"]', waitFor: '#instructor-assignment-departments', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a department card to continue.', title: 'Choose a source department', description: 'Open the department that owns the course. With only one, it opens for you.', side: 'top' as const },
+    { element: '#assignment-status-filter', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose "Needs instructor" to continue.', title: 'Show only what is left', description: 'Narrow the list to classes that still have nobody assigned.', side: 'bottom' as const },
+    { element: "#instructor-assignment-worklist select[id^='worklist-faculty-']:not([disabled])", waitFor: '#instructor-assignment-worklist', skipIfMissing: true, title: 'Assign an instructor', description: 'Pick an eligible instructor straight from the row — it saves as you choose.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'cross-department-assignment', isReady: !scheduler.isLoading && isAssignmentWorkspaceReady, steps: crossDepartmentGuideSteps, mission: 'Cover Delegated Courses' });
   const allAssigned = workspaceState.allAssigned;

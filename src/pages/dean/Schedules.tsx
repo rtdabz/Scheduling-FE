@@ -149,10 +149,14 @@ const slotToTime = (slotIndex: number): string => {
 };
 
 const parseTimeToSlot = (time: string): number => {
-  const match = time.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+  // slotToTimeLabel drops ":00" on the hour ("7 AM", not "7:00 AM"), so the
+  // minutes are optional here. Requiring them made every whole-hour time fall
+  // through to slot 0, which read as a mutual overlap and raised phantom
+  // room/section conflicts on rows that never overlapped.
+  const match = time.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
   if (!match) return 0;
   let hour = Number(match[1]);
-  const minutes = Number(match[2]);
+  const minutes = Number(match[2] ?? 0);
   const ampm = match[3].toUpperCase();
   if (ampm === "PM" && hour !== 12) hour += 12;
   if (ampm === "AM" && hour === 12) hour = 0;

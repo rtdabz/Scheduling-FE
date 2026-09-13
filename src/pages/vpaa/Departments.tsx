@@ -9,7 +9,6 @@ import {
   Pencil, 
   Trash2, 
   Search, 
-  AlertTriangle, 
   ArrowUpDown, 
   ArrowUp, 
   ArrowDown,
@@ -174,7 +173,7 @@ function DepartmentLogo({
 }
 
 export default function Departments() {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const departmentsCacheKey = 'page:departments:v2';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
@@ -193,8 +192,6 @@ export default function Departments() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
   
   // Form state
   const [name, setName] = useState('');
@@ -466,26 +463,26 @@ export default function Departments() {
     setIsModalOpen(true);
   };
 
-  const triggerDeleteConfirmation = (id: number) => {
-    setIdToDelete(id);
-    setIsDeleteModalOpen(true);
-  };
+  const triggerDeleteConfirmation = async (id: number) => {
+    const confirmed = await confirm({
+      title: 'Archive Department',
+      message: 'This department will be hidden from active lists and can be restored from the Archive.',
+      eyebrow: 'Archive Record',
+      confirmLabel: 'Confirm Archive',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
-  const confirmDeleteDepartment = async () => {
-    if (idToDelete !== null) {
-      try {
-        await api.delete(`/departments/${idToDelete}`);
-        setDepartments(prev => {
-          const nextDepartments = prev.filter(dept => dept.id !== idToDelete);
-          setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
-          return nextDepartments;
-        });
-        toast.success('Archived', 'Department moved to the Archive');
-        setIsDeleteModalOpen(false);
-        setIdToDelete(null);
-      } catch {
-        toast.error('Archive Failed', 'Could not archive the department.');
-      }
+    try {
+      await api.delete(`/departments/${id}`);
+      setDepartments(prev => {
+        const nextDepartments = prev.filter(dept => dept.id !== id);
+        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+        return nextDepartments;
+      });
+      toast.success('Archived', 'Department moved to the Archive');
+    } catch {
+      toast.error('Archive Failed', 'Could not archive the department.');
     }
   };
 
@@ -617,7 +614,7 @@ export default function Departments() {
                 variant="danger"
                 onClick={(e) => {
                   e.stopPropagation();
-                  triggerDeleteConfirmation(row.original.id);
+                  void triggerDeleteConfirmation(row.original.id);
                 }}
               >
                 <Trash2 size={17} />
@@ -782,7 +779,7 @@ export default function Departments() {
                             variant="danger"
                             onClick={(e) => {
                               e.stopPropagation();
-                              triggerDeleteConfirmation(dept.id);
+                              void triggerDeleteConfirmation(dept.id);
                             }}
                           >
                             <Trash2 size={15} />
@@ -1069,8 +1066,8 @@ export default function Departments() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50 relative overflow-hidden">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50 relative overflow-hidden">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode ? 'Edit Department' : 'Add New Department'}
               </h2>
@@ -1082,7 +1079,7 @@ export default function Departments() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
               {/* Photo / Logo Upload Picker */}
               <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
                 <div className="relative">
@@ -1191,38 +1188,6 @@ export default function Departments() {
       )}
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-100">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Archive Department</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  This department will be hidden from active lists and can be restored from the Archive.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteDepartment}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Archive
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
       {/* Department Detail Modal */}
       {isDetailModalOpen && selectedDeptForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">

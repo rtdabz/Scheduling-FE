@@ -38,7 +38,7 @@ export default function FacultyPanel({
             <Users className="w-4 h-4 text-[#4e0a10]" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900 leading-tight">Faculty Assignment</h2>
+            <h2 className="text-lg font-bold text-slate-900 leading-tight">Faculty Assignment</h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
               Managed via Timetable Grid
             </p>

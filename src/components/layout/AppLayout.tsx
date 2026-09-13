@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import PageHeader from './PageHeader'
 import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
+import SessionTimeoutGuard from './SessionTimeoutGuard'
 import Skeleton from '../ui/Skeleton'
 import { useActiveTerm } from '../../hooks/useActiveTerm'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
@@ -102,7 +103,14 @@ export default function AppLayout() {
   }, [sidebarOpen])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F7F4F0]">
+    // `fixed inset-0` rather than `h-screen`: an h-screen shell still sits in
+    // document flow, so the browser kept its own window scrollbar alongside
+    // <main>'s — two vertical scrollbars, side by side. Taking the shell out of
+    // flow leaves <main> as the only scroller on the page.
+    <div className="fixed inset-0 flex overflow-hidden bg-[#F7F4F0]">
+
+      {/* Ends the session and explains why after a spell of inactivity. */}
+      <SessionTimeoutGuard />
 
       {/* Mobile overlay */}
       <div
@@ -128,7 +136,7 @@ export default function AppLayout() {
         className="flex flex-col flex-1 min-w-0 overflow-hidden"
       >
         <SystemHeader activeTerm={activeTerm} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4 md:px-8 md:pb-8 md:pt-4">
+        <main className="min-h-0 flex-1 overflow-y-auto p-4">
           <PageHeader navItems={navItems} homePath={homePath} />
           <Suspense fallback={
             <div className="space-y-4" aria-busy="true" aria-label="Loading module">

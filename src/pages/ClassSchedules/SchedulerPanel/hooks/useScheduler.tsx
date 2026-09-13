@@ -41,6 +41,27 @@ import {
   slotToTime24h
 } from "./initialDataMapper";
 import { buildPlacementSessionKey } from "./placementSession";
+
+/**
+ * Cheap identity of a schedule list, for deciding whether a background
+ * reconciliation actually changed anything.
+ *
+ * Covers every field the grid renders or the conflict engine reads. Building
+ * one string over the rows costs far less than handing the grid a new array
+ * it has to diff and repaint.
+ */
+const scheduleSignature = (items: ScheduleItem[]): string =>
+  items
+    .map((item) =>
+      [
+        item.id, item.dayIndex, item.startSlot, item.durationSlots,
+        item.roomId, item.sectionId, item.courseId || item.subjectId,
+        item.facultyId ?? "", item.status, item.mode,
+      ].join("|"),
+    )
+    .sort()
+    .join("~");
+
 import { requiredRoomTypeForMeeting, useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
@@ -68,6 +89,7 @@ const ROOM_TBA = "tba";
 export interface ManualSchedulingSettings {
   lecture_lab_schedule_override_enabled?: boolean;
   gec_split_schedule_override_enabled?: boolean;
+  major_lecture_split_schedule_override_enabled?: boolean;
   forced_day_rules?: Array<{ course_id: number; day: string }>;
   field_course_codes?: string[];
 }
@@ -373,6 +395,11 @@ export const useScheduler = () => {
     [activeTerm?.semester],
   );
 
+  const schedulesRef = useRef<ScheduleItem[]>([]);
+  useEffect(() => {
+    schedulesRef.current = schedules;
+  }, [schedules]);
+
   const refreshSchedules = useCallback(async () => {
     try {
       const url = activeTerm ? `/schedules/term/${activeTerm.id}` : '/schedules';
@@ -382,6 +409,12 @@ export const useScheduler = () => {
         apiData = apiData.filter((item) => Number(item.term_id) === Number(activeTerm.id));
       }
       const mapped = apiData.map(mapApiScheduleToItem);
+      // Mutations already merge the authoritative rows the server hands back,
+      // so this reconciliation usually finds nothing new. Replacing the array
+      // regardless handed every card a new identity and forced the whole grid
+      // (and the conflict memos behind it) to rebuild for no visible change.
+      const signature = scheduleSignature(mapped);
+      if (signature === scheduleSignature(schedulesRef.current)) return;
       setSchedules(mapped);
       const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
       if (cachedData) {
@@ -1275,7 +1308,10 @@ export const useScheduler = () => {
         )
       );
       toast.success("Schedule Relocated", "Class schedule successfully updated.");
-      await refreshSchedules();
+      // Background reconciliation: the server's own response is already
+      // merged above, so blocking the user on a second full-term fetch only
+      // delayed the feedback for a result that is almost always identical.
+      void refreshSchedules();
     } catch (err) {
       if (isNotFoundError(err)) {
         toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
@@ -1631,7 +1667,10 @@ export const useScheduler = () => {
       setDropContext(null);
       setSelectedRecommendationId(null);
       setConflictInfo(null);
-      await refreshSchedules();
+      // Background reconciliation: the server's own response is already
+      // merged above, so blocking the user on a second full-term fetch only
+      // delayed the feedback for a result that is almost always identical.
+      void refreshSchedules();
     } catch (err) {
       triggerConflictReminder();
       const violations = getApiViolations(err);
@@ -1716,7 +1755,7 @@ export const useScheduler = () => {
           const linkedIds = new Set(linked.map(s => s.id));
           setSchedules((prev) => prev.filter((s) => !linkedIds.has(s.id)));
           toast.success("Split Schedule Removed", "All linked split meetings removed.");
-          await refreshSchedules();
+          void refreshSchedules();
           return;
         }
       }
@@ -1724,7 +1763,10 @@ export const useScheduler = () => {
       await api.delete(`/schedules/${target.id}`);
       setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
       toast.success("Schedule Removed", "Class schedule successfully removed.");
-      await refreshSchedules();
+      // Background reconciliation: the server's own response is already
+      // merged above, so blocking the user on a second full-term fetch only
+      // delayed the feedback for a result that is almost always identical.
+      void refreshSchedules();
     } catch (err) {
       if (isNotFoundError(err)) {
         toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
@@ -2559,8 +2601,11 @@ export const useScheduler = () => {
             schedule.id === updatedSchedule.id ? updatedSchedule : schedule
           )
         );
-        await refreshSchedules();
         toast.success("Schedule Relocated", "Class schedule successfully relocated.");
+        // Background reconciliation: the server's own response is already
+        // merged above, so blocking the user on a second full-term fetch only
+        // delayed the feedback for a result that is almost always identical.
+        void refreshSchedules();
       } catch (err) {
         if (isNotFoundError(err)) {
           toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");

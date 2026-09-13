@@ -33,6 +33,7 @@ import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import InstructorTeachingLoadButton from '../../components/InstructorTeachingLoadButton';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
+import { describeDeload, fetchDesignations, type Designation } from '../../lib/designations';
 import FacultyAvailabilityPanel from '../../components/faculty/FacultyAvailabilityPanel';
 import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -120,6 +121,8 @@ interface FacultyMember {
   status: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
+  designation_id?: number | null;
+  designation?: Designation | null;
   createdAt?: string;
 }
 
@@ -146,6 +149,8 @@ interface ApiFacultyMember {
   status: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
+  designation_id?: number | null;
+  designation?: Designation | null;
   created_at: string;
   updated_at: string;
 }
@@ -183,6 +188,8 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   status: f.status || 'active',
   profile_picture: f.profile_picture || null,
   administrative_role: f.administrative_role || null,
+  designation_id: f.designation_id ?? null,
+  designation: f.designation ?? null,
   createdAt: f.created_at
 });
 
@@ -283,6 +290,21 @@ export default function SecretaryFaculty() {
   const [probonoUnits, setProbonoUnits] = useState<number>(0);
   const [departmentId, setDepartmentId] = useState('');
   const [programId, setProgramId] = useState('');
+  // The designation list is server data, never a hardcoded set -- the picker
+  // renders whatever /designations returns. Assigning one is its own
+  // capability; without it the field is read-only and is never submitted,
+  // because sending it unprivileged would fail the whole roster save.
+  const [designationId, setDesignationId] = useState('');
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const canManageDesignations = hasStoredCapability('faculty.manage_designations');
+
+  useEffect(() => {
+    let active = true;
+    fetchDesignations(true)
+      .then((list) => { if (active) setDesignations(list); })
+      .catch(() => { if (active) setDesignations([]); });
+    return () => { active = false; };
+  }, []);
   // An instructor's program has to belong to their own department: it exists to
   // say which majors of that department they are eligible to teach.
   const formPrograms = programs.filter(program =>
@@ -392,6 +414,7 @@ export default function SecretaryFaculty() {
     setProbonoUnits(faculty.probono_units);
     setDepartmentId(faculty.department_id ? faculty.department_id.toString() : '');
     setProgramId(faculty.program_id ? faculty.program_id.toString() : '');
+    setDesignationId(faculty.designation_id ? faculty.designation_id.toString() : '');
     setStatus(faculty.status);
     setProfilePicture(faculty.profile_picture || null);
 
@@ -521,6 +544,10 @@ export default function SecretaryFaculty() {
       probono_units: probonoUnits,
       department_id: Number(deptVal),
       program_id: programId ? Number(programId) : null,
+      // Only sent when the account may change it. Submitting the field without
+      // faculty.manage_designations is refused outright, which would block
+      // every ordinary roster edit for roles that never touch designations.
+      ...(canManageDesignations ? { designation_id: designationId ? Number(designationId) : null } : {}),
       status,
       profile_picture: profilePicture
     };
@@ -664,7 +691,7 @@ export default function SecretaryFaculty() {
   useWorkflowGuide({ id: 'instructors', isReady: true, steps: instructorGuideSteps, mission: 'Manage Instructors' });
 
   return (
-    <div className="space-y-6 font-sans pb-12">
+    <div className="space-y-6 font-sans">
       {/* Summary Statistics Dashboard Row */}
       <div id="instructors-summary" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-5">
         <DashboardMetricCard label="Total Instructors" value={isLoading ? '—' : summaryStats.total} detail="Active faculty" icon={UserRound} tone="brand" />
@@ -781,6 +808,7 @@ export default function SecretaryFaculty() {
                 setProbonoUnits(0);
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
                 setProgramId('');
+                setDesignationId('');
                 setStatus('active');
                 setProfilePicture(null);
 
@@ -879,7 +907,16 @@ export default function SecretaryFaculty() {
                           <span className="text-[10px] text-gray-500 font-semibold block">
                             {f.department?.department_name || 'No Department'}
                           </span>
-                          <FacultyRoleBadge role={f.administrative_role} />
+                          <div className="flex flex-wrap items-center gap-1">
+                            <FacultyRoleBadge role={f.administrative_role} />
+                            {f.designation && (
+                              <FacultyRoleBadge
+                                label={f.designation.name}
+                                tone="gold"
+                                hint={f.designation.deload_units ? `-${f.designation.deload_units}u` : null}
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${statusDetails.color}`}>
@@ -1058,7 +1095,16 @@ export default function SecretaryFaculty() {
                             <div>
                               <div className="text-xs font-extrabold text-gray-900">{name}</div>
                               <div className="text-[10px] text-gray-400 font-medium">ID: #{f.id}</div>
-                              <FacultyRoleBadge role={f.administrative_role} />
+                              <div className="flex flex-wrap items-center gap-1">
+                                <FacultyRoleBadge role={f.administrative_role} />
+                                {f.designation && (
+                                  <FacultyRoleBadge
+                                    label={f.designation.name}
+                                    tone="gold"
+                                    hint={f.designation.deload_units ? `-${f.designation.deload_units}u` : null}
+                                  />
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -1225,8 +1271,8 @@ export default function SecretaryFaculty() {
       {/* View Details Modal Overlay */}
       {isDetailsModalOpen && detailsFaculty && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+          <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-200 flex shrink-0 justify-between items-center bg-gray-50/50">
               <div className="flex items-center gap-3.5">
                 {detailsFaculty.profile_picture ? (
                   <img src={detailsFaculty.profile_picture} alt={detailsFaculty.first_name} className="w-12 h-12 rounded-full object-cover border-2 border-[#5A1220]/30 shadow-md shrink-0" />
@@ -1253,7 +1299,7 @@ export default function SecretaryFaculty() {
               </button>
             </div>
 
-            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto font-sans">
+            <div className="p-6 space-y-6 min-h-0 flex-1 overflow-y-auto font-sans">
               {/* Load Metrics Breakdown Card */}
               <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-sm space-y-3 font-sans">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Required Load Balance</h3>
@@ -1363,7 +1409,7 @@ export default function SecretaryFaculty() {
               />
             </div>
 
-            <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex justify-end gap-3">
+            <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex shrink-0 justify-end gap-3">
               {canEditLoad && !canManageFaculty && (
                 <button
                   type="button"
@@ -1384,8 +1430,8 @@ export default function SecretaryFaculty() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
+          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
                 {isEditMode ? 'Edit Instructor' : 'Add New Instructor'}
               </h2>
@@ -1397,7 +1443,7 @@ export default function SecretaryFaculty() {
                 <X size={20} />
               </button>
             </div>
-            <form id="instructor-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans">
+            <form id="instructor-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto font-sans">
               {/* Photo Upload Section */}
               <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
                 <div className="relative group">
@@ -1497,6 +1543,30 @@ export default function SecretaryFaculty() {
                   placeholder="Smith"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  Designation
+                </label>
+                <select
+                  value={designationId}
+                  disabled={!canManageDesignations}
+                  onChange={(e) => setDesignationId(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans disabled:bg-gray-50 disabled:text-gray-500"
+                >
+                  <option value="">No designation</option>
+                  {designations.map(d => (
+                    <option key={d.id} value={d.id.toString()}>
+                      {d.name}{d.deload_units ? ` (-${d.deload_units} units)` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">
+                  {canManageDesignations
+                    ? describeDeload(maxUnits, designations.find(d => d.id.toString() === designationId)?.deload_units ?? 0)
+                    : 'Requires the Manage Designations capability.'}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

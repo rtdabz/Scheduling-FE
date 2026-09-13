@@ -25,6 +25,12 @@ export interface DepartmentScheduleStatusData {
   sections: SectionStatusItem[];
   /** Whether an active Dean is assigned to this department. */
   has_dean?: boolean;
+  /**
+   * Delegated classes still without an instructor. Counted server-side because
+   * they sit in other departments' sections, so the dashboard's own schedule
+   * rows never contain them.
+   */
+  cross_department_pending?: number;
 }
 
 /** Shown wherever submitting is blocked for want of a Dean. */
@@ -54,6 +60,8 @@ interface UseDepartmentScheduleStatusReturn {
   canSubmit: boolean;
   /** False when no active Dean is assigned; submitting is refused server-side. */
   hasDean: boolean;
+  /** Delegated classes from other departments that still need an instructor. */
+  crossDepartmentPending: number;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -76,6 +84,7 @@ export function useDepartmentScheduleStatus(
   // Assume a Dean until told otherwise, so a stale cache or a failed fetch never
   // blocks submitting on its own -- the backend is the authority either way.
   const [hasDean, setHasDean] = useState(cachedStatus?.has_dean ?? true);
+  const [crossDepartmentPending, setCrossDepartmentPending] = useState(cachedStatus?.cross_department_pending ?? 0);
   const [loading, setLoading] = useState(!!departmentId && !hasCachedData(statusCacheKey));
   const [error, setError] = useState<string | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
@@ -105,6 +114,7 @@ export function useDepartmentScheduleStatus(
           setSections(data.sections);
           setDepartmentName(data.department_name);
           setHasDean(data.has_dean ?? true);
+          setCrossDepartmentPending(data.cross_department_pending ?? 0);
         }
       } catch {
         if (!cancelled) {
@@ -177,6 +187,7 @@ export function useDepartmentScheduleStatus(
     draftingProgress,
     canSubmit,
     hasDean,
+    crossDepartmentPending,
     loading,
     error,
     refetch,

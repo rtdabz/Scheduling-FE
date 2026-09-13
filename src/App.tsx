@@ -4,7 +4,6 @@ import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
 import api from './lib/api';
-import { clearDataCache } from './lib/dataCache';
 import { getStoredUser, getStoredUserRole, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
 import LockedModuleView from './components/ui/LockedModuleView';
 
@@ -40,6 +39,10 @@ const ProgramHeadScheduleBuilder = lazy(() => import('./pages/program_head/Sched
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
 const ProgramHeadSectionTimetables = lazy(() => import('./pages/program_head/SectionTimetables'));
 const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
+// VPAA-only: a designation rewrites an instructor's Basic Load, so the list is
+// maintained by the office that owns faculty loading. Other roles read the
+// designation badge on their roster screens but have no route to this page.
+const Designations = lazy(() => import('./pages/shared/Designations'));
 const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
 const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
 const CrossDepartmentAssignments = lazy(() => import('./pages/ClassSchedules/CrossDepartmentAssignments'));
@@ -49,12 +52,6 @@ const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
 const CurriculumListPage = lazy(() => import('./pages/curriculum/CurriculumListPage'));
 const CurriculumDetailPage = lazy(() => import('./pages/curriculum/CurriculumDetailPage'));
 const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
-
-interface ApiErrorLike {
-  response?: {
-    status?: number;
-  };
-}
 
 type CapabilityUser = Pick<StoredUser, 'permissions' | 'scheduling_ready' | 'capability_catalog'>;
 
@@ -168,19 +165,10 @@ export default function App() {
         const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
         storage.setItem('user', JSON.stringify(res.data));
       })
-      .catch((error: ApiErrorLike) => {
-        if (error.response?.status !== 401) return;
-
-        clearDataCache();
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        sessionStorage.removeItem('token');
-        sessionStorage.removeItem('user');
-
-        if (window.location.pathname !== '/') {
-          window.location.href = '/';
-        }
-      });
+      // A rejected token is handled once, by the API layer: it clears the
+      // session and hands the shell an expiry notice to show. Nothing is left
+      // for this call to do but stay quiet.
+      .catch(() => undefined);
   }, []);
 
   return (
@@ -197,6 +185,7 @@ export default function App() {
             <Route path="/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
             <Route path="/vpaa/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
             <Route path="/faculty" element={<RoleRoute role="vpaa" moduleName="Faculty"><VpaaFaculty /></RoleRoute>} />
+            <Route path="/designations" element={<RoleRoute role="vpaa" moduleName="Designations"><Designations /></RoleRoute>} />
             <Route path="/rooms" element={<RoleRoute role="vpaa" moduleName="Rooms"><VpaaRooms /></RoleRoute>} />
 
             <Route path="/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />

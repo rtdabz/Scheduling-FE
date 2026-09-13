@@ -11,7 +11,8 @@ import { slotsToHours } from "../courseSlotPlan";
 import {
   isFieldSchedulingEligible,
   isHybridSchedulingEligible,
-  isMinorSplitSchedulingEligible,
+  balancedSplitSettingsOf,
+  isBalancedSplitSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 
 interface DropRecommendationRow {
@@ -111,6 +112,7 @@ interface DropModalProps {
   manualSchedulingSettings: {
     lecture_lab_schedule_override_enabled?: boolean;
     gec_split_schedule_override_enabled?: boolean;
+    major_lecture_split_schedule_override_enabled?: boolean;
   } | null;
   modalPreferredPattern: string | null;
   setModalPreferredPattern: (value: string | null) => void;
@@ -410,9 +412,9 @@ export default function DropModal({
     dropSubject,
     Boolean(manualSchedulingSettings?.lecture_lab_schedule_override_enabled),
   );
-  const splitEligible = isMinorSplitSchedulingEligible(
+  const splitEligible = isBalancedSplitSchedulingEligible(
     dropSubject,
-    Boolean(manualSchedulingSettings?.gec_split_schedule_override_enabled),
+    balancedSplitSettingsOf(manualSchedulingSettings),
   );
   // A course may be designated as Field by department settings even when its
   // stored room_type_required value is still lecture/laboratory.
