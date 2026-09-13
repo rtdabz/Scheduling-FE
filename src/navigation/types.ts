@@ -8,6 +8,7 @@ export interface NavItem {
   children?: NavItem[]  // optional submenu items
   requiredCapability?: string | string[]
   isLocked?: boolean
+  badge?: string        // optional status tag shown beside the label, e.g. "Under Implementation"
 }
 
 export interface NavSection {

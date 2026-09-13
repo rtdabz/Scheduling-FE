@@ -301,12 +301,22 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                     onClose();
                                   }
                                 }}
-                                title={child.isLocked ? `Locked: Requires permission` : child.label}
+                                title={child.isLocked ? `Locked: Requires permission` : child.badge ? `${child.label} (${child.badge})` : child.label}
                               >
                                 {child.icon && <child.icon size={16} className="flex-shrink-0" aria-hidden="true" />}
-                                <span className="whitespace-nowrap text-xs font-medium">
-                                  {child.label}
-                                </span>
+                                {child.badge ? (
+                                  <span className="flex min-w-0 flex-col leading-tight">
+                                    <span className="whitespace-nowrap text-xs font-medium">{child.label}</span>
+                                    <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide text-[#E8C27A]">
+                                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#C9952A]" aria-hidden="true" />
+                                      {child.badge}
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span className="whitespace-nowrap text-xs font-medium">
+                                    {child.label}
+                                  </span>
+                                )}
                                 {child.isLocked && (
                                   <Lock size={12} className="ml-auto text-[#E8D5C4]/50 shrink-0" />
                                 )}

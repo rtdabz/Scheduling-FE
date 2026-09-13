@@ -38,7 +38,7 @@ export const secretaryNav: NavSection[] = [
         requiredCapability: ['schedule.view', 'room.request'],
         children: [
           { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
-          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
+          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request', badge: 'Under Implementation' },
         ],
       },
       { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },

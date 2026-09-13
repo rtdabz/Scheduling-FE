@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Check, DoorOpen, Plus, RefreshCw, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowRight, Check, Construction, DoorOpen, Plus, RefreshCw, Trash2, Undo2, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import Skeleton from '../../components/ui/Skeleton';
@@ -138,6 +138,14 @@ export default function RoomRequests() {
 
   return (
     <div className="space-y-6">
+      <div role="status" className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+        <Construction size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <div className="text-sm">
+          <p className="font-bold">Under Implementation</p>
+          <p className="text-amber-700">Room Requests is still being rolled out. Some features may change or behave unexpectedly.</p>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="max-w-2xl text-sm text-gray-500">
           {canReview
