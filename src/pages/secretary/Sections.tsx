@@ -27,7 +27,7 @@ import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import SectionModal from './SectionModal';
-import { yearLevelLabel } from '../../lib/termLabel';
+import { yearLevelLabel } from '../../lib/semesterLabel';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
@@ -38,7 +38,7 @@ interface Department {
 }
 interface Program { id: number; code: string; name: string | null; department_id: number; }
 
-interface Term {
+interface Semester {
   id: number;
   academic_year: string;
   semester: '1st' | '2nd' | 'summer';
@@ -53,8 +53,8 @@ interface Section {
   department_id: number;
   program_id: number | null;
   department: Department | null;
-  term_id: number;
-  term: Term | null;
+  semester_id: number;
+  academic_semester: Semester | null;
   status: 'active' | 'inactive';
   createdAt?: string;
 }
@@ -67,8 +67,8 @@ interface ApiSection {
   department_id: number;
   program_id: number | null;
   department?: Department | null;
-  term_id: number;
-  term?: Term | null;
+  semester_id: number;
+  academic_semester?: Semester | null;
   status: 'active' | 'inactive';
   created_at: string;
   updated_at: string;
@@ -78,7 +78,7 @@ interface SectionsPageData {
   sections: Section[];
   departments: Department[];
   programs: Program[];
-  terms: Term[];
+  semesters: Semester[];
 }
 
 const mapApiSection = (s: ApiSection): Section => ({
@@ -89,8 +89,8 @@ const mapApiSection = (s: ApiSection): Section => ({
   department_id: s.department_id,
   program_id: s.program_id ?? null,
   department: s.department || null,
-  term_id: s.term_id,
-  term: s.term || null,
+  semester_id: s.semester_id,
+  academic_semester: s.academic_semester || null,
   status: s.status || 'active',
   createdAt: s.created_at
 });
@@ -104,7 +104,7 @@ export default function SecretarySections() {
   const [sections, setSections] = useState<Section[]>(cachedSectionsData?.sections ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedSectionsData?.departments ?? []);
   const [programs, setPrograms] = useState<Program[]>(cachedSectionsData?.programs ?? []);
-  const [terms, setTerms] = useState<Term[]>(cachedSectionsData?.terms ?? []);
+  const [semesters, setSemesters] = useState<Semester[]>(cachedSectionsData?.semesters ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
@@ -113,7 +113,7 @@ export default function SecretarySections() {
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageSections = isVpaa || isSecretary || isProgramHead;
 
-  const activeTerm = useMemo(() => terms.find((t) => t.is_active) ?? terms[0], [terms]);
+  const activeSemester = useMemo(() => semesters.find((t) => t.is_active) ?? semesters[0], [semesters]);
 
   const filteredSections = useMemo(() => {
     if (isVpaa) return sections;
@@ -144,25 +144,25 @@ export default function SecretarySections() {
     setIsLoading(forceRefresh || !hasCachedData(sectionsCacheKey));
     try {
       const data = await loadCachedData<SectionsPageData>(sectionsCacheKey, async () => {
-        const [sectionsRes, deptsRes, termsRes, programsRes] = await Promise.all([
+        const [sectionsRes, deptsRes, semestersRes, programsRes] = await Promise.all([
           api.get<ApiSection[]>('/sections'),
           api.get<Department[]>('/departments'),
-          api.get<Term[]>('/terms'),
+          api.get<Semester[]>('/semesters'),
           api.get<Program[]>('/programs')
         ]);
         return {
           sections: sectionsRes.data.map(mapApiSection),
           departments: deptsRes.data,
-          terms: termsRes.data,
+          semesters: semestersRes.data,
           programs: programsRes.data,
         };
       }, forceRefresh);
       setSections(data.sections);
       setDepartments(data.departments);
-      setTerms(data.terms);
+      setSemesters(data.semesters);
       setPrograms(data.programs);
     } catch {
-      toast.error('Error', 'Failed to load sections, departments, and terms data.');
+      toast.error('Error', 'Failed to load sections, departments, and semesters data.');
     } finally {
       setIsLoading(false);
     }
@@ -186,7 +186,7 @@ export default function SecretarySections() {
         invalidateCacheGroups('sections', 'schedules', 'approvals', 'dashboards');
         setSections(prev => {
           const nextSections = prev.filter(s => s.id !== idToDelete);
-          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, terms });
+          setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, semesters });
           return nextSections;
         });
         toast.success('Archived', 'Section archived successfully');
@@ -216,7 +216,7 @@ export default function SecretarySections() {
       invalidateCacheGroups('sections', 'schedules', 'approvals', 'dashboards');
       setSections((prev) => {
         const nextSections = prev.map((s) => (s.id === editingId ? updatedSection : s));
-        setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, terms });
+        setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, semesters });
         return nextSections;
       });
       toast.success('Updated', 'Section updated successfully');
@@ -240,7 +240,7 @@ export default function SecretarySections() {
     invalidateCacheGroups('sections', 'schedules', 'approvals', 'dashboards');
     setSections((prev) => {
       const nextSections = [...createdSections, ...prev];
-      setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, terms });
+      setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, semesters });
       return nextSections;
     });
     toast.success('Sections Saved', res.data.message || `${createdSections.length} sections created successfully.`);
@@ -288,13 +288,13 @@ export default function SecretarySections() {
           }
         },
         {
-          accessorKey: 'term',
-          header: 'Academic Term',
+          accessorKey: 'academic_semester',
+          header: 'Academic Semester',
           cell: info => {
-            const term = info.getValue() as Term | null;
+            const semester = info.getValue() as Semester | null;
             return (
               <span className="text-gray-700 font-semibold text-xs">
-                {term ? `A.Y. ${term.academic_year} (${term.semester})` : '—'}
+                {semester ? `A.Y. ${semester.academic_year} (${semester.semester})` : '—'}
               </span>
             );
           }
@@ -376,7 +376,7 @@ export default function SecretarySections() {
   });
 
   const sectionGuideSteps = useMemo(() => [
-    { element: '#sections-toolbar input[type="text"]', action: 'input' as const, taskHint: 'Type in the search box to continue.', title: 'Find a section', description: 'Search for a section by name or term before scheduling.', side: 'bottom' as const },
+    { element: '#sections-toolbar input[type="text"]', action: 'input' as const, taskHint: 'Type in the search box to continue.', title: 'Find a section', description: 'Search for a section by name or semester before scheduling.', side: 'bottom' as const },
     { element: '#sections-add-button', action: 'click' as const, taskHint: 'Click Add Section to open the form.', title: 'Add a section', description: 'New sections are created from this page.', side: 'bottom' as const },
     { element: '#section-program-select', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the program to continue.', title: 'Select a program', description: 'The section belongs to a program in your department.', side: 'bottom' as const },
     { element: '[data-tour="section-row-name"]', waitFor: '#section-form', action: 'input' as const, taskHint: 'Type a section name to continue.', title: 'Name the section', description: 'Use the official section code, e.g. BSIT 1A.', side: 'bottom' as const },
@@ -395,7 +395,7 @@ export default function SecretarySections() {
             type="text"
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search section name, term, etc..."
+            placeholder="Search section name, semester, etc..."
             className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
           />
         </div>
@@ -598,7 +598,7 @@ export default function SecretarySections() {
         isOpen={isModalOpen}
         isEditMode={isEditMode}
         editingSection={sections.find((s) => s.id === editingId)}
-        activeTerm={activeTerm ?? null}
+        activeSemester={activeSemester ?? null}
         departments={departments}
         programs={programs}
         userDepartmentId={user?.department_id}

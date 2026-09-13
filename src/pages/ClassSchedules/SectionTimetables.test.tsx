@@ -44,13 +44,13 @@ const section = (id: string, name: string, yearLevel: Section["yearLevel"]): Sec
   yearLevel,
   semester: "1st",
   departmentId: 7,
-  termId: 9,
+  semesterId: 9,
   status: "active",
 });
 
 const schedule = (id: string, sectionId: string, mode: ScheduleItem["mode"]): ScheduleItem => ({
   id,
-  termId: 9,
+  semesterId: 9,
   departmentId: 7,
   courseId: id,
   subjectId: id,
@@ -86,7 +86,7 @@ describe("SectionTimetables", () => {
       sections: [section("2", "BSIT-2A", 2), section("1", "BSIT-1A", 1)],
       subjects: [],
       faculties: [],
-      activeTerm: { id: 9, academic_year: "2026-2027", semester: "1st", is_active: true },
+      activeSemester: { id: 9, academic_year: "2026-2027", semester: "1st", is_active: true },
       departments: [],
       users: [],
       schedules: [schedule("10", "1", "on-site"), schedule("20", "2", "online")],

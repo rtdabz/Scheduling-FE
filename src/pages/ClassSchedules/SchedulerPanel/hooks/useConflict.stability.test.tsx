@@ -22,7 +22,7 @@ const rooms: Room[] = [
   { id: "1", name: "LEC1", departmentId: 2, roomType: "lecture", status: "available" },
 ];
 const sections: Section[] = [
-  { id: "10", name: "BSIT-1A", yearLevel: 1, semester: "1st", departmentId: 2, termId: 7, status: "active" },
+  { id: "10", name: "BSIT-1A", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" },
 ];
 const departments: Department[] = [
   { id: 2, department_name: "Info Tech", department_code: "IT" },

@@ -9,7 +9,7 @@ import {
   type SchedulerCacheData,
 } from "./SchedulerPanel/hooks/initialDataMapper";
 import type { ScheduleItem } from "./SchedulerPanel/types";
-import { yearLevelLabel } from "../../lib/termLabel";
+import { yearLevelLabel } from "../../lib/semesterLabel";
 
 type DeliveryModeFilter = "all" | ScheduleItem["mode"];
 
@@ -18,7 +18,7 @@ const emptyData: SchedulerCacheData = {
   sections: [],
   subjects: [],
   faculties: [],
-  activeTerm: null,
+  activeSemester: null,
   departments: [],
   users: [],
   schedules: [],
@@ -28,19 +28,19 @@ const emptyData: SchedulerCacheData = {
   hasDean: true,
 };
 
-const formatActiveTerm = (data: SchedulerCacheData): string => {
-  const term = data.activeTerm;
-  if (!term) return "No active term";
+const formatActiveSemester = (data: SchedulerCacheData): string => {
+  const semester = data.activeSemester;
+  if (!semester) return "No active semester";
 
-  const semester = term.semester === "1st"
+  const period = semester.semester === "1st"
     ? "1st Semester"
-    : term.semester === "2nd"
+    : semester.semester === "2nd"
       ? "2nd Semester"
-      : term.semester === "summer"
+      : semester.semester === "summer"
         ? "Summer"
-        : term.semester;
+        : semester.semester;
 
-  return `${semester} AY ${term.academic_year}`.trim();
+  return `${period} AY ${semester.academic_year}`.trim();
 };
 
 export default function SectionTimetables() {
@@ -183,8 +183,8 @@ export default function SectionTimetables() {
           sections={data.sections}
           rooms={data.rooms}
           subjects={data.subjects}
-          activeTermText={formatActiveTerm(data)}
-          activeTerm={data.activeTerm}
+          activeSemesterText={formatActiveSemester(data)}
+          activeSemester={data.activeSemester}
           selectedSectionId={selectedSectionId}
           totalScheduled={totalScheduled}
           totalSubjects={totalSubjects}

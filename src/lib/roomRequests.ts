@@ -30,7 +30,7 @@ export interface RoomRequest {
   purpose: string | null;
   review_remarks: string | null;
   room: RoomRequestRoom | null;
-  term: { id: number; academic_year: string; semester: string; is_active: boolean } | null;
+  academic_semester: { id: number; academic_year: string; semester: string; is_active: boolean } | null;
   requesting_department: RoomRequestDepartment | null;
   owner_department: RoomRequestDepartment | null;
   requester: { id: number; name: string } | null;

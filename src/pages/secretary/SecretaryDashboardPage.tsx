@@ -37,14 +37,14 @@ import { MILESTONE_TITLES, SUBMISSION_MILESTONES, submissionProgress } from '../
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 
-interface Schedule { id:number; term_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; course?:{course_code:string;course_category?:string|null}|null; subject?:{subject_code:string;subject_category?:string|null}|null; faculty?:{first_name:string;last_name:string}|null; room?:{room_code:string;room_type?:string}|null; section?:{section_name:string}|null; department_id?:number|null }
+interface Schedule { id:number; semester_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; course?:{course_code:string;course_category?:string|null}|null; subject?:{subject_code:string;subject_category?:string|null}|null; faculty?:{first_name:string;last_name:string}|null; room?:{room_code:string;room_type?:string}|null; section?:{section_name:string}|null; department_id?:number|null }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null; department_id?:number|null }
 interface Section { id:number; section_name:string; department_id?:number|null }
 interface Faculty { id:number; first_name:string; last_name:string; max_units:number; assigned_units?:number; deload_units?:number; profile_picture?:string|null; department_id:number }
 interface Subject { id:number; subject_code:string; subject_name:string; department_id?:number|null }
-interface Term { id:number; status:string }
-interface Overview { schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeTerm:Term|null }
-interface InitialData { schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_term?:Term }
+interface Semester { id:number; status:string }
+interface Overview { schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null }
+interface InitialData { schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert';
 
@@ -136,7 +136,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
-  const [term, setTerm] = useState<Term | null>(cached?.activeTerm ?? null);
+  const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
 
   useEffect(() => {
     let active = true;
@@ -153,7 +153,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
             sections: Array.isArray(data.sections) ? data.sections : [],
             faculties: Array.isArray(data.faculties) ? data.faculties : [],
             subjects: Array.isArray(data.subjects) ? data.subjects : (Array.isArray(data.courses) ? data.courses : []),
-            activeTerm: data.active_term || null,
+            activeSemester: data.active_semester || null,
           };
         }, reloadKey > 0);
 
@@ -163,7 +163,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         setSections(overview.sections);
         setFaculties(overview.faculties);
         setSubjects(overview.subjects);
-        setTerm(overview.activeTerm);
+        setSemester(overview.activeSemester);
       } catch {
         if (active) setLoadError('Could not load scheduling data. Figures below may be out of date.');
       } finally {
@@ -198,12 +198,12 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   );
 
   const sectionIds = useMemo(() => new Set(visibleSections.map(s => s.id)), [visibleSections]);
-  const termId = term?.id;
+  const semesterId = semester?.id;
   const visibleSchedules = useMemo(
     () => schedules.filter(s =>
-      (!termId || Number(s.term_id) === Number(termId)) &&
+      (!semesterId || Number(s.semester_id) === Number(semesterId)) &&
       (sectionIds.has(s.section_id) || Number(s.department_id) === Number(departmentId))),
-    [schedules, termId, sectionIds, departmentId],
+    [schedules, semesterId, sectionIds, departmentId],
   );
 
   // ── Counts ──
@@ -282,7 +282,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   // ── Current status ──
   const progress = submissionProgress(currentStage);
   const statusNote = progress.isComplete
-    ? 'Approved all the way through. Nothing further is needed for this term.'
+    ? 'Approved all the way through. Nothing further is needed for this semester.'
     : currentStage === 4 ? 'The Dean approved these schedules. Waiting on the VPAA.'
     : progress.isReturned ? `${stageCounts.revision} section${stageCounts.revision === 1 ? '' : 's'} came back from the Dean. Revise and submit again.`
     : currentStage === 2 ? 'Schedules are with the Dean for review.'

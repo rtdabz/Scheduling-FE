@@ -20,7 +20,7 @@ const typeLabels: Record<string, string> = {
   rooms: 'Rooms',
   faculties: 'Faculty',
   courses: 'Courses',
-  terms: 'Terms',
+  semesters: 'Semesters',
   sections: 'Sections',
   schedules: 'Schedules',
   'schedule-splits': 'Schedule splits',

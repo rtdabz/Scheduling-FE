@@ -493,7 +493,7 @@ export default function Departments() {
         accessorKey: 'logo',
         header: 'Logo',
         // A base64 data URI is meaningless to sort by and would match every
-        // search term, so the column is display-only.
+        // search semester, so the column is display-only.
         enableSorting: false,
         enableGlobalFilter: false,
         cell: info => {

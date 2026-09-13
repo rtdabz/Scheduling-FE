@@ -10,7 +10,7 @@ interface ClearAllModalProps {
   selectedSectionId: string;
   schedules: ScheduleItem[];
   sectionSchedules: ScheduleItem[];
-  activeTermText: string;
+  activeSemesterText: string;
   confirmClearAll: (scope?: "section" | "all") => void;
   cancelClearAll: () => void;
 }
@@ -22,7 +22,7 @@ export default function ClearAllModal({
   selectedSectionId,
   schedules,
   sectionSchedules,
-  activeTermText,
+  activeSemesterText,
   confirmClearAll,
   cancelClearAll
 }: ClearAllModalProps) {
@@ -88,7 +88,7 @@ export default function ClearAllModal({
               <p id="clear-all-desc" className="text-sm text-gray-600 mt-1">
                 Choose whether to clear only{" "}
                 <span className="font-bold text-gray-900">{sectionName}</span>{" "}
-                or the entire loaded schedule{activeTermText ? ` for ${activeTermText}` : ""}.
+                or the entire loaded schedule{activeSemesterText ? ` for ${activeSemesterText}` : ""}.
               </p>
             </div>
           </div>

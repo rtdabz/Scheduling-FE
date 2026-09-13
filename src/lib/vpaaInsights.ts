@@ -3,7 +3,7 @@
  *
  * These cannot be derived in the browser from `/initial-data`: that payload caps
  * its `schedules` array, so campus-wide utilisation measured from it would be
- * understated. The server counts over every meeting in the active term and sends
+ * understated. The server counts over every meeting in the active semester and sends
  * back a few kilobytes of totals.
  */
 
@@ -28,7 +28,7 @@ export interface RoomUtilizationRow {
 }
 
 export interface VpaaInsights {
-  term_id: number | null;
+  semester_id: number | null;
   generated_at: string;
   utilization: {
     open_minutes_per_day: number;
@@ -59,7 +59,7 @@ export interface VpaaInsights {
 }
 
 export const EMPTY_INSIGHTS: VpaaInsights = {
-  term_id: null,
+  semester_id: null,
   generated_at: '',
   utilization: {
     open_minutes_per_day: 0,

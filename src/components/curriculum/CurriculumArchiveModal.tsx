@@ -98,7 +98,7 @@ export default function CurriculumArchiveModal({
                 <BookOpen size={44} className="mx-auto text-gray-300 mb-3 animate-pulse" />
                 <p className="text-sm font-bold text-gray-700 mb-1">No archived curriculum found</p>
                 <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                  {searchQuery ? 'Try searching for a different term or keyword.' : 'Curriculum records that you archive will appear here.'}
+                  {searchQuery ? 'Try searching for a different semester or keyword.' : 'Curriculum records that you archive will appear here.'}
                 </p>
               </div>
             ) : (

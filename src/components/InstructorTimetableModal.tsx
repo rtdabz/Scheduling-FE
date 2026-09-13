@@ -11,7 +11,7 @@ import { scheduleLocationLabel } from "../lib/scheduleLocation";
 
 interface ApiScheduleRecord {
   id: number;
-  term_id: number;
+  semester_id: number;
   section_id: number;
   course_id?: number | null;
   subject_id?: number | null;

@@ -52,10 +52,10 @@ function HybridModalHarness({
         { id: "lab-room", name: "Laboratory Room", departmentId: 1, roomType: "laboratory", status: "available" },
         { id: "online-room", name: "Online", departmentId: 1, roomType: "online", status: "available" },
       ]}
-      sections={[{ id: "1", name: "BSIT 1A", yearLevel: 1, semester: "1st", departmentId: 1, termId: 1, status: "active" }]}
+      sections={[{ id: "1", name: "BSIT 1A", yearLevel: 1, semester: "1st", departmentId: 1, semesterId: 1, status: "active" }]}
       schedules={schedules}
       selectedSectionId="1"
-      activeTerm={{ id: 1, academic_year: "2026-2027", semester: "1st", is_active: true }}
+      activeSemester={{ id: 1, academic_year: "2026-2027", semester: "1st", is_active: true }}
       dropContext={{ courseId: "1", subjectId: "1", dayIndex: 3, startSlot: 2, isRescheduling: false }}
       dropSubject={{
         id: "1",
@@ -153,7 +153,7 @@ describe("DropModal Hybrid configuration", () => {
   it("recalculates recommendations from the latest displayed schedule state", async () => {
     const schedule = (overrides: Partial<ScheduleItem>): ScheduleItem => ({
       id: "22",
-      termId: 1,
+      semesterId: 1,
       departmentId: 1,
       courseId: "2",
       courseCode: "IT 102",

@@ -62,7 +62,7 @@ interface ApiRoom {
 
 interface Schedule {
   id: number;
-  term_id: number;
+  semester_id: number;
   section_id: number;
   course_id: number;
   faculty_id: number | null;
@@ -94,7 +94,7 @@ interface RoomsPageData {
   rooms: Room[];
   departments: Department[];
   schedules?: Schedule[];
-  activeTerm?: any;
+  activeSemester?: any;
 }
 
 const mapApiRoom = (r: ApiRoom): Room => ({
@@ -119,7 +119,7 @@ export default function ProgramHeadRooms() {
   const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
-  const [activeTerm, setActiveTerm] = useState<any | null>(cachedRoomsData?.activeTerm ?? null);
+  const [activeSemester, setActiveSemester] = useState<any | null>(cachedRoomsData?.activeSemester ?? null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -171,23 +171,23 @@ export default function ProgramHeadRooms() {
     setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
     try {
       const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_term?: any }>('/initial-data?include=rooms,departments,schedules');
+        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_semester?: any }>('/initial-data?include=rooms,departments,schedules');
         const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
         const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
         const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
-        const activeTerm = initialDataRes.data?.active_term || null;
+        const activeSemester = initialDataRes.data?.active_semester || null;
 
         return {
           rooms: rawRooms.map(mapApiRoom),
           departments: rawDepts,
           schedules: rawSchedules,
-          activeTerm: activeTerm,
+          activeSemester: activeSemester,
         };
       }, forceRefresh);
       setRooms(data.rooms);
       setDepartments(data.departments);
       setSchedules(data.schedules || []);
-      setActiveTerm(data.activeTerm || null);
+      setActiveSemester(data.activeSemester || null);
     } catch {
       toast.error('Error', 'Failed to load rooms and schedules data.');
     } finally {
@@ -243,7 +243,7 @@ export default function ProgramHeadRooms() {
         setRooms(prev => {
           const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
           invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester });
           return nextRooms;
         });
         toast.success('Success', 'Room updated successfully');
@@ -253,7 +253,7 @@ export default function ProgramHeadRooms() {
         setRooms(prev => {
           const nextRooms = [createdRoom, ...prev];
           invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester });
           return nextRooms;
         });
         toast.success('Success', 'Room created successfully');
@@ -303,7 +303,7 @@ export default function ProgramHeadRooms() {
         setRooms(prev => {
           const nextRooms = prev.filter(r => r.id !== idToDelete);
           invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeTerm });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester });
           return nextRooms;
         });
         toast.success('Archived', 'Room archived successfully');

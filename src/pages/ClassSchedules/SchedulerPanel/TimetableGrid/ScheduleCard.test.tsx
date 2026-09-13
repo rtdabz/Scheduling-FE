@@ -20,7 +20,7 @@ const subject: Subject = {
 
 const schedule = (meetingType: ScheduleItem["meetingType"], mode: ScheduleItem["mode"]): ScheduleItem => ({
   id: meetingType ?? "meeting",
-  termId: 1,
+  semesterId: 1,
   departmentId: 1,
   courseId: "1",
   courseCode: subject.code,

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPrintTermTitle } from "./printScheduleFormat";
+import { buildPrintSemesterTitle } from "./printScheduleFormat";
 
-describe("buildPrintTermTitle", () => {
-  it("uses the scheduler active term in the print heading", () => {
-    expect(buildPrintTermTitle({
+describe("buildPrintSemesterTitle", () => {
+  it("uses the scheduler active semester in the print heading", () => {
+    expect(buildPrintSemesterTitle({
       id: 7,
       academic_year: "2026-2027",
       semester: "1st",
@@ -12,8 +12,8 @@ describe("buildPrintTermTitle", () => {
     })).toBe("CLASS SCHEDULE AY 2026-2027    1st Semester");
   });
 
-  it("supports the summer term label", () => {
-    expect(buildPrintTermTitle({
+  it("supports the summer semester label", () => {
+    expect(buildPrintSemesterTitle({
       id: 8,
       academic_year: "2026-2027",
       semester: "summer",

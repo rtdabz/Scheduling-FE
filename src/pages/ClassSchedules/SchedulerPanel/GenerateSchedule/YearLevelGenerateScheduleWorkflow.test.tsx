@@ -24,7 +24,7 @@ vi.mock("../../../../context/ToastContext", () => ({
 import YearLevelGenerateScheduleWorkflow from "./YearLevelGenerateScheduleWorkflow";
 import { GenerationRunProvider } from "../hooks/useGenerationRun";
 import { clearDataCache } from "../../../../lib/dataCache";
-import type { Course, Section, Term } from "../types";
+import type { Course, Section, Semester } from "../types";
 
 afterEach(cleanup);
 
@@ -32,12 +32,12 @@ afterEach(cleanup);
 // inside its provider.
 const renderWorkflow = (ui: ReactElement) =>
   render(
-    <GenerationRunProvider departmentId={2} termId={1}>
+    <GenerationRunProvider departmentId={2} semesterId={1}>
       {ui}
     </GenerationRunProvider>,
   );
 
-const activeTerm: Term = {
+const activeSemester: Semester = {
   id: 1,
   academic_year: "2026-2027",
   semester: "1st",
@@ -55,7 +55,7 @@ const sections: Section[] = [{
   // against is only well defined relative to one.
   curriculumId: 7,
   curriculumName: "BSIT 2026",
-  termId: 1,
+  semesterId: 1,
   status: "active",
 }];
 
@@ -146,7 +146,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
   it("polls the queued result, saves it, and closes on the click while the refresh finishes", async () => {
     const generatedSchedule = {
       id: 501,
-      term_id: 1,
+      semester_id: 1,
       department_id: 2,
       course_id: 20,
       section_id: 10,
@@ -210,7 +210,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={onClose}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={onAccepted}
@@ -233,7 +233,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       expect.objectContaining({
         operations: [expect.objectContaining({ section_id: 10, course_id: 20 })],
         replace_section_ids: [10],
-        replace_term_id: 1,
+        replace_semester_id: 1,
       }),
     ));
     expect(onAccepted).toHaveBeenCalledWith([generatedSchedule]);
@@ -255,7 +255,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
           onClose={vi.fn()}
           sections={sections}
           courses={courses}
-          activeTerm={activeTerm}
+          activeSemester={activeSemester}
           departmentId={2}
           existingSchedules={[]}
           onAccepted={vi.fn()}
@@ -351,7 +351,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -390,7 +390,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={onClose}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -477,7 +477,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={twoSections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -540,7 +540,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -597,7 +597,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -629,7 +629,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -670,7 +670,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={sections}
         courses={courses}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}
@@ -733,7 +733,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         onClose={vi.fn()}
         sections={sections}
         courses={[...courses, secondCourse]}
-        activeTerm={activeTerm}
+        activeSemester={activeSemester}
         departmentId={2}
         existingSchedules={[]}
         onAccepted={vi.fn()}

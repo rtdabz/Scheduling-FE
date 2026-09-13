@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { CalendarDays, ChevronDown, Plus } from 'lucide-react';
-import type { CurriculumCourse, CurriculumTerm, Program } from '../../types/curriculum';
+import type { CurriculumCourse, CurriculumSemester, Program } from '../../types/curriculum';
 import CourseTable from './CourseTable';
 import AddCourseModal from './AddCourseModal';
 import EditCourseModal, { type EditCourseFormData } from './EditCourseModal';
 
 interface SemesterCardProps {
-  term: CurriculumTerm;
-  semesterTerms: CurriculumTerm[];
+  semester: CurriculumSemester;
+  curriculumSemesters: CurriculumSemester[];
   selectedYear: number;
   selectedSemester: number;
   yearLevelStats: Record<number, { courses: number; units: number; lec: number; lab: number }>;
@@ -40,12 +40,12 @@ interface SemesterCardProps {
 const semesterLabels: Record<number, string> = {
   1: '1st Semester',
   2: '2nd Semester',
-  3: 'Summer Term',
+  3: 'Summer',
 };
 
 export default function SemesterCard({
-  term,
-  semesterTerms,
+  semester,
+  curriculumSemesters,
   selectedYear,
   selectedSemester,
   yearLevelStats,
@@ -124,16 +124,16 @@ export default function SemesterCard({
           </label>
 
           <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Semester">
-            {semesterTerms.map((semesterTerm) => {
-              const isSelected = semesterTerm.semester === selectedSemester;
+            {curriculumSemesters.map((curriculumSemester) => {
+              const isSelected = curriculumSemester.semester === selectedSemester;
 
               return (
                 <button
-                  key={semesterTerm.semester}
+                  key={curriculumSemester.semester}
                   type="button"
                   role="tab"
                   aria-selected={isSelected}
-                  onClick={() => onSelectSemester(semesterTerm.semester)}
+                  onClick={() => onSelectSemester(curriculumSemester.semester)}
                   className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
                     isSelected
                       ? 'bg-[#4e0a10] text-white shadow-sm'
@@ -141,13 +141,13 @@ export default function SemesterCard({
                   }`}
                 >
                   <CalendarDays size={14} aria-hidden="true" />
-                  <span>{semesterLabels[semesterTerm.semester] || `Semester ${semesterTerm.semester}`}</span>
+                  <span>{semesterLabels[curriculumSemester.semester] || `Semester ${curriculumSemester.semester}`}</span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-mono ${
                       isSelected ? 'bg-[#C9952A] text-white' : 'bg-gray-100 text-gray-500'
                     }`}
                   >
-                    {semesterTerm.totals.tu}u
+                    {curriculumSemester.totals.tu}u
                   </span>
                 </button>
               );
@@ -157,9 +157,9 @@ export default function SemesterCard({
 
         <div className="flex items-center justify-between gap-4 px-1 sm:justify-end">
           <div className="flex items-center gap-3 text-xs font-semibold text-gray-500">
-            <span>{term.courses.length} courses</span>
+            <span>{semester.courses.length} courses</span>
             <span>·</span>
-            <span className="text-[#4e0a10] font-bold">{term.totals.tu} units</span>
+            <span className="text-[#4e0a10] font-bold">{semester.totals.tu} units</span>
           </div>
 
           {canEdit && (
@@ -177,8 +177,8 @@ export default function SemesterCard({
 
       {/* Course Table */}
       <CourseTable
-        courses={term.courses}
-        totals={term.totals}
+        courses={semester.courses}
+        totals={semester.totals}
         highlightedCourseId={highlightedCourseId}
         removingCourseId={removingCourseId}
         isRemoving={isRemoving}
@@ -193,8 +193,8 @@ export default function SemesterCard({
       {canEdit && (
         <AddCourseModal
           isOpen={isAddOpen}
-          yearLevel={term.year_level}
-          semester={term.semester}
+          yearLevel={semester.year_level}
+          semester={semester.semester}
           onClose={() => setIsAddOpen(false)}
           onSaveCourses={handleSaveCourses}
         />

@@ -1,19 +1,19 @@
 import type jsPDF from 'jspdf';
 import tccLogo from '../assets/logo.jpg';
 import municipalLogo from '../assets/municipal-logo.png';
-import type { Curriculum, CurriculumTerm, Program } from '../types/curriculum';
+import type { Curriculum, CurriculumSemester, Program } from '../types/curriculum';
 
 interface PrintCurriculumOptions {
   curriculum: Curriculum;
-  terms: CurriculumTerm[];
+  semesters: CurriculumSemester[];
   program?: Program | null;
 }
 
 interface CurriculumPrintSection {
   yearLevel: number;
-  firstSemester: CurriculumTerm;
-  secondSemester: CurriculumTerm;
-  summer: CurriculumTerm;
+  firstSemester: CurriculumSemester;
+  secondSemester: CurriculumSemester;
+  summer: CurriculumSemester;
 }
 
 const PAGE_WIDTH = 216;
@@ -24,19 +24,19 @@ const EVALUATION_HEIGHT = 39;
 const PRINT_LOGO_SIZE = 18;
 const PRINT_LOGO_Y = 7;
 
-const emptyTerm = (yearLevel: number, semester: number): CurriculumTerm => ({
+const emptySemester = (yearLevel: number, semester: number): CurriculumSemester => ({
   year_level: yearLevel,
   semester,
   courses: [],
   totals: { lec: 0, lab: 0, tu: 0 },
 });
 
-export const getCurriculumPrintSections = (terms: CurriculumTerm[]): CurriculumPrintSection[] =>
+export const getCurriculumPrintSections = (semesters: CurriculumSemester[]): CurriculumPrintSection[] =>
   [1, 2, 3, 4].map((yearLevel) => ({
     yearLevel,
-    firstSemester: terms.find((term) => term.year_level === yearLevel && term.semester === 1) ?? emptyTerm(yearLevel, 1),
-    secondSemester: terms.find((term) => term.year_level === yearLevel && term.semester === 2) ?? emptyTerm(yearLevel, 2),
-    summer: terms.find((term) => term.year_level === yearLevel && term.semester === 3) ?? emptyTerm(yearLevel, 3),
+    firstSemester: semesters.find((semester) => semester.year_level === yearLevel && semester.semester === 1) ?? emptySemester(yearLevel, 1),
+    secondSemester: semesters.find((semester) => semester.year_level === yearLevel && semester.semester === 2) ?? emptySemester(yearLevel, 2),
+    summer: semesters.find((semester) => semester.year_level === yearLevel && semester.semester === 3) ?? emptySemester(yearLevel, 3),
   }));
 
 export const getPrintableProgramTitle = (curriculum: Curriculum, program?: Program | null): string => {
@@ -244,7 +244,7 @@ const fitSingleLineText = (doc: jsPDF, value: string, maxWidth: number, preferre
   return `${fitted.trimEnd()}...`;
 };
 
-const drawTerm = (doc: jsPDF, term: CurriculumTerm, label: string, x: number, y: number, width: number, rowHeight: number) => {
+const drawSemester = (doc: jsPDF, semester: CurriculumSemester, label: string, x: number, y: number, width: number, rowHeight: number) => {
   const codeWidth = 17.5;
   const unitWidth = 5.2;
   const prerequisiteWidth = 19;
@@ -260,9 +260,9 @@ const drawTerm = (doc: jsPDF, term: CurriculumTerm, label: string, x: number, y:
   doc.text(label, x + codeWidth + titleWidth / 2, y + 3.5, { align: 'center' });
 
   doc.setLineWidth(0.35);
-  doc.rect(numericX, y, unitTableWidth, headerHeight + term.courses.length * rowHeight);
-  [unitWidth, unitWidth * 2, unitWidth * 3].forEach((offset) => doc.line(numericX + offset, y, numericX + offset, y + headerHeight + term.courses.length * rowHeight));
-  doc.line(numericX + unitWidth * 3, y, numericX + unitWidth * 3, y + headerHeight + term.courses.length * rowHeight);
+  doc.rect(numericX, y, unitTableWidth, headerHeight + semester.courses.length * rowHeight);
+  [unitWidth, unitWidth * 2, unitWidth * 3].forEach((offset) => doc.line(numericX + offset, y, numericX + offset, y + headerHeight + semester.courses.length * rowHeight));
+  doc.line(numericX + unitWidth * 3, y, numericX + unitWidth * 3, y + headerHeight + semester.courses.length * rowHeight);
   doc.line(numericX, y + headerHeight, numericX + unitTableWidth, y + headerHeight);
 
   doc.setFont('Helvetica', 'normal');
@@ -270,7 +270,7 @@ const drawTerm = (doc: jsPDF, term: CurriculumTerm, label: string, x: number, y:
   ['Lec', 'Lab', 'TU'].forEach((header, index) => doc.text(header, numericX + unitWidth * (index + 0.5), y + 3.6, { align: 'center' }));
   doc.text('Preq', numericX + unitWidth * 3 + prerequisiteWidth / 2, y + 3.6, { align: 'center' });
 
-  term.courses.forEach((course, index) => {
+  semester.courses.forEach((course, index) => {
     const rowTop = y + headerHeight + index * rowHeight;
     const baseline = rowTop + rowHeight * 0.72;
     doc.line(numericX, rowTop + rowHeight, numericX + unitTableWidth, rowTop + rowHeight);
@@ -288,13 +288,13 @@ const drawTerm = (doc: jsPDF, term: CurriculumTerm, label: string, x: number, y:
     doc.text(String(course.total_units), numericX + unitWidth * 2.5, baseline, { align: 'center' });
   });
 
-  const totalsY = y + headerHeight + term.courses.length * rowHeight + 3.2;
+  const totalsY = y + headerHeight + semester.courses.length * rowHeight + 3.2;
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(5.5);
   doc.text('TOTAL CREDITS', numericX - 16, totalsY, { align: 'right' });
-  doc.text(String(term.totals.lec), numericX + unitWidth * 0.5, totalsY, { align: 'center' });
-  doc.text(String(term.totals.lab), numericX + unitWidth * 1.5, totalsY, { align: 'center' });
-  doc.text(String(term.totals.tu), numericX + unitWidth * 2.5, totalsY, { align: 'center' });
+  doc.text(String(semester.totals.lec), numericX + unitWidth * 0.5, totalsY, { align: 'center' });
+  doc.text(String(semester.totals.lab), numericX + unitWidth * 1.5, totalsY, { align: 'center' });
+  doc.text(String(semester.totals.tu), numericX + unitWidth * 2.5, totalsY, { align: 'center' });
 };
 
 const drawEvaluationTable = (doc: jsPDF, y: number) => {
@@ -335,7 +335,7 @@ export const createCurriculumPdfDocument = (
   autoPrint = false,
 ) => {
   const doc = new PdfDocument({ orientation: 'portrait', unit: 'mm', format: [PAGE_WIDTH, PAGE_HEIGHT] });
-  const sections = getCurriculumPrintSections(options.terms);
+  const sections = getCurriculumPrintSections(options.semesters);
   const title = getPrintableProgramTitle(options.curriculum, options.program);
   drawInstitutionHeader(doc, options.curriculum, title, tccImage, municipalImage, departmentImage);
 
@@ -349,19 +349,19 @@ export const createCurriculumPdfDocument = (
 
   let y = 71;
   const gutter = 3;
-  const termWidth = (CONTENT_WIDTH - gutter) / 2;
+  const semesterWidth = (CONTENT_WIDTH - gutter) / 2;
 
   sections.forEach((section) => {
     drawBand(doc, yearLabel(section.yearLevel), y);
     y += 7.1;
-    drawTerm(doc, section.firstSemester, 'First Semester', PAGE_MARGIN, y, termWidth, rowHeight);
-    drawTerm(doc, section.secondSemester, 'Second Semester', PAGE_MARGIN + termWidth + gutter, y, termWidth, rowHeight);
+    drawSemester(doc, section.firstSemester, 'First Semester', PAGE_MARGIN, y, semesterWidth, rowHeight);
+    drawSemester(doc, section.secondSemester, 'Second Semester', PAGE_MARGIN + semesterWidth + gutter, y, semesterWidth, rowHeight);
     y += 9.8 + Math.max(section.firstSemester.courses.length, section.secondSemester.courses.length) * rowHeight;
 
     if (section.summer.courses.length > 0) {
       drawBand(doc, 'SUMMER', y);
       y += 7.1;
-      drawTerm(doc, section.summer, 'Summer', PAGE_MARGIN, y, termWidth + 19, rowHeight);
+      drawSemester(doc, section.summer, 'Summer', PAGE_MARGIN, y, semesterWidth + 19, rowHeight);
       y += 9.8 + section.summer.courses.length * rowHeight;
     }
   });

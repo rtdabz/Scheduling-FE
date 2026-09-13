@@ -23,7 +23,7 @@ export const curriculumService = {
 
   /** Points every active section of a year level at one curriculum. */
   async assignCurriculumToYearLevel(payload: {
-    term_id: number;
+    semester_id: number;
     department_id: number;
     year_level: number;
     curriculum_id: number;

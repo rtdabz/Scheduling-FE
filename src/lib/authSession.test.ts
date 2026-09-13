@@ -30,7 +30,7 @@ describe('logoutCurrentSession', () => {
   it('revokes the captured token and clears local state immediately', () => {
     localStorage.setItem('token', 'test-token');
     localStorage.setItem('user', '{"id":1}');
-    sessionStorage.setItem('wicars:data-cache:v4:dashboard', '{}');
+    sessionStorage.setItem('wicars:data-cache:v5:dashboard', '{}');
 
     logoutCurrentSession();
 

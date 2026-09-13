@@ -5,7 +5,7 @@ interface CacheEntry<T> {
 
 const dataCache = new Map<string, CacheEntry<unknown>>();
 const pendingRequests = new Map<string, Promise<unknown>>();
-const STORAGE_PREFIX = 'wicars:data-cache:v4:';
+const STORAGE_PREFIX = 'wicars:data-cache:v5:'; // v5: term -> semester field rename
 const CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL
 
 // Clean up any legacy or stale cache keys from previous versions on startup

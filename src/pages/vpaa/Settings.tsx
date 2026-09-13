@@ -40,7 +40,7 @@ import {
   type InstitutionSettings,
 } from '../../lib/institutionSettings';
 
-interface Term {
+interface Semester {
   id: number;
   academic_year: string;
   semester: '1st' | '2nd' | 'summer';
@@ -48,7 +48,7 @@ interface Term {
   is_enabled: boolean;
 }
 
-interface ApiTerm {
+interface ApiSemester {
   id: number;
   academic_year: string;
   semester: '1st' | '2nd' | 'summer';
@@ -68,15 +68,15 @@ interface ActivationHistoryEntry {
 
 interface ApiActivationHistoryEntry {
   id: number;
-  term_id: number;
-  semester: Term['semester'];
+  semester_id: number;
+  semester: Semester['semester'];
   academic_year: string;
   is_active: boolean;
   activated_at: string;
 }
 
 interface SettingsPageData {
-  terms: Term[];
+  semesters: Semester[];
 }
 
 interface TimeslotSettings {
@@ -89,13 +89,13 @@ interface TimeslotResponse {
   settings: TimeslotSettings;
 }
 
-const SEMESTER_LABELS: Record<Term['semester'], string> = {
+const SEMESTER_LABELS: Record<Semester['semester'], string> = {
   '1st': '1st Semester',
   '2nd': '2nd Semester',
   summer: 'Summer',
 };
 
-const mapApiTerm = (t: ApiTerm): Term => ({
+const mapApiSemester = (t: ApiSemester): Semester => ({
   id: t.id,
   academic_year: t.academic_year,
   semester: t.semester,
@@ -145,12 +145,12 @@ export default function Settings() {
   const { toast, confirm } = useToast();
   const settingsCacheKey = 'page:settings';
   const cachedSettingsData = getCachedData<SettingsPageData>(settingsCacheKey);
-  const [terms, setTerms] = useState<Term[]>(cachedSettingsData?.terms ?? []);
+  const [semesters, setSemesters] = useState<Semester[]>(cachedSettingsData?.semesters ?? []);
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(!hasCachedData(settingsCacheKey));
 
   // Academic years are stored joined but edited as two fields, so the draft
-  // halves live beside the terms until they are saved.
+  // halves live beside the semesters until they are saved.
   const [yearDrafts, setYearDrafts] = useState<Record<number, AcademicYearParts>>({});
   const [savingYearId, setSavingYearId] = useState<number | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
@@ -179,22 +179,22 @@ export default function Settings() {
 
   // Modal states
 
-  const rememberTerms = useCallback((next: Term[]) => {
-    setCachedData<SettingsPageData>(settingsCacheKey, { terms: next });
+  const rememberSemesters = useCallback((next: Semester[]) => {
+    setCachedData<SettingsPageData>(settingsCacheKey, { semesters: next });
     return next;
   }, [settingsCacheKey]);
 
-  const fetchTerms = useCallback(async (forceRefresh = false) => {
+  const fetchSemesters = useCallback(async (forceRefresh = false) => {
     setIsLoading(forceRefresh || !hasCachedData(settingsCacheKey));
     try {
       const data = await loadCachedData<SettingsPageData>(settingsCacheKey, async () => {
-        const termsRes = await api.get<ApiTerm[]>('/terms');
+        const semestersRes = await api.get<ApiSemester[]>('/semesters');
         return {
-          terms: termsRes.data ? termsRes.data.map(mapApiTerm) : [],
+          semesters: semestersRes.data ? semestersRes.data.map(mapApiSemester) : [],
         };
       }, forceRefresh);
-      setTerms(data.terms);
-      setYearDrafts(Object.fromEntries(data.terms.map(t => [t.id, splitAcademicYear(t.academic_year)])));
+      setSemesters(data.semesters);
+      setYearDrafts(Object.fromEntries(data.semesters.map(t => [t.id, splitAcademicYear(t.academic_year)])));
     } catch {
       toast.error('Error', 'Failed to load settings data.');
     } finally {
@@ -204,7 +204,7 @@ export default function Settings() {
 
   const fetchActivationHistory = useCallback(async () => {
     try {
-      const { data } = await api.get<ApiActivationHistoryEntry[]>('/terms/activation-history');
+      const { data } = await api.get<ApiActivationHistoryEntry[]>('/semesters/activation-history');
       setHistory((data ?? []).map(entry => ({
         id: entry.id,
         semester: entry.semester,
@@ -218,9 +218,9 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    fetchTerms();
+    fetchSemesters();
     fetchActivationHistory();
-  }, [fetchTerms, fetchActivationHistory]);
+  }, [fetchSemesters, fetchActivationHistory]);
 
   useEffect(() => {
     let active = true;
@@ -252,86 +252,86 @@ export default function Settings() {
     return () => { active = false; };
   }, [toast]);
 
-  const activeSemester = useMemo(() => terms.find(t => t.is_active)?.semester, [terms]);
-  const isSummerToggleEnabled = activeSemester === '2nd';
+  const activePeriod = useMemo(() => semesters.find(t => t.is_active)?.semester, [semesters]);
+  const isSummerToggleEnabled = activePeriod === '2nd';
 
-  // Summer is not offered alongside a 1st-semester term.
+  // Summer is not offered alongside a 1st semester.
   useEffect(() => {
-    if (activeSemester !== '1st') return;
-    setTerms(prev => {
+    if (activePeriod !== '1st') return;
+    setSemesters(prev => {
       if (!prev.some(t => t.semester === 'summer' && t.is_enabled)) return prev;
-      return rememberTerms(prev.map(t => (
+      return rememberSemesters(prev.map(t => (
         t.semester === 'summer' && t.is_enabled ? { ...t, is_enabled: false } : t
       )));
     });
-  }, [activeSemester, rememberTerms]);
+  }, [activePeriod, rememberSemesters]);
 
   const draftFor = useCallback(
-    (term: Term): AcademicYearParts => yearDrafts[term.id] ?? splitAcademicYear(term.academic_year),
+    (semester: Semester): AcademicYearParts => yearDrafts[semester.id] ?? splitAcademicYear(semester.academic_year),
     [yearDrafts],
   );
 
   /** Typing a complete starting year fills the end year in, still editable. */
-  const handleStartYearChange = (term: Term, value: string) => {
+  const handleStartYearChange = (semester: Semester, value: string) => {
     const start = sanitizeYearInput(value);
     setYearDrafts(prev => {
-      const current = prev[term.id] ?? splitAcademicYear(term.academic_year);
+      const current = prev[semester.id] ?? splitAcademicYear(semester.academic_year);
       const next = followingYear(start);
-      return { ...prev, [term.id]: { start, end: next || (start ? current.end : '') } };
+      return { ...prev, [semester.id]: { start, end: next || (start ? current.end : '') } };
     });
   };
 
-  const handleEndYearChange = (term: Term, value: string) => {
+  const handleEndYearChange = (semester: Semester, value: string) => {
     setYearDrafts(prev => {
-      const current = prev[term.id] ?? splitAcademicYear(term.academic_year);
-      return { ...prev, [term.id]: { ...current, end: sanitizeYearInput(value) } };
+      const current = prev[semester.id] ?? splitAcademicYear(semester.academic_year);
+      return { ...prev, [semester.id]: { ...current, end: sanitizeYearInput(value) } };
     });
   };
 
-  const saveAcademicYear = async (term: Term) => {
-    const draft = draftFor(term);
+  const saveAcademicYear = async (semester: Semester) => {
+    const draft = draftFor(semester);
     const joined = joinAcademicYear(draft);
     if (!isValidAcademicYear(draft) || !joined) return;
-    if (savingYearIdsRef.current.has(term.id)) return;
+    if (savingYearIdsRef.current.has(semester.id)) return;
 
-    savingYearIdsRef.current.add(term.id);
-    setSavingYearId(term.id);
+    savingYearIdsRef.current.add(semester.id);
+    setSavingYearId(semester.id);
     try {
-      const { data } = await api.patch<{ term: ApiTerm }>(`/terms/${term.id}`, { academic_year: joined });
-      const saved = data?.term ? mapApiTerm(data.term) : { ...term, academic_year: joined };
-      setTerms(prev => rememberTerms(prev.map(t => (t.id === term.id ? { ...t, ...saved } : t))));
-      setYearDrafts(prev => ({ ...prev, [term.id]: splitAcademicYear(saved.academic_year) }));
-      toast.success('Saved', `${SEMESTER_LABELS[term.semester]} now covers ${joined}.`);
+      const { data } = await api.patch<{ semester: ApiSemester }>(`/semesters/${semester.id}`, { academic_year: joined });
+      const saved = data?.semester ? mapApiSemester(data.semester) : { ...semester, academic_year: joined };
+      setSemesters(prev => rememberSemesters(prev.map(t => (t.id === semester.id ? { ...t, ...saved } : t))));
+      setYearDrafts(prev => ({ ...prev, [semester.id]: splitAcademicYear(saved.academic_year) }));
+      toast.success('Saved', `${SEMESTER_LABELS[semester.semester]} now covers ${joined}.`);
     } catch (error) {
       toast.error('Not saved', apiMessage(error, 'Failed to update the academic year.'));
     } finally {
-      savingYearIdsRef.current.delete(term.id);
+      savingYearIdsRef.current.delete(semester.id);
       setSavingYearId(null);
     }
   };
 
-  const handleToggleEnabled = async (term: Term, enabled: boolean) => {
-    if (togglingIdsRef.current.has(term.id)) return;
-    togglingIdsRef.current.add(term.id);
-    setTogglingId(term.id);
+  const handleToggleEnabled = async (semester: Semester, enabled: boolean) => {
+    if (togglingIdsRef.current.has(semester.id)) return;
+    togglingIdsRef.current.add(semester.id);
+    setTogglingId(semester.id);
     try {
-      await api.patch(`/terms/${term.id}`, { is_enabled: enabled });
-      setTerms(prev => rememberTerms(prev.map(t => (t.id === term.id ? { ...t, is_enabled: enabled } : t))));
+      await api.patch(`/semesters/${semester.id}`, { is_enabled: enabled });
+      setSemesters(prev => rememberSemesters(prev.map(t => (t.id === semester.id ? { ...t, is_enabled: enabled } : t))));
       toast.success(enabled ? 'Summer enabled' : 'Summer disabled', enabled
-        ? 'Summer term is now offered this academic year.'
-        : 'Summer term will not be offered this academic year.');
+        ? 'Summer semester is now offered this academic year.'
+        : 'Summer semester will not be offered this academic year.');
     } catch (error) {
-      toast.error('Not saved', apiMessage(error, 'Failed to update the summer term.'));
+      toast.error('Not saved', apiMessage(error, 'Failed to update the summer semester.'));
     } finally {
-      togglingIdsRef.current.delete(term.id);
+      togglingIdsRef.current.delete(semester.id);
       setTogglingId(null);
     }
   };
 
   const handleActivateClick = async (id: number) => {
     const confirmed = await confirm({
-      title: 'Activate Academic Term',
-      message: 'Are you sure you want to activate this academic term? This will set all other terms to inactive and apply this term system-wide.',
+      title: 'Activate Academic Semester',
+      message: 'Are you sure you want to activate this academic semester? This will set all other semesters to inactive and apply this semester system-wide.',
       eyebrow: 'Confirmation Required',
       confirmLabel: 'Confirm Activate',
       variant: 'maroon',
@@ -343,18 +343,18 @@ export default function Settings() {
     if (activatingRef.current) return;
     activatingRef.current = true;
     try {
-      await api.patch<{ term: ApiTerm }>(`/terms/${id}/activate`);
+      await api.patch<{ semester: ApiSemester }>(`/semesters/${id}/activate`);
 
-      // The active term scopes scheduler sections, courses, and schedules.
-      // Discard snapshots created for the previous term before navigating back.
+      // The active semester scopes scheduler sections, courses, and schedules.
+      // Discard snapshots created for the previous semester before navigating back.
       clearDataCache();
-      setTerms(prev => rememberTerms(prev.map(t => ({ ...t, is_active: t.id === id }))));
+      setSemesters(prev => rememberSemesters(prev.map(t => ({ ...t, is_active: t.id === id }))));
 
       await fetchActivationHistory();
 
-      toast.success('Activated', 'Academic term is now active');
+      toast.success('Activated', 'Academic semester is now active');
     } catch (error) {
-      toast.error('Error', apiMessage(error, 'Failed to activate academic term'));
+      toast.error('Error', apiMessage(error, 'Failed to activate academic semester'));
     } finally {
       activatingRef.current = false;
     }
@@ -439,18 +439,18 @@ export default function Settings() {
     operatingHoursDraft.closing_time,
   );
 
-  const sortedTerms = useMemo(() => {
+  const sortedSemesters = useMemo(() => {
     const semesterOrder = { '1st': 1, '2nd': 2, 'summer': 3 };
-    return [...terms].sort((a, b) => semesterOrder[a.semester] - semesterOrder[b.semester]);
-  }, [terms]);
+    return [...semesters].sort((a, b) => semesterOrder[a.semester] - semesterOrder[b.semester]);
+  }, [semesters]);
 
   const columns = useMemo<ColumnDef<ActivationHistoryEntry>[]>(
     () => [
       {
         accessorKey: 'semester',
-        header: 'Term',
+        header: 'Semester',
         cell: info => (
-          <span className="font-semibold text-gray-700">{SEMESTER_LABELS[info.getValue() as Term['semester']]}</span>
+          <span className="font-semibold text-gray-700">{SEMESTER_LABELS[info.getValue() as Semester['semester']]}</span>
         )
       },
       {
@@ -501,36 +501,36 @@ export default function Settings() {
     <div id="settings-page" className="space-y-6">
       <SectionCard
         icon={CalendarRange}
-        title="Academic Terms"
-        description="Set the years each term covers, then activate the one in session. Activating a term applies it system-wide."
+        title="Academic Semesters"
+        description="Set the years each semester covers, then activate the one in session. Activating a semester applies it system-wide."
         aside={
           <span className="rounded-full bg-[#C9952A]/15 px-2.5 py-1 text-[10px] font-bold text-[#7B1113]">
-            {terms.length} terms
+            {semesters.length} semesters
           </span>
         }
       >
         <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
-          {isLoading && terms.length === 0 ? (
+          {isLoading && semesters.length === 0 ? (
             Array.from({ length: 3 }).map((_, index) => (
               <div key={`card-skeleton-${index}`} className="h-64 animate-pulse rounded-2xl border border-slate-200/70 bg-slate-50" />
             ))
-          ) : sortedTerms.map(term => {
-            const isSummer = term.semester === 'summer';
-            const isCardDisabled = isSummer && !term.is_enabled;
-            const draft = draftFor(term);
+          ) : sortedSemesters.map(semester => {
+            const isSummer = semester.semester === 'summer';
+            const isCardDisabled = isSummer && !semester.is_enabled;
+            const draft = draftFor(semester);
             const error = academicYearError(draft);
             const joined = joinAcademicYear(draft);
-            const isDirty = joined !== term.academic_year;
+            const isDirty = joined !== semester.academic_year;
             const canSave = isDirty && isValidAcademicYear(draft);
-            const isSaving = savingYearId === term.id;
+            const isSaving = savingYearId === semester.id;
 
             return (
               <article
-                key={term.id}
+                key={semester.id}
                 className={`flex flex-col justify-between rounded-2xl border p-4 shadow-sm transition-all duration-200 ${
                   isCardDisabled
                     ? 'border-gray-200/60 bg-gray-50/80'
-                    : term.is_active
+                    : semester.is_active
                     ? 'border-[#4e0a10]/30 bg-[#4e0a10]/[0.03]'
                     : 'border-slate-200/80 bg-[#F7F4F0]'
                 }`}
@@ -538,11 +538,11 @@ export default function Settings() {
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h3 className="font-display text-base font-bold text-gray-800">{SEMESTER_LABELS[term.semester]}</h3>
+                      <h3 className="font-display text-base font-bold text-gray-800">{SEMESTER_LABELS[semester.semester]}</h3>
                       <div className="mt-1 flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${term.is_active && !isCardDisabled ? 'animate-pulse bg-green-500' : 'bg-gray-300'}`} />
-                        <span className={`text-[11px] font-bold ${term.is_active && !isCardDisabled ? 'text-green-700' : 'text-gray-400'}`}>
-                          {term.is_active && !isCardDisabled ? 'Active' : isCardDisabled ? 'Not offered' : 'Inactive'}
+                        <span className={`h-2 w-2 rounded-full ${semester.is_active && !isCardDisabled ? 'animate-pulse bg-green-500' : 'bg-gray-300'}`} />
+                        <span className={`text-[11px] font-bold ${semester.is_active && !isCardDisabled ? 'text-green-700' : 'text-gray-400'}`}>
+                          {semester.is_active && !isCardDisabled ? 'Active' : isCardDisabled ? 'Not offered' : 'Inactive'}
                         </span>
                       </div>
                     </div>
@@ -550,26 +550,26 @@ export default function Settings() {
                     {isSummer && (
                       <button
                         type="button"
-                        onClick={() => handleToggleEnabled(term, !term.is_enabled)}
-                        disabled={!isSummerToggleEnabled || togglingId === term.id}
+                        onClick={() => handleToggleEnabled(semester, !semester.is_enabled)}
+                        disabled={!isSummerToggleEnabled || togglingId === semester.id}
                         className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          !isSummerToggleEnabled || togglingId === term.id
+                          !isSummerToggleEnabled || togglingId === semester.id
                             ? 'cursor-not-allowed bg-gray-200 opacity-50'
-                            : term.is_enabled
+                            : semester.is_enabled
                             ? 'cursor-pointer bg-[#4e0a10]'
                             : 'cursor-pointer bg-gray-300'
                         }`}
                         title={
                           !isSummerToggleEnabled
-                            ? 'Summer term can only be managed when 2nd Semester is active'
-                            : term.is_enabled
-                            ? 'Disable Summer Term'
-                            : 'Enable Summer Term'
+                            ? 'Summer semester can only be managed when 2nd Semester is active'
+                            : semester.is_enabled
+                            ? 'Disable Summer'
+                            : 'Enable Summer'
                         }
                       >
                         <span
                           className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            term.is_enabled ? 'translate-x-4' : 'translate-x-0'
+                            semester.is_enabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </button>
@@ -589,10 +589,10 @@ export default function Settings() {
                           inputMode="numeric"
                           maxLength={4}
                           value={draft.start}
-                          onChange={e => handleStartYearChange(term, e.target.value)}
+                          onChange={e => handleStartYearChange(semester, e.target.value)}
                           disabled={isCardDisabled}
                           placeholder="2026"
-                          aria-label={`${SEMESTER_LABELS[term.semester]} starting year`}
+                          aria-label={`${SEMESTER_LABELS[semester.semester]} starting year`}
                           className={`w-full rounded-xl border bg-white px-3 py-2 text-center font-mono text-sm outline-none transition-all ${
                             isCardDisabled
                               ? 'cursor-not-allowed border-gray-200 bg-gray-100/50 text-gray-400'
@@ -610,10 +610,10 @@ export default function Settings() {
                           inputMode="numeric"
                           maxLength={4}
                           value={draft.end}
-                          onChange={e => handleEndYearChange(term, e.target.value)}
+                          onChange={e => handleEndYearChange(semester, e.target.value)}
                           disabled={isCardDisabled}
                           placeholder="2027"
-                          aria-label={`${SEMESTER_LABELS[term.semester]} end year`}
+                          aria-label={`${SEMESTER_LABELS[semester.semester]} end year`}
                           className={`w-full rounded-xl border bg-white px-3 py-2 text-center font-mono text-sm outline-none transition-all ${
                             isCardDisabled
                               ? 'cursor-not-allowed border-gray-200 bg-gray-100/50 text-gray-400'
@@ -640,7 +640,7 @@ export default function Settings() {
                   {canSave && (
                     <button
                       type="button"
-                      onClick={() => saveAcademicYear(term)}
+                      onClick={() => saveAcademicYear(semester)}
                       disabled={isSaving}
                       className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] py-2 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:opacity-60"
                     >
@@ -650,8 +650,8 @@ export default function Settings() {
                   )}
 
                   {isCardDisabled ? (
-                    <p className="py-2 text-xs italic text-gray-500">Summer term not offered this year</p>
-                  ) : term.is_active ? (
+                    <p className="py-2 text-xs italic text-gray-500">Summer semester not offered this year</p>
+                  ) : semester.is_active ? (
                     <button
                       type="button"
                       disabled
@@ -663,8 +663,8 @@ export default function Settings() {
                     <button
                       type="button"
                       disabled={!isValidAcademicYear(draft) || isDirty}
-                      onClick={() => { void handleActivateClick(term.id); }}
-                      title={isDirty ? 'Save the academic year before activating this term' : undefined}
+                      onClick={() => { void handleActivateClick(semester.id); }}
+                      title={isDirty ? 'Save the academic year before activating this semester' : undefined}
                       className={`w-full rounded-xl border border-gray-300 bg-white py-2 text-xs font-semibold text-gray-700 transition-colors ${
                         !isValidAcademicYear(draft) || isDirty
                           ? 'cursor-not-allowed opacity-50'
@@ -821,8 +821,8 @@ export default function Settings() {
 
       <SectionCard
         icon={History}
-        title="Term Activation History"
-        description="Every term activation recorded by the system, including the currently active term."
+        title="Semester Activation History"
+        description="Every semester activation recorded by the system, including the currently active semester."
         aside={
           <span className="text-xs font-semibold text-gray-500">{history.length} logged</span>
         }
@@ -830,7 +830,7 @@ export default function Settings() {
         <DataTable
           table={table}
           emptyTitle="No activations yet."
-          emptyDescription="Setting a term as active records it here."
+          emptyDescription="Setting a semester as active records it here."
           totalLabel="entries"
           cellClassName={columnId => columnId === 'academic_year' ? 'whitespace-nowrap' : ''}
         />

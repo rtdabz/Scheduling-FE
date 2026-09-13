@@ -22,7 +22,7 @@ interface Room {
 
 interface Schedule {
   id: number;
-  term_id: number;
+  semester_id: number;
   section_id: number;
   course_id: number;
   faculty_id: number | null;

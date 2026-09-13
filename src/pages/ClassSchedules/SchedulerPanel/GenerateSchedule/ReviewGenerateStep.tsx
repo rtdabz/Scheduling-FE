@@ -11,7 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import { useGenerationRun } from "../hooks/useGenerationRun";
-import type { Course, Section, Term } from "../types";
+import type { Course, Section, Semester } from "../types";
 import type { TimeBlockOption } from "./generationTypes";
 
 export type ReviewCourseRow = {
@@ -282,7 +282,7 @@ function GeneratingView({
  * queued the summary is replaced by the run's progress.
  */
 export default function ReviewGenerateStep({
-  activeTerm,
+  activeSemester,
   yearLevel,
   curriculumName,
   sections,
@@ -294,7 +294,7 @@ export default function ReviewGenerateStep({
   generating,
   blockedReason,
 }: {
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   yearLevel: number;
   curriculumName: string | null;
   sections: Section[];
@@ -355,15 +355,15 @@ export default function ReviewGenerateStep({
       : []),
   ];
 
-  const termLabel = activeTerm
-    ? `${activeTerm.academic_year} · ${activeTerm.semester.toUpperCase()} Semester`
-    : "No active term";
+  const fullSemesterLabel = activeSemester
+    ? `${activeSemester.academic_year} · ${activeSemester.semester.toUpperCase()} Semester`
+    : "No active semester";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden">
       {generating ? (
         <GeneratingView
-          scopeLabel={`${yearLabel(yearLevel)} · ${termLabel}`}
+          scopeLabel={`${yearLabel(yearLevel)} · ${fullSemesterLabel}`}
           sectionCount={sections.length}
           courseCount={courseRows.length}
         />
@@ -379,7 +379,7 @@ export default function ReviewGenerateStep({
                   {yearLabel(yearLevel)}
                 </h2>
                 <p className="truncate text-[11px] font-semibold text-white/75">
-                  {termLabel} · {curriculumName ?? "No curriculum assigned"}
+                  {fullSemesterLabel} · {curriculumName ?? "No curriculum assigned"}
                 </p>
               </div>
               <div className="grid w-full max-w-lg grid-cols-2 gap-2 sm:grid-cols-4">

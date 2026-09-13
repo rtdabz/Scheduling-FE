@@ -8,7 +8,7 @@ const PLOTTING_STATUSES = new Set<ScheduleItem["status"]>(["draft", "completed"]
 export function canGenerateYearLevel(
   sections: Section[],
   schedules: ScheduleItem[],
-  termId: number | string | null,
+  semesterId: number | string | null,
 ): boolean {
   if (sections.length === 0) return false;
 
@@ -17,7 +17,7 @@ export function canGenerateYearLevel(
 
   for (const schedule of schedules) {
     const sectionId = String(schedule.sectionId);
-    if (!sectionIds.has(sectionId) || (termId !== null && Number(schedule.termId) !== Number(termId))) continue;
+    if (!sectionIds.has(sectionId) || (semesterId !== null && Number(schedule.semesterId) !== Number(semesterId))) continue;
     schedulesBySection.set(sectionId, [...(schedulesBySection.get(sectionId) ?? []), schedule]);
   }
 

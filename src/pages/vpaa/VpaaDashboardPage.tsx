@@ -61,12 +61,12 @@ import {
  *    for why reading `schedules.status` reported approved departments as drafts.
  *  - Campus-wide aggregates (room load, peak hours, coverage gaps) come from
  *    `/vpaa/dashboard-insights`, which counts server-side over every meeting in
- *    the term. The `schedules` array here is capped and is used only to draw the
+ *    the semester. The `schedules` array here is capped and is used only to draw the
  *    timetable preview, which is explicitly a preview.
  */
 
 interface Schedule {
-  id:number; term_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
+  id:number; semester_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
   day:string; start_time:string; end_time:string; mode?:'on-site'|'online'|'field'; status:string; updated_at?:string;
   section?:{ id:number; section_name:string; department_id:number; department?:{ department_code:string; department_name:string }|null }|null;
   faculty?:{ id:number; first_name:string; last_name:string }|null;
@@ -79,16 +79,16 @@ interface Section { id:number; section_name:string; department_id:number }
 interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; probono_units?:number|null; department_id:number; status:string }
 interface Department { id:number; department_name:string; department_code:string }
 interface Subject { id:number; subject_code:string; subject_name:string }
-interface Term { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
+interface Semester { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
 
 interface DashboardData {
   schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[];
-  departments:Department[]; subjects:Subject[]; activeTerm:Term|null;
+  departments:Department[]; subjects:Subject[]; activeSemester:Semester|null;
   submissions:OverviewSubmission[]; scheduleLimitReached:boolean;
 }
 interface InitialDataResponse {
   schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[];
-  departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_term?:Term;
+  departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester;
   schedule_submissions?:OverviewSubmission[];
 }
 
@@ -139,7 +139,7 @@ export default function VpaaDashboardPage() {
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cached?.departments ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(cached?.activeTerm ?? null);
+  const [activeSemester, setActiveSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [submissions, setSubmissions] = useState<OverviewSubmission[]>(cached?.submissions ?? []);
   const [previewTruncated, setPreviewTruncated] = useState(cached?.scheduleLimitReached ?? false);
 
@@ -200,7 +200,7 @@ export default function VpaaDashboardPage() {
             faculties: Array.isArray(d.faculties) ? d.faculties : [],
             departments: Array.isArray(d.departments) ? d.departments : [],
             subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray(d.courses) ? d.courses : []),
-            activeTerm: d.active_term || null,
+            activeSemester: d.active_semester || null,
             submissions: Array.isArray(d.schedule_submissions) ? d.schedule_submissions : [],
             // The API caps the array rather than reporting a total, so hitting
             // the ceiling exactly is the only signal that rows were dropped.
@@ -215,7 +215,7 @@ export default function VpaaDashboardPage() {
         setFaculties(data.faculties);
         setDepartments(data.departments);
         setSubjects(data.subjects);
-        setActiveTerm(data.activeTerm);
+        setActiveSemester(data.activeSemester);
         setSubmissions(data.submissions ?? []);
         setPreviewTruncated(Boolean(data.scheduleLimitReached));
       } catch {
@@ -291,12 +291,12 @@ export default function VpaaDashboardPage() {
 
   const retry = useCallback(() => setReloadKey(k => k + 1), []);
 
-  const activeTermId = activeTerm?.id ?? null;
+  const activeSemesterId = activeSemester?.id ?? null;
 
   // ── Approval rollup, from schedule_submissions ──
   const submissionBySection = useMemo(
-    () => latestSubmissionBySection(submissions, activeTermId),
-    [submissions, activeTermId],
+    () => latestSubmissionBySection(submissions, activeSemesterId),
+    [submissions, activeSemesterId],
   );
 
   const departmentStats = useMemo<DepartmentRollup[]>(
@@ -418,9 +418,9 @@ export default function VpaaDashboardPage() {
   const campusRooms = useMemo(() => physicalRooms(rooms), [rooms]);
 
   // ── Timetable filters ──
-  const termSchedules = useMemo(
-    () => (activeTermId ? schedules.filter(s => Number(s.term_id) === Number(activeTermId)) : schedules),
-    [activeTermId, schedules],
+  const semesterSchedules = useMemo(
+    () => (activeSemesterId ? schedules.filter(s => Number(s.semester_id) === Number(activeSemesterId)) : schedules),
+    [activeSemesterId, schedules],
   );
 
   const buildingOptions = useMemo(
@@ -436,7 +436,7 @@ export default function VpaaDashboardPage() {
 
   const timetableSchedules = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return termSchedules.filter(s => {
+    return semesterSchedules.filter(s => {
       if (filterDept !== 'all' && Number(s.section?.department_id) !== Number(filterDept)) return false;
       if (filterBuilding !== 'all' && (s.room?.building ?? '').trim() !== filterBuilding) return false;
       if (filterRoom !== 'all' && String(s.room_id ?? '') !== filterRoom) return false;
@@ -452,7 +452,7 @@ export default function VpaaDashboardPage() {
         s.room?.building,
       ].some(value => (value ?? '').toLowerCase().includes(query));
     });
-  }, [termSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
+  }, [semesterSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
 
   const timetableRoomsUsed = useMemo(
     () => new Set(timetableSchedules.map(s => s.room_id).filter(Boolean)).size,
@@ -495,7 +495,7 @@ export default function VpaaDashboardPage() {
 
   // ── Decision metrics ──
   // Inventory counts (departments, faculty, courses, rooms) moved to the strip
-  // below these: they never change during a term and carry no decision, so they
+  // below these: they never change during a semester and carry no decision, so they
   // were crowding out the figures the VPAA is meant to act on.
   const kpis: Tile[] = [
     {
@@ -537,9 +537,9 @@ export default function VpaaDashboardPage() {
   const inventory: Tile[] = [
     { label: 'Departments', value: grouped(departments.length), detail: 'Academic units', icon: Landmark, path: '/departments', tone: 'brand' },
     { label: 'Faculty', value: grouped(faculties.length), detail: 'Active faculty', icon: Users, path: '/faculty', tone: 'accent' },
-    { label: 'Courses Offered', value: grouped(subjects.length), detail: 'This term', icon: BookOpen, path: '/curriculum', tone: 'good' },
+    { label: 'Courses Offered', value: grouped(subjects.length), detail: 'This semester', icon: BookOpen, path: '/curriculum', tone: 'good' },
     { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/rooms', tone: 'warn' },
-    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active term', icon: LayoutGrid, path: '/schedules', tone: 'info' },
+    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules', tone: 'info' },
   ];
 
   const completionSlices = [
@@ -650,7 +650,7 @@ export default function VpaaDashboardPage() {
     </div>}
 
     <ExecutiveHeader
-      term={activeTerm}
+      semester={activeSemester}
       generatedAt={insights.generated_at || null}
       now={now}
       refreshing={insightsRefreshing}

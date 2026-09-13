@@ -52,7 +52,7 @@ export interface Room {
   name: string;
 }
 
-export interface Term {
+export interface Semester {
   id: number | string;
   academic_year?: string;
   semester?: string;
@@ -88,7 +88,7 @@ interface RawSection {
   id: number | string;
   section_name: string;
   department_id?: number | string | null;
-  term_id?: number | string | null;
+  semester_id?: number | string | null;
 }
 
 interface RawFaculty {
@@ -110,7 +110,7 @@ interface RawSchedule {
   department_id?: number | string | null;
   faculty_id?: number | string | null;
   room_id?: number | string | null;
-  term_id?: number | string | null;
+  semester_id?: number | string | null;
   meeting_type?: string | null;
   day: string;
   start_time: string;
@@ -130,7 +130,7 @@ interface ScheduleViewerData {
   faculties: Faculty[];
   rooms: Room[];
   schedules: Schedule[];
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
 }
 
 type ViewMode = "overview" | "sections" | "list" | "grid";
@@ -431,14 +431,14 @@ export default function VpaaScheduleViewer() {
   const [faculties, setFaculties] = useState<Faculty[]>(cachedScheduleViewerData?.faculties ?? []);
   const [rooms, setRooms] = useState<Room[]>(cachedScheduleViewerData?.rooms ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedScheduleViewerData?.schedules ?? []);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(cachedScheduleViewerData?.activeTerm ?? null);
+  const [activeSemester, setActiveSemester] = useState<Semester | null>(cachedScheduleViewerData?.activeSemester ?? null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(scheduleViewerCacheKey));
   const [isScheduleListTruncated, setIsScheduleListTruncated] = useState(false);
 
   /**
    * Institution-wide counts come from a dedicated aggregate endpoint rather
    * than from the `/initial-data` rows below: that payload is capped, so
-   * counting it reports part of the term as the whole of it.
+   * counting it reports part of the semester as the whole of it.
    */
   const {
     departments: overviewDepartments,
@@ -488,15 +488,15 @@ export default function VpaaScheduleViewer() {
       try {
         setIsLoading(!hasCache);
         const response = await api.get<{
-          active_term: Term | null;
+          active_semester: Semester | null;
           departments: RawDepartment[];
           sections: RawSection[];
           faculties: RawFaculty[];
           rooms: RawRoom[];
           schedules: RawSchedule[];
         }>(`/initial-data?schedule_limit=${INITIAL_DATA_SCHEDULE_LIMIT}`);
-        const term = response.data.active_term;
-        setActiveTerm(term);
+        const semester = response.data.active_semester;
+        setActiveSemester(semester);
 
         // Map departments
         const mappedDepts = response.data.departments.map((d) => ({
@@ -506,10 +506,10 @@ export default function VpaaScheduleViewer() {
         }));
         setDepartments(mappedDepts);
 
-        // Map sections (filtered by active term)
+        // Map sections (filtered by active semester)
         let rawSections = response.data.sections;
-        if (term) {
-          rawSections = rawSections.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
+        if (semester) {
+          rawSections = rawSections.filter((s) => s.semester_id == null || Number(s.semester_id) === Number(semester.id));
         }
         const mappedSections = rawSections.map((s) => ({
           id: s.id.toString(),
@@ -534,10 +534,10 @@ export default function VpaaScheduleViewer() {
         }));
         setRooms(mappedRooms);
 
-        // Map schedules (filtered by active term)
+        // Map schedules (filtered by active semester)
         let rawSchedules = response.data.schedules;
-        if (term) {
-          rawSchedules = rawSchedules.filter((s) => s.term_id == null || Number(s.term_id) === Number(term.id));
+        if (semester) {
+          rawSchedules = rawSchedules.filter((s) => s.semester_id == null || Number(s.semester_id) === Number(semester.id));
         }
 
         const mappedSchedules: Schedule[] = rawSchedules.map(
@@ -546,7 +546,7 @@ export default function VpaaScheduleViewer() {
         setSchedules(mappedSchedules);
         // The endpoint caps this payload. The aggregate counts above are
         // unaffected, but the flat list below would silently show part of the
-        // term as all of it, so say so instead.
+        // semester as all of it, so say so instead.
         setIsScheduleListTruncated(rawSchedules.length >= INITIAL_DATA_SCHEDULE_LIMIT);
         setCachedData<ScheduleViewerData>(scheduleViewerCacheKey, {
           departments: mappedDepts,
@@ -554,7 +554,7 @@ export default function VpaaScheduleViewer() {
           faculties: mappedFaculties,
           rooms: mappedRooms,
           schedules: mappedSchedules,
-          activeTerm: term,
+          activeSemester: semester,
         });
 
       } catch {
@@ -584,7 +584,7 @@ export default function VpaaScheduleViewer() {
 
         const sectionDepartmentById = new Map(sections.map((section) => [section.id, section.departmentId]));
         const rows = response.data
-          .filter((row) => activeTerm == null || row.term_id == null || Number(row.term_id) === Number(activeTerm.id))
+          .filter((row) => activeSemester == null || row.semester_id == null || Number(row.semester_id) === Number(activeSemester.id))
           .map((row) => mapRawSchedule(row, departments, sectionDepartmentById));
 
         setSchedules((current) => {
@@ -605,7 +605,7 @@ export default function VpaaScheduleViewer() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSectionId, sections, departments, activeTerm]);
+  }, [selectedSectionId, sections, departments, activeSemester]);
 
   // Dynamic Options filtering based on department selection
   const filteredSections = sections.filter((sec) => {
@@ -918,9 +918,9 @@ export default function VpaaScheduleViewer() {
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              {activeTerm && (
+              {activeSemester && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#C9952A]/10 text-[#4e0a10] border border-[#C9952A]/20">
-                  {activeTerm.semester ? `${activeTerm.semester} Sem` : ""} {activeTerm.academic_year ?? "Active Term"}
+                  {activeSemester.semester ? `${activeSemester.semester} Sem` : ""} {activeSemester.academic_year ?? "Active Semester"}
                 </span>
               )}
             </div>
@@ -1258,9 +1258,9 @@ export default function VpaaScheduleViewer() {
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs font-bold text-amber-800">
               <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <p>
-                This list shows the {INITIAL_DATA_SCHEDULE_LIMIT.toLocaleString()} most recent meetings of the term, not all of
+                This list shows the {INITIAL_DATA_SCHEDULE_LIMIT.toLocaleString()} most recent meetings of the semester, not all of
                 them. Narrow it with a department, section or search to be sure you are seeing everything.
-                The counts above cover the whole term.
+                The counts above cover the whole semester.
               </p>
             </div>
           )}

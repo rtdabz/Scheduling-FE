@@ -13,7 +13,7 @@ import api from "../../../../lib/api";
 import { useToast } from "../../../../context/ToastContext";
 import ConfirmModal from "../../../../components/ui/ConfirmModal";
 import { DAYS } from "../constants";
-import type { Course, Section, Term } from "../types";
+import type { Course, Section, Semester } from "../types";
 import YearLevelCurriculumSelector from "./YearLevelCurriculumSelector";
 import { getForcedDayConcentration } from "./forcedDayConcentration";
 import { setCachedData } from "../../../../lib/dataCache";
@@ -194,7 +194,7 @@ function KanbanColumn({
  * waiting for a separate confirm.
  */
 export default function ConfigurationStep({
-  activeTerm,
+  activeSemester,
   years,
   yearLevel,
   onYearChange,
@@ -212,7 +212,7 @@ export default function ConfigurationStep({
   configs,
   onConfigChange,
 }: {
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   years: number[];
   yearLevel: number;
   onYearChange: (value: number) => void;
@@ -482,7 +482,7 @@ export default function ConfigurationStep({
 
         <YearLevelCurriculumSelector
           departmentId={departmentId}
-          termId={activeTerm?.id ?? null}
+          semesterId={activeSemester?.id ?? null}
           yearLevel={yearLevel}
           sections={sections}
           onApplied={onCurriculumApplied}

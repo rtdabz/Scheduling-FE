@@ -39,7 +39,7 @@ interface Room { id:number; room_code:string; room_type:string; building?:string
 interface Section { id:number; section_name:string; year_level?:string|number|null; department_id:number }
 interface Subject { id:number; subject_code:string; subject_name:string; department_id?:number|null }
 interface Schedule {
-  id:number; term_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; department_id?:number|null;
+  id:number; semester_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; department_id?:number|null;
   day:string; start_time:string; end_time:string; mode?:string|null; status:string; updated_at?:string|null;
   course?:{ id?:number; course_code?:string; course_name?:string; course_category?:string|null; units?:number }|null;
   subject?:{ id?:number; subject_code?:string; subject_name?:string; subject_category?:string|null; units?:number }|null;
@@ -47,10 +47,10 @@ interface Schedule {
   room?:{ id?:number; room_code?:string; room_type?:string; building?:string|null }|null;
   section?:{ id?:number; section_name?:string }|null;
 }
-interface Term { id:number; academic_year?:string; semester?:string; is_active?:boolean }
+interface Semester { id:number; academic_year?:string; semester?:string; is_active?:boolean }
 interface DeptUser { id:number; name?:string; role?:string; department_id?:number|null }
-interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeTerm:Term|null }
-interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_term?:Term }
+interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeSemester:Semester|null }
+interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_semester?:Semester }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
@@ -128,7 +128,7 @@ export default function DeanDashboardPage() {
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
   const [users, setUsers] = useState<DeptUser[]>(cached?.users ?? []);
-  const [term, setTerm] = useState<Term | null>(cached?.activeTerm ?? null);
+  const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
 
   // ── Timetable controls ──
   const [yearFilter, setYearFilter] = useState('all');
@@ -154,7 +154,7 @@ export default function DeanDashboardPage() {
             subjects: Array.isArray(data.subjects) ? data.subjects : (Array.isArray(data.courses) ? data.courses : []),
             schedules: Array.isArray(data.schedules) ? data.schedules : [],
             users: Array.isArray(data.users) ? data.users : [],
-            activeTerm: data.active_term || null,
+            activeSemester: data.active_semester || null,
           };
         }, reloadKey > 0);
 
@@ -165,7 +165,7 @@ export default function DeanDashboardPage() {
         setSubjects(overview.subjects);
         setSchedules(overview.schedules);
         setUsers(overview.users);
-        setTerm(overview.activeTerm);
+        setSemester(overview.activeSemester);
       } catch {
         if (active) setLoadError('Could not load department scheduling data. Figures below may be out of date.');
       } finally {
@@ -210,17 +210,17 @@ export default function DeanDashboardPage() {
   const deptRooms = useMemo(() => inDepartment(rooms, departmentId), [rooms, departmentId]);
 
   const sectionIds = useMemo(() => new Set(deptSections.map(s => s.id)), [deptSections]);
-  const termId = term?.id;
+  const semesterId = semester?.id;
   const visibleSchedules = useMemo(
     () => schedules.filter(s =>
-      (!termId || Number(s.term_id) === Number(termId)) &&
+      (!semesterId || Number(s.semester_id) === Number(semesterId)) &&
       (sectionIds.has(s.section_id) || Number(s.department_id) === Number(departmentId))),
-    [schedules, termId, sectionIds, departmentId],
+    [schedules, semesterId, sectionIds, departmentId],
   );
 
   /**
    * Sections total. The schedule-status endpoint is the authority — it counts the
-   * active sections of the active term, the same set every readiness and
+   * active sections of the active semester, the same set every readiness and
    * completion figure below is measured against. The payload is the fallback that
    * keeps the tile populated while that request is still in flight.
    */

@@ -23,7 +23,7 @@ export interface RoomsPageRoom {
 
 export interface RoomsPageSchedule {
   id: number;
-  term_id: number;
+  semester_id: number;
   section_id: number;
   course_id: number;
   faculty_id: number | null;
@@ -43,7 +43,7 @@ export interface RoomsPageData {
   rooms: RoomsPageRoom[];
   departments: RoomsPageDepartment[];
   schedules: RoomsPageSchedule[];
-  activeTerm: unknown | null;
+  activeSemester: unknown | null;
 }
 
 interface ApiRoom extends Omit<RoomsPageRoom, 'allow_lecture_usage' | 'createdAt'> {
@@ -65,7 +65,7 @@ export function useRoomsPageData(role: string | undefined, departmentId: number 
     rooms: cached?.rooms ?? [],
     departments: cached?.departments ?? [],
     schedules: cached?.schedules ?? [],
-    activeTerm: cached?.activeTerm ?? null,
+    activeSemester: cached?.activeSemester ?? null,
   });
   const [isLoading, setIsLoading] = useState(!hasCachedData(cacheKey));
   const onErrorRef = useRef(onError);
@@ -75,12 +75,12 @@ export function useRoomsPageData(role: string | undefined, departmentId: number 
     setIsLoading(forceRefresh || !hasCachedData(cacheKey));
     try {
       const next = await loadCachedData<RoomsPageData>(cacheKey, async () => {
-        const response = await api.get<{ rooms?: ApiRoom[]; departments?: RoomsPageDepartment[]; schedules?: RoomsPageSchedule[]; active_term?: unknown }>('/initial-data?include=rooms,departments,schedules');
+        const response = await api.get<{ rooms?: ApiRoom[]; departments?: RoomsPageDepartment[]; schedules?: RoomsPageSchedule[]; active_semester?: unknown }>('/initial-data?include=rooms,departments,schedules');
         return {
           rooms: (response.data.rooms ?? []).map(mapRoom),
           departments: response.data.departments ?? [],
           schedules: response.data.schedules ?? [],
-          activeTerm: response.data.active_term ?? null,
+          activeSemester: response.data.active_semester ?? null,
         };
       }, forceRefresh);
       setData(next);

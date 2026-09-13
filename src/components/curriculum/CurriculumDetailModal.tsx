@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, BookOpen } from 'lucide-react';
 import { curriculumService } from '../../services/curriculum/curriculumService';
-import type { CurriculumDetail, CurriculumTerm } from '../../types/curriculum';
+import type { CurriculumDetail, CurriculumSemester } from '../../types/curriculum';
 import Skeleton from '../ui/Skeleton';
 
 interface CurriculumDetailModalProps {
@@ -44,7 +44,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
   if (!isOpen) return null;
 
   const curriculum = detail?.curriculum;
-  const terms = detail?.terms || [];
+  const semesters = detail?.semesters || [];
 
   const statusColors: Record<string, string> = {
     active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -120,20 +120,20 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
                 </h4>
               </div>
 
-              {terms.length === 0 ? (
+              {semesters.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-100">
                   <p className="font-semibold">No courses attached to this curriculum.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {terms.map((term: CurriculumTerm) => (
-                    <div key={`${term.year_level}-${term.semester}`} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  {semesters.map((semester: CurriculumSemester) => (
+                    <div key={`${semester.year_level}-${semester.semester}`} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                       <div className="px-4 py-2.5 bg-gray-50/75 border-b border-gray-100 flex justify-between items-center">
                         <span className="text-xs font-bold text-gray-700">
-                          {yearLabels[term.year_level] || `Year ${term.year_level}`} - {semesterLabels[term.semester] || `Sem ${term.semester}`}
+                          {yearLabels[semester.year_level] || `Year ${semester.year_level}`} - {semesterLabels[semester.semester] || `Sem ${semester.semester}`}
                         </span>
                         <span className="text-[10px] font-bold text-gray-500">
-                          {term.totals?.tu || 0} units total
+                          {semester.totals?.tu || 0} units total
                         </span>
                       </div>
                       <table className="w-full text-left">
@@ -147,7 +147,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
                           </tr>
                         </thead>
                         <tbody>
-                          {term.courses.map((course) => (
+                          {semester.courses.map((course) => (
                             <tr key={course.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                               <td className="px-4 py-2">
                                 <span className="bg-[#C9952A]/10 text-[#C9952A] px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase">

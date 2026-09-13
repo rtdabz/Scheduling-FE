@@ -6,7 +6,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import PrintSchedule from '../ClassSchedules/SchedulerPanel/PrintSchedule';
 import TeachingLoad from '../ClassSchedules/SchedulerPanel/TeachingLoad';
 import type { SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
-import { termLabel } from '../../lib/termLabel';
+import { fullSemesterLabel } from '../../lib/semesterLabel';
 import {
   fetchReportData,
   fetchReportsOverview,
@@ -126,7 +126,7 @@ export default function Reports() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-gray-500">
-            {overview?.active_term ? termLabel(overview.active_term) : 'No active term'}
+            {overview?.active_semester ? fullSemesterLabel(overview.active_semester) : 'No active semester'}
           </p>
           <p className="text-xs text-gray-400">
             Only schedules approved by the VPAA are included. A section appears once all of its classes are approved.
@@ -225,7 +225,7 @@ export default function Reports() {
           selectedSectionId={job.data.sections[0]?.id ?? ''}
           departments={job.data.departments}
           users={job.data.users}
-          activeTerm={job.data.activeTerm}
+          activeSemester={job.data.activeSemester}
         />
       )}
 
@@ -236,7 +236,7 @@ export default function Reports() {
           isTeachingLoadOpen={isPrintOpen}
           setIsTeachingLoadOpen={setIsPrintOpen}
           sections={job.data.sections}
-          activeTerm={job.data.activeTerm}
+          activeSemester={job.data.activeSemester}
           users={job.data.users}
           departments={job.data.departments}
           selectedSectionId=""

@@ -4,11 +4,11 @@ import type autoTable from "jspdf-autotable";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ApiDepartmentRecord, ScheduleItem, Section, Term, UserSummary } from "./types";
+import type { ApiDepartmentRecord, ScheduleItem, Section, Semester, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 import { formatTime12h } from "../../../lib/timeGrid";
 import {
-  buildPrintTermTitle,
+  buildPrintSemesterTitle,
   getFullDayName,
   groupPrintMeetings,
   type PrintMeetingGroup,
@@ -22,7 +22,7 @@ interface PrintScheduleProps {
   selectedSectionId: string;
   departments: ApiDepartmentRecord[];
   users: UserSummary[];
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   printAllSections?: boolean;
 }
 
@@ -68,7 +68,7 @@ export default function PrintSchedule({
   selectedSectionId,
   departments,
   users,
-  activeTerm,
+  activeSemester,
   printAllSections = false,
 }: PrintScheduleProps) {
 
@@ -256,19 +256,19 @@ export default function PrintSchedule({
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
-    doc.text(buildPrintTermTitle(activeTerm), 148.5, currentY + 11.5, { align: "center" });
+    doc.text(buildPrintSemesterTitle(activeSemester), 148.5, currentY + 11.5, { align: "center" });
 
     currentY += 13;
 
     // Determine target sections belonging to the same department as the active section
-    const activeTermSections = activeTerm
-      ? sections.filter((section) => Number(section.termId) === Number(activeTerm.id))
+    const activeSemesterSections = activeSemester
+      ? sections.filter((section) => Number(section.semesterId) === Number(activeSemester.id))
       : sections;
     const unfilteredSections = printAllSections
-      ? activeTermSections
+      ? activeSemesterSections
       : activeSection
-      ? activeTermSections.filter((section) => section.departmentId === activeSection.departmentId)
-      : activeTermSections;
+      ? activeSemesterSections.filter((section) => section.departmentId === activeSection.departmentId)
+      : activeSemesterSections;
 
     const targetSections = [...unfilteredSections].sort((a, b) => {
       const yearA = Number(a.yearLevel) || 0;

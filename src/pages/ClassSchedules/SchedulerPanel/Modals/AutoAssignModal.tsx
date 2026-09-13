@@ -219,7 +219,7 @@ export default function AutoAssignModal({
   const facultyLoads = useMemo(() => {
     const loads = new Map<string, number>();
     // Seeded from the server's own figure instead of by summing the visible
-    // groups: `assignedUnits` covers the whole term, so a filtered view no
+    // groups: `assignedUnits` covers the whole semester, so a filtered view no
     // longer under-reports a load, and the already-assigned groups are inside it
     // already — adding them here counted them twice. Only queued rows, which
     // nothing has written yet, are added on top.

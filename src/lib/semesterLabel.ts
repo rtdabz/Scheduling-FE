@@ -1,11 +1,11 @@
 /**
- * Human labels for an academic term.
+ * Human labels for an academic semester.
  *
- * The `terms` table stores only `academic_year` and `semester` ('1st' | '2nd' |
- * 'summer') -- there is no `term_name` column and no accessor for one, so every
- * `term.term_name` in the UI renders blank. The label is built here instead.
+ * The `semesters` table stores only `academic_year` and `semester` ('1st' | '2nd' |
+ * 'summer') -- there is no `semester_name` column and no accessor for one, so every
+ * `semester.semester_name` in the UI renders blank. The label is built here instead.
  */
-export interface LabelledTerm {
+export interface LabelledSemester {
   academic_year?: string | null;
   semester?: string | null;
 }
@@ -37,9 +37,9 @@ export const yearLevelLabel = (yearLevel?: number | string | null): string => {
 };
 
 /** '1st Semester, AY 2026-2027' -- the year is dropped when unknown. */
-export const termLabel = (term?: LabelledTerm | null): string => {
-  if (!term) return 'No active term';
-  const year = academicYearLabel(term.academic_year);
-  const semester = semesterLabel(term.semester);
-  return year ? `${semester}, ${year}` : semester;
+export const fullSemesterLabel = (semester?: LabelledSemester | null): string => {
+  if (!semester) return 'No active semester';
+  const year = academicYearLabel(semester.academic_year);
+  const period = semesterLabel(semester.semester);
+  return year ? `${period}, ${year}` : period;
 };

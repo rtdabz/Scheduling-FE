@@ -36,7 +36,7 @@ const section = (id: number, name: string, departmentId: number) => ({ id, secti
  */
 const schedule = (id: number, sectionId: number, departmentId: number, status: string) => ({
   id,
-  term_id: 1,
+  semester_id: 1,
   section_id: sectionId,
   room_id: 1,
   faculty_id: 1,
@@ -55,7 +55,7 @@ const schedule = (id: number, sectionId: number, departmentId: number, status: s
 const submission = (id: number, departmentId: number, status: string, sectionIds: number[], extra: Record<string, unknown> = {}) => ({
   id,
   department_id: departmentId,
-  term_id: 1,
+  semester_id: 1,
   revision_number: 1,
   status,
   submitted_at: '2026-09-01T02:00:00.000000Z',
@@ -65,7 +65,7 @@ const submission = (id: number, departmentId: number, status: string, sectionIds
 });
 
 const initialData = {
-  active_term: { id: 1, academic_year: '2026-2027', semester: '2nd', is_active: true },
+  active_semester: { id: 1, academic_year: '2026-2027', semester: '2nd', is_active: true },
   departments: [department(1, 'CBA', 'Business Administration'), department(2, 'CIT', 'Information Technology'), department(3, 'CED', 'Education')],
   sections: [section(1, 'BSBA 1A', 1), section(2, 'BSBA 2A', 1), section(3, 'BSIT 1A', 2), section(4, 'BEED 1A', 3)],
   schedules: [
@@ -96,7 +96,7 @@ const initialData = {
 };
 
 const insights = {
-  term_id: 1,
+  semester_id: 1,
   generated_at: '2026-09-11T02:00:00.000000Z',
   utilization: {
     open_minutes_per_day: 690,
@@ -173,7 +173,7 @@ describe('VpaaDashboardPage', () => {
     ].forEach(title => expect(screen.getByText(title)).toBeTruthy());
   });
 
-  it('names the active term and when the figures were taken', async () => {
+  it('names the active semester and when the figures were taken', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText(/2nd Semester, AY 2026-2027/)).toBeTruthy());
     expect(screen.getByText('Figures as of')).toBeTruthy();
@@ -207,7 +207,7 @@ describe('VpaaDashboardPage', () => {
     // and once as a row of the utilisation table.
     await waitFor(() => expect(screen.getAllByText('Main').length).toBeGreaterThan(1));
     expect(screen.getAllByText('Annex').length).toBeGreaterThan(1);
-    expect(screen.getByText(/Unused this term/)).toBeTruthy();
+    expect(screen.getByText(/Unused this semester/)).toBeTruthy();
     expect(screen.getAllByText(/R 202/).length).toBeGreaterThan(0);
   });
 

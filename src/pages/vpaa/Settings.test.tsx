@@ -49,8 +49,8 @@ describe('VPAA Settings operating hours', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.apiGet.mockImplementation((url: string) => {
-      if (url === '/terms') return Promise.resolve({ data: [] });
-      if (url === '/terms/activation-history') return Promise.resolve({ data: [] });
+      if (url === '/semesters') return Promise.resolve({ data: [] });
+      if (url === '/semesters/activation-history') return Promise.resolve({ data: [] });
       if (url === '/timeslots') {
         return Promise.resolve({
           data: {

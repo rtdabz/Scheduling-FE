@@ -83,7 +83,7 @@ export default function FacultyModal({
   const isSameAssignedFaculty = Boolean(schedule.facultyId && facultyAssignmentPopup.facultyId === schedule.facultyId);
   const meetingSchedules = schedules
     .filter((item) =>
-      item.termId === schedule.termId &&
+      item.semesterId === schedule.semesterId &&
       item.sectionId === schedule.sectionId &&
       item.subjectId === schedule.subjectId
     )

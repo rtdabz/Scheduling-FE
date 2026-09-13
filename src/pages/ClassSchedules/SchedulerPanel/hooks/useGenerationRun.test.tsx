@@ -13,7 +13,7 @@ afterEach(cleanup);
 
 const generatedSchedule = {
   id: 501,
-  term_id: 1,
+  semester_id: 1,
   department_id: 2,
   course_id: 20,
   section_id: 10,
@@ -88,7 +88,7 @@ describe("useGenerationRun", () => {
     });
 
     const { rerender } = render(
-      <GenerationRunProvider departmentId={2} termId={1}>
+      <GenerationRunProvider departmentId={2} semesterId={1}>
         <Starter />
         <Watcher />
       </GenerationRunProvider>,
@@ -100,7 +100,7 @@ describe("useGenerationRun", () => {
     // Closing the generator unmounts the starter. The run must survive it:
     // this is exactly what the in-modal poll loop used to abort.
     rerender(
-      <GenerationRunProvider departmentId={2} termId={1}>
+      <GenerationRunProvider departmentId={2} semesterId={1}>
         <Watcher />
       </GenerationRunProvider>,
     );
@@ -138,7 +138,7 @@ describe("useGenerationRun", () => {
     });
 
     render(
-      <GenerationRunProvider departmentId={2} termId={1}>
+      <GenerationRunProvider departmentId={2} semesterId={1}>
         <Watcher />
       </GenerationRunProvider>,
     );
@@ -159,7 +159,7 @@ describe("useGenerationRun", () => {
     });
 
     render(
-      <GenerationRunProvider departmentId={2} termId={1}>
+      <GenerationRunProvider departmentId={2} semesterId={1}>
         <Watcher />
       </GenerationRunProvider>,
     );

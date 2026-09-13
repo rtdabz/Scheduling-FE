@@ -31,7 +31,7 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
   }
 
   return (
-    left.termId === right.termId
+    left.semesterId === right.semesterId
     && left.sectionId === right.sectionId
     && (left.courseId ?? left.subjectId) === (right.courseId ?? right.subjectId)
     && left.departmentId === right.departmentId

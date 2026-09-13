@@ -1,20 +1,20 @@
 import { Menu } from 'lucide-react';
 import NotificationBell from '../notifications/NotificationBell';
-import { academicYearLabel, semesterLabel } from '../../lib/termLabel';
+import { academicYearLabel, semesterLabel } from '../../lib/semesterLabel';
 import UserProfileMenu from './UserProfileMenu';
 
-interface HeaderTerm {
+interface HeaderSemester {
   academic_year?: string | null;
   semester?: string | null;
 }
 
 interface SystemHeaderProps {
-  activeTerm: HeaderTerm | null;
+  activeSemester: HeaderSemester | null;
   sidebarOpen?: boolean;
   onToggleSidebar: () => void;
 }
 
-export default function SystemHeader({ activeTerm, sidebarOpen = false, onToggleSidebar }: SystemHeaderProps) {
+export default function SystemHeader({ activeSemester, sidebarOpen = false, onToggleSidebar }: SystemHeaderProps) {
   return (
     <header className="relative z-50 flex min-h-[4.25rem] shrink-0 items-center justify-between gap-3 border-b border-l border-white/10 bg-[#4e0a10] px-3 py-3 text-white shadow-md sm:px-4">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -27,11 +27,11 @@ export default function SystemHeader({ activeTerm, sidebarOpen = false, onToggle
         </button>
       </div>
       <div className="relative z-10 flex shrink-0 items-center gap-2 sm:gap-3">
-        {activeTerm && (
+        {activeSemester && (
           <div className="hidden items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] shadow-sm sm:flex">
-            <span className="font-semibold text-white/70">Active term</span>
-            <span className="font-bold text-white">{semesterLabel(activeTerm.semester)}</span>
-            <span className="font-semibold text-white/60">{academicYearLabel(activeTerm.academic_year)}</span>
+            <span className="font-semibold text-white/70">Active semester</span>
+            <span className="font-bold text-white">{semesterLabel(activeSemester.semester)}</span>
+            <span className="font-semibold text-white/60">{academicYearLabel(activeSemester.academic_year)}</span>
           </div>
         )}
         <NotificationBell />

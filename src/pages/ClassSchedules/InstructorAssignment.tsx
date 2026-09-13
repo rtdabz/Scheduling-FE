@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import api from "../../lib/api";
-import { yearLevelLabel } from "../../lib/termLabel";
+import { yearLevelLabel } from "../../lib/semesterLabel";
 import { useToast } from "../../context/ToastContext";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
@@ -54,7 +54,7 @@ interface ApiDepartment {
   logo?: string | null;
 }
 
-interface ApiTerm {
+interface ApiSemester {
   id: number;
   academic_year: string;
   semester: string;
@@ -114,7 +114,7 @@ interface ApiFaculty {
 
 interface ApiSchedule {
   id: number;
-  term_id: number;
+  semester_id: number;
   department_id: number;
   course_id?: number;
   /** Legacy API alias retained for compatibility with older payloads. */
@@ -147,7 +147,7 @@ interface ApiIncomingCourse {
 }
 
 interface AssignmentResponse {
-  active_term: ApiTerm | null;
+  active_semester: ApiSemester | null;
   current_department_id?: number | null;
   departments: ApiDepartment[];
   subjects: ApiSubject[];
@@ -373,7 +373,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [faculties, setFaculties] = useState<ApiFaculty[]>(cachedAssignmentData?.faculties ?? []);
   const [schedules, setSchedules] = useState<ApiSchedule[]>(cachedAssignmentData?.schedules ?? []);
   const [incomingCourses, setIncomingCourses] = useState<ApiIncomingCourse[]>(cachedAssignmentData?.incoming_courses ?? []);
-  const [activeTerm, setActiveTerm] = useState<ApiTerm | null>(cachedAssignmentData?.active_term ?? null);
+  const [activeSemester, setActiveSemester] = useState<ApiSemester | null>(cachedAssignmentData?.active_semester ?? null);
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
   const [selectedSection, setSelectedSection] = useState("all");
@@ -431,7 +431,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         setFaculties(data.faculties);
         setSchedules(data.schedules);
         setIncomingCourses(data.incoming_courses ?? []);
-        setActiveTerm(data.active_term);
+        setActiveSemester(data.active_semester);
         setCurrentDepartmentId(data.current_department_id ?? user.department_id ?? null);
       } catch (loadError) {
         if (!active) return;
@@ -661,7 +661,7 @@ const selectedSchedule = assignmentSchedules.find(
     const endMinutes = timeToMinutes(schedule.end_time);
     return {
       id: String(schedule.id),
-      termId: Number(schedule.term_id),
+      semesterId: Number(schedule.semester_id),
       departmentId: Number(schedule.department_id),
       courseId: String(subject.id),
       subjectId: String(subject.id),
@@ -766,7 +766,7 @@ const selectedSchedule = assignmentSchedules.find(
       setFaculties(nextFaculties);
       setSchedules(nextSchedules);
       setCachedData<AssignmentResponse>(assignmentsCacheKey, {
-        active_term: activeTerm,
+        active_semester: activeSemester,
         current_department_id: currentDepartmentId,
         departments,
         subjects,
@@ -827,7 +827,7 @@ const selectedSchedule = assignmentSchedules.find(
     const assignedByClass = new Map<string, boolean>();
     for (const schedule of departmentSchedules) {
       const key = [
-        schedule.term_id,
+        schedule.semester_id,
         schedule.section_id ?? schedule.section?.section_name ?? "none",
         schedule.subject.id,
       ].join(":");
@@ -870,7 +870,7 @@ const selectedSchedule = assignmentSchedules.find(
       setSchedules(nextSchedules);
       setFaculties(nextFaculties);
       setCachedData<AssignmentResponse>(assignmentsCacheKey, {
-        active_term: activeTerm,
+        active_semester: activeSemester,
         current_department_id: currentDepartmentId,
         departments,
         subjects,
@@ -910,7 +910,7 @@ const selectedSchedule = assignmentSchedules.find(
     const conflict = schedules.some((item) => (
       String(item.id) !== scheduleId
       && String(item.faculty_id ?? "") === facultyId
-      && Number(item.term_id) === Number(schedule.term_id)
+      && Number(item.semester_id) === Number(schedule.semester_id)
       && item.day === schedule.day
       && start < timeToMinutes(item.end_time)
       && timeToMinutes(item.start_time) < end
@@ -921,14 +921,14 @@ const selectedSchedule = assignmentSchedules.find(
 
   /**
    * One entry per class, not per meeting. The grouping key matches the one
-   * FacultyModal uses to gather a class's meetings (term + section + course),
+   * FacultyModal uses to gather a class's meetings (semester + section + course),
    * so both views agree on what a single assignment decision covers.
    */
   const worklistClasses = useMemo<WorklistClass[]>(() => {
     const grouped = new Map<string, AssignmentSchedule[]>();
     for (const schedule of visibleSchedules) {
       const key = [
-        schedule.term_id,
+        schedule.semester_id,
         schedule.section_id ?? schedule.section?.section_name ?? "none",
         schedule.subject.id,
       ].join(":");
@@ -1056,11 +1056,11 @@ const selectedSchedule = assignmentSchedules.find(
               <CalendarDays className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active assignment term</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active assignment semester</p>
               <div className="mt-1 flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-xs font-bold shadow-2xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  {activeTerm ? `${activeTerm.semester} Semester · AY ${activeTerm.academic_year}` : "No active term selected"}
+                  {activeSemester ? `${activeSemester.semester} Semester · AY ${activeSemester.academic_year}` : "No active semester selected"}
                 </span>
               </div>
               <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
@@ -1226,10 +1226,10 @@ const selectedSchedule = assignmentSchedules.find(
                   )}
                 </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
-                  {activeTerm && (
+                  {activeSemester && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-[10px] font-bold">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                      {activeTerm.semester} Semester &bull; AY {activeTerm.academic_year}
+                      {activeSemester.semester} Semester &bull; AY {activeSemester.academic_year}
                     </span>
                   )}
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#C9952A]" /> Needs instructor</span>

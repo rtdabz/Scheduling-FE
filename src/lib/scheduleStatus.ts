@@ -3,13 +3,13 @@
  *
  * `schedules.status` is not flipped to 'approved' when the VPAA approves a
  * submission: DepartmentScheduleController::approveByVpaa() moves the rows to
- * 'faculty_assignment', and instructor reassignment and term lock-in move them
+ * 'faculty_assignment', and instructor reassignment and semester lock-in move them
  * on again to 'reassignment' and 'finalized'. Approval ownership itself lives
  * on schedule_submissions.status, which is where the plain 'approved' value
  * appears. 'approved' survives on schedules only for rows written before that
  * split.
  *
- * Mirrors ScheduleTermArchiver::VPAA_APPROVED_STATUSES on the backend — keep
+ * Mirrors ScheduleSemesterArchiver::VPAA_APPROVED_STATUSES on the backend — keep
  * the two lists in step.
  */
 export const VPAA_APPROVED_STATUSES = ['approved', 'faculty_assignment', 'reassignment', 'finalized'] as const;

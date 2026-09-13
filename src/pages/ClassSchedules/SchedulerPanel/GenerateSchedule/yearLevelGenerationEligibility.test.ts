@@ -11,13 +11,13 @@ const sections = ["1", "2", "3"].map((id, index): Section => ({
   yearLevel: 1,
   semester: "1st",
   departmentId: 10,
-  termId: 20,
+  semesterId: 20,
   status: "active",
 }));
 
 const schedule = (sectionId: string, status: ScheduleItem["status"]): ScheduleItem => ({
   id: `${sectionId}-${status}`,
-  termId: 20,
+  semesterId: 20,
   departmentId: 10,
   courseId: "100",
   courseCode: "IT 101",

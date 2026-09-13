@@ -89,7 +89,7 @@ export interface CurriculumCourse {
   program_id?: number | null;
 }
 
-export interface CurriculumTerm {
+export interface CurriculumSemester {
   year_level: number;
   semester: number;
   courses: CurriculumCourse[];
@@ -102,7 +102,7 @@ export interface CurriculumTerm {
 
 export interface CurriculumDetail {
   curriculum: Curriculum & { department?: Department };
-  terms: CurriculumTerm[];
+  semesters: CurriculumSemester[];
 }
 
 export const mapApiCurriculum = (c: ApiCurriculum): Curriculum => ({

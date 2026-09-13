@@ -150,7 +150,7 @@ describe("checkDayCategoryConstraint", () => {
 
 const onlineSchedule = (id: string, courseId: string, sectionId = "10"): ScheduleItem => ({
   id,
-  termId: 7,
+  semesterId: 7,
   departmentId: 2,
   courseId,
   subjectId: courseId,

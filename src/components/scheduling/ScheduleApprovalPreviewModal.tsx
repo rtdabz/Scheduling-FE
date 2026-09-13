@@ -2,7 +2,7 @@ import { X, Check } from 'lucide-react';
 import tccLogo from '../../assets/logo.jpg';
 import municipalLogo from '../../assets/municipal-logo.png';
 import type { ApprovalScheduleItem } from './ScheduleApprovalList';
-import { semesterLabel, type LabelledTerm } from '../../lib/termLabel';
+import { semesterLabel, type LabelledSemester } from '../../lib/semesterLabel';
 
 type PreviewStatus = 'pending' | 'approved' | 'rejected';
 
@@ -21,7 +21,7 @@ interface Props<T extends ApprovalScheduleItem> {
   getModeLabel: (mode: T['mode']) => string | undefined;
   formatTime: (value: string) => string;
   departmentLogoUrl?: string | null;
-  activeTerm: LabelledTerm | null;
+  activeSemester: LabelledSemester | null;
   canAct: boolean;
   onApprove: () => void;
   onReject: () => void;
@@ -38,14 +38,14 @@ const getCourseUnits = (item: ApprovalScheduleItem) => {
   return { lecture, laboratory, total: lecture + laboratory };
 };
 
-export const buildApprovalTermTitle = (term: LabelledTerm | null): string => term
-  ? `CLASS SCHEDULE AY ${term.academic_year ?? ''}    ${semesterLabel(term.semester)}`
+export const buildApprovalSemesterTitle = (semester: LabelledSemester | null): string => semester
+  ? `CLASS SCHEDULE AY ${semester.academic_year ?? ''}    ${semesterLabel(semester.semester)}`
   : 'CLASS SCHEDULE';
 
 export default function ScheduleApprovalPreviewModal<T extends ApprovalScheduleItem>({
   open, title, status, statusLabel, sections, schedules, getCourseCode, getCourseName,
   getRoomName, getModeLabel, formatTime, canAct, onApprove, onReject, onClose,
-  departmentLogoUrl, activeTerm,
+  departmentLogoUrl, activeSemester,
 }: Props<T>) {
   if (!open) return null;
   const grouped = sections.map((section) => ({
@@ -77,7 +77,7 @@ export default function ScheduleApprovalPreviewModal<T extends ApprovalScheduleI
             </div>
             <div className="mt-3 border border-black">
               <div className="bg-[#7b0c17] py-1 text-center text-sm font-bold text-white">{title.toUpperCase()}</div>
-              <div className="border-t border-black py-1 text-center text-xs font-bold whitespace-pre-wrap">{buildApprovalTermTitle(activeTerm)}</div>
+              <div className="border-t border-black py-1 text-center text-xs font-bold whitespace-pre-wrap">{buildApprovalSemesterTitle(activeSemester)}</div>
             </div>
             {grouped.length === 0 ? <div className="py-16 text-center text-sm italic text-gray-500">This department has no schedule entries.</div> : grouped.map((section) => (
               <div key={section.id} className="mt-4">

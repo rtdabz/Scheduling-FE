@@ -81,7 +81,7 @@ export default function SectionOverviewCards({ sections, isLoading, onOpen }: Pr
   if (sections.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-400 italic">
-        This department has no active sections for the term.
+        This department has no active sections for the semester.
       </div>
     );
   }

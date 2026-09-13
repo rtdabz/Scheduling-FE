@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getCurriculumPrintSections, getPrintableProgramTitle } from './curriculumPrintable';
-import type { Curriculum, CurriculumTerm } from '../types/curriculum';
+import type { Curriculum, CurriculumSemester } from '../types/curriculum';
 
 const curriculum: Curriculum = {
   id: 1,
@@ -17,18 +17,18 @@ const curriculum: Curriculum = {
 };
 
 describe('curriculum printable layout', () => {
-  it('creates all four year sections and preserves empty terms', () => {
-    const terms: CurriculumTerm[] = [{
+  it('creates all four year sections and preserves empty semesters', () => {
+    const semesters: CurriculumSemester[] = [{
       year_level: 2,
       semester: 3,
       courses: [],
       totals: { lec: 0, lab: 0, tu: 0 },
     }];
 
-    const sections = getCurriculumPrintSections(terms);
+    const sections = getCurriculumPrintSections(semesters);
 
     expect(sections).toHaveLength(4);
-    expect(sections[1].summer).toBe(terms[0]);
+    expect(sections[1].summer).toBe(semesters[0]);
     expect(sections[0].firstSemester.courses).toEqual([]);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { academicYearLabel, semesterLabel, termLabel } from './termLabel';
+import { academicYearLabel, semesterLabel, fullSemesterLabel } from './semesterLabel';
 
 describe('semesterLabel', () => {
   it('spells out the stored enum values', () => {
@@ -36,16 +36,16 @@ describe('academicYearLabel', () => {
   });
 });
 
-describe('termLabel', () => {
+describe('fullSemesterLabel', () => {
   it('combines semester and academic year', () => {
-    expect(termLabel({ academic_year: '2026-2027', semester: '1st' })).toBe('1st Semester, AY 2026-2027');
+    expect(fullSemesterLabel({ academic_year: '2026-2027', semester: '1st' })).toBe('1st Semester, AY 2026-2027');
   });
 
   it('drops the year clause when there is no year', () => {
-    expect(termLabel({ semester: '2nd' })).toBe('2nd Semester');
+    expect(fullSemesterLabel({ semester: '2nd' })).toBe('2nd Semester');
   });
 
   it('names the empty case so the chip never renders blank', () => {
-    expect(termLabel(null)).toBe('No active term');
+    expect(fullSemesterLabel(null)).toBe('No active semester');
   });
 });

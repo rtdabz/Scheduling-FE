@@ -6,7 +6,7 @@ import {
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, ScheduleItem, Room, Section, Subject, Term } from "../types";
+import type { ConflictInfo, ScheduleItem, Room, Section, Subject, Semester } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 import Skeleton from "../../../../components/ui/Skeleton";
@@ -18,8 +18,8 @@ interface TimetableGridProps {
   sections: Section[];
   rooms: Room[];
   subjects: Subject[];
-  activeTermText: string;
-  activeTerm: Term | null;
+  activeSemesterText: string;
+  activeSemester: Semester | null;
   selectedSectionId: string;
   totalScheduled: number;
   totalSubjects: number;
@@ -70,8 +70,8 @@ export default function TimetableGrid({
   sections,
   rooms,
   subjects,
-  activeTermText,
-  activeTerm,
+  activeSemesterText,
+  activeSemester,
   selectedSectionId,
   totalScheduled,
   totalSubjects,
@@ -110,7 +110,7 @@ export default function TimetableGrid({
   isReadOnlyViewer = false
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
-  const isSummerTerm = activeTerm?.semester === "summer";
+  const isSummerSemester = activeSemester?.semester === "summer";
   const isFacultyAssignment = ["approved", "faculty_assignment", "reassignment"].includes(currentStatus);
   const subjectsById = React.useMemo(() => buildSubjectIndex(subjects), [subjects]);
   const timetableSlotCount = React.useMemo(
@@ -139,7 +139,7 @@ export default function TimetableGrid({
                 {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
               </span>
               <span className="bg-[#c9952a]/10 text-amber-950 border border-[#c9952a]/20 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider">
-                {activeTermText}
+                {activeSemesterText}
               </span>
             </>}
           </div>
@@ -243,7 +243,7 @@ export default function TimetableGrid({
               // the row is stretched by a taller Course Bank.
               className="shrink-0"
               isLoading={isLoading}
-              disabledDayIndexes={isSummerTerm ? [5, 6] : []}
+              disabledDayIndexes={isSummerSemester ? [5, 6] : []}
               getTimeLabel={slotToTimeStr}
               getDayCount={getClassesCountForDay}
               renderCell={isLoading ? undefined : (d, t) => {
@@ -261,7 +261,7 @@ export default function TimetableGrid({
                     isEditable={isEditable}
                     isPhase2Active={isPhase2Active}
                     isPlacementMode={isPlacementMode}
-                    isSummerDisabled={isSummerTerm && d >= 5}
+                    isSummerDisabled={isSummerSemester && d >= 5}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}

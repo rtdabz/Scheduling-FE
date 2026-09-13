@@ -10,7 +10,7 @@ interface Department {
 }
 interface Program { id: number; code: string; name: string | null; department_id: number; }
 
-interface Term {
+interface Semester {
   id: number;
   academic_year: string;
   semester: '1st' | '2nd' | 'summer';
@@ -25,8 +25,8 @@ interface Section {
   department_id: number;
   program_id: number | null;
   department: Department | null;
-  term_id: number;
-  term: Term | null;
+  semester_id: number;
+  academic_semester: Semester | null;
   status: 'active' | 'inactive';
 }
 
@@ -41,7 +41,7 @@ interface SectionModalProps {
   isOpen: boolean;
   isEditMode: boolean;
   editingSection?: Section | null;
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   departments: Department[];
   programs: Program[];
   userDepartmentId?: number | null;
@@ -55,7 +55,7 @@ export default function SectionModal({
   isOpen,
   isEditMode,
   editingSection,
-  activeTerm,
+  activeSemester,
   departments,
   programs,
   userDepartmentId,
@@ -222,19 +222,19 @@ export default function SectionModal({
                 <h2 className="text-base sm:text-lg font-black text-white font-display uppercase tracking-wide">
                   {isEditMode ? 'EDIT SECTION' : 'ADD SECTION'}
                 </h2>
-                {activeTerm?.academic_year && (
+                {activeSemester?.academic_year && (
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-[#C9952A] text-slate-950 shadow-2xs">
-                    A.Y. {activeTerm.academic_year}
+                    A.Y. {activeSemester.academic_year}
                   </span>
                 )}
-                {activeTerm?.semester && (
+                {activeSemester?.semester && (
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-white/15 text-slate-100 border border-white/20">
-                    {activeTerm.semester} Semester
+                    {activeSemester.semester} Semester
                   </span>
                 )}
               </div>
               <p className="text-xs text-amber-100/70 font-sans font-medium mt-0.5">
-                Manually enter section details for this term card
+                Manually enter section details for this semester card
               </p>
             </div>
           </div>
@@ -248,19 +248,19 @@ export default function SectionModal({
         </div>
 
         <form id="section-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-          {/* Shared Top Settings: System-Controlled Department, Term & Status */}
+          {/* Shared Top Settings: System-Controlled Department, Semester & Status */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 bg-gray-50/80 rounded-2xl border border-gray-200/80 mb-2">
             <div>
               <label className="block text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-1 font-sans">
-                Academic Term
+                Academic Semester
               </label>
               <input
                 type="text"
                 disabled
                 value={
-                  activeTerm
-                    ? `A.Y. ${activeTerm.academic_year} - ${activeTerm.semester} Semester (Active)`
-                    : 'Active System Term'
+                  activeSemester
+                    ? `A.Y. ${activeSemester.academic_year} - ${activeSemester.semester} Semester (Active)`
+                    : 'Active System Semester'
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-100/90 text-gray-700 text-xs font-semibold outline-none cursor-not-allowed font-sans truncate"
               />
@@ -375,7 +375,7 @@ export default function SectionModal({
                   <input
                     type="text"
                     disabled
-                    value={activeTerm ? `${activeTerm.semester} Semester` : '1st Semester'}
+                    value={activeSemester ? `${activeSemester.semester} Semester` : '1st Semester'}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100/90 text-gray-600 text-sm font-bold cursor-not-allowed font-sans"
                   />
                 </div>
@@ -434,7 +434,7 @@ export default function SectionModal({
                     <input
                       type="text"
                       disabled
-                      value={activeTerm ? `${activeTerm.semester} Semester` : '1st Semester'}
+                      value={activeSemester ? `${activeSemester.semester} Semester` : '1st Semester'}
                       className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-100/90 text-gray-600 text-xs font-bold cursor-not-allowed font-sans"
                     />
                   </div>

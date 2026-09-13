@@ -18,7 +18,7 @@ describe('RoomDetailContent grid view', () => {
         }}
         schedules={[{
           id: 10,
-          term_id: 9,
+          semester_id: 9,
           section_id: 3,
           course_id: 12,
           faculty_id: 5,

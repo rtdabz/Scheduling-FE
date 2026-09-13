@@ -14,14 +14,14 @@ import type {
   ApiScheduleRecord,
   ApiSectionRecord,
   ApiSubjectRecord,
-  ApiTermRecord,
+  ApiSemesterRecord,
   Department,
   Faculty,
   Room,
   ScheduleItem,
   Section,
   Subject,
-  Term,
+  Semester,
   UserSummary
 } from "../types";
 import { normalizeAdministrativePost } from "../types";
@@ -31,7 +31,7 @@ export interface SchedulerCacheData {
   sections: Section[];
   subjects: Subject[];
   faculties: Faculty[];
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   departments: Department[];
   users: UserSummary[];
   schedules: ScheduleItem[];
@@ -43,7 +43,7 @@ export interface SchedulerCacheData {
 }
 
 export interface InitialDataResponse {
-  active_term: ApiTermRecord | null;
+  active_semester: ApiSemesterRecord | null;
   rooms: ApiRoomRecord[];
   courses?: ApiCourseRecord[];
   /** Legacy alias; /initial-data no longer sends it. Kept for cached payloads. */
@@ -133,7 +133,7 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   const courseId = item.course_id?.toString() ?? item.subject_id?.toString() ?? "";
   const sectionId = item.section_id?.toString() ?? "";
   const fallbackId = [
-    item.term_id ?? "term",
+    item.semester_id ?? "semester",
     sectionId || "section",
     courseId || "course",
     item.day ?? "day",
@@ -164,7 +164,7 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
 
   return {
     id: item.id?.toString() ?? fallbackId,
-    termId: Number(item.term_id),
+    semesterId: Number(item.semester_id),
     departmentId: Number(item.department_id),
     courseId,
     subjectId: courseId,
@@ -345,15 +345,15 @@ export const mapInitialData = (
     availabilities: f.availabilities
   }));
 
-  const term = initialData.active_term;
+  const semester = initialData.active_semester;
 
-  // Sections must match the active term by id, or by semester *and* academic
+  // Sections must match the active semester by id, or by semester *and* academic
   // year. Matching on semester alone leaks sections from other academic years.
   const filteredSections = initialData.sections
     .filter((s) => {
-      if (!term) return true;
-      if (s.term_id && Number(s.term_id) === Number(term.id)) return true;
-      return !!(term.semester && s.semester === term.semester && s.term?.academic_year === term.academic_year);
+      if (!semester) return true;
+      if (s.semester_id && Number(s.semester_id) === Number(semester.id)) return true;
+      return !!(semester.semester && s.semester === semester.semester && s.academic_semester?.academic_year === semester.academic_year);
     })
     .map((s): Section => ({
       id: s.id.toString(),
@@ -364,19 +364,19 @@ export const mapInitialData = (
       programId: s.program_id == null ? null : Number(s.program_id),
       curriculumId: s.curriculum_id == null ? null : Number(s.curriculum_id),
       curriculumName: s.curriculum?.name ?? null,
-      termId: Number(s.term_id),
+      semesterId: Number(s.semester_id),
       status: s.status ?? "active"
     }));
 
   const filteredSchedules = initialData.schedules
-    .filter((item) => !term || Number(item.term_id) === Number(term.id))
+    .filter((item) => !semester || Number(item.semester_id) === Number(semester.id))
     .map(mapApiScheduleToItem);
 
   return {
     rooms: mappedRooms,
     subjects: mappedSubjects,
     faculties: mappedFaculties,
-    activeTerm: term,
+    activeSemester: semester,
     departments: initialData.departments,
     users: initialData.users,
     sections: filteredSections,

@@ -8,7 +8,7 @@ import type {
   FacultyAdministrativePost,
   ScheduleItem,
   Section,
-  Term,
+  Semester,
   UserSummary,
 } from "./types";
 import { INSTRUCTOR_ASSIGNED_STATUSES } from "./constants";
@@ -25,7 +25,7 @@ interface TeachingLoadProps {
   isTeachingLoadOpen: boolean;
   setIsTeachingLoadOpen: (value: boolean) => void;
   sections: Section[];
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   users: UserSummary[];
   departments: Department[];
   selectedSectionId: string;
@@ -99,7 +99,7 @@ export default function TeachingLoad({
   isTeachingLoadOpen,
   setIsTeachingLoadOpen,
   sections,
-  activeTerm,
+  activeSemester,
   users,
   departments,
   selectedSectionId,
@@ -211,8 +211,8 @@ export default function TeachingLoad({
           logoImg,
           muniImg,
           collegeName,
-          semester: semesterLabel(activeTerm?.semester),
-          academicYear: activeTerm?.academic_year || "",
+          semester: semesterLabel(activeSemester?.semester),
+          academicYear: activeSemester?.academic_year || "",
           surname: surname.toUpperCase(),
           givenName,
           middleInitial: mi,

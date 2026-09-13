@@ -24,7 +24,7 @@ import type {
   Course,
   ScheduleItem,
   Section,
-  Term,
+  Semester,
 } from "../types";
 import RecommendedAdjustmentPanel, {
   AppliedAdjustmentNotice,
@@ -108,7 +108,7 @@ interface Props {
   onClose: () => void;
   sections: Section[];
   courses: Course[];
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   departmentId: number | null;
   departmentLogoUrl?: string | null;
   existingSchedules: ScheduleItem[];
@@ -146,10 +146,10 @@ const defaultSetupDraft: SetupDraft = {
   completed: false,
   allowedSplitCourseIds: [],
 };
-const formatTerm = (term: Term | null) =>
-  term
-    ? `${term.academic_year} - ${term.semester.toUpperCase()} Semester`
-    : "No active term selected";
+const formatSemester = (semester: Semester | null) =>
+  semester
+    ? `${semester.academic_year} - ${semester.semester.toUpperCase()} Semester`
+    : "No active semester selected";
 const yearLabel = (yearLevel: number) => {
   const ordinal =
     yearLevel === 1
@@ -168,7 +168,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   onClose,
   sections,
   courses,
-  activeTerm,
+  activeSemester,
   departmentId,
   departmentLogoUrl,
   existingSchedules,
@@ -225,8 +225,8 @@ export default function YearLevelGenerateScheduleWorkflow({
 
   const storageKey = useMemo(
     () =>
-      `wicars.year-level-wizard.${storageVersion}.${departmentId ?? "none"}.${activeTerm?.id ?? "none"}`,
-    [activeTerm?.id, departmentId],
+      `wicars.year-level-wizard.${storageVersion}.${departmentId ?? "none"}.${activeSemester?.id ?? "none"}`,
+    [activeSemester?.id, departmentId],
   );
   const departmentSections = useMemo(
     () =>
@@ -242,9 +242,9 @@ export default function YearLevelGenerateScheduleWorkflow({
       departmentSections.filter(
         (section) =>
           section.status === "active" &&
-          (!activeTerm || Number(section.termId) === Number(activeTerm.id)),
+          (!activeSemester || Number(section.semesterId) === Number(activeSemester.id)),
       ),
-    [activeTerm, departmentSections],
+    [activeSemester, departmentSections],
   );
   const availableYears = useMemo(
     () =>
@@ -351,7 +351,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     return source.filter(
       (course) =>
         Number(course.yearLevel) === yearLevel &&
-        (!activeTerm || course.semester === activeTerm.semester) &&
+        (!activeSemester || course.semester === activeSemester.semester) &&
         course.status === "active" &&
         (course.departmentId === null ||
           departmentId === null ||
@@ -362,7 +362,7 @@ export default function YearLevelGenerateScheduleWorkflow({
           )),
     );
   }, [
-    activeTerm,
+    activeSemester,
     courses,
     curriculumCourses,
     departmentId,
@@ -374,9 +374,9 @@ export default function YearLevelGenerateScheduleWorkflow({
       canGenerateYearLevel(
         scopedSections,
         existingSchedules,
-        activeTerm?.id ?? null,
+        activeSemester?.id ?? null,
       ),
-    [activeTerm?.id, existingSchedules, scopedSections],
+    [activeSemester?.id, existingSchedules, scopedSections],
   );
   const roomCodeById = useMemo(
     () =>
@@ -685,7 +685,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     }));
 
   const generate = async (configsOverride?: Record<string, SectionConfig>) => {
-    if (!activeTerm || departmentId === null) return;
+    if (!activeSemester || departmentId === null) return;
     if (!yearLevelGenerationAllowed) return;
     const activeConfigs = configsOverride ?? configs;
     const configuredFieldCourseIds = scopedCourses
@@ -709,7 +709,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     );
     try {
       const payload = {
-        term_id: Number(activeTerm.id),
+        semester_id: Number(activeSemester.id),
         department_id: departmentId,
         year_level: yearLevel,
         section_configs: scopedSections.map((section) => {
@@ -840,14 +840,14 @@ export default function YearLevelGenerateScheduleWorkflow({
         .filter(
           (schedule) =>
             sectionIds.has(String(schedule.sectionId)) &&
-            (!activeTerm ||
-              Number(schedule.termId) === Number(activeTerm.id)) &&
+            (!activeSemester ||
+              Number(schedule.semesterId) === Number(activeSemester.id)) &&
             replaceableStatuses.has(schedule.status),
         )
         .map((schedule) => Number(schedule.id))
         .filter((id) => id > 0);
       const operations = preview.map((r) => ({
-        term_id: Number(r.term_id),
+        semester_id: Number(r.semester_id),
         section_id: Number(r.section_id),
         course_id: Number(r.course_id ?? r.subject_id),
         faculty_id: r.faculty_id ? Number(r.faculty_id) : null,
@@ -872,7 +872,7 @@ export default function YearLevelGenerateScheduleWorkflow({
           replace_section_ids: Array.from(sectionIds)
             .map(Number)
             .filter((id) => id > 0),
-          replace_term_id: activeTerm ? Number(activeTerm.id) : undefined,
+          replace_semester_id: activeSemester ? Number(activeSemester.id) : undefined,
         },
       );
       window.localStorage.removeItem(storageKey);
@@ -981,7 +981,7 @@ export default function YearLevelGenerateScheduleWorkflow({
             Generate Schedule
           </h2>
           <p className="truncate text-xs font-semibold text-white/70">
-            {formatTerm(activeTerm)} &middot; {yearLabel(yearLevel)} &middot;{" "}
+            {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel)} &middot;{" "}
             {scopedSections.length} section
             {scopedSections.length === 1 ? "" : "s"}
           </p>
@@ -1053,7 +1053,7 @@ export default function YearLevelGenerateScheduleWorkflow({
             >
               {step === 1 && (
                 <ConfigurationStep
-                  activeTerm={activeTerm}
+                  activeSemester={activeSemester}
                   years={availableYears}
                   yearLevel={yearLevel}
                   onYearChange={(value) => {
@@ -1092,7 +1092,7 @@ export default function YearLevelGenerateScheduleWorkflow({
 
               {step === 3 && (
                 <ReviewGenerateStep
-                  activeTerm={activeTerm}
+                  activeSemester={activeSemester}
                   yearLevel={yearLevel}
                   curriculumName={
                     scopedSections[0]?.curriculumName ?? null

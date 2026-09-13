@@ -6,8 +6,8 @@ import { getCachedData, hasCachedData, setCachedData } from '../lib/dataCache';
  * Aggregated schedule counts for the All Schedules screen.
  *
  * These deliberately do not come from `/initial-data`: that payload is capped,
- * so counting its rows reports a slice of the term as the whole of it. Every
- * figure here is aggregated server-side over the entire active term.
+ * so counting its rows reports a slice of the semester as the whole of it. Every
+ * figure here is aggregated server-side over the entire active semester.
  */
 
 export type SectionScheduleStage =
@@ -71,7 +71,7 @@ export interface ScheduleOverviewTotals {
 }
 
 export interface ScheduleOverviewData {
-  term: { id: number; academic_year?: string; semester?: string } | null;
+  semester: { id: number; academic_year?: string; semester?: string } | null;
   departments: DepartmentOverview[];
   totals: ScheduleOverviewTotals;
 }
@@ -130,7 +130,7 @@ export function useScheduleOverview() {
     data,
     departments: data?.departments ?? [],
     totals: data?.totals,
-    term: data?.term ?? null,
+    semester: data?.semester ?? null,
     isLoading,
     error,
     refresh,

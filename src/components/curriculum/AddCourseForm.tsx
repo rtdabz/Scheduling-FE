@@ -15,10 +15,10 @@ interface AddCourseFormProps {
   availableCourses: CourseOption[];
   isAdding: boolean;
   onAddCourse: (courseId: number) => Promise<void>;
-  onAddCourseWithTarget?: (courseId: number, yearLevel: number, term: number) => Promise<void>;
+  onAddCourseWithTarget?: (courseId: number, yearLevel: number, semester: number) => Promise<void>;
   initialYearLevel?: number;
-  initialTerm?: number;
-  showYearTermSelectors?: boolean;
+  initialSemester?: number;
+  showYearSemesterSelectors?: boolean;
   onCancel?: () => void;
 }
 
@@ -28,21 +28,21 @@ export default function AddCourseForm({
   onAddCourse,
   onAddCourseWithTarget,
   initialYearLevel = 1,
-  initialTerm = 1,
-  showYearTermSelectors = false,
+  initialSemester = 1,
+  showYearSemesterSelectors = false,
   onCancel,
 }: AddCourseFormProps) {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [searchVal, setSearchVal] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [yearLevel, setYearLevel] = useState<number>(initialYearLevel);
-  const [term, setTerm] = useState<number>(initialTerm);
+  const [semester, setSemester] = useState<number>(initialSemester);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setYearLevel(initialYearLevel);
-    setTerm(initialTerm);
-  }, [initialYearLevel, initialTerm]);
+    setSemester(initialSemester);
+  }, [initialYearLevel, initialSemester]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -67,8 +67,8 @@ export default function AddCourseForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCourseId) return;
-    if (showYearTermSelectors && onAddCourseWithTarget) {
-      await onAddCourseWithTarget(selectedCourseId, yearLevel, term);
+    if (showYearSemesterSelectors && onAddCourseWithTarget) {
+      await onAddCourseWithTarget(selectedCourseId, yearLevel, semester);
     } else {
       await onAddCourse(selectedCourseId);
     }
@@ -80,8 +80,8 @@ export default function AddCourseForm({
   return (
     <div className="bg-[#4e0a10]/[0.02] border-t border-[#C9952A]/20 p-4 font-sans">
       <form onSubmit={handleSubmit} className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
-        {/* Optional Year Level & Term Selectors */}
-        {showYearTermSelectors && (
+        {/* Optional Year Level & Semester Selectors */}
+        {showYearSemesterSelectors && (
           <div className="flex items-center gap-2 flex-wrap">
             <select
               value={yearLevel}
@@ -95,13 +95,13 @@ export default function AddCourseForm({
             </select>
 
             <select
-              value={term}
-              onChange={(e) => setTerm(Number(e.target.value))}
+              value={semester}
+              onChange={(e) => setSemester(Number(e.target.value))}
               className="px-3 py-2 border border-gray-300 rounded-xl text-xs bg-white font-bold text-gray-700 outline-none focus:ring-1 focus:ring-[#C9952A]"
             >
               <option value={1}>1st Semester</option>
               <option value={2}>2nd Semester</option>
-              <option value={3}>Summer Term</option>
+              <option value={3}>Summer</option>
             </select>
           </div>
         )}

@@ -5,7 +5,7 @@ import api from "../../../../lib/api";
 import { getStoredUserRole } from "../../../../lib/storedUser";
 import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
 import { FULL_DAY_NAMES, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
-import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Term } from "../types";
+import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Semester } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { slotsToHours } from "../courseSlotPlan";
 import {
@@ -17,7 +17,7 @@ import {
 import { describeWindow } from "../../../../lib/roomRequests";
 
 interface DropRecommendationRow {
-  term_id: number;
+  semester_id: number;
   section_id: number;
   course_id: number;
   faculty_id: number | null;
@@ -88,7 +88,7 @@ interface DropModalProps {
   sections: Section[];
   schedules: ScheduleItem[];
   selectedSectionId: string;
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   dropContext: DropContext | null;
   dropSubject: Subject | null;
   dropSubjectIsField: boolean;
@@ -173,7 +173,7 @@ export default function DropModal({
   rooms,
   schedules,
   selectedSectionId,
-  activeTerm,
+  activeSemester,
   dropContext,
   dropSubject,
   dropSubjectIsField,
@@ -220,8 +220,8 @@ export default function DropModal({
   setDropContext,
   handleModalConfirm
 }: DropModalProps) {
-  const isSummerTerm = activeTerm?.semester === "summer";
-  const availableDays = isSummerTerm ? DAYS.slice(0, 5) : DAYS;
+  const isSummerSemester = activeSemester?.semester === "summer";
+  const availableDays = isSummerSemester ? DAYS.slice(0, 5) : DAYS;
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const hasLaboratoryUnits = Number(dropSubject?.labHours ?? 0) > 0;
   const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
@@ -254,7 +254,7 @@ export default function DropModal({
 
       return {
         ...(!Number.isNaN(numericId) ? { id: numericId } : {}),
-        term_id: schedule.termId,
+        semester_id: schedule.semesterId,
         section_id: Number(schedule.sectionId),
         course_id: Number(schedule.courseId ?? schedule.subjectId),
         faculty_id: schedule.facultyId ? Number(schedule.facultyId) : null,

@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback } from "react";
 import { DAYS, slotToTimeStr } from "../constants";
-import type { ConflictInfo, DropContext, ScheduleItem, Subject, Term } from "../types";
+import type { ConflictInfo, DropContext, ScheduleItem, Subject, Semester } from "../types";
 
 type CheckConflict = (
   subjectId: string,
@@ -30,7 +30,7 @@ interface UseDragDropParams {
   setConflictInfo: React.Dispatch<React.SetStateAction<ConflictInfo | null>>;
   checkConflict: CheckConflict;
   onScheduleRelocated?: (scheduleId: string, dayIndex: number, timeIndex: number) => void;
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
 }
 
 /**
@@ -58,9 +58,9 @@ export const useDragDrop = ({
   setConflictInfo,
   checkConflict,
   onScheduleRelocated,
-  activeTerm
+  activeSemester
 }: UseDragDropParams) => {
-  const isSummerTerm = activeTerm?.semester === "summer";
+  const isSummerSemester = activeSemester?.semester === "summer";
 
   const handleDragStartFromBank = useCallback((e: React.DragEvent, subjectId: string) => {
     setDragSubjectId(subjectId);
@@ -87,13 +87,13 @@ export const useDragDrop = ({
 
   const handleDragOver = useCallback((e: React.DragEvent, dayIndex: number, timeIndex: number) => {
     e.preventDefault();
-    if (isSummerTerm && dayIndex >= 5) {
+    if (isSummerSemester && dayIndex >= 5) {
       e.dataTransfer.dropEffect = "none";
       return;
     }
     const key = `${dayIndex}-${timeIndex}`;
     setHoveredCell((current) => (current === key ? current : key));
-  }, [isSummerTerm, setHoveredCell]);
+  }, [isSummerSemester, setHoveredCell]);
 
   const handleDragLeave = useCallback(() => setHoveredCell(null), [setHoveredCell]);
 
@@ -102,7 +102,7 @@ export const useDragDrop = ({
     setHoveredCell(null);
     setConflictInfo(null);
 
-    if (isSummerTerm && dayIndex >= 5) return;
+    if (isSummerSemester && dayIndex >= 5) return;
 
     if (draggedScheduleId) {
       const sched = schedules.find((s) => s.id === draggedScheduleId);
@@ -156,7 +156,7 @@ export const useDragDrop = ({
       setDragSubjectId(null);
     }
   }, [
-    isSummerTerm,
+    isSummerSemester,
     draggedScheduleId,
     dragSubjectId,
     schedules,

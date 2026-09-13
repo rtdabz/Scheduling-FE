@@ -16,9 +16,9 @@ interface NotificationDepartment {
   department_code: string;
 }
 
-interface NotificationTerm {
+interface NotificationSemester {
   id: number;
-  term_name: string;
+  semester_name: string;
   semester: string;
   academic_year: string;
 }
@@ -34,7 +34,7 @@ interface SystemNotification {
   created_at: string;
   actor?: NotificationUser | null;
   department?: NotificationDepartment | null;
-  term?: NotificationTerm | null;
+  academic_semester?: NotificationSemester | null;
 }
 
 interface NotificationResponse {
@@ -67,9 +67,9 @@ const buildActionText = (notification: SystemNotification): string => {
   const departmentName = notification.department?.department_name ?? 'the department schedule';
   const departmentCode = notification.department?.department_code;
   const department = departmentCode ? `${departmentCode} - ${departmentName}` : departmentName;
-  const term = notification.term
-    ? `${notification.term.semester.toUpperCase()} semester, AY ${notification.term.academic_year}`
-    : 'Active term';
+  const semester = notification.academic_semester
+    ? `${notification.academic_semester.semester.toUpperCase()} semester, AY ${notification.academic_semester.academic_year}`
+    : 'Active semester';
   const actor = notification.actor?.name ?? 'System';
   const schedulesUpdated = Number(notification.metadata?.schedules_updated ?? 0);
   const scheduleText = schedulesUpdated > 0
@@ -80,19 +80,19 @@ const buildActionText = (notification: SystemNotification): string => {
     case 'incoming_cross_department_course':
       return `${notification.message} Open Incoming Cross-Department Courses to assign instructors and schedule it.`;
     case 'schedule_submitted':
-      return `${actor} submitted ${departmentName} for ${term}. ${scheduleText} sent for Dean review.`;
+      return `${actor} submitted ${departmentName} for ${semester}. ${scheduleText} sent for Dean review.`;
     case 'schedule_withdrawn':
       return `${actor} withdrew selected section${Number(notification.metadata?.sections_unlocked ?? 0) === 1 ? '' : 's'} from ${departmentName} for revision.`;
     case 'schedule_approved_by_dean':
-      return `${actor} approved and forwarded ${departmentName} for ${term}. ${scheduleText} sent to VPAA review.`;
+      return `${actor} approved and forwarded ${departmentName} for ${semester}. ${scheduleText} sent to VPAA review.`;
     case 'schedule_returned_by_dean':
       return `${actor} returned ${departmentName} for revision.`;
     case 'schedule_returned_by_vpaa':
       return `${actor} returned ${departmentName} from VPAA review.`;
     case 'schedule_approved_by_vpaa':
-      return `${actor} approved ${departmentName} for ${term}.`;
+      return `${actor} approved ${departmentName} for ${semester}.`;
     default:
-      return `${notification.message} Department: ${department}. Term: ${term}. Initiated by: ${actor}.`;
+      return `${notification.message} Department: ${department}. Semester: ${semester}. Initiated by: ${actor}.`;
   }
 };
 

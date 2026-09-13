@@ -128,7 +128,7 @@ export default function CurriculumListPage() {
       const detail = await curriculumService.getCurriculumFull(item.id);
       await printCurriculum({
         curriculum: detail.curriculum,
-        terms: detail.terms ?? [],
+        semesters: detail.semesters ?? [],
         program: programs.find((program) => program.id === detail.curriculum.program_id) ?? null,
       });
     } catch {

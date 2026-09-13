@@ -18,7 +18,7 @@ const course = (overrides: Partial<ApiCourseRecord> = {}): ApiCourseRecord => ({
 });
 
 const payload = (courses: ApiCourseRecord[]): InitialDataResponse => ({
-  active_term: null,
+  active_semester: null,
   rooms: [],
   courses,
   faculties: [],
@@ -92,7 +92,7 @@ describe("mapInitialData teaching college", () => {
 describe("generatedScheduleSectionId", () => {
   const schedule = (id: number, sectionId: number): ApiScheduleRecord => ({
     id,
-    term_id: 1,
+    semester_id: 1,
     department_id: 2,
     course_id: id + 20,
     section_id: sectionId,

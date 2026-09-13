@@ -39,7 +39,7 @@ export default function CurriculumDetailPage() {
     handleRemoveCourse,
   } = useCurriculumDetail(id);
 
-  const selectedTerm = currentYearSemesters.find((term) => term.semester === selectedSemester) ?? currentYearSemesters[0];
+  const selectedCurriculumSemester = currentYearSemesters.find((semester) => semester.semester === selectedSemester) ?? currentYearSemesters[0];
 
   return (
     <div className="w-full">
@@ -81,10 +81,10 @@ export default function CurriculumDetailPage() {
             onActivate={handleActivate}
           />
 
-          {selectedTerm && (
+          {selectedCurriculumSemester && (
             <SemesterCard
-              term={selectedTerm}
-              semesterTerms={currentYearSemesters}
+              semester={selectedCurriculumSemester}
+              curriculumSemesters={currentYearSemesters}
               selectedYear={selectedYear}
               selectedSemester={selectedSemester}
               yearLevelStats={yearLevelStats}

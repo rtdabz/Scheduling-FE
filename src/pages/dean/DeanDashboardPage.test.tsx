@@ -33,7 +33,7 @@ const statusSection = (id: number, code: string, year: number, status: string) =
 
 const schedule = (id: number, sectionId: number, over: Record<string, unknown> = {}) => ({
   id,
-  term_id: 1,
+  semester_id: 1,
   section_id: sectionId,
   department_id: 6,
   faculty_id: 1,
@@ -52,7 +52,7 @@ const schedule = (id: number, sectionId: number, over: Record<string, unknown> =
 });
 
 const initialData = {
-  active_term: { id: 1, academic_year: '2026-2027', semester: '2nd', is_active: true },
+  active_semester: { id: 1, academic_year: '2026-2027', semester: '2nd', is_active: true },
   faculties: [
     { id: 1, first_name: 'Grace', last_name: 'Hopper', max_units: 21, assigned_units: 21, deload_units: 0, department_id: 6, status: 'active' },
     { id: 2, first_name: 'Alan', last_name: 'Turing', max_units: 21, assigned_units: 12, deload_units: 0, department_id: 6, status: 'active' },

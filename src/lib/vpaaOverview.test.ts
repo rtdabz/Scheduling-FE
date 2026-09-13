@@ -21,7 +21,7 @@ const sections = [
 
 const submission = (over: Partial<OverviewSubmission> & { id: number }): OverviewSubmission => ({
   department_id: 1,
-  term_id: 1,
+  semester_id: 1,
   revision_number: 1,
   status: 'pending_vpaa',
   sections: [],
@@ -46,9 +46,9 @@ describe('latestSubmissionBySection', () => {
     expect(map.has(10)).toBe(false);
   });
 
-  it('ignores submissions from another term', () => {
+  it('ignores submissions from another semester', () => {
     const map = latestSubmissionBySection([
-      submission({ id: 1, term_id: 99, sections: [{ id: 10 }] }),
+      submission({ id: 1, semester_id: 99, sections: [{ id: 10 }] }),
     ], 1);
 
     expect(map.size).toBe(0);

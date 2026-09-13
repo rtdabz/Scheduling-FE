@@ -7,7 +7,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { getStoredUserDepartmentId, hasStoredCapability } from '../../lib/storedUser';
-import { termLabel } from '../../lib/termLabel';
+import { fullSemesterLabel } from '../../lib/semesterLabel';
 import {
   ROOM_REQUEST_DAYS,
   cancelRoomRequest,
@@ -239,7 +239,7 @@ export default function RoomRequests() {
                     </p>
                   )}
                   <p className="text-xs text-gray-400">
-                    {request.term ? termLabel(request.term) : ''}
+                    {request.academic_semester ? fullSemesterLabel(request.academic_semester) : ''}
                     {request.requester ? ` · Requested by ${request.requester.name}` : ''}
                     {request.reviewer ? ` · Reviewed by ${request.reviewer.name}` : ''}
                   </p>

@@ -1,25 +1,25 @@
 import { CalendarRange, Printer, RotateCcw } from 'lucide-react';
 import { formatPhilippineDate } from '../../lib/philippineTime';
-import { termLabel, type LabelledTerm } from '../../lib/termLabel';
+import { fullSemesterLabel, type LabelledSemester } from '../../lib/semesterLabel';
 import { relativeAge } from '../../lib/vpaaOverview';
 
 /**
- * Which term these figures describe, how fresh they are, and how to take them
+ * Which semester these figures describe, how fresh they are, and how to take them
  * away.
  *
  * The dashboard reads through a session cache, so without a stamp there is no
  * way to tell a live figure from one loaded an hour ago — and no way to say
- * which academic term a "68% complete" refers to.
+ * which academic semester a "68% complete" refers to.
  */
 export default function ExecutiveHeader({
-  term,
+  semester,
   generatedAt,
   now,
   refreshing,
   onRefresh,
   onPrint,
 }: {
-  term: LabelledTerm | null;
+  semester: LabelledSemester | null;
   generatedAt: string | null;
   now: Date;
   refreshing: boolean;
@@ -35,8 +35,8 @@ export default function ExecutiveHeader({
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-sm font-bold leading-tight text-primary">Institutional Overview</h1>
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-600">
-          {termLabel(term)}
-          {term ? <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Active</span> : null}
+          {fullSemesterLabel(semester)}
+          {semester ? <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Active</span> : null}
         </p>
       </div>
 

@@ -115,7 +115,7 @@ export default function DepartmentOverviewCards({ departments, isLoading, onOpen
   if (departments.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-400 italic">
-        No departments to show for the active term.
+        No departments to show for the active semester.
       </div>
     );
   }

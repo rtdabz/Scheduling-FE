@@ -38,7 +38,7 @@ interface Room {
 
 interface Schedule {
   id: number;
-  term_id: number;
+  semester_id: number;
   section_id: number;
   course_id: number;
   faculty_id: number | null;
@@ -128,7 +128,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
         return {
           schedule: {
             id: String(schedule.id),
-            termId: schedule.term_id,
+            semesterId: schedule.semester_id,
             departmentId: schedule.department_id,
             courseId,
             subjectId: courseId,

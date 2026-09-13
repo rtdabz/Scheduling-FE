@@ -5,7 +5,7 @@ import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
 import SessionTimeoutGuard from './SessionTimeoutGuard'
 import Skeleton from '../ui/Skeleton'
-import { useActiveTerm } from '../../hooks/useActiveTerm'
+import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
 import api from '../../lib/api'
 import { vpaaNav } from '../../navigation/vpaaNav'
@@ -18,7 +18,7 @@ import type { NavItem, NavSection } from '../../navigation/types'
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
   const location = useLocation()
-  const { term: activeTerm } = useActiveTerm()
+  const { semester: activeSemester } = useActiveSemester()
 
   const [user, setUser] = useState<StoredUser | null>(() => getStoredUser())
 
@@ -135,7 +135,7 @@ export default function AppLayout() {
       <div
         className="flex flex-col flex-1 min-w-0 overflow-hidden"
       >
-        <SystemHeader activeTerm={activeTerm} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
+        <SystemHeader activeSemester={activeSemester} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
           <PageHeader navItems={navItems} homePath={homePath} />
           <Suspense fallback={

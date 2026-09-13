@@ -88,8 +88,8 @@ const idleSnapshot: GenerationRunSnapshot = {
 const isActiveStatus = (status: GenerationRunStatus) =>
   status === "queued" || status === "running";
 
-const storageKeyFor = (departmentId: number | null, termId: number | null) =>
-  `wicars.generation-run.${departmentId ?? "none"}.${termId ?? "none"}`;
+const storageKeyFor = (departmentId: number | null, semesterId: number | null) =>
+  `wicars.generation-run.${departmentId ?? "none"}.${semesterId ?? "none"}`;
 
 type GenerationRunContextValue = GenerationRunSnapshot & {
   isActive: boolean;
@@ -111,11 +111,11 @@ const GenerationRunContext = createContext<GenerationRunContextValue | null>(
 
 export function GenerationRunProvider({
   departmentId,
-  termId,
+  semesterId,
   children,
 }: {
   departmentId: number | null;
-  termId: number | null;
+  semesterId: number | null;
   children: ReactNode;
 }) {
   const [snapshot, setSnapshot] = useState<GenerationRunSnapshot>(idleSnapshot);
@@ -124,7 +124,7 @@ export function GenerationRunProvider({
   // Every queue submission supersedes the previous one: a stale poll response
   // must never overwrite the run the user is actually waiting on.
   const requestIdRef = useRef(0);
-  const storageKey = storageKeyFor(departmentId, termId);
+  const storageKey = storageKeyFor(departmentId, semesterId);
 
   const persistRunId = useCallback(
     (runId: string | null) => {
@@ -254,7 +254,7 @@ export function GenerationRunProvider({
   // recovers a finished run whose result was never applied; the server lookup
   // is the fallback when this browser has no record of it.
   useEffect(() => {
-    if (departmentId === null || termId === null) return;
+    if (departmentId === null || semesterId === null) return;
     let cancelled = false;
 
     const adopt = (run: GenerationRunRecord) => {
@@ -302,7 +302,7 @@ export function GenerationRunProvider({
       try {
         const { data } = await api.get<{ run: GenerationRunRecord | null }>(
           "/schedule-recommendations/active-generation-run",
-          { params: { department_id: departmentId, term_id: termId } },
+          { params: { department_id: departmentId, semester_id: semesterId } },
         );
         if (data.run) adopt(data.run);
       } catch {
@@ -315,9 +315,9 @@ export function GenerationRunProvider({
     return () => {
       cancelled = true;
     };
-    // Restoration is per department/term context, not per render.
+    // Restoration is per department/semester context, not per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, termId, storageKey]);
+  }, [departmentId, semesterId, storageKey]);
 
   // Poll only while the run is genuinely in flight. There is no client-side
   // deadline: the server reconciles an orphaned run and reports it as failed.

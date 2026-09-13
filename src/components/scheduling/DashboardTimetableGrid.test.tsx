@@ -38,7 +38,7 @@ const renderGrid = (schedules: DashboardSchedule[]) =>
 
 describe("DashboardTimetableGrid", () => {
   // VPAA approval writes 'faculty_assignment', not 'approved'; instructor
-  // reassignment and term lock-in move the row on to 'reassignment' and
+  // reassignment and semester lock-in move the row on to 'reassignment' and
   // 'finalized'. All four are published and must reach the grid.
   it.each(["approved", "faculty_assignment", "reassignment", "finalized"])(
     "plots a %s class",

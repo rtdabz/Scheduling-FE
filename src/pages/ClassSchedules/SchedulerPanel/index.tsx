@@ -105,11 +105,11 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     // The generation run is owned above the generator modal so a queued run
     // survives closing the panel, and is recovered after a page reload.
     <GenerationRunProvider
-      // A different department or term is a different scheduling context, so
+      // A different department or semester is a different scheduling context, so
       // the tracker is rebuilt rather than carrying the previous run over.
-      key={`${generatorDepartmentId ?? "none"}.${scheduler.activeTerm?.id ?? "none"}`}
+      key={`${generatorDepartmentId ?? "none"}.${scheduler.activeSemester?.id ?? "none"}`}
       departmentId={generatorDepartmentId === null ? null : Number(generatorDepartmentId)}
-      termId={scheduler.activeTerm ? Number(scheduler.activeTerm.id) : null}
+      semesterId={scheduler.activeSemester ? Number(scheduler.activeSemester.id) : null}
     >
     <div className="flex flex-col gap-4 w-full text-slate-800 antialiased">
       <TopBar
@@ -135,7 +135,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         >
           <CourseBank {...scheduler} />
         </div>
-        <TimetableGrid {...scheduler} activeTermText={scheduler.activeTermText} />
+        <TimetableGrid {...scheduler} activeSemesterText={scheduler.activeSemesterText} />
       </div>
 
       {scheduler.canGenerateSchedule && isGeneratorOpen && (
@@ -145,7 +145,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
               onClose={() => setIsGeneratorOpen(false)}
               sections={scheduler.sections}
               courses={scheduler.subjects}
-              activeTerm={scheduler.activeTerm}
+              activeSemester={scheduler.activeSemester}
               departmentId={generatorDepartmentId}
               departmentLogoUrl={generatorDepartmentLogoUrl}
               existingSchedules={scheduler.schedules}
@@ -214,7 +214,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         setIsPrintModalOpen={scheduler.setIsPrintModalOpen}
         allSchedules={scheduler.schedules}
         selectedSectionId={scheduler.selectedSectionId}
-        activeTerm={scheduler.activeTerm}
+        activeSemester={scheduler.activeSemester}
       />
       {/* One overload confirmation for all three faculty paths: the slot popup,
           the inline picker and Auto-Assign each await this same answer. */}

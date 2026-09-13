@@ -46,7 +46,7 @@ export default function PeakLoadHeatmap({ insights, loading, className = '' }: {
       {loading && <p className="py-8 text-center text-xs italic text-slate-400">Measuring campus load…</p>}
 
       {!loading && !hasData && (
-        <p className="py-8 text-center text-xs italic text-slate-400">No scheduled meetings in the active term yet.</p>
+        <p className="py-8 text-center text-xs italic text-slate-400">No scheduled meetings in the active semester yet.</p>
       )}
 
       {!loading && hasData && (

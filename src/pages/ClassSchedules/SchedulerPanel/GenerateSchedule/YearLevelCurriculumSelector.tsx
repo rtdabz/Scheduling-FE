@@ -10,7 +10,7 @@ import { activeCurriculaCacheKey } from "./generatorCache";
 
 interface Props {
   departmentId: number | null;
-  termId: number | null;
+  semesterId: number | null;
   yearLevel: number;
   /** The active sections of the selected year level. */
   sections: Section[];
@@ -31,7 +31,7 @@ interface Props {
  */
 export default function YearLevelCurriculumSelector({
   departmentId,
-  termId,
+  semesterId,
   yearLevel,
   sections,
   onApplied,
@@ -109,12 +109,12 @@ export default function YearLevelCurriculumSelector({
   const dirty = selected !== null && (selected !== currentId || isMixed || unassignedCount > 0);
 
   const apply = async () => {
-    if (selected === null || departmentId === null || termId === null) return;
+    if (selected === null || departmentId === null || semesterId === null) return;
 
     setApplying(true);
     try {
       const result = await curriculumService.assignCurriculumToYearLevel({
-        term_id: termId,
+        semester_id: semesterId,
         department_id: departmentId,
         year_level: yearLevel,
         curriculum_id: selected,

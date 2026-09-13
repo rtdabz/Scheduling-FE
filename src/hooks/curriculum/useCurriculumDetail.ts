@@ -4,7 +4,7 @@ import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
-import type { Curriculum, CurriculumTerm, CurriculumCourse, Program } from '../../types/curriculum';
+import type { Curriculum, CurriculumSemester, CurriculumCourse, Program } from '../../types/curriculum';
 import type { CourseOption } from '../../components/curriculum/AddCourseForm';
 
 type FullCurriculum = Curriculum & {
@@ -13,7 +13,7 @@ type FullCurriculum = Curriculum & {
 
 interface CurriculumDetailCacheData {
   curriculum: FullCurriculum;
-  terms: CurriculumTerm[];
+  semesters: CurriculumSemester[];
 }
 
 interface BatchCreateCourseResult {
@@ -39,7 +39,7 @@ export function useCurriculumDetail(id: string | undefined) {
   const [curriculum, setCurriculum] = useState<FullCurriculum | null>(
     cachedData?.curriculum ?? null
   );
-  const [terms, setTerms] = useState<CurriculumTerm[]>(cachedData?.terms ?? []);
+  const [semesters, setSemesters] = useState<CurriculumSemester[]>(cachedData?.semesters ?? []);
   const [isLoading, setIsLoading] = useState<boolean>(!cachedData && Boolean(id));
   const [isActivating, setIsActivating] = useState(false);
 
@@ -64,13 +64,13 @@ export function useCurriculumDetail(id: string | undefined) {
             const res = await curriculumService.getCurriculumFull(id);
             return {
               curriculum: res.curriculum as FullCurriculum,
-              terms: res.terms || [],
+              semesters: res.semesters || [],
             };
           },
           silent
         );
         setCurriculum(data.curriculum);
-        setTerms(data.terms || []);
+        setSemesters(data.semesters || []);
       } catch {
         toast.error('Error', 'Failed to load curriculum details.');
       } finally {
@@ -129,9 +129,9 @@ export function useCurriculumDetail(id: string | undefined) {
 
   const addedCourseIds = useMemo(() => {
     const ids = new Set<number>();
-    terms.forEach((t) => t.courses.forEach((c) => ids.add(c.id)));
+    semesters.forEach((t) => t.courses.forEach((c) => ids.add(c.id)));
     return ids;
-  }, [terms]);
+  }, [semesters]);
 
   const availableCourses = useMemo(() => {
     return allCourses.filter((c) => !addedCourseIds.has(c.id));
@@ -142,14 +142,14 @@ export function useCurriculumDetail(id: string | undefined) {
     let totalLec = 0;
     let totalLab = 0;
     let totalUnits = 0;
-    terms.forEach((t) => {
+    semesters.forEach((t) => {
       totalCourses += t.courses.length;
       totalLec += t.totals.lec;
       totalLab += t.totals.lab;
       totalUnits += t.totals.tu;
     });
     return { totalCourses, totalLec, totalLab, totalUnits };
-  }, [terms]);
+  }, [semesters]);
 
   const yearLevelStats = useMemo(() => {
     const stats: Record<number, { courses: number; units: number; lec: number; lab: number }> = {
@@ -159,7 +159,7 @@ export function useCurriculumDetail(id: string | undefined) {
       4: { courses: 0, units: 0, lec: 0, lab: 0 },
     };
 
-    terms.forEach((t) => {
+    semesters.forEach((t) => {
       if (stats[t.year_level]) {
         stats[t.year_level].courses += t.courses.length;
         stats[t.year_level].units += t.totals.tu;
@@ -169,13 +169,13 @@ export function useCurriculumDetail(id: string | undefined) {
     });
 
     return stats;
-  }, [terms]);
+  }, [semesters]);
 
   const currentYearSemesters = useMemo(() => {
     const semNums = [1, 2, 3];
 
     return semNums.map((sem) => {
-      const existing = terms.find((t) => t.year_level === selectedYear && t.semester === sem);
+      const existing = semesters.find((t) => t.year_level === selectedYear && t.semester === sem);
       return (
         existing || {
           year_level: selectedYear,
@@ -185,7 +185,7 @@ export function useCurriculumDetail(id: string | undefined) {
         }
       );
     });
-  }, [terms, selectedYear]);
+  }, [semesters, selectedYear]);
 
   const handleActivate = async () => {
     if (!id) return;
@@ -297,8 +297,8 @@ export function useCurriculumDetail(id: string | undefined) {
         if (allFailed) {
           toast.error('Error', 'Failed to save courses. Please review individual row errors.');
         } else if (successfulNewCourses.length > 0) {
-          setTerms((prev) => {
-            let next: CurriculumTerm[];
+          setSemesters((prev) => {
+            let next: CurriculumSemester[];
             const existingIndex = prev.findIndex((t) => t.year_level === yearLevel && t.semester === semester);
             if (existingIndex >= 0) {
               next = prev.map((t, idx) => {
@@ -317,7 +317,7 @@ export function useCurriculumDetail(id: string | undefined) {
                 return t;
               });
             } else {
-              const newTerm: CurriculumTerm = {
+              const newSemester: CurriculumSemester = {
                 year_level: yearLevel,
                 semester,
                 courses: successfulNewCourses,
@@ -327,10 +327,10 @@ export function useCurriculumDetail(id: string | undefined) {
                   tu: successfulNewCourses.reduce((sum, c) => sum + c.total_units, 0),
                 },
               };
-              next = [...prev, newTerm];
+              next = [...prev, newSemester];
             }
             if (cacheKey && curriculum) {
-              setCachedData(cacheKey, { curriculum, terms: next });
+              setCachedData(cacheKey, { curriculum, semesters: next });
             }
             return next;
           });
@@ -361,7 +361,7 @@ export function useCurriculumDetail(id: string | undefined) {
       if (!id) return;
       setIsRemoving(true);
 
-      setTerms((prev) => {
+      setSemesters((prev) => {
         const next = prev
           .map((t) => {
             const updatedCourses = t.courses.filter((c) => c.id !== courseId);
@@ -378,7 +378,7 @@ export function useCurriculumDetail(id: string | undefined) {
           .filter((t) => t.courses.length > 0 || t.year_level === selectedYear);
 
         if (cacheKey && curriculum) {
-          setCachedData(cacheKey, { curriculum, terms: next });
+          setCachedData(cacheKey, { curriculum, semesters: next });
         }
         return next;
       });
@@ -416,12 +416,12 @@ export function useCurriculumDetail(id: string | undefined) {
       // scheduling/contact hours here.
       const totalUnits = lecUnits + labUnits;
       const normalizedCode = courseCode.replace(/\s+/g, ' ').trim().toUpperCase();
-      const currentTerm = terms.find((t) => t.courses.some((c) => c.id === courseId));
+      const currentSemester = semesters.find((t) => t.courses.some((c) => c.id === courseId));
       const existingCourse = allCourses.find(
         (course) => course.course_code.replace(/\s+/g, ' ').trim().toUpperCase() === normalizedCode && course.id !== courseId
       );
       const existingCourseIsAlreadyAdded = existingCourse
-        ? terms.some((term) => term.courses.some((course) => course.id === existingCourse.id))
+        ? semesters.some((semester) => semester.courses.some((course) => course.id === existingCourse.id))
         : false;
 
       if (existingCourseIsAlreadyAdded) {
@@ -429,14 +429,14 @@ export function useCurriculumDetail(id: string | undefined) {
         return;
       }
 
-      if (existingCourse && currentTerm) {
-        setTerms((prev) => {
-          const next = prev.map((term) => {
-            if (!term.courses.some((course) => course.id === courseId)) {
-              return term;
+      if (existingCourse && currentSemester) {
+        setSemesters((prev) => {
+          const next = prev.map((semester) => {
+            if (!semester.courses.some((course) => course.id === courseId)) {
+              return semester;
             }
 
-            const updatedCourses = term.courses.map((course) =>
+            const updatedCourses = semester.courses.map((course) =>
               course.id === courseId
                 ? {
                     id: existingCourse.id,
@@ -451,7 +451,7 @@ export function useCurriculumDetail(id: string | undefined) {
             );
 
             return {
-              ...term,
+              ...semester,
               courses: updatedCourses,
               totals: {
                 lec: updatedCourses.reduce((sum, course) => sum + course.lec_units, 0),
@@ -462,14 +462,14 @@ export function useCurriculumDetail(id: string | undefined) {
           });
 
           if (cacheKey && curriculum) {
-            setCachedData(cacheKey, { curriculum, terms: next });
+            setCachedData(cacheKey, { curriculum, semesters: next });
           }
 
           return next;
         });
 
         try {
-          await curriculumService.attachCourse(id, existingCourse.id, currentTerm.year_level, currentTerm.semester, courseId);
+          await curriculumService.attachCourse(id, existingCourse.id, currentSemester.year_level, currentSemester.semester, courseId);
           invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
           toast.success('Course Updated', `${normalizedCode} linked successfully.`);
         } catch {
@@ -480,7 +480,7 @@ export function useCurriculumDetail(id: string | undefined) {
         return;
       }
 
-      setTerms((prev) => {
+      setSemesters((prev) => {
         const next = prev.map((t) => {
           const courseIdx = t.courses.findIndex((c) => c.id === courseId);
           if (courseIdx >= 0) {
@@ -512,7 +512,7 @@ export function useCurriculumDetail(id: string | undefined) {
         });
 
         if (cacheKey && curriculum) {
-          setCachedData(cacheKey, { curriculum, terms: next });
+          setCachedData(cacheKey, { curriculum, semesters: next });
         }
         return next;
       });
@@ -550,12 +550,12 @@ export function useCurriculumDetail(id: string | undefined) {
         fetchCurriculum(true);
       }
     },
-    [id, cacheKey, curriculum, terms, allCourses, toast, fetchCurriculum]
+    [id, cacheKey, curriculum, semesters, allCourses, toast, fetchCurriculum]
   );
 
   return {
     curriculum,
-    terms,
+    semesters,
     isLoading,
     isActivating,
     availableCourses,

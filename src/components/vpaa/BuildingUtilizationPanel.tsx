@@ -106,7 +106,7 @@ export default function BuildingUtilizationPanel({
 
       {!loading && utilization.idle_rooms.length > 0 && (
         <p className="mt-3 border-t border-slate-100 pt-2.5 text-[11px] font-semibold leading-relaxed text-slate-500">
-          <b className="text-slate-700">Unused this term:</b>{' '}
+          <b className="text-slate-700">Unused this semester:</b>{' '}
           {utilization.idle_rooms.map(room => room.room_code).join(', ')}
           {utilization.idle_room_count > utilization.idle_rooms.length &&
             ` +${utilization.idle_room_count - utilization.idle_rooms.length} more`}

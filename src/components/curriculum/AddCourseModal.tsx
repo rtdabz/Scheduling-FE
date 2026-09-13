@@ -37,7 +37,7 @@ interface AddCourseModalProps {
 const semesterNames: Record<number, string> = {
   1: '1st Semester',
   2: '2nd Semester',
-  3: 'Summer Term',
+  3: 'Summer',
 };
 
 const yearNames: Record<number, string> = {

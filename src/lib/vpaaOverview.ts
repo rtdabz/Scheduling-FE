@@ -34,7 +34,7 @@ export interface OverviewSubmissionSection {
 export interface OverviewSubmission {
   id: number;
   department_id: number | string;
-  term_id: number | string;
+  semester_id: number | string;
   revision_number: number;
   status: SubmissionStatus;
   submitted_at?: string | null;
@@ -108,12 +108,12 @@ const newestFirst = (a: OverviewSubmission, b: OverviewSubmission) => {
  */
 export const latestSubmissionBySection = (
   submissions: OverviewSubmission[],
-  activeTermId?: number | null,
+  activeSemesterId?: number | null,
 ): Map<number, OverviewSubmission> => {
   const map = new Map<number, OverviewSubmission>();
 
   [...submissions]
-    .filter(s => activeTermId == null || Number(s.term_id) === Number(activeTermId))
+    .filter(s => activeSemesterId == null || Number(s.semester_id) === Number(activeSemesterId))
     .sort(newestFirst)
     .forEach(submission => {
       (submission.sections ?? []).forEach(section => {

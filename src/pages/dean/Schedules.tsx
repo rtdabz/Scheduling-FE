@@ -41,7 +41,7 @@ interface StoredUser {
   };
 }
 
-interface Term {
+interface Semester {
   id: number | string;
 }
 
@@ -49,7 +49,7 @@ interface RawSection {
   id: number | string;
   section_name: string;
   department_id?: number | string | null;
-  term_id?: number | string | null;
+  semester_id?: number | string | null;
   department?: {
     department_name?: string;
     department_code?: string;
@@ -62,7 +62,7 @@ interface RawSchedule {
   department_id?: number | string | null;
   faculty_id?: number | string | null;
   room_id?: number | string | null;
-  term_id?: number | string | null;
+  semester_id?: number | string | null;
   day: string;
   start_time: string;
   end_time: string;
@@ -367,15 +367,15 @@ export default function DeanScheduleViewer() {
       try {
         setIsLoading(true);
         const response = await api.get<{
-          active_term: Term | null;
+          active_semester: Semester | null;
           sections: RawSection[];
           schedules: RawSchedule[];
         }>('/initial-data');
-        const term = response.data.active_term;
+        const semester = response.data.active_semester;
 
         let rawSections = response.data.sections;
-        if (term) {
-          rawSections = rawSections.filter((s) => Number(s.term_id) === Number(term.id));
+        if (semester) {
+          rawSections = rawSections.filter((s) => Number(s.semester_id) === Number(semester.id));
         }
         if (userDeptId) {
           rawSections = rawSections.filter((s) => Number(s.department_id) === Number(userDeptId));
@@ -388,8 +388,8 @@ export default function DeanScheduleViewer() {
         setSections(mappedSections);
 
         let rawSchedules = response.data.schedules;
-        if (term) {
-          rawSchedules = rawSchedules.filter((s) => Number(s.term_id) === Number(term.id));
+        if (semester) {
+          rawSchedules = rawSchedules.filter((s) => Number(s.semester_id) === Number(semester.id));
         }
         if (userDeptId) {
           rawSchedules = rawSchedules.filter((s) => Number(s.department_id) === Number(userDeptId));

@@ -30,10 +30,10 @@ import type {
   ScheduleItem,
   Section,
   Subject,
-  Term,
+  Semester,
 } from "../ClassSchedules/SchedulerPanel/types";
 import PrintSchedule from "../ClassSchedules/SchedulerPanel/PrintSchedule";
-import { semesterLabel } from "../../lib/termLabel";
+import { semesterLabel } from "../../lib/semesterLabel";
 import TableActionButton from "../../components/ui/TableActionButton";
 
 type Snapshot = {
@@ -60,7 +60,7 @@ type Entry = {
   id: number;
   group_id?: string | null;
   schedule_id: number | null;
-  term_id: number | null;
+  semester_id: number | null;
   academic_year?: string | null;
   semester?: string | null;
   section_id: number | null;
@@ -118,7 +118,7 @@ const gridCard = (
   return {
     schedule: {
       id: String(item.schedule_id ?? item.id),
-      termId: number(item.snapshot, "term_id"),
+      semesterId: number(item.snapshot, "semester_id"),
       departmentId: number(item.snapshot, "department_id"),
       courseId,
       courseCode: item.course_code || "Course",
@@ -233,7 +233,7 @@ export default function ScheduleHistory() {
       yearLevel: Math.min(4, Math.max(1, Number(item.section_year_level ?? 1))) as Section["yearLevel"],
       semester: (item.section_semester || printingEntry?.semester || "1st") as Section["semester"],
       departmentId: Number(item.snapshot.department_id ?? printingEntry?.department_id ?? 0),
-      termId: Number(item.snapshot.term_id ?? printingEntry?.term_id ?? 0),
+      semesterId: Number(item.snapshot.semester_id ?? printingEntry?.semester_id ?? 0),
       status: "active",
     })),
     [printSnapshots, printingEntry],
@@ -254,10 +254,10 @@ export default function ScheduleHistory() {
     }])).values()),
     [printSnapshots, printingEntry],
   );
-  const printingTerm = useMemo<Term | null>(() => printingEntry ? {
-    id: printingEntry.term_id ?? 0,
+  const printingSemester = useMemo<Semester | null>(() => printingEntry ? {
+    id: printingEntry.semester_id ?? 0,
     academic_year: printingEntry.academic_year || "",
-    semester: (printingEntry.semester || "1st") as Term["semester"],
+    semester: (printingEntry.semester || "1st") as Semester["semester"],
     is_active: false,
   } : null, [printingEntry]);
 
@@ -572,7 +572,7 @@ export default function ScheduleHistory() {
         setIsPrintModalOpen={setIsPrintOpen}
         allSchedules={printingSchedules}
         selectedSectionId={printingSections[0]?.id ?? ""}
-        activeTerm={printingTerm}
+        activeSemester={printingSemester}
       />
     </div>
   );

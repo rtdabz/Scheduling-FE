@@ -10,20 +10,20 @@ import type {
   ApiScheduleRecord,
   ApiSectionRecord,
   ApiSubjectRecord,
-  ApiTermRecord,
+  ApiSemesterRecord,
   Department,
   Faculty,
   ScheduleItem,
   Section,
   Subject,
-  Term,
+  Semester,
   UserSummary,
   YearLevel,
 } from "../pages/ClassSchedules/SchedulerPanel/types";
 import { normalizeAdministrativePost } from "../pages/ClassSchedules/SchedulerPanel/types";
 
 interface InitialTeachingLoadData {
-  active_term: ApiTermRecord | null;
+  active_semester: ApiSemesterRecord | null;
   departments: ApiDepartmentRecord[];
   faculties: ApiFacultyRecord[];
   schedules: ApiScheduleRecord[];
@@ -34,7 +34,7 @@ interface InitialTeachingLoadData {
 }
 
 interface TeachingLoadData {
-  activeTerm: Term | null;
+  activeSemester: Semester | null;
   departments: Department[];
   faculties: Faculty[];
   schedules: ScheduleItem[];
@@ -68,7 +68,7 @@ const normalizeYearLevel = (value: string | number): YearLevel => {
 };
 
 const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
-  activeTerm: data.active_term,
+  activeSemester: data.active_semester,
   departments: data.departments,
   users: data.users,
   faculties: data.faculties.map((faculty) => ({
@@ -102,7 +102,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     yearLevel: normalizeYearLevel(section.year_level),
     semester: section.semester,
     departmentId: section.department_id,
-    termId: section.term_id,
+    semesterId: section.semester_id,
     status: section.status ?? "active",
   })),
   schedules: data.schedules.map((schedule) => {
@@ -112,7 +112,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     const courseId = schedule.course_id ?? schedule.subject_id;
     return {
       id: String(schedule.id),
-      termId: Number(schedule.term_id),
+      semesterId: Number(schedule.semester_id),
       departmentId: Number(schedule.department_id),
       courseId: String(courseId),
       courseCode: course?.course_code ?? course?.subject_code ?? "",
@@ -188,7 +188,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
           isTeachingLoadOpen={isPrinting}
           setIsTeachingLoadOpen={setIsPrinting}
           sections={teachingLoadData.sections}
-          activeTerm={teachingLoadData.activeTerm}
+          activeSemester={teachingLoadData.activeSemester}
           users={teachingLoadData.users}
           departments={teachingLoadData.departments}
           selectedSectionId=""

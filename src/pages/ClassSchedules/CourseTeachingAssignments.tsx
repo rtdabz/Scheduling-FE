@@ -42,11 +42,11 @@ interface PageData {
   currentDepartmentId: number | null;
   /** False when the department has published no curriculum, so there is nothing to offer. */
   hasActiveCurriculum: boolean;
-  /** The term the list is scoped to; null when no term is active and nothing is narrowed. */
-  activeTerm: ActiveTerm | null;
+  /** The semester the list is scoped to; null when no semester is active and nothing is narrowed. */
+  activeSemester: ActiveSemester | null;
 }
 
-interface ActiveTerm {
+interface ActiveSemester {
   id: number;
   academic_year?: string | null;
   semester?: string | null;
@@ -57,16 +57,16 @@ interface IndexResponse {
   departments?: DepartmentOption[];
   current_department_id?: number | null;
   has_active_curriculum?: boolean;
-  active_term?: ActiveTerm | null;
+  active_semester?: ActiveSemester | null;
   programs?: PageData['programs'];
 }
 
-// v9 scopes the listing to the active term's semester.
+// v9 scopes the listing to the active semester's period.
 const cacheKey = 'page:course-teaching-assignments:v9';
 
 const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
-const termLabel = (term: ActiveTerm | null) => (term
-  ? [SEMESTER_LABELS[term.semester ?? ''] ?? term.semester, term.academic_year].filter(Boolean).join(', ')
+const fullSemesterLabel = (semester: ActiveSemester | null) => (semester
+  ? [SEMESTER_LABELS[semester.semester ?? ''] ?? semester.semester, semester.academic_year].filter(Boolean).join(', ')
   : '');
 
 const YEAR_LEVELS = [1, 2, 3, 4];
@@ -104,7 +104,7 @@ export default function CourseTeachingAssignments() {
   const [programs, setPrograms] = useState<PageData['programs']>(cached?.programs ?? []);
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(cached?.currentDepartmentId ?? null);
   const [hasActiveCurriculum, setHasActiveCurriculum] = useState(cached?.hasActiveCurriculum ?? true);
-  const [activeTerm, setActiveTerm] = useState<ActiveTerm | null>(cached?.activeTerm ?? null);
+  const [activeSemester, setActiveSemester] = useState<ActiveSemester | null>(cached?.activeSemester ?? null);
   const [target, setTarget] = useState<string | null>(null);
   const [targetProgramId, setTargetProgramId] = useState('');
   const [yearLevel, setYearLevel] = useState<number | null>(null);
@@ -132,7 +132,7 @@ export default function CourseTeachingAssignments() {
         programs: Array.isArray(response.data.programs) ? response.data.programs : [],
         currentDepartmentId: response.data.current_department_id ?? null,
         hasActiveCurriculum: response.data.has_active_curriculum ?? false,
-        activeTerm: response.data.active_term ?? null,
+        activeSemester: response.data.active_semester ?? null,
       };
     }, true).then((data) => {
       if (!active) return;
@@ -141,7 +141,7 @@ export default function CourseTeachingAssignments() {
       setPrograms(data.programs);
       setCurrentDepartmentId(data.currentDepartmentId);
       setHasActiveCurriculum(data.hasActiveCurriculum);
-      setActiveTerm(data.activeTerm);
+      setActiveSemester(data.activeSemester);
       setError(null);
     }).catch((loadError) => {
       if (active) setError(errorMessage(loadError, 'Unable to load course teaching assignments.'));
@@ -264,7 +264,7 @@ export default function CourseTeachingAssignments() {
     setCourses(next);
     // The live flag, not the mount-time `cached` snapshot: writing that back would
     // record "no curriculum published" for a department that has one.
-    setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeTerm });
+    setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester });
     setSelectedIds((current) => current.filter((id) => !savedIds.includes(id)));
   };
 
@@ -379,11 +379,11 @@ export default function CourseTeachingAssignments() {
               <span className="flex items-center gap-1.5 px-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
                 <GraduationCap className="h-4 w-4" />Year Level
               </span>
-              {/* The list is the active term's, not the whole curriculum's — say so
+              {/* The list is the active semester's, not the whole curriculum's — say so
                   here, where the counts it changes are read. */}
-              {activeTerm && (
+              {activeSemester && (
                 <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                  {termLabel(activeTerm)}
+                  {fullSemesterLabel(activeSemester)}
                 </span>
               )}
               {YEAR_LEVELS.map((year) => {
@@ -484,7 +484,7 @@ export default function CourseTeachingAssignments() {
                       : yearCourses.length === 0
                         // The list is one semester's, so name it — otherwise an empty
                         // year reads as a curriculum that is missing courses.
-                        ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeTerm ? ` for ${termLabel(activeTerm)}` : ''}.`
+                        ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
                         : 'No courses match this filter.'}
                   </p>
                 )}

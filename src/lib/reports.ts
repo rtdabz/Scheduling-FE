@@ -1,12 +1,12 @@
 import api from './api';
-import type { ApiTermRecord } from '../pages/ClassSchedules/SchedulerPanel/types';
+import type { ApiSemesterRecord } from '../pages/ClassSchedules/SchedulerPanel/types';
 import {
   mapInitialData,
   type InitialDataResponse,
   type SchedulerCacheData,
 } from '../pages/ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 
-/** One program's printable totals for the active term. */
+/** One program's printable totals for the active semester. */
 export interface ReportProgram {
   id: number;
   code: string;
@@ -29,7 +29,7 @@ export interface ReportDepartment {
 }
 
 export interface ReportsOverview {
-  active_term: ApiTermRecord | null;
+  active_semester: ApiSemesterRecord | null;
   departments: ReportDepartment[];
 }
 

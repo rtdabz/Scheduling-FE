@@ -21,7 +21,7 @@ import type {
   Section,
   SectionDoneCandidate,
   Subject,
-  Term,
+  Semester,
   UserSummary,
   WithdrawalStage
 } from "../types";
@@ -251,7 +251,7 @@ export const useScheduler = () => {
   const [sections, setSections] = useState<Section[]>(canUseInitialCache ? cachedSchedulerData.sections : []);
   const [subjects, setSubjects] = useState<Subject[]>(canUseInitialCache ? cachedSchedulerData.subjects : []);
   const [faculties, setFaculties] = useState<Faculty[]>(canUseInitialCache ? cachedSchedulerData.faculties : []);
-  const [activeTerm, setActiveTerm] = useState<Term | null>(canUseInitialCache ? cachedSchedulerData.activeTerm : null);
+  const [activeSemester, setActiveSemester] = useState<Semester | null>(canUseInitialCache ? cachedSchedulerData.activeSemester : null);
   const [departments, setDepartments] = useState<Department[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
   const [schedulingReady, setSchedulingReady] = useState(canUseInitialCache ? cachedSchedulerData.schedulingReady !== false : true);
   // Assume a Dean until the payload says otherwise, so a cold cache never
@@ -303,7 +303,7 @@ export const useScheduler = () => {
       setRooms(cachedData.rooms);
       setSubjects(cachedData.subjects);
       setFaculties(cachedData.faculties);
-      setActiveTerm(cachedData.activeTerm);
+      setActiveSemester(cachedData.activeSemester);
       setDepartments(cachedData.departments);
       setSchedulingReady(cachedData.schedulingReady !== false);
       setHasDean(cachedData.hasDean !== false);
@@ -338,7 +338,7 @@ export const useScheduler = () => {
         setRooms(data.rooms);
         setSubjects(data.subjects);
         setFaculties(data.faculties);
-        setActiveTerm(data.activeTerm);
+        setActiveSemester(data.activeSemester);
         setDepartments(data.departments);
         setSchedulingReady(data.schedulingReady);
         setHasDean(data.hasDean);
@@ -388,12 +388,12 @@ export const useScheduler = () => {
 
 
   /**
-   * Summer terms run Monday–Friday. useDragDrop enforces this on the drag path;
+   * Summer semesters run Monday–Friday. useDragDrop enforces this on the drag path;
    * this is the same rule for the click-to-place and relocate paths.
    */
   const isSummerWeekendBlocked = useCallback(
-    (dayIndex: number) => activeTerm?.semester === "summer" && dayIndex >= 5,
-    [activeTerm?.semester],
+    (dayIndex: number) => activeSemester?.semester === "summer" && dayIndex >= 5,
+    [activeSemester?.semester],
   );
 
   const schedulesRef = useRef<ScheduleItem[]>([]);
@@ -403,11 +403,11 @@ export const useScheduler = () => {
 
   const refreshSchedules = useCallback(async () => {
     try {
-      const url = activeTerm ? `/schedules/term/${activeTerm.id}` : '/schedules';
+      const url = activeSemester ? `/schedules/semester/${activeSemester.id}` : '/schedules';
       const res = await api.get<ApiScheduleRecord[]>(url);
       let apiData = res.data;
-      if (activeTerm) {
-        apiData = apiData.filter((item) => Number(item.term_id) === Number(activeTerm.id));
+      if (activeSemester) {
+        apiData = apiData.filter((item) => Number(item.semester_id) === Number(activeSemester.id));
       }
       const mapped = apiData.map(mapApiScheduleToItem);
       // Mutations already merge the authoritative rows the server hands back,
@@ -431,7 +431,7 @@ export const useScheduler = () => {
       toast.error("Timetable Not Refreshed", "The timetable could not be refreshed. What you see may be out of date; reload to try again.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTerm, schedulerCacheKey]);
+  }, [activeSemester, schedulerCacheKey]);
 
   const handleAcceptedRecommendation = useCallback(
     async (newSchedules?: ApiScheduleRecord[]) => {
@@ -479,7 +479,7 @@ export const useScheduler = () => {
       setRooms(freshData.rooms);
       setSubjects(freshData.subjects);
       setFaculties(freshData.faculties);
-      setActiveTerm(freshData.activeTerm);
+      setActiveSemester(freshData.activeSemester);
       setDepartments(freshData.departments);
       setUsers(freshData.users);
       setFieldCourseAssignmentEnabled(freshData.fieldCourseAssignmentEnabled);
@@ -515,14 +515,14 @@ export const useScheduler = () => {
   const isInitialLoadedRef = useRef(false);
 
   useEffect(() => {
-    if (activeTerm) {
+    if (activeSemester) {
       if (isInitialLoadedRef.current) {
         refreshSchedules();
       } else {
         isInitialLoadedRef.current = true;
       }
     }
-  }, [activeTerm, refreshSchedules]);
+  }, [activeSemester, refreshSchedules]);
 
   const [dropContext, setDropContext] = useState<DropContext | null>(null);
   const [modalRoomId, setModalRoomId] = useState<string>("");
@@ -715,14 +715,14 @@ export const useScheduler = () => {
 
   const semesterSubjects = useMemo(() => {
     if (subjects.length === 0) return [];
-    if (!activeTerm?.semester) return subjects;
-    const activeSem = normalizeSemester(activeTerm.semester);
+    if (!activeSemester?.semester) return subjects;
+    const activeSem = normalizeSemester(activeSemester.semester);
     return subjects.filter((s) => {
       if (!s.semester) return true;
       const subSem = normalizeSemester(s.semester);
       return subSem === activeSem;
     });
-  }, [subjects, activeTerm, normalizeSemester]);
+  }, [subjects, activeSemester, normalizeSemester]);
 
   const totalSubjects = useMemo(() => {
     if (!selectedSection) return semesterSubjects.length;
@@ -856,11 +856,11 @@ export const useScheduler = () => {
         return false;
       }
 
-      const term = searchQuery.toLowerCase().trim();
-      if (!term) return true;
+      const semester = searchQuery.toLowerCase().trim();
+      if (!semester) return true;
       return (
-        subject.code.toLowerCase().includes(term) ||
-        subject.name.toLowerCase().includes(term)
+        subject.code.toLowerCase().includes(semester) ||
+        subject.name.toLowerCase().includes(semester)
       );
     });
   }, [semesterSubjects, selectedSection, subjectClassFilter, searchQuery]);
@@ -1279,7 +1279,7 @@ export const useScheduler = () => {
     // Mirrors the drag path's guard (useDragDrop.handleDragOver/handleDrop).
     // GridCell already blocks the interaction; this closes the code path.
     if (isSummerWeekendBlocked(dayIndex)) {
-      toast.error("Weekend Not Available", "Summer term classes are scheduled Monday through Friday.");
+      toast.error("Weekend Not Available", "Summer semester classes are scheduled Monday through Friday.");
       return;
     }
     const dayName = FULL_DAY_NAMES[dayIndex];
@@ -1314,7 +1314,7 @@ export const useScheduler = () => {
       );
       toast.success("Schedule Relocated", "Class schedule successfully updated.");
       // Background reconciliation: the server's own response is already
-      // merged above, so blocking the user on a second full-term fetch only
+      // merged above, so blocking the user on a second full-semester fetch only
       // delayed the feedback for a result that is almost always identical.
       void refreshSchedules();
     } catch (err) {
@@ -1353,12 +1353,12 @@ export const useScheduler = () => {
     setConflictInfo,
     checkConflict,
     onScheduleRelocated,
-    activeTerm
+    activeSemester
   });
 
   const handleConfirmSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dropContext || !activeTerm) return;
+    if (!dropContext || !activeSemester) return;
     if (!modalRoomId) {
       setModalValidationError("Please select a Room before confirming.");
       return;
@@ -1577,7 +1577,7 @@ export const useScheduler = () => {
 
         return {
           ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
-          term_id: activeTerm.id,
+          semester_id: activeSemester.id,
           section_id: Number(selectedSectionId),
           course_id: Number(subject.id),
           faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
@@ -1656,11 +1656,11 @@ export const useScheduler = () => {
       setSchedules((previousSchedules) => {
         const savedScheduleIds = new Set(savedScheduleItems.map((item) => item.id));
         const savedScheduleKeys = new Set(
-          savedScheduleItems.map((item) => `${item.termId}:${item.sectionId}:${item.courseId || item.subjectId}`)
+          savedScheduleItems.map((item) => `${item.semesterId}:${item.sectionId}:${item.courseId || item.subjectId}`)
         );
         return [
           ...previousSchedules.filter((item) => {
-            const itemKey = `${item.termId}:${item.sectionId}:${item.courseId || item.subjectId}`;
+            const itemKey = `${item.semesterId}:${item.sectionId}:${item.courseId || item.subjectId}`;
             return !savedScheduleIds.has(item.id)
               && !deletedScheduleIds.has(item.id)
               && !savedScheduleKeys.has(itemKey);
@@ -1673,7 +1673,7 @@ export const useScheduler = () => {
       setSelectedRecommendationId(null);
       setConflictInfo(null);
       // Background reconciliation: the server's own response is already
-      // merged above, so blocking the user on a second full-term fetch only
+      // merged above, so blocking the user on a second full-semester fetch only
       // delayed the feedback for a result that is almost always identical.
       void refreshSchedules();
     } catch (err) {
@@ -1769,7 +1769,7 @@ export const useScheduler = () => {
       setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
       toast.success("Schedule Removed", "Class schedule successfully removed.");
       // Background reconciliation: the server's own response is already
-      // merged above, so blocking the user on a second full-term fetch only
+      // merged above, so blocking the user on a second full-semester fetch only
       // delayed the feedback for a result that is almost always identical.
       void refreshSchedules();
     } catch (err) {
@@ -1854,14 +1854,14 @@ export const useScheduler = () => {
         .map(Number)
         .filter((id) => id > 0);
 
-      if (targetSectionIds.length > 0 && activeTerm) {
+      if (targetSectionIds.length > 0 && activeSemester) {
         // Use the server-side replacement scope so clear-all removes every
-        // replaceable row for the term, including rows beyond the UI page limit.
+        // replaceable row for the semester, including rows beyond the UI page limit.
         await api.post('/schedules/batch', {
           operations: [],
           delete_ids: validSchedules.map((s) => Number(s.id)),
           replace_section_ids: targetSectionIds,
-          replace_term_id: Number(activeTerm.id),
+          replace_semester_id: Number(activeSemester.id),
         });
       } else if (validSchedules.length > 0) {
         await api.post('/schedules/batch', {
@@ -2547,7 +2547,7 @@ export const useScheduler = () => {
   const handleCellClick = useCallback(async (dayIndex: number, timeIndex: number) => {
     if (!isEditable) return;
     if (isSummerWeekendBlocked(dayIndex)) {
-      toast.error("Weekend Not Available", "Summer term classes are scheduled Monday through Friday.");
+      toast.error("Weekend Not Available", "Summer semester classes are scheduled Monday through Friday.");
       return;
     }
 
@@ -2608,7 +2608,7 @@ export const useScheduler = () => {
         );
         toast.success("Schedule Relocated", "Class schedule successfully relocated.");
         // Background reconciliation: the server's own response is already
-        // merged above, so blocking the user on a second full-term fetch only
+        // merged above, so blocking the user on a second full-semester fetch only
         // delayed the feedback for a result that is almost always identical.
         void refreshSchedules();
       } catch (err) {
@@ -2629,23 +2629,23 @@ export const useScheduler = () => {
   }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkConflict, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast]);
 
 
-  const activeTermText = useMemo(() => {
-    if (!activeTerm) return "";
+  const activeSemesterText = useMemo(() => {
+    if (!activeSemester) return "";
     const semMap: Record<string, string> = {
       '1st': '1st Semester',
       '2nd': '2nd Semester',
       'summer': 'Summer'
     };
-    const sem = semMap[activeTerm.semester] || activeTerm.semester || '';
-    return `${sem} AY ${activeTerm.academic_year || ''}`;
-  }, [activeTerm]);
+    const sem = semMap[activeSemester.semester] || activeSemester.semester || '';
+    return `${sem} AY ${activeSemester.academic_year || ''}`;
+  }, [activeSemester]);
 
   return {
     userDepartmentId: user?.department_id ?? null,
     userProgramId: user?.program_id ?? null,
     schedulingReady,
     placed,
-    activeTermText,
+    activeSemesterText,
     dragSubjectId,
     draggedScheduleId,
     dragFromCell,
@@ -2742,7 +2742,7 @@ export const useScheduler = () => {
     setIsRoomViewOpen,
     isPrintModalOpen,
     setIsPrintModalOpen,
-    activeTerm,
+    activeSemester,
     departments,
     users,
     roomViewRoomId,

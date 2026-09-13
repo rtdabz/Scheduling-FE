@@ -63,7 +63,7 @@ interface RawSection {
   id: number | string;
   section_name: string;
   department_id: number | string;
-  term_id: number | string;
+  semester_id: number | string;
 }
 
 interface RawSchedule extends ApprovalScheduleItem {
@@ -73,7 +73,7 @@ interface RawSchedule extends ApprovalScheduleItem {
   course_id?: number | string;
   subject_id?: number | string;
   faculty_id?: number | string | null;
-  term_id: number | string;
+  semester_id: number | string;
   day: string;
   start_time: string;
   end_time: string;
@@ -116,7 +116,7 @@ interface RawScheduleSubmissionSection extends RawSection {
 interface RawScheduleSubmission {
   id: number;
   department_id: number | string;
-  term_id: number | string;
+  semester_id: number | string;
   revision_number: number;
   status: 'pending_dean' | 'pending_vpaa' | 'approved' | 'withdrawn' | 'partially_withdrawn' | 'rejected_by_dean' | 'rejected_by_vpaa';
   submitted_at: string | null;
@@ -198,7 +198,7 @@ const parseApiDate = (value: string): Date => {
   return new Date(hasTimezone ? normalized : `${normalized}Z`);
 };
 
-interface ApprovalTerm {
+interface ApprovalSemester {
   id: number | string;
   academic_year: string;
   semester: string;
@@ -309,7 +309,7 @@ export default function VpaaScheduleApprovalPage() {
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>([]);
   const [rawSections, setRawSections] = useState<RawSection[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
-  const [activeTerm, setActiveTerm] = useState<ApprovalTerm | null>(null);
+  const [activeSemester, setActiveSemester] = useState<ApprovalSemester | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   // Filters
@@ -342,13 +342,13 @@ export default function VpaaScheduleApprovalPage() {
         setIsLoading(true);
         const data = await (async () => {
           const response = await api.get<{
-            active_term: ApprovalTerm | null;
+            active_semester: ApprovalSemester | null;
             departments: RawDepartment[];
             sections: RawSection[];
             schedules: RawSchedule[];
             schedule_submissions: RawScheduleSubmission[];
           }>('/initial-data');
-          const term = response.data.active_term;
+          const semester = response.data.active_semester;
 
           const mappedDepts = response.data.departments.map((d) => ({
             id: d.id,
@@ -356,13 +356,13 @@ export default function VpaaScheduleApprovalPage() {
           }));
 
           let filteredSections = response.data.sections;
-          if (term) {
-            filteredSections = filteredSections.filter((s) => Number(s.term_id) === Number(term.id));
+          if (semester) {
+            filteredSections = filteredSections.filter((s) => Number(s.semester_id) === Number(semester.id));
           }
 
           let dbSchedules = response.data.schedules;
-          if (term) {
-            dbSchedules = dbSchedules.filter((s) => Number(s.term_id) === Number(term.id));
+          if (semester) {
+            dbSchedules = dbSchedules.filter((s) => Number(s.semester_id) === Number(semester.id));
           }
 
           const sectionsByDepartment: Record<string, RawSection[]> = {};
@@ -392,7 +392,7 @@ export default function VpaaScheduleApprovalPage() {
             response.data.departments.map((department) => [String(department.id), department.department_name])
           );
           const mappedApprovals = response.data.schedule_submissions
-            .filter((submission) => !term || Number(submission.term_id) === Number(term.id))
+            .filter((submission) => !semester || Number(submission.semester_id) === Number(semester.id))
             .map((submission): ScheduleApproval => {
               const departmentId = String(submission.department_id);
               const workflowSectionIds = submissionSectionIds(submission);
@@ -424,14 +424,14 @@ export default function VpaaScheduleApprovalPage() {
             rawSchedules: dbSchedules,
             rawSections: filteredSections,
             departments: mappedDepts,
-            activeTerm: term,
+            activeSemester: semester,
           };
         })();
 
         setDepartments(data.departments);
         setRawSchedules(data.rawSchedules);
         setRawSections(data.rawSections);
-        setActiveTerm(data.activeTerm);
+        setActiveSemester(data.activeSemester);
         setSchedules(data.schedules);
       } catch (err) {
         // Safe empty catch block
@@ -1105,7 +1105,7 @@ export default function VpaaScheduleApprovalPage() {
           getModeLabel={getModeLabel}
           formatTime={formatTime24hTo12h}
           departmentLogoUrl={modalSchedules[0]?.department?.logo}
-          activeTerm={activeTerm}
+          activeSemester={activeSemester}
           canAct={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved'}
           onApprove={() => { void handleApprove(viewSchedule); setViewSchedule(null); }}
           onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}

@@ -2,7 +2,7 @@ import { getCourseSlotPlan } from "./courseSlotPlan";
 
 export type CourseCategory = "major" | "minor";
 export type SubjectCategory = CourseCategory; // Legacy alias
-export type Semester = "1st" | "2nd" | "summer";
+export type SemesterPeriod = "1st" | "2nd" | "summer";
 export type YearLevel = 1 | 2 | 3 | 4;
 export type RoomType = "lecture" | "laboratory" | "field" | "online";
 export type RoomStatus = "available" | "not available";
@@ -40,10 +40,10 @@ export interface Department {
   sunday_online_only_enabled?: boolean | number | null;
 }
 
-export interface Term {
+export interface Semester {
   id: number;
   academic_year: string;
-  semester: Semester;
+  semester: SemesterPeriod;
   is_active: boolean | number;
   is_enabled?: boolean | number;
 }
@@ -65,7 +65,7 @@ export interface Course {
   lectureHours: number;
   labHours: number;
   category: CourseCategory;
-  semester: Semester;
+  semester: SemesterPeriod;
   departmentId: number | null;
   /**
    * College whose instructors may teach this course, mirroring the rule engine's
@@ -105,7 +105,7 @@ export interface Section {
   id: string;
   name: string;
   yearLevel: YearLevel;
-  semester: Semester;
+  semester: SemesterPeriod;
   departmentId: number;
   programId?: number | null;
   /**
@@ -115,7 +115,7 @@ export interface Section {
    */
   curriculumId?: number | null;
   curriculumName?: string | null;
-  termId: number;
+  semesterId: number;
   status: "active" | "inactive";
 }
 
@@ -163,7 +163,7 @@ export interface Faculty {
   overloadUnits?: number;
   /** Further allowance past the overload one, taught unpaid. */
   probonoUnits?: number;
-  /** Units already assigned this term, deduped so a split course counts once. */
+  /** Units already assigned this semester, deduped so a split course counts once. */
   assignedUnits?: number;
   /** Basic Load as the server computes it: maxUnits - deloadUnits. */
   requiredUnits?: number;
@@ -180,7 +180,7 @@ export interface Room {
   roomType: RoomType;
   status: RoomStatus;
   maxConcurrentClasses?: number;
-  /** Set when another department lent this room for the term: the only windows it may be used in. */
+  /** Set when another department lent this room for the semester: the only windows it may be used in. */
   grantWindows?: RoomGrantWindow[];
 }
 
@@ -193,7 +193,7 @@ export interface RoomGrantWindow {
 
 export interface ScheduleItem {
   id: string;
-  termId: number;
+  semesterId: number;
   departmentId: number;
   courseId: string;
   subjectId?: string; // Legacy alias
@@ -290,10 +290,10 @@ export interface ApiDepartmentRecord {
   sunday_online_only_enabled?: boolean | number | null;
 }
 
-export interface ApiTermRecord {
+export interface ApiSemesterRecord {
   id: number;
   academic_year: string;
-  semester: Semester;
+  semester: SemesterPeriod;
   is_active: boolean | number;
   is_enabled?: boolean | number;
 }
@@ -309,7 +309,7 @@ export interface ApiCourseRecord {
   lab_hours?: number | null;
   course_category: CourseCategory;
   subject_category?: CourseCategory;
-  semester: Semester;
+  semester: SemesterPeriod;
   department_id: number | null;
   /** Eager-loaded owner, used to label the college that teaches a GEC subject. */
   department?: {
@@ -344,14 +344,14 @@ export interface ApiSectionRecord {
   id: number | string;
   section_name: string;
   year_level: string | number;
-  semester: Semester;
+  semester: SemesterPeriod;
   department_id: number;
   program_id?: number | null;
   curriculum_id?: number | null;
   curriculum?: { id: number; name: string; code?: string } | null;
-  term_id: number;
+  semester_id: number;
   status?: "active" | "inactive";
-  term?: ApiTermRecord | null;
+  academic_semester?: ApiSemesterRecord | null;
 }
 
 export interface ApiFacultyRecord {
@@ -399,7 +399,7 @@ export interface ApiRoomRecord {
 
 export interface ApiScheduleRecord {
   id: number | string;
-  term_id: number | string;
+  semester_id: number | string;
   department_id: number | string;
   course_id: number | string;
   subject_id?: number | string;

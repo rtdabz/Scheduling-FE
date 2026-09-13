@@ -1361,7 +1361,7 @@ export default function VpaaFaculty() {
                   <span>Assigned Subjects ({detailsFaculty.assigned_subjects.length})</span>
                 </div>
                 {detailsFaculty.assigned_subjects.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No assigned subjects scheduled for this term.</p>
+                  <p className="text-xs text-gray-400 italic">No assigned subjects scheduled for this semester.</p>
                 ) : (
                   <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-100 overflow-hidden font-sans">
                     {detailsFaculty.assigned_subjects.map(s => (
@@ -1385,7 +1385,7 @@ export default function VpaaFaculty() {
                   <span>Assigned Section Classes ({detailsFaculty.assigned_classes.length})</span>
                 </div>
                 {detailsFaculty.assigned_classes.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No assigned classes scheduled for this term.</p>
+                  <p className="text-xs text-gray-400 italic">No assigned classes scheduled for this semester.</p>
                 ) : (
                   <div className="bg-white border border-gray-100 rounded-xl p-3 flex flex-wrap gap-2 font-sans">
                     {detailsFaculty.assigned_classes.map(c => (
@@ -1628,7 +1628,7 @@ export default function VpaaFaculty() {
                   <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">
                     {loadType === 'overload'
                       ? `Units granted on top of the ${maxUnits}-unit basic load.`
-                      : 'The units this instructor is expected to carry each term.'}
+                      : 'The units this instructor is expected to carry each semester.'}
                   </p>
                 </div>
 

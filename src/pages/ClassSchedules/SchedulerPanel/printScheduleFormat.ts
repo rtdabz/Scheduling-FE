@@ -1,5 +1,5 @@
-import { semesterLabel } from "../../../lib/termLabel";
-import type { ScheduleItem, Term } from "./types";
+import { semesterLabel } from "../../../lib/semesterLabel";
+import type { ScheduleItem, Semester } from "./types";
 
 /**
  * Pure formatting for the printed class schedule.
@@ -9,8 +9,8 @@ import type { ScheduleItem, Term } from "./types";
  * jsPDF.
  */
 
-export const buildPrintTermTitle = (term: Term | null): string => term
-  ? `CLASS SCHEDULE AY ${term.academic_year}    ${semesterLabel(term.semester)}`
+export const buildPrintSemesterTitle = (semester: Semester | null): string => semester
+  ? `CLASS SCHEDULE AY ${semester.academic_year}    ${semesterLabel(semester.semester)}`
   : "CLASS SCHEDULE";
 
 export const getFullDayName = (day: string): string => {
