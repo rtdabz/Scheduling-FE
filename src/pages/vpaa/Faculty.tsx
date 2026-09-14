@@ -867,14 +867,7 @@ export default function VpaaFaculty() {
                           </div>
                         )}
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
-                            {f.department?.department_code && (
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${getDepartmentColor(f.department.department_code || f.department.department_name)}`}>
-                                {f.department.department_code}
-                              </span>
-                            )}
-                          </div>
+                          <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
                           <span className="text-[10px] text-gray-500 font-semibold block">
                             {f.department?.department_name || 'No Department'}
                           </span>

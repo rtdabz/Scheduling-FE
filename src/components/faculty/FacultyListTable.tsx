@@ -71,7 +71,7 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'name',
       header: 'Instructor Name',
-      meta: { cellClassName: 'whitespace-nowrap font-bold text-gray-900 border-l-4 border-l-transparent transition-all group-hover:border-l-[#C9952A]' },
+      meta: { cellClassName: 'whitespace-nowrap font-bold text-gray-900' },
       cell: ({ row: { original: f } }) => {
         const name = formatFacultyListName(f);
         return (

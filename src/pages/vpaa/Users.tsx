@@ -633,7 +633,7 @@ export default function VpaaUsers() {
                   {initials}
                 </div>
               )}
-              <span className="font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">{nameStr}</span>
+              <span className="font-bold text-gray-800">{nameStr}</span>
             </div>
           );
         }
