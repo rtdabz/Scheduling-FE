@@ -345,28 +345,27 @@ export default function CurriculumListPage() {
         wrapping lets the groups fall onto a second line inside the card while
         staying on one line whenever there is room.
       */}
-      <div id="curriculum-filters" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div id="curriculum-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
           {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search curriculum name or code..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#C9952A] bg-white"
+              className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
             />
           </div>
 
           {/* Department Filter */}
-          <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-700">
-            <Filter size={14} className="text-gray-400" />
-            <span className="text-gray-500">Dept:</span>
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
             <select
               value={departmentFilter}
               onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="bg-transparent outline-none font-bold text-[#4e0a10] cursor-pointer"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="all">All Depts</option>
               {departments.map((dept) => (
@@ -378,13 +377,12 @@ export default function CurriculumListPage() {
           </div>
 
           {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-700">
-            <Filter size={14} className="text-gray-400" />
-            <span className="text-gray-500">Status:</span>
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-transparent outline-none font-bold text-[#4e0a10] cursor-pointer"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -395,24 +393,24 @@ export default function CurriculumListPage() {
 
         {/* View mode, then the page actions. */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <div className="flex items-center bg-gray-100/90 border border-gray-200 p-1 rounded-xl">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === 'list' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="List View"
-            >
-              <List size={16} />
-            </button>
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'grid' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
             >
-              <LayoutGrid size={16} />
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="List View"
+            >
+              <List size={15} />
             </button>
           </div>
 

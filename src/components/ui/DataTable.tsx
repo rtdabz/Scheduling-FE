@@ -183,17 +183,20 @@ export default function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                 onKeyDown={onRowClick ? (event) => handleRowKeyDown(event, row.original) : undefined}
                 tabIndex={onRowClick ? 0 : undefined}
-                className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'} transition-colors hover:bg-[#5A1220]/[0.04] ${onRowClick ? 'cursor-pointer focus:outline-none focus-visible:bg-[#5A1220]/[0.06]' : ''} ${rowClassName?.(row.original, index) ?? ''}`}
+                className={`group ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'} transition-colors hover:bg-[#5A1220]/[0.04] ${onRowClick ? 'cursor-pointer focus:outline-none focus-visible:bg-[#5A1220]/[0.06]' : ''} ${rowClassName?.(row.original, index) ?? ''}`}
               >
-                {row.getVisibleCells().map((cell) => {
+                {row.getVisibleCells().map((cell, cellIndex) => {
                   const meta = cell.column.columnDef.meta;
                   return (
                     <td
                       key={cell.id}
                       onClick={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
                       onKeyDown={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
-                      className={`${cellPad} align-middle text-xs font-semibold text-gray-700 ${alignClass(meta?.align)} ${meta?.cellClassName ?? ''} ${cellClassName?.(cell.column.id) ?? ''}`}
+                      className={`${cellPad} align-middle text-xs font-semibold text-gray-700 ${alignClass(meta?.align)} ${meta?.cellClassName ?? ''} ${cellClassName?.(cell.column.id) ?? ''} ${cellIndex === 0 ? 'relative' : ''}`}
                     >
+                      {cellIndex === 0 && (
+                        <div className="absolute left-0 top-0 bottom-0 w-[2.5px] bg-[#C9952A] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                      )}
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   );

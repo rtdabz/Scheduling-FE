@@ -683,10 +683,6 @@ export default function ProgramHeadRooms() {
                   badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
                 }
                 
-                const statusBadgeColor = room.status === 'not available'
-                  ? 'bg-red-50 text-red-700 border-red-200'
-                  : 'bg-green-50 text-green-700 border-green-200';
-
                 return (
                   <div
                     key={room.id}
@@ -710,9 +706,6 @@ export default function ProgramHeadRooms() {
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
                           {room.room_type}
                         </span>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadgeColor}`}>
-                          {room.status}
-                        </span>
                       </div>
                     </div>
 
@@ -729,17 +722,13 @@ export default function ProgramHeadRooms() {
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                             </span>
-                            <p className="text-xs font-bold text-emerald-600 truncate">
+                            <p className="text-xs font-bold text-emerald-600 truncate" title={liveStatus.text}>
                               {liveStatus.text}
                             </p>
                           </div>
-                        ) : liveStatus.status === 'upcoming' ? (
-                          <p className="text-xs font-bold text-amber-600 truncate">
-                            {liveStatus.text}
-                          </p>
                         ) : (
                           <p className="text-xs font-bold text-gray-500 truncate">
-                            {liveStatus.text}
+                            Vacant
                           </p>
                         )}
                       </div>

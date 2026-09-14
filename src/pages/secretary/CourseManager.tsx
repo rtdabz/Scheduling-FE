@@ -3,6 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
 import {
   Search,
+  Filter,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -269,26 +270,29 @@ export default function CourseManager() {
 
   return (
     <div className="w-full">
-      {/* Top Bar Section */}
-      <div id="course-list-filters" className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-          <div className="relative flex-1 sm:max-w-md">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              type="text"
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-              placeholder="Search course code, name, etc..."
-              className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
-            />
-          </div>
+      {/* Search and Filters Bar */}
+      <div id="course-list-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
+        {/* Search */}
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder="Search course code, name, etc..."
+            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
+          />
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+        {/* Dropdowns */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
             <select
               value={yearLevelFilter}
               onChange={(e) => setYearLevelFilter(e.target.value)}
               title="Filter by Year Level"
-              className="px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A]/50 outline-none text-sm shadow-sm bg-white font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50/30 cursor-pointer transition-all duration-200"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="all">All Year Levels</option>
               <option value="1">1st Year</option>
@@ -296,23 +300,29 @@ export default function CourseManager() {
               <option value="3">3rd Year</option>
               <option value="4">4th Year</option>
             </select>
+          </div>
 
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               title="Filter by Course Category"
-              className="px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A]/50 outline-none text-sm shadow-sm bg-white font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50/30 cursor-pointer transition-all duration-200"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="all">All Categories</option>
               <option value="major">Major</option>
               <option value="minor">Minor</option>
             </select>
+          </div>
 
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
             <select
               value={semesterFilter}
               onChange={(e) => setSemesterFilter(e.target.value)}
               title="Filter by Semester"
-              className="px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A]/50 outline-none text-sm shadow-sm bg-white font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50/30 cursor-pointer transition-all duration-200"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
             >
               <option value="all">All Semesters</option>
               <option value="1st">1st Semester</option>

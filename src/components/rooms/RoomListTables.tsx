@@ -40,8 +40,6 @@ const roomTypeBadge: Record<RoomListRow['room_type'], string> = {
   field: 'bg-amber-50 text-amber-700 border-amber-200',
 };
 
-const hoverAccent = 'border-l-4 border-l-transparent transition-all group-hover:border-l-[#C9952A]';
-
 export function BuildingsTable<T extends BuildingListRow>({
   buildings,
   onSelect,
@@ -57,13 +55,13 @@ export function BuildingsTable<T extends BuildingListRow>({
       id: 'name',
       accessorKey: 'name',
       header: 'Building Name',
-      meta: { cellClassName: `whitespace-nowrap ${hoverAccent}` },
+      meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] group-hover:bg-[#C9952A]/15 group-hover:text-[#C9952A] flex items-center justify-center transition-colors">
+          <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center transition-colors">
             <Building2 size={16} />
           </div>
-          <span className="text-sm font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">
+          <span className="text-sm font-bold text-gray-800">
             {row.original.name}
           </span>
         </div>
@@ -136,9 +134,9 @@ export function RoomsTable<T extends RoomListRow>({
       id: 'room_code',
       accessorKey: 'room_code',
       header: 'Room Code',
-      meta: { cellClassName: `whitespace-nowrap ${hoverAccent}` },
+      meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
-        <span className="text-xs font-mono font-bold bg-[#C9952A]/10 text-[#C9952A] group-hover:bg-[#C9952A] group-hover:text-white px-2.5 py-1 rounded-lg border border-[#C9952A]/20 transition-all">
+        <span className="text-xs font-mono font-bold bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg border border-[#C9952A]/20">
           {row.original.room_code}
         </span>
       ),
@@ -161,19 +159,6 @@ export function RoomsTable<T extends RoomListRow>({
       ),
     },
     {
-      id: 'status',
-      accessorKey: 'status',
-      header: 'Status',
-      meta: { cellClassName: 'whitespace-nowrap' },
-      cell: ({ row }) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-          row.original.status === 'not available' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'
-        }`}>
-          {row.original.status}
-        </span>
-      ),
-    },
-    {
       id: 'today',
       header: "Today's Status",
       enableSorting: false,
@@ -187,13 +172,13 @@ export function RoomsTable<T extends RoomListRow>({
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
-              <p className="text-xs font-bold text-emerald-600 max-w-[200px] truncate">{live.text}</p>
+              <p className="text-xs font-bold text-emerald-600 max-w-[260px] truncate" title={live.text}>{live.text}</p>
             </div>
           );
         }
         return (
-          <p className={`text-xs font-bold max-w-[200px] truncate ${live.status === 'upcoming' ? 'text-amber-600' : 'text-gray-500'}`}>
-            {live.text}
+          <p className="text-xs font-bold text-gray-500 max-w-[260px] truncate">
+            Vacant
           </p>
         );
       },

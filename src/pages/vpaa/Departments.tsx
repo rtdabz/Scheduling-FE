@@ -504,7 +504,7 @@ export default function Departments() {
       {
         accessorKey: 'name',
         header: 'Department Name',
-        cell: info => <span className="font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">{info.getValue() as string}</span>
+        cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
       },
       {
         accessorKey: 'schedulingProfile',
