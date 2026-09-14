@@ -14,6 +14,10 @@ export type SummaryMeeting = {
   mode: DeliveryMode;
   room: string;
   meeting: string;
+  /** The `schedules` row, when the caller needs to open one. */
+  id?: string;
+  /** Instructor name; meetings with different instructors stay separate parts. */
+  faculty?: string;
 };
 
 /** Meetings of one class that share a time, room, mode and meeting type. */
@@ -25,6 +29,9 @@ export type SummaryPart = {
   mode: DeliveryMode;
   room: string;
   meeting: string;
+  faculty?: string;
+  /** Ids of the meetings folded into this part, when the input carried them. */
+  ids: string[];
 };
 
 /** One section's course, with every meeting folded into it. */
@@ -70,7 +77,7 @@ export const buildSummaryClasses = (meetings: SummaryMeeting[]): SummaryClass[] 
   const classes = Array.from(byClass.entries()).map(([key, classMeetings]): SummaryClass => {
     const byPart = new Map<string, SummaryMeeting[]>();
     for (const meeting of classMeetings) {
-      const partKey = [meeting.start, meeting.end, meeting.mode, meeting.room, meeting.meeting].join("|");
+      const partKey = [meeting.start, meeting.end, meeting.mode, meeting.room, meeting.meeting, meeting.faculty ?? ""].join("|");
       byPart.set(partKey, [...(byPart.get(partKey) ?? []), meeting]);
     }
 
@@ -86,6 +93,8 @@ export const buildSummaryClasses = (meetings: SummaryMeeting[]): SummaryClass[] 
           mode: first.mode,
           room: first.room,
           meeting: first.meeting,
+          faculty: first.faculty,
+          ids: partMeetings.flatMap((m) => (m.id ? [m.id] : [])),
         };
       })
       .sort(

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CalendarDays, RefreshCw } from "lucide-react";
+import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import api from "../../lib/api";
 import { getStoredUser } from "../../lib/storedUser";
 import TimetableGrid from "./SchedulerPanel/TimetableGrid";
@@ -51,12 +52,13 @@ export default function SectionTimetables() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const liveRevision = useLiveRevision(["schedules", "sections"]);
 
   useEffect(() => {
     const controller = new AbortController();
 
     const load = async () => {
-      setIsLoading(true);
+      if (liveRevision === 0) setIsLoading(true);
       setError("");
 
       try {
@@ -88,7 +90,7 @@ export default function SectionTimetables() {
 
     void load();
     return () => controller.abort();
-  }, [reloadKey, user?.department_id]);
+  }, [reloadKey, user?.department_id, liveRevision]);
 
   const selectedSection = useMemo(
     () => data.sections.find((section) => section.id === selectedSectionId) ?? null,

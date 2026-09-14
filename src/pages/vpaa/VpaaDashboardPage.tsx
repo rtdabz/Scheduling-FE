@@ -27,7 +27,6 @@ import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 import ExecutiveHeader from '../../components/vpaa/ExecutiveHeader';
-import PeakLoadHeatmap from '../../components/vpaa/PeakLoadHeatmap';
 import BuildingUtilizationPanel from '../../components/vpaa/BuildingUtilizationPanel';
 import FacultyLoadPanel, { type FacultyLoadRow } from '../../components/vpaa/FacultyLoadPanel';
 import AdministrativeActivityPanel, { type ActivityRow } from '../../components/vpaa/AdministrativeActivityPanel';
@@ -36,6 +35,7 @@ import { grouped } from '../../lib/dashboardFormat';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { physicalRooms } from '../../lib/roomUsage';
 import { formatPhilippineDate } from '../../lib/philippineTime';
 import { EMPTY_INSIGHTS, type VpaaInsights } from '../../lib/vpaaInsights';
@@ -119,6 +119,8 @@ const SEVERITY_STYLES = {
   fresh: 'bg-slate-100 text-slate-600',
 } as const;
 
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'departments', 'users', 'settings'] as const;
+
 export default function VpaaDashboardPage() {
   const navigate = useNavigate();
 
@@ -133,6 +135,7 @@ export default function VpaaDashboardPage() {
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
   const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
@@ -184,7 +187,8 @@ export default function VpaaDashboardPage() {
     let active = true;
 
     const load = async () => {
-      setLoading(!hasCachedData(cacheKey));
+      // A live refresh keeps the current figures on screen until new ones land.
+      setLoading(liveRevision === 0 && !hasCachedData(cacheKey));
       setLoadError(null);
       try {
         const data = await loadCachedData<DashboardData>(cacheKey, async () => {
@@ -227,13 +231,13 @@ export default function VpaaDashboardPage() {
 
     load();
     return () => { active = false; };
-  }, [cacheKey, reloadKey]);
+  }, [cacheKey, reloadKey, liveRevision]);
 
   useEffect(() => {
     let active = true;
 
     const load = async () => {
-      setInsightsLoading(!hasCachedData(insightsCacheKey));
+      setInsightsLoading(liveRevision === 0 && !hasCachedData(insightsCacheKey));
       setInsightsRefreshing(true);
       try {
         const data = await loadCachedData<VpaaInsights>(insightsCacheKey, async () => {
@@ -254,13 +258,13 @@ export default function VpaaDashboardPage() {
 
     load();
     return () => { active = false; };
-  }, [insightsCacheKey, reloadKey]);
+  }, [insightsCacheKey, reloadKey, liveRevision]);
 
   useEffect(() => {
     let active = true;
 
     const load = async () => {
-      setActivityLoading(!hasCachedData(activityCacheKey));
+      setActivityLoading(liveRevision === 0 && !hasCachedData(activityCacheKey));
       setActivityError(false);
       try {
         const rows = await loadCachedData<ActivityRow[]>(activityCacheKey, async () => {
@@ -287,7 +291,7 @@ export default function VpaaDashboardPage() {
 
     load();
     return () => { active = false; };
-  }, [activityCacheKey, reloadKey]);
+  }, [activityCacheKey, reloadKey, liveRevision]);
 
   const retry = useCallback(() => setReloadKey(k => k + 1), []);
 
@@ -372,7 +376,7 @@ export default function VpaaDashboardPage() {
 
     faculties.forEach(f => {
       const assigned = f.assigned_units || 0;
-      const max = f.max_units || 21;
+      const max = f.max_units ?? 21;
       if (assigned <= 0) noAssignment++;
       else if (assigned > max) overloaded++;
       else if (assigned === max) completeLoad++;
@@ -398,7 +402,7 @@ export default function VpaaDashboardPage() {
     () => faculties
       .map(f => {
         const assigned = f.assigned_units || 0;
-        const max = f.max_units || 21;
+        const max = f.max_units ?? 21;
         return {
           id: f.id,
           name: `${f.first_name} ${f.last_name}`.trim(),
@@ -877,10 +881,6 @@ export default function VpaaDashboardPage() {
           compact
         />
       </div>
-    </section>
-
-    <section className="grid gap-4">
-      <PeakLoadHeatmap insights={insights} loading={insightsLoading} />
     </section>
   </div>;
 }

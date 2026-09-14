@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, ClipboardList, Download, Filter, RefreshCw, Search, X } from 'lucide-react';
 import api from '../../lib/api';
-import Skeleton from '../../components/ui/Skeleton';
+import type { ColumnDef } from '@tanstack/react-table';
+import DataTable from '../../components/ui/DataTable';
+import { useDataTable } from '../../components/ui/useDataTable';
 
 type Actor = { id: number; name: string; username: string; role: string };
 type ActivityEntry = {
@@ -29,7 +31,7 @@ const categories = [
   ['user_management', 'User Management'],
   ['scheduling', 'Recommendations'],
   ['schedule_workflow', 'Schedule Workflow'],
-  ['faculty_assignment', 'Faculty Assignment'],
+  ['faculty_assignment', 'Instructor Assignment'],
 ] as const;
 
 const formatLabel = (value: string) => value.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
@@ -82,6 +84,34 @@ export default function ActivityLog() {
 
   const departmentMap = useMemo(() => new Map(departments.map(department => [department.id, department])), [departments]);
   const semesterMap = useMemo(() => new Map(semesters.map(semester => [semester.id, semester])), [semesters]);
+
+  const columns = useMemo<ColumnDef<ActivityEntry>[]>(() => [
+    { id: 'occurred_at', header: 'Date and time', meta: { cellClassName: 'whitespace-nowrap font-medium text-gray-600' }, cell: ({ row }) => formatDate(row.original.occurred_at) },
+    {
+      id: 'event',
+      header: 'Event',
+      cell: ({ row }) => <><p className="text-sm font-semibold text-gray-900">{formatLabel(row.original.event)}</p><p className="font-medium text-gray-500">{formatLabel(row.original.category)}</p></>,
+    },
+    {
+      id: 'actor',
+      header: 'Actor',
+      cell: ({ row }) => <><p className="text-sm font-medium text-gray-800">{row.original.actor?.name || 'System'}</p><p className="font-medium uppercase text-gray-500">{row.original.actor?.role || 'system'}</p></>,
+    },
+    {
+      id: 'department',
+      header: 'Department',
+      meta: { cellClassName: 'font-medium text-gray-600' },
+      cell: ({ row }) => (row.original.department_id ? departmentMap.get(row.original.department_id)?.department_code : null) || 'Institution-wide',
+    },
+    {
+      id: 'source',
+      header: 'Source',
+      cell: ({ row }) => <span className="rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-600">{formatLabel(row.original.source)}</span>,
+    },
+  ], [departmentMap]);
+
+  // The server pages and orders the log, so the table only renders one page.
+  const table = useDataTable({ data: entries, columns, pageSize: false, enableSorting: false, getRowId: (entry) => entry.id });
 
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
@@ -152,30 +182,14 @@ export default function ActivityLog() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         {error ? <div role="alert" className="p-8 text-center"><p className="text-sm font-semibold text-red-700">{error}</p><button onClick={() => void loadEntries()} className="mt-3 text-sm font-bold text-[#5A1220] hover:underline">Try again</button></div>
-          : loading ? <div className="overflow-x-auto" aria-busy="true" aria-label="Loading activity"><table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500"><tr><th className="px-5 py-3">Date and time</th><th className="px-5 py-3">Event</th><th className="px-5 py-3">Actor</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Source</th></tr></thead>
-            <tbody className="divide-y divide-gray-100">{Array.from({ length: 6 }).map((_, index) => <tr key={`activity-skeleton-${index}`}>
-              <td className="whitespace-nowrap px-5 py-4"><Skeleton className="h-4 w-36" /></td>
-              <td className="px-5 py-4"><Skeleton className="h-4 w-40" /><Skeleton className="mt-1 h-3 w-24" /></td>
-              <td className="px-5 py-4"><Skeleton className="h-4 w-32" /><Skeleton className="mt-1 h-3 w-16" /></td>
-              <td className="px-5 py-4"><Skeleton className="h-4 w-28" /></td>
-              <td className="px-5 py-4"><Skeleton className="h-6 w-20 rounded-full" /></td>
-            </tr>)}</tbody>
-          </table></div>
-          : entries.length === 0 ? <div className="p-12 text-center"><ClipboardList className="mx-auto h-10 w-10 text-gray-300" /><p className="mt-3 font-semibold text-gray-700">No activity found</p><p className="mt-1 text-sm text-gray-500">Try clearing the filters or check again after system activity occurs.</p></div>
-          : <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500"><tr><th className="px-5 py-3">Date and time</th><th className="px-5 py-3">Event</th><th className="px-5 py-3">Actor</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Source</th></tr></thead>
-            <tbody className="divide-y divide-gray-100">{entries.map(entry => {
-              const department = entry.department_id ? departmentMap.get(entry.department_id) : null;
-              return <tr key={entry.id} onClick={() => setSelected(entry)} className="cursor-pointer hover:bg-amber-50/40">
-                <td className="whitespace-nowrap px-5 py-4 text-gray-600">{formatDate(entry.occurred_at)}</td>
-                <td className="px-5 py-4"><p className="font-semibold text-gray-900">{formatLabel(entry.event)}</p><p className="text-xs text-gray-500">{formatLabel(entry.category)}</p></td>
-                <td className="px-5 py-4"><p className="font-medium text-gray-800">{entry.actor?.name || 'System'}</p><p className="text-xs uppercase text-gray-500">{entry.actor?.role || 'system'}</p></td>
-                <td className="px-5 py-4 text-gray-600">{department?.department_code || 'Institution-wide'}</td>
-                <td className="px-5 py-4"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{formatLabel(entry.source)}</span></td>
-              </tr>;
-            })}</tbody>
-          </table></div>}
+          : <DataTable
+            table={table}
+            variant="embedded"
+            isLoading={loading}
+            ariaLabel="Activity log"
+            onRowClick={setSelected}
+            emptyState={<><ClipboardList className="mx-auto h-10 w-10 text-gray-300" /><p className="mt-3 font-semibold text-gray-700">No activity found</p><p className="mt-1 text-sm text-gray-500">Try clearing the filters or check again after system activity occurs.</p></>}
+          />}
         <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3 text-sm text-gray-600">
           <span>{meta.total} event{meta.total === 1 ? '' : 's'}</span>
           <div className="flex items-center gap-2"><button aria-label="Previous page" disabled={page <= 1 || loading} onClick={() => setPage(value => value - 1)} className="rounded-md border border-gray-300 p-1.5 disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button><span>Page {meta.current_page} of {meta.last_page}</span><button aria-label="Next page" disabled={page >= meta.last_page || loading} onClick={() => setPage(value => value + 1)} className="rounded-md border border-gray-300 p-1.5 disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div>

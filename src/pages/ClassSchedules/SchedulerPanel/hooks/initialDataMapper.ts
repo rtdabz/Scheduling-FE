@@ -1,3 +1,4 @@
+import { designationLabel } from "../../../../lib/designations";
 import { DAYS, slotToTimeStr } from "../constants";
 import {
   configureTimeGrid,
@@ -195,6 +196,7 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
       ? String(item.faculty_id ?? item.faculty?.id)
       : null,
     facultyAssignmentDone: Boolean(item.faculty_assignment_done),
+    facultyConflictOverride: Boolean(item.faculty_conflict_override),
     status: item.status,
     dayIndex,
     startSlot,
@@ -292,12 +294,14 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   profilePicture: f.profile_picture ?? null,
   employmentType: f.employment_type,
   administrativeRole: normalizeAdministrativePost(f.administrative_role),
+  designations: (f.designations ?? []).map(designationLabel),
   departmentId: f.department_id,
   departmentCode: f.department?.department_code,
   departmentName: f.department?.department_name,
   programId: f.program_id ?? null,
   programCode: f.program?.code ?? null,
-  maxUnits: f.max_units ? Number(f.max_units) : undefined,
+  // A Basic Load of 0 (overload-only instructor) is real, so this coerces too.
+  maxUnits: numberOrUndefined(f.max_units),
   // Zero is a real allowance, so these coerce rather than falling back:
   // treating 0 as "unknown" would make the Auto-Assign labels invent room the
   // instructor does not have.

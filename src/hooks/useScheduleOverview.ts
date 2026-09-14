@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, setCachedData } from '../lib/dataCache';
+import { useLiveRevision } from './useLiveRefresh';
 
 /**
  * Aggregated schedule counts for the All Schedules screen.
@@ -25,6 +26,8 @@ export interface ConflictBreakdown {
   section: number;
   /** Meetings in at least one conflict, counted once however many kinds they trip. */
   total: number;
+  /** Meetings in a clash both sides were deliberately assigned over; not in total. */
+  overridden?: number;
 }
 
 export interface SectionOverview {
@@ -96,6 +99,8 @@ export function useScheduleOverview() {
   const [fetchKey, setFetchKey] = useState(0);
 
   const refresh = useCallback(() => setFetchKey((key) => key + 1), []);
+  // Live refreshes stay silent: fetchKey (a manual refresh) shows the spinner.
+  const liveRevision = useLiveRevision(['approvals', 'schedules', 'sections']);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +129,7 @@ export function useScheduleOverview() {
     return () => {
       cancelled = true;
     };
-  }, [fetchKey]);
+  }, [fetchKey, liveRevision]);
 
   return {
     data,

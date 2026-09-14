@@ -1,6 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useCallback, useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import type { ColumnDef } from '@tanstack/react-table';
 import { X, Search, RotateCcw, Archive, BookOpen } from 'lucide-react';
+import DataTable from '../ui/DataTable';
+import { useDataTable } from '../ui/useDataTable';
 import type { Curriculum } from '../../types/curriculum';
 
 interface CurriculumArchiveModalProps {
@@ -37,9 +40,7 @@ export default function CurriculumArchiveModal({
     });
   }, [curriculumList, searchQuery, hiddenIds]);
 
-  if (!isOpen) return null;
-
-  const handleRestoreClick = async (id: number) => {
+  const handleRestoreClick = useCallback(async (id: number) => {
     setHiddenIds((prev) => [...prev, id]);
     try {
       // Restored out of the archive, not back to unfinished: an archived
@@ -49,10 +50,56 @@ export default function CurriculumArchiveModal({
     } catch {
       setHiddenIds((prev) => prev.filter((rid) => rid !== id));
     }
-  };
+  }, [onRestore]);
+
+  const columns = useMemo<ColumnDef<Curriculum>[]>(() => [
+    {
+      id: 'code',
+      accessorKey: 'code',
+      header: 'Code',
+      meta: { cellClassName: 'whitespace-nowrap' },
+      cell: ({ row }) => (
+        <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
+          {row.original.code}
+        </span>
+      ),
+    },
+    {
+      id: 'name',
+      accessorKey: 'name',
+      header: 'Curriculum Name',
+      meta: { cellClassName: 'font-bold text-gray-700' },
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      enableSorting: false,
+      meta: { align: 'right', cellClassName: 'whitespace-nowrap' },
+      cell: ({ row }) => (
+        <button
+          type="button"
+          onClick={() => handleRestoreClick(row.original.id)}
+          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4e0a10]/10 hover:bg-[#4e0a10] hover:text-white text-[#4e0a10] text-[10px] font-bold uppercase rounded-lg border border-[#4e0a10]/20 transition-all duration-200 cursor-pointer disabled:opacity-50"
+          title="Restore to Draft"
+        >
+          <RotateCcw size={11} />
+          <span>Restore</span>
+        </button>
+      ),
+    },
+  ], [handleRestoreClick]);
+
+  const table = useDataTable({
+    data: archivedCurriculumList,
+    columns,
+    pageSize: false,
+    getRowId: (item) => String(item.id),
+  });
+
+  if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200">
         {/* Modal Header */}
         <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
@@ -93,52 +140,21 @@ export default function CurriculumArchiveModal({
 
           {/* Curriculum List */}
           <div className="flex-1 overflow-y-auto min-h-0 border border-gray-100 rounded-xl bg-gray-50/20">
-            {archivedCurriculumList.length === 0 ? (
-              <div className="py-16 text-center">
-                <BookOpen size={44} className="mx-auto text-gray-300 mb-3 animate-pulse" />
-                <p className="text-sm font-bold text-gray-700 mb-1">No archived curriculum found</p>
-                <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                  {searchQuery ? 'Try searching for a different semester or keyword.' : 'Curriculum records that you archive will appear here.'}
-                </p>
-              </div>
-            ) : (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">Code</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">Curriculum Name</th>
-                    <th className="px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {archivedCurriculumList.map((item) => {
-                    const isRestoring = hiddenIds.includes(item.id);
-                    return (
-                      <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-5 py-3.5 whitespace-nowrap">
-                          <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
-                            {item.code}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 font-bold text-gray-700 text-xs">{item.name}</td>
-                        <td className="px-5 py-3.5 whitespace-nowrap text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleRestoreClick(item.id)}
-                            disabled={isRestoring}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4e0a10]/10 hover:bg-[#4e0a10] hover:text-white text-[#4e0a10] text-[10px] font-bold uppercase rounded-lg border border-[#4e0a10]/20 transition-all duration-200 cursor-pointer disabled:opacity-50"
-                            title="Restore to Draft"
-                          >
-                            <RotateCcw size={11} className={isRestoring ? 'animate-spin' : ''} />
-                            <span>{isRestoring ? 'Restoring...' : 'Restore'}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+            <DataTable
+              table={table}
+              variant="embedded"
+              ariaLabel="Archived curriculum"
+              emptyState={
+                <div className="py-2">
+                  <BookOpen size={44} className="mx-auto text-gray-300 mb-3" />
+                  <p className="text-sm font-bold text-gray-700 mb-1">No archived curriculum found</p>
+                  <p className="text-xs text-gray-500 max-w-xs mx-auto">
+                    {searchQuery ? 'Try searching for a different semester or keyword.' : 'Curriculum records that you archive will appear here.'}
+                  </p>
+                </div>
+              }
+            />
+
           </div>
         </div>
 

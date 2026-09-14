@@ -35,7 +35,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   ], []);
   const facultyAssignmentGuideSteps = useMemo(() => [
     { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose an approved section", description: "Select a section with classes that need instructors.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-workflow", title: "Check the current step", description: "Faculty Assignment means the timetable is ready for instructors.", side: "bottom" as const },
+    { element: "#schedule-builder-workflow", title: "Check the current step", description: "Instructor Assignment means the timetable is ready for instructors.", side: "bottom" as const },
     { element: "#schedule-builder-auto-assign", action: "click" as const, skipIfMissing: true, taskHint: "Click Auto-Assign to continue.", title: "Use Auto-Assign", description: "Review automatic instructor suggestions, then apply the ones you want.", side: "bottom" as const, align: "end" as const },
     { element: '[data-tour="unassigned-class"]', waitFor: "#schedule-builder-timetable", action: "click" as const, skipIfMissing: true, taskHint: "Click a highlighted class that needs an instructor.", title: "Open an unassigned class", description: "Select a class without an instructor to see eligible faculty and conflicts.", side: "top" as const },
   ], []);
@@ -53,7 +53,9 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   useWorkflowGuide({ id: "schedule-builder-review", isReady: !scheduler.isLoading && reviewActive, steps: reviewGuideSteps, mission: "Review the Schedule" });
   const [isAutoAssignOpen, setIsAutoAssignOpen] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
+  const [isSavingGenerated, setIsSavingGenerated] = useState(false);
   const [isClearInstructorConfirmOpen, setIsClearInstructorConfirmOpen] = useState(false);
+  const [clearInstructorScope, setClearInstructorScope] = useState<"section" | "department">("section");
 
   useEffect(() => {
     if (autoAssignOnOpen && scheduler.schedules.length > 0) {
@@ -117,7 +119,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
         onGenerateYearLevel={scheduler.canGenerateSchedule ? () => setIsGeneratorOpen(true) : undefined}
         onAutoAssign={scheduler.canAssignInstructor ? () => setIsAutoAssignOpen(true) : undefined}
-        onClearInstructors={scheduler.canAssignInstructor ? () => setIsClearInstructorConfirmOpen(true) : undefined}
+        onClearInstructors={scheduler.canAssignInstructor ? () => { setClearInstructorScope(scheduler.clearableSectionInstructorCount > 0 ? "section" : "department"); setIsClearInstructorConfirmOpen(true); } : undefined}
       />
 
       <div
@@ -135,11 +137,15 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         >
           <CourseBank {...scheduler} />
         </div>
-        <TimetableGrid {...scheduler} activeSemesterText={scheduler.activeSemesterText} />
+        <TimetableGrid
+          {...scheduler}
+          activeSemesterText={scheduler.activeSemesterText}
+          savingMessage={isSavingGenerated ? "Saving the generated timetable…" : null}
+        />
       </div>
 
       {scheduler.canGenerateSchedule && isGeneratorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-[1px] sm:p-4" role="dialog" aria-modal="true" aria-label="Generate schedule">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 sm:p-4" role="dialog" aria-modal="true" aria-label="Generate schedule">
           <div className="flex max-h-[calc(100dvh-1rem)] max-w-full overflow-hidden bg-white shadow-2xl sm:rounded-lg">
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
@@ -151,6 +157,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
               existingSchedules={scheduler.schedules}
               onAccepted={scheduler.handleAcceptedRecommendation}
               onSectionsChanged={scheduler.refreshData}
+              onSavingChange={setIsSavingGenerated}
             />
           </div>
         </div>
@@ -182,6 +189,26 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onCancel={scheduler.cancelMarkSectionsDone}
       />
       )}
+      {scheduler.isFinalizeSectionsModalOpen && (
+      <MarkSectionsDoneModal
+        variant="finalize"
+        candidates={scheduler.sectionFinalizeCandidates}
+        selectedSectionId={scheduler.selectedSectionId}
+        isMarking={scheduler.isFinalizing}
+        onConfirm={scheduler.confirmFinalizeSections}
+        onCancel={scheduler.cancelFinalizeSections}
+      />
+      )}
+      {scheduler.isReassignSectionsModalOpen && (
+      <MarkSectionsDoneModal
+        variant="reassign"
+        candidates={scheduler.sectionReassignCandidates}
+        selectedSectionId={scheduler.selectedSectionId}
+        isMarking={scheduler.isEditingSection}
+        onConfirm={scheduler.confirmReassignSections}
+        onCancel={scheduler.cancelReassignSections}
+      />
+      )}
 
       <WithdrawSubmissionModal
         isOpen={scheduler.isWithdrawSubmissionModalOpen}
@@ -198,15 +225,38 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         isOpen={isClearInstructorConfirmOpen}
         eyebrow="Section Instructor Assignment"
         title="Clear all instructors?"
-        message={`Remove all ${scheduler.clearableSectionInstructorCount} assigned course sessions/components from ${selectedSection?.name ?? "this section"}? Timetable placements and approval status will remain unchanged.`}
+        message={clearInstructorScope === "department"
+          ? `Remove all ${scheduler.clearableDepartmentInstructorCount} assigned course sessions/components from every section in the department? Timetable placements and approval status will remain unchanged.`
+          : `Remove all ${scheduler.clearableSectionInstructorCount} assigned course sessions/components from ${selectedSection?.name ?? "this section"}? Timetable placements and approval status will remain unchanged.`}
         confirmLabel="Clear Instructors"
         variant="danger"
         isConfirming={scheduler.isClearingSectionInstructors}
         onConfirm={async () => {
-          if (await scheduler.handleClearSectionInstructors()) setIsClearInstructorConfirmOpen(false);
+          if (await scheduler.handleClearSectionInstructors(clearInstructorScope)) setIsClearInstructorConfirmOpen(false);
         }}
         onCancel={() => !scheduler.isClearingSectionInstructors && setIsClearInstructorConfirmOpen(false)}
-      />
+      >
+        <fieldset className="space-y-2" disabled={scheduler.isClearingSectionInstructors}>
+          <legend className="sr-only">What to clear</legend>
+          {([
+            { value: "section" as const, label: `This section only (${selectedSection?.name ?? "current section"})`, count: scheduler.clearableSectionInstructorCount },
+            { value: "department" as const, label: "All sections in the department", count: scheduler.clearableDepartmentInstructorCount },
+          ]).map((option) => (
+            <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+              <input
+                type="radio"
+                name="clear-instructor-scope"
+                value={option.value}
+                checked={clearInstructorScope === option.value}
+                onChange={() => setClearInstructorScope(option.value)}
+                disabled={option.count === 0}
+              />
+              <span className="flex-1">{option.label}</span>
+              <span className="text-slate-400">{option.count}</span>
+            </label>
+          ))}
+        </fieldset>
+      </ConfirmModal>
       <PrintSchedule
         sections={scheduler.sections}
         departments={scheduler.departments}

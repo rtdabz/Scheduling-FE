@@ -8,6 +8,7 @@ import Skeleton from '../ui/Skeleton'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
 import api from '../../lib/api'
+import { startLiveUpdates } from '../../lib/liveUpdates'
 import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
@@ -21,6 +22,12 @@ export default function AppLayout() {
   const { semester: activeSemester } = useActiveSemester()
 
   const [user, setUser] = useState<StoredUser | null>(() => getStoredUser())
+  const userId = user?.id
+
+  // One live-updates connection for the signed-in shell; sign-out closes it.
+  useEffect(() => {
+    if (userId) void startLiveUpdates(Number(userId))
+  }, [userId])
 
   useEffect(() => {
     api.get<StoredUser>('/me')

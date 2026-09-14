@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import jsPDF from "jspdf";
-import { FORM_PAGE_SIZE, LAST_ROW, bottom, left, right, top } from "./teachingLoadForm";
+import { FORM_PAGE_SIZE, LAST_ROW, bottom, formPageSize, formRow, left, right, setOverloadLineCount, top } from "./teachingLoadForm";
 import { classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
 import type { Faculty, ScheduleItem } from "./types";
@@ -88,7 +88,7 @@ const renderSheet = () => {
     givenName: "A",
     middleInitial: "B",
     isPartTime: false,
-    designation: "",
+    designations: [],
     instructorName: "A B CRUZ",
     preparedBy: "",
     verifiedBy: "",
@@ -193,5 +193,176 @@ describe("drawSheet control footer", () => {
 
     // The whole box clears the bottom of the sheet.
     expect(box.y + box.h).toBeLessThan(pageHeight - 3);
+  });
+});
+
+/** Every string drawn, with the text colour it was drawn in, and every filled rect's colour. */
+const recordColours = (doc: jsPDF) => {
+  const fills: string[] = [];
+  const texts: Array<{ text: string; color: string }> = [];
+  let fillColour = "";
+  let textColour = "0,0,0";
+  vi.spyOn(doc, "setFillColor").mockImplementation(((...rgb: number[]) => { fillColour = rgb.join(","); return doc; }) as typeof doc.setFillColor);
+  vi.spyOn(doc, "setTextColor").mockImplementation(((...rgb: number[]) => { textColour = rgb.join(","); return doc; }) as typeof doc.setTextColor);
+  vi.spyOn(doc, "rect").mockImplementation(((_x: number, _y: number, _w: number, _h: number, style?: string) => { if (style === "F") fills.push(fillColour); return doc; }) as typeof doc.rect);
+  vi.spyOn(doc, "text").mockImplementation(((text: string) => { texts.push({ text: String(text), color: textColour }); return doc; }) as typeof doc.text);
+  return { fills, texts };
+};
+
+const PROBONO_TEXT = "107,114,128";
+const OVERLOAD_TEXT = "248,113,113";
+const CONFLICT_TEXT = "251,146,60";
+const PALE_FILLS = ["254,226,226", "255,237,213"];
+
+describe("drawSheet pro bono text", () => {
+  const renderWith = (probonoUnits: number, overriddenIndex: number | null = null, overloadUnits = 3) => {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
+    const { fills, texts } = recordColours(doc);
+
+    // Basic Load 3: the first subject is basic, the second overload, the third pro bono.
+    const schedules = [0, 1, 2].map((index) =>
+      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index], facultyConflictOverride: index === overriddenIndex }),
+    );
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits, probonoUnits } as Faculty;
+    const load = classifyLoad(faculty, schedules);
+
+    drawSheet(doc, {
+      logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
+      surname: "Cruz", givenName: "A", middleInitial: "B", isPartTime: false, designations: [],
+      instructorName: "A B CRUZ", preparedBy: "", verifiedBy: "", vpaaName: "", presidentName: "", presidentTitle: "",
+      load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
+    });
+    return { fills, texts };
+  };
+
+  it("prints overload in light red and pro bono in grey, without shading the rows, and says why", () => {
+    const { fills, texts } = renderWith(3);
+    // Line 1 of the Overload table (IT 101) is paid overload, line 2 (IT 102) pro bono.
+    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
+    expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe(OVERLOAD_TEXT);
+    // The basic subject keeps plain black text.
+    expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe("0,0,0");
+    expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
+    expect(texts.map((entry) => entry.text)).toContain("Grey text is Pro Bono");
+    expect(texts.map((entry) => entry.text)).toContain("Light red text is Overload");
+  });
+
+  it("colours nothing when no subject reached pro bono", () => {
+    // A 6-unit overload allowance holds both subjects past Basic Load.
+    const { texts } = renderWith(0, null, 6);
+    expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === PROBONO_TEXT)).toHaveLength(0);
+    expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === OVERLOAD_TEXT)).toHaveLength(2);
+    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
+  });
+});
+
+describe("drawSheet instructor conflict text", () => {
+  it("prints a subject assigned over a conflict in light orange text, over pro bono, with no label", () => {
+    // The third subject is pro bono and assigned over a conflict: light orange wins and nothing names it.
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
+    const { fills, texts } = recordColours(doc);
+
+    const schedules = [0, 1, 2].map((index) =>
+      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index], facultyConflictOverride: index === 2 }),
+    );
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3, probonoUnits: 3 } as Faculty;
+    const load = classifyLoad(faculty, schedules);
+    drawSheet(doc, {
+      logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
+      surname: "Cruz", givenName: "A", middleInitial: "B", isPartTime: false, designations: [],
+      instructorName: "A B CRUZ", preparedBy: "", verifiedBy: "", vpaaName: "", presidentName: "", presidentTitle: "",
+      load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
+    });
+
+    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(CONFLICT_TEXT);
+    expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
+    expect(texts.some((entry) => /override|conflict/i.test(entry.text))).toBe(false);
+    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
+  });
+});
+
+describe("drawSheet with more overload subjects than the form's six lines", () => {
+  afterEach(() => setOverloadLineCount(0));
+
+  it("adds a line per extra subject to the same table and grows the page to fit", () => {
+    const format = formPageSize(8);
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format });
+    const texts: Array<{ text: string; y: number }> = [];
+    const rects: Array<{ y: number; h: number }> = [];
+    vi.spyOn(doc, "text").mockImplementation(((text: string, _x: number, y: number) => {
+      texts.push({ text: String(text), y });
+      return doc;
+    }) as typeof doc.text);
+    vi.spyOn(doc, "rect").mockImplementation(((_x: number, y: number, _w: number, h: number) => {
+      rects.push({ y, h });
+      return doc;
+    }) as typeof doc.rect);
+
+    // Basic Load 3 holds the first subject; the other eight are overload.
+    const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const schedules = Array.from({ length: 9 }, (_, index) =>
+      meeting({
+        id: String(index),
+        courseId: `c${index}`,
+        courseCode: `IT ${200 + index}`,
+        day: days[index % days.length],
+        dayIndex: index % days.length,
+        startTime: index < 6 ? "07:00" : "13:00",
+        endTime: index < 6 ? "10:00" : "16:00",
+      }),
+    );
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 30, probonoUnits: 0 } as Faculty;
+    const load = classifyLoad(faculty, schedules);
+    expect(load.overload).toHaveLength(8);
+
+    drawSheet(doc, {
+      logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
+      surname: "Cruz", givenName: "A", middleInitial: "B", isPartTime: false, designations: [],
+      instructorName: "A B CRUZ", preparedBy: "", verifiedBy: "", vpaaName: "", presidentName: "", presidentTitle: "",
+      load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
+    });
+
+    // Every overload subject is printed, the last on the eighth line of table B.
+    load.overload.forEach((line) => expect(texts.some((entry) => entry.text === line.code)).toBe(true));
+    const lastCode = texts.find((entry) => entry.text === load.overload[7].code)!;
+    expect(lastCode.y).toBeGreaterThan(top(38));
+    expect(lastCode.y).toBeLessThan(bottom(38));
+
+    // The totals follow the added lines instead of overlapping them.
+    expect(formRow(37)).toBe(39);
+    const overloadTotal = texts.find((entry) => entry.text.startsWith("TOTAL NUMBER OF UNITS / HRS (OVERLOAD)"))!;
+    expect(overloadTotal.y).toBeGreaterThan(top(formRow(37)));
+
+    // One sheet, taller by two lines, with the control footer still on the page.
+    expect(format[1]).toBeGreaterThan(FORM_PAGE_SIZE[1]);
+    const footerBottom = Math.max(...rects.map((rect) => rect.y + rect.h));
+    expect(footerBottom).toBeLessThan(format[1] - 3);
+  });
+
+  it("keeps the form's own layout for six lines or fewer", () => {
+    expect(formPageSize(6)).toEqual(FORM_PAGE_SIZE);
+    setOverloadLineCount(4);
+    expect(formRow(37)).toBe(37);
+  });
+});
+
+describe("drawSheet designations", () => {
+  it("prints the first designation on line 1 of section C and the rest on line 2", () => {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
+    const texts: string[] = [];
+    vi.spyOn(doc, "text").mockImplementation(((text: string) => { texts.push(String(text)); return doc; }) as typeof doc.text);
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 21 } as Faculty;
+    const load = classifyLoad(faculty, [meeting({ id: "1" })]);
+
+    drawSheet(doc, {
+      logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
+      surname: "Cruz", givenName: "A", middleInitial: "B", isPartTime: false,
+      designations: ["Director · Networking Dev't", "Program Chairperson", "Coach"],
+      instructorName: "A B CRUZ", preparedBy: "", verifiedBy: "", vpaaName: "", presidentName: "", presidentTitle: "",
+      load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
+    });
+
+    expect(texts).toContain("Director · Networking Dev't");
+    expect(texts).toContain("Program Chairperson; Coach");
   });
 });

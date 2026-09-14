@@ -46,3 +46,36 @@ export const formatCourseName = (name: string): string => {
   
   return formattedWords.join('');
 };
+
+/**
+ * Capitalizes the first letter of every word as a name is typed:
+ * "del rosario" -> "Del Rosario", "mary-ann" -> "Mary-Ann".
+ *
+ * Only the first letter is touched and the rest is left as typed, so
+ * "McDonald" or "DelaCruz" survive, and it is safe to run on every keystroke.
+ */
+export const capitalizeNameInput = (value: string): string =>
+  value.replace(/(^|[\s-])(\p{Ll})/gu, (_match, boundary: string, letter: string) => boundary + letter.toUpperCase());
+
+/** Name suffixes an instructor record accepts. Mirrors FacultyController::NAME_SUFFIXES. */
+export const NAME_SUFFIXES = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const;
+
+/**
+ * "Last, First M. Suffix" as the faculty roster lists an instructor, e.g.
+ * "Del Rosario, Roberto A. Jr.". The suffix follows the given name and middle
+ * initial so the list still reads, and sorts, by surname first.
+ */
+export const formatFacultyListName = (faculty: {
+  last_name: string;
+  first_name: string;
+  middle_name?: string | null;
+  suffix?: string | null;
+}): string =>
+  [
+    `${faculty.last_name},`,
+    faculty.first_name,
+    faculty.middle_name ? `${faculty.middle_name.charAt(0)}.` : '',
+    faculty.suffix ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ');

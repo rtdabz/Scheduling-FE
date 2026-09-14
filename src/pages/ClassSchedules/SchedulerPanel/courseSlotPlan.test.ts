@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   SLOTS_PER_HOUR,
   SLOTS_PER_LABORATORY_UNIT,
+  customLaboratoryDurationSlots,
   getCourseSlotPlan,
+  laboratoryComponentSlots,
   slotsToHours,
 } from "./courseSlotPlan";
 import { getSubjectTotalSlots } from "./types";
@@ -61,5 +63,36 @@ describe("slotsToHours", () => {
     expect(slotsToHours(6)).toBe(3);
     expect(slotsToHours(10)).toBe(5);
     expect(slotsToHours(1)).toBe(0.5);
+  });
+});
+
+describe("laboratoryComponentSlots", () => {
+  const course = { units: 3, lectureHours: 2, labHours: 1 };
+
+  it("uses three hours per laboratory unit when no custom duration is set", () => {
+    expect(laboratoryComponentSlots(course, null)).toBe(6);
+    expect(laboratoryComponentSlots(course, { custom_lab_duration_override_enabled: false, custom_lab_duration_5_hours_enabled: true })).toBe(6);
+  });
+
+  it("applies the presets in the server's precedence order", () => {
+    expect(laboratoryComponentSlots(course, {
+      custom_lab_duration_override_enabled: true,
+      custom_lab_duration_6_hours_enabled: true,
+      custom_lab_duration_5_hours_enabled: true,
+    })).toBe(12);
+    expect(laboratoryComponentSlots(course, { custom_lab_duration_override_enabled: true, custom_lab_duration_5_hours_enabled: true })).toBe(10);
+    expect(laboratoryComponentSlots(course, {
+      custom_lab_duration_override_enabled: true,
+      custom_lab_duration_other_enabled: true,
+      custom_lab_duration_minutes: 240,
+    })).toBe(8);
+  });
+
+  it("ignores a custom minute count off the 30-minute grid", () => {
+    expect(customLaboratoryDurationSlots({
+      custom_lab_duration_override_enabled: true,
+      custom_lab_duration_other_enabled: true,
+      custom_lab_duration_minutes: 250,
+    })).toBeNull();
   });
 });

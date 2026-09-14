@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
+import DataTable from "../../../../components/ui/DataTable";
+import { useDataTable } from "../../../../components/ui/useDataTable";
 import { INSTRUCTOR_ASSIGNABLE_STATUSES, type Faculty, type ScheduleItem, type Subject } from "../types";
 import ProfileAvatar from "../../../../components/ui/ProfileAvatar";
 import TableActionButton from "../../../../components/ui/TableActionButton";
@@ -18,6 +20,8 @@ import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 interface AssignmentBatch {
   scheduleIds: string[];
   facultyId: string;
+  /** Assign over the instructor's own conflict (sent as override_conflicts). */
+  overrideConflicts?: boolean;
 }
 
 interface AutoAssignModalProps {
@@ -62,6 +66,8 @@ interface QueuedAssignment {
   schedule: string;
   mode: string;
   scheduleIds: string[];
+  /** The instructor's clash this class is being assigned over, if any. */
+  conflict?: string | null;
 }
 
 const steps = [
@@ -293,7 +299,7 @@ export default function AutoAssignModal({
   ), [courseId, groups, yearLevel]);
 
   const queuedKeys = new Set(assignments.map((assignment) => assignment.key));
-  const getIssue = (group: SectionGroup, selectionKeys = selectedKeys): string | null => {
+  const getIssue = (group: SectionGroup): string | null => {
     if (group.assignedFacultyId) {
       const assignedFaculty = faculties.find((faculty) => faculty.id === group.assignedFacultyId);
       const assignedName = assignedFaculty?.name ?? group.schedules.find((schedule) => schedule.facultyId === group.assignedFacultyId)?.facultyName ?? "Instructor";
@@ -315,9 +321,26 @@ export default function AutoAssignModal({
       );
       if (!eligibility.eligible) return eligibility.reason;
     }
+    // The instructor's own clashes are not listed here: they can be assigned
+    // over on purpose, so getConflict() labels them instead of blocking.
+    // Load is deliberately absent from this list. Assignment continues past Basic
+    // Load into the overload allowance and then pro bono -- with no ceiling -- so
+    // a heavy load is labelled beside the instructor and confirmed on save.
+    return null;
+  };
+
+  /**
+   * The instructor's own clash with this class -- already teaching at that time,
+   * outside a part-timer's availability, or overlapping another class queued or
+   * ticked for them. Unlike getIssue() it does not block: the class can still be
+   * picked, and is saved as a conflict override.
+   */
+  const getConflict = (group: SectionGroup, selectionKeys = selectedKeys): string | null => {
+    if (group.assignedFacultyId || queuedKeys.has(group.key) || !facultyId) return null;
+    const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
     for (const schedule of pendingSchedules) {
-      const issue = checkFacultyConflict(facultyId, schedule.id);
-      if (issue) return issue;
+      const conflict = checkFacultyConflict(facultyId, schedule.id);
+      if (conflict) return conflict;
     }
     const queuedFacultySchedules = assignments
       .filter((assignment) => assignment.facultyId === facultyId)
@@ -325,29 +348,13 @@ export default function AutoAssignModal({
       .map((scheduleId) => schedules.find((schedule) => schedule.id === scheduleId))
       .filter((schedule): schedule is ScheduleItem => !!schedule);
     if (pendingSchedules.some((schedule) => queuedFacultySchedules.some((queued) => overlaps(schedule, queued)))) {
-      return "Conflicts with a queued assignment";
+      return "Overlaps a class already on the list for this instructor";
     }
-    const selectedGroupsForConflict = groups.filter((selectedGroup) =>
+    const otherSelected = groups.filter((selectedGroup) =>
       selectedGroup.key !== group.key && selectionKeys.includes(selectedGroup.key),
     );
-    if (selectedGroupsForConflict.some((selectedGroup) => groupsOverlap(selectedGroup, group))) {
-      return "Conflict";
-    }
-    // Load is deliberately absent from this list. Assignment continues past Basic
-    // Load into the overload allowance and then pro bono, so a heavy load is
-    // labelled beside the instructor and confirmed on save — only genuine
-    // conflicts and eligibility still block a section.
-    const facultyCeiling = selectedFaculty?.unitCeiling
-      ?? (selectedFaculty
-        ? basicLoadOf(selectedFaculty.maxUnits, selectedFaculty.deloadUnits)
-          + Math.max(0, selectedFaculty.overloadUnits ?? 0)
-          + Math.max(0, selectedFaculty.probonoUnits ?? 0)
-        : 0);
-    const selectedUnitsForLoad = groups
-      .filter((selectedGroup) => selectionKeys.includes(selectedGroup.key))
-      .reduce((total, selectedGroup) => total + selectedGroup.units, 0);
-    if (facultyCeiling > 0 && currentLoad + selectedUnitsForLoad + group.units > facultyCeiling) {
-      return `Exceeds the ${facultyCeiling}-unit ceiling`;
+    if (otherSelected.some((selectedGroup) => groupsOverlap(selectedGroup, group))) {
+      return "Overlaps another selected section";
     }
     return null;
   };
@@ -377,23 +384,44 @@ export default function AutoAssignModal({
     setSelectedKeys([]);
   };
 
+  /**
+   * Assigning over the instructor's own conflict is never a silent tick: the
+   * Assign button, or a click on the row, asks first, and only a confirmed
+   * section is selected -- and later saved as a conflict override.
+   */
+  const confirmConflictOverride = async (group: SectionGroup) => {
+    const conflict = getConflict(group);
+    if (!conflict || !selectedFaculty || getIssue(group)) return;
+    const confirmed = await confirm({
+      title: "Instructor has a conflict",
+      message: `${conflict}\n\nAssign ${selectedFaculty.name} to ${group.courseCode} ${group.sectionName} anyway?`,
+      eyebrow: "Instructor conflict",
+      confirmLabel: "Assign anyway",
+      variant: "warning",
+    });
+    if (!confirmed) return;
+    setSelectedKeys((current) => (current.includes(group.key) ? current : [...current, group.key]));
+  };
+
   const toggleGroup = (group: SectionGroup) => {
     if (getIssue(group)) return;
-    setSelectedKeys((current) => {
-      if (current.includes(group.key)) return current.filter((key) => key !== group.key);
-      const selected = courseGroups.filter((item) => current.includes(item.key));
-      // Only a time clash with something already ticked stops a section being
-      // added; the units it adds are reported, not refused.
-      if (selected.some((item) => groupsOverlap(item, group))) return current;
-      return [...current, group.key];
-    });
+    if (selectedKeys.includes(group.key)) {
+      setSelectedKeys((current) => current.filter((key) => key !== group.key));
+      return;
+    }
+    if (getConflict(group)) {
+      void confirmConflictOverride(group);
+      return;
+    }
+    setSelectedKeys((current) => [...current, group.key]);
   };
 
   const selectableCourseGroupKeys = (() => {
     const keys: string[] = [];
 
+    // "Select all" never ticks a conflict; overriding one is a deliberate click.
     courseGroups.forEach((group) => {
-      if (getIssue(group, keys) === null) {
+      if (getIssue(group) === null && getConflict(group, keys) === null) {
         keys.push(group.key);
       }
     });
@@ -432,6 +460,7 @@ export default function AutoAssignModal({
         schedule: scheduleLabel(group),
         mode: modesLabel(group),
         scheduleIds: group.schedules.filter((schedule) => !schedule.facultyId).map((schedule) => schedule.id),
+        conflict: getConflict(group),
       })),
     ]);
     setSelectedKeys([]);
@@ -464,11 +493,15 @@ export default function AutoAssignModal({
   const removeAssignment = (key: string) => setAssignments((current) => current.filter((assignment) => assignment.key !== key));
 
   const saveAssignments = async () => {
+    // Overrides travel in their own batch per instructor, so only the classes
+    // marked as conflicts are allowed through one.
     const byFaculty = new Map<string, AssignmentBatch>();
     assignments.forEach((assignment) => {
-      const existing = byFaculty.get(assignment.facultyId);
+      const overrideConflicts = Boolean(assignment.conflict);
+      const batchKey = `${assignment.facultyId}:${overrideConflicts ? "override" : "plain"}`;
+      const existing = byFaculty.get(batchKey);
       if (existing) existing.scheduleIds.push(...assignment.scheduleIds);
-      else byFaculty.set(assignment.facultyId, { facultyId: assignment.facultyId, scheduleIds: [...assignment.scheduleIds] });
+      else byFaculty.set(batchKey, { facultyId: assignment.facultyId, scheduleIds: [...assignment.scheduleIds], overrideConflicts });
     });
     const success = await onAssign([...byFaculty.values()]);
     if (success) onClose();
@@ -501,7 +534,7 @@ export default function AutoAssignModal({
                   <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
                   <SelectField label="Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => ({ value: course.id, label: `${course.code} - ${course.name}` }))} placeholder="Select course" />
                 </div>
-                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
+                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} onToggle={toggleGroup} onOverride={confirmConflictOverride} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
                 <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
                   {selectedFaculty ? (
                     <div className="mr-auto min-w-0 text-xs text-slate-600">
@@ -565,6 +598,7 @@ export default function AutoAssignModal({
 
 function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect, allowExternalInstructors = true }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void; allowExternalInstructors?: boolean }) {
   const [tab, setTab] = useState<"department" | "external">("department");
+  const [search, setSearch] = useState("");
   // Department ids arrive from the API as numbers in the type contract, but
   // database-backed JSON responses may contain numeric strings. Normalize both
   // sides so department instructors are not hidden by a strict type mismatch.
@@ -578,6 +612,16 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       return tab === "department" ? isDepartmentInstructor : !isDepartmentInstructor;
     }),
     [faculties, normalizedDepartmentId, tab],
+  );
+  // Narrows the current tab by name, department or program, so a long roster
+  // does not have to be scrolled to find one instructor.
+  const query = search.trim().toLowerCase();
+  const matchingFaculties = useMemo(
+    () => (query === ""
+      ? visibleFaculties
+      : visibleFaculties.filter((faculty) => [faculty.name, faculty.departmentCode, faculty.departmentName, faculty.programCode]
+        .some((value) => (value ?? "").toLowerCase().includes(query)))),
+    [query, visibleFaculties],
   );
   const columns = useMemo<ColumnDef<Faculty>[]>(() => [
     {
@@ -626,13 +670,15 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
     },
   ], [facultyId, facultyLoads, onSelect, tab]);
 
-  const table = useReactTable({ data: visibleFaculties, columns, getCoreRowModel: getCoreRowModel() });
+  const table = useReactTable({ data: matchingFaculties, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
     <aside className="flex max-h-[420px] min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 text-sm font-black text-slate-900">
         <Users className="h-4 w-4 text-[#4e0a10]" /> Instructor
-        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{visibleFaculties.length}</span>
+        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+          {query ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
+        </span>
       </div>
       {allowExternalInstructors && <div className="flex shrink-0 border-b border-slate-200 px-3">
         {([
@@ -658,6 +704,27 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
           </button>
         ))}
       </div>}
+      <div className="relative shrink-0 px-3 pt-2.5">
+        <Search className="pointer-events-none absolute left-[22px] top-5 h-4 w-4 text-slate-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search instructor, department, program"
+          aria-label="Search instructors to assign"
+          className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-8 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            aria-label="Clear instructor search"
+            className="absolute right-5 top-[18px] rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
       <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto overflow-x-hidden px-3 pb-2" style={{ contain: "layout paint" }}>
         <table className="w-full table-fixed border-separate border-spacing-y-2">
           <tbody>
@@ -670,7 +737,11 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
             ))}
           </tbody>
         </table>
-        {visibleFaculties.length === 0 && <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">No instructors in this group.</p>}
+        {matchingFaculties.length === 0 && (
+          <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">
+            {query && visibleFaculties.length > 0 ? `No instructor matches “${search.trim()}”.` : "No instructors in this group."}
+          </p>
+        )}
       </div>
     </aside>
   );
@@ -680,11 +751,13 @@ function SelectField({ label, value, onChange, options, placeholder, allValue }:
   return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
 }
 
-function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
+function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, onOverride, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; onToggle: (group: SectionGroup) => void; onOverride: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
   const columns = useMemo<ColumnDef<SectionGroup>[]>(() => [
     {
       id: "selected",
       header: "",
+      size: 48,
+      enableSorting: false,
       cell: ({ row }) => {
         const alreadyAssigned = !!row.original.assignedFacultyId;
         const selected = alreadyAssigned || selectedKeys.includes(row.original.key);
@@ -709,6 +782,7 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
     {
       id: "schedule",
       header: "Schedule",
+      enableSorting: false,
       cell: ({ row }) => <span className="whitespace-nowrap text-xs font-medium text-slate-600">{scheduleLabel(row.original)}</span>,
     },
     {
@@ -718,9 +792,22 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
     },
     {
       id: "availability",
+      accessorFn: (group) => getIssue(group) ?? getConflict(group) ?? "Available",
       header: "Availability",
       cell: ({ row }) => {
         const issue = getIssue(row.original);
+        const conflict = issue ? null : getConflict(row.original);
+        if (conflict) {
+          return (
+            <span className="inline-flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-orange-700" title={conflict}>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
+                {selectedKeys.includes(row.original.key) ? "Conflict · confirmed" : "Conflict"}
+              </span>
+              <span className="max-w-[260px] truncate text-[11px] font-medium text-orange-600/90">{conflict}</span>
+            </span>
+          );
+        }
         return (
           <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${issue ? "text-slate-500" : "text-emerald-700"}`}>
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${issue ? "bg-amber-400" : "bg-emerald-500"}`} />
@@ -729,11 +816,32 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
         );
       },
     },
-    ...(onRemove ? [{
+    {
       id: "actions",
-      header: () => <span className="block text-right">Actions</span>,
+      header: "Actions",
+      size: 96,
+      enableSorting: false,
+      meta: { align: "right" as const, stopRowClick: true },
       cell: ({ row }: { row: { original: SectionGroup } }) => {
-        if (!row.original.assignedFacultyId) return null;
+        const needsConfirmation = !getIssue(row.original)
+          && Boolean(getConflict(row.original))
+          && !selectedKeys.includes(row.original.key);
+        if (needsConfirmation) {
+          return (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); onOverride(row.original); }}
+                disabled={busy}
+                aria-label={`Assign ${row.original.courseCode} ${row.original.sectionName} despite the conflict`}
+                className="inline-flex h-8 items-center rounded-lg border border-orange-300 bg-white px-3 text-xs font-bold text-orange-700 transition-colors hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Assign
+              </button>
+            </div>
+          );
+        }
+        if (!onRemove || !row.original.assignedFacultyId) return null;
         const blocked = removalBlockedReason(row.original);
         return (
           <div className="flex justify-end">
@@ -749,48 +857,34 @@ function SectionTable({ groups, selectedKeys, getIssue, onToggle, onSelectAll, s
           </div>
         );
       },
-    } satisfies ColumnDef<SectionGroup>] : []),
-  ], [busy, getIssue, onRemove, removalBlockedReason, selectedKeys]);
+    } satisfies ColumnDef<SectionGroup>,
+  ], [busy, getConflict, getIssue, onOverride, onRemove, removalBlockedReason, selectedKeys]);
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: groups,
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    pageSize: false,
+    getRowId: (group) => group.key,
   });
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2.5"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><Layers3 className="h-4 w-4 text-[#4e0a10]" /> Sections <span className="text-xs font-semibold text-slate-400">{groups.length}</span></div><div className="flex items-center gap-3">{selectedKeys.length > 0 && <span className="rounded-full bg-[#4e0a10]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#4e0a10]">{selectedKeys.length} selected</span>}<label className={`inline-flex items-center gap-1.5 text-xs font-bold ${selectAllDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700"}`}><input type="checkbox" checked={selectAllChecked} onChange={onSelectAll} disabled={selectAllDisabled} className="h-4 w-4 rounded border-slate-300 accent-[#4e0a10]" /> Select all available</label></div></div>
       {groups.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center"><Layers3 className="h-6 w-6 text-slate-300" /><p className="text-sm font-semibold text-slate-600">No sections to assign</p><p className="text-xs text-slate-500">Pick another course or year level.</p></div> : (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[650px] text-left">
-            <thead className="sticky top-0 z-10 border-y border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th key={header.id} className={`px-3 py-2 font-bold ${header.column.id === "selected" ? "w-12 pl-4" : header.column.id === "actions" ? "w-20 pr-4" : ""}`}>
-                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {table.getRowModel().rows.map((row) => {
-                const issue = getIssue(row.original);
-                return (
-                  <tr key={row.id} aria-disabled={!!issue} onClick={() => onToggle(row.original)} className={issue ? "cursor-not-allowed" : selectedKeys.includes(row.original.key) ? "cursor-pointer bg-[#4e0a10]/[0.04]" : "cursor-pointer hover:bg-slate-50"}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={`px-3 py-2.5 ${cell.column.id === "selected" ? "pl-4" : cell.column.id === "actions" ? "pr-4" : ""}`}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          table={table}
+          variant="embedded"
+          className="flex min-h-0 flex-1 flex-col"
+          scrollClassName="min-h-0 flex-1 overflow-auto"
+          tableClassName="min-w-[650px]"
+          ariaLabel="Sections"
+          onRowClick={onToggle}
+          rowClassName={(group) => (getIssue(group)
+            ? "!cursor-not-allowed"
+            : getConflict(group)
+              ? selectedKeys.includes(group.key) ? "!bg-orange-100/70" : "!bg-orange-50/60"
+              : selectedKeys.includes(group.key) ? "!bg-[#4e0a10]/[0.04]" : "")}
+        />
       )}
     </section>
   );
@@ -914,41 +1008,12 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
               <span className={`inline-flex w-fit rounded-md border px-2 py-1 text-xs font-bold ${display.badgeClass}`}>{display.label}</span>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full min-w-[640px] text-left">
-                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-2 font-bold">Course</th>
-                    <th className="px-3 py-2 font-bold">Section</th>
-                    <th className="px-3 py-2 font-bold">Schedule</th>
-                    <th className="px-3 py-2 font-bold">Mode</th>
-                    <th className="px-3 py-2 text-right font-bold">Units</th>
-                    <th className="w-20 px-4 py-2 text-right font-bold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {items.map((assignment) => (
-                    <tr key={assignment.key} className="align-top hover:bg-slate-50/60">
-                      <td className="px-4 py-2.5">
-                        <p className="text-sm font-black text-slate-900">{assignment.courseCode}</p>
-                        <p className="max-w-[260px] truncate text-xs text-slate-500">{assignment.courseName}</p>
-                      </td>
-                      <td className="px-3 py-2.5 text-sm font-bold text-slate-800">{assignment.sectionName}</td>
-                      <td className="px-3 py-2.5 text-xs font-medium leading-5 text-slate-600">{assignment.schedule}</td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-600">{assignment.mode}</td>
-                      <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-800">{assignment.units}</td>
-                      <td className="px-4 py-2">
-                        <div className="flex justify-end">
-                          <TableActionButton label="Remove from list" aria-label={`Remove ${assignment.courseCode} ${assignment.sectionName}`} variant="danger" onClick={() => onRemove(assignment.key)}>
-                            <Trash2 size={15} />
-                          </TableActionButton>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AssignmentItemsTable
+              items={items}
+              onRemove={onRemove}
+              className="flex min-h-0 flex-1 flex-col"
+              scrollClassName="min-h-0 flex-1 overflow-auto"
+            />
 
             <p className="flex shrink-0 items-start gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-600">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -960,6 +1025,69 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
         <section className="flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-8 text-sm font-semibold text-slate-500">Select an instructor to review their assignments.</section>
       )}
     </div>
+  );
+}
+
+/** One instructor's queued sections; shared by the Review and Confirm steps. */
+function AssignmentItemsTable({ items, onRemove, showTotal = false, className, scrollClassName }: { items: QueuedAssignment[]; onRemove?: (key: string) => void; showTotal?: boolean; className?: string; scrollClassName?: string }) {
+  const columns = useMemo<ColumnDef<QueuedAssignment>[]>(() => [
+    {
+      id: "course",
+      accessorKey: "courseCode",
+      header: "Course",
+      meta: { cellClassName: "align-top" },
+      cell: ({ row }) => (
+        <>
+          <p className="text-sm font-black text-slate-900">{row.original.courseCode}</p>
+          <p className="max-w-[260px] truncate text-xs font-medium text-slate-500">{row.original.courseName}</p>
+        </>
+      ),
+    },
+    { id: "section", accessorKey: "sectionName", header: "Section", meta: { cellClassName: "align-top text-sm font-bold text-slate-800" } },
+    { id: "schedule", accessorKey: "schedule", header: "Schedule", enableSorting: false, meta: { cellClassName: "align-top font-medium leading-5 text-slate-600" } },
+    { id: "mode", accessorKey: "mode", header: "Mode", meta: { cellClassName: "whitespace-nowrap align-top text-slate-600" } },
+    {
+      id: "units",
+      accessorKey: "units",
+      header: "Units",
+      meta: { align: "right", cellClassName: "align-top text-sm font-black tabular-nums text-slate-800" },
+      ...(showTotal ? { footer: () => <span className="font-black tabular-nums text-slate-900">{items.reduce((total, item) => total + item.units, 0)}</span> } : {}),
+    },
+    ...(onRemove ? [{
+      id: "actions",
+      header: "Actions",
+      size: 80,
+      enableSorting: false,
+      meta: { align: "right" as const, cellClassName: "align-top" },
+      cell: ({ row }: { row: { original: QueuedAssignment } }) => (
+        <div className="flex justify-end">
+          <TableActionButton label="Remove from list" aria-label={`Remove ${row.original.courseCode} ${row.original.sectionName}`} variant="danger" onClick={() => onRemove(row.original.key)}>
+            <Trash2 size={15} />
+          </TableActionButton>
+        </div>
+      ),
+    } satisfies ColumnDef<QueuedAssignment>] : []),
+  ], [items, onRemove, showTotal]);
+
+  // The footer label spans the columns before Units, so it is set on the first column only.
+  const withFooterLabel = showTotal
+    ? columns.map((column, index) => (index === 0 ? { ...column, footer: () => <span className="text-slate-500">Units added</span> } : column))
+    : columns;
+
+  const table = useDataTable({ data: items, columns: withFooterLabel, pageSize: false, getRowId: (item) => item.key });
+
+  return (
+    <DataTable
+      table={table}
+      variant="embedded"
+      density="compact"
+      className={className}
+      scrollClassName={scrollClassName}
+      tableClassName="min-w-[640px]"
+      ariaLabel="Queued assignments"
+      emptyTitle="No sections on the list."
+      emptyDescription=""
+    />
   );
 }
 
@@ -982,7 +1110,7 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
       <section className="grid shrink-0 gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(0,1fr))] lg:items-center">
         <div className="flex items-start gap-3">
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${overloaded.length ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${overloaded.length ? "bg-red-50 text-red-600" : "bg-emerald-100 text-emerald-700"}`}>
             {overloaded.length ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
           </span>
           <div>
@@ -1034,35 +1162,8 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
                 <button type="button" onClick={() => toggleGroup(facultyId)} aria-hidden="true" tabIndex={-1} className="rounded-lg p-2 text-slate-500 hover:bg-slate-50"><ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "-rotate-180" : ""}`} /></button>
               </div>
               {expanded && (
-                <div className="overflow-x-auto border-t border-slate-100 motion-safe:animate-dropdownIn">
-                  <table className="w-full min-w-[640px] text-left text-xs">
-                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-4 py-2 font-bold">Course</th>
-                        <th className="px-3 py-2 font-bold">Section</th>
-                        <th className="px-3 py-2 font-bold">Schedule</th>
-                        <th className="px-3 py-2 font-bold">Mode</th>
-                        <th className="px-4 py-2 text-right font-bold">Units</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {items.map((assignment) => (
-                        <tr key={assignment.key} className="align-top">
-                          <td className="px-4 py-2.5"><span className="block font-black text-slate-900">{assignment.courseCode}</span><span className="block max-w-[260px] truncate text-slate-500">{assignment.courseName}</span></td>
-                          <td className="px-3 py-2.5 font-bold text-slate-800">{assignment.sectionName}</td>
-                          <td className="px-3 py-2.5 leading-5 text-slate-600">{assignment.schedule}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-600">{assignment.mode}</td>
-                          <td className="px-4 py-2.5 text-right font-black tabular-nums text-slate-800">{assignment.units}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-slate-200 bg-slate-50/70">
-                        <td colSpan={4} className="px-4 py-2 text-right font-bold text-slate-500">Units added</td>
-                        <td className="px-4 py-2 text-right font-black tabular-nums text-slate-900">{items.reduce((total, item) => total + item.units, 0)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                <div className="border-t border-slate-100 motion-safe:animate-dropdownIn">
+                  <AssignmentItemsTable items={items} showTotal />
                 </div>
               )}
             </article>
@@ -1082,11 +1183,16 @@ function ConfirmValidationSummary({ assignments, faculties, facultyLoads }: { as
   const totalUnits = assignments.reduce((total, assignment) => total + assignment.units, 0);
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
-      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-amber-700" : ""}`}>
+      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-red-600" : ""}`}>
         {overloadCount ? <AlertTriangle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5 text-emerald-600" />}
         {overloadCount ? `${plural(overloadCount, "instructor")} past Basic Load` : "All within Basic Load"}
       </span>
       <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(assignments.length, "section")}</span>
+      {assignments.some((assignment) => assignment.conflict) && (
+        <span className="flex items-center gap-1.5 text-orange-700">
+          <AlertTriangle className="h-3.5 w-3.5" /> {plural(assignments.filter((assignment) => assignment.conflict).length, "conflict")}
+        </span>
+      )}
       <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(totalUnits, "unit")} to save</span>
     </div>
   );

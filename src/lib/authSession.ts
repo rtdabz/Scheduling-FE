@@ -1,8 +1,10 @@
 import api, { beginLogout, cancelPendingRequests } from './api';
 import { clearDataCache } from './dataCache';
+import { disconnectLiveUpdates } from './liveSocket';
 import { clearLastActivity } from './sessionTimeout';
 
 const clearStoredSession = (): void => {
+  disconnectLiveUpdates();
   clearDataCache();
   clearLastActivity();
   localStorage.removeItem('token');

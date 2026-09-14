@@ -139,7 +139,7 @@ export default function FacultyAvailabilityEditor({
   }));
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
       <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-gray-200 flex shrink-0 justify-between items-center bg-gray-50/50">
           <div>

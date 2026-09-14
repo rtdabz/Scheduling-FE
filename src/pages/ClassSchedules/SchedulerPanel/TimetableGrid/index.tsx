@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, Loader2, MousePointerClick, Move, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -56,6 +56,11 @@ interface TimetableGridProps {
   isWideView?: boolean;
   handleToggleWideView?: () => void;
   isReadOnlyViewer?: boolean;
+  /**
+   * Shown over the grid while a save that will replace its rows is in flight,
+   * which also keeps the rows about to be replaced from being edited.
+   */
+  savingMessage?: string | null;
 }
 
 /**
@@ -107,7 +112,8 @@ export default function TimetableGrid({
   isLoading = false,
   isWideView = false,
   handleToggleWideView,
-  isReadOnlyViewer = false
+  isReadOnlyViewer = false,
+  savingMessage = null,
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
   const isSummerSemester = activeSemester?.semester === "summer";
@@ -120,6 +126,12 @@ export default function TimetableGrid({
     ),
     [sectionSchedules],
   );
+  const selectedSectionName = selectedSectionId
+    ? sections.find((s) => s.id === selectedSectionId)?.name ?? "No section"
+    : "No section selected";
+  const unplacedSubjects = Math.max(0, totalSubjects - totalScheduled);
+  const placedPercent = totalSubjects > 0 ? Math.min(100, Math.round((totalScheduled / totalSubjects) * 100)) : 0;
+  const gridToolButtonClass = "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold shadow-sm transition-colors cursor-pointer";
   const placementLabel = placementSubjectId
     ? subjectsById.get(String(placementSubjectId))?.code ?? "subject"
     : movingScheduleId
@@ -127,72 +139,115 @@ export default function TimetableGrid({
       : "";
   return (
     <div id="schedule-builder-timetable" className="flex min-h-[48rem] min-w-0 flex-1 flex-col overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-auto lg:min-h-0">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-b border-slate-200/80 bg-slate-50/50 shrink-0">
-        <div>
-          <h2 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
-            <Calendar className="w-4.5 h-4.5 text-[#4e0a10]" />
-            Timetable Grid
-          </h2>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            {isLoading ? <><Skeleton className="h-5 w-20 rounded-md" /><Skeleton className="h-5 w-28 rounded-md" /></> : <>
-              <span className="bg-gradient-to-r from-[#4e0a10] to-[#70121a] text-white px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm">
-                {selectedSectionId ? (sections.find((s) => s.id === selectedSectionId)?.name ?? "None") : "None"}
-              </span>
-              <span className="bg-[#c9952a]/10 text-amber-950 border border-[#c9952a]/20 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider">
-                {activeSemesterText}
-              </span>
-            </>}
+      <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200/80 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.07] text-[#4e0a10]">
+            <Calendar className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 leading-tight">
+            <h2 className="text-sm font-black text-slate-900">Timetable Grid</h2>
+            {isLoading ? (
+              <Skeleton className="mt-1 h-3 w-48" />
+            ) : (
+              <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
+                <span className="font-bold text-[#4e0a10]">{selectedSectionName}</span>
+                <span aria-hidden="true" className="text-slate-300">•</span>
+                <span className="font-medium">{activeSemesterText}</span>
+              </p>
+            )}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold select-none text-slate-500">
-            {isLoading ? <><Skeleton className="h-5 w-28 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></> : <>
-              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-sm">
-                {totalScheduled} Subjects Placed
-              </span>
-              <span className="bg-slate-50 text-slate-600 border border-slate-200 px-2.5 py-0.5 rounded-full shadow-sm">
-                {Math.max(0, totalSubjects - totalScheduled)} Unplaced
-              </span>
-            </>}
-          </div>
-          {!isReadOnlyViewer && !isFacultyAssignment && (isLoading ? <Skeleton className="h-8 w-36 rounded-xl" /> : <button
-            id="schedule-builder-course-bank-toggle"
-            type="button"
-            onClick={handleToggleWideView}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border cursor-pointer ${
-              isWideView
-                ? "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300"
-                : "bg-[#4e0a10] border-[#4e0a10] text-white hover:bg-[#6b0e17] hover:border-[#6b0e17]"
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            {isWideView ? "Show Course Bank" : "Hide Course Bank"}
-          </button>)}
 
-          {!isReadOnlyViewer && (isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
-            type="button"
-            onClick={() => setIsRoomViewOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 cursor-pointer"
-          >
-            <DoorOpen className="w-3.5 h-3.5" />
-            Room View
-          </button>)}
-          {!isReadOnlyViewer && (isLoading ? <Skeleton className="h-8 w-24 rounded-xl" /> : <button
-            type="button"
-            onClick={handleClearAll}
-            disabled={!isEditable || schedules.length === 0}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 shadow-sm border ${isEditable && schedules.length > 0
-                ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 cursor-pointer"
-                : "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
-              }`}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Clear All
-          </button>)}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {isLoading ? <Skeleton className="h-9 w-36 rounded-lg" /> : (
+            <div
+              className="flex h-9 items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 select-none"
+              title={`${totalScheduled} placed, ${unplacedSubjects} unplaced`}
+            >
+              <span className="text-xs font-bold text-slate-700">
+                {totalScheduled}<span className="text-slate-400">/{totalSubjects}</span> placed
+              </span>
+              <span
+                className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100"
+                role="progressbar"
+                aria-label="Subjects placed"
+                aria-valuemin={0}
+                aria-valuemax={totalSubjects}
+                aria-valuenow={totalScheduled}
+              >
+                <span
+                  className={`block h-full rounded-full transition-all duration-300 ${unplacedSubjects === 0 && totalSubjects > 0 ? "bg-emerald-500" : "bg-[#c9952a]"}`}
+                  style={{ width: `${placedPercent}%` }}
+                />
+              </span>
+              {unplacedSubjects > 0 && (
+                <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                  {unplacedSubjects} left
+                </span>
+              )}
+            </div>
+          )}
+
+          {!isReadOnlyViewer && (
+            <>
+              <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
+              {!isFacultyAssignment && (isLoading ? <Skeleton className="h-9 w-32 rounded-lg" /> : (
+                <button
+                  id="schedule-builder-course-bank-toggle"
+                  type="button"
+                  onClick={handleToggleWideView}
+                  aria-pressed={!isWideView}
+                  className={`${gridToolButtonClass} ${
+                    isWideView
+                      ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      : "border-[#4e0a10]/20 bg-[#4e0a10]/[0.07] text-[#4e0a10] hover:bg-[#4e0a10]/10"
+                  }`}
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  {isWideView ? "Show Course Bank" : "Hide Course Bank"}
+                </button>
+              ))}
+              {isLoading ? <Skeleton className="h-9 w-28 rounded-lg" /> : (
+                <button
+                  type="button"
+                  onClick={() => setIsRoomViewOpen(true)}
+                  className={`${gridToolButtonClass} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`}
+                >
+                  <DoorOpen className="h-3.5 w-3.5" />
+                  Room View
+                </button>
+              )}
+              {isLoading ? <Skeleton className="h-9 w-24 rounded-lg" /> : (
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  disabled={!isEditable || schedules.length === 0}
+                  className={`${gridToolButtonClass} border-slate-200 bg-white text-red-700 hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:border-slate-200 disabled:hover:bg-white`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Clear All
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      <div className="relative flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-slate-50/80 lg:min-h-0">
+      <div
+        className="relative flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-slate-50/80 lg:min-h-0"
+        aria-busy={savingMessage ? true : undefined}
+      >
+        {savingMessage && (
+          <div
+            role="status"
+            className="absolute inset-0 z-50 flex items-start justify-center bg-white/60 pt-24"
+          >
+            <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-lg">
+              <Loader2 className="h-4 w-4 animate-spin text-[#4e0a10]" />
+              {savingMessage}
+            </div>
+          </div>
+        )}
         {isPlacementMode && (
           <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
             {movingScheduleId ? <Move className="w-5 h-5 text-blue-700 shrink-0" /> : <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />}

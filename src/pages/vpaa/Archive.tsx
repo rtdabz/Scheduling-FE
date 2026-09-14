@@ -4,7 +4,9 @@ import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { clearDataCache } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
-import Skeleton from '../../components/ui/Skeleton';
+import type { ColumnDef } from '@tanstack/react-table';
+import DataTable from '../../components/ui/DataTable';
+import { useDataTable } from '../../components/ui/useDataTable';
 
 interface ArchivedRecord {
   id: number;
@@ -92,6 +94,51 @@ export default function Archive() {
     }
   };
 
+  // Rebuilt each render: the restore cell reads the live restoringKey.
+  const columns: ColumnDef<ArchivedRecord>[] = [
+    { id: 'label', accessorKey: 'label', header: 'Record', meta: { cellClassName: 'text-sm font-semibold text-gray-900' } },
+    {
+      id: 'type',
+      accessorFn: (record) => typeLabels[record.type] ?? record.type,
+      header: 'Type',
+      meta: { cellClassName: 'text-gray-600' },
+    },
+    {
+      id: 'deleted_at',
+      accessorKey: 'deleted_at',
+      header: 'Archived',
+      meta: { cellClassName: 'text-gray-600' },
+      cell: ({ row }) => new Date(row.original.deleted_at).toLocaleString(),
+    },
+    {
+      id: 'action',
+      header: 'Action',
+      size: 96,
+      enableSorting: false,
+      meta: { align: 'right' },
+      cell: ({ row: { original: record } }) => (
+        <button
+          type="button"
+          onClick={() => void restore(record)}
+          disabled={restoringKey !== null}
+          title={`Restore ${record.label}`}
+          aria-label={`Restore ${record.label}`}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[#5A1220] hover:bg-[#5A1220]/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RotateCcw size={17} className={restoringKey === `${record.type}:${record.id}` ? 'animate-spin' : ''} />
+        </button>
+      ),
+    },
+  ];
+
+  const table = useDataTable({
+    data: filteredRecords,
+    columns,
+    pageSize: 25,
+    initialSorting: [{ id: 'deleted_at', desc: true }],
+    getRowId: (record) => `${record.type}:${record.id}`,
+  });
+
   return (
     <div id="archive-page" className="mx-auto w-full max-w-7xl">
       <div className="mb-6 flex flex-col gap-4 border-b border-gray-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
@@ -125,76 +172,24 @@ export default function Archive() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="overflow-x-auto border border-gray-200 bg-white" aria-busy="true" aria-label="Loading archived records">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-bold uppercase text-gray-500">
-              <tr>
-                <th className="px-4 py-3">Record</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Archived</th>
-                <th className="w-24 px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <tr key={`archive-skeleton-${index}`}>
-                  <td className="px-4 py-3"><Skeleton className="h-4 w-56" /></td>
-                  <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
-                  <td className="px-4 py-3"><Skeleton className="h-4 w-40" /></td>
-                  <td className="px-4 py-3"><Skeleton className="ml-auto h-9 w-9 rounded-md" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : error ? (
+      {error ? (
         <div className="border-l-4 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}
           <button type="button" onClick={() => void loadArchive()} className="ml-3 font-bold underline">Retry</button>
         </div>
-      ) : filteredRecords.length === 0 ? (
-        <div className="py-16 text-center">
-          <ArchiveIcon className="mx-auto mb-3 text-gray-300" size={36} />
-          <p className="font-semibold text-gray-700">No archived records found</p>
-        </div>
       ) : (
-        <div className="overflow-x-auto border border-gray-200 bg-white">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-bold uppercase text-gray-500">
-              <tr>
-                <th className="px-4 py-3">Record</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Archived</th>
-                <th className="w-24 px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredRecords.map((record) => {
-                const key = `${record.type}:${record.id}`;
-                const isRestoring = restoringKey === key;
-                return (
-                  <tr key={key} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-semibold text-gray-900">{record.label}</td>
-                    <td className="px-4 py-3 text-gray-600">{typeLabels[record.type] ?? record.type}</td>
-                    <td className="px-4 py-3 text-gray-600">{new Date(record.deleted_at).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => void restore(record)}
-                        disabled={restoringKey !== null}
-                        title={`Restore ${record.label}`}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[#5A1220] hover:bg-[#5A1220]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <RotateCcw size={17} className={isRestoring ? 'animate-spin' : ''} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          table={table}
+          isLoading={loading}
+          totalLabel="archived records"
+          ariaLabel="Archived records"
+          emptyState={
+            <>
+              <ArchiveIcon className="mx-auto mb-3 text-gray-300" size={36} />
+              <p className="font-semibold text-gray-700">No archived records found</p>
+            </>
+          }
+        />
       )}
     </div>
   );

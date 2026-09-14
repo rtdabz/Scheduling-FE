@@ -3,6 +3,7 @@ import { AlertTriangle, Calendar, Clock, Info, Layers, MapPin, RefreshCw, User, 
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
+import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
@@ -354,18 +355,19 @@ export default function DeanScheduleViewer() {
   const [sections, setSections] = useState<Section[]>(cachedDeanSchedulesData?.sections ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedDeanSchedulesData?.schedules ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(deanSchedulesCacheKey));
+  const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals']);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [selectedOverflowGroup, setSelectedOverflowGroup] = useState<OverflowGroup | null>(null);
 
   useEffect(() => {
-    if (hasCachedData(deanSchedulesCacheKey)) {
+    if (liveRevision === 0 && hasCachedData(deanSchedulesCacheKey)) {
       setIsLoading(false);
       return;
     }
 
     const loadData = async () => {
       try {
-        setIsLoading(true);
+        if (liveRevision === 0) setIsLoading(true);
         const response = await api.get<{
           active_semester: Semester | null;
           sections: RawSection[];
@@ -440,7 +442,7 @@ export default function DeanScheduleViewer() {
     };
 
     loadData();
-  }, [deanSchedulesCacheKey, userDeptId, userDeptName]);
+  }, [deanSchedulesCacheKey, userDeptId, userDeptName, liveRevision]);
 
   const filteredSchedules = useMemo(() => {
     return schedules.filter((schedule) => {
@@ -736,7 +738,7 @@ export default function DeanScheduleViewer() {
       </div>
 
       {selectedOverflowGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-[#F7F4F0] p-4">
               <div>
@@ -782,7 +784,7 @@ export default function DeanScheduleViewer() {
       )}
 
       {selectedSchedule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-[#F7F4F0] p-4">
               <div>

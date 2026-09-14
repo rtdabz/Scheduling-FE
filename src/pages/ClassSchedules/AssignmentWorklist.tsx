@@ -279,8 +279,8 @@ function WorklistRow({
                   {item.eligible.length === 0 ? "No eligible instructor" : "Select an instructor"}
                 </option>
                 {item.eligible.map((faculty) => (
-                  <option key={faculty.id} value={faculty.id} disabled={Boolean(faculty.conflict)}>
-                    {faculty.conflict ? `${faculty.name} — ${faculty.conflict}` : faculty.name}
+                  <option key={faculty.id} value={faculty.id}>
+                    {faculty.conflict ? `${faculty.name} — Conflict` : faculty.name}
                   </option>
                 ))}
               </select>

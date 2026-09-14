@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, LayoutGrid, Printer, RotateCcw, Send, UserCheck, UserMinus, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, Printer, RotateCcw, Send, UserCheck, UserMinus } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, SectionDoneCandidate, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -31,6 +31,8 @@ interface TopBarProps {
   unassignedSlotsCount: number;
   departmentSectionProgress: DepartmentSectionProgress[];
   sectionDoneCandidates: SectionDoneCandidate[];
+  sectionFinalizeCandidates: SectionDoneCandidate[];
+  sectionReassignCandidates: SectionDoneCandidate[];
   openMarkSectionsDone: () => void;
   departmentTotalSections: number;
   departmentDoneSections: number;
@@ -48,6 +50,7 @@ interface TopBarProps {
   onAutoAssign?: () => void;
   onClearInstructors?: () => void;
   clearableSectionInstructorCount: number;
+  clearableDepartmentInstructorCount: number;
   isClearingSectionInstructors: boolean;
   isLoading?: boolean;
   canUpdateSchedule: boolean;
@@ -63,30 +66,55 @@ interface TopBarProps {
   sectionSchedules: ScheduleItem[];
 }
 
+// Tinted rather than solid: the badge labels state, and solid fills competed
+// with the section's primary action for attention.
 const statusBadgeConfigs: Record<string, { cls: string; label: string }> = {
-  draft: { cls: "bg-slate-500 text-white", label: "Draft" },
-  completed: { cls: "bg-[#4e0a10] text-white", label: "Done" },
-  submitted: { cls: "bg-yellow-500 text-white", label: "Pending Dean Approval" },
-  approved_by_dean: { cls: "bg-blue-600 text-white", label: "Pending VPAA Approval" },
-  conditionally_approved: { cls: "bg-amber-500 text-white", label: "Conditionally Approved" },
-  rejected_by_dean: { cls: "bg-red-600 text-white", label: "Rejected by Dean" },
-  approved: { cls: "bg-green-600 text-white", label: "Approved" },
-  faculty_assignment: { cls: "bg-purple-600 text-white", label: "Faculty Assignment" },
-  reassignment: { cls: "bg-amber-600 text-white", label: "Reassignment" },
-  finalized: { cls: "bg-emerald-800 text-white", label: "Finalized" },
-  rejected: { cls: "bg-red-600 text-white", label: "Rejected" },
-  revision: { cls: "bg-orange-600 text-white", label: "Under Revision" }
+  draft: { cls: "bg-slate-100 text-slate-600 ring-slate-200", label: "Draft" },
+  completed: { cls: "bg-[#4e0a10]/[0.07] text-[#4e0a10] ring-[#4e0a10]/15", label: "Done" },
+  submitted: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Pending Dean Approval" },
+  approved_by_dean: { cls: "bg-blue-50 text-blue-700 ring-blue-200", label: "Pending VPAA Approval" },
+  conditionally_approved: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Conditionally Approved" },
+  rejected_by_dean: { cls: "bg-red-50 text-red-700 ring-red-200", label: "Rejected by Dean" },
+  approved: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Approved" },
+  faculty_assignment: { cls: "bg-violet-50 text-violet-700 ring-violet-200", label: "Instructor Assignment" },
+  reassignment: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Reassignment" },
+  finalized: { cls: "bg-emerald-100 text-emerald-800 ring-emerald-200", label: "Finalized" },
+  rejected: { cls: "bg-red-50 text-red-700 ring-red-200", label: "Rejected" },
+  revision: { cls: "bg-orange-50 text-orange-700 ring-orange-200", label: "Under Revision" }
 };
 
 function StatusBadge({ status }: { status: ScheduleItem["status"] }) {
   const cfg = statusBadgeConfigs[status] || {
-    cls: "bg-red-500 text-white",
-    label: "UNKNOWN"
+    cls: "bg-red-50 text-red-700 ring-red-200",
+    label: "Unknown"
   };
   return (
-    <span className={`${cfg.cls} px-3 py-1 rounded-full text-xs font-medium`}>
+    <span className={`${cfg.cls} rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset`}>
       {cfg.label}
     </span>
+  );
+}
+
+type StepState = "done" | "active" | "upcoming";
+
+const stepStateStyles: Record<StepState, { marker: string; label: string; meta: string }> = {
+  done: { marker: "bg-emerald-600 text-white", label: "text-slate-800", meta: "text-emerald-700" },
+  active: { marker: "bg-[#4e0a10] text-white ring-4 ring-[#4e0a10]/10", label: "text-[#4e0a10]", meta: "text-slate-500" },
+  upcoming: { marker: "border border-slate-300 bg-white text-slate-400", label: "text-slate-400", meta: "text-slate-400" },
+};
+
+function WorkflowStep({ index, label, meta, state }: { index: number; label: string; meta?: string; state: StepState }) {
+  const styles = stepStateStyles[state];
+  return (
+    <li className="flex min-w-0 items-center gap-2.5" aria-current={state === "active" ? "step" : undefined}>
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black transition-colors duration-300 ${styles.marker}`}>
+        {state === "done" ? <CheckCircle2 className="h-4 w-4" aria-label="Completed" /> : index}
+      </span>
+      <span className="min-w-0 leading-tight">
+        <span className={`block truncate text-sm font-bold ${styles.label}`}>{label}</span>
+        {meta && <span className={`block truncate text-[11px] font-semibold ${styles.meta}`}>{meta}</span>}
+      </span>
+    </li>
   );
 }
 
@@ -96,6 +124,8 @@ interface ActionButtonProps {
   totalSubjects: number;
   totalScheduled: number;
   readySectionCount: number;
+  readyFinalizeCount: number;
+  finalizedSectionCount: number;
   isEditingSection: boolean;
   isResubmittingSection: boolean;
   isFinalizing: boolean;
@@ -114,6 +144,8 @@ function ActionButton({
   totalSubjects,
   totalScheduled,
   readySectionCount,
+  readyFinalizeCount,
+  finalizedSectionCount,
   isEditingSection,
   isResubmittingSection,
   isFinalizing,
@@ -200,13 +232,17 @@ function ActionButton({
         sectionSchedules.filter((s) => !s.facultyId).map((s) => s.courseCode),
       )];
       const missingFacultyLabel = missingFacultyCourses.length > 0
-        ? `Missing faculty: ${missingFacultyCourses.join(", ")}`
+        ? `Missing instructor: ${missingFacultyCourses.join(", ")}`
         : undefined;
       return (
         <button
           onClick={handleFinalize}
           disabled={!allAssigned || isFinalizing}
-          title={!allAssigned ? missingFacultyLabel : undefined}
+          title={!allAssigned
+            ? missingFacultyLabel
+            : readyFinalizeCount > 1
+              ? `Review and finalize ${readyFinalizeCount} ready sections`
+              : "Finalize this section"}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
             allAssigned && !isFinalizing
               ? "bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer"
@@ -216,7 +252,9 @@ function ActionButton({
           }`}
         >
           {isFinalizing && <LoadingSpinner className="h-4 w-4" />}
-          {allAssigned ? (isFinalizing ? "Finalizing..." : "Finalized") : `${unassigned} slots still need faculty`}
+          {allAssigned
+            ? (isFinalizing ? "Finalizing..." : readyFinalizeCount > 1 ? `Finalize (${readyFinalizeCount})` : "Finalize")
+            : `${unassigned} need an instructor`}
         </button>
       );
     }
@@ -226,7 +264,7 @@ function ActionButton({
         <button
           onClick={handleEditSection}
           disabled={isEditingSection}
-          title="Reassign faculty for this finalized section"
+          title={finalizedSectionCount > 1 ? `Choose which of ${finalizedSectionCount} finalized sections to reassign` : "Reassign instructors for this finalized section"}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
             isEditingSection
               ? "bg-[#C9952A] text-white cursor-wait opacity-80"
@@ -234,7 +272,7 @@ function ActionButton({
           }`}
         >
           {isEditingSection && <LoadingSpinner className="h-4 w-4" />}
-          {isEditingSection ? "Unlocking..." : "Reassignment"}
+          {isEditingSection ? "Unlocking..." : finalizedSectionCount > 1 ? `Reassignment (${finalizedSectionCount})` : "Reassignment"}
         </button>
       );
     default:
@@ -260,6 +298,8 @@ export default function TopBar({
   unassignedSlotsCount,
   departmentSectionProgress,
   sectionDoneCandidates,
+  sectionFinalizeCandidates,
+  sectionReassignCandidates,
   openMarkSectionsDone,
   departmentTotalSections,
   departmentDoneSections,
@@ -277,6 +317,7 @@ export default function TopBar({
   onAutoAssign,
   onClearInstructors,
   clearableSectionInstructorCount,
+  clearableDepartmentInstructorCount,
   isClearingSectionInstructors,
   isLoading = false,
   canUpdateSchedule,
@@ -291,14 +332,14 @@ export default function TopBar({
   sectionSchedules
 }: TopBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const printDropdownRef = useRef<HTMLDivElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
   const sectionListScrollTopRef = useRef<number>(0);
 
   const [sectionSearch, setSectionSearch] = useState("");
   const [isReadinessOpen, setIsReadinessOpen] = useState(false);
   const readySectionCount = sectionDoneCandidates.filter((candidate) => candidate.isReady).length;
-  const [isPrintDropdownOpen, setIsPrintDropdownOpen] = useState(false);
+  const readyFinalizeCount = sectionFinalizeCandidates.filter((candidate) => candidate.isReady).length;
+  const finalizedSectionCount = sectionReassignCandidates.filter((candidate) => candidate.isReady).length;
 
   const handleSectionListScroll = (e: React.UIEvent<HTMLDivElement>) => {
     sectionListScrollTopRef.current = e.currentTarget.scrollTop;
@@ -368,14 +409,14 @@ export default function TopBar({
 
     if (currentStatus === "approved") {
       return {
-        title: "Start faculty assignment",
+        title: "Start instructor assignment",
         description: "The timetable is approved. Begin assigning instructors to each class.",
       };
     }
 
     if (currentStatus === "faculty_assignment") {
       return {
-        title: unassignedSlotsCount > 0 ? "Complete faculty assignment" : "Ready to finalize",
+        title: unassignedSlotsCount > 0 ? "Complete instructor assignment" : "Ready to finalize",
         description: unassignedSlotsCount > 0
           ? `${unassignedSlotsCount} class${unassignedSlotsCount !== 1 ? "es" : ""} still need an instructor.`
           : "All classes have assigned instructors.",
@@ -384,7 +425,7 @@ export default function TopBar({
 
     if (currentStatus === "reassignment") {
       return {
-        title: "Faculty reassignment in progress",
+        title: "Instructor reassignment in progress",
         description: "Assign an instructor to every class before finalizing. Timetable details remain locked.",
       };
     }
@@ -392,7 +433,7 @@ export default function TopBar({
     if (currentStatus === "finalized") {
       return {
         title: "Schedule finalized",
-        description: "Reassignment unlocks faculty assignment for each section. Timetable details remain locked.",
+        description: "Reassignment unlocks instructor assignment for each section. Timetable details remain locked.",
       };
     }
 
@@ -419,24 +460,17 @@ export default function TopBar({
   };
 
   useEffect(() => {
-    // Gated on either menu: the handlers close both, so registering only while
-    // the section dropdown was open left the Print menu undismissable by an
-    // outside click or Escape.
-    if (!isSectionDropdownOpen && !isPrintDropdownOpen) return;
+    if (!isSectionDropdownOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
       if (!dropdownRef.current?.contains(event.target as Node)) {
         setIsSectionDropdownOpen(false);
-      }
-      if (!printDropdownRef.current?.contains(event.target as Node)) {
-        setIsPrintDropdownOpen(false);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsSectionDropdownOpen(false);
-        setIsPrintDropdownOpen(false);
       }
     };
 
@@ -447,7 +481,7 @@ export default function TopBar({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isSectionDropdownOpen, isPrintDropdownOpen, setIsSectionDropdownOpen, setIsPrintDropdownOpen]);
+  }, [isSectionDropdownOpen, setIsSectionDropdownOpen]);
 
   useEffect(() => {
     if (!isSectionDropdownOpen || !listboxRef.current) return;
@@ -462,142 +496,121 @@ export default function TopBar({
     }
   }, [isSectionDropdownOpen, selectedSectionId]);
 
-  const phasePipeline = (
-    <div className="grid w-full max-w-[430px] grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-2 select-none">
-      <div className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black transition-all duration-300 ${
-        isPhase1Completed
-          ? "bg-green-600 text-white border-green-600 shadow-sm"
-          : "bg-[#4e0a10] text-white border-[#4e0a10] shadow-sm"
-      }`}>
-        {isPhase1Completed ? (
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-        ) : (
-          <LayoutGrid className="w-4 h-4 shrink-0" />
-        )}
-        <span className="truncate">Plotting</span>
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[10px] font-bold text-white">1</span>
-      </div>
+  const plottingState: StepState = isPhase1Completed ? "done" : "active";
+  const assignmentState: StepState = isPhase2Completed ? "done" : isPhase2Active ? "active" : "upcoming";
+  const isAssignmentStatus = ["approved", "faculty_assignment", "reassignment"].includes(currentStatus);
+  const toolButtonClass = "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold shadow-sm transition-colors";
 
-      <div className="flex items-center justify-center">
-        <div className={`h-0.5 flex-1 transition-all duration-300 ${
-          isPhase2Active ? "bg-green-500" : "bg-gray-300"
-        }`} />
-        <div className={`mx-1 h-2 w-2 shrink-0 rounded-full transition-all duration-300 ${
-          isPhase2Active ? "bg-green-500" : "bg-gray-300"
-        }`} />
-      </div>
-
-      <div className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black transition-all duration-300 ${
-        isPhase2Completed
-          ? "bg-green-600 text-white border-green-600 shadow-sm"
-          : isPhase2Active
-          ? "bg-purple-600 text-white border-purple-600 shadow-sm"
-          : "bg-white text-gray-400 border-gray-200"
-      }`}>
-        {isPhase2Completed ? (
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-        ) : (
-          <Users className="w-4 h-4 shrink-0" />
-        )}
-        <span className="truncate">Faculty Assignment</span>
-        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-          isPhase2Active || isPhase2Completed ? "bg-white/20 text-white" : "bg-gray-100 text-gray-400"
-        }`}>2</span>
-      </div>
-    </div>
+  const workflowStepper = (
+    <ol className="flex min-w-0 items-center gap-3 select-none" aria-label="Scheduling workflow">
+      <WorkflowStep
+        index={1}
+        label="Plotting"
+        meta={selectedSectionId ? `${totalScheduled}/${totalSubjects} plotted` : undefined}
+        state={plottingState}
+      />
+      <li role="presentation" aria-hidden="true" className="flex w-10 shrink-0 items-center sm:w-16">
+        <span className={`h-0.5 w-full rounded-full transition-colors duration-300 ${isPhase2Active ? "bg-emerald-500" : "bg-slate-200"}`} />
+      </li>
+      <WorkflowStep
+        index={2}
+        label="Instructor Assignment"
+        meta={assignmentState === "upcoming"
+          ? "After approval"
+          : selectedSectionId ? `${assignedSlotsCount}/${totalSlotsCount} assigned` : undefined}
+        state={assignmentState}
+      />
+    </ol>
   );
 
   return (
-    <div className="flex flex-col gap-3 rounded-t-2xl border-b border-gray-200 bg-white px-4 py-3 shadow-sm sm:px-5">
-      <div className="grid grid-cols-1 gap-3 border-b border-gray-100 pb-3 xl:grid-cols-[minmax(360px,1fr)_minmax(340px,0.85fr)_auto] xl:items-center">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500 font-medium whitespace-nowrap">Section:</span>
-            <div id="schedule-builder-section" className="relative" ref={dropdownRef}>
-              {isLoading ? <Skeleton className="h-[38px] w-[220px] rounded-lg" /> : <><button
-                type="button"
-                aria-haspopup="listbox"
-                aria-expanded={isSectionDropdownOpen}
-                onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
-                className="flex min-w-0 w-full max-w-[280px] items-center justify-between gap-2 overflow-hidden rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium outline-none transition-colors hover:border-gray-400 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20 sm:min-w-[220px]"
-              >
-                <span className="flex min-w-0 items-center gap-2 overflow-hidden text-gray-800">
-                  <GraduationCap className="w-4 h-4 shrink-0 text-[#4e0a10]" />
-                  {selectedSection ? (
-                    `${selectedSection.name} — ${yearLevelLabel(selectedSection.yearLevel)}`
-                  ) : (
-                    "Select a Section"
-                  )}
-                </span>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isSectionDropdownOpen ? "rotate-180" : ""}`} />
-              </button>
-              {isSectionDropdownOpen && (
-                <div className="absolute left-0 z-50 mt-1.5 w-[min(100vw-1rem,22rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg animate-in fade-in slide-in-from-top-1 duration-150 sm:min-w-[300px]">
-                  <div className="p-2 border-b border-gray-100">
-                    <SearchField
-                      value={sectionSearch}
-                      onChange={setSectionSearch}
-                      placeholder="Search section..."
-                      clearLabel="Clear section search"
-                      inputClassName="focus:ring-[#4e0a10]/15 focus:border-[#4e0a10]"
-                    />
-                  </div>
-                  <div
-                    ref={listboxRef}
-                    onScroll={handleSectionListScroll}
-                    role="listbox"
-                    aria-label="Available sections"
-                    className="max-h-80 overflow-y-auto py-1"
-                  >
-                  {filteredGroupedSections.length === 0 ? (
-                    <p className="px-4 py-2.5 text-sm text-gray-400">No sections available.</p>
-                  ) : (
-                    filteredGroupedSections.map((group) => (
-                      <div key={group.yearLevel}>
-                        <div className="px-4 py-2 text-xs font-bold text-[#4e0a10] uppercase tracking-wider bg-gray-50 border-b border-gray-100 select-none sticky top-0">
-                          {yearLevelLabel(group.yearLevel)}
-                        </div>
-                        {group.sections.map((sec) => (
-                          <button
-                            key={sec.id}
-                            type="button"
-                            onClick={() => handleSectionSelect(sec.id)}
-                            role="option"
-                            aria-selected={selectedSectionId === sec.id}
-                            className={`w-full text-left pl-7 pr-4 py-2.5 text-sm transition-colors ${
-                              selectedSectionId === sec.id
-                                ? "text-[#4e0a10] bg-[#4e0a10]/5 font-semibold"
-                                : "text-gray-700 font-normal hover:bg-gray-50"
-                            }`}
-                          >
-                            {sec.name}
-                          </button>
-                        ))}
-                      </div>
-                    ))
-                  )}
-                  </div>
-                </div>
-              )}</>}
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 select-none">
-              <Skeleton className="h-4 w-24" />
-            </div>
-          ) : selectedSectionId && selectedSection && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 select-none">
-              <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Active:</span>
-              <span className="text-sm font-bold text-amber-800">
-                {selectedSection.name}
+    <div className="flex flex-col rounded-t-2xl border-b border-slate-200 bg-white shadow-sm">
+      {/* Toolbar: what you are editing, where it is in the workflow, and the phase tools. */}
+      <div className="flex flex-col gap-3 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:gap-6">
+        <div id="schedule-builder-section" className="relative shrink-0" ref={dropdownRef}>
+          {isLoading ? <Skeleton className="h-[46px] w-full rounded-xl sm:w-[260px]" /> : <><button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={isSectionDropdownOpen}
+            onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
+            className="flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white py-1.5 pl-1.5 pr-3 text-left outline-none transition-colors hover:border-slate-300 hover:bg-slate-50 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20 sm:w-[260px]"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.07] text-[#4e0a10]">
+              <GraduationCap className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Section</span>
+              <span className="block truncate text-sm font-bold text-slate-800">
+                {selectedSection ? (
+                  <>
+                    {selectedSection.name}
+                    <span className="font-medium text-slate-500"> · {yearLevelLabel(selectedSection.yearLevel)}</span>
+                  </>
+                ) : (
+                  "Select a section"
+                )}
               </span>
+            </span>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-150 ${isSectionDropdownOpen ? "rotate-180" : ""}`} />
+          </button>
+          {isSectionDropdownOpen && (
+            <div className="absolute left-0 z-50 mt-1.5 w-[min(100vw-1rem,22rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg animate-in fade-in slide-in-from-top-1 duration-150 sm:min-w-[300px]">
+              <div className="p-2 border-b border-gray-100">
+                <SearchField
+                  value={sectionSearch}
+                  onChange={setSectionSearch}
+                  placeholder="Search section..."
+                  clearLabel="Clear section search"
+                  inputClassName="focus:ring-[#4e0a10]/15 focus:border-[#4e0a10]"
+                />
+              </div>
+              <div
+                ref={listboxRef}
+                onScroll={handleSectionListScroll}
+                role="listbox"
+                aria-label="Available sections"
+                className="max-h-80 overflow-y-auto py-1"
+              >
+              {filteredGroupedSections.length === 0 ? (
+                <p className="px-4 py-2.5 text-sm text-gray-400">No sections available.</p>
+              ) : (
+                filteredGroupedSections.map((group) => (
+                  <div key={group.yearLevel}>
+                    <div className="px-4 py-2 text-xs font-bold text-[#4e0a10] uppercase tracking-wider bg-gray-50 border-b border-gray-100 select-none sticky top-0">
+                      {yearLevelLabel(group.yearLevel)}
+                    </div>
+                    {group.sections.map((sec) => (
+                      <button
+                        key={sec.id}
+                        type="button"
+                        onClick={() => handleSectionSelect(sec.id)}
+                        role="option"
+                        aria-selected={selectedSectionId === sec.id}
+                        className={`w-full text-left pl-7 pr-4 py-2.5 text-sm transition-colors ${
+                          selectedSectionId === sec.id
+                            ? "text-[#4e0a10] bg-[#4e0a10]/5 font-semibold"
+                            : "text-gray-700 font-normal hover:bg-gray-50"
+                        }`}
+                      >
+                        {sec.name}
+                      </button>
+                    ))}
+                  </div>
+                ))
+              )}
+              </div>
             </div>
-          )}
+          )}</>}
         </div>
 
-        <div id="schedule-builder-workflow" className="flex min-w-0 justify-start xl:justify-center">
-          {isLoading ? <div className="grid w-full max-w-2xl grid-cols-[1fr_32px_1fr] items-center"><Skeleton className="h-9 w-full rounded-xl" /><div className="px-1"><Skeleton className="h-1 w-full rounded-full" /></div><Skeleton className="h-9 w-full rounded-xl" /></div> : phasePipeline}
+        <div id="schedule-builder-workflow" className="flex min-w-0 flex-1 justify-start xl:justify-center">
+          {isLoading ? (
+            <div className="flex w-full max-w-md items-center gap-3">
+              <Skeleton className="h-8 w-8 shrink-0 rounded-full" /><Skeleton className="h-8 flex-1 rounded-lg" />
+              <Skeleton className="h-0.5 w-12 rounded-full" />
+              <Skeleton className="h-8 w-8 shrink-0 rounded-full" /><Skeleton className="h-8 flex-1 rounded-lg" />
+            </div>
+          ) : workflowStepper}
         </div>
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
@@ -606,19 +619,19 @@ export default function TopBar({
               guideId={
                 ["draft", "revision"].includes(currentStatus)
                   ? "schedule-builder-plotting"
-                  : ["approved", "faculty_assignment", "reassignment"].includes(currentStatus)
+                  : isAssignmentStatus
                     ? "schedule-builder-faculty-assignment"
                     : "schedule-builder-review"
               }
             />
           )}
-          {isLoading ? <><Skeleton className="h-8 w-28 rounded-xl" /><Skeleton className="h-[38px] w-24 rounded-lg" /><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>{onAutoAssign && ["approved", "faculty_assignment", "reassignment"].includes(currentStatus) ? (
+          {isLoading ? <><Skeleton className="h-9 w-28 rounded-lg" /><Skeleton className="h-9 w-24 rounded-lg" /></> : <>{onAutoAssign && isAssignmentStatus ? (
             <>
               <button
                 id="schedule-builder-auto-assign"
                 type="button"
                 onClick={onAutoAssign}
-                className="flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+                className={`${toolButtonClass} border-[#4e0a10] bg-[#4e0a10] text-white hover:bg-[#3a0809]`}
               >
                 <UserCheck className="h-3.5 w-3.5" />
                 <span>Auto-Assign</span>
@@ -627,218 +640,200 @@ export default function TopBar({
                 <button
                   type="button"
                   onClick={onClearInstructors}
-                  disabled={clearableSectionInstructorCount === 0 || isClearingSectionInstructors}
-                  className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Remove all manageable instructor assignments from this section"
+                  disabled={(clearableSectionInstructorCount === 0 && clearableDepartmentInstructorCount === 0) || isClearingSectionInstructors}
+                  className={`${toolButtonClass} border-slate-200 bg-white text-red-700 hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50`}
+                  title="Remove manageable instructor assignments from this section or the whole department"
                 >
                   <UserMinus className="h-3.5 w-3.5" />
-                  <span>{isClearingSectionInstructors ? "Clearing..." : "Clear Instructor"}</span>
+                  <span>{isClearingSectionInstructors ? "Clearing..." : "Clear Instructors"}</span>
                 </button>
               )}
             </>
-              ) : onGenerateYearLevel && ["draft", "revision"].includes(currentStatus) && (
+          ) : onGenerateYearLevel && ["draft", "revision"].includes(currentStatus) && (
             <div id="schedule-builder-generate">
               <GenerateScheduleButton
                 onClick={onGenerateYearLevel}
               />
             </div>
           )}</>}
-          {isLoading ? <><Skeleton className="h-[38px] w-24 rounded-lg" /></> : <>
-          <div className="relative" ref={printDropdownRef}>
+          <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
+          {isLoading ? <Skeleton className="h-9 w-20 rounded-lg" /> : (
             <button
               type="button"
-              onClick={() => setIsPrintDropdownOpen(!isPrintDropdownOpen)}
-              aria-haspopup="menu"
-              aria-expanded={isPrintDropdownOpen}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50"
+              onClick={onPrint}
+              title="Print schedule"
+              className={`${toolButtonClass} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`}
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="h-3.5 w-3.5" />
               <span>Print</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isPrintDropdownOpen ? "rotate-180" : ""}`} />
             </button>
-            {isPrintDropdownOpen && (
-              <div role="menu" className="absolute right-0 z-50 mt-1.5 w-52 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setIsPrintDropdownOpen(false); onPrint(); }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  <Printer className="w-4 h-4 text-[#4e0a10]" />
-                  Print Schedule
-                </button>
-              </div>
-            )}
-          </div></>}
-        </div>
-      </div>
-
-        <div id="schedule-builder-next-step" className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-        <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(300px,0.85fr)_minmax(420px,1.15fr)_auto] xl:items-center">
-              <div className="flex min-w-0 flex-col gap-3 rounded-lg px-1 py-1 sm:flex-row sm:items-center">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    {isLoading ? <><Skeleton className="h-2.5 w-14" /><Skeleton className="h-5 w-16 rounded-full" /></> : <><p className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</p><StatusBadge status={currentStatus} /></>}
-                  </div>
-                  {isLoading ? <><Skeleton className="mt-1 h-4 w-40" /><Skeleton className="mt-1 h-3 w-64 max-w-full" /></> : <><p className="text-sm font-bold text-gray-800 mt-0.5">{nextStep.title}</p><p className="text-xs text-gray-500 mt-0.5">{nextStep.description}</p></>}
-                </div>
-                {selectedSectionId && (
-                  <div className="flex flex-wrap gap-2 sm:ml-auto">
-                    <span className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold text-gray-600">
-                      {totalScheduled}/{totalSubjects} plotted
-                    </span>
-                    {isPhase2Active && (
-                      <span className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold text-gray-600">
-                        {assignedSlotsCount}/{totalSlotsCount} assigned
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {isLoading ? (
-                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                      <Skeleton className="h-2.5 w-32" />
-                      <div className="mt-1 flex items-center gap-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-5 w-20 rounded-full" /></div>
-                      <Skeleton className="mt-2 h-1.5 w-full max-w-xs rounded-full" />
-                    </div>
-                    <Skeleton className="h-9 w-24 rounded-lg" />
-                    <Skeleton className="h-9 w-[190px] rounded-lg" />
-                  </div>
-                </div>
-              ) : selectedSectionId && departmentTotalSections > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="min-w-0 mr-auto">
-                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Department readiness</p>
-                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                        <p className="text-sm font-bold text-gray-800">
-                          {departmentDoneSections}/{departmentTotalSections} sections done
-                        </p>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          departmentReadyToSubmit
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-amber-50 text-amber-700"
-                        }`}>
-                          {departmentReadyToSubmit ? "All sections complete" : `${departmentRemainingSections} remaining`}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex h-1.5 w-full max-w-xs gap-0.5 overflow-hidden rounded-full" aria-label={`${departmentDoneSections} of ${departmentTotalSections} sections complete`}>
-                        {departmentSectionProgress.map((section) => (
-                          <span
-                            key={section.sectionId}
-                            className={`h-full flex-1 first:rounded-l-full last:rounded-r-full ${section.isDone ? "bg-emerald-500" : "bg-gray-200"}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    {!departmentHasSubmittedSchedule ? <button
-                      type="button"
-                      onClick={() => setIsReadinessOpen(!isReadinessOpen)}
-                      aria-expanded={isReadinessOpen}
-                      className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors"
-                    >
-                      View sections
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isReadinessOpen ? "rotate-180" : ""}`} />
-                    </button> : (
-                      <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Submitted
-                      </span>
-                    )}
-                    {departmentHasWithdrawableSubmission && canWithdrawSubmission && !departmentReadyToSubmit ? (
-                      <button
-                        type="button"
-                        onClick={handleWithdrawSubmission}
-                        disabled={isWithdrawingSubmission}
-                        title={departmentWithdrawalStage === "vpaa_approved"
-                          ? "Revoke VPAA approval and withdraw selected sections for revision"
-                          : `Withdraw selected sections from ${departmentWithdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review`}
-                        className="flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition-all hover:bg-orange-100 disabled:cursor-wait disabled:opacity-70 xl:min-w-[190px]"
-                      >
-                        {isWithdrawingSubmission ? (
-                          <LoadingSpinner className="w-4 h-4" />
-                        ) : (
-                          <RotateCcw className="w-4 h-4" />
-                        )}
-                        {isWithdrawingSubmission
-                          ? "Withdrawing..."
-                          : departmentWithdrawalStage === "vpaa_approved"
-                            ? "Withdraw Schedule"
-                            : "Withdraw Submission"}
-                      </button>
-                    ) : departmentReadyToSubmit && canSubmitSchedule ? (
-                      <button
-                        type="button"
-                        onClick={handleSubmitForApproval}
-                        title="Submit the complete department schedule to the Dean"
-                        className="flex items-center justify-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3a0809] xl:min-w-[170px]"
-                      >
-                        <Send className="w-4 h-4" />
-                        {departmentSubmitLabel}
-                      </button>
-                    ) : null}
-                  </div>
-
-                  {isReadinessOpen && (
-                    <div className="mt-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-2 border-t border-gray-100 pt-2">
-                      {departmentSectionProgress.map((section) => (
-                        <button
-                          key={section.sectionId}
-                          type="button"
-                          onClick={() => handleSectionSelect(section.sectionId)}
-                          className={`rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
-                            section.isSelected
-                              ? "border-[#4e0a10] bg-[#4e0a10]/5"
-                              : "border-gray-200 bg-gray-50 hover:bg-gray-100"
-                          }`}
-                        >
-                          <span className="block text-[11px] font-bold text-gray-800 truncate">{section.sectionName}</span>
-                          <span className={`mt-0.5 flex items-center gap-1 text-[10px] font-bold ${
-                            section.isDone ? "text-emerald-700" : "text-amber-700"
-                          }`}>
-                            {section.isDone ? (
-                              <CheckCircle2 className="w-3 h-3 shrink-0" />
-                            ) : (
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                            )}
-                            <span className="truncate">{getDepartmentStatusLabel(section)}</span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-        <div className="flex min-w-[130px] flex-col items-stretch justify-center gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm xl:items-end">
-          <span className="px-1 text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Section action</span>
-          {isLoading ? (
-            <Skeleton className="h-9 w-28 rounded-lg" />
-          ) : (
-            <ActionButton
-              selectedSectionId={selectedSectionId}
-              currentStatus={currentStatus}
-              totalSubjects={totalSubjects}
-              totalScheduled={totalScheduled}
-              readySectionCount={readySectionCount}
-              isEditingSection={isEditingSection}
-              isResubmittingSection={isResubmittingSection}
-              isFinalizing={isFinalizing}
-              openMarkSectionsDone={openMarkSectionsDone}
-              handleEditSection={handleEditSection}
-              handleResubmit={handleResubmit}
-              handleFinalize={handleFinalize}
-              sectionSchedules={sectionSchedules}
-              canUpdateSchedule={canUpdateSchedule}
-              canAssignInstructor={canAssignInstructor}
-            />
           )}
         </div>
       </div>
+
+      {/* Status strip: the next step, department readiness, and the section's primary action. */}
+      <div id="schedule-builder-next-step" className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_auto] xl:items-center xl:gap-0 xl:divide-x xl:divide-slate-200">
+          <div className="min-w-0 xl:pr-5">
+            {isLoading ? (
+              <><Skeleton className="h-4 w-36 rounded-full" /><Skeleton className="mt-1.5 h-4 w-48" /><Skeleton className="mt-1 h-3 w-64 max-w-full" /></>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</span>
+                  <StatusBadge status={currentStatus} />
+                </div>
+                <p className="mt-1 text-sm font-bold text-slate-800">{nextStep.title}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{nextStep.description}</p>
+              </>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="min-w-0 xl:px-5">
+              <Skeleton className="h-2.5 w-32" />
+              <Skeleton className="mt-1.5 h-4 w-40" />
+              <Skeleton className="mt-2 h-1.5 w-full rounded-full" />
+            </div>
+          ) : selectedSectionId && departmentTotalSections > 0 ? (
+            <div className="min-w-0 xl:px-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Department readiness</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-bold text-slate-800">
+                      {departmentDoneSections}<span className="text-slate-400">/{departmentTotalSections}</span> sections done
+                    </p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      departmentReadyToSubmit || departmentRemainingSections === 0
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {departmentReadyToSubmit || departmentRemainingSections === 0 ? "All sections complete" : `${departmentRemainingSections} remaining`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {!departmentHasSubmittedSchedule ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsReadinessOpen(!isReadinessOpen)}
+                      aria-expanded={isReadinessOpen}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                      View sections
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isReadinessOpen ? "rotate-180" : ""}`} />
+                    </button>
+                  ) : (
+                    <span className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Submitted
+                    </span>
+                  )}
+                  {departmentHasWithdrawableSubmission && canWithdrawSubmission && !departmentReadyToSubmit ? (
+                    <button
+                      type="button"
+                      onClick={handleWithdrawSubmission}
+                      disabled={isWithdrawingSubmission}
+                      title={departmentWithdrawalStage === "vpaa_approved"
+                        ? "Revoke VPAA approval and recall selected sections for revision"
+                        : `Recall selected sections from ${departmentWithdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review`}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-orange-200 bg-white px-3 text-xs font-bold text-orange-700 transition-colors hover:bg-orange-50 disabled:cursor-wait disabled:opacity-70"
+                    >
+                      {isWithdrawingSubmission ? (
+                        <LoadingSpinner className="h-3.5 w-3.5" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                      {isWithdrawingSubmission
+                        ? "Recalling..."
+                        : departmentWithdrawalStage === "vpaa_approved"
+                          ? "Recall Schedule"
+                          : "Recall Submission"}
+                    </button>
+                  ) : departmentReadyToSubmit && canSubmitSchedule ? (
+                    <button
+                      type="button"
+                      onClick={handleSubmitForApproval}
+                      title="Submit the complete department schedule to the Dean"
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#3a0809]"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {departmentSubmitLabel}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-2 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full" aria-label={`${departmentDoneSections} of ${departmentTotalSections} sections complete`}>
+                {departmentSectionProgress.map((section) => (
+                  <span
+                    key={section.sectionId}
+                    className={`h-full flex-1 first:rounded-l-full last:rounded-r-full ${section.isDone ? "bg-emerald-500" : "bg-slate-200"}`}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div aria-hidden="true" className="hidden xl:block" />
+          )}
+
+          <div className="flex items-center xl:justify-end xl:pl-5">
+            {isLoading ? (
+              <Skeleton className="h-9 w-32 rounded-lg" />
+            ) : (
+              <ActionButton
+                selectedSectionId={selectedSectionId}
+                currentStatus={currentStatus}
+                totalSubjects={totalSubjects}
+                totalScheduled={totalScheduled}
+                readySectionCount={readySectionCount}
+                readyFinalizeCount={readyFinalizeCount}
+                finalizedSectionCount={finalizedSectionCount}
+                isEditingSection={isEditingSection}
+                isResubmittingSection={isResubmittingSection}
+                isFinalizing={isFinalizing}
+                openMarkSectionsDone={openMarkSectionsDone}
+                handleEditSection={handleEditSection}
+                handleResubmit={handleResubmit}
+                handleFinalize={handleFinalize}
+                sectionSchedules={sectionSchedules}
+                canUpdateSchedule={canUpdateSchedule}
+                canAssignInstructor={canAssignInstructor}
+              />
+            )}
+          </div>
+        </div>
+
+        {isReadinessOpen && !isLoading && selectedSectionId && departmentTotalSections > 0 && !departmentHasSubmittedSchedule && (
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+            {departmentSectionProgress.map((section) => (
+              <button
+                key={section.sectionId}
+                type="button"
+                onClick={() => handleSectionSelect(section.sectionId)}
+                className={`rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
+                  section.isSelected
+                    ? "border-[#4e0a10] bg-[#4e0a10]/5"
+                    : "border-slate-200 bg-white hover:bg-slate-50"
+                }`}
+              >
+                <span className="block truncate text-[11px] font-bold text-slate-800">{section.sectionName}</span>
+                <span className={`mt-0.5 flex items-center gap-1 text-[10px] font-bold ${
+                  section.isDone ? "text-emerald-700" : "text-amber-700"
+                }`}>
+                  {section.isDone ? (
+                    <CheckCircle2 className="h-3 w-3 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                  )}
+                  <span className="truncate">{getDepartmentStatusLabel(section)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

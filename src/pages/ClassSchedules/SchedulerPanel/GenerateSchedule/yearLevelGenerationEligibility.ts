@@ -1,7 +1,7 @@
 import type { ScheduleItem, Section } from "../types";
 
 export const YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE =
-  "Schedules for this year level have already been plotted. Generation is unavailable unless the entire year level is withdrawn.";
+  "Schedules for this year level have already been plotted. Generation is unavailable unless the entire year level is recalled.";
 
 const PLOTTING_STATUSES = new Set<ScheduleItem["status"]>(["draft", "completed"]);
 

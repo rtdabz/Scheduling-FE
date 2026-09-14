@@ -68,7 +68,7 @@ export default function CrossDepartmentAssignments() {
     setWorkspaceState(state);
   }, []);
   const handleWorkflowReady = useCallback(() => setIsAssignmentWorkspaceReady(true), []);
-  const handleAutoAssign = useCallback(async (assignments: { scheduleIds: string[]; facultyId: string }[]) => {
+  const handleAutoAssign = useCallback(async (assignments: { scheduleIds: string[]; facultyId: string; overrideConflicts?: boolean }[]) => {
     const success = await scheduler.handleBulkFacultyAssign(assignments);
     if (success) setAssignmentRefreshToken((current) => current + 1);
     return success;
@@ -96,6 +96,7 @@ export default function CrossDepartmentAssignments() {
       <WorkflowGuideButton id="cross-department-guide" guideId="cross-department-assignment" />
       <InstructorAssignment
         refreshToken={assignmentRefreshToken}
+        scrollableTimetable={false}
         workflowGuideId={null}
         onWorkflowReady={handleWorkflowReady}
         assignmentLocked={assignmentDone}

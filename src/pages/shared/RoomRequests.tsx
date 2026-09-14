@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check, Construction, DoorOpen, Plus, RefreshCw, Trash2, Undo2, X } from 'lucide-react';
+import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import Skeleton from '../../components/ui/Skeleton';
@@ -85,6 +86,10 @@ export default function RoomRequests() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useLiveRefresh(['rooms'], () => {
+    void load();
+  });
 
   const refresh = () => {
     setIsLoading(true);

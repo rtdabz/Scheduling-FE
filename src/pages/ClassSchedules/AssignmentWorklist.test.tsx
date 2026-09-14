@@ -82,18 +82,23 @@ describe("AssignmentWorklist", () => {
     expect(onAssign).toHaveBeenCalledWith(501, 9);
   });
 
-  it("offers a conflicting instructor as disabled rather than hiding them", () => {
+  it("keeps a conflicting instructor selectable, so the assignment can be confirmed", () => {
+    const onAssign = vi.fn();
     render(
       <AssignmentWorklist
         classes={[buildClass()]}
         busyScheduleId={null}
-        onAssign={vi.fn()}
+        onAssign={onAssign}
         emptyMessage="nothing here"
       />,
     );
 
     const conflicting = screen.getByRole("option", { name: /John Doe/ }) as HTMLOptionElement;
-    expect(conflicting.disabled).toBe(true);
+    expect(conflicting.disabled).toBe(false);
+    expect(conflicting.textContent).toMatch(/— Conflict$/);
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: conflicting.value } });
+    expect(onAssign).toHaveBeenCalledWith(501, Number(conflicting.value));
   });
 
   it("sends null when the instructor is cleared", () => {

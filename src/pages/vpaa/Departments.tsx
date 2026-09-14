@@ -4,14 +4,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import {
-  Pencil, 
-  Trash2, 
-  Search, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown,
+  Pencil,
+  Trash2,
+  Search,
   X,
   Loader2,
   LayoutGrid,
@@ -22,7 +20,7 @@ import {
   Plus,
   Camera,
   LibraryBig,
-  Eye
+  Eye,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -30,10 +28,10 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
@@ -278,6 +276,8 @@ export default function Departments() {
     fetchDepartments();
   }, []);
 
+  useLiveRefresh(['departments', 'faculty', 'users'], () => { void fetchDepartments(true, true); });
+
   const mapDepartment = (department: ApiDepartment): Department => ({
     id: department.id,
     code: department.department_code,
@@ -334,7 +334,7 @@ export default function Departments() {
     }
   };
 
-  const fetchDepartments = async (forceRefresh = false) => {
+  const fetchDepartments = async (forceRefresh = false, silent = false) => {
     const cachedData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
 
     if (!forceRefresh && cachedData && cachedData.departments.length > 0) {
@@ -343,7 +343,7 @@ export default function Departments() {
       return;
     }
 
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const response = await api.get<ApiDepartment[]>('/departments');
       const mappedDepartments = response.data.map(mapDepartment);
@@ -881,191 +881,24 @@ export default function Departments() {
         </div>
       ) : (
         /* Table Section */
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                {table.getHeaderGroups().map(headerGroup => (
-                  <tr key={headerGroup.id} className="bg-gray-50/80 border-b border-gray-200">
-                    {headerGroup.headers.map(header => (
-                      <th 
-                        key={header.id} 
-                        className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
-                      >
-                        {header.isPlaceholder ? null : (
-                          <div className="flex items-center">
-                            {flexRender(header.column.columnDef.header, header.getContext())}
-                            {header.column.getCanSort() && (
-                              <button
-                                onClick={header.column.getToggleSortingHandler()}
-                                className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                              >
-                                {header.column.getIsSorted() === 'asc' ? (
-                                  <ArrowUp size={13} className="text-[#C9952A]" />
-                                ) : header.column.getIsSorted() === 'desc' ? (
-                                  <ArrowDown size={13} className="text-[#C9952A]" />
-                                ) : (
-                                  <ArrowUpDown size={13} />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {isLoading ? (
-                  Array.from({ length: 6 }).map((_, index) => (
-                    <tr 
-                      key={`skeleton-row-${index}`} 
-                      className={`h-12 border-b border-gray-100 ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                      }`}
-                    >
-                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                        <Skeleton className="h-9 w-9 rounded-full" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-48" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-5 w-28 rounded-full" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-32" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-8 mx-auto" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs">
-                        <Skeleton className="h-4 w-8 mx-auto" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                        <Skeleton className="h-4 w-20" />
-                      </td>
-                      <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                        <div className="flex justify-end gap-2">
-                          <Skeleton className="h-8 w-8 rounded-lg" />
-                          <Skeleton className="h-8 w-8 rounded-lg" />
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : table.getRowModel().rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <p className="text-base font-semibold">No departments found.</p>
-                        <p className="text-xs">Try adjusting your search criteria or add a new department.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  table.getRowModel().rows.map((row, index) => (
-                    <tr 
-                      key={row.id} 
-                      onClick={() => {
-                        setSelectedDeptForDetail(row.original);
-                        setIsDetailModalOpen(true);
-                      }}
-                      className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                      }`}
-                    >
-                      {row.getVisibleCells().map((cell, cellIdx) => {
-                        const isNoWrap = ['logo', 'createdAt', 'actions'].includes(cell.column.id);
-                        return (
-                          <td 
-                            key={cell.id} 
-                            className={`px-4 py-2.5 align-middle text-xs ${
-                              isNoWrap ? 'whitespace-nowrap' : ''
-                            } ${cellIdx === 0 ? 'border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all' : ''}`}
-                          >
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        {/* Pagination Section */}
-        {table.getFilteredRowModel().rows.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-gray-500">
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-                {Math.min(
-                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                  table.getFilteredRowModel().rows.length
-                )} of {table.getFilteredRowModel().rows.length} departments
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-semibold">Show</span>
-                <select
-                  value={table.getState().pagination.pageSize}
-                  onChange={e => {
-                    table.setPageSize(Number(e.target.value));
-                  }}
-                  className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-                >
-                  {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                First
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold text-gray-500 px-1">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+        <DataTable
+          table={table}
+          isLoading={isLoading}
+          totalLabel="departments"
+          ariaLabel="Departments"
+          emptyTitle="No departments found."
+          emptyDescription="Try adjusting your search criteria or add a new department."
+          onRowClick={(dept) => {
+            setSelectedDeptForDetail(dept);
+            setIsDetailModalOpen(true);
+          }}
+          cellClassName={(columnId) => (['logo', 'createdAt', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
+        />
       )}
 
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50 relative overflow-hidden">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
@@ -1190,7 +1023,7 @@ export default function Departments() {
       {/* Delete Confirmation Modal */}
       {/* Department Detail Modal */}
       {isDetailModalOpen && selectedDeptForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-6xl w-full max-h-[calc(100dvh-1.5rem)] overflow-hidden shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
             {/* Header Banner */}
             <div className="relative overflow-hidden border-b border-slate-200/80 bg-white px-8 py-7">

@@ -367,7 +367,7 @@ export default function RoomViewModal({
             days={DAYS}
             slotCount={SLOT_COUNT}
             headerHeight={GRID_HEADER_HEIGHT_PX}
-            rowTemplate={`repeat(${SLOT_COUNT}, ${SLOT_HEIGHT_PX}px)`}
+            rowTemplate={`repeat(${SLOT_COUNT}, minmax(${SLOT_HEIGHT_PX}px, auto))`}
             minWidth={0}
             className="w-full shrink-0"
             getTimeLabel={slotToTimeStr}
@@ -387,7 +387,7 @@ export default function RoomViewModal({
               const exceedsCapacity = isSharedRoom && groupOverlapCount > sharedRoomCapacity;
 
               // Group items by courseCode
-              const subgroups: { courseCode: string; sectionName: string; courseType: ScheduleItem["courseType"] }[] = [];
+              const subgroups: { courseCode: string; sections: string[]; courseType: ScheduleItem["courseType"] }[] = [];
               const courseMap: Record<string, string[]> = {};
               const courseTypeMap: Record<string, ScheduleItem["courseType"]> = {};
 
@@ -401,10 +401,9 @@ export default function RoomViewModal({
               });
 
               Object.keys(courseMap).forEach((code) => {
-                const sectionsList = [...new Set(courseMap[code])].sort();
                 subgroups.push({
                   courseCode: code,
-                  sectionName: sectionsList.join(" | "),
+                  sections: [...new Set(courseMap[code])].sort(),
                   courseType: courseTypeMap[code]
                 });
               });
@@ -418,37 +417,59 @@ export default function RoomViewModal({
               return (
                 <div
                   key={cellGroup.id}
-                  className={`relative m-0.5 rounded-lg border-2 border-l-4 px-1.5 py-1 overflow-hidden shadow-sm transform-gpu flex flex-col justify-between ${styles.container}`}
+                  className={`m-0.5 flex flex-col rounded-lg border-2 border-l-4 px-1.5 py-1 shadow-sm transform-gpu ${styles.container}`}
                   style={{
                     gridColumn: cellGroup.dayIndex + 2,
                     gridRow: `${cellGroup.startSlot + 2} / span ${cellGroup.durationSlots}`
                   }}
                   title={tooltipTitle}
                 >
-                  <div className={`flex flex-col gap-1 overflow-hidden ${isSharedRoom ? "pr-8" : ""}`}>
+                  {/*
+                    Rows are `minmax(slot, auto)`, so a card holding many classes
+                    stretches its time rows (and that row on every other day)
+                    instead of clipping or scrolling its contents.
+                  */}
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <span className="text-[11px] font-bold text-slate-500">
+                      {cellGroup.startTime} - {cellGroup.endTime}
+                    </span>
                     {isSharedRoom && (
-                      <div className={`absolute right-1 top-1 rounded px-1.5 py-0.5 text-[9px] font-black uppercase ${
+                      <span className={`shrink-0 rounded px-1 py-px text-[10px] font-black uppercase leading-tight ${
                         exceedsCapacity ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
                       }`}>
                         {groupOverlapCount}/{sharedRoomCapacityLabel}
-                      </div>
+                      </span>
                     )}
-                    {subgroups.map((sub) => (
-                      <div key={`${cellGroup.id}-${sub.courseCode}-${sub.sectionName}`} className="flex flex-col mb-1 last:mb-0 border-b border-dashed border-slate-100/30 last:border-b-0 pb-0.5 last:pb-0">
-                        <div className={`text-xs font-black uppercase leading-tight break-words ${getGridCardStyles(sub.courseType).text}`}>
-                          {sub.courseCode}
-                        </div>
-                        <div className="text-[11px] font-bold leading-tight text-slate-700 break-words" title={sub.sectionName}>
-                          {sub.sectionName}
-                        </div>
-                      </div>
-                    ))}
                   </div>
-                  {cellGroup.durationSlots > 3 && (
-                    <div className="text-[10px] text-slate-500 font-bold truncate mt-auto pt-0.5 border-t border-slate-100/30">
-                      {cellGroup.startTime} - {cellGroup.endTime}
-                    </div>
-                  )}
+                  <ul className="mt-0.5 space-y-px">
+                    {subgroups.map((sub) => (
+                      <li
+                        key={`${cellGroup.id}-${sub.courseCode}-${sub.sections.join("|")}`}
+                        className={sub.sections.length > 1
+                          ? "min-w-0 leading-tight"
+                          : "flex min-w-0 flex-wrap items-baseline gap-x-1.5 leading-tight"}
+                      >
+                        <span className={`shrink-0 text-[13px] font-black uppercase ${getGridCardStyles(sub.courseType).text}`}>
+                          {sub.courseCode}
+                        </span>
+                        {sub.sections.length > 1 ? (
+                          // One course taught to many sections at once (ROTC,
+                          // PE): wrap the sections instead of truncating them.
+                          <div className="mt-px flex flex-wrap gap-x-1.5 gap-y-px">
+                            {sub.sections.map((section) => (
+                              <span key={section} className="text-xs font-bold text-slate-700">
+                                {section}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="break-words text-xs font-bold text-slate-700">
+                            {sub.sections[0]}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               );
             })}

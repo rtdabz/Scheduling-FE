@@ -31,6 +31,12 @@ export interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
   variant?: ConfirmModalVariant
+  /**
+   * Work to run once the user confirms. While it runs the modal stays open with
+   * a spinner on the confirm button and cannot be dismissed; confirm() resolves
+   * after it settles. The action is expected to report its own errors.
+   */
+  onConfirm?: () => unknown
 }
 
 export interface ConfirmRequest extends ConfirmOptions {
@@ -51,6 +57,8 @@ interface ToastContextValue {
   /** Resolves true when the user confirms, false when they cancel or dismiss. */
   confirm: (options: ConfirmOptions) => Promise<boolean>
   confirmRequest: ConfirmRequest | null
+  /** True while the confirmed request's onConfirm action is running. */
+  isConfirming: boolean
   resolveConfirm: (answer: boolean) => void
 }
 
@@ -61,6 +69,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [modalNotices, setModalNotices] = useState<ModalNoticeItem[]>([])
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
   const pendingConfirm = useRef<((answer: boolean) => void) | null>(null)
+  const pendingAction = useRef<ConfirmOptions['onConfirm']>(undefined)
+  const confirmingRef = useRef(false)
+  const [isConfirming, setIsConfirming] = useState(false)
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) =>
@@ -109,16 +120,47 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         // caller awaiting it would hang forever.
         pendingConfirm.current?.(false)
         pendingConfirm.current = resolve
+        pendingAction.current = options.onConfirm
         setConfirmRequest({ ...options, id: crypto.randomUUID() })
       }),
     []
   )
 
   const resolveConfirm = useCallback((answer: boolean) => {
+    // Once the confirmed action is running, neither a second click nor a
+    // cancel/Escape may close the modal out from under it.
+    if (confirmingRef.current) return
+
     const resolve = pendingConfirm.current
-    pendingConfirm.current = null
-    setConfirmRequest(null)
-    resolve?.(answer)
+    const action = answer ? pendingAction.current : undefined
+    const settle = () => {
+      // Only close the modal if it is still showing this request.
+      if (pendingConfirm.current === resolve) {
+        pendingConfirm.current = null
+        pendingAction.current = undefined
+        setConfirmRequest(null)
+      }
+      resolve?.(answer)
+    }
+
+    if (!action) {
+      settle()
+      return
+    }
+
+    confirmingRef.current = true
+    setIsConfirming(true)
+    void (async () => {
+      try {
+        await action()
+      } catch (error) {
+        console.error(error)
+      } finally {
+        confirmingRef.current = false
+        setIsConfirming(false)
+        settle()
+      }
+    })()
   }, [])
 
   const toastApi = useMemo(() => ({
@@ -138,6 +180,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         dismissModalNotice,
         confirm,
         confirmRequest,
+        isConfirming,
         resolveConfirm,
       }}
     >

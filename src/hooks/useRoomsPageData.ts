@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../lib/dataCache';
+import { useLiveRefresh } from './useLiveRefresh';
 import { invalidateCacheGroups } from '../lib/cacheGroups';
 
 export interface RoomsPageDepartment {
@@ -71,8 +72,8 @@ export function useRoomsPageData(role: string | undefined, departmentId: number 
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const refresh = useCallback(async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(cacheKey));
+  const refresh = useCallback(async (forceRefresh = false, silent = false) => {
+    if (!silent) setIsLoading(forceRefresh || !hasCachedData(cacheKey));
     try {
       const next = await loadCachedData<RoomsPageData>(cacheKey, async () => {
         const response = await api.get<{ rooms?: ApiRoom[]; departments?: RoomsPageDepartment[]; schedules?: RoomsPageSchedule[]; active_semester?: unknown }>('/initial-data?include=rooms,departments,schedules');
@@ -92,6 +93,9 @@ export function useRoomsPageData(role: string | undefined, departmentId: number 
   }, [cacheKey]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Room usage figures come from the timetable, so schedule changes count too.
+  useLiveRefresh(['rooms', 'schedules', 'departments'], () => { void refresh(true, true); });
 
   const commit = useCallback((next: RoomsPageData) => {
     // A room write changes the room lists, the builder's room options and the

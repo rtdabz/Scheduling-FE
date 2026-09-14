@@ -1,4 +1,5 @@
 import { formatPhilippineDate } from '../../lib/philippineTime';
+import { capitalizeNameInput } from '../../lib/formatters';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
@@ -28,7 +29,10 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
+import { fetchDesignations, type Designation } from '../../lib/designations';
+import DesignationPicker from '../../components/faculty/DesignationPicker';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 
 interface User {
@@ -68,11 +72,6 @@ interface LinkableFaculty {
   status: string | null;
 }
 
-interface DesignationOption {
-  id: number;
-  name: string;
-  deload_units: number;
-}
 
 const linkableFacultyName = (f: LinkableFaculty) =>
   [f.last_name && `${f.last_name},`, f.first_name, f.middle_name].filter(Boolean).join(' ');
@@ -235,17 +234,17 @@ export default function VpaaUsers() {
   // `link`; once they choose, the suggestion never overrides them.
   const [facultyModeTouched, setFacultyModeTouched] = useState(false);
   const [linkFacultyId, setLinkFacultyId] = useState('');
-  const [designationId, setDesignationId] = useState('');
+  const [designationIds, setDesignationIds] = useState<string[]>([]);
   const [linkableFaculty, setLinkableFaculty] = useState<LinkableFaculty[]>([]);
   const [isLoadingLinkable, setIsLoadingLinkable] = useState(false);
-  const [designations, setDesignations] = useState<DesignationOption[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
   const [facultyLinkError, setFacultyLinkError] = useState('');
 
   const resetTeachingProfile = () => {
     setFacultyMode('create');
     setFacultyModeTouched(false);
     setLinkFacultyId('');
-    setDesignationId('');
+    setDesignationIds([]);
     setFacultyLinkError('');
   };
 
@@ -308,6 +307,8 @@ export default function VpaaUsers() {
     fetchData();
   }, []);
 
+  useLiveRefresh(['users', 'departments'], () => { void fetchData(true, true); });
+
   useEffect(() => {
     if (!isEditMode && formData.role && formData.department_id) {
       const dept = departments.find(d => d.id === parseInt(formData.department_id));
@@ -357,8 +358,8 @@ export default function VpaaUsers() {
 
   useEffect(() => {
     if (!isCreatingAccount || designations.length > 0) return;
-    api.get<DesignationOption[]>('/designations', { params: { active_only: 1 } })
-      .then((res) => setDesignations(res.data))
+    fetchDesignations(true)
+      .then(setDesignations)
       .catch(() => setDesignations([]));
   }, [isCreatingAccount, designations.length]);
 
@@ -384,16 +385,14 @@ export default function VpaaUsers() {
     }
   }, [isCreatingAccount, facultyModeTouched, matchingInstructor]);
 
-  const selectedDesignation = designations.find((d) => String(d.id) === designationId) ?? null;
-
   const isProgramHeadRole = formData.role === 'Program Head';
   const selectedDepartmentPrograms = useMemo(
     () => programs.filter((program) => String(program.department_id) === String(formData.department_id)),
     [programs, formData.department_id]
   );
 
-  const fetchData = async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(usersCacheKey));
+  const fetchData = async (forceRefresh = false, silent = false) => {
+    if (!silent) setIsLoading(forceRefresh || !hasCachedData(usersCacheKey));
     try {
       const data = await loadCachedData<UsersPageData>(usersCacheKey, async () => {
         const [usersRes, deptsRes, programsRes] = await Promise.all([
@@ -519,7 +518,7 @@ export default function VpaaUsers() {
           profile_picture: profilePicture,
           faculty_mode: facultyMode,
           faculty_id: facultyMode === 'link' ? parseInt(linkFacultyId) : null,
-          designation_id: facultyMode !== 'none' && designationId ? parseInt(designationId) : null,
+          designation_ids: facultyMode !== 'none' ? designationIds.map(Number) : [],
         });
         const createdUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -1009,7 +1008,7 @@ export default function VpaaUsers() {
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
@@ -1076,10 +1075,10 @@ export default function VpaaUsers() {
                     type="text"
                     value={formData.last_name}
                     onChange={(e) => {
-                      setFormData({ ...formData, last_name: e.target.value });
+                      setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
                       setLastNameError('');
                     }}
-                    placeholder="e.g. dela Cruz"
+                    placeholder="e.g. Dela Cruz"
                     className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
                       lastNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
                     }`}
@@ -1095,7 +1094,7 @@ export default function VpaaUsers() {
                     type="text"
                     value={formData.first_name}
                     onChange={(e) => {
-                      setFormData({ ...formData, first_name: e.target.value });
+                      setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
                       setFirstNameError('');
                     }}
                     placeholder="e.g. Juan"
@@ -1359,24 +1358,13 @@ export default function VpaaUsers() {
                   {facultyMode !== 'none' && designations.length > 0 && (
                     <div className="mt-3">
                       <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                        Designation
+                        Designations
                       </label>
-                      <select
-                        value={designationId}
-                        onChange={(e) => setDesignationId(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
-                      >
-                        <option value="">{facultyMode === 'link' ? 'Keep current designation' : 'No designation'}</option>
-                        {designations.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}{d.deload_units > 0 ? ` (-${d.deload_units} units)` : ''}
-                          </option>
-                        ))}
-                      </select>
+                      <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} />
                       <p className="text-xs text-gray-500 mt-1">
-                        {selectedDesignation
-                          ? `Deloads the instructor by ${selectedDesignation.deload_units} unit${selectedDesignation.deload_units === 1 ? '' : 's'}.`
-                          : 'A dean or program head usually carries a reduced load. Pick their post so it is scheduled correctly.'}
+                        {facultyMode === 'link' && designationIds.length === 0
+                          ? 'Leave empty to keep the instructor\'s current designations.'
+                          : 'A dean or program head usually carries a reduced load. Pick their posts so it is scheduled correctly.'}
                       </p>
                     </div>
                   )}
@@ -1410,7 +1398,7 @@ export default function VpaaUsers() {
 
       {/* User Detail Modal */}
       {isDetailModalOpen && selectedUserForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
             {/* Header Banner */}
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">

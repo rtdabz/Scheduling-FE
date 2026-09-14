@@ -117,6 +117,12 @@ interface Props {
    * the section records — and everything derived from them — pick up the change.
    */
   onSectionsChanged?: () => void | Promise<void>;
+  /**
+   * Reports the save that "Save & View Timetable" starts. The wizard closes on
+   * the click, so without this the timetable behind it sat unchanged, with no
+   * sign of progress, until the save and the refresh both came back.
+   */
+  onSavingChange?: (saving: boolean) => void;
 }
 
 const wizardSteps: Array<{ id: Step; title: string }> = [
@@ -173,6 +179,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   existingSchedules,
   onAccepted,
   onSectionsChanged,
+  onSavingChange,
 }: Props) {
   const { toast } = useToast();
   const [step, setStep] = useState<Step>(1);
@@ -816,6 +823,7 @@ export default function YearLevelGenerateScheduleWorkflow({
 
   const apply = async () => {
     setApplying(true);
+    onSavingChange?.(true);
     // The generator closes on the click rather than when the save resolves.
     // Refreshing the timetable behind it raises its own loading overlay, and
     // holding the wizard open stacked a second dialog on top of it. Nothing
@@ -918,6 +926,7 @@ export default function YearLevelGenerateScheduleWorkflow({
       );
     } finally {
       setApplying(false);
+      onSavingChange?.(false);
     }
   };
 

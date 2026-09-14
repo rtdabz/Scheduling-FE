@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { clearDataCache } from './dataCache';
+import { disconnectLiveUpdates, getLiveSocketId } from './liveSocket';
 import { announceSessionEnded, clearLastActivity } from './sessionTimeout';
 
 const api = axios.create({
@@ -45,6 +46,11 @@ api.interceptors.request.use((config) => {
         config.headers.Authorization = `Bearer ${token}`;
     }
 
+    const socketId = getLiveSocketId();
+    if (socketId) {
+        config.headers['X-Socket-ID'] = socketId;
+    }
+
     if (!config.signal) {
         const controller = new AbortController();
         config.signal = controller.signal;
@@ -75,6 +81,7 @@ api.interceptors.response.use(
         if (error.response?.status === 401 && requestUrl !== '/login' && requestUrl !== '/logout') {
             beginLogout();
             cancelPendingRequests();
+            disconnectLiveUpdates();
             clearDataCache();
             clearLastActivity();
             localStorage.removeItem('token');

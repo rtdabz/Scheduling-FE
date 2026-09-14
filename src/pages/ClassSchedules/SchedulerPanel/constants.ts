@@ -12,17 +12,20 @@ export const DAYS: string[] = [...FULL_DAY_NAMES];
  * `SchedulingPolicy::INSTRUCTOR_ASSIGNED_STATUSES`. A row that fell back to
  * draft, completed or revision is no longer an approved assignment, so it must
  * not appear as teaching load.
+ *
+ * Reassignment belongs here: the class keeps its instructor while assignments
+ * are reopened, and the server keeps counting it. Leaving it out made the
+ * printed load sheet drop those classes, so its totals fell short of the load
+ * shown on screen and a pro bono subject never reached the Overload table.
  */
 export const INSTRUCTOR_ASSIGNED_STATUSES: ScheduleItem["status"][] = [
   "approved",
   "faculty_assignment",
+  "reassignment",
   "finalized"
 ];
 
-/**
- * Approval stages that can be withdrawn into revision. Reassignment requires
- * an additional current-state check because it starts from a finalized cohort.
- */
+/** Approval stages that can be recalled into revision. */
 export const DEPARTMENT_WITHDRAWABLE_STATUSES: ScheduleItem["status"][] = [
   "submitted",
   "approved_by_dean",
@@ -32,13 +35,17 @@ export const DEPARTMENT_WITHDRAWABLE_STATUSES: ScheduleItem["status"][] = [
   "reassignment"
 ];
 
+/**
+ * Whether a section can be recalled. Recalling releases its instructors, so a
+ * section under Reassignment qualifies whether or not instructors are still on
+ * it. The instructor arguments are kept for existing callers and no longer
+ * decide anything.
+ */
 export const isDepartmentSectionWithdrawable = (
   status: ScheduleItem["status"],
-  assignedInstructorBlocks = 0,
-  facultyAssignmentDone = false,
-): boolean => status === "reassignment"
-  ? assignedInstructorBlocks === 0 && !facultyAssignmentDone
-  : DEPARTMENT_WITHDRAWABLE_STATUSES.includes(status);
+  _assignedInstructorBlocks = 0,
+  _facultyAssignmentDone = false,
+): boolean => DEPARTMENT_WITHDRAWABLE_STATUSES.includes(status);
 
 export const yearLevelLabel = (year: number): string => {
   switch (year) {

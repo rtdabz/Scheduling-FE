@@ -14,8 +14,11 @@ import axios from "axios";
 import api from "../../lib/api";
 import { yearLevelLabel } from "../../lib/semesterLabel";
 import { useToast } from "../../context/ToastContext";
+import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt } from "../../lib/conflictOverride";
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
+import { useLiveRevision } from "../../hooks/useLiveRefresh";
+import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { apiErrorMessage } from "../../lib/apiError";
 import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
 import type { LoadTier, OverloadConfirmation } from "../../lib/overloadConfirmation";
@@ -121,6 +124,7 @@ interface ApiSchedule {
   subject_id?: number;
   faculty_id: number | null;
   faculty_assignment_done?: boolean | number;
+  faculty_conflict_override?: boolean | number;
   section_id?: number;
   room_id?: number | null;
   day: string;
@@ -266,10 +270,21 @@ const getFacultyName = (schedule: ApiSchedule): string | null => {
   return [schedule.faculty.first_name, schedule.faculty.last_name].filter(Boolean).join(" ") || null;
 };
 
+/**
+ * The frame around the weekly grid. By default the grid is held to the viewport
+ * and scrolls on its own; with `scrollableTimetable` off it runs at full height
+ * in the page, so every hour is visible without an inner scrollbar.
+ */
+const timetableFrameClass = (scrollableTimetable: boolean): string => (scrollableTimetable
+  ? "max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white"
+  : "rounded-xl bg-white");
+
 function InstructorAssignmentTimetableSkeleton({
   hasFooter,
+  scrollableTimetable,
 }: {
   hasFooter: boolean;
+  scrollableTimetable: boolean;
 }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-busy="true" aria-label="Loading instructor assignments">
@@ -293,7 +308,7 @@ function InstructorAssignmentTimetableSkeleton({
       </div>
 
       <div id="instructor-assignment-timetable" className="overflow-x-auto p-3">
-        <div className="max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white">
+        <div className={timetableFrameClass(scrollableTimetable)}>
           <WeeklyTimetableGrid
             days={DAYS}
             slotCount={slotCount()}
@@ -354,6 +369,8 @@ interface InstructorAssignmentProps {
   workflowGuideId?: string | null;
   onWorkflowReady?: () => void;
   refreshToken?: number;
+  /** False lets the Grid view run at full height instead of scrolling inside the page. */
+  scrollableTimetable?: boolean;
 }
 
 export interface InstructorAssignmentWorkspaceState {
@@ -363,8 +380,8 @@ export interface InstructorAssignmentWorkspaceState {
   assignmentDone: boolean;
 }
 
-export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", onWorkflowReady, refreshToken = 0 }: InstructorAssignmentProps = {}) {
-  const { toast } = useToast();
+export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
+  const { toast, confirm } = useToast();
   const user = getStoredUser();
   const assignmentsCacheKey = `page:instructor-assignments:v5:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
@@ -387,13 +404,15 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     confirmation: OverloadConfirmation;
     schedule: AssignmentSchedule;
     facultyId: number;
+    /** Carried so confirming the overload keeps an override already chosen. */
+    overrideConflicts: boolean;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(assignmentsCacheKey));
   const [isSaving, setIsSaving] = useState(false);
   const [savingScheduleId, setSavingScheduleId] = useState<number | null>(null);
   const [isClearingSection, setIsClearingSection] = useState(false);
   const [clearSectionTarget, setClearSectionTarget] = useState<{
-    id: number;
+    sectionIds: number[];
     name: string;
     assignedCount: number;
   } | null>(null);
@@ -412,11 +431,13 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     if (!isLoading) onWorkflowReady?.();
   }, [isLoading, onWorkflowReady]);
 
+  const liveRevision = useLiveRevision(["assignments", "schedules", "faculty"]);
+
   useEffect(() => {
     let active = true;
 
     const loadData = async () => {
-      const shouldShowSkeleton = !hasCachedData(assignmentsCacheKey);
+      const shouldShowSkeleton = liveRevision === 0 && !hasCachedData(assignmentsCacheKey);
       setIsLoading(shouldShowSkeleton);
       setError("");
       try {
@@ -450,7 +471,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     return () => {
       active = false;
     };
-  }, [assignmentsCacheKey, refreshToken, user.department_id]);
+  }, [assignmentsCacheKey, refreshToken, user.department_id, liveRevision]);
 
   const subjectMap = useMemo(
     () => new Map(subjects.map((subject) => [Number(subject.id), subject])),
@@ -554,13 +575,13 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       getFacultyName(schedule),
     ].some((field) => (field ?? "").toLowerCase().includes(query));
   });
-  const clearableSectionSchedules = selectedSection === "all"
-    ? []
-    : sectionSchedules.filter((schedule) => (
-        schedule.faculty_id !== null
-        && schedule.status !== "finalized"
-        && !Boolean(schedule.faculty_assignment_done)
-      ));
+  // With "All sections" selected this is the whole department, so clearing
+  // there really does empty every instructor's load.
+  const clearableSectionSchedules = sectionSchedules.filter((schedule) => (
+    schedule.faculty_id !== null
+    && schedule.status !== "finalized"
+    && !schedule.faculty_assignment_done
+  ));
   const scheduleLayouts = useMemo(() => {
     const layouts: Array<{
       schedule: AssignmentSchedule;
@@ -683,6 +704,7 @@ const selectedSchedule = assignmentSchedules.find(
       facultyName: getFacultyName(schedule),
       facultyId: schedule.faculty_id === null ? null : String(schedule.faculty_id),
       facultyAssignmentDone: Boolean(schedule.faculty_assignment_done),
+      facultyConflictOverride: Boolean(schedule.faculty_conflict_override),
       status: schedule.status as ScheduleItem["status"],
       dayIndex: DAYS.indexOf(schedule.day),
       startSlot: Math.max(0, Math.floor((startMinutes - gridOpeningMinutes()) / slotMinutes())),
@@ -734,7 +756,8 @@ const selectedSchedule = assignmentSchedules.find(
   const submitAssignment = async (
     schedule: AssignmentSchedule,
     facultyId: number | null,
-    confirmOverload: boolean
+    confirmOverload: boolean,
+    overrideConflicts = false
   ) => {
     setIsSaving(true);
     setSavingScheduleId(schedule.id);
@@ -743,6 +766,7 @@ const selectedSchedule = assignmentSchedules.find(
       const response = await api.patch<AssignmentUpdateResponse>(`/instructor-assignments/${schedule.id}`, {
         faculty_id: facultyId,
         ...(confirmOverload ? { confirm_overload: true } : {}),
+        ...(overrideConflicts && facultyId !== null ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
       });
       // Soft rules do not refuse the assignment, so the reason has to be shown
       // after the save rather than blocking it.
@@ -775,6 +799,7 @@ const selectedSchedule = assignmentSchedules.find(
         incoming_courses: incomingCourses,
       });
 
+      invalidateAssignmentDependents();
       setOverloadPrompt(null);
       setFacultyAssignmentPopup(null);
       toast.success(
@@ -788,7 +813,23 @@ const selectedSchedule = assignmentSchedules.find(
       // question to put to the user — not an error to report.
       const confirmation = overloadConfirmationFrom(err);
       if (confirmation && facultyId !== null) {
-        setOverloadPrompt({ confirmation, schedule, facultyId });
+        setOverloadPrompt({ confirmation, schedule, facultyId, overrideConflicts });
+        return;
+      }
+
+      // Only the instructor's own clash: ask, then replay with the override,
+      // keeping any overload answer already given.
+      const question = facultyId === null || overrideConflicts ? null : conflictOverrideFrom(err);
+      if (question && facultyId !== null) {
+        setIsSaving(false);
+        setSavingScheduleId(null);
+        const proceed = await confirm({
+          title: "Instructor has a conflict",
+          message: conflictOverridePrompt(question),
+          eyebrow: "Instructor conflict",
+          confirmLabel: "Assign anyway",
+        });
+        if (proceed) await submitAssignment(schedule, facultyId, confirmOverload, true);
         return;
       }
 
@@ -806,7 +847,10 @@ const selectedSchedule = assignmentSchedules.find(
       return;
     }
 
-    void submitAssignment(selectedSchedule, Number(facultyAssignmentPopup.facultyId), false);
+    // Sent without the override: a confirmed clash comes back as a question,
+    // and the "Assign anyway" confirmation decides whether to assign over it.
+    const facultyId = Number(facultyAssignmentPopup.facultyId);
+    void submitAssignment(selectedSchedule, facultyId, false);
   };
 
   const removeAssignment = () => {
@@ -844,12 +888,21 @@ const selectedSchedule = assignmentSchedules.find(
     setWarnings([]);
     void submitAssignment(schedule, facultyId, false);
   };
+  // The Faculty pages, dashboards and timetables cache their own copies of each
+  // instructor's load; without this they kept showing assignments made or
+  // cleared here until those caches expired.
+  const invalidateAssignmentDependents = () => {
+    invalidateCacheGroups("faculty", "schedules", "dashboards");
+  };
+
   const requestClearSection = () => {
-    const sectionId = Number(clearableSectionSchedules[0]?.section_id ?? 0);
-    if (!sectionId || selectedSection === "all" || clearableSectionSchedules.length === 0) return;
+    const sectionIds = [...new Set(
+      clearableSectionSchedules.map((schedule) => Number(schedule.section_id ?? 0)).filter((id) => id > 0),
+    )];
+    if (sectionIds.length === 0) return;
     setClearSectionTarget({
-      id: sectionId,
-      name: selectedSection,
+      sectionIds,
+      name: selectedSection === "all" ? "all sections" : selectedSection,
       assignedCount: clearableSectionSchedules.length,
     });
   };
@@ -859,9 +912,9 @@ const selectedSchedule = assignmentSchedules.find(
     setIsClearingSection(true);
     setError("");
     try {
-      const response = await api.delete<ClearSectionResponse>(
-        `/instructor-assignments/sections/${clearSectionTarget.id}`,
-      );
+      const response = await api.post<ClearSectionResponse>("/instructor-assignments/clear", {
+        section_ids: clearSectionTarget.sectionIds,
+      });
       const updatedScheduleMap = new Map(response.data.schedules.map((schedule) => [schedule.id, schedule]));
       const updatedFacultyMap = new Map(response.data.faculties.map((faculty) => [faculty.id, faculty]));
       const nextSchedules = schedules.map((schedule) => updatedScheduleMap.get(schedule.id) ?? schedule);
@@ -881,8 +934,9 @@ const selectedSchedule = assignmentSchedules.find(
       setClearSectionTarget(null);
       toast.success(
         "Instructors Cleared",
-        `${response.data.courses_cleared} course ${response.data.courses_cleared === 1 ? "assignment was" : "assignments were"} cleared for ${selectedSection}.`,
+        `${response.data.courses_cleared} course ${response.data.courses_cleared === 1 ? "assignment was" : "assignments were"} cleared for ${clearSectionTarget.name}.`,
       );
+      invalidateAssignmentDependents();
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to clear the section's instructors. Please try again."));
     } finally {
@@ -988,6 +1042,7 @@ const selectedSchedule = assignmentSchedules.find(
     return (
       <InstructorAssignmentTimetableSkeleton
         hasFooter={Boolean(footerActions)}
+        scrollableTimetable={scrollableTimetable}
       />
     );
   }
@@ -1281,18 +1336,18 @@ const selectedSchedule = assignmentSchedules.find(
                 <option value="all">All sections</option>
                 {sections.map((section) => <option key={section}>{section}</option>)}
               </select>
-              {selectedSection !== "all" && (
-                <button
-                  type="button"
-                  onClick={requestClearSection}
-                  disabled={Boolean(assignmentLocked) || isSaving || isClearingSection || clearableSectionSchedules.length === 0}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Remove every instructor assignment you can manage in this section"
-                >
-                  <UserMinus className="h-4 w-4" />
-                  Clear Instructor
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={requestClearSection}
+                disabled={Boolean(assignmentLocked) || isSaving || isClearingSection || clearableSectionSchedules.length === 0}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title={selectedSection === "all"
+                  ? "Remove every instructor assignment you can manage in all sections"
+                  : "Remove every instructor assignment you can manage in this section"}
+              >
+                <UserMinus className="h-4 w-4" />
+                {selectedSection === "all" ? "Clear All Instructors" : "Clear Instructor"}
+              </button>
             </div>
 
             <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5">
@@ -1331,7 +1386,7 @@ const selectedSchedule = assignmentSchedules.find(
             </div>
           ) : (
           <div id="instructor-assignment-timetable" className="overflow-x-auto p-3">
-            <div className="max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white">
+            <div className={timetableFrameClass(scrollableTimetable)}>
               <WeeklyTimetableGrid
                 days={DAYS}
                 slotCount={slotCount()}
@@ -1431,7 +1486,7 @@ const selectedSchedule = assignmentSchedules.find(
           confirmation={overloadPrompt.confirmation}
           isSaving={isSaving}
           onConfirm={() =>
-            void submitAssignment(overloadPrompt.schedule, overloadPrompt.facultyId, true)
+            void submitAssignment(overloadPrompt.schedule, overloadPrompt.facultyId, true, overloadPrompt.overrideConflicts)
           }
           // "No" sends nothing, so the drawer is left exactly as the user had it:
           // the instructor is still only selected, never assigned.

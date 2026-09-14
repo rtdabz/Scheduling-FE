@@ -3,6 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, Department, Program } from '../../types/curriculum';
 import { annotateCurriculumLifecycle } from '../../types/curriculum';
@@ -39,8 +40,8 @@ export function useCurriculum() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchCurriculumList = useCallback(
-    async (forceRefresh = false) => {
-      setIsLoading(forceRefresh || !hasCachedData(curriculumCacheKey));
+    async (forceRefresh = false, silent = false) => {
+      if (!silent) setIsLoading(forceRefresh || !hasCachedData(curriculumCacheKey));
       try {
         const data = await loadCachedData<CurriculumPageData>(
           curriculumCacheKey,
@@ -73,6 +74,10 @@ export function useCurriculum() {
   useEffect(() => {
     fetchCurriculumList();
   }, [fetchCurriculumList]);
+
+  useLiveRefresh(['curriculum', 'courses', 'departments'], () => {
+    void fetchCurriculumList(true, true);
+  });
 
   // Ranked before filtering: new-vs-old is relative to a curriculum's siblings,
   // and a status filter would hide the ones the ranking depends on.

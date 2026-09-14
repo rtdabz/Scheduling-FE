@@ -52,6 +52,8 @@ interface UserPermissionsApiResponse {
   catalog_metadata: CapabilityDefinition[];
   modules: ModuleDefinition[];
   presets: Record<string, { label: string; permissions: string[] }>;
+  /** False while the user's department owns no program, so program-bound grants are refused. */
+  scheduling_ready?: boolean;
 }
 
 interface CapabilityDefinition {
@@ -60,6 +62,8 @@ interface CapabilityDefinition {
   title: string;
   description: string;
   assignable?: boolean;
+  /** Refused by the server until the holder's department owns a program. */
+  requires_program?: boolean;
   /** Capabilities this one cannot be exercised without; the server grants them alongside it. */
   requires?: string[];
 }
@@ -100,6 +104,7 @@ export default function UserAccessMatrixModal({
   const [catalogMetadata, setCatalogMetadata] = useState<CapabilityDefinition[]>([]);
   const [presets, setPresets] = useState<Record<string, { label: string; permissions: string[] }>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [schedulingReady, setSchedulingReady] = useState(true);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -125,6 +130,7 @@ export default function UserAccessMatrixModal({
         })));
         setCatalogMetadata(metadata);
         setPresets(res.data.presets || {});
+        setSchedulingReady(res.data.scheduling_ready !== false);
       })
       .catch(() => {
         if (!isMounted) return;
@@ -151,6 +157,12 @@ export default function UserAccessMatrixModal({
   }, [savedDirectPermissions, directPermissions]);
 
   const currentPresetKey = useMemo(() => {
+    // Checked first: a preset the role already covers (Reviewer, for a dean)
+    // has the same effective set as no grants at all.
+    if (directPermissions.length === 0) {
+      return 'defaults';
+    }
+
     const currentEffective = [...effectivePermissions].sort().join(',');
 
     for (const [key, preset] of Object.entries(presets)) {
@@ -162,10 +174,6 @@ export default function UserAccessMatrixModal({
       if (currentEffective === presetEffective) {
         return key;
       }
-    }
-
-    if (directPermissions.length === 0) {
-      return 'defaults';
     }
 
     return 'custom';
@@ -188,6 +196,19 @@ export default function UserAccessMatrixModal({
     [catalogMetadata],
   );
 
+  /**
+   * The direct grants to store: what was asked for, plus the prerequisites the
+   * role does not already give. Mirrors CapabilityRegistry::expandForRole, so a
+   * dean granted Create Schedules does not pick up a second copy of View.
+   */
+  const directGrantsFor = useCallback(
+    (permissionIds: string[]): string[] =>
+      withPrerequisites(permissionIds).filter(
+        (id) => permissionIds.includes(id) || !inheritedPermissions.includes(id),
+      ),
+    [withPrerequisites, inheritedPermissions],
+  );
+
   /** Capabilities currently selected that would break if `permissionId` were revoked. */
   const dependentsOf = useCallback(
     (permissionId: string, selected: string[]): string[] =>
@@ -200,9 +221,14 @@ export default function UserAccessMatrixModal({
   const toggleDirectPermission = (permissionId: string) => {
     // If inherited, locked and cannot be toggled off directly
     const definition = catalogMetadata.find((capability) => capability.id === permissionId);
-    if (inheritedPermissions.includes(permissionId) || definition?.assignable === false) return;
+    if (inheritedPermissions.includes(permissionId)) return;
 
     setDirectPermissions((prev) => {
+      // A grant the role may no longer hold can still be revoked -- otherwise it
+      // is stuck on, and every save is refused because it is sent back.
+      if (definition?.assignable === false && !prev.includes(permissionId)) {
+        return prev;
+      }
       if (prev.includes(permissionId)) {
         // Revoking a prerequisite would leave its dependents granted but unusable --
         // the server expands the grant back anyway, so refuse the toggle instead of
@@ -214,7 +240,7 @@ export default function UserAccessMatrixModal({
       }
       // Granting pulls in what the capability cannot run without, matching what
       // the server will store.
-      const additions = withPrerequisites([permissionId]).filter((id) => !prev.includes(id));
+      const additions = directGrantsFor([permissionId]).filter((id) => !prev.includes(id));
       return [...prev, ...additions];
     });
   };
@@ -225,9 +251,12 @@ export default function UserAccessMatrixModal({
       return;
     }
 
-    const targetPermissions = presets[presetKey]?.permissions ?? [];
-    // Keep only direct permissions that aren't already inherited (or set all target direct)
-    setDirectPermissions(withPrerequisites(targetPermissions));
+    // What the role already gives is left to the role, so a preset never
+    // stores a duplicate of an inherited capability.
+    const targetPermissions = (presets[presetKey]?.permissions ?? []).filter(
+      (id) => !inheritedPermissions.includes(id),
+    );
+    setDirectPermissions(directGrantsFor(targetPermissions));
   };
 
   const handleResetToSaved = () => {
@@ -282,6 +311,15 @@ export default function UserAccessMatrixModal({
     }).filter((group) => group.capabilities.length > 0);
   }, [searchQuery, modules]);
 
+  /** Granted capabilities the department cannot exercise until it owns a program. */
+  const programBoundGrants = useMemo(
+    () =>
+      catalogMetadata
+        .filter((capability) => capability.requires_program && effectivePermissions.includes(capability.id))
+        .map((capability) => capability.title),
+    [catalogMetadata, effectivePermissions],
+  );
+
   const totalCapabilitiesCount = useMemo(() => {
     return catalogMetadata.length;
   }, [catalogMetadata]);
@@ -289,7 +327,7 @@ export default function UserAccessMatrixModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 animate-in fade-in duration-200">
       <div className="bg-[#FBF9F6] border border-gray-200 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden font-sans animate-in zoom-in-95 duration-200">
         {/* Modal Header Banner */}
         <div className="px-6 py-5 border-b border-gray-200 bg-white flex items-center justify-between shrink-0">
@@ -459,6 +497,20 @@ export default function UserAccessMatrixModal({
           </div>
         )}
 
+        {/* Program Readiness Banner */}
+        {!isLoading && !schedulingReady && programBoundGrants.length > 0 && (
+          <div
+            role="alert"
+            className="px-6 py-2.5 bg-orange-50 border-b border-orange-200 text-orange-900 text-xs font-semibold flex items-center gap-2 shrink-0"
+          >
+            <AlertCircle size={15} className="text-orange-600 shrink-0" />
+            <span>
+              {user.department ?? 'This department'} has no program yet, so{' '}
+              {programBoundGrants.join(', ')} will be refused until the VPAA adds one.
+            </span>
+          </div>
+        )}
+
         {/* Error Banner */}
         {error && (
           <div className="px-6 py-3 bg-red-50 border-b border-red-200 text-red-800 text-xs font-semibold flex items-center gap-2 shrink-0">
@@ -521,6 +573,11 @@ export default function UserAccessMatrixModal({
                       const isDirect = directPermissions.includes(capability.id);
                       const isEffective = isInherited || isDirect;
                       const isAssignable = capability.assignable !== false;
+                      // Held from before the role lost eligibility: revocable, never grantable.
+                      const isStale = !isAssignable && isDirect;
+                      const needsProgram =
+                        !schedulingReady &&
+                        catalogMetadata.find((c) => c.id === capability.id)?.requires_program === true;
                       // Held in place while something that needs it is still granted.
                       const requiredBy = isDirect ? dependentsOf(capability.id, directPermissions) : [];
                       const isRequired = requiredBy.length > 0;
@@ -554,6 +611,17 @@ export default function UserAccessMatrixModal({
                                   Direct Grant
                                 </span>
                               ) : null}
+                              {isStale && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">
+                                  <AlertCircle size={10} />
+                                  Not allowed for role
+                                </span>
+                              )}
+                              {needsProgram && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+                                  Needs a program
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11.5px] text-gray-500 mt-0.5 leading-relaxed">
                               {capability.description}
@@ -575,7 +643,7 @@ export default function UserAccessMatrixModal({
                               type="button"
                               role="switch"
                               aria-checked={isEffective}
-                              disabled={isInherited || !isAssignable || isRequired || isSaving}
+                              disabled={isInherited || (!isAssignable && !isDirect) || isRequired || isSaving}
                               onClick={() => toggleDirectPermission(capability.id)}
                               className={`
                                 relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent
@@ -583,6 +651,8 @@ export default function UserAccessMatrixModal({
                                 ${
                                   isInherited
                                     ? 'bg-amber-600/70 cursor-not-allowed opacity-80'
+                                    : isStale
+                                    ? 'bg-red-500 cursor-pointer'
                                     : !isAssignable
                                     ? 'bg-gray-100 cursor-not-allowed opacity-60'
                                     : isRequired
@@ -595,6 +665,8 @@ export default function UserAccessMatrixModal({
                               title={
                                 isInherited
                                   ? `Inherited from ${user.role} role (locked)`
+                                  : isStale
+                                  ? `Not allowed for the ${user.role} role. Click to revoke.`
                                   : !isAssignable
                                   ? `Unavailable for the ${user.role} role`
                                   : isRequired

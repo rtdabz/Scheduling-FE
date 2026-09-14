@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import NumberInput from '../ui/NumberInput';
 import { createPortal } from 'react-dom';
 import { Info, X } from 'lucide-react';
 import api from '../../lib/api';
@@ -77,7 +78,6 @@ export default function FacultyLoadEditorModal({
   }, [values]);
 
   const localError = useMemo(() => {
-    if (values.max_units <= 0) return 'The basic load must be greater than 0.';
     if (values.deload_units > values.max_units) {
       return 'Deload units cannot exceed the basic load.';
     }
@@ -107,7 +107,7 @@ export default function FacultyLoadEditorModal({
   const overCeiling = faculty.assigned_units > derived.ceiling && derived.ceiling > 0;
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
       <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-gray-200 flex shrink-0 justify-between items-center bg-gray-50/50">
           <div>
@@ -141,9 +141,8 @@ export default function FacultyLoadEditorModal({
                 >
                   {field.label}
                 </label>
-                <input
+                <NumberInput
                   id={`load-${field.key}`}
-                  type="number"
                   min={0}
                   value={values[field.key]}
                   onChange={e =>

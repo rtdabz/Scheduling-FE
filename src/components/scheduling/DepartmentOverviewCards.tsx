@@ -182,7 +182,7 @@ export default function DepartmentOverviewCards({ departments, isLoading, onOpen
                 <span className="mx-1.5 text-slate-300">·</span>
                 {department.meetings} meeting{department.meetings === 1 ? '' : 's'}
               </p>
-              <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-[#4e0a10] opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-[#4e0a10] transition-transform group-hover:translate-x-0.5">
                 Open
                 <ChevronRight className="w-3.5 h-3.5" />
               </span>

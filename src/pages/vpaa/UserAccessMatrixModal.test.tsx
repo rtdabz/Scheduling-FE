@@ -204,3 +204,99 @@ describe('UserAccessMatrixModal', () => {
     fireEvent.click(roleDefaultsChip);
   });
 });
+
+describe('UserAccessMatrixModal against role defaults and prerequisites', () => {
+  // Shaped like the real config: every capability but View requires View.
+  const capability = (id: string, module: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    module,
+    title: id,
+    description: `${id} description`,
+    assignable: true,
+    requires: id === 'schedule.view' ? [] : ['schedule.view'],
+    ...extra,
+  });
+  const catalog = [
+    capability('schedule.view', 'schedule_workspace'),
+    capability('schedule.create', 'schedule_workspace', { requires_program: true }),
+    capability('room.review_requests', 'room_requests', { assignable: false }),
+  ];
+  const response = (overrides: Record<string, unknown>) => ({
+    data: {
+      inherited: [],
+      direct: [],
+      effective: [],
+      catalog: catalog.map((c) => c.id),
+      catalog_metadata: catalog,
+      modules: [
+        { id: 'schedule_workspace', title: 'Schedule Workspace', description: 'Scheduling.', capabilities: [] },
+        { id: 'room_requests', title: 'Room Requests', description: 'Rooms.', capabilities: [] },
+      ],
+      presets: { view_only: { label: 'Reviewer', permissions: ['schedule.view'] } },
+      scheduling_ready: true,
+      ...overrides,
+    },
+  });
+  const dean = { id: 7, name: 'Dean', username: 'dean', email: 'dean@school.edu.ph', role: 'dean', status: 'Active' as const };
+  const switchFor = (id: string) =>
+    screen.getByText(id, { selector: 'code' }).closest('div.px-5')!.querySelector('[role="switch"]') as HTMLButtonElement;
+  const renderModal = async (user = dean) => {
+    render(<UserAccessMatrixModal isOpen onClose={vi.fn()} user={user} onSuccess={vi.fn()} />);
+    await screen.findByText('schedule.create', { selector: 'code' });
+  };
+
+  it('highlights Role Defaults, not a preset the role already covers, when nothing is granted', async () => {
+    get.mockResolvedValue(response({ inherited: ['schedule.view'] }));
+    await renderModal();
+
+    expect(screen.getByRole('button', { name: 'Role Defaults' }).className).toContain('bg-gray-800');
+    expect(screen.getByRole('button', { name: 'Reviewer' }).className).not.toContain('bg-[#5A1220]');
+  });
+
+  it('does not add an inherited prerequisite as a direct grant', async () => {
+    get.mockResolvedValue(response({ inherited: ['schedule.view'] }));
+    await renderModal();
+
+    fireEvent.click(switchFor('schedule.create'));
+    expect(screen.getByText('Direct Grants').parentElement?.textContent).toContain('1 Direct Grants');
+
+    fireEvent.click(switchFor('schedule.create'));
+    expect(screen.queryByText(/unsaved access changes/i)).toBeNull();
+    expect(screen.getByText('Direct Grants').parentElement?.textContent).toContain('0 Direct Grants');
+  });
+
+  it('lets a grant the role may no longer hold be revoked and saved', async () => {
+    get.mockResolvedValue(response({ direct: ['room.review_requests'] }));
+    await renderModal({ ...dean, role: 'secretary' });
+
+    expect(screen.getByText('Not allowed for role')).not.toBeNull();
+    const stale = switchFor('room.review_requests');
+    expect(stale.disabled).toBe(false);
+
+    fireEvent.click(stale);
+    expect(stale.getAttribute('aria-checked')).toBe('false');
+    // Once revoked it cannot be switched back on.
+    expect(stale.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Access Changes/i }));
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('/user/7/permissions', { permissions: [] });
+    });
+  });
+
+  it('warns when a granted capability needs a program the department does not have', async () => {
+    get.mockResolvedValue(response({ direct: ['schedule.create', 'schedule.view'], scheduling_ready: false }));
+    await renderModal();
+
+    expect(screen.getByRole('alert')?.textContent).toContain('schedule.create');
+    expect(screen.getByText('Needs a program')).not.toBeNull();
+  });
+
+  it('shows no program warning once the department is ready', async () => {
+    get.mockResolvedValue(response({ direct: ['schedule.create', 'schedule.view'] }));
+    await renderModal();
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Needs a program')).toBeNull();
+  });
+});

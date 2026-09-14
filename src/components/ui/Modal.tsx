@@ -69,7 +69,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-2 backdrop-blur-[2px] animate-in fade-in duration-200 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-2 animate-in fade-in duration-200 sm:items-center sm:p-4"
       onMouseDown={handleOverlayClick}
       role="presentation"
     >

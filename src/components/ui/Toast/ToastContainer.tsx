@@ -3,7 +3,7 @@ import ConfirmModal from '../ConfirmModal'
 import Toast from './Toast'
 
 export default function ToastContainer() {
-  const { toasts, modalNotices, dismiss, dismissModalNotice, confirmRequest, resolveConfirm } = useToast()
+  const { toasts, modalNotices, dismiss, dismissModalNotice, confirmRequest, isConfirming, resolveConfirm } = useToast()
   const activeNotice = modalNotices[0] ?? null
   const closeActiveNotice = () => {
     if (activeNotice) dismissModalNotice(activeNotice.id)
@@ -47,6 +47,7 @@ export default function ToastContainer() {
         confirmLabel={confirmRequest?.confirmLabel ?? 'Confirm'}
         cancelLabel={confirmRequest?.cancelLabel ?? 'Cancel'}
         variant={confirmRequest?.variant ?? 'warning'}
+        isConfirming={isConfirming}
         onCancel={() => resolveConfirm(false)}
         onConfirm={() => resolveConfirm(true)}
       />

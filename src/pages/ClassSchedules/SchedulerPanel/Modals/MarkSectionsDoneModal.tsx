@@ -4,21 +4,94 @@ import { yearLevelLabel } from "../constants";
 import type { SectionDoneCandidate } from "../types";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 
+export type SectionChecklistVariant = "done" | "finalize" | "reassign";
+
 interface MarkSectionsDoneModalProps {
   candidates: SectionDoneCandidate[];
   selectedSectionId: string;
   isMarking: boolean;
   onConfirm: (sectionIds: string[]) => void;
   onCancel: () => void;
+  /**
+   * "done" locks plotting, "finalize" locks instructor assignment, "reassign"
+   * reopens finalized assignments. Same checklist in every case.
+   */
+  variant?: SectionChecklistVariant;
 }
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : word.endsWith("s") ? "es" : "s"}`;
+
+const COPY: Record<SectionChecklistVariant, {
+  eyebrow: string;
+  title: string;
+  description: string;
+  empty: string;
+  noneReady: string;
+  progress: (done: number, total: number) => string;
+  lockNote: (meetings: number) => string;
+  selectAll: string;
+  closeLabel: string;
+  working: string;
+  confirm: (count: number) => string;
+  /**
+   * Which sections start ticked. Locking actions pre-check every ready section;
+   * reopening one only pre-checks the section that is open, so unlocking the
+   * whole department is never a single click.
+   */
+  preselect: "ready" | "open";
+}> = {
+  done: {
+    eyebrow: "Department Readiness",
+    title: "Mark sections done",
+    description: "Tick every section you have finished plotting. Marking a section done locks its timetable so the department schedule can be submitted.",
+    empty: "Every section in this department is already done or locked for approval.",
+    noneReady: "No section is fully plotted yet. Finish placing the remaining courses before marking a section done.",
+    progress: (done, total) => `${done}/${total} courses plotted`,
+    lockNote: (meetings) => `${plural(meetings, "meeting")} will be locked`,
+    selectAll: "Select all ready",
+    closeLabel: "Close mark sections done",
+    working: "Marking...",
+    confirm: (count) => (count > 0 ? `Mark ${count} Done` : "Mark Done"),
+    preselect: "ready",
+  },
+  finalize: {
+    eyebrow: "Instructor Assignment",
+    title: "Finalize sections",
+    description: "Tick every section whose classes all have an instructor. Finalizing locks its instructor assignments; use Reassignment on a section to reopen it.",
+    empty: "No section in this department is waiting to be finalized.",
+    noneReady: "No section is ready yet. Assign an instructor to every class, and a room to every on-site laboratory class, before finalizing.",
+    progress: (done, total) => `${done}/${total} classes have an instructor`,
+    lockNote: (meetings) => `${plural(meetings, "meeting")} will be finalized`,
+    selectAll: "Select all ready",
+    closeLabel: "Close finalize sections",
+    working: "Finalizing...",
+    confirm: (count) => (count > 0 ? `Finalize ${count}` : "Finalize"),
+    preselect: "ready",
+  },
+  reassign: {
+    eyebrow: "Instructor Assignment",
+    title: "Reassign sections",
+    description: "Tick every finalized section whose instructors need to change. Reassignment reopens instructor assignment only; the timetable itself stays locked. Finalize the section again when you are done.",
+    empty: "No section in this department has been finalized.",
+    noneReady: "No finalized section can be reopened right now.",
+    progress: (_done, total) => `${plural(total, "class")} finalized`,
+    lockNote: (meetings) => `${plural(meetings, "meeting")} will reopen for reassignment`,
+    selectAll: "Select all finalized",
+    closeLabel: "Close reassign sections",
+    working: "Unlocking...",
+    confirm: (count) => (count > 0 ? `Reassign ${count}` : "Reassign"),
+    preselect: "open",
+  },
+};
 
 const readyIdsOf = (candidates: SectionDoneCandidate[]): string[] =>
   candidates.filter((candidate) => candidate.isReady).map((candidate) => candidate.sectionId);
 
 /**
- * Bulk replacement for walking every section and clicking Done one at a time.
- * Ready sections are pre-checked; blocked ones stay visible (disabled) so the
- * remaining plotting work is obvious without leaving the modal.
+ * Bulk replacement for walking every section and clicking Done -- or Finalize --
+ * one at a time. Ready sections are pre-checked; blocked ones stay visible
+ * (disabled) with the reason, so the remaining work is obvious without leaving
+ * the modal.
  */
 export default function MarkSectionsDoneModal({
   candidates,
@@ -26,10 +99,16 @@ export default function MarkSectionsDoneModal({
   isMarking,
   onConfirm,
   onCancel,
+  variant = "done",
 }: MarkSectionsDoneModalProps) {
+  const copy = COPY[variant];
   // The modal is mounted only while open, so the ready sections are pre-checked
   // once on mount instead of being resynced from an effect.
-  const [selectedIds, setSelectedIds] = useState<string[]>(() => readyIdsOf(candidates));
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => (
+    COPY[variant].preselect === "open"
+      ? readyIdsOf(candidates).filter((id) => id === selectedSectionId)
+      : readyIdsOf(candidates)
+  ));
 
   const readySections = useMemo(
     () => candidates.filter((candidate) => candidate.isReady),
@@ -68,7 +147,7 @@ export default function MarkSectionsDoneModal({
     .reduce((total, candidate) => total + candidate.scheduleIds.length, 0);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px] animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4 animate-in fade-in duration-200">
       <div
         role="dialog"
         aria-modal="true"
@@ -81,10 +160,10 @@ export default function MarkSectionsDoneModal({
             <CheckSquare size={20} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b0f1a]">Department Readiness</p>
-            <h3 id="mark-sections-done-title" className="mt-1 text-base font-bold leading-6 text-slate-950">Mark sections done</h3>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b0f1a]">{copy.eyebrow}</p>
+            <h3 id="mark-sections-done-title" className="mt-1 text-base font-bold leading-6 text-slate-950">{copy.title}</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Tick every section you have finished plotting. Marking a section done locks its timetable so the department schedule can be submitted.
+              {copy.description}
             </p>
           </div>
           <button
@@ -93,7 +172,7 @@ export default function MarkSectionsDoneModal({
             disabled={isMarking}
             className="flex h-8 w-8 items-center justify-center bg-slate-50 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
             style={{ borderRadius: 8 }}
-            aria-label="Close mark sections done"
+            aria-label={copy.closeLabel}
           >
             <X size={16} />
           </button>
@@ -103,20 +182,20 @@ export default function MarkSectionsDoneModal({
           {candidates.length === 0 ? (
             <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-600">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-              Every section in this department is already done or locked for approval.
+              {copy.empty}
             </div>
           ) : (
             <>
               {readySections.length === 0 && (
                 <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  No section is fully plotted yet. Finish placing the remaining courses before marking a section done.
+                  {copy.noneReady}
                 </div>
               )}
               <div className="overflow-hidden rounded-xl border border-slate-200">
                 <label className="flex cursor-pointer items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
                   <span className="text-xs font-bold text-slate-700">
-                    {allReadySelected ? "Clear all" : "Select all ready"}
+                    {allReadySelected ? "Clear all" : copy.selectAll}
                   </span>
                   <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
                     {selectedIds.length} of {readySections.length} selected
@@ -162,9 +241,9 @@ export default function MarkSectionsDoneModal({
                             )}
                           </span>
                           <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
-                            {candidate.plottedSubjects}/{candidate.requiredSubjects} courses plotted
+                            {copy.progress(candidate.plottedSubjects, candidate.requiredSubjects)}
                             {candidate.isReady
-                              ? ` · ${candidate.scheduleIds.length} meeting${candidate.scheduleIds.length === 1 ? "" : "s"} will be locked`
+                              ? ` · ${copy.lockNote(candidate.scheduleIds.length)}`
                               : ` · ${candidate.blockedReason}`}
                           </span>
                         </span>
@@ -177,7 +256,7 @@ export default function MarkSectionsDoneModal({
                         ) : (
                           <span
                             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-slate-400"
-                            title={remaining > 0 ? `${remaining} course${remaining === 1 ? "" : "s"} still unplaced` : candidate.blockedReason}
+                            title={variant === "done" && remaining > 0 ? `${remaining} course${remaining === 1 ? "" : "s"} still unplaced` : candidate.blockedReason}
                           >
                             <Lock size={13} />
                           </span>
@@ -215,7 +294,7 @@ export default function MarkSectionsDoneModal({
               style={{ borderRadius: 8 }}
             >
               {isMarking && <LoadingSpinner className="h-4 w-4" />}
-              {isMarking ? "Marking..." : selectedIds.length > 0 ? `Mark ${selectedIds.length} Done` : "Mark Done"}
+              {isMarking ? copy.working : copy.confirm(selectedIds.length)}
             </button>
           </span>
         </div>

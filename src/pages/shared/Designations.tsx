@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
+import NumberInput from '../../components/ui/NumberInput';
+import { AlertTriangle, ArrowRight, Award, CornerDownRight, FolderTree, Pencil, Plus, Search, TrendingDown, Trash2, Users, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import Skeleton from '../../components/ui/Skeleton';
+import DataTable from '../../components/ui/DataTable';
+import { useDataTable } from '../../components/ui/useDataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import { hasStoredCapability } from '../../lib/storedUser';
 import {
+  basicLoadAfterDeload,
   createDesignation,
   deleteDesignation,
+  designationLabel,
   emptyDesignation,
   fetchDesignations,
   updateDesignation,
@@ -17,6 +23,14 @@ import {
 } from '../../lib/designations';
 
 const MANAGE_CAPABILITY = 'faculty.manage_designations';
+
+/** The common full-time maximum, used only to illustrate a deload's effect. */
+const REFERENCE_MAX_UNITS = 21;
+
+const initialsOf = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || '?';
+
+const unitsLabel = (units: number) => `${units} ${units === 1 ? 'unit' : 'units'}`;
 
 /**
  * Maintains the administrative designations instructors may hold.
@@ -61,24 +75,40 @@ export default function Designations() {
     void load();
   }, [load]);
 
+  // Each top-level designation followed by the sub-designations under it, so a
+  // heading reads as a group. Search matches the full "Director · Networking
+  // Dev't" label, and keeps a matching sub-designation's heading in view.
   const visible = useMemo(() => {
+    const ordered: Designation[] = [];
+    designations.filter((d) => d.parent_id === null).forEach((top) => {
+      ordered.push(top, ...designations.filter((d) => d.parent_id === top.id));
+    });
+    designations.forEach((d) => { if (!ordered.includes(d)) ordered.push(d); });
+
     const needle = search.trim().toLowerCase();
-    if (!needle) return designations;
-    return designations.filter((d) =>
-      [d.name, d.code ?? '', d.description ?? ''].some((field) => field.toLowerCase().includes(needle)),
-    );
+    if (!needle) return ordered;
+    const matches = new Set(ordered.filter((d) => designationLabel(d).toLowerCase().includes(needle)).map((d) => d.id));
+    return ordered.filter((d) => matches.has(d.id) || designations.some((child) => child.parent_id === d.id && matches.has(child.id)));
   }, [designations, search]);
 
-  const openCreate = () => {
+  /** Top-level designations another may be placed under. */
+  const parentOptions = useMemo(
+    () => designations.filter((d) => d.parent_id === null && d.id !== editing?.id),
+    [designations, editing],
+  );
+  const editingHasChildren = editing !== null && designations.some((d) => d.parent_id === editing.id);
+
+  const openCreate = (parent: Designation | null = null) => {
     setEditing(null);
-    setForm(emptyDesignation());
+    setForm({ ...emptyDesignation(), parent_id: parent?.id ?? null });
     setFieldErrors({});
     setIsFormOpen(true);
   };
 
-  const openEdit = (designation: Designation) => {
+  const openEdit = useCallback((designation: Designation) => {
     setEditing(designation);
     setForm({
+      parent_id: designation.parent_id ?? null,
       name: designation.name,
       code: designation.code,
       deload_units: designation.deload_units,
@@ -88,7 +118,143 @@ export default function Designations() {
     });
     setFieldErrors({});
     setIsFormOpen(true);
-  };
+  }, []);
+
+  const columns = useMemo<ColumnDef<Designation>[]>(() => [
+    {
+      id: 'name',
+      accessorKey: 'name',
+      header: 'Designation',
+      cell: ({ row }) => {
+        const designation = row.original;
+        const isSub = designation.parent_id !== null;
+        const subCount = designation.children_count ?? 0;
+        return (
+          <div className={`flex min-w-[14rem] items-center gap-3 ${isSub ? 'pl-8' : ''}`}>
+            {isSub && <CornerDownRight size={16} aria-hidden="true" className="-ml-6 shrink-0 text-gray-300" />}
+            <span
+              aria-hidden="true"
+              className={`flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5A1220] to-[#8a2434] font-black tracking-wide text-white shadow-sm ${isSub ? 'h-8 w-8 text-[10px] opacity-80' : 'h-10 w-10 text-xs'}`}
+            >
+              {initialsOf(designation.name)}
+            </span>
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-bold text-gray-900">
+                <span className="truncate">{designation.name}</span>
+                {designation.code && (
+                  <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-[10px] font-bold uppercase text-gray-500">
+                    {designation.code}
+                  </span>
+                )}
+                {subCount > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-px text-[10px] font-bold text-[#5A1220]">
+                    <FolderTree size={10} /> Heading · {subCount} sub-designation{subCount === 1 ? '' : 's'}
+                  </span>
+                )}
+              </p>
+              <p className="max-w-xs truncate text-xs font-medium text-gray-400">
+                {isSub ? `Under ${designation.parent?.name ?? 'another designation'}` : designation.description || 'No description'}
+              </p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'deload',
+      accessorKey: 'deload_units',
+      header: 'Deload',
+      cell: ({ row }) => {
+        const units = row.original.deload_units;
+        const share = Math.min(100, (units / REFERENCE_MAX_UNITS) * 100);
+        return (
+          <div className="w-36">
+            <span className="inline-flex items-center gap-1 rounded-md border border-[#C9952A]/30 bg-[#C9952A]/10 px-2 py-0.5 text-xs font-black text-[#8a6412]">
+              <TrendingDown size={12} />
+              {unitsLabel(units)}
+            </span>
+            <div
+              className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100"
+              role="img"
+              aria-label={`${Math.round(share)}% of a ${REFERENCE_MAX_UNITS}-unit load`}
+            >
+              <div className="h-full rounded-full bg-gradient-to-r from-[#C9952A] to-[#e0b65a]" style={{ width: `${share}%` }} />
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'basic_load',
+      accessorFn: (designation) => basicLoadAfterDeload(REFERENCE_MAX_UNITS, designation.deload_units),
+      header: `Basic load (of ${REFERENCE_MAX_UNITS})`,
+      cell: ({ getValue }) => {
+        const remaining = getValue<number>();
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-gray-500">
+            {REFERENCE_MAX_UNITS}
+            <ArrowRight size={12} className="text-gray-300" />
+            <span className={`font-black ${remaining === 0 ? 'text-red-600' : 'text-gray-900'}`}>{unitsLabel(remaining)}</span>
+          </span>
+        );
+      },
+    },
+    {
+      id: 'holders',
+      accessorFn: (designation) => designation.faculties_count ?? 0,
+      header: 'Holders',
+      cell: ({ getValue }) => {
+        const holders = getValue<number>();
+        return holders > 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#5A1220]/[0.07] px-2.5 py-1 text-xs font-bold text-[#5A1220]">
+            <Users size={12} />
+            {holders} {holders === 1 ? 'instructor' : 'instructors'}
+          </span>
+        ) : (
+          <span className="text-xs font-medium italic text-gray-400">Not assigned yet</span>
+        );
+      },
+    },
+    {
+      id: 'status',
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const active = row.original.status !== 'inactive';
+        return (
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            {active ? 'Active' : 'Inactive'}
+          </span>
+        );
+      },
+    },
+    ...(canManage ? [{
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      enableSorting: false,
+      meta: { align: 'right' as const },
+      cell: ({ row }: { row: { original: Designation } }) => (
+        <div className="flex items-center justify-end gap-2">
+          {row.original.parent_id === null && (row.original.faculties_count ?? 0) === 0 && (
+            <TableActionButton label={`Add a sub-designation under ${row.original.name}`} variant="view" onClick={() => openCreate(row.original)}>
+              <Plus size={15} />
+            </TableActionButton>
+          )}
+          <TableActionButton label={`Edit ${row.original.name}`} variant="edit" onClick={() => openEdit(row.original)}>
+            <Pencil size={15} />
+          </TableActionButton>
+          <TableActionButton label={`Archive ${row.original.name}`} variant="danger" onClick={() => setPendingDelete(row.original)}>
+            <Trash2 size={15} />
+          </TableActionButton>
+        </div>
+      ),
+    } satisfies ColumnDef<Designation>] : []),
+  // openCreate is rebuilt each render but only reads setters, so it is safe to omit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [canManage, openEdit]);
+
+  const table = useDataTable({ data: visible, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
 
   const handleSave = async () => {
     if (!form.name.trim()) {
@@ -100,7 +266,11 @@ export default function Designations() {
     setFieldErrors({});
     try {
       if (editing) {
-        const { holdersUpdated } = await updateDesignation(editing.id, form);
+        const { holdersUpdated } = await updateDesignation(editing.id, {
+          name: form.name,
+          deload_units: form.deload_units,
+          parent_id: form.parent_id,
+        });
         // The deload is copied onto each holder, so a changed figure moves real
         // teaching loads. Saying how many keeps that from being a silent edit.
         toast.success(
@@ -153,144 +323,118 @@ export default function Designations() {
   };
 
   const totalHolders = designations.reduce((sum, d) => sum + (d.faculties_count ?? 0), 0);
+  const activeCount = designations.filter((d) => d.status !== 'inactive').length;
+  const unitsReleased = designations.reduce((sum, d) => sum + d.deload_units * (d.faculties_count ?? 0), 0);
+  const isSearching = search.trim() !== '';
 
   return (
     <div className="space-y-6">
       {/* The page title is rendered by the layout's PageHeader. */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Designations" value={designations.length} icon={<Award size={18} />} />
         <StatCard
-          label="Active"
-          value={designations.filter((d) => d.status === 'active').length}
+          label="Designations"
+          value={designations.length}
+          hint={`${activeCount} active`}
           icon={<Award size={18} />}
+          isLoading={isLoading}
         />
-        <StatCard label="Instructors holding one" value={totalHolders} icon={<Users size={18} />} />
+        <StatCard
+          label="Instructors holding one"
+          value={totalHolders}
+          hint="Across every designation"
+          icon={<Users size={18} />}
+          isLoading={isLoading}
+        />
+        <StatCard
+          label="Units deloaded"
+          value={unitsReleased}
+          hint="Deload × holders, freed from teaching"
+          icon={<TrendingDown size={18} />}
+          isLoading={isLoading}
+        />
       </div>
 
-      {/* Search and actions bar — the primary action sits with the filters,
-          matching Users, Faculty, and Rooms. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-md">
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search designations"
-            aria-label="Search designations"
-            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
-          />
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {/* Toolbar lives on the card, so the list and its controls read as one unit. */}
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-sm font-black text-gray-900">Designation register</h2>
+            <p className="text-xs text-gray-500">
+              Each post takes its deload off a holder&apos;s maximum units to give their Basic Load.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-72">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search designations"
+                aria-label="Search designations"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50/60 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[#C9952A] focus:bg-white focus:ring-2 focus:ring-[#C9952A]/20"
+              />
+            </div>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => openCreate()}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#5A1220] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#4a0f1a]"
+              >
+                <Plus size={16} />
+                Add Designation
+              </button>
+            )}
+          </div>
         </div>
 
-        {canManage && (
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#5A1220] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#4a0f1a]"
-          >
-            <Plus size={16} />
-            Add Designation
-          </button>
-        )}
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left">
-            <thead className="bg-gray-50/95">
-              <tr className="border-b border-gray-200">
-                {['Designation', 'Code', 'Deload', 'Holders', 'Status', ''].map((heading, index) => (
-                  <th
-                    key={heading || `actions-${index}`}
-                    scope="col"
-                    className="whitespace-nowrap px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-gray-500"
-                  >
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 4 }).map((_, index) => (
-                  <tr key={index}>
-                    {Array.from({ length: 6 }).map((__, cell) => (
-                      <td key={cell} className="px-4 py-3">
-                        <Skeleton className="h-4 w-full" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center">
-                    <p className="text-sm font-bold text-gray-700">No designations yet.</p>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {canManage
-                        ? 'Add the posts your institution recognises — each with the units it deloads.'
-                        : 'Ask the VPAA to add the designations your institution recognises.'}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                visible.map((designation) => (
-                  <tr key={designation.id} className="transition hover:bg-gray-50/70">
-                    <td className="px-4 py-3">
-                      <p className="font-bold text-gray-900">{designation.name}</p>
-                      {designation.description && (
-                        <p className="mt-0.5 text-xs text-gray-500">{designation.description}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{designation.code ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-md border border-[#C9952A]/30 bg-[#C9952A]/10 px-2 py-0.5 text-xs font-black text-[#8a6412]">
-                        {designation.deload_units} {designation.deload_units === 1 ? 'unit' : 'units'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{designation.faculties_count ?? 0}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                          designation.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {designation.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {canManage && (
-                        <div className="flex items-center gap-2">
-                          <TableActionButton
-                            label={`Edit ${designation.name}`}
-                            variant="edit"
-                            onClick={() => openEdit(designation)}
-                          >
-                            <Pencil size={15} />
-                          </TableActionButton>
-                          <TableActionButton
-                            label={`Archive ${designation.name}`}
-                            variant="danger"
-                            onClick={() => setPendingDelete(designation)}
-                          >
-                            <Trash2 size={15} />
-                          </TableActionButton>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
+        <DataTable
+          table={table}
+          variant="embedded"
+          isLoading={isLoading}
+          loadingRows={4}
+          totalLabel="designations"
+          ariaLabel="Designations"
+          emptyState={
+            <div className="mx-auto flex max-w-sm flex-col items-center">
+              <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C9952A]/10 text-[#C9952A]">
+                {isSearching ? <Search size={22} /> : <Award size={22} />}
+              </span>
+              <p className="text-sm font-bold text-gray-800">
+                {isSearching ? `No designations match “${search.trim()}”.` : 'No designations yet.'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {isSearching
+                  ? 'Check the spelling or clear the search to see every designation.'
+                  : canManage
+                    ? 'Add the posts your institution recognises — each with the units it deloads.'
+                    : 'Ask the VPAA to add the designations your institution recognises.'}
+              </p>
+              {isSearching ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                >
+                  <X size={14} /> Clear search
+                </button>
+              ) : canManage && (
+                <button
+                  type="button"
+                  onClick={() => openCreate()}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#5A1220] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a0f1a]"
+                >
+                  <Plus size={14} /> Add the first designation
+                </button>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+            </div>
+          }
+        />
+      </section>
       <Modal
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        title={editing ? `Edit ${editing.name}` : 'Add Designation'}
+        title={editing ? `Edit ${editing.name}` : form.parent_id ? `Add a sub-designation under ${designations.find((d) => d.id === form.parent_id)?.name ?? 'the parent'}` : 'Add Designation'}
         description="The deload is what this post takes off an instructor's maximum units."
         size="md"
         footer={
@@ -316,30 +460,37 @@ export default function Designations() {
         {/* Modal renders children with no padding of its own, so the body
             supplies it -- matching the header and footer insets. */}
         <div className="space-y-4 p-5 sm:p-6">
-          <Field label="Designation Name" error={fieldErrors.name} required>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="e.g. Dean, Program Chairperson, Laboratory Head"
-              className={inputClass(fieldErrors.name)}
-            />
+          <Field label="Parent Designation" error={fieldErrors.parent_id}>
+            <select
+              value={form.parent_id ?? ''}
+              disabled={editingHasChildren}
+              onChange={(event) => setForm((prev) => ({ ...prev, parent_id: event.target.value ? Number(event.target.value) : null }))}
+              className={`${inputClass(fieldErrors.parent_id)} disabled:bg-gray-50 disabled:text-gray-500`}
+            >
+              <option value="">None — a top-level designation</option>
+              {parentOptions.map((parent) => (
+                <option key={parent.id} value={parent.id}>{parent.name}</option>
+              ))}
+            </select>
+            <span className="mt-1 block text-[11px] text-gray-500">
+              {editingHasChildren
+                ? 'This designation has sub-designations of its own, so it stays top-level.'
+                : "Put it under a heading like Director to create a sub-designation, e.g. Director · Networking Dev't. A heading cannot itself be assigned."}
+            </span>
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Short Code" error={fieldErrors.code}>
+          <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
+            <Field label="Designation Name" error={fieldErrors.name} required>
               <input
                 type="text"
-                value={form.code ?? ''}
-                onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value || null }))}
-                placeholder="Optional"
-                className={inputClass(fieldErrors.code)}
+                value={form.name}
+                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder={form.parent_id ? "e.g. Networking Dev't" : 'e.g. Dean, Program Chairperson'}
+                className={inputClass(fieldErrors.name)}
               />
             </Field>
-
             <Field label="Deload Units" error={fieldErrors.deload_units} required>
-              <input
-                type="number"
+              <NumberInput
                 min={0}
                 value={form.deload_units}
                 onChange={(event) =>
@@ -356,41 +507,6 @@ export default function Designations() {
               <strong>{Math.max(0, 21 - form.deload_units)} units</strong>.
             </p>
           )}
-
-          <Field label="Description" error={fieldErrors.description}>
-            <input
-              type="text"
-              value={form.description ?? ''}
-              onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value || null }))}
-              placeholder="Optional note about this post"
-              className={inputClass(fieldErrors.description)}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Status" error={fieldErrors.status}>
-              <select
-                value={form.status}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, status: event.target.value as 'active' | 'inactive' }))
-                }
-                className={inputClass(fieldErrors.status)}
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </Field>
-
-            <Field label="Sort Order" error={fieldErrors.sort_order}>
-              <input
-                type="number"
-                min={0}
-                value={form.sort_order}
-                onChange={(event) => setForm((prev) => ({ ...prev, sort_order: Number(event.target.value) || 0 }))}
-                className={inputClass(fieldErrors.sort_order)}
-              />
-            </Field>
-          </div>
 
           {editing && (editing.faculties_count ?? 0) > 0 && form.deload_units !== editing.deload_units && (
             <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -452,14 +568,32 @@ function Field({
   );
 }
 
-function StatCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
+function StatCard({
+  label,
+  value,
+  hint,
+  icon,
+  isLoading,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+  icon: React.ReactNode;
+  isLoading: boolean;
+}) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-gray-500">
-        <span className="text-[#C9952A]">{icon}</span>
-        <span className="text-[10px] font-extrabold uppercase tracking-wider">{label}</span>
+    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220] via-[#8a2434] to-[#C9952A]" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">{label}</p>
+          {isLoading
+            ? <Skeleton className="mt-2 h-8 w-12" />
+            : <p className="mt-1 text-3xl font-black tabular-nums text-[#5A1220]">{value}</p>}
+          <p className="mt-1 truncate text-xs text-gray-400">{hint}</p>
+        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#C9952A]/10 text-[#C9952A]">{icon}</span>
       </div>
-      <p className="mt-2 text-2xl font-black text-[#5A1220]">{value}</p>
     </div>
   );
 }

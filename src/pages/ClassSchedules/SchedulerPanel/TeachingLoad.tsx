@@ -15,9 +15,9 @@ import { INSTRUCTOR_ASSIGNED_STATUSES } from "./constants";
 import { useToast } from "../../../context/ToastContext";
 import { getStoredUserDepartmentId, getStoredUserRole } from "../../../lib/storedUser";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
-import { BASIC_LINE_COUNT, OVERLOAD_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
+import { BASIC_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
-import { FORM_PAGE_SIZE } from "./teachingLoadForm";
+import { formPageSize } from "./teachingLoadForm";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -36,9 +36,10 @@ const PRINT_DEBOUNCE_MS = 1500;
 let lastTeachingLoadPrintAt = 0;
 
 /**
- * Section C of the form asks for "Other Designation/Functions". The post itself
- * is the designation, so it is printed as written on the appointment rather than
- * as the short badge label the scheduler UI uses.
+ * Section C of the form asks for "Other Designation/Functions". It prints the
+ * designations the instructor holds; an account role is printed only for an
+ * instructor who holds none, written as on the appointment rather than as the
+ * short badge label the scheduler UI uses.
  */
 const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   dean: "Department Dean",
@@ -170,10 +171,11 @@ export default function TeachingLoad({
     // department-scoped ones.
     const vpaaAccount = users.find((u) => u.role?.toLowerCase() === "vpaa");
 
-    const doc = new PdfDocument({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
-    let isFirstSheet = true;
+    // Created with the first sheet, because each sheet's page is sized to its
+    // own overload table.
+    let doc: jsPDF | null = null;
 
-    targetFaculties.forEach((faculty) => {
+    for (const faculty of targetFaculties) {
       const { surname, givenName, mi } = parseFacultyName(faculty.name);
       const department = departments.find((d) => Number(d.id) === Number(faculty.departmentId));
       const collegeName = (
@@ -194,19 +196,17 @@ export default function TeachingLoad({
 
       const load = classifyLoad(faculty, assignedSchedules.filter((s) => s.facultyId === faculty.id));
 
-      // The blank form holds seven basic and six overload lines. Grouping the
-      // meetings by subject keeps almost every instructor on one sheet, but a
-      // heavy load still spills onto a continuation sheet rather than losing
-      // subjects off the bottom of the table.
-      const sheetCount = Math.max(
-        1,
-        Math.ceil(load.basic.length / BASIC_LINE_COUNT),
-        Math.ceil(load.overload.length / OVERLOAD_LINE_COUNT),
-      );
+      // The blank form holds seven basic and six overload lines. A basic load
+      // past seven still spills onto a continuation sheet, but the overload
+      // table grows by a line per extra subject instead, so the whole overload
+      // reads as one table on the first sheet.
+      const sheetCount = Math.max(1, Math.ceil(load.basic.length / BASIC_LINE_COUNT));
 
       for (let sheet = 0; sheet < sheetCount; sheet += 1) {
-        if (!isFirstSheet) doc.addPage();
-        isFirstSheet = false;
+        const overloadLines = sheet === 0 ? load.overload : [];
+        const format = formPageSize(overloadLines.length);
+        if (doc === null) doc = new PdfDocument({ orientation: "portrait", unit: "mm", format });
+        else doc.addPage(format, "portrait");
 
         drawSheet(doc, {
           logoImg,
@@ -218,7 +218,9 @@ export default function TeachingLoad({
           givenName,
           middleInitial: mi,
           isPartTime: faculty.employmentType === "part-time",
-          designation: faculty.administrativeRole ? DESIGNATION_LABELS[faculty.administrativeRole] : "",
+          designations: faculty.designations?.length
+            ? faculty.designations
+            : faculty.administrativeRole ? [DESIGNATION_LABELS[faculty.administrativeRole]] : [],
           instructorName: faculty.name.toUpperCase(),
           preparedBy: preparer?.name ?? "",
           verifiedBy: byRole("dean")?.name ?? "",
@@ -229,13 +231,14 @@ export default function TeachingLoad({
           presidentTitle: settings.president_title,
           load,
           basicLines: load.basic.slice(sheet * BASIC_LINE_COUNT, (sheet + 1) * BASIC_LINE_COUNT),
-          overloadLines: load.overload.slice(sheet * OVERLOAD_LINE_COUNT, (sheet + 1) * OVERLOAD_LINE_COUNT),
+          overloadLines,
           sheetNumber: sheet + 1,
           sheetCount,
         });
       }
-    });
+    }
 
+    if (doc === null) return;
     const blobUrl = URL.createObjectURL(doc.output("blob"));
     window.open(blobUrl, "_blank");
   };

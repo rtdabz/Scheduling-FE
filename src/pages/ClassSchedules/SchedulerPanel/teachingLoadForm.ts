@@ -73,12 +73,54 @@ const COLUMN_X: number[] = (() => {
   return edges;
 })();
 
-/** Top edge of rows 1..58, indexed by row number; index 59 is the bottom edge. */
-const ROW_Y: number[] = (() => {
+/** Form rows 31-36: the six printed lines of table B, the overload table. */
+export const OVERLOAD_BODY_FIRST_ROW = 31;
+export const OVERLOAD_BODY_ROWS = 6;
+const LAST_OVERLOAD_BODY_ROW = OVERLOAD_BODY_FIRST_ROW + OVERLOAD_BODY_ROWS - 1;
+const OVERLOAD_ROW_POINTS = ROW_POINTS[LAST_OVERLOAD_BODY_ROW - 1];
+
+/**
+ * Top edge of every row, indexed by row number, with `extraOverloadRows` more
+ * overload lines inserted after row 36. Index LAST_ROW + extra + 1 is the
+ * bottom edge of the form.
+ */
+const buildRowY = (extraOverloadRows: number): number[] => {
+  const points = [
+    ...ROW_POINTS.slice(0, LAST_OVERLOAD_BODY_ROW),
+    ...Array<number>(extraOverloadRows).fill(OVERLOAD_ROW_POINTS),
+    ...ROW_POINTS.slice(LAST_OVERLOAD_BODY_ROW),
+  ];
   const edges = [0, FORM_TOP_MM];
-  ROW_POINTS.forEach((points, index) => edges.push(edges[index + 1] + points * POINTS_TO_MM));
+  points.forEach((rowPoints, index) => edges.push(edges[index + 1] + rowPoints * POINTS_TO_MM));
   return edges;
-})();
+};
+
+/** Overload lines past the form's six, each drawn as one more ruled line. */
+export const extraOverloadRowsFor = (overloadLineCount: number): number =>
+  Math.max(0, overloadLineCount - OVERLOAD_BODY_ROWS);
+
+let extraOverloadRows = 0;
+let ROW_Y: number[] = buildRowY(0);
+
+/**
+ * Sizes table B for the sheet about to be drawn. An instructor with more
+ * overload subjects than the form's six lines gets extra lines in the same
+ * table -- and a taller page, see formPageSize -- rather than a continuation
+ * sheet that splits one overload table across two pages.
+ */
+export const setOverloadLineCount = (overloadLineCount: number): void => {
+  const extra = extraOverloadRowsFor(overloadLineCount);
+  if (extra === extraOverloadRows) return;
+  extraOverloadRows = extra;
+  ROW_Y = buildRowY(extra);
+};
+
+/**
+ * A row as numbered on the blank form, moved down past any overload lines the
+ * current sheet adds. Rows up to the end of table B keep their number.
+ */
+export const formRow = (row: number): number =>
+  row > LAST_OVERLOAD_BODY_ROW ? row + extraOverloadRows : row;
 
 export type Column = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K";
 
@@ -87,6 +129,12 @@ export const LAST_ROW = ROW_POINTS.length;
 
 /** The expanded load rows need a little more vertical page room than legal paper. */
 export const FORM_PAGE_SIZE: [number, number] = [216, 390];
+
+/** The page for a sheet whose overload table carries `overloadLineCount` lines. */
+export const formPageSize = (overloadLineCount: number): [number, number] => [
+  FORM_PAGE_SIZE[0],
+  FORM_PAGE_SIZE[1] + extraOverloadRowsFor(overloadLineCount) * OVERLOAD_ROW_POINTS * POINTS_TO_MM,
+];
 
 export const left = (column: Column): number => COLUMN_X[column.charCodeAt(0) - 65];
 export const right = (column: Column): number => COLUMN_X[column.charCodeAt(0) - 64];

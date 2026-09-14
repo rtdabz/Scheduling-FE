@@ -32,7 +32,7 @@ export default function OverloadConfirmationModal({
   onCancel,
 }: OverloadConfirmationModalProps) {
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
       <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-gray-200 flex shrink-0 items-start gap-3 bg-amber-50/60">
           <span className="mt-0.5 shrink-0 w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
@@ -98,15 +98,14 @@ export default function OverloadConfirmationModal({
               </dl>
 
               <p className="mt-2 text-[11px] text-gray-500 font-semibold">
-                Allowances: {projection.overload_units} overload + {projection.probono_units} pro
-                bono, for a {projection.unit_ceiling}-unit ceiling.
+                Basic Load {projection.basic_load} + {projection.overload_units} overload. Units past
+                that are pro bono.
               </p>
 
-              {projection.tier === 'beyond_ceiling' && (
+              {projection.tier === 'probono' && (
                 <p className="mt-2 text-[11px] font-bold text-rose-700">
-                  This goes past the {projection.unit_ceiling}-unit ceiling by{' '}
-                  {projection.projected_units - projection.unit_ceiling} unit
-                  {projection.projected_units - projection.unit_ceiling === 1 ? '' : 's'}.
+                  {Math.max(0, projection.projected_units - projection.basic_load - projection.overload_units)} unit
+                  {projection.projected_units - projection.basic_load - projection.overload_units === 1 ? '' : 's'} of this load will be pro bono.
                 </p>
               )}
             </div>

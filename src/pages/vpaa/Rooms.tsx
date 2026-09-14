@@ -2,11 +2,11 @@ import { getPhilippineNowParts } from '../../lib/philippineTime';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { BuildingsTable, RoomsTable } from '../../components/rooms/RoomListTables';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
-import TableActionButton from '../../components/ui/TableActionButton';
 import {
   Pencil,
   Trash2,
@@ -644,64 +644,7 @@ export default function VpaaRooms() {
             </div>
           ) : (
             /* Buildings List View */
-            <div className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm font-sans">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50/75 border-b border-gray-150">
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Building Name</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Total Rooms</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Available Rooms</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Unavailable Rooms</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Availability</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {buildings.map((building) => {
-                      const percent = Math.round((building.availableCount / building.totalCount) * 100);
-                      return (
-                        <tr
-                          key={building.name}
-                          onClick={() => setSelectedBuilding(building.name)}
-                          className="group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] group-hover:bg-[#C9952A]/15 group-hover:text-[#C9952A] flex items-center justify-center transition-colors">
-                                <Building2 size={16} />
-                              </div>
-                              <span className="text-sm font-bold text-gray-800 group-hover:text-[#C9952A] transition-colors">
-                                {building.name}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-655 font-semibold">
-                            {building.totalCount}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs text-emerald-600 font-semibold">
-                            {building.availableCount}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs text-red-655 font-semibold">
-                            {building.totalCount - building.availableCount}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-3 max-w-xs">
-                              <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-[#4e0a10] rounded-full"
-                                  style={{ width: `${percent}%` }}
-                                />
-                              </div>
-                              <span className="text-xs font-bold text-gray-500">{percent}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <BuildingsTable buildings={buildings} onSelect={(building) => setSelectedBuilding(building.name)} />
           )}
         </div>
       ) : (
@@ -836,118 +779,24 @@ export default function VpaaRooms() {
             </div>
           ) : (
             /* Rooms List View */
-            <div className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm font-sans">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50/75 border-b border-gray-150">
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Room Code</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Department</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Room Type</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Today's Status</th>
-                      {canManageRooms && <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {roomsInSelectedBuilding.map((room) => {
-                      const liveStatus = getRoomStatusToday(room.id);
-                      
-                      let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
-                      if (room.room_type === 'laboratory') {
-                        badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
-                      } else if (room.room_type === 'online') {
-                        badgeColor = 'bg-green-50 text-green-700 border-green-200';
-                      } else if (room.room_type === 'field') {
-                        badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-                      }
-                      
-                      const statusBadgeColor = room.status === 'not available'
-                        ? 'bg-red-50 text-red-700 border-red-200'
-                        : 'bg-green-50 text-green-700 border-green-200';
-
-                      return (
-                        <tr
-                          key={room.id}
-                          onClick={() => {
-                            setSelectedRoomIdForDetail(room.id);
-                            setIsDetailModalOpen(true);
-                          }}
-                          className="group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all">
-                            <span className="text-xs font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] group-hover:bg-[#C9952A] group-hover:text-white px-2.5 py-1 rounded-lg border border-[#C9952A]/20 transition-all">
-                              {room.room_code}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-655 font-semibold">
-                            {room.department ? `${room.department.department_code}` : 'General / All'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-                              {room.room_type}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadgeColor}`}>
-                              {room.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {liveStatus.status === 'occupied' ? (
-                              <div className="flex items-center gap-2">
-                                <span className="relative flex h-2 w-2">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                </span>
-                                <p className="text-xs font-bold text-emerald-600 max-w-[200px] truncate">
-                                  {liveStatus.text}
-                                </p>
-                              </div>
-                            ) : liveStatus.status === 'upcoming' ? (
-                              <p className="text-xs font-bold text-amber-600 max-w-[200px] truncate">
-                                {liveStatus.text}
-                              </p>
-                            ) : (
-                              <p className="text-xs font-bold text-gray-500 max-w-[200px] truncate">
-                                {liveStatus.text}
-                              </p>
-                            )}
-                          </td>
-                          {canManageRooms && (
-                            <td className="px-6 py-4 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
-                              <div className="flex justify-end gap-2">
-                                <TableActionButton
-                                  label="Edit Room"
-                                  variant="edit"
-                                  onClick={() => handleEditClick(room)}
-                                >
-                                  <Pencil size={15} />
-                                </TableActionButton>
-                                <TableActionButton
-                                  label="Archive Room"
-                                  variant="danger"
-                                  onClick={() => triggerDeleteConfirmation(room.id)}
-                                >
-                                  <Trash2 size={15} />
-                                </TableActionButton>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <RoomsTable
+              rooms={roomsInSelectedBuilding}
+              getRoomStatusToday={getRoomStatusToday}
+              canManage={canManageRooms}
+              onOpen={(room) => {
+                setSelectedRoomIdForDetail(room.id);
+                setIsDetailModalOpen(true);
+              }}
+              onEdit={handleEditClick}
+              onArchive={(room) => { void triggerDeleteConfirmation(room.id); }}
+            />
           )}
         </div>
       )}
 
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">

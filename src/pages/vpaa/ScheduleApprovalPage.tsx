@@ -1,13 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Eye, 
-  X, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown,
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
+import {
+  Eye,
+  X,
   RefreshCw,
   List,
-  CalendarDays
+  CalendarDays,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -15,12 +13,11 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
-import Skeleton from '../../components/ui/Skeleton';
+import DataTable from '../../components/ui/DataTable';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX, WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
@@ -28,10 +25,15 @@ import { slotCount, timeToSlot } from '../../lib/timeGrid';
 import ScheduleApprovalList from '../../components/scheduling/ScheduleApprovalList';
 import type { ApprovalScheduleItem } from '../../components/scheduling/ScheduleApprovalList';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
+import { splitSubmission } from '../../lib/approvalQueue';
+import { mapInitialData, type InitialDataResponse, type SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
+import type { SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
 
 interface ScheduleApproval {
   id: number;
   submissionId: number;
+  /** A partially recalled submission yields two entries sharing one id. */
+  entryKey: string;
   department: string;
   section: string;
   subjectsScheduled: number;
@@ -175,14 +177,6 @@ const scheduleStatusesForSubmission = (status: RawScheduleSubmission['status']):
   }
 };
 
-const submissionSectionIds = (submission: RawScheduleSubmission): string[] => {
-  const withdrawn = submission.sections.filter((section) => section.pivot?.state === 'withdrawn');
-  const sections = ['withdrawn', 'partially_withdrawn'].includes(submission.status) && withdrawn.length > 0
-    ? withdrawn
-    : submission.sections;
-  return sections.map((section) => String(section.id));
-};
-
 const formatSectionSummary = (sections: RawSection[], sectionIds: string[]): string => {
   const selected = new Set(sectionIds);
   const visible = sections.filter((section) => selected.has(String(section.id)));
@@ -309,7 +303,7 @@ export default function VpaaScheduleApprovalPage() {
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>([]);
   const [rawSections, setRawSections] = useState<RawSection[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
-  const [activeSemester, setActiveSemester] = useState<ApprovalSemester | null>(null);
+  const [, setActiveSemester] = useState<ApprovalSemester | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   // Filters
@@ -331,15 +325,20 @@ export default function VpaaScheduleApprovalPage() {
   const [rejectError, setRejectError] = useState('');
   const [modalViewMode, setModalViewMode] = useState<ModalViewMode>('list');
   const [selectedModalSectionId, setSelectedModalSectionId] = useState('');
+  // The same mapped payload Print consumes, so the preview is the printed document.
+  const [printSource, setPrintSource] = useState<SchedulerCacheData | null>(null);
 
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const userId = user?.id;
 
+  const liveRevision = useLiveRevision(['approvals', 'schedules']);
+
   useEffect(() => {
     const loadData = async () => {
       try {
-        setIsLoading(true);
+        // A live refresh keeps the queue on screen while it reloads.
+        if (liveRevision === 0) setIsLoading(true);
         const data = await (async () => {
           const response = await api.get<{
             active_semester: ApprovalSemester | null;
@@ -349,6 +348,7 @@ export default function VpaaScheduleApprovalPage() {
             schedule_submissions: RawScheduleSubmission[];
           }>('/initial-data');
           const semester = response.data.active_semester;
+          setPrintSource(mapInitialData(response.data as unknown as InitialDataResponse, { isVpaa: true }));
 
           const mappedDepts = response.data.departments.map((d) => ({
             id: d.id,
@@ -393,9 +393,14 @@ export default function VpaaScheduleApprovalPage() {
           );
           const mappedApprovals = response.data.schedule_submissions
             .filter((submission) => !semester || Number(submission.semester_id) === Number(semester.id))
-            .map((submission): ScheduleApproval => {
+            .flatMap((rawSubmission) => {
+              const deptSchedules = schedulesByDepartment[String(rawSubmission.department_id)] ?? [];
+              return splitSubmission(rawSubmission, (sectionIds) => deptSchedules
+                .filter((schedule) => sectionIds.includes(String(schedule.section_id)))
+                .map((schedule) => String(schedule.status)));
+            })
+            .map(({ key, submission, sectionIds: workflowSectionIds }): ScheduleApproval => {
               const departmentId = String(submission.department_id);
-              const workflowSectionIds = submissionSectionIds(submission);
               const deptSchedules = schedulesByDepartment[departmentId] ?? [];
               const allowedStatuses = new Set(scheduleStatusesForSubmission(submission.status));
               const visibleDeptSchedules = deptSchedules.filter((schedule) =>
@@ -407,6 +412,7 @@ export default function VpaaScheduleApprovalPage() {
               return {
                 id: Number(submission.department_id),
                 submissionId: submission.id,
+                entryKey: key,
                 department: firstSchedule?.department?.department_name ?? departmentNames.get(departmentId) ?? '',
                 section: formatSectionSummary(sectionsByDepartment[departmentId] ?? [], workflowSectionIds),
                 subjectsScheduled: new Set(visibleDeptSchedules.map((schedule) => getScheduleCourseId(schedule))).size,
@@ -441,7 +447,7 @@ export default function VpaaScheduleApprovalPage() {
     };
 
     loadData();
-  }, []);
+  }, [liveRevision]);
 
   const resetFilters = () => {
     setSelectedQueueTab('pending');
@@ -450,23 +456,25 @@ export default function VpaaScheduleApprovalPage() {
     setSelectedMode('All Modes');
   };
 
-  const handleApprove = async (sched: ScheduleApproval) => {
-    const confirmed = await confirm({
+  const handleApprove = (sched: ScheduleApproval) => {
+    void confirm({
       title: 'Approve Schedule',
       message: `Are you sure you want to approve the complete department schedule for ${sched.department}?`,
       eyebrow: 'Approval Required',
       confirmLabel: 'Confirm Approve',
       variant: 'maroon',
+      onConfirm: () => submitApproval(sched),
     });
-    if (!confirmed) return;
+  };
 
+  const submitApproval = async (sched: ScheduleApproval) => {
     try {
       const now = new Date().toISOString();
       await api.post(`/departments/${sched.id}/approve-by-vpaa`);
 
       setSchedules((prev) =>
         prev.map((s) =>
-          s.submissionId === sched.submissionId ? { ...s, status: 'approved' } : s
+          s.entryKey === sched.entryKey ? { ...s, status: 'approved' } : s
         )
       );
       setRawSchedules((prev) =>
@@ -506,7 +514,7 @@ export default function VpaaScheduleApprovalPage() {
 
         setSchedules((prev) =>
           prev.map((s) =>
-            s.submissionId === rejectConfirm.submissionId ? { ...s, status: 'rejected' } : s
+            s.entryKey === rejectConfirm.entryKey ? { ...s, status: 'rejected' } : s
           )
         );
         setRawSchedules((prev) =>
@@ -607,6 +615,7 @@ export default function VpaaScheduleApprovalPage() {
       case 'rejected_by_dean': return 'Rejected by Dean';
       case 'approved': return 'Approved';
       case 'rejected': return 'Rejected';
+      case 'revision': return 'Under Revision';
       default: return 'UNKNOWN';
     }
   };
@@ -691,6 +700,21 @@ export default function VpaaScheduleApprovalPage() {
       .map(([id, name]) => ({ id, name }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [modalSchedules, rawSections, viewSchedule]);
+
+  const printInput = useMemo<SchedulePdfInput | null>(() => {
+    if (!viewSchedule || !printSource) return null;
+    const scheduleIds = new Set(modalSchedules.map((schedule) => String(schedule.id)));
+    const sectionIds = new Set(modalSections.map((section) => section.id));
+    const sections = printSource.sections.filter((section) => sectionIds.has(section.id));
+    return {
+      sections,
+      allSchedules: printSource.schedules.filter((schedule) => scheduleIds.has(String(schedule.id))),
+      selectedSectionId: sections[0]?.id ?? '',
+      departments: printSource.departments,
+      users: printSource.users,
+      activeSemester: printSource.activeSemester,
+    };
+  }, [modalSchedules, modalSections, printSource, viewSchedule]);
 
   useEffect(() => {
     if (!viewSchedule) {
@@ -818,7 +842,7 @@ export default function VpaaScheduleApprovalPage() {
   const queueTabs: Array<{ id: VpaaQueueTab; label: string }> = [
     { id: 'pending', label: 'Pending Approval' },
     { id: 'approved', label: 'Schedule Approved' },
-    { id: 'withdrawn', label: 'Withdrawn' },
+    { id: 'withdrawn', label: 'Recalled' },
     { id: 'rejected', label: 'Rejected' },
   ];
   const matchesQueueTab = (schedule: ScheduleApproval, tab: VpaaQueueTab): boolean => tab === 'pending'
@@ -910,184 +934,16 @@ export default function VpaaScheduleApprovalPage() {
       </div>
 
       {/* Table Card wrapper */}
-      <div id="schedule-approval-list" className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                  {headerGroup.headers.map((header, idx) => (
-                    <th 
-                      key={header.id} 
-                      className={`py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none ${idx === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr 
-                    key={`skeleton-row-${index}`} 
-                    className={`h-12 border-b border-gray-100 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    <td className="pl-6 pr-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-32" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-20" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-12 mx-auto" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-28" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-36" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-36" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-24 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                      <div className="flex justify-end gap-2">
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No schedules found.</p>
-                      <p className="text-xs">Adjust your status/department filters and try again.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr 
-                    key={row.id} 
-                    className={`transition-colors h-12 hover:bg-gray-50/70 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(cell.column.id);
-                      return (
-                        <td 
-                          key={cell.id} 
-                          className={`px-4 py-2.5 align-middle text-xs ${
-                            isNoWrap ? 'whitespace-nowrap' : ''
-                          }`}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination bar */}
-        {filteredData.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-gray-500">
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-                {Math.min(
-                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                  table.getFilteredRowModel().rows.length
-                )} of {table.getFilteredRowModel().rows.length} schedules
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-semibold">Show</span>
-                <select
-                  value={table.getState().pagination.pageSize}
-                  onChange={e => {
-                    table.setPageSize(Number(e.target.value));
-                  }}
-                  className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-                >
-                  {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                First
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold text-gray-500 px-1">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
+      <div id="schedule-approval-list">
+        <DataTable
+          table={table}
+          isLoading={isLoading}
+          totalLabel="schedules"
+          ariaLabel="Schedule submissions"
+          emptyTitle="No schedules found."
+          emptyDescription="Adjust your status/department filters and try again."
+          cellClassName={(columnId) => (['subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
+        />
       </div>
 
       {/* View Weekly Timetable Modal */}
@@ -1097,15 +953,7 @@ export default function VpaaScheduleApprovalPage() {
           title={`${viewSchedule.department} Department Schedule`}
           status={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved' ? 'pending' : viewSchedule.status === 'rejected' ? 'rejected' : 'approved'}
           statusLabel={getStatusLabel(viewSchedule.status)}
-          sections={modalSections}
-          schedules={modalSchedules}
-          getCourseCode={getScheduleCourseCode}
-          getCourseName={getScheduleCourseName}
-          getRoomName={getRoomName}
-          getModeLabel={getModeLabel}
-          formatTime={formatTime24hTo12h}
-          departmentLogoUrl={modalSchedules[0]?.department?.logo}
-          activeSemester={activeSemester}
+          printInput={printInput}
           canAct={viewSchedule.status === 'approved_by_dean' || viewSchedule.status === 'conditionally_approved'}
           onApprove={() => { void handleApprove(viewSchedule); setViewSchedule(null); }}
           onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}
@@ -1113,7 +961,7 @@ export default function VpaaScheduleApprovalPage() {
         />
       )}
       {viewSchedule ? false && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div>
@@ -1277,7 +1125,7 @@ export default function VpaaScheduleApprovalPage() {
       {/* Approve Confirmation Modal */}
       {/* Reject Reason Modal */}
       {rejectConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-250 flex justify-between items-center bg-gray-50/50">
               <h3 className="text-lg font-bold text-gray-850 font-display">Reject Schedule</h3>

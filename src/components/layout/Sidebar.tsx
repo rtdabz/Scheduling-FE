@@ -7,6 +7,7 @@ import campusBg from '../../assets/campus-bg.jpg';
 import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -92,6 +93,8 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
       .catch(() => {});
   }, []);
 
+  const approvalsRevision = useLiveRevision(['approvals']);
+
   useEffect(() => {
     if (role !== 'dean' && role !== 'vpaa') {
       return;
@@ -100,7 +103,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
     const controller = new AbortController();
 
     const loadPendingCount = async () => {
-      setIsCountLoading(true);
+      if (approvalsRevision === 0) setIsCountLoading(true);
       try {
         const response = await api.get<PendingDepartmentCountResponse>(
           '/schedules/pending-department-count',
@@ -124,7 +127,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [role]);
+  }, [role, approvalsRevision]);
 
   const toggleExpand = (label: string) => {
     setExpandedItems((prev) => ({

@@ -32,9 +32,11 @@ import {
   drawTextLines,
   drawText,
   fill,
+  formRow,
   left,
   right,
   rule,
+  setOverloadLineCount,
   top,
   type Column,
 } from "./teachingLoadForm";
@@ -112,6 +114,26 @@ const drawLetterhead = (
  */
 const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 
+/**
+ * Table B prints each subject in its band's colour -- light red for overload,
+ * grey for pro bono -- matching the load badges on screen. The row itself is
+ * not shaded; the colour is on the letters.
+ */
+const OVERLOAD_TEXT = [248, 113, 113] as const;
+const PROBONO_TEXT = [107, 114, 128] as const;
+/**
+ * A subject assigned over an instructor conflict prints in light orange text.
+ * It wins over both band colours, and carries no printed label by design.
+ */
+const CONFLICT_TEXT = [251, 146, 60] as const;
+
+const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined => {
+  if (line.overridden) return CONFLICT_TEXT;
+  if (line.band === "probono") return PROBONO_TEXT;
+  if (line.band === "overload") return OVERLOAD_TEXT;
+  return undefined;
+};
+
 const drawTableHeader = (doc: jsPDF, firstRow: number): void => {
   const lastRow = firstRow + 1;
   rule(doc, { from: "A", to: "K", row: firstRow, edge: "top" }, MEDIUM);
@@ -151,13 +173,14 @@ const drawTableBody = (doc: jsPDF, firstRow: number, lineCount: number, lines: L
   for (let offset = 0; offset < lineCount; offset += 1) {
     const row = firstRow + offset;
     const isLast = offset === lineCount - 1;
+    const line = lines[offset];
+
     rule(doc, { from: "A", to: "K", row, edge: "bottom" }, isLast ? MEDIUM : THIN);
     INNER_DIVIDERS.forEach((column) => columnRule(doc, { column, row, edge: "right" }));
 
-    const line = lines[offset];
     if (!line) continue;
 
-    const cell = { size: SIZE.body, align: "center" as const };
+    const cell = { size: SIZE.body, align: "center" as const, color: lineTextColor(line) };
     drawText(doc, line.code, { from: "A", row }, cell);
     drawText(doc, line.title, { from: "B", to: "C", row }, { ...cell, align: "left", padding: 1.4 });
     drawText(doc, line.day, { from: "D", row }, cell);
@@ -230,7 +253,8 @@ export interface SheetContext {
   givenName: string;
   middleInitial: string;
   isPartTime: boolean;
-  designation: string;
+  /** Held designations, in order. The form has two lines; a third shares line 2. */
+  designations: string[];
   instructorName: string;
   preparedBy: string;
   verifiedBy: string;
@@ -245,10 +269,13 @@ export interface SheetContext {
 }
 
 export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
+  // Before any row is addressed: every row below table B moves down by the
+  // overload lines this sheet adds past the form's six.
+  setOverloadLineCount(ctx.overloadLines.length);
   const centre = (left("A") + right("K")) / 2;
 
   // The whole sheet is one medium-ruled box; every rule below sits inside it.
-  box(doc, { from: "A", to: "K", row: 1, throughRow: LAST_ROW }, MEDIUM);
+  box(doc, { from: "A", to: "K", row: 1, throughRow: formRow(LAST_ROW) }, MEDIUM);
 
   drawLetterhead(doc, ctx.logoImg, ctx.muniImg);
   rule(doc, { from: "A", to: "K", row: 5, edge: "bottom" }, MEDIUM);
@@ -353,79 +380,101 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
 
   // Rows 28-38 -- B. Overload / Part Time Load.
   drawText(doc, "B. Overload/Part Time Load", { from: "A", to: "C", row: 28 }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  // Names the band colours only; the light orange conflict text is deliberately unlabelled.
+  const hasOverload = ctx.overloadLines.some((line) => line.band === "overload" && !line.overridden);
+  const hasProbono = ctx.overloadLines.some((line) => line.band === "probono" && !line.overridden);
+  if (hasProbono) {
+    drawText(doc, "Grey text is Pro Bono", { from: "H", to: "K", row: 28 }, {
+      size: SIZE.small,
+      style: "bold",
+      align: "right",
+      padding: 1.6,
+      color: PROBONO_TEXT,
+    });
+  }
+  if (hasOverload) {
+    drawText(doc, "Light red text is Overload", { from: "E", to: "G", row: 28 }, {
+      size: SIZE.small,
+      style: "bold",
+      align: "right",
+      padding: 1.6,
+      color: OVERLOAD_TEXT,
+    });
+  }
   drawTableHeader(doc, 29);
-  drawTableBody(doc, 31, OVERLOAD_LINE_COUNT, ctx.overloadLines);
-  drawTotalsRow(doc, 37, "TOTAL NUMBER OF UNITS / HRS (OVERLOAD)", ctx.load.overloadTotals, MEDIUM);
-  drawTotalsRow(doc, 38, "GRAND TOTAL NUMBER OF UNITS/HRS", ctx.load.grandTotals, THIN);
+  drawTableBody(doc, 31, Math.max(OVERLOAD_LINE_COUNT, ctx.overloadLines.length), ctx.overloadLines);
+  drawTotalsRow(doc, formRow(37), "TOTAL NUMBER OF UNITS / HRS (OVERLOAD)", ctx.load.overloadTotals, MEDIUM);
+  drawTotalsRow(doc, formRow(38), "GRAND TOTAL NUMBER OF UNITS/HRS", ctx.load.grandTotals, THIN);
 
-  // Rows 39-41 -- C. Other Designation/Functions. Line 1 carries the post the
-  // instructor's account holds; line 2 stays ruled and empty for anything not
-  // recorded in the system.
-  drawText(doc, "C. Other Designation/Functions", { from: "A", to: "D", row: 39 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  rule(doc, { from: "A", to: "K", row: 40, edge: "top" }, MEDIUM);
-  rule(doc, { from: "A", to: "K", row: 40, edge: "bottom" }, THIN);
-  rule(doc, { from: "A", to: "K", row: 41, edge: "bottom" }, MEDIUM);
-  drawText(doc, "1", { from: "A", row: 40 }, { size: SIZE.label, padding: 1.8 });
-  drawText(doc, "2", { from: "A", row: 41 }, { size: SIZE.label, padding: 1.8 });
-  drawText(doc, ctx.designation, { from: "B", to: "K", row: 40 }, { size: SIZE.label, padding: 1.6 });
+  // Rows 39-41 -- C. Other Designation/Functions. Line 1 carries the first
+  // designation the instructor holds, line 2 the rest (an instructor holds at
+  // most three, so line 2 carries two at most).
+  drawText(doc, "C. Other Designation/Functions", { from: "A", to: "D", row: formRow(39) }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  rule(doc, { from: "A", to: "K", row: formRow(40), edge: "top" }, MEDIUM);
+  rule(doc, { from: "A", to: "K", row: formRow(40), edge: "bottom" }, THIN);
+  rule(doc, { from: "A", to: "K", row: formRow(41), edge: "bottom" }, MEDIUM);
+  drawText(doc, "1", { from: "A", row: formRow(40) }, { size: SIZE.label, padding: 1.8 });
+  drawText(doc, "2", { from: "A", row: formRow(41) }, { size: SIZE.label, padding: 1.8 });
+  drawText(doc, ctx.designations[0] ?? "", { from: "B", to: "K", row: formRow(40) }, { size: SIZE.label, padding: 1.6 });
+  drawText(doc, ctx.designations.slice(1).join("; "), { from: "B", to: "K", row: formRow(41) }, { size: SIZE.label, padding: 1.6 });
 
   // Rows 44-52 -- the signature block. The form runs it as two open columns
   // with no divider between them, only the rules each signatory signs on.
-  drawText(doc, "Prepared :", { from: "A", to: "C", row: 44 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  drawText(doc, "Verified by:", { from: "G", to: "K", row: 44 }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  drawText(doc, "Prepared :", { from: "A", to: "C", row: formRow(44) }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  drawText(doc, "Verified by:", { from: "G", to: "K", row: formRow(44) }, { size: SIZE.label, style: "bold", padding: 1.6 });
   drawSignatory(doc, {
     name: ctx.preparedBy,
     title: "Program Head/Department Secretary",
-    row: 45,
+    row: formRow(45),
     from: "A",
     to: "C",
   });
-  drawSignatory(doc, { name: ctx.verifiedBy, title: "College Dean", row: 45, from: "G", to: "K" });
-  drawDateSigned(doc, 47, "A", "B", "C");
-  drawDateSigned(doc, 47, "G", "H", "J");
+  drawSignatory(doc, { name: ctx.verifiedBy, title: "College Dean", row: formRow(45), from: "G", to: "K" });
+  drawDateSigned(doc, formRow(47), "A", "B", "C");
+  drawDateSigned(doc, formRow(47), "G", "H", "J");
 
-  drawText(doc, "Recommending Approval:", { from: "A", to: "D", row: 49 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  drawText(doc, "Approved:", { from: "G", to: "H", row: 49 }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  drawText(doc, "Recommending Approval:", { from: "A", to: "D", row: formRow(49) }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  drawText(doc, "Approved:", { from: "G", to: "H", row: formRow(49) }, { size: SIZE.label, style: "bold", padding: 1.6 });
   drawSignatory(doc, {
     name: ctx.vpaaName,
     title: "Vice President for Academic Affairs",
-    row: 50,
+    row: formRow(50),
     from: "A",
     to: "C",
   });
   drawSignatory(doc, {
     name: ctx.presidentName,
     title: ctx.presidentTitle,
-    row: 50,
+    row: formRow(50),
     from: "G",
     to: "J",
   });
-  drawDateSigned(doc, 52, "A", "B", "C");
-  drawDateSigned(doc, 52, "G", "H", "J");
+  drawDateSigned(doc, formRow(52), "A", "B", "C");
+  drawDateSigned(doc, formRow(52), "G", "H", "J");
 
   // Rows 53-55 -- the instructor's own acknowledgement. The form asks for a
   // signature over the printed name, so the name is printed and the rule above
   // it is what gets signed.
-  drawText(doc, "Received:", { from: "A", to: "C", row: 53 }, { size: SIZE.small, style: "bold", padding: 1.6 });
-  rule(doc, { from: "A", to: "C", row: 54, edge: "bottom" });
-  drawText(doc, ctx.instructorName, { from: "A", to: "C", row: 54 }, { size: SIZE.label, style: "bold", align: "center" });
-  drawText(doc, "Instructor's Name (Signature over Printed Name)", { from: "A", to: "C", row: 55 }, {
+  drawText(doc, "Received:", { from: "A", to: "C", row: formRow(53) }, { size: SIZE.small, style: "bold", padding: 1.6 });
+  rule(doc, { from: "A", to: "C", row: formRow(54), edge: "bottom" });
+  drawText(doc, ctx.instructorName, { from: "A", to: "C", row: formRow(54) }, { size: SIZE.label, style: "bold", align: "center" });
+  drawText(doc, "Instructor's Name (Signature over Printed Name)", { from: "A", to: "C", row: formRow(55) }, {
     size: SIZE.caption,
     style: "italic",
     padding: 1.6,
   });
 
   // Rows 56-58 -- the reminder and the closing bar.
-  rule(doc, { from: "A", to: "K", row: 56, edge: "top" }, MEDIUM);
-  drawText(doc, "Reminder:", { from: "A", to: "C", row: 56 }, { size: SIZE.body, style: "bold", padding: 1.6 });
-  drawText(doc, "Submit corrected teaching load when there is/ are changes.", { from: "A", to: "G", row: 57 }, {
+  rule(doc, { from: "A", to: "K", row: formRow(56), edge: "top" }, MEDIUM);
+  drawText(doc, "Reminder:", { from: "A", to: "C", row: formRow(56) }, { size: SIZE.body, style: "bold", padding: 1.6 });
+  drawText(doc, "Submit corrected teaching load when there is/ are changes.", { from: "A", to: "G", row: formRow(57) }, {
     size: SIZE.small,
     style: "italic",
     padding: 1.6,
   });
-  fill(doc, { from: "A", to: "K", row: 58 }, MAROON);
-  rule(doc, { from: "A", to: "K", row: 58, edge: "top" }, MEDIUM);
-  rule(doc, { from: "A", to: "K", row: 58, edge: "bottom" }, MEDIUM);
+  fill(doc, { from: "A", to: "K", row: formRow(58) }, MAROON);
+  rule(doc, { from: "A", to: "K", row: formRow(58), edge: "top" }, MEDIUM);
+  rule(doc, { from: "A", to: "K", row: formRow(58), edge: "bottom" }, MEDIUM);
 
   // Control footer, outside the form box: the document and revision numbers in
   // their own ruled box rather than loose text under the closing bar.
@@ -441,7 +490,7 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     { text: "Revision No.", width: 15.5 },
     { text: "001", width: 9 },
   ];
-  const controlTop = bottom(LAST_ROW) + 1.4;
+  const controlTop = bottom(formRow(LAST_ROW)) + 1.4;
   const controlWidth = controlCells.reduce((sum, cell) => sum + cell.width, 0);
   const controlBaseline = baselineAt(controlTop + CONTROL_ROW_HEIGHT / 2, SIZE.control);
 

@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import NumberInput from '../../components/ui/NumberInput';
+import SegmentedLoadBar from '../../components/faculty/SegmentedLoadBar';
+import { LOAD_LEVELS, loadLevelOf } from '../../lib/facultyLoad';
+import { NAME_SUFFIXES, capitalizeNameInput, formatFacultyListName } from '../../lib/formatters';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
-import TableActionButton from '../../components/ui/TableActionButton';
+import FacultyListTable from '../../components/faculty/FacultyListTable';
 import {
   Pencil,
   Trash2,
@@ -11,25 +15,22 @@ import {
   Plus,
   ArrowUpDown,
   Filter,
-  CheckCircle2,
-  AlertCircle,
   HelpCircle,
-  Award,
-  Info,
   LayoutGrid,
   List,
   Camera,
   UserRound,
-  Eye
 } from 'lucide-react';
 import api from '../../lib/api';
 import { hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage } from '../../lib/apiError';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
-import { describeDeload, fetchDesignations, type Designation } from '../../lib/designations';
+import { designationLabel, fetchDesignations, totalDeload, type Designation } from '../../lib/designations';
+import DesignationPicker from '../../components/faculty/DesignationPicker';
 import FacultyDetailsModal from '../../components/faculty/FacultyDetailsModal';
 import FacultyLoadEditorModal from '../../components/faculty/FacultyLoadEditorModal';
 
@@ -95,6 +96,7 @@ interface FacultyMember {
   first_name: string;
   last_name: string;
   middle_name: string | null;
+  suffix?: string | null;
   employment_type: 'full-time' | 'part-time';
   max_units: number;
   overload_units: number;
@@ -116,6 +118,7 @@ interface FacultyMember {
   administrative_role?: FacultyAdministrativeRole | null;
   designation_id?: number | null;
   designation?: Designation | null;
+  designations?: Designation[];
   createdAt?: string;
 }
 
@@ -124,6 +127,7 @@ interface ApiFacultyMember {
   first_name: string;
   last_name: string;
   middle_name?: string | null;
+  suffix?: string | null;
   employment_type?: 'full-time' | 'part-time';
   max_units?: number;
   overload_units?: number | null;
@@ -144,6 +148,7 @@ interface ApiFacultyMember {
   administrative_role?: FacultyAdministrativeRole | null;
   designation_id?: number | null;
   designation?: Designation | null;
+  designations?: Designation[];
   created_at: string;
   updated_at: string;
 }
@@ -159,8 +164,9 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   first_name: f.first_name,
   last_name: f.last_name,
   middle_name: f.middle_name || null,
+  suffix: f.suffix ?? null,
   employment_type: f.employment_type || 'full-time',
-  max_units: f.max_units || 21,
+  max_units: f.max_units ?? 21,
   overload_units: f.overload_units || 0,
   deload_units: f.deload_units || 0,
   probono_units: f.probono_units || 0,
@@ -168,10 +174,10 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   assigned_subjects: f.assigned_subjects || [],
   assigned_classes: f.assigned_classes || [],
   live_schedule_count: f.live_schedule_count ?? 0,
-  required_units: f.required_units ?? Math.max(0, (f.max_units || 21) - (f.deload_units || 0)),
+  required_units: f.required_units ?? Math.max(0, (f.max_units ?? 21) - (f.deload_units || 0)),
   unit_ceiling:
     f.unit_ceiling ??
-    Math.max(0, (f.max_units || 21) - (f.deload_units || 0)) +
+    Math.max(0, (f.max_units ?? 21) - (f.deload_units || 0)) +
       (f.overload_units || 0) +
       (f.probono_units || 0),
   department_id: f.department_id,
@@ -183,38 +189,18 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   administrative_role: f.administrative_role || null,
   designation_id: f.designation_id ?? null,
   designation: f.designation ?? null,
+  designations: f.designations ?? [],
   createdAt: f.created_at
 });
 
-const getWorkloadStatus = (f: FacultyMember) => {
-  const required = f.max_units - f.deload_units;
-  if (f.assigned_units > required) {
-    if (f.probono_units > 0) {
-      return {
-        label: 'Pro Bono',
-        color: 'text-purple-600 bg-purple-50 border-purple-200',
-        dot: 'bg-purple-500'
-      };
-    }
-    return {
-      label: 'Overloaded',
-      color: 'text-red-600 bg-red-50 border-red-200',
-      dot: 'bg-red-500'
-    };
-  }
-  if (f.assigned_units === required) {
-    return {
-      label: 'Fully Loaded',
-      color: 'text-blue-600 bg-blue-50 border-blue-200',
-      dot: 'bg-blue-500'
-    };
-  }
-  return {
-    label: 'Available',
-    color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-    dot: 'bg-emerald-500'
-  };
-};
+/** Regular -> Overload -> Pro Bono, levelling up as the load bands fill. See loadLevelOf. */
+const getWorkloadStatus = (f: FacultyMember) => LOAD_LEVELS[loadLevelOf({
+  assignedUnits: f.assigned_units,
+  maxUnits: f.max_units,
+  deloadUnits: f.deload_units,
+  overloadUnits: f.overload_units,
+  probonoUnits: f.probono_units,
+})];
 
 export default function ProgramHeadFaculty() {
   const { toast, confirm } = useToast();
@@ -236,6 +222,8 @@ export default function ProgramHeadFaculty() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
+  /** The instructor just created, shown and highlighted wherever the sort puts it. */
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -269,6 +257,7 @@ export default function ProgramHeadFaculty() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [middleName, setMiddleName] = useState('');
+  const [suffix, setSuffix] = useState('');
   const [employmentType, setEmploymentType] = useState<'full-time' | 'part-time'>('full-time');
   const [maxUnits, setMaxUnits] = useState<number>(21);
   const [overloadUnits, setOverloadUnits] = useState<number>(0);
@@ -280,7 +269,7 @@ export default function ProgramHeadFaculty() {
   // renders whatever /designations returns. Assigning one is its own
   // capability; without it the field is read-only and is never submitted,
   // because sending it unprivileged would fail the whole roster save.
-  const [designationId, setDesignationId] = useState('');
+  const [designationIds, setDesignationIds] = useState<string[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const canManageDesignations = hasStoredCapability('faculty.manage_designations');
 
@@ -353,8 +342,10 @@ export default function ProgramHeadFaculty() {
     fetchData();
   }, []);
 
-  const fetchData = async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(facultyCacheKey));
+  useLiveRefresh(['faculty', 'users'], () => { void fetchData(true, true); });
+
+  const fetchData = async (forceRefresh = false, silent = false) => {
+    if (!silent) setIsLoading(forceRefresh || !hasCachedData(facultyCacheKey));
     try {
       const data = await loadCachedData<FacultyPageData>(facultyCacheKey, async () => {
         const [facultiesRes, deptsRes, programsRes] = await Promise.all([
@@ -393,6 +384,7 @@ export default function ProgramHeadFaculty() {
     setFirstName(faculty.first_name);
     setLastName(faculty.last_name);
     setMiddleName(faculty.middle_name || '');
+    setSuffix(faculty.suffix || '');
     setEmploymentType(faculty.employment_type);
     setMaxUnits(faculty.max_units);
     setOverloadUnits(faculty.overload_units);
@@ -400,7 +392,7 @@ export default function ProgramHeadFaculty() {
     setProbonoUnits(faculty.probono_units);
     setDepartmentId(faculty.department_id ? faculty.department_id.toString() : '');
     setProgramId(faculty.program_id ? faculty.program_id.toString() : '');
-    setDesignationId(faculty.designation_id ? faculty.designation_id.toString() : '');
+    setDesignationIds((faculty.designations?.length ? faculty.designations : faculty.designation ? [faculty.designation] : []).map((d) => d.id.toString()));
     setStatus(faculty.status);
     setProfilePicture(faculty.profile_picture || null);
 
@@ -493,6 +485,11 @@ export default function ProgramHeadFaculty() {
     const trimmedFirst = firstName.trim();
     const trimmedLast = lastName.trim();
     const trimmedMiddle = middleName.trim();
+    const editedMiddleName = faculties.find((f) => f.id === editingId)?.middle_name ?? null;
+    const keptMiddleName = (initial: string) => {
+      if (!initial) return null;
+      return editedMiddleName && editedMiddleName.charAt(0).toUpperCase() === initial ? editedMiddleName : initial;
+    };
 
     if (!trimmedFirst) {
       setFirstNameError('First name is required');
@@ -506,13 +503,6 @@ export default function ProgramHeadFaculty() {
       hasError = true;
     } else {
       setLastNameError('');
-    }
-
-    if (maxUnits <= 0) {
-      setMaxUnitsError('Maximum units must be greater than 0');
-      hasError = true;
-    } else {
-      setMaxUnitsError('');
     }
 
     const deptVal = isVpaa ? departmentId : (user?.department_id?.toString() || '');
@@ -529,7 +519,8 @@ export default function ProgramHeadFaculty() {
     const payload = {
       first_name: trimmedFirst,
       last_name: trimmedLast,
-      middle_name: trimmedMiddle || null,
+      middle_name: keptMiddleName(trimmedMiddle),
+      suffix: suffix || null,
       employment_type: employmentType,
       max_units: maxUnits,
       overload_units: overloadUnits,
@@ -540,7 +531,7 @@ export default function ProgramHeadFaculty() {
       // Only sent when the account may change it. Submitting the field without
       // faculty.manage_designations is refused outright, which would block
       // every ordinary roster edit for roles that never touch designations.
-      ...(canManageDesignations ? { designation_id: designationId ? Number(designationId) : null } : {}),
+      ...(canManageDesignations ? { designation_ids: designationIds.map(Number) } : {}),
       status,
       profile_picture: profilePicture
     };
@@ -563,7 +554,14 @@ export default function ProgramHeadFaculty() {
           setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
           return nextFaculties;
         });
-        toast.success('Created', 'Instructor created successfully');
+        // The list is sorted by name and paged, so a new record rarely lands
+        // on the page in view. Clear anything that could hide it; the effect
+        // below then opens its page and highlights it.
+        setSearchQuery('');
+        setDepartmentFilter('');
+        setEmploymentFilter('');
+        setHighlightedId(createdFaculty.id);
+        toast.success('Created', `${formatFacultyListName(createdFaculty)} was added to the list.`);
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -588,8 +586,7 @@ export default function ProgramHeadFaculty() {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(f => {
-        const middleInitial = f.middle_name ? `${f.middle_name.charAt(0)}.` : '';
-        const fullName = `${f.last_name}, ${f.first_name} ${middleInitial}`.toLowerCase();
+        const fullName = formatFacultyListName(f).toLowerCase();
         return fullName.includes(q);
       });
     }
@@ -634,6 +631,29 @@ export default function ProgramHeadFaculty() {
     return list;
   }, [filteredFaculties, sortBy]);
 
+  useEffect(() => {
+    if (highlightedId === null) return;
+    const index = sortedFaculties.findIndex((f) => f.id === highlightedId);
+    // Deferred so it lands after the filter reset above sends the list to page 1.
+    const jump = index >= 0
+      ? setTimeout(() => setCurrentPage(Math.floor(index / pageSize) + 1), 0)
+      : undefined;
+    const fade = setTimeout(() => setHighlightedId(null), 4000);
+    return () => {
+      clearTimeout(jump);
+      clearTimeout(fade);
+    };
+  }, [highlightedId, sortedFaculties, pageSize]);
+
+  const editingDesignations = faculties.find((f) => f.id === editingId)?.designations ?? [];
+  const previewLoad = {
+
+    assignedUnits: faculties.find((f) => f.id === editingId)?.assigned_units ?? 0,
+
+    deloadUnits: designationIds.length ? totalDeload(designationIds, [...designations, ...editingDesignations]) : deloadUnits,
+
+  };
+
   const totalItems = sortedFaculties.length;
   const totalPages = Math.ceil(totalItems / pageSize);
   const activePage = Math.min(currentPage, Math.max(1, totalPages));
@@ -643,88 +663,9 @@ export default function ProgramHeadFaculty() {
     return sortedFaculties.slice(startIndex, startIndex + pageSize);
   }, [sortedFaculties, activePage, pageSize]);
 
-  // General workload stats summary
-  const summaryStats = useMemo(() => {
-    let available = 0;
-    let fullyLoaded = 0;
-    let overloaded = 0;
-    let probono = 0;
-
-    filteredFaculties.forEach(f => {
-      const statusDetails = getWorkloadStatus(f);
-      if (statusDetails.label === 'Available') available++;
-      else if (statusDetails.label === 'Fully Loaded') fullyLoaded++;
-      else if (statusDetails.label === 'Overloaded') overloaded++;
-      else if (statusDetails.label === 'Pro Bono') probono++;
-    });
-
-    return {
-      total: filteredFaculties.length,
-      available,
-      fullyLoaded,
-      overloaded,
-      probono
-    };
-  }, [filteredFaculties]);
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Summary Statistics Dashboard Row */}
-      <div id="instructors-summary" className="grid grid-cols-2 md:grid-cols-5 gap-5">
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Instructors</p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-gray-900 mt-0.5">{summaryStats.total}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <CheckCircle2 size={12} className="text-emerald-500" />
-            Available
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-emerald-700 mt-0.5">{summaryStats.available}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Info size={12} className="text-blue-500" />
-            Fully Loaded
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-blue-700 mt-0.5">{summaryStats.fullyLoaded}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200">
-          <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <AlertCircle size={12} className="text-red-500" />
-            Overloaded
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-red-700 mt-0.5">{summaryStats.overloaded}</p>
-          )}
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border-[0.5px] border-gray-200 col-span-2 md:col-span-1">
-          <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider flex items-center gap-1">
-            <Award size={12} className="text-purple-500" />
-            Pro Bono
-          </p>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12 mt-1" />
-          ) : (
-            <p className="text-2xl font-extrabold text-purple-700 mt-0.5">{summaryStats.probono}</p>
-          )}
-        </div>
-      </div>
-
       {/* Search and Filters Bar */}
       <div id="instructors-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
@@ -824,6 +765,7 @@ export default function ProgramHeadFaculty() {
                 setFirstName('');
                 setLastName('');
                 setMiddleName('');
+                setSuffix('');
                 setEmploymentType('full-time');
                 setMaxUnits(21);
                 setOverloadUnits(0);
@@ -831,7 +773,7 @@ export default function ProgramHeadFaculty() {
                 setProbonoUnits(0);
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
                 setProgramId('');
-                setDesignationId('');
+                setDesignationIds([]);
                 setStatus('active');
                 setProfilePicture(null);
 
@@ -878,22 +820,15 @@ export default function ProgramHeadFaculty() {
           ) : (
             paginatedFaculties.map((f) => {
               const statusDetails = getWorkloadStatus(f);
-              const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
+              const name = formatFacultyListName(f);
               const required = f.max_units - f.deload_units;
-              const pct = required > 0 ? Math.round((f.assigned_units / required) * 100) : 0;
-
-              let progressColor = 'bg-[#F5A623]';
-              if (f.assigned_units > required) {
-                progressColor = f.probono_units > 0 ? 'bg-purple-500' : 'bg-red-500';
-              } else if (f.assigned_units === required) {
-                progressColor = 'bg-blue-500';
-              }
+              const ceiling = Math.max(0, required) + f.overload_units + f.probono_units;
 
               const remaining = Math.max(0, required - f.assigned_units);
               const deptLogo = f.department?.logo || departments.find(d => d.id === f.department_id)?.logo || null;
 
               return (
-                <div key={f.id} className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between font-sans relative group overflow-hidden ${GRID_CARD_HOVER}`}>
+                <div key={f.id} className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between font-sans relative group overflow-hidden transition-shadow ${GRID_CARD_HOVER} ${f.id === highlightedId ? 'ring-2 ring-[#C9952A] ring-offset-2' : ''}`}>
                   {/* Centered Background Department Watermark Logo */}
                   {deptLogo && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
@@ -929,16 +864,7 @@ export default function ProgramHeadFaculty() {
                           <span className="text-[10px] text-gray-500 font-semibold block">
                             {f.department?.department_name || 'No Department'}
                           </span>
-                          <div className="flex flex-wrap items-center gap-1">
-                            <FacultyRoleBadge role={f.administrative_role} />
-                            {f.designation && (
-                              <FacultyRoleBadge
-                                label={f.designation.name}
-                                tone="gold"
-                                hint={f.designation.deload_units ? `-${f.designation.deload_units}u` : null}
-                              />
-                            )}
-                          </div>
+                          <FacultyRoleBadge role={f.administrative_role} />
                         </div>
                       </div>
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${statusDetails.color}`}>
@@ -951,18 +877,32 @@ export default function ProgramHeadFaculty() {
                     <div className="space-y-1.5 font-sans pt-1">
                       <div className="flex justify-between text-xs font-semibold text-gray-500">
                         <span>Workload Progress</span>
-                        <span className="text-gray-700">{f.assigned_units} / {required} Units ({pct}%)</span>
+                        <span className="text-gray-700">{f.assigned_units} / {ceiling} Units</span>
                       </div>
-                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${progressColor}`}
-                          style={{ width: `${Math.min(pct, 100)}%` }}
-                        />
-                      </div>
+                      <SegmentedLoadBar
+                        assignedUnits={f.assigned_units}
+                        maxUnits={f.max_units}
+                        deloadUnits={f.deload_units}
+                        overloadUnits={f.overload_units}
+                        probonoUnits={f.probono_units}
+                        showLegend
+                      />
                     </div>
 
                     {/* Card stats / details */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
+                      <div className="col-span-2">
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Designation</span>
+                        {(f.designations?.length ? f.designations : f.designation ? [f.designation] : []).length === 0 ? (
+                          <span className="font-bold text-gray-400">—</span>
+                        ) : (
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                            {(f.designations?.length ? f.designations : f.designation ? [f.designation] : []).map((d) => (
+                              <FacultyRoleBadge key={d.id} label={designationLabel(d)} tone="gold" hint={d.deload_units ? `-${d.deload_units}u` : null} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div>
                         <span className="text-gray-400 font-semibold block text-[10px] uppercase">Employment</span>
                         <span className="font-bold text-gray-700 capitalize">{f.employment_type}</span>
@@ -1055,172 +995,16 @@ export default function ProgramHeadFaculty() {
         </div>
       ) : (
         /* List View Table */
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden font-sans">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
-                  <th className="px-5 py-3.5">Instructor Name</th>
-                  <th className="px-4 py-3.5">Department</th>
-                  <th className="px-4 py-3.5">Employment</th>
-                  <th className="px-4 py-3.5">Workload Units</th>
-                  <th className="px-4 py-3.5">Status</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-xs font-semibold text-gray-700">
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, idx) => (
-                    <tr key={idx} className="animate-pulse">
-                      <td className="px-5 py-4"><Skeleton className="h-4 w-36" /></td>
-                      <td className="px-4 py-4"><Skeleton className="h-4 w-16" /></td>
-                      <td className="px-4 py-4"><Skeleton className="h-4 w-20" /></td>
-                      <td className="px-4 py-4"><Skeleton className="h-4 w-28" /></td>
-                      <td className="px-4 py-4"><Skeleton className="h-4 w-20" /></td>
-                      <td className="px-5 py-4 text-right"><Skeleton className="h-8 w-20 ml-auto rounded-lg" /></td>
-                    </tr>
-                  ))
-                ) : sortedFaculties.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-gray-400">
-                      <p className="text-base font-semibold">No instructors found.</p>
-                      <p className="text-xs">Try adjusting search parameters or add a new record.</p>
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedFaculties.map((f, index) => {
-                    const statusDetails = getWorkloadStatus(f);
-                    const name = `${f.last_name}, ${f.first_name} ${f.middle_name ? f.middle_name.charAt(0) + '.' : ''}`.trim();
-                    const required = f.max_units - f.deload_units;
-                    const pct = required > 0 ? Math.round((f.assigned_units / required) * 100) : 0;
-                    const deptColorClass = getDepartmentColor(f.department?.department_code || f.department?.department_name);
-
-                    let progressColor = 'bg-[#F5A623]';
-                    if (f.assigned_units > required) {
-                      progressColor = f.probono_units > 0 ? 'bg-purple-500' : 'bg-red-500';
-                    } else if (f.assigned_units === required) {
-                      progressColor = 'bg-blue-500';
-                    }
-
-                    return (
-                      <tr key={f.id} className={`group hover:bg-[#5A1220]/5 transition-all duration-200 cursor-pointer ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'}`}>
-                        <td className="px-5 py-3.5 font-bold text-gray-900 whitespace-nowrap border-l-4 border-l-transparent group-hover:border-l-[#C9952A] transition-all">
-                          <div className="flex items-center gap-3">
-                            {f.profile_picture ? (
-                              <img src={f.profile_picture} alt={name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
-                                <UserRound className="w-4 h-4" aria-hidden="true" />
-                              </div>
-                            )}
-                            <div>
-                              <div className="text-xs font-extrabold text-gray-900">{name}</div>
-                              <div className="text-[10px] text-gray-400 font-medium">ID: #{f.id}</div>
-                              <div className="flex flex-wrap items-center gap-1">
-                                <FacultyRoleBadge role={f.administrative_role} />
-                                {f.designation && (
-                                  <FacultyRoleBadge
-                                    label={f.designation.name}
-                                    tone="gold"
-                                    hint={f.designation.deload_units ? `-${f.designation.deload_units}u` : null}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          {f.department?.department_code ? (
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${deptColorClass}`}>
-                              {f.department.department_code}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-xs">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold capitalize ${
-                            f.employment_type === 'full-time'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
-                            {f.employment_type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="space-y-1 max-w-[140px]">
-                            <div className="flex items-center justify-between text-[11px] font-bold">
-                              <span className="text-gray-900">{f.assigned_units} / {required}</span>
-                              <span className="text-gray-400 text-[10px]">({pct}%)</span>
-                            </div>
-                            <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all duration-300 ${progressColor}`}
-                                style={{ width: `${Math.min(100, pct)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 w-fit ${statusDetails.color}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusDetails.dot}`} />
-                            {statusDetails.label}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleViewDetails(f)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-[#5A1220] hover:border-[#C9952A] hover:bg-amber-50 hover:text-[#410b15] cursor-pointer"
-                              aria-label="View Details"
-                              title="View Details"
-                            >
-                              <Eye size={15} />
-                            </button>
-                            <InstructorTimetableButton
-                              facultyId={f.id}
-                              facultyName={name}
-                              departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
-                              iconOnly
-                            />
-                            {canManageFaculty && (
-                              <>
-                                <div className="relative group/tooltip">
-                                  <TableActionButton
-                                    label="Edit"
-                                    variant="edit"
-                                    onClick={() => handleEditClick(f)}
-                                  >
-                                    <Pencil size={17} />
-                                  </TableActionButton>
-                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                                    Edit
-                                  </span>
-                                </div>
-                                <div className="relative group/tooltip">
-                                  <TableActionButton
-                                    label="Archive"
-                                    variant="danger"
-                                    onClick={() => { void triggerDeleteConfirmation(f.id); }}
-                                  >
-                                    <Trash2 size={17} />
-                                  </TableActionButton>
-                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                                    Archive
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <FacultyListTable
+          faculties={paginatedFaculties}
+          isLoading={isLoading}
+          highlightedId={highlightedId}
+          canManage={canManageFaculty}
+          getDepartmentColor={getDepartmentColor}
+          onView={(f) => { void handleViewDetails(f); }}
+          onEdit={handleEditClick}
+          onArchive={(f) => { void triggerDeleteConfirmation(f.id); }}
+        />
       )}
       {/* Pagination Section */}
       {totalItems > 0 && (
@@ -1300,7 +1084,7 @@ export default function ProgramHeadFaculty() {
 
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
               <h2 className="text-lg font-bold text-[#1A1410] font-display">
@@ -1359,7 +1143,28 @@ export default function ProgramHeadFaculty() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Name in the order it is written on records: last, first, middle initial, suffix. */}
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1fr_1fr_4.5rem_6.5rem]">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    Last Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => {
+                      setLastName(capitalizeNameInput(e.target.value));
+                      setLastNameError('');
+                    }}
+                    placeholder="Doe"
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-gray-200 focus:ring-[#C9952A]'
+                      }`}
+                  />
+                  {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{lastNameError}</p>}
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     First Name <span className="text-red-500">*</span>
@@ -1368,7 +1173,7 @@ export default function ProgramHeadFaculty() {
                     type="text"
                     value={firstName}
                     onChange={(e) => {
-                      setFirstName(e.target.value);
+                      setFirstName(capitalizeNameInput(e.target.value));
                       setFirstNameError('');
                     }}
                     placeholder="John"
@@ -1382,60 +1187,45 @@ export default function ProgramHeadFaculty() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Last Name <span className="text-red-500">*</span>
+                    M.I.
                   </label>
                   <input
                     type="text"
-                    value={lastName}
-                    onChange={(e) => {
-                      setLastName(e.target.value);
-                      setLastNameError('');
-                    }}
-                    placeholder="Doe"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                      }`}
+                    maxLength={1}
+                    value={middleName.charAt(0)}
+                    onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
+                    placeholder="S"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white text-center uppercase font-sans"
                   />
-                  {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{lastNameError}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    Suffix
+                  </label>
+                  <select
+                    value={suffix}
+                    onChange={(e) => setSuffix(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                  >
+                    <option value="">None</option>
+                    {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Middle Name
+                  Designations
                 </label>
-                <input
-                  type="text"
-                  value={middleName}
-                  onChange={(e) => setMiddleName(e.target.value)}
-                  placeholder="Smith"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Designation
-                </label>
-                <select
-                  value={designationId}
+                <DesignationPicker
+                  designations={designations}
+                  held={editingDesignations}
+                  value={designationIds}
+                  onChange={setDesignationIds}
                   disabled={!canManageDesignations}
-                  onChange={(e) => setDesignationId(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans disabled:bg-gray-50 disabled:text-gray-500"
-                >
-                  <option value="">No designation</option>
-                  {designations.map(d => (
-                    <option key={d.id} value={d.id.toString()}>
-                      {d.name}{d.deload_units ? ` (-${d.deload_units} units)` : ''}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">
-                  {canManageDesignations
-                    ? describeDeload(maxUnits, designations.find(d => d.id.toString() === designationId)?.deload_units ?? 0)
-                    : 'Requires the Manage Designations capability.'}
-                </p>
+                  maxUnits={maxUnits}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1457,14 +1247,13 @@ export default function ProgramHeadFaculty() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     Max Units <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={maxUnits}
                     onChange={(e) => {
                       setMaxUnits(Number(e.target.value));
                       setMaxUnitsError('');
                     }}
-                    min="1"
+                    min="0"
                     className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${maxUnitsError
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
@@ -1479,8 +1268,7 @@ export default function ProgramHeadFaculty() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     Deload Units
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={deloadUnits}
                     onChange={(e) => setDeloadUnits(Number(e.target.value))}
                     min="0"
@@ -1491,8 +1279,7 @@ export default function ProgramHeadFaculty() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     Overload Units
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={overloadUnits}
                     onChange={(e) => setOverloadUnits(Number(e.target.value))}
                     min="0"
@@ -1503,14 +1290,30 @@ export default function ProgramHeadFaculty() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     Pro Bono Units
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={probonoUnits}
                     onChange={(e) => setProbonoUnits(Number(e.target.value))}
                     min="0"
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
                   />
                 </div>
+              </div>
+
+              {/* The load as it will be saved, band by band. */}
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between gap-3 text-xs font-bold text-gray-500 font-sans">
+                  <span className="uppercase tracking-wider">Load Preview</span>
+                  <span className="text-gray-700">{previewLoad.assignedUnits} / {Math.max(0, maxUnits - previewLoad.deloadUnits) + overloadUnits + probonoUnits} units</span>
+                </div>
+                <SegmentedLoadBar
+                  className="mt-2"
+                  assignedUnits={previewLoad.assignedUnits}
+                  maxUnits={maxUnits}
+                  deloadUnits={previewLoad.deloadUnits}
+                  overloadUnits={overloadUnits}
+                  probonoUnits={probonoUnits}
+                  showLegend
+                />
               </div>
 
               {isVpaa ? (

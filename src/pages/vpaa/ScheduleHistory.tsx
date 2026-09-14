@@ -23,7 +23,9 @@ import {
 } from "../../lib/timeGrid";
 import { scheduleLocationLabel } from "../../lib/scheduleLocation";
 import ScheduleCard from "../ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard";
-import Skeleton from "../../components/ui/Skeleton";
+import type { ColumnDef } from "@tanstack/react-table";
+import DataTable from "../../components/ui/DataTable";
+import { useDataTable } from "../../components/ui/useDataTable";
 import type {
   ApiDepartmentRecord,
   DeliveryMode,
@@ -160,6 +162,24 @@ const gridCard = (
   };
 };
 
+const snapshotColumns: ColumnDef<Snapshot>[] = [
+  { id: "schedule", accessorFn: (item) => item.schedule_id ?? 0, header: "Schedule", cell: ({ row }) => `#${row.original.schedule_id ?? "Deleted"}` },
+  { id: "section", accessorFn: (item) => item.section_name || "", header: "Section", cell: ({ row }) => row.original.section_name || `#${row.original.section_id ?? "Unknown"}` },
+  {
+    id: "course",
+    accessorFn: (item) => item.course_code || "",
+    header: "Course",
+    cell: ({ row }) => (
+      <>
+        {row.original.course_code || "Course"}
+        <span className="block font-medium text-gray-500">{row.original.course_name || ""}</span>
+      </>
+    ),
+  },
+  { id: "instructor", accessorFn: (item) => item.faculty_name || "Unassigned", header: "Instructor" },
+  { id: "room", accessorFn: (item) => location(item), header: "Room" },
+];
+
 export default function ScheduleHistory() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [selected, setSelected] = useState<Entry | null>(null);
@@ -261,6 +281,53 @@ export default function ScheduleHistory() {
     is_active: false,
   } : null, [printingEntry]);
 
+  // Rebuilt each render: the action cells call open/print, which are plain closures.
+  const historyColumns: ColumnDef<Entry>[] = [
+    { id: "semester", header: "Semester", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => semesterLabel(row.original.semester) },
+    { id: "academic_year", header: "A.Y.", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.academic_year || "Archived year" },
+    { id: "created_at", header: "Date and time", meta: { cellClassName: "whitespace-nowrap font-medium text-gray-600" }, cell: ({ row }) => date(row.original.created_at) },
+    {
+      id: "actor",
+      header: "Actor",
+      cell: ({ row }) => (
+        <>
+          <p className="text-sm font-medium text-gray-800">{row.original.actor?.name || "System"}</p>
+          <p className="font-medium uppercase text-gray-500">{row.original.actor?.role || "system"}</p>
+        </>
+      ),
+    },
+    {
+      id: "action",
+      header: "Action",
+      meta: { stopRowClick: true },
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <TableActionButton label="View schedule" variant="view" onClick={() => open(row.original)}>
+            <Eye className="h-4 w-4" />
+          </TableActionButton>
+          <TableActionButton label="Print schedule" variant="print" onClick={() => print(row.original)}>
+            <Printer className="h-4 w-4" />
+          </TableActionButton>
+        </div>
+      ),
+    },
+  ];
+  // The server pages the history, so the table renders one page unsorted.
+  const historyTable = useDataTable({
+    data: entries,
+    columns: historyColumns,
+    pageSize: false,
+    enableSorting: false,
+    getRowId: (entry) => String(entry.group_id || entry.id),
+  });
+
+  const snapshotTable = useDataTable({
+    data: snapshots,
+    columns: snapshotColumns,
+    pageSize: false,
+    getRowId: (item) => String(item.id),
+  });
+
   return (
     <div id="schedule-history-page" className="space-y-5">
       <div className="flex justify-end">
@@ -282,121 +349,20 @@ export default function ScheduleHistory() {
           >
             {error}
           </div>
-        ) : loading ? (
-          <div
-            className="overflow-x-auto"
-            aria-busy="true"
-            aria-label="Loading schedule history"
-          >
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-5 py-3">Semester</th>
-                  <th className="px-5 py-3">A.Y.</th>
-                  <th className="px-5 py-3">Date and time</th>
-                  <th className="px-5 py-3">Actor</th>
-                  <th className="px-5 py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <tr key={`history-skeleton-${index}`}>
-                    <td className="px-5 py-4">
-                      <Skeleton className="h-4 w-28" />
-                    </td>
-                    <td className="px-5 py-4">
-                      <Skeleton className="h-4 w-24" />
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4">
-                      <Skeleton className="h-4 w-36" />
-                    </td>
-                    <td className="px-5 py-4">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="mt-1 h-3 w-16" />
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-8 w-8 rounded-md" />
-                        <Skeleton className="h-8 w-8 rounded-md" />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : entries.length === 0 ? (
-          <div className="p-12 text-center">
-            <History className="mx-auto h-10 w-10 text-gray-300" />
-            <p className="mt-3 font-semibold text-gray-700">
-              No schedule history yet
-            </p>
-          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50 text-left text-xs font-bold uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-5 py-3">Semester</th>
-                  <th className="px-5 py-3">A.Y.</th>
-                  <th className="px-5 py-3">Date and time</th>
-                  <th className="px-5 py-3">Actor</th>
-                  <th className="px-5 py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {entries.map((entry) => (
-                  <tr
-                    key={entry.group_id || entry.id}
-                    onClick={() => open(entry)}
-                    className="cursor-pointer hover:bg-amber-50/40"
-                  >
-                    <td className="px-5 py-4 font-semibold text-gray-900">
-                      {semesterLabel(entry.semester)}
-                    </td>
-                    <td className="px-5 py-4 font-semibold text-gray-900">
-                      {entry.academic_year || "Archived year"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-gray-600">
-                      {date(entry.created_at)}
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="font-medium text-gray-800">
-                        {entry.actor?.name || "System"}
-                      </p>
-                      <p className="text-xs uppercase text-gray-500">
-                        {entry.actor?.role || "system"}
-                      </p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <TableActionButton
-                          label="View schedule"
-                          variant="view"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            open(entry);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </TableActionButton>
-                        <TableActionButton
-                          label="Print schedule"
-                          variant="print"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            print(entry);
-                          }}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </TableActionButton>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            table={historyTable}
+            variant="embedded"
+            isLoading={loading}
+            ariaLabel="Schedule history"
+            onRowClick={open}
+            emptyState={
+              <>
+                <History className="mx-auto h-10 w-10 text-gray-300" />
+                <p className="mt-3 font-semibold text-gray-700">No schedule history yet</p>
+              </>
+            }
+          />
         )}
         <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3 text-sm text-gray-600">
           <span>
@@ -483,42 +449,16 @@ export default function ScheduleHistory() {
                 </div>
               </div>
               {detailMode === "list" ? (
-                <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-gray-200">
-                  <table className="min-w-full text-xs">
-                    <thead className="sticky top-0 z-10 bg-gray-50 text-left font-bold uppercase text-gray-500">
-                      <tr>
-                        <th className="px-3 py-2">Schedule</th>
-                        <th className="px-3 py-2">Section</th>
-                        <th className="px-3 py-2">Course</th>
-                        <th className="px-3 py-2">Instructor</th>
-                        <th className="px-3 py-2">Room</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {snapshots.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-3 py-2">
-                            #{item.schedule_id ?? "Deleted"}
-                          </td>
-                          <td className="px-3 py-2">
-                            {item.section_name ||
-                              `#${item.section_id ?? "Unknown"}`}
-                          </td>
-                          <td className="px-3 py-2">
-                            {item.course_code || "Course"}
-                            <span className="block text-gray-500">
-                              {item.course_name || ""}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">
-                            {item.faculty_name || "Unassigned"}
-                          </td>
-                          <td className="px-3 py-2">{location(item)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  table={snapshotTable}
+                  variant="embedded"
+                  density="compact"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200"
+                  scrollClassName="min-h-0 flex-1 overflow-auto"
+                  ariaLabel="Schedules in this history entry"
+                  emptyTitle="No schedules were captured in this entry."
+                  emptyDescription=""
+                />
               ) : cards.length === 0 ? (
                 <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
                   The selected history entry has no timetable snapshot for this

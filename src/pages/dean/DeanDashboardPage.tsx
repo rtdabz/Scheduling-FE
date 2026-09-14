@@ -32,6 +32,7 @@ import type { SectionStatusItem } from '../../hooks/useDepartmentScheduleStatus'
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
 
 interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; deload_units?:number; probono_units?:number|null; profile_picture?:string|null; department_id:number; status?:string }
@@ -111,6 +112,8 @@ interface Package {
   submittedOn:string|null;
 }
 
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'users'] as const;
+
 export default function DeanDashboardPage() {
   const navigate = useNavigate();
 
@@ -122,6 +125,7 @@ export default function DeanDashboardPage() {
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
@@ -142,7 +146,8 @@ export default function DeanDashboardPage() {
     let active = true;
 
     const load = async () => {
-      setLoading(!hasCachedData(cacheKey));
+      // A live refresh keeps the current figures on screen until new ones land.
+      setLoading(liveRevision === 0 && !hasCachedData(cacheKey));
       setLoadError(null);
       try {
         const overview = await loadCachedData<Overview>(cacheKey, async () => {
@@ -175,7 +180,7 @@ export default function DeanDashboardPage() {
 
     load();
     return () => { active = false; };
-  }, [cacheKey, reloadKey]);
+  }, [cacheKey, reloadKey, liveRevision]);
 
   const {
     sections: statusSections,

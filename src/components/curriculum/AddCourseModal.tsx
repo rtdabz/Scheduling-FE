@@ -197,7 +197,7 @@ export default function AddCourseModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 backdrop-blur-sm animate-in fade-in duration-200 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 animate-in fade-in duration-200 sm:items-center sm:p-4"
       role="presentation"
     >
       <div

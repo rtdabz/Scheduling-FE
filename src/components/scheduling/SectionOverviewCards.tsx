@@ -146,7 +146,7 @@ export default function SectionOverviewCards({ sections, isLoading, onOpen }: Pr
                 {section.meetings} meeting{section.meetings === 1 ? '' : 's'}
               </p>
               {!isEmpty && (
-                <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-[#4e0a10] opacity-0 transition-opacity group-hover:opacity-100">
+                <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-[#4e0a10] transition-transform group-hover:translate-x-0.5">
                   Timetable
                   <ChevronRight className="w-3.5 h-3.5" />
                 </span>

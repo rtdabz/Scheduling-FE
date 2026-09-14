@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { closingTimeLabel, parsePreferredPattern, slotCount, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { closingTimeLabel, parsePreferredPattern, slotCount, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
@@ -17,6 +18,13 @@ interface UseConflictParams {
   faculties: Faculty[];
   fieldCourseAssignmentEnabled?: boolean;
   fieldCourseCodes?: string[];
+  /** From `/scheduling-settings`; false keeps field placements inside the day window. */
+  fieldEveningScheduleEnabled?: boolean;
+  /**
+   * The department's online limit from `/scheduling-settings`, fresher than the
+   * copy on `departments`. Undefined falls back to that copy.
+   */
+  onlineSlotLimit?: number | null;
 }
 
 const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => {
@@ -312,6 +320,92 @@ export const checkSectionOnlineLimit = (
     : null;
 };
 
+/** Mirrors SchedulingPolicy::FIELD_DAY_END_TIME. */
+const FIELD_DAY_END_TIME = "17:00";
+
+/**
+ * Mirrors RuleEngine::checkFieldEveningWindow: a field placement (field delivery,
+ * or a course the department classifies as field) ends by 5:00 PM unless the
+ * department has enabled evening field scheduling.
+ */
+export const checkFieldEveningWindow = (
+  isFieldPlacement: boolean,
+  endSlot: number,
+  fieldEveningScheduleEnabled: boolean
+): ConflictResult => {
+  if (!isFieldPlacement || fieldEveningScheduleEnabled) return null;
+  if (slotToTime24h(endSlot) <= FIELD_DAY_END_TIME) return null;
+
+  return {
+    conflictType: "section",
+    message: "Field window: field courses must end by 5:00 PM unless evening field scheduling is enabled for this department."
+  };
+};
+
+/**
+ * Concurrent online classes a department may run. Mirrors
+ * DepartmentResourceSlotLimitService::resolve: null, zero or negative is uncapped.
+ */
+export const resolveOnlineSlotLimit = (limit: number | string | null | undefined): number => {
+  if (limit === null || limit === undefined || limit === "") return UNLIMITED_SHARED_SLOT_LIMIT;
+  const numeric = Number(limit);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : UNLIMITED_SHARED_SLOT_LIMIT;
+};
+
+/**
+ * Mirrors RuleEngine::checkOnlineCapacity: the department's online classes that
+ * overlap the meeting, counted directly (not as peak concurrency), must stay
+ * below the configured limit.
+ *
+ * The room-conflict loop in checkConflict skips the "online" sentinel entirely,
+ * so this was never checked on the client.
+ */
+export const checkOnlineCapacity = (
+  schedules: ScheduleItem[],
+  departmentId: number | null,
+  dayIndex: number,
+  startSlot: number,
+  endSlot: number,
+  limit: number,
+  excludeIds: string[]
+): ConflictResult => {
+  if (!Number.isFinite(limit)) return null;
+
+  const overlapping = schedules.filter((item) =>
+    item.mode === "online"
+    && item.dayIndex === dayIndex
+    && (departmentId === null || Number(item.departmentId) === Number(departmentId))
+    && !excludeIds.includes(item.id)
+    && item.startSlot < endSlot
+    && startSlot < item.startSlot + item.durationSlots
+  ).length;
+
+  return overlapping >= limit
+    ? {
+        conflictType: "room",
+        message: `Online capacity: this department already runs ${overlapping} online class${overlapping === 1 ? "" : "es"} at this time, and its limit is ${limit}.`
+      }
+    : null;
+};
+
+/**
+ * Mirrors RoomAccessPolicy::fitsWindows for a borrowed room: it may only be used
+ * inside a window the lending department granted.
+ */
+export const checkRoomGrantWindow = (
+  room: Room | undefined,
+  dayIndex: number,
+  startSlot: number,
+  durationSlots: number
+): ConflictResult => {
+  if (!room?.grantWindows || roomGrantFits(room, dayIndex, startSlot, durationSlots)) return null;
+
+  return {
+    conflictType: "room",
+    message: `Room access: ${room.name} is borrowed and only usable ${room.grantWindows.map(describeWindow).join(", ")}.`
+  };
+};
+
 /**
  * Delivery mode implied by a room selection. checkConflict callers pass room ids
  * rather than a mode, and the scheduler represents virtual rooms with the
@@ -490,8 +584,13 @@ export const getConflictedScheduleMap = (
           }
         }
 
-        // 3. Faculty conflict
-        if (s1.facultyId && s1.facultyId === s2.facultyId) {
+        // 3. Faculty conflict. A clash both meetings were deliberately assigned
+        // over is an override, not a conflict: the card shows it in orange.
+        if (
+          s1.facultyId
+          && s1.facultyId === s2.facultyId
+          && !(s1.facultyConflictOverride && s2.facultyConflictOverride)
+        ) {
           const faculty = faculties.find((f) => String(f.id) === String(s1.facultyId));
           const facName = faculty?.name ?? "Assigned faculty";
           const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
@@ -517,7 +616,9 @@ export const useConflict = ({
   subjects,
   faculties,
   fieldCourseAssignmentEnabled = false,
-  fieldCourseCodes = []
+  fieldCourseCodes = [],
+  fieldEveningScheduleEnabled = false,
+  onlineSlotLimit
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
     () => getConflictedScheduleMap(schedules, subjects, rooms, faculties, departments),
@@ -600,15 +701,44 @@ export const useConflict = ({
       return dayCategoryConflict;
     }
 
+    const fieldWindowConflict = checkFieldEveningWindow(
+      deliveryMode === "field" || subjectRequiresField,
+      endSlot,
+      fieldEveningScheduleEnabled
+    );
+    if (fieldWindowConflict) {
+      return fieldWindowConflict;
+    }
+
     if (deliveryMode === "online") {
       const onlineLimitConflict = checkSectionOnlineLimit(schedules, sectionId, excludeIdList);
       if (onlineLimitConflict) {
         return onlineLimitConflict;
       }
+
+      const departmentOnlineLimit = onlineSlotLimit !== undefined
+        ? onlineSlotLimit
+        : departments.find((item) => Number(item.id) === Number(candidateDepartmentId))?.online_slot_limit;
+      const onlineCapacityConflict = checkOnlineCapacity(
+        schedules,
+        candidateDepartmentId,
+        dayIndex,
+        startSlot,
+        endSlot,
+        resolveOnlineSlotLimit(departmentOnlineLimit),
+        excludeIdList
+      );
+      if (onlineCapacityConflict) {
+        return onlineCapacityConflict;
+      }
     }
 
     if (!isTbaPlacement && !isOnlinePlacement) {
       const room = resolveRoom(rooms, roomId);
+      const grantWindowConflict = checkRoomGrantWindow(room, dayIndex, startSlot, durationSlots);
+      if (grantWindowConflict) {
+        return grantWindowConflict;
+      }
       if (room?.roomType === "online") {
         return {
           conflictType: "room",
@@ -717,7 +847,7 @@ export const useConflict = ({
       }
     }
     return null;
-  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes]);
+  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, fieldEveningScheduleEnabled, onlineSlotLimit]);
 
   const checkFacultyConflict = useCallback((facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);

@@ -26,8 +26,9 @@ import type {
   WithdrawalStage
 } from "../types";
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
-import { getCourseSlotPlan } from "../courseSlotPlan";
+import { getCourseSlotPlan, laboratoryComponentSlots, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { buildSectionDoneCandidates } from "../sectionDoneCandidates";
+import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
 import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
 
@@ -68,10 +69,12 @@ import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
 import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
+import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
 import { roomGrantFits } from "../../../../lib/roomRequests";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
+import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
 import { buildPreferredPattern, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 import { resolveManualOperationStatus } from "../manualScheduleOperation";
 
@@ -88,8 +91,10 @@ const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DA
 
 const ROOM_TBA = "tba";
 
-export interface ManualSchedulingSettings {
+export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
   lecture_lab_schedule_override_enabled?: boolean;
+  field_evening_schedule_enabled?: boolean;
+  online_slot_limit?: number | null;
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
   forced_day_rules?: Array<{ course_id: number; day: string }>;
@@ -100,9 +105,10 @@ const sortSplitMeetingsForEdit = (
   items: ScheduleItem[],
   subject?: Subject | null,
   laboratoryFirst = false,
+  laboratorySettings: LaboratoryDurationSettings | null = null,
 ): ScheduleItem[] => {
   const lectureSlots = Number(subject?.lectureHours ?? 0) * 2;
-  const labSlots = Number(subject?.labHours ?? 0) * 6;
+  const labSlots = Number(subject?.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratorySettings) : 0;
   const meetingRank = (item: ScheduleItem): number => {
     if (item.meetingType === "laboratory") return laboratoryFirst ? 0 : 1;
     if (item.meetingType === "lecture") return laboratoryFirst ? 1 : 0;
@@ -237,7 +243,7 @@ const getApiErrorMessage = (error: unknown): string | null => {
 };
 
 export const useScheduler = () => {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const user = getStoredUser();
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const canUpdateSchedule = hasStoredCapability('schedule.update');
@@ -273,6 +279,8 @@ export const useScheduler = () => {
 
   const [isResubmittingSection, setIsResubmittingSection] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isFinalizeSectionsModalOpen, setIsFinalizeSectionsModalOpen] = useState(false);
+  const [isReassignSectionsModalOpen, setIsReassignSectionsModalOpen] = useState(false);
   const [selectedSectionId, setSelectedSectionId] = useState<string>(() => {
     return canUseInitialCache && cachedSchedulerData?.sections?.length
       ? cachedSchedulerData.sections[0].id
@@ -408,9 +416,14 @@ export const useScheduler = () => {
 
   const refreshSchedules = useCallback(async () => {
     try {
-      const url = activeSemester ? `/schedules/semester/${activeSemester.id}` : '/schedules';
-      const res = await api.get<ApiScheduleRecord[]>(url);
-      let apiData = res.data;
+      // Re-read the same slice the page loaded on mount. `/schedules/semester/{id}`
+      // is institution-wide, skips the delegated-assignment masking, and nests
+      // every relation in full (a ~40 KB department logo per meeting row), so
+      // each refresh downloaded megabytes and never matched the page's own
+      // signature — replacing the whole grid after every save.
+      const res = await api.get<Pick<InitialDataResponse, "schedules">>('/initial-data', { params: { include: 'schedules' } });
+      if (!Array.isArray(res.data.schedules)) return;
+      let apiData = res.data.schedules;
       if (activeSemester) {
         apiData = apiData.filter((item) => Number(item.semester_id) === Number(activeSemester.id));
       }
@@ -520,6 +533,12 @@ export const useScheduler = () => {
       // Loads are advisory here; the save itself already succeeded.
     }
   }, [schedulerCacheKey]);
+
+  // Changes made by others (another secretary, a Dean returning a section, a
+  // VPAA approval) reconcile into the open builder. Both refreshers compare
+  // before replacing state, so an unrelated department's change re-renders nothing.
+  useLiveRefresh(["schedules", "approvals"], () => { void refreshSchedules(); });
+  useLiveRefresh(["faculty", "assignments"], () => { void refreshFaculties(); });
 
   const applyUpdatedSchedules = useCallback((updatedSchedules: ScheduleItem[]) => {
     const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));
@@ -826,6 +845,18 @@ export const useScheduler = () => {
     [departmentSectionProgress, schedules]
   );
 
+  // Sections in instructor assignment, for the bulk Finalize checklist.
+  const sectionFinalizeCandidates = useMemo<SectionDoneCandidate[]>(
+    () => buildSectionFinalizeCandidates(departmentSectionProgress, schedules),
+    [departmentSectionProgress, schedules]
+  );
+
+  // Finalized sections, for the bulk Reassignment checklist.
+  const sectionReassignCandidates = useMemo<SectionDoneCandidate[]>(
+    () => buildSectionReassignCandidates(departmentSectionProgress, schedules),
+    [departmentSectionProgress, schedules]
+  );
+
   const departmentTotalSections = departmentSectionProgress.length;
   const departmentDoneSections = departmentSectionProgress.filter((section) => section.isDone).length;
   const submissionReadySections = departmentSectionProgress.filter((section) => section.status === "completed");
@@ -907,7 +938,10 @@ export const useScheduler = () => {
     subjects,
     faculties,
     fieldCourseAssignmentEnabled,
-    fieldCourseCodes
+    fieldCourseCodes,
+    fieldEveningScheduleEnabled: Boolean(manualSchedulingSettings?.field_evening_schedule_enabled),
+    // Undefined until settings load, so the department copy is used meanwhile.
+    onlineSlotLimit: manualSchedulingSettings ? (manualSchedulingSettings.online_slot_limit ?? null) : undefined,
   });
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
@@ -1026,7 +1060,7 @@ export const useScheduler = () => {
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
           );
-          const sorted = sortSplitMeetingsForEdit(existing, subject, Boolean(targetSched.isHybrid));
+          const sorted = sortSplitMeetingsForEdit(existing, subject, Boolean(targetSched.isHybrid), manualSchedulingSettings);
 
           if (sorted.length >= 2) {
             setModalSplitEnabled(!targetSched.isHybrid && ["MW", "TTh"].includes(targetSched.preferredPattern ?? ""));
@@ -1576,6 +1610,7 @@ export const useScheduler = () => {
             schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)),
             subject,
             modalIsHybrid,
+            manualSchedulingSettings,
           )
         : [];
 
@@ -1592,7 +1627,7 @@ export const useScheduler = () => {
             meetingType = index === 0 ? "laboratory" : "lecture";
           } else if (hasLab) {
             const duration = targetDay.duration;
-            const labSlots = Number(subject.labHours ?? 0) * 6;
+            const labSlots = laboratoryComponentSlots(subject, manualSchedulingSettings);
             const lecSlots = Number(subject.lectureHours ?? 0) * 2;
             if (duration === labSlots) {
               meetingType = "laboratory";
@@ -1722,7 +1757,9 @@ export const useScheduler = () => {
         setModalValidationError("Could not save the schedule to the database.");
         toast.error("Operation Failed", "Could not save the schedule to the database.");
       }
-      shouldCloseModal = selectedRecommendationId === null;
+      // Nothing was saved, so keep the dialog open with the server's reason
+      // instead of discarding everything the user configured.
+      shouldCloseModal = false;
     } finally {
       setIsModalLoading(false);
       if (shouldCloseModal) {
@@ -1741,8 +1778,11 @@ export const useScheduler = () => {
     e.preventDefault();
     const subject = dropContext ? subjects.find((item) => String(item.id) === String(dropContext.subjectId)) : null;
     const isLabMeeting = (duration: number): boolean => {
-      const labSlots = Number(subject?.labHours ?? 0) * 6;
-      return labSlots > 0 && duration === labSlots;
+      if (Number(subject?.labHours ?? 0) <= 0) return false;
+      // The per-unit length still identifies an unsplit laboratory block; a
+      // department's Custom Lab Duration identifies the split laboratory meeting.
+      return duration === getCourseSlotPlan(subject).laboratorySlots
+        || duration === laboratoryComponentSlots(subject, manualSchedulingSettings);
     };
     const missingFirstRoom = modalClassMode === "on-site" && !modalRoomId;
     const missingSecondRoom = modalPreferredPattern
@@ -1979,7 +2019,7 @@ export const useScheduler = () => {
     if (!selectedSectionId || isWithdrawingSubmission) return;
     const section = sections.find((s) => s.id === selectedSectionId);
     if (!section?.departmentId) {
-      toast.error("Unable to Withdraw", "The selected section is not linked to a department.");
+      toast.error("Unable to Recall", "The selected section is not linked to a department.");
       setIsWithdrawSubmissionModalOpen(false);
       return;
     }
@@ -1991,33 +2031,38 @@ export const useScheduler = () => {
 
     try {
       setIsWithdrawingSubmission(true);
-      await api.post<{ instructors_preserved?: number }>(
+      const response = await api.post<{ instructors_released?: number }>(
         `/departments/${section.departmentId}/withdraw-submission`,
         { section_ids: sectionIds.map((id) => Number(id)) }
       );
+      const released = Number(response.data?.instructors_released ?? 0);
 
       const selectedRevisionSectionIds = new Set(sectionIds);
       setSchedules((prev) =>
         prev.map((item) =>
           selectedRevisionSectionIds.has(item.sectionId)
             && departmentWithdrawableStatuses.includes(item.status)
-            ? { ...item, status: "revision" }
+            // The server releases a withdrawn section's instructors.
+            ? { ...item, status: "revision", facultyId: null, facultyName: null, facultyAssignmentDone: false, facultyConflictOverride: false }
             : item
         )
       );
 
       toast.success(
-        "Submission Withdrawn",
+        "Submission Recalled",
         (departmentWithdrawalStage === "vpaa_approved"
           ? "VPAA approval was revoked and only the selected sections were unlocked for revision."
           : "Only the selected sections were unlocked for revision.")
-          + " Existing instructor assignments were preserved. After revision, mark the section done and submit it again for Dean and VPAA approval."
+          + (released > 0
+            ? ` ${released} instructor assignment${released === 1 ? " was" : "s were"} released.`
+            : "")
+          + " After revision, mark the section done and submit it again for Dean and VPAA approval, then assign instructors again."
       );
-      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty');
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty', 'assignments');
       refreshSchedules().catch(() => {});
       setIsWithdrawSubmissionModalOpen(false);
     } catch (err) {
-      toast.error("Failed to withdraw", getApiErrorMessage(err) ?? "An error occurred.");
+      toast.error("Failed to recall", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
       setIsWithdrawingSubmission(false);
     }
@@ -2081,19 +2126,9 @@ export const useScheduler = () => {
   const handleEditSection = useCallback(async () => {
     if (!selectedSectionId || isEditingSection) return;
 
+    // Reassignment opens the same kind of checklist as Done and Finalize.
     if (currentStatus === "finalized") {
-      try {
-        setIsEditingSection(true);
-        const ids = sectionSchedules.map((s) => Number(s.id));
-        const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-status", { ids, status: "reassignment" });
-        applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
-        toast.success("Reassignment Enabled", "Reassignment unlocks faculty assignments for each section. Timetable details remain locked.");
-        void refreshSchedules();
-      } catch (err) {
-        toast.error("Failed to enable reassignment", getApiErrorMessage(err) ?? "Please try again.");
-      } finally {
-        setIsEditingSection(false);
-      }
+      setIsReassignSectionsModalOpen(true);
       return;
     }
 
@@ -2117,7 +2152,42 @@ export const useScheduler = () => {
     } finally {
       setIsEditingSection(false);
     }
-  }, [selectedSectionId, isEditingSection, currentStatus, sectionSchedules, applyUpdatedSchedules, refreshSchedules, toast]);
+  }, [selectedSectionId, isEditingSection, currentStatus, sectionSchedules, refreshSchedules, toast]);
+
+  const cancelReassignSections = useCallback(() => {
+    if (!isEditingSection) setIsReassignSectionsModalOpen(false);
+  }, [isEditingSection]);
+
+  // One batch call for every selected finalized section.
+  const confirmReassignSections = useCallback(async (sectionIds: string[]) => {
+    if (isEditingSection) return;
+
+    const chosen = sectionReassignCandidates.filter(
+      (candidate) => candidate.isReady && sectionIds.includes(candidate.sectionId)
+    );
+    const ids = chosen.flatMap((candidate) => candidate.scheduleIds);
+    if (ids.length === 0) {
+      toast.error("Nothing to Reassign", "Select at least one finalized section.");
+      return;
+    }
+
+    try {
+      setIsEditingSection(true);
+      const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-status", { ids, status: "reassignment" });
+      applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
+      toast.success(
+        chosen.length === 1 ? "Reassignment Enabled" : `Reassignment Enabled for ${chosen.length} Sections`,
+        "Instructor assignments are unlocked. Timetable details remain locked.",
+      );
+      setIsReassignSectionsModalOpen(false);
+      invalidateCacheGroups('schedules', 'dashboards', 'faculty', 'assignments');
+      void refreshSchedules();
+    } catch (err) {
+      toast.error("Failed to enable reassignment", getApiErrorMessage(err) ?? "Please try again.");
+    } finally {
+      setIsEditingSection(false);
+    }
+  }, [isEditingSection, sectionReassignCandidates, applyUpdatedSchedules, refreshSchedules, toast]);
 
   const handleResubmit = useCallback(async () => {
     if (!selectedSectionId || isResubmittingSection) return;
@@ -2143,30 +2213,57 @@ export const useScheduler = () => {
     }
   }, [selectedSectionId, isResubmittingSection, sectionSchedules, refreshSchedules, toast]);
 
+  /** Finalize opens the same kind of checklist as Done, for every section ready to finalize. */
   const handleFinalize = useCallback(async () => {
-    if (!selectedSectionId) return;
+    if (!selectedSectionId || isFinalizing) return;
+    setIsFinalizeSectionsModalOpen(true);
+  }, [selectedSectionId, isFinalizing]);
+
+  const cancelFinalizeSections = useCallback(() => {
+    if (!isFinalizing) setIsFinalizeSectionsModalOpen(false);
+  }, [isFinalizing]);
+
+  // One batch call for every selected section. The server finalizes a section
+  // only as a whole, so each candidate carries all of its rows.
+  const confirmFinalizeSections = useCallback(async (sectionIds: string[]) => {
     if (isFinalizing) return;
+
+    const chosen = sectionFinalizeCandidates.filter(
+      (candidate) => candidate.isReady && sectionIds.includes(candidate.sectionId)
+    );
+    const ids = chosen.flatMap((candidate) => candidate.scheduleIds);
+    if (ids.length === 0) {
+      toast.error("Nothing to Finalize", "Select at least one section whose classes all have an instructor.");
+      return;
+    }
+
     try {
       setIsFinalizing(true);
-      const ids = sectionSchedules.map((s) => Number(s.id));
       await api.patch("/schedules/batch-status", { ids, status: "finalized" });
 
-      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      const finalizedIds = new Set(ids.map(String));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
-          sectionScheduleIds.has(schedule.id)
+          finalizedIds.has(String(schedule.id))
             ? { ...schedule, status: "finalized" }
             : schedule
         )
       );
-      toast.success("Finalized", "Schedule successfully marked as finalized.");
+      toast.success(
+        chosen.length === 1 ? "Section Finalized" : `${chosen.length} Sections Finalized`,
+        chosen.length === 1
+          ? `${chosen[0].sectionName}'s instructor assignments are now finalized.`
+          : "The selected sections' instructor assignments are now finalized."
+      );
+      setIsFinalizeSectionsModalOpen(false);
+      invalidateCacheGroups('schedules', 'dashboards', 'faculty', 'assignments');
       refreshSchedules().catch(() => {});
     } catch (err) {
       toast.error("Failed to finalize", getApiErrorMessage(err) ?? "An error occurred.");
     } finally {
       setIsFinalizing(false);
     }
-  }, [selectedSectionId, isFinalizing, sectionSchedules, refreshSchedules, toast]);
+  }, [isFinalizing, sectionFinalizeCandidates, refreshSchedules, toast]);
 
   const handlePopupFacultyChange = useCallback((fId: string) => {
     if (!facultyAssignmentPopup) return;
@@ -2211,6 +2308,7 @@ export const useScheduler = () => {
     | { status: "restricted"; message: string }
     | { status: "resynced" }
     | { status: "needs_overload_confirmation"; confirmation: OverloadConfirmation }
+    | { status: "needs_conflict_override"; question: ConflictOverrideQuestion }
     | { status: "failed"; message: string };
 
   /**
@@ -2222,7 +2320,8 @@ export const useScheduler = () => {
   const mutateScheduleFaculty = async (
     slotId: string,
     facultyId: string | null,
-    confirmOverload = false
+    confirmOverload = false,
+    overrideConflicts = false
   ): Promise<FacultyMutationOutcome> => {
     const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
     if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
@@ -2239,7 +2338,8 @@ export const useScheduler = () => {
     try {
       const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, {
         faculty_id: facultyId === null ? null : Number(facultyId),
-        ...(confirmOverload ? { confirm_overload: true } : {})
+        ...(confirmOverload ? { confirm_overload: true } : {}),
+        ...(overrideConflicts && facultyId !== null ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {})
       });
       const resData = response.data;
       const rawList: ApiScheduleRecord[] = resData.schedules
@@ -2262,6 +2362,12 @@ export const useScheduler = () => {
         return { status: "needs_overload_confirmation", confirmation };
       }
 
+      // Only the instructor's own clash: a question, not a failure.
+      const question = facultyId === null ? null : conflictOverrideFrom(err);
+      if (question) {
+        return { status: "needs_conflict_override", question };
+      }
+
       return {
         status: "failed",
         message: getApiErrorMessage(err)
@@ -2272,9 +2378,47 @@ export const useScheduler = () => {
     }
   };
 
+  const askConflictOverride = (question: ConflictOverrideQuestion): Promise<boolean> =>
+    confirm({
+      title: "Instructor has a conflict",
+      message: conflictOverridePrompt(question),
+      eyebrow: "Instructor conflict",
+      confirmLabel: "Assign anyway",
+    });
+
+  /**
+   * Sends an assignment and answers the server's questions until it is written
+   * or the user declines. The overload and conflict answers are independent, so
+   * a retry keeps the one already given. Resolves null when the user said No.
+   */
+  const withAssignmentQuestions = async <T extends { status: string }>(
+    send: (confirmOverload: boolean, overrideConflicts: boolean) => Promise<T>,
+    overrideConflicts = false,
+  ): Promise<T | null> => {
+    let confirmOverload = false;
+    let override = overrideConflicts;
+    // At most one of each question, then the real answer.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const outcome = await send(confirmOverload, override);
+      const question = outcome as unknown as { status: string; confirmation?: OverloadConfirmation; question?: ConflictOverrideQuestion };
+      if (question.status === "needs_overload_confirmation" && question.confirmation && !confirmOverload) {
+        if (!(await askOverloadConfirmation(question.confirmation))) return null;
+        confirmOverload = true;
+        continue;
+      }
+      if (question.status === "needs_conflict_override" && question.question && !override) {
+        if (!(await askConflictOverride(question.question))) return null;
+        override = true;
+        continue;
+      }
+      return outcome;
+    }
+    return null;
+  };
+
   const facultySuccessToast = (facultyId: string | null) => {
     if (facultyId === null) {
-      toast.success("Faculty Assignment Removed", "Faculty member removed from the schedule.");
+      toast.success("Instructor Assignment Removed", "Instructor removed from the schedule.");
       return;
     }
     const fac = faculties.find((f) => f.id === facultyId);
@@ -2284,20 +2428,18 @@ export const useScheduler = () => {
   const facultyFailureTitle = (facultyId: string | null) =>
     facultyId === null ? "Failed to remove faculty" : "Failed to assign faculty";
 
-  const handlePopupFacultyMutation = async (slotId: string, facultyId: string | null) => {
+  const handlePopupFacultyMutation = async (slotId: string, facultyId: string | null, overrideConflicts = false) => {
     if (facultyActionSlotId === slotId) return;
     setFacultyActionSlotId(slotId);
     try {
-      let outcome = await mutateScheduleFaculty(slotId, facultyId);
-
       // Answering No returns from inside the try, so the popup below is left
       // open with the instructor still selected — nothing was written.
-      if (outcome.status === "needs_overload_confirmation") {
-        const proceed = await askOverloadConfirmation(outcome.confirmation);
-        if (!proceed) return;
-        outcome = await mutateScheduleFaculty(slotId, facultyId, true);
-      }
-      if (outcome.status === "needs_overload_confirmation") return;
+      const outcome = await withAssignmentQuestions(
+        (confirmOverload, override) => mutateScheduleFaculty(slotId, facultyId, confirmOverload, override),
+        overrideConflicts,
+      );
+      if (outcome === null) return;
+      if (outcome.status === "needs_overload_confirmation" || outcome.status === "needs_conflict_override") return;
 
       if (outcome.status === "restricted") {
         setPopupValidationError(outcome.message);
@@ -2321,14 +2463,11 @@ export const useScheduler = () => {
     if (facultyActionSlotId === slotId) return;
     setFacultyActionSlotId(slotId);
     try {
-      let outcome = await mutateScheduleFaculty(slotId, facultyId);
-
-      if (outcome.status === "needs_overload_confirmation") {
-        const proceed = await askOverloadConfirmation(outcome.confirmation);
-        if (!proceed) return;
-        outcome = await mutateScheduleFaculty(slotId, facultyId, true);
-      }
-      if (outcome.status === "needs_overload_confirmation") return;
+      const outcome = await withAssignmentQuestions(
+        (confirmOverload, override) => mutateScheduleFaculty(slotId, facultyId, confirmOverload, override),
+      );
+      if (outcome === null) return;
+      if (outcome.status === "needs_overload_confirmation" || outcome.status === "needs_conflict_override") return;
 
       if (outcome.status === "restricted") {
         toast.error("Assignment Restricted", outcome.message);
@@ -2353,6 +2492,8 @@ export const useScheduler = () => {
       return;
     }
     if (!faculties.some((f) => f.id === facultyId)) return;
+    // Sent without the override: if the server confirms the clash, the
+    // "Assign anyway" confirmation asks before the class is marked.
     await handlePopupFacultyMutation(scheduleId, facultyId);
   };
 
@@ -2413,11 +2554,13 @@ export const useScheduler = () => {
    * the outer call already holds.
    */
   const submitBulkFacultyAssign = async (
-    assignments: { scheduleIds: string[]; facultyId: string }[],
-    confirmOverload: boolean
+    assignments: { scheduleIds: string[]; facultyId: string; overrideConflicts?: boolean }[],
+    confirmOverload: boolean,
+    overrideAll = false
   ): Promise<
     | { status: "ok"; schedules: ScheduleItem[] }
     | { status: "needs_overload_confirmation"; confirmation: OverloadConfirmation }
+    | { status: "needs_conflict_override"; question: ConflictOverrideQuestion }
     | { status: "failed"; error: unknown }
   > => {
     try {
@@ -2428,8 +2571,10 @@ export const useScheduler = () => {
         assignments: assignments.map((assignment) => ({
           schedule_ids: assignment.scheduleIds.map(Number),
           faculty_id: Number(assignment.facultyId),
+          ...(assignment.overrideConflicts ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
         })),
         ...(confirmOverload ? { confirm_overload: true } : {}),
+        ...(overrideAll ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
       });
 
       return { status: "ok", schedules: (response.data.schedules ?? []).map(mapApiScheduleToItem) };
@@ -2439,11 +2584,16 @@ export const useScheduler = () => {
         return { status: "needs_overload_confirmation", confirmation };
       }
 
+      const question = conflictOverrideFrom(err);
+      if (question) {
+        return { status: "needs_conflict_override", question };
+      }
+
       return { status: "failed", error: err };
     }
   };
 
-  const handleBulkFacultyAssign = async (assignments: { scheduleIds: string[]; facultyId: string }[]): Promise<boolean> => {
+  const handleBulkFacultyAssign = async (assignments: { scheduleIds: string[]; facultyId: string; overrideConflicts?: boolean }[]): Promise<boolean> => {
     if (assignments.length === 0 || facultyActionSlotId !== null) return false;
 
     setFacultyActionSlotId("bulk");
@@ -2464,17 +2614,16 @@ export const useScheduler = () => {
         }
       }
 
-      let outcome = await submitBulkFacultyAssign(assignments, false);
-
       // The batch is confirmed once, not per class: the server names every
-      // instructor who ends up overloaded in a single payload. Answering No
-      // returns from inside the try, so nothing is written, the modal keeps its
-      // selection and neither the failure toast nor a refresh fires.
-      if (outcome.status === "needs_overload_confirmation") {
-        const proceed = await askOverloadConfirmation(outcome.confirmation);
-        if (!proceed) return false;
-        outcome = await submitBulkFacultyAssign(assignments, true);
-      }
+      // instructor who ends up overloaded in a single payload. Classes the modal
+      // already marked as overrides carry the flag; a clash only the server saw
+      // (someone else just assigned) is asked about once for the whole batch.
+      // Answering No returns from inside the try, so nothing is written, the
+      // modal keeps its selection and neither the failure toast nor a refresh fires.
+      const outcome = await withAssignmentQuestions(
+        (confirmOverload, overrideAll) => submitBulkFacultyAssign(assignments, confirmOverload, overrideAll),
+      );
+      if (outcome === null) return false;
       if (outcome.status !== "ok") {
         // "failed" carries the original error so getApiErrorMessage() still
         // reads the server's own message below.
@@ -2513,28 +2662,42 @@ export const useScheduler = () => {
     }
   }, [applyUpdatedSchedules, refreshSchedules, sectionSchedules, toast]);
 
-  const clearableSectionInstructorCount = sectionSchedules.filter(
-    (schedule) => Boolean(schedule.facultyId)
-      && !schedule.facultyAssignmentDone
-      && schedule.status !== "finalized"
-      && canManageScheduleFaculty(schedule)
-  ).length;
+  const isClearableInstructorSchedule = useCallback((schedule: ScheduleItem) => Boolean(schedule.facultyId)
+    && !schedule.facultyAssignmentDone
+    && schedule.status !== "finalized"
+    && canManageScheduleFaculty(schedule), [canManageScheduleFaculty]);
+  const clearableSectionInstructorCount = sectionSchedules.filter(isClearableInstructorSchedule).length;
+  // Every section of the department, so "clear all" can empty each instructor's
+  // load instead of only the section on screen.
+  const clearableDepartmentInstructorSchedules = useMemo(() => {
+    const departmentSectionIds = new Set(
+      sections
+        .filter((section) => selectedDepartmentId === null || Number(section.departmentId) === Number(selectedDepartmentId))
+        .map((section) => section.id),
+    );
+    return schedules.filter((schedule) => departmentSectionIds.has(schedule.sectionId) && isClearableInstructorSchedule(schedule));
+  }, [isClearableInstructorSchedule, schedules, sections, selectedDepartmentId]);
+  const clearableDepartmentInstructorCount = clearableDepartmentInstructorSchedules.length;
 
-  const handleClearSectionInstructors = useCallback(async (): Promise<boolean> => {
-    if (!selectedSectionId || isClearingSectionInstructors || clearableSectionInstructorCount === 0) return false;
+  const handleClearSectionInstructors = useCallback(async (scope: "section" | "department" = "section"): Promise<boolean> => {
+    const sectionIds = scope === "department"
+      ? [...new Set(clearableDepartmentInstructorSchedules.map((schedule) => Number(schedule.sectionId)))]
+      : [Number(selectedSectionId)];
+    const clearableCount = scope === "department" ? clearableDepartmentInstructorCount : clearableSectionInstructorCount;
+    if (!selectedSectionId || isClearingSectionInstructors || clearableCount === 0 || sectionIds.length === 0) return false;
     setIsClearingSectionInstructors(true);
     try {
-      const response = await api.delete<{
+      const response = await api.post<{
         schedules?: ApiScheduleRecord[];
         courses_cleared?: number;
-      }>(`/instructor-assignments/sections/${selectedSectionId}`);
+      }>("/instructor-assignments/clear", { section_ids: sectionIds });
       applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
       const coursesCleared = Number(response.data.courses_cleared ?? 0);
       toast.success(
         "Instructors Cleared",
-        `${coursesCleared} course ${coursesCleared === 1 ? "assignment was" : "assignments were"} cleared for this section.`,
+        `${coursesCleared} course ${coursesCleared === 1 ? "assignment was" : "assignments were"} cleared for ${scope === "department" ? "all sections" : "this section"}.`,
       );
-      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty');
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty', 'assignments');
       void refreshSchedules();
       return true;
     } catch (err) {
@@ -2543,7 +2706,7 @@ export const useScheduler = () => {
     } finally {
       setIsClearingSectionInstructors(false);
     }
-  }, [applyUpdatedSchedules, canManageScheduleFaculty, clearableSectionInstructorCount, isClearingSectionInstructors, refreshSchedules, selectedSectionId, toast]);
+  }, [applyUpdatedSchedules, clearableDepartmentInstructorCount, clearableDepartmentInstructorSchedules, clearableSectionInstructorCount, isClearingSectionInstructors, refreshSchedules, selectedSectionId, toast]);
 
   const getClassesCountForDay = useCallback((dayIdx: number) =>
     sectionSchedules.filter((s) => s.dayIndex === dayIdx).length, [sectionSchedules]);
@@ -2832,6 +2995,7 @@ export const useScheduler = () => {
     assignedSlotsCount,
     unassignedSlotsCount,
     clearableSectionInstructorCount,
+    clearableDepartmentInstructorCount,
     departmentSectionProgress,
     departmentTotalSections,
     departmentDoneSections,
@@ -2864,6 +3028,14 @@ export const useScheduler = () => {
     canUpdateSchedule,
     handleResubmit,
     handleFinalize,
+    sectionFinalizeCandidates,
+    sectionReassignCandidates,
+    isReassignSectionsModalOpen,
+    cancelReassignSections,
+    confirmReassignSections,
+    isFinalizeSectionsModalOpen,
+    cancelFinalizeSections,
+    confirmFinalizeSections,
     sectionDoneCandidates,
     isMarkSectionsDoneModalOpen,
     isMarkingSectionsDone,

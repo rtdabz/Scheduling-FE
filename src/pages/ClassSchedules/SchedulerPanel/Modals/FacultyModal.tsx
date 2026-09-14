@@ -115,7 +115,7 @@ export default function FacultyModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 min-h-screen p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-4"
       onClick={(event) => { if (event.target === event.currentTarget) setFacultyAssignmentPopup(null); }}
     >
       <div
@@ -215,8 +215,10 @@ export default function FacultyModal({
                 {eligibleFaculties.map((faculty) => {
                   const conflict = checkFacultyConflict(faculty.id, schedule.id);
                   return (
-                    <option key={faculty.id} value={faculty.id} disabled={Boolean(conflict)}>
-                      {conflict ? `${faculty.name} - Already scheduled` : faculty.name}
+                    // A clash can be assigned over on purpose, so it is labelled
+                    // rather than disabled.
+                    <option key={faculty.id} value={faculty.id}>
+                      {conflict ? `${faculty.name} - Conflict` : faculty.name}
                     </option>
                   );
                 })}
@@ -261,11 +263,14 @@ export default function FacultyModal({
           </section>
 
           {popupConflictWarning && (
-            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-xl text-orange-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-orange-600 mt-0.5" />
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Warning: Conflict Found</div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-orange-900">Conflict found</div>
                 <div className="text-[10px] font-semibold mt-0.5 leading-relaxed">{popupConflictWarning}</div>
+                <div className="text-[10px] font-semibold mt-1 leading-relaxed">
+                  You can still assign this instructor. Assign will ask you to confirm.
+                </div>
               </div>
             </div>
           )}
@@ -280,9 +285,11 @@ export default function FacultyModal({
           <div className="flex gap-2 pt-1">
             <button
               type="submit"
-              disabled={isSavingFaculty || !canManageFaculty || Boolean(popupConflictWarning) || isSameAssignedFaculty}
-              className={`flex-1 px-4 py-2.5 bg-[#4e0a10] hover:bg-[#3a0809] text-white rounded-lg text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 ${
-                isSavingFaculty || !canManageFaculty || popupConflictWarning || isSameAssignedFaculty ? "cursor-not-allowed opacity-75" : ""
+              disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty}
+              className={`flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 ${
+                "bg-[#4e0a10] hover:bg-[#3a0809]"
+              } ${
+                isSavingFaculty || !canManageFaculty || isSameAssignedFaculty ? "cursor-not-allowed opacity-75" : ""
               }`}
             >
               {isSavingFaculty ? (
@@ -291,7 +298,7 @@ export default function FacultyModal({
                   Saving...
                 </>
               ) : (
-                popupConflictWarning ? "Assign Another Instructor" : isSameAssignedFaculty ? "Already Assigned" : "Assign Instructor"
+                isSameAssignedFaculty ? "Already Assigned" : "Assign Instructor"
               )}
             </button>
             {schedule.facultyId && (

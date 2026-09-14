@@ -3,8 +3,12 @@ import axios from 'axios';
 import { BookOpen, Building2, Check, Info, Save, Search, Trash2, TriangleAlert } from 'lucide-react';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import type { ColumnDef } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
+import DataTable from '../../components/ui/DataTable';
+import { useDataTable } from '../../components/ui/useDataTable';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -36,6 +40,11 @@ interface CourseRow {
   curriculum_program_name?: string | null;
   curriculum_program_cluster?: string | null;
   delegable: boolean;
+  /**
+   * Classes this semester that already have an instructor. While any do, the
+   * server refuses to change who teaches the course, so the page locks it too.
+   */
+  instructor_assigned_classes?: number;
 }
 interface PageData {
   courses: CourseRow[];
@@ -64,8 +73,8 @@ interface IndexResponse {
   programs?: PageData['programs'];
 }
 
-// v9 scopes the listing to the active semester's period.
-const cacheKey = 'page:course-teaching-assignments:v9';
+// v10 carries instructor_assigned_classes, which locks a course that is already being taught.
+const cacheKey = 'page:course-teaching-assignments:v10';
 
 const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
 const fullSemesterLabel = (semester: ActiveSemester | null) => (semester
@@ -94,6 +103,12 @@ const programOf = (course: CourseRow) => ({
  * Who teaches the course today: the recorded college, or the owner teaching its
  * own course when nothing has been recorded.
  */
+const instructorClassesOf = (course: CourseRow) => Number(course.instructor_assigned_classes ?? 0) || 0;
+const instructorLockMessage = (course: CourseRow) => {
+  const classes = instructorClassesOf(course);
+  return `${course.course_code} already has an instructor in ${classes} ${classes === 1 ? 'class' : 'classes'} this semester. Remove those instructor assignments before changing who teaches it.`;
+};
+
 const currentTeacherOf = (course: CourseRow) =>
   course.teaching_program_code
   ?? course.teaching_department_code
@@ -126,6 +141,8 @@ export default function CourseTeachingAssignments() {
   ], []);
   useWorkflowGuide({ id: 'course-teaching', isReady: !loading, steps: courseTeachingGuideSteps, mission: 'Assign Course Teaching' });
 
+  const liveRevision = useLiveRevision(['assignments', 'courses', 'curriculum']);
+
   useEffect(() => {
     let active = true;
     loadCachedData<PageData>(cacheKey, async () => {
@@ -151,7 +168,7 @@ export default function CourseTeachingAssignments() {
       if (active) setError(errorMessage(loadError, 'Unable to load course teaching assignments.'));
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [liveRevision]);
 
   const ownDepartment = departments.find((department) => department.id === currentDepartmentId) ?? null;
   const availableDepartments = useMemo(() => departments, [departments]);
@@ -220,6 +237,7 @@ export default function CourseTeachingAssignments() {
     if (course.teaching_department_id !== null) {
       return `Already assigned to ${currentTeacherOf(course)}`;
     }
+    if (instructorClassesOf(course) > 0) return 'Has an instructor';
     if (!effectiveTargetDepartment) return 'Select a department or program';
     return 'Available';
   };
@@ -308,6 +326,10 @@ export default function CourseTeachingAssignments() {
    * same year-tab reason as `applySaved`.
    */
   const removeAssignment = async (course: CourseRow) => {
+    if (instructorClassesOf(course) > 0) {
+      toast.error('Not removed', instructorLockMessage(course));
+      return;
+    }
     const teacher = currentTeacherOf(course);
     const confirmed = await confirm({
       title: 'Remove teaching assignment',
@@ -345,7 +367,7 @@ export default function CourseTeachingAssignments() {
 
   const responsibleLabel = selectedProgram?.code ?? effectiveTargetDepartment?.department_code ?? null;
   const selectedUnits = selectedCourses.reduce((sum, course) => sum + unitsOf(course), 0);
-  const selectableVisible = visibleCourses.filter((course) => course.teaching_department_id === null);
+  const selectableVisible = visibleCourses.filter((course) => course.teaching_department_id === null && instructorClassesOf(course) === 0);
   const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every((course) => selectedIds.includes(course.id));
   const toggleAllVisible = () => {
     const ids = selectableVisible.map((course) => course.id);
@@ -353,6 +375,116 @@ export default function CourseTeachingAssignments() {
       ? current.filter((id) => !ids.includes(id))
       : [...new Set([...current, ...ids])]));
   };
+
+  // Rebuilt each render: every cell reads the live selection and target.
+  const courseColumns: ColumnDef<CourseRow>[] = [
+    {
+      id: 'select',
+      enableSorting: false,
+      size: 40,
+      meta: { stopRowClick: true },
+      header: () => (
+        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0 || !effectiveTargetDepartment} aria-label="Select all unassigned courses" className="h-4 w-4 accent-[#4e0a10]" />
+      ),
+      cell: ({ row }) => {
+        const status = statusOf(row.original);
+        return (
+          <input type="checkbox" checked={status === 'Selected'} disabled={status !== 'Available' && status !== 'Selected'} onChange={() => toggleCourse(row.original)} aria-label={`Select ${row.original.course_code}`} className="h-4 w-4 accent-[#4e0a10] disabled:opacity-40" />
+        );
+      },
+    },
+    {
+      id: 'course',
+      accessorKey: 'course_code',
+      header: 'Course',
+      cell: ({ row }) => (
+        <>
+          <p className="font-black text-slate-900">{row.original.course_code}</p>
+          <p className="max-w-[280px] truncate font-medium text-slate-500">{row.original.course_name}</p>
+        </>
+      ),
+    },
+    {
+      id: 'program',
+      accessorFn: (course) => programOf(course).code,
+      header: 'Program',
+      cell: ({ row }) => {
+        const program = programOf(row.original);
+        return (
+          <>
+            <p className="font-bold text-slate-700">{program.code}</p>
+            <p className="max-w-[180px] truncate text-[11px] font-medium text-slate-500">{program.name}</p>
+          </>
+        );
+      },
+    },
+    { id: 'owner', accessorFn: (course) => ownerOf(course), header: 'Owner', meta: { cellClassName: 'text-slate-600' } },
+    {
+      id: 'taught_by',
+      accessorFn: (course) => currentTeacherOf(course),
+      header: 'Taught by',
+      cell: ({ row }) => (row.original.teaching_department_id !== null
+        ? <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-800">{currentTeacherOf(row.original)}</span>
+        : <span className="font-medium text-slate-400">{currentTeacherOf(row.original)}</span>),
+    },
+    {
+      id: 'units',
+      accessorFn: (course) => unitsOf(course),
+      header: 'Units',
+      meta: { align: 'right', cellClassName: 'font-black tabular-nums text-slate-800' },
+    },
+    {
+      id: 'status',
+      accessorFn: (course) => statusOf(course),
+      header: 'Status',
+      cell: ({ row }) => {
+        const status = statusOf(row.original);
+        const selected = status === 'Selected';
+        const enabled = status === 'Available' || selected;
+        const assigned = row.original.teaching_department_id !== null;
+        const taught = instructorClassesOf(row.original) > 0;
+        return (
+          <span
+            title={taught ? instructorLockMessage(row.original) : undefined}
+            className={`inline-flex flex-col gap-0.5 font-semibold ${selected ? 'text-[#4e0a10]' : assigned ? 'text-slate-600' : enabled ? 'text-emerald-700' : 'text-slate-500'}`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#4e0a10]' : assigned ? 'bg-amber-400' : enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+              {selected ? 'Selected' : assigned ? 'Assigned' : status}
+            </span>
+            {taught && (
+              <span className="text-[11px] font-medium text-slate-500">
+                Instructor in {instructorClassesOf(row.original)} {instructorClassesOf(row.original) === 1 ? 'class' : 'classes'} · locked
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      enableSorting: false,
+      size: 80,
+      meta: { align: 'right', stopRowClick: true },
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          {row.original.teaching_department_id !== null && (
+            <TableActionButton
+              label={instructorClassesOf(row.original) > 0 ? instructorLockMessage(row.original) : 'Remove assignment'}
+              aria-label={`Remove ${row.original.course_code} assignment`}
+              variant="danger"
+              onClick={() => void removeAssignment(row.original)}
+              disabled={removingId !== null || saving || instructorClassesOf(row.original) > 0}
+            >
+              {removingId === row.original.id ? <LoadingSpinner className="h-4 w-4" /> : <Trash2 size={15} />}
+            </TableActionButton>
+          )}
+        </div>
+      ),
+    },
+  ];
+  const courseTable = useDataTable({ data: visibleCourses, columns: courseColumns, pageSize: false, getRowId: (course) => String(course.id) });
 
   return (
     <div className="w-full">
@@ -484,92 +616,33 @@ export default function CourseTeachingAssignments() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px] text-left text-xs">
-                  <thead className="border-y border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="w-10 px-4 py-2">
-                        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0 || !effectiveTargetDepartment} aria-label="Select all unassigned courses" className="h-4 w-4 accent-[#4e0a10]" />
-                      </th>
-                      <th className="px-3 py-2 font-bold">Course</th>
-                      <th className="px-3 py-2 font-bold">Program</th>
-                      <th className="px-3 py-2 font-bold">Owner</th>
-                      <th className="px-3 py-2 font-bold">Taught by</th>
-                      <th className="px-3 py-2 text-right font-bold">Units</th>
-                      <th className="px-3 py-2 font-bold">Status</th>
-                      <th className="w-20 px-4 py-2 text-right font-bold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {visibleCourses.map((course) => {
-                      const status = statusOf(course);
-                      const selected = status === 'Selected';
-                      const enabled = status === 'Available' || selected;
-                      const assigned = course.teaching_department_id !== null;
-                      const program = programOf(course);
+                <DataTable
+                  table={courseTable}
+                  variant="embedded"
+                  isLoading={loading}
+                  tableClassName="min-w-[900px]"
+                  ariaLabel={`${YEAR_LABELS[activeYear]} minor courses`}
+                  onRowClick={toggleCourse}
+                  rowClassName={(course) => {
+                    const status = statusOf(course);
+                    const enabled = status === 'Available' || status === 'Selected';
+                    return `${enabled ? '' : '!cursor-default'} ${status === 'Selected' ? '!bg-[#4e0a10]/[0.04]' : ''}`;
+                  }}
+                  emptyState={
+                    <p className="text-sm font-semibold text-slate-500">
+                      {!hasActiveCurriculum
+                        // The list is the curriculum's, so no published curriculum is a
+                        // different problem from an empty year — and a different fix.
+                        ? `${ownDepartment?.department_code ?? 'Your department'} has no active curriculum, so there are no courses to assign yet. Publish one to manage its minor courses here.`
+                        : yearCourses.length === 0
+                          // The list is one semester's, so name it — otherwise an empty
+                          // year reads as a curriculum that is missing courses.
+                          ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
+                          : 'No courses match this filter.'}
+                    </p>
+                  }
+                />
 
-                      return (
-                        <tr
-                          key={course.id}
-                          onClick={() => enabled && toggleCourse(course)}
-                          className={`${enabled ? 'cursor-pointer hover:bg-slate-50' : ''} ${selected ? 'bg-[#4e0a10]/[0.04]' : ''}`}
-                        >
-                          <td className="px-4 py-2.5" onClick={(event) => event.stopPropagation()}>
-                            <input type="checkbox" checked={selected} disabled={!enabled} onChange={() => toggleCourse(course)} aria-label={`Select ${course.course_code}`} className="h-4 w-4 accent-[#4e0a10] disabled:opacity-40" />
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <p className="font-black text-slate-900">{course.course_code}</p>
-                            <p className="max-w-[280px] truncate text-slate-500">{course.course_name}</p>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <p className="font-bold text-slate-700">{program.code}</p>
-                            <p className="max-w-[180px] truncate text-[11px] text-slate-500">{program.name}</p>
-                          </td>
-                          <td className="px-3 py-2.5 font-semibold text-slate-600">{ownerOf(course)}</td>
-                          <td className="px-3 py-2.5">
-                            {assigned
-                              ? <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-800">{currentTeacherOf(course)}</span>
-                              : <span className="text-slate-400">{currentTeacherOf(course)}</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-800">{unitsOf(course)}</td>
-                          <td className="px-3 py-2.5">
-                            <span className={`inline-flex items-center gap-1.5 font-semibold ${selected ? 'text-[#4e0a10]' : assigned ? 'text-slate-600' : enabled ? 'text-emerald-700' : 'text-slate-500'}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#4e0a10]' : assigned ? 'bg-amber-400' : enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                              {selected ? 'Selected' : assigned ? 'Assigned' : status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2" onClick={(event) => event.stopPropagation()}>
-                            <div className="flex justify-end">
-                              {assigned && (
-                                <TableActionButton
-                                  label="Remove assignment"
-                                  aria-label={`Remove ${course.course_code} assignment`}
-                                  variant="danger"
-                                  onClick={() => void removeAssignment(course)}
-                                  disabled={removingId !== null || saving}
-                                >
-                                  {removingId === course.id ? <LoadingSpinner className="h-4 w-4" /> : <Trash2 size={15} />}
-                                </TableActionButton>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {!loading && visibleCourses.length === 0 && (
-                  <p className="p-10 text-center text-sm font-semibold text-slate-500">
-                    {!hasActiveCurriculum
-                      // The list is the curriculum's, so no published curriculum is a
-                      // different problem from an empty year — and a different fix.
-                      ? `${ownDepartment?.department_code ?? 'Your department'} has no active curriculum, so there are no courses to assign yet. Publish one to manage its minor courses here.`
-                      : yearCourses.length === 0
-                        // The list is one semester's, so name it — otherwise an empty
-                        // year reads as a curriculum that is missing courses.
-                        ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
-                        : 'No courses match this filter.'}
-                  </p>
-                )}
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-2.5">

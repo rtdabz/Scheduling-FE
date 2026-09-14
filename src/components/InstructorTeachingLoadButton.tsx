@@ -1,3 +1,4 @@
+import { designationLabel } from "../lib/designations";
 import { useState } from "react";
 import { Printer } from "lucide-react";
 import api from "../lib/api";
@@ -62,6 +63,12 @@ const timeToSlot = (time: string): number => {
   return Math.max(0, Math.floor(((hours * 60 + minutes) - 420) / 30));
 };
 
+const unitsOrUndefined = (value: number | string | null | undefined): number | undefined => {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const normalizeYearLevel = (value: string | number): YearLevel => {
   const year = Number(value);
   return year === 1 || year === 2 || year === 3 || year === 4 ? year : 1;
@@ -76,10 +83,18 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     name: `${faculty.first_name} ${faculty.last_name}`,
     employmentType: faculty.employment_type,
     administrativeRole: normalizeAdministrativePost(faculty.administrative_role),
+    designations: (faculty.designations ?? []).map(designationLabel),
     departmentId: faculty.department_id,
     departmentCode: faculty.department?.department_code,
     departmentName: faculty.department?.department_name,
-    maxUnits: faculty.max_units ? Number(faculty.max_units) : undefined,
+    // The load sheet splits subjects by these bands. 0 is a real allowance
+    // (an overload-only instructor has a Basic Load of 0), so none of them may
+    // fall back when they are zero.
+    maxUnits: unitsOrUndefined(faculty.max_units),
+    deloadUnits: unitsOrUndefined(faculty.deload_units),
+    overloadUnits: unitsOrUndefined(faculty.overload_units),
+    probonoUnits: unitsOrUndefined(faculty.probono_units),
+    requiredUnits: unitsOrUndefined(faculty.required_units),
     status: faculty.status,
   })),
   subjects: (data.courses ?? data.subjects ?? []).map((subject: ApiCourseRecord) => ({
@@ -136,6 +151,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
         : null,
       facultyId: schedule.faculty_id ? String(schedule.faculty_id) : null,
       status: schedule.status,
+      facultyConflictOverride: Boolean(schedule.faculty_conflict_override),
       dayIndex: dayIndexes[schedule.day] ?? 0,
       startSlot,
       durationSlots: Math.max(1, endSlot - startSlot),

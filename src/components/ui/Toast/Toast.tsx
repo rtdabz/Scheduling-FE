@@ -30,7 +30,7 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
     <div
       role={toast.type === 'error' ? 'alert' : 'status'}
       className={`
-        relative w-full min-w-0 max-w-[400px] bg-parchment backdrop-blur-md sm:min-w-[320px]
+        relative w-full min-w-0 max-w-[400px] bg-parchment sm:min-w-[320px]
         rounded-2xl shadow-xl border border-border border-l-4
         overflow-hidden px-4 py-3.5 flex items-start gap-3
         ${toast.exiting ? 'animate-toastOut' : 'animate-toastIn'}

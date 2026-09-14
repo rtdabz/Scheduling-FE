@@ -204,6 +204,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       finishRefresh = resolve;
     }));
     const onClose = vi.fn();
+    const onSavingChange = vi.fn();
 
     renderWorkflow(
       <YearLevelGenerateScheduleWorkflow
@@ -214,6 +215,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         departmentId={2}
         existingSchedules={[]}
         onAccepted={onAccepted}
+        onSavingChange={onSavingChange}
       />,
     );
 
@@ -240,9 +242,14 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     // The wizard leaves on the click, so the timetable refresh behind it is
     // the only overlay the user sees.
     expect(onClose).toHaveBeenCalledOnce();
+    // The timetable behind the closed wizard shows the save as in progress
+    // until the refresh lands.
+    expect(onSavingChange).toHaveBeenCalledWith(true);
+    expect(onSavingChange).not.toHaveBeenCalledWith(false);
 
     finishRefresh?.();
-    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("serves the reference data from cache when the generator is reopened", async () => {

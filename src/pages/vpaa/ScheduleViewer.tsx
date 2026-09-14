@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
+  ArrowLeft,
   ChevronRight,
   Filter,
   RefreshCw,
@@ -22,9 +23,18 @@ import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
 import DepartmentOverviewCards, { type OverviewFocus } from "../../components/scheduling/DepartmentOverviewCards";
 import SectionOverviewCards from "../../components/scheduling/SectionOverviewCards";
+import ScheduleScopeSummary, { type ScopeStats } from "../../components/scheduling/ScheduleScopeSummary";
+import ClassSummaryTable from "../../components/scheduling/ClassSummaryTable";
+import {
+  buildSummaryClasses,
+  timeRangeLabel,
+  type SummaryClass,
+  type SummaryMeeting,
+} from "../ClassSchedules/SchedulerPanel/GenerateSchedule/summaryRows";
 import { useScheduleOverview } from "../../hooks/useScheduleOverview";
 import { getDeptBadgeStyles, getDeptStyles } from "../../lib/departmentTheme";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
+import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
@@ -65,6 +75,8 @@ export interface Schedule {
   departmentId: string;
   departmentName: string;
   departmentCode: string;
+  /** Falls back to the subject code for rows without a course id. */
+  courseId: string;
   subjectCode: string;
   subjectName: string;
   facultyId: string;
@@ -74,8 +86,13 @@ export interface Schedule {
   day: string; // "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
   startTime: string; // e.g. "09:00 AM"
   endTime: string; // e.g. "10:30 AM"
+  /** 24-hour "HH:MM", what the class table groups and sorts on. */
+  startClock: string;
+  endClock: string;
   mode: 'on-site' | 'online' | 'field';
   meetingType?: string | null;
+  /** Instructor assigned over a conflict on purpose; shown as an override, not a clash. */
+  facultyConflictOverride?: boolean;
 }
 
 interface RawDepartment {
@@ -108,10 +125,13 @@ interface RawSchedule {
   id: number | string;
   section_id?: number | string | null;
   department_id?: number | string | null;
+  course_id?: number | string | null;
+  subject_id?: number | string | null;
   faculty_id?: number | string | null;
   room_id?: number | string | null;
   semester_id?: number | string | null;
   meeting_type?: string | null;
+  faculty_conflict_override?: boolean | number | null;
   day: string;
   start_time: string;
   end_time: string;
@@ -134,9 +154,6 @@ interface ScheduleViewerData {
 }
 
 type ViewMode = "overview" | "sections" | "list" | "grid";
-type SortKey = "department" | "section" | "subject" | "day" | "startTime" | "faculty" | "room";
-type SortDirection = "asc" | "desc";
-type GroupKey = "department" | "section" | "day" | "faculty" | "room";
 type ConflictStatus = "All" | "Conflict" | "No Conflict";
 type AssignmentStatus = "All" | "Complete" | "Missing Faculty" | "Missing Room" | "Missing Assignment";
 
@@ -205,6 +222,7 @@ const mapRawSchedule = (
     departmentId,
     departmentName: item.department?.department_name ?? department?.name ?? "",
     departmentCode: item.department?.department_code ?? department?.code ?? "",
+    courseId: String(item.course_id ?? item.subject_id ?? item.course?.course_code ?? item.subject?.subject_code ?? ""),
     subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
     subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
     facultyId: item.faculty_id ? item.faculty_id.toString() : "",
@@ -214,8 +232,11 @@ const mapRawSchedule = (
     day: DAYS_MAP[dayIndex] || "Mon",
     startTime: slotToTimeStr12h(startSlot),
     endTime: slotToTimeStr12h(endSlot),
+    startClock: item.start_time.slice(0, 5),
+    endClock: item.end_time.slice(0, 5),
     mode,
-    meetingType: item.meeting_type ?? null
+    meetingType: item.meeting_type ?? null,
+    facultyConflictOverride: Boolean(item.faculty_conflict_override),
   };
 };
 
@@ -228,8 +249,6 @@ const getModeLabel = (mode: Schedule["mode"]) => {
   if (mode === "online") return "Online";
   return "Field";
 };
-
-const getDayOrder = (day: string) => DAYS_MAP.indexOf(day);
 
 const isUnassignedFaculty = (schedule: Schedule) => (
   !schedule.facultyName.trim() || schedule.facultyName.trim().toLowerCase() === "unassigned"
@@ -278,7 +297,12 @@ const buildConflictMap = (items: Schedule[]) => {
         rightInfo.section = true;
         hasPairConflict = true;
       }
-      if (!isUnassignedFaculty(left) && left.facultyId === right.facultyId) {
+      // A clash both meetings were deliberately assigned over is an override.
+      if (
+        !isUnassignedFaculty(left)
+        && left.facultyId === right.facultyId
+        && !(left.facultyConflictOverride && right.facultyConflictOverride)
+      ) {
         leftInfo.faculty = true;
         rightInfo.faculty = true;
         hasPairConflict = true;
@@ -424,7 +448,7 @@ const getDayLayouts = (daySchedules: Schedule[]): LayoutItem[] => {
 };
 
 export default function VpaaScheduleViewer() {
-  const scheduleViewerCacheKey = 'page:schedule-viewer:v2';
+  const scheduleViewerCacheKey = 'page:schedule-viewer:v3';
   const cachedScheduleViewerData = getCachedData<ScheduleViewerData>(scheduleViewerCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedScheduleViewerData?.departments ?? []);
   const [sections, setSections] = useState<Section[]>(cachedScheduleViewerData?.sections ?? []);
@@ -442,20 +466,35 @@ export default function VpaaScheduleViewer() {
    */
   const {
     departments: overviewDepartments,
-    totals: overviewTotals,
     isLoading: isOverviewLoading,
     error: overviewError,
     refresh: refreshOverview,
   } = useScheduleOverview();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<ViewMode>(
+  const [requestedViewMode, setViewMode] = useState<ViewMode>(
     searchParams.get("section") ? "grid" : searchParams.get("dept") ? "sections" : "overview",
   );
 
+  /**
+   * The drill-down scope lives in the URL, not in component state. Moving down
+   * a level pushes a history entry, so the browser's Back button walks back up
+   * the levels instead of leaving the screen; filter tweaks replace the entry.
+   */
+  const selectedDeptId = searchParams.get("dept") ?? "All";
+  const selectedSectionId = searchParams.get("section") ?? "All";
+  const setScope = (deptId: string, sectionId: string, { push = false }: { push?: boolean } = {}) => {
+    const next = new URLSearchParams(searchParams);
+    if (deptId === "All") next.delete("dept");
+    else next.set("dept", deptId);
+    if (sectionId === "All") next.delete("section");
+    else next.set("section", sectionId);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: !push });
+    }
+  };
+
   // Filters State
-  const [selectedDeptId, setSelectedDeptId] = useState<string>(searchParams.get("dept") ?? "All");
-  const [selectedSectionId, setSelectedSectionId] = useState<string>(searchParams.get("section") ?? "All");
   const [selectedFacultyId, setSelectedFacultyId] = useState<string>("All");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("All");
   const [selectedMode, setSelectedMode] = useState<string>("All");
@@ -463,9 +502,6 @@ export default function VpaaScheduleViewer() {
   const [selectedConflictStatus, setSelectedConflictStatus] = useState<ConflictStatus>("All");
   const [selectedAssignmentStatus, setSelectedAssignmentStatus] = useState<AssignmentStatus>("All");
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("department");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [groupKey, setGroupKey] = useState<GroupKey>("department");
   const [currentPage, setCurrentPage] = useState(1);
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   
@@ -482,11 +518,13 @@ export default function VpaaScheduleViewer() {
   // Detail State
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
 
+  const liveRevision = useLiveRevision(['schedules', 'sections', 'rooms', 'departments']);
+
   useEffect(() => {
     const loadData = async () => {
       const hasCache = hasCachedData(scheduleViewerCacheKey);
       try {
-        setIsLoading(!hasCache);
+        setIsLoading(!hasCache && liveRevision === 0);
         const response = await api.get<{
           active_semester: Semester | null;
           departments: RawDepartment[];
@@ -564,7 +602,7 @@ export default function VpaaScheduleViewer() {
     };
 
     loadData();
-  }, [scheduleViewerCacheKey]);
+  }, [scheduleViewerCacheKey, liveRevision]);
 
   /**
    * The bulk payload above is capped, so a section opened from the drill-down
@@ -624,28 +662,48 @@ export default function VpaaScheduleViewer() {
    * to imply was set in three different places, which is what made it hard to
    * tell what the screen would show next.
    */
+  /**
+   * One focus at a time ("conflicts", "missing faculty", "missing room"),
+   * shared by every level. It is set from the summary cards or a department
+   * chip, and deliberately survives moving between levels, so filtering for
+   * conflicts and then opening a department still shows only its conflicts.
+   */
+  const focus: OverviewFocus | null = selectedConflictStatus === "Conflict"
+    ? "conflicts"
+    : selectedAssignmentStatus === "Missing Faculty"
+    ? "missing-faculty"
+    : selectedAssignmentStatus === "Missing Room"
+    ? "missing-room"
+    : null;
+
+  const setFocus = (next: OverviewFocus | null) => {
+    setSelectedConflictStatus(next === "conflicts" ? "Conflict" : "All");
+    setSelectedAssignmentStatus(
+      next === "missing-faculty" ? "Missing Faculty" : next === "missing-room" ? "Missing Room" : "All",
+    );
+  };
+
   const openInstitution = () => {
-    setSelectedDeptId("All");
-    setSelectedSectionId("All");
+    setScope("All", "All", { push: true });
     setCurrentPage(1);
     setViewMode("overview");
   };
 
-  const openDepartment = (departmentId: number | string, focus?: OverviewFocus) => {
-    setSelectedDeptId(String(departmentId));
-    setSelectedSectionId("All");
+  const openDepartment = (departmentId: number | string, nextFocus?: OverviewFocus) => {
+    setScope(String(departmentId), "All", { push: true });
     setCurrentPage(1);
     // A chip carries the reason it was clicked, so the level below opens on
     // what the user was pointing at instead of everything.
-    setSelectedConflictStatus(focus === "conflicts" ? "Conflict" : "All");
-    setSelectedAssignmentStatus(
-      focus === "missing-faculty" ? "Missing Faculty" : focus === "missing-room" ? "Missing Room" : "All",
-    );
+    if (nextFocus !== undefined) setFocus(nextFocus);
     setViewMode("sections");
   };
 
   const openSection = (sectionId: number | string) => {
-    setSelectedSectionId(String(sectionId));
+    const id = String(sectionId);
+    // Record the section's department too, so the breadcrumb and Back always
+    // have a level to return to, however the section was reached.
+    const departmentId = sections.find((section) => section.id === id)?.departmentId || selectedDeptId;
+    setScope(departmentId, id, { push: true });
     setCurrentPage(1);
     setViewMode("grid");
   };
@@ -653,17 +711,14 @@ export default function VpaaScheduleViewer() {
   // Handle department change - cascading reset logic
   const handleDepartmentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const deptId = e.target.value;
-    setSelectedDeptId(deptId);
     setCurrentPage(1);
-    setViewMode(deptId === "All" ? "overview" : "sections");
 
     // Reset section filter if the currently selected section does not belong to the new department
-    if (deptId !== "All") {
-      const activeSec = sections.find((s) => s.id === selectedSectionId);
-      if (activeSec && activeSec.departmentId !== deptId) {
-        setSelectedSectionId("All");
-      }
+    const activeSec = sections.find((s) => s.id === selectedSectionId);
+    const keepSection = deptId !== "All" && activeSec?.departmentId === deptId;
+    setScope(deptId, keepSection ? selectedSectionId : "All");
 
+    if (deptId !== "All") {
       // Reset faculty filter if the currently selected faculty does not belong to the new department
       const activeFac = faculties.find((f) => f.id === selectedFacultyId);
       if (activeFac && activeFac.departmentId !== deptId) {
@@ -673,8 +728,7 @@ export default function VpaaScheduleViewer() {
   };
 
   const handleResetFilters = () => {
-    setSelectedDeptId("All");
-    setSelectedSectionId("All");
+    setScope("All", "All");
     setSelectedFacultyId("All");
     setSelectedRoomId("All");
     setSelectedMode("All");
@@ -690,31 +744,33 @@ export default function VpaaScheduleViewer() {
   const { map: conflictMap } = useMemo(() => buildConflictMap(schedules), [schedules]);
 
   const hasGridScope = selectedSectionId !== "All" || selectedFacultyId !== "All" || selectedRoomId !== "All";
+  /**
+   * The view actually shown. The drill-down level is derived from the scope
+   * (which lives in the URL and can change under the screen via browser
+   * Back/Forward), so the breadcrumb never names a level the content is not
+   * showing. The flat list and a faculty or room grid are views the user
+   * chose, so those requests are honoured as long as they still make sense.
+   */
+  const drillViewMode: ViewMode = selectedSectionId !== "All" ? "grid" : selectedDeptId !== "All" ? "sections" : "overview";
+  const viewMode: ViewMode = requestedViewMode === "list" || (requestedViewMode === "grid" && hasGridScope)
+    ? requestedViewMode
+    : drillViewMode;
   const isFlatView = viewMode === "list" || viewMode === "grid";
 
-  useEffect(() => {
-    if (viewMode === "grid" && !hasGridScope) {
-      setViewMode(selectedDeptId !== "All" ? "sections" : "overview");
-    }
-  }, [hasGridScope, selectedDeptId, viewMode]);
-
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (selectedDeptId === "All") next.delete("dept");
-    else next.set("dept", selectedDeptId);
-    if (selectedSectionId === "All") next.delete("section");
-    else next.set("section", selectedSectionId);
-
-    if (next.toString() !== searchParams.toString()) {
-      // Replace rather than push: changing a filter is not a navigation, and
-      // pushing would make Back step through every filter change.
-      setSearchParams(next, { replace: true });
-    }
-  }, [selectedDeptId, selectedSectionId, searchParams, setSearchParams]);
+  /** One level up from wherever the screen is. Null at the top. */
+  const goBack = viewMode === "list"
+    ? () => setViewMode(drillViewMode)
+    : viewMode === "grid" && selectedSectionId === "All"
+    ? () => setViewMode("list")
+    : selectedSectionId !== "All"
+    ? () => (selectedDeptId !== "All" ? openDepartment(selectedDeptId) : openInstitution())
+    : selectedDeptId !== "All"
+    ? openInstitution
+    : null;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedDeptId, selectedSectionId, selectedFacultyId, selectedRoomId, selectedMode, selectedDay, selectedConflictStatus, selectedAssignmentStatus, searchTerm, sortKey, sortDirection, groupKey]);
+  }, [selectedDeptId, selectedSectionId, selectedFacultyId, selectedRoomId, selectedMode, selectedDay, selectedConflictStatus, selectedAssignmentStatus, searchTerm]);
 
   const filteredSchedules = useMemo(() => schedules.filter((s) => {
     if (selectedDeptId !== "All" && s.departmentId !== selectedDeptId) {
@@ -792,28 +848,102 @@ export default function VpaaScheduleViewer() {
     conflictMap
   ]);
 
-  const overviewStats = useMemo(() => ({
-    classes: overviewTotals?.classes ?? 0,
-    sectionsScheduled: overviewTotals?.sections_scheduled ?? 0,
-    sectionsTotal: overviewTotals?.sections_total ?? 0,
-    unassignedFaculty: overviewTotals?.unassigned_faculty ?? 0,
-    unassignedRooms: overviewTotals?.unassigned_rooms ?? 0,
-    conflicts: overviewTotals?.conflicts ?? 0,
-  }), [overviewTotals]);
-
   const selectedDepartment = useMemo(
     () => overviewDepartments.find((department) => String(department.department_id) === selectedDeptId),
     [overviewDepartments, selectedDeptId],
   );
 
+  const selectedSectionOverview = useMemo(
+    () => selectedSectionId === "All"
+      ? undefined
+      : overviewDepartments.flatMap((department) => department.sections).find((section) => String(section.id) === selectedSectionId),
+    [overviewDepartments, selectedSectionId],
+  );
+
+  const selectedSectionName = selectedSectionOverview?.code
+    ?? sections.find((section) => section.id === selectedSectionId)?.name
+    ?? "Section";
+
+  /**
+   * The summary follows the breadcrumb: all departments, then the opened
+   * department, then the opened section. It used to show institution totals
+   * at every level, so drilling in never changed a single number.
+   */
+  const scopeLevel: "institution" | "department" | "section" = selectedSectionId !== "All"
+    ? "section"
+    : selectedDeptId !== "All" ? "department" : "institution";
+
+  const scopeStats = useMemo<ScopeStats | null>(() => {
+    if (scopeLevel === "section") {
+      const section = selectedSectionOverview;
+      if (!section) return null;
+      return {
+        sectionsScheduled: section.meetings > 0 ? 1 : 0,
+        sectionsTotal: 1,
+        classes: section.classes,
+        meetings: section.meetings,
+        unassignedFaculty: section.unassigned_faculty,
+        unassignedRooms: section.unassigned_rooms,
+        conflicts: section.conflicts,
+        status: section.meetings > 0 ? section.status : undefined,
+      };
+    }
+
+    const scoped = scopeLevel === "department"
+      ? (selectedDepartment ? [selectedDepartment] : [])
+      : overviewDepartments;
+    if (scoped.length === 0) return null;
+
+    return scoped.reduce<ScopeStats>((sum, department) => ({
+      sectionsScheduled: sum.sectionsScheduled + department.sections_scheduled,
+      sectionsTotal: sum.sectionsTotal + department.sections_total,
+      classes: sum.classes + department.classes,
+      meetings: sum.meetings + department.meetings,
+      unassignedFaculty: sum.unassignedFaculty + department.unassigned_faculty,
+      unassignedRooms: sum.unassignedRooms + department.unassigned_rooms,
+      conflicts: {
+        faculty: sum.conflicts.faculty + department.conflicts.faculty,
+        overridden: (sum.conflicts.overridden ?? 0) + (department.conflicts.overridden ?? 0),
+        room: sum.conflicts.room + department.conflicts.room,
+        section: sum.conflicts.section + department.conflicts.section,
+        total: sum.conflicts.total + department.conflicts.total,
+      },
+    }), {
+      sectionsScheduled: 0,
+      sectionsTotal: 0,
+      classes: 0,
+      meetings: 0,
+      unassignedFaculty: 0,
+      unassignedRooms: 0,
+      conflicts: { faculty: 0, room: 0, section: 0, total: 0, overridden: 0 },
+    });
+  }, [scopeLevel, selectedSectionOverview, selectedDepartment, overviewDepartments]);
+
+  const scopeLabel = scopeLevel === "section"
+    ? selectedSectionName
+    : scopeLevel === "department"
+    ? (selectedDepartment ? `${selectedDepartment.code} · ${selectedDepartment.name}` : "Department")
+    : "All departments";
+
+  const focusDescription = focus === "conflicts"
+    ? "with conflicts"
+    : focus === "missing-faculty"
+    ? "with meetings missing a faculty"
+    : focus === "missing-room"
+    ? "with meetings missing a room"
+    : "";
+
   const visibleDepartments = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
-    if (!search) return overviewDepartments;
 
-    return overviewDepartments.filter((department) => (
-      `${department.code} ${department.name}`.toLowerCase().includes(search)
-    ));
-  }, [overviewDepartments, searchTerm]);
+    return overviewDepartments.filter((department) => {
+      if (focus === "conflicts" && department.conflicts.total === 0) return false;
+      if (focus === "missing-faculty" && department.unassigned_faculty === 0) return false;
+      if (focus === "missing-room" && department.unassigned_rooms === 0) return false;
+      if (search && !`${department.code} ${department.name}`.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }, [overviewDepartments, searchTerm, focus]);
 
   /**
    * The section level honours the chip that was clicked to reach it, and the
@@ -836,49 +966,68 @@ export default function VpaaScheduleViewer() {
     });
   }, [selectedDepartment, selectedConflictStatus, selectedAssignmentStatus, searchTerm]);
 
-  const sortedSchedules = useMemo(() => {
-    const sorted = [...filteredSchedules].sort((left, right) => {
-      const getValue = (schedule: Schedule) => {
-        switch (sortKey) {
-          case "department": return schedule.departmentCode || schedule.departmentName;
-          case "section": return schedule.sectionName;
-          case "subject": return `${schedule.subjectCode} ${schedule.subjectName}`;
-          case "day": return `${getDayOrder(schedule.day)} ${schedule.startTime}`;
-          case "startTime": return `${getDayOrder(schedule.day)} ${parseTimeToSlotIndex(schedule.startTime)}`;
-          case "faculty": return schedule.facultyName;
-          case "room": return schedule.roomName;
-          default: return schedule.departmentName;
-        }
-      };
-      const leftValue = getValue(left);
-      const rightValue = getValue(right);
-      return sortDirection === "asc"
-        ? leftValue.localeCompare(rightValue)
-        : rightValue.localeCompare(leftValue);
-    });
-    return sorted;
-  }, [filteredSchedules, sortKey, sortDirection]);
+  /**
+   * The list shows one row per class, the same table as the generator's
+   * Schedule Summary. A class matches when any of its meetings passes the
+   * filters and is then shown whole: hiding its other days would misstate when
+   * the class actually meets.
+   */
+  const listClasses = useMemo<SummaryClass[]>(() => {
+    const classKeyOf = (schedule: Schedule) => `${schedule.sectionId}|${schedule.courseId}`;
+    const matching = new Set(filteredSchedules.map(classKeyOf));
+
+    const meetings = schedules
+      .filter((schedule) => matching.has(classKeyOf(schedule)))
+      .map((schedule): SummaryMeeting => ({
+        id: schedule.id,
+        sectionId: schedule.sectionId,
+        sectionName: schedule.sectionName || "Unassigned section",
+        courseId: schedule.courseId,
+        courseCode: schedule.subjectCode || "Subject",
+        courseName: schedule.subjectName || "Untitled subject",
+        day: schedule.day,
+        start: schedule.startClock,
+        end: schedule.endClock,
+        mode: schedule.mode,
+        room: isVirtualRoom(schedule) ? getModeLabel(schedule.mode) : (schedule.roomName || "Unassigned"),
+        meeting: schedule.meetingType ?? "",
+        faculty: isUnassignedFaculty(schedule) ? "Unassigned" : schedule.facultyName,
+      }));
+
+    return buildSummaryClasses(meetings);
+  }, [filteredSchedules, schedules]);
+
+  const scheduleById = useMemo(() => new Map(schedules.map((schedule) => [schedule.id, schedule])), [schedules]);
+
+  const conflictLabelsOfClass = (item: SummaryClass) => Array.from(new Set(
+    item.parts.flatMap((part) => part.ids.flatMap((id) => getConflictLabels(conflictMap.get(id)))),
+  ));
 
   const pageSize = 20;
-  const pageCount = Math.max(1, Math.ceil(sortedSchedules.length / pageSize));
-  const paginatedSchedules = sortedSchedules.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageCount = Math.max(1, Math.ceil(listClasses.length / pageSize));
+  const paginatedClasses = listClasses.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const groupedSchedules = useMemo(() => {
-    const groups = new Map<string, Schedule[]>();
-    paginatedSchedules.forEach((schedule) => {
-      const label = groupKey === "department"
-        ? `${schedule.departmentCode || "Department"} - ${schedule.departmentName || "Unassigned Department"}`
-        : groupKey === "section"
-        ? schedule.sectionName || "Unassigned Section"
-        : groupKey === "day"
-        ? schedule.day
-        : groupKey === "faculty"
-        ? schedule.facultyName
-        : schedule.roomName || "Unassigned Room";
-      groups.set(label, [...(groups.get(label) ?? []), schedule]);
-    });
-    return Array.from(groups.entries());
-  }, [paginatedSchedules, groupKey]);
+  /** Every meeting of the class the detail modal is open on. */
+  const selectedClassParts = useMemo(() => {
+    if (!selectedSchedule) return [];
+    const siblings = schedules.filter((schedule) => (
+      schedule.sectionId === selectedSchedule.sectionId && schedule.courseId === selectedSchedule.courseId
+    ));
+    return buildSummaryClasses(siblings.map((schedule): SummaryMeeting => ({
+      sectionId: schedule.sectionId,
+      sectionName: schedule.sectionName,
+      courseId: schedule.courseId,
+      courseCode: schedule.subjectCode,
+      courseName: schedule.subjectName,
+      day: schedule.day,
+      start: schedule.startClock,
+      end: schedule.endClock,
+      mode: schedule.mode,
+      room: isVirtualRoom(schedule) ? getModeLabel(schedule.mode) : (schedule.roomName || "Unassigned"),
+      meeting: schedule.meetingType ?? "",
+      faculty: isUnassignedFaculty(schedule) ? "Unassigned" : schedule.facultyName,
+    })))[0]?.parts ?? [];
+  }, [schedules, selectedSchedule]);
 
   const activeFilterChips = [
     selectedDeptId !== "All" ? departments.find((dept) => dept.id === selectedDeptId)?.code ?? "Department" : "",
@@ -908,6 +1057,43 @@ export default function VpaaScheduleViewer() {
 
   const timeSlots = useMemo(() => generateTimeSlots(gridRange.start, gridRange.end), [gridRange]);
 
+  const summary = (
+    <ScheduleScopeSummary
+      scopeLabel={scopeLabel}
+      level={scopeLevel}
+      stats={scopeStats}
+      isLoading={isOverviewLoading}
+      focus={focus}
+      onFocusChange={setFocus}
+    />
+  );
+
+  const focusBadge = focus ? (
+    <button
+      type="button"
+      onClick={() => setFocus(null)}
+      className="inline-flex items-center gap-1.5 rounded-full border border-[#4e0a10]/20 bg-[#4e0a10]/5 px-3 py-1 text-xs font-bold text-[#4e0a10] hover:bg-[#4e0a10]/10 cursor-pointer"
+    >
+      Filtered: {focusDescription.replace(/^with /, "")}
+      <X className="w-3.5 h-3.5" />
+    </button>
+  ) : null;
+
+  /** A filter that matches nothing must still offer a way out, not a blank page. */
+  const focusEmptyState = (noun: string) => (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
+      <p className="text-sm font-bold text-slate-600">No {noun} {focusDescription}.</p>
+      <button
+        type="button"
+        onClick={() => setFocus(null)}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-[#4e0a10] shadow-sm hover:bg-slate-50 cursor-pointer"
+      >
+        <X className="w-3.5 h-3.5" />
+        Clear filter
+      </button>
+    </div>
+  );
+
 
 
   return (
@@ -916,6 +1102,17 @@ export default function VpaaScheduleViewer() {
       
       <div className="bg-slate-50/70 border-b border-slate-200 p-5 space-y-4 pt-6">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            {goBack && (
+              <button
+                type="button"
+                onClick={goBack}
+                className="mt-0.5 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:border-[#4e0a10]/30 hover:text-[#4e0a10] cursor-pointer"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </button>
+            )}
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               {activeSemester && (
@@ -929,46 +1126,57 @@ export default function VpaaScheduleViewer() {
               * read the filter selects to work out how deep the screen is.
               */}
             <nav aria-label="Breadcrumb" className="mt-1.5 flex flex-wrap items-center gap-1 text-xs font-bold">
-              <button
-                type="button"
-                onClick={openInstitution}
-                disabled={viewMode === "overview"}
-                className={`rounded-lg px-2 py-1 transition-colors ${
-                  viewMode === "overview"
-                    ? "text-[#4e0a10] cursor-default"
-                    : "text-slate-500 hover:bg-white hover:text-[#4e0a10] cursor-pointer"
-                }`}
-              >
-                All Schedules
-              </button>
+              {/* Earlier levels are links (underlined on hover); the current level is plain text. */}
+              {scopeLevel === "institution" ? (
+                <span aria-current="page" className="rounded-lg px-2 py-1 text-[#4e0a10]">All departments</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openInstitution}
+                  className="rounded-lg px-2 py-1 text-slate-500 underline-offset-2 transition-colors hover:bg-white hover:text-[#4e0a10] hover:underline cursor-pointer"
+                >
+                  All departments
+                </button>
+              )}
 
-              {selectedDepartment && (
+              {selectedDeptId !== "All" && (
                 <>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-                  <button
-                    type="button"
-                    onClick={() => openDepartment(selectedDepartment.department_id)}
-                    disabled={viewMode === "sections"}
-                    className={`rounded-lg px-2 py-1 transition-colors ${
-                      viewMode === "sections"
-                        ? "text-[#4e0a10] cursor-default"
-                        : "text-slate-500 hover:bg-white hover:text-[#4e0a10] cursor-pointer"
-                    }`}
-                  >
-                    {selectedDepartment.code}
-                  </button>
+                  {scopeLevel === "department" ? (
+                    <span aria-current="page" className="rounded-lg px-2 py-1 text-[#4e0a10]">
+                      {selectedDepartment?.code ?? departments.find((dept) => dept.id === selectedDeptId)?.code ?? "Department"}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openDepartment(selectedDeptId)}
+                      className="rounded-lg px-2 py-1 text-slate-500 underline-offset-2 transition-colors hover:bg-white hover:text-[#4e0a10] hover:underline cursor-pointer"
+                    >
+                      {selectedDepartment?.code ?? departments.find((dept) => dept.id === selectedDeptId)?.code ?? "Department"}
+                    </button>
+                  )}
                 </>
               )}
 
               {selectedSectionId !== "All" && (
                 <>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-                  <span className="rounded-lg px-2 py-1 text-[#4e0a10]">
-                    {sections.find((section) => section.id === selectedSectionId)?.name ?? "Section"}
+                  <span aria-current="page" className="rounded-lg px-2 py-1 text-[#4e0a10]">
+                    {selectedSectionName}
                   </span>
                 </>
               )}
             </nav>
+            <p className="mt-0.5 px-2 text-[11px] font-semibold text-slate-400">
+              {viewMode === "list"
+                ? "Every meeting in this scope as a list. Click a row for details."
+                : viewMode === "grid"
+                ? "Weekly timetable. Click a class for details."
+                : scopeLevel === "department"
+                ? "Pick a section to open its weekly timetable."
+                : "Pick a department to see its sections."}
+            </p>
+          </div>
           </div>
 
           <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/80 shadow-inner w-fit">
@@ -981,7 +1189,18 @@ export default function VpaaScheduleViewer() {
                   key={mode}
                   type="button"
                   disabled={isDisabled}
-                  onClick={() => !isDisabled && setViewMode(mode)}
+                  onClick={() => {
+                    if (isDisabled) return;
+                    // Overview is the drill-down, so from inside a section it
+                    // steps up to that section's department rather than
+                    // highlighting "Overview" over a section's breadcrumb.
+                    if (mode === "overview" && selectedSectionId !== "All") {
+                      openDepartment(selectedDeptId);
+                      return;
+                    }
+                    setViewMode(mode === "overview" ? drillViewMode : mode);
+                  }}
+                  title={isDisabled ? "Open a section first (or pick a faculty or room in Schedule List)" : undefined}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
                     viewMode === mode || (mode === "overview" && viewMode === "sections")
                       ? "bg-[#4e0a10] text-[#E8D5C4] shadow-md scale-[1.02]"
@@ -1027,7 +1246,13 @@ export default function VpaaScheduleViewer() {
 
           <select 
             value={selectedSectionId} 
-            onChange={(event) => { setSelectedSectionId(event.target.value); setViewMode(event.target.value === "All" ? (selectedDeptId === "All" ? "overview" : "sections") : "grid"); }} 
+            onChange={(event) => {
+              if (event.target.value === "All") {
+                setScope(selectedDeptId, "All");
+              } else {
+                openSection(event.target.value);
+              }
+            }}
             className="h-11 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] cursor-pointer"
           >
             <option value="All">All Sections</option>
@@ -1169,84 +1394,58 @@ export default function VpaaScheduleViewer() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-            {[
-              { icon: Layers, label: "Scheduled", value: `${overviewStats.sectionsScheduled}/${overviewStats.sectionsTotal}`, type: "normal" },
-              { icon: BookOpen, label: "Classes", value: overviewStats.classes, type: "normal" },
-              { icon: User, label: "No Faculty", value: overviewStats.unassignedFaculty, type: "warning" },
-              { icon: MapPin, label: "No Room", value: overviewStats.unassignedRooms, type: "warning" },
-              { icon: AlertTriangle, label: "Conflicts", value: overviewStats.conflicts, type: "danger" },
-            ].map(({ icon: Icon, label, value, type }) => {
-              const isFlagged = typeof value === "number" && value > 0;
-              let cardStyles = "bg-white border border-slate-200/80 text-slate-800 hover:border-slate-300";
-              let textStyles = "text-[#4e0a10]";
-              let iconStyles = "text-[#C9952A]";
-              
-              if (type === "warning" && isFlagged) {
-                cardStyles = "bg-amber-50/30 border border-amber-200 text-amber-900 hover:border-amber-300 hover:bg-amber-50/60";
-                textStyles = "text-amber-700";
-                iconStyles = "text-amber-500";
-              } else if (type === "danger" && isFlagged) {
-                cardStyles = "bg-rose-50/30 border border-rose-200 text-rose-900 hover:border-rose-300 hover:bg-rose-50/60";
-                textStyles = "text-rose-700";
-                iconStyles = "text-rose-500";
-              }
-              
-              return (
-                <div
-                  key={label}
-                  className={`rounded-2xl px-4 py-3.5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between min-h-[90px] ${cardStyles}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
-                    <Icon className={`w-4 h-4 ${iconStyles}`} />
-                  </div>
-                  {isOverviewLoading && !overviewTotals ? (
-                    <Skeleton className="h-7 w-12 mt-2 rounded-lg" />
-                  ) : (
-                    <p className={`text-2xl font-black leading-tight mt-2 ${textStyles}`}>{value}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {summary}
 
           {viewMode === "overview" ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-black text-slate-800">Departments</h3>
+                  <h3 className="text-sm font-black text-slate-800">
+                    {focus ? `Departments ${focusDescription}` : "Departments"}
+                  </h3>
                   <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                    Sorted so departments needing attention come first. Open one, or jump straight to what it flags.
+                    Click a department to see its sections. Departments needing attention are listed first.
                   </p>
                 </div>
+                {focusBadge}
               </div>
-              <DepartmentOverviewCards
-                departments={visibleDepartments}
-                isLoading={isOverviewLoading && overviewDepartments.length === 0}
-                onOpen={openDepartment}
-              />
+              {focus && !isOverviewLoading && visibleDepartments.length === 0 ? (
+                focusEmptyState("departments")
+              ) : (
+                <DepartmentOverviewCards
+                  departments={visibleDepartments}
+                  isLoading={isOverviewLoading && overviewDepartments.length === 0}
+                  onOpen={openDepartment}
+                />
+              )}
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-black text-slate-800">
                     {selectedDepartment ? `${selectedDepartment.code} sections` : "Sections"}
+                    {focus ? ` ${focusDescription}` : ""}
                   </h3>
                   <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                    Open a section to see its weekly timetable.
+                    Click a section to open its weekly timetable.
                   </p>
                 </div>
-                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
-                  {selectedDepartment?.sections.length ?? 0} section{(selectedDepartment?.sections.length ?? 0) === 1 ? "" : "s"}
-                </span>
+                {focus ? focusBadge : (
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+                    {selectedDepartment?.sections.length ?? 0} section{(selectedDepartment?.sections.length ?? 0) === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
-              <SectionOverviewCards
-                sections={visibleSections}
-                isLoading={isOverviewLoading && !selectedDepartment}
-                onOpen={openSection}
-              />
+              {focus && selectedDepartment && visibleSections.length === 0 ? (
+                focusEmptyState("sections")
+              ) : (
+                <SectionOverviewCards
+                  sections={visibleSections}
+                  isLoading={isOverviewLoading && !selectedDepartment}
+                  onOpen={openSection}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1264,158 +1463,76 @@ export default function VpaaScheduleViewer() {
               </p>
             </div>
           )}
-          <>
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <select 
-                    value={groupKey} 
-                    onChange={(event) => setGroupKey(event.target.value as GroupKey)} 
-                    className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
-                  >
-                    <option value="department">Group by Department</option>
-                    <option value="section">Group by Section</option>
-                    <option value="day">Group by Day</option>
-                    <option value="faculty">Group by Faculty</option>
-                    <option value="room">Group by Room</option>
-                  </select>
-                  
-                  <select 
-                    value={sortKey} 
-                    onChange={(event) => setSortKey(event.target.value as SortKey)} 
-                    className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
-                  >
-                    <option value="department">Sort Department</option>
-                    <option value="section">Sort Section</option>
-                    <option value="subject">Sort Subject</option>
-                    <option value="day">Sort Day</option>
-                    <option value="startTime">Sort Start Time</option>
-                    <option value="faculty">Sort Faculty</option>
-                    <option value="room">Sort Room</option>
-                  </select>
-                  
-                  <button 
-                    type="button" 
-                    onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")} 
-                    className="h-10 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-sm font-bold shadow-sm cursor-pointer transition-all duration-150"
-                  >
-                    {sortDirection === "asc" ? "Ascending" : "Descending"}
-                  </button>
-                </div>
-                <p className="text-xs font-bold text-slate-400">Page {currentPage} of {pageCount}</p>
-              </div>
-              
-              {groupKey === "section" && (
-                <div className="rounded-xl border border-[#C9952A]/20 bg-[#F7F4F0] px-4 py-2.5 text-xs font-semibold text-[#4e0a10]">
-                  Each section group contains the different subjects scheduled for that same section.
-                </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-bold text-slate-500">
+              {listClasses.length} class{listClasses.length === 1 ? "" : "es"} · split and hybrid meetings share one row
+            </p>
+            <p className="text-xs font-bold text-slate-400">Page {currentPage} of {pageCount}</p>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}</div>
+          ) : (
+            <ClassSummaryTable
+              classes={paginatedClasses}
+              showFaculty
+              sortable={false}
+              className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm"
+              emptyMessage="No schedules match the selected filters."
+              onRowClick={(item) => {
+                const firstId = item.parts[0]?.ids[0];
+                const schedule = firstId ? scheduleById.get(firstId) : undefined;
+                if (schedule) setSelectedSchedule(schedule);
+              }}
+              isRowFlagged={(item) => conflictLabelsOfClass(item).length > 0}
+              renderSection={(item) => {
+                const departmentCode = item.parts[0]?.ids[0] ? scheduleById.get(item.parts[0].ids[0])?.departmentCode : undefined;
+                return (
+                  <>
+                    <span className="block">{item.sectionName}</span>
+                    {selectedDeptId === "All" && departmentCode && (
+                      <span className={`mt-1 inline-block rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase ${getDeptBadgeStyles(departmentCode)}`}>
+                        {departmentCode}
+                      </span>
+                    )}
+                  </>
+                );
+              }}
+              renderCourseExtras={(item) => (
+                <>
+                  {conflictLabelsOfClass(item).map((label) => (
+                    <span key={label} className="mr-1 mt-1 inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-rose-700">
+                      {label}
+                    </span>
+                  ))}
+                </>
               )}
-              
-              <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-sm">
-                <div className={`hidden md:grid grid-cols-1 ${groupKey === "section" ? "md:grid-cols-[1.2fr_1.1fr_1fr_1fr_0.7fr]" : "md:grid-cols-[1.2fr_1.1fr_0.8fr_1fr_1fr_0.7fr]"} gap-2 px-5 py-3 bg-slate-50/80 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-400`}>
-                  <div>Subject</div>
-                  <div>Schedule / Time</div>
-                  {groupKey !== "section" && <div>Section</div>}
-                  <div>Faculty</div>
-                  <div>Room</div>
-                  <div className="text-right">Dept / Status</div>
-                </div>
-                
-                {isLoading ? (
-                  <div className="p-4 space-y-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full rounded-xl" />)}</div>
-                ) : groupedSchedules.length === 0 ? (
-                  <div className="p-10 text-center text-sm text-slate-400 italic">No schedules match the selected filters.</div>
-                ) : (
-                  <div className="divide-y divide-slate-200">
-                    {groupedSchedules.map(([group, groupSchedules]) => (
-                      <div key={group}>
-                        <div className="bg-slate-50/40 px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-extrabold text-[#4e0a10]">{group}</p>
-                            {groupKey === "section" && <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Subjects scheduled for this section</p>}
-                          </div>
-                          <span className="inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-100 text-slate-500 border border-slate-200">
-                            {groupSchedules.length} class{groupSchedules.length === 1 ? "" : "es"}
-                          </span>
-                        </div>
-                        <div className="divide-y divide-slate-100 font-medium">
-                          {groupSchedules.map((schedule) => {
-                            const conflicts = getConflictLabels(conflictMap.get(schedule.id));
-                            const isUnassignedFac = isUnassignedFaculty(schedule);
-                            const isUnassignedRm = isUnassignedRoom(schedule);
-                            
-                            return (
-                              <button 
-                                key={schedule.id} 
-                                type="button" 
-                                onClick={() => setSelectedSchedule(schedule)} 
-                                className={`w-full text-left grid grid-cols-1 ${
-                                  groupKey === "section" 
-                                    ? "md:grid-cols-[1.2fr_1.1fr_1fr_1fr_0.7fr]" 
-                                    : "md:grid-cols-[1.2fr_1.1fr_0.8fr_1fr_1fr_0.7fr]"
-                                } gap-2 px-5 py-3.5 text-xs items-center hover:bg-slate-50/60 transition-colors cursor-pointer`}
-                              >
-                                <div className="min-w-0">
-                                  <p className="font-extrabold text-[#4e0a10] text-sm truncate">{schedule.subjectCode || "Subject"}</p>
-                                  <p className="text-slate-400 font-semibold text-[11px] truncate mt-0.5">{schedule.subjectName || "Untitled subject"}</p>
-                                </div>
-                                <div className="text-slate-700 font-bold">
-                                  <p>{schedule.day}</p>
-                                  <p className="text-slate-400 font-medium text-[11px] mt-0.5">{schedule.startTime} - {schedule.endTime}</p>
-                                </div>
-                                {groupKey !== "section" && (
-                                  <p className="text-slate-700 font-semibold truncate bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md w-fit text-[11px]">
-                                    {schedule.sectionName || "Unassigned"}
-                                  </p>
-                                )}
-                                <p className={isUnassignedFac ? "font-bold text-amber-600 italic bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md w-fit text-[11px]" : "text-slate-700 font-semibold truncate"}>
-                                  {schedule.facultyName}
-                                </p>
-                                <p className={isUnassignedRm ? "font-bold text-amber-600 italic bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md w-fit text-[11px]" : "text-slate-700 font-semibold truncate"}>
-                                  {schedule.roomName || "Unassigned"}
-                                </p>
-                                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getDeptBadgeStyles(schedule.departmentCode)}`}>
-                                    {schedule.departmentCode || "TCC"}
-                                  </span>
-                                  {conflicts.length > 0 && (
-                                    <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">
-                                      Conflict
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex items-center justify-between pt-2">
-                <button 
-                  type="button" 
-                  disabled={currentPage === 1} 
-                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} 
-                  className="px-4 h-10 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-sm font-bold text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
-                >
-                  Previous
-                </button>
-                <button 
-                  type="button" 
-                  disabled={currentPage === pageCount} 
-                  onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))} 
-                  className="px-4 h-10 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-sm font-bold text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
-                >
-                  Next
-                </button>
-              </div>
-            </>
+            />
+          )}
+
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              className="px-4 h-10 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-sm font-bold text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={currentPage === pageCount}
+              onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+              className="px-4 h-10 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-sm font-bold text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
       {viewMode === "grid" && (
         <div className="bg-slate-50/20 p-5 space-y-4 font-sans">
+          {selectedSectionId !== "All" && summary}
           <div className="rounded-xl border border-[#C9952A]/25 bg-[#C9952A]/5 px-4 py-3 text-xs font-semibold text-[#4e0a10] flex items-start gap-2.5 shadow-sm">
             <Info className="w-4 h-4 text-[#C9952A] shrink-0 mt-0.5" />
             <p>
@@ -1429,6 +1546,8 @@ export default function VpaaScheduleViewer() {
               <h4 className="font-extrabold text-slate-700 text-sm">No Grid Scope Active</h4>
               <p className="text-xs font-medium text-slate-400 mt-1 max-w-xs mx-auto">Select a department section, faculty member, or room from the filters before opening the Weekly Grid.</p>
             </div>
+          ) : filteredSchedules.length === 0 && focus ? (
+            focusEmptyState("meetings in the loaded timetable")
           ) : filteredSchedules.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
               <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
@@ -1541,7 +1660,7 @@ export default function VpaaScheduleViewer() {
       </div>
 
       {selectedSchedule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55">
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-md overflow-hidden relative font-sans">
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#4e0a10] to-[#C9952A]" />
             
@@ -1578,6 +1697,21 @@ export default function VpaaScheduleViewer() {
                   </div>
                 ))}
               </div>
+
+              {selectedClassParts.length > 1 && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">All meetings of this class</p>
+                  <ul className="mt-1.5 space-y-1">
+                    {selectedClassParts.map((part, index) => (
+                      <li key={index} className="text-[11px] font-bold text-slate-700">
+                        {part.dayLabel} · {timeRangeLabel(part.start, part.end)}
+                        {part.meeting && <span className="ml-1 text-[10px] uppercase text-slate-400">{part.meeting === "laboratory" ? "Lab" : "Lec"}</span>}
+                        <span className="font-semibold text-slate-500"> · {part.room} · {part.faculty}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {getConflictLabels(conflictMap.get(selectedSchedule.id)).length > 0 && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs font-bold text-rose-700 flex items-start gap-2.5">

@@ -35,8 +35,8 @@ interface FacultyDetailsModalProps {
 
 const BAR_CLASSES = {
   basic: 'bg-emerald-500',
-  overload: 'bg-amber-500',
-  probono: 'bg-sky-500',
+  overload: 'bg-red-400',
+  probono: 'bg-slate-400',
   beyond_ceiling: 'bg-rose-500',
 } as const;
 
@@ -62,7 +62,7 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
     : null;
   const percent = basicLoad > 0 ? Math.min(100, (assigned / basicLoad) * 100) : 0;
   const remaining = basicLoad - assigned;
-  const aboveCeiling = faculty.unit_ceiling > 0 && assigned > faculty.unit_ceiling;
+  const aboveCeiling = assigned > basicLoad + Math.max(0, faculty.overload_units);
 
   const allowances: { label: string; value: number; hint?: string }[] = [
     { label: 'Max units', value: faculty.max_units },
@@ -75,7 +75,7 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:items-center sm:p-4"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
       role="presentation"
     >
@@ -153,7 +153,7 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
             {aboveCeiling && (
               <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Above the {faculty.unit_ceiling}-unit ceiling. Further assignments are blocked.
+                Past the Basic Load and Overload allowances, so the extra units are pro bono.
               </p>
             )}
           </section>

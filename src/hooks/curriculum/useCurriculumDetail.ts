@@ -3,6 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, CurriculumSemester, CurriculumCourse, Program } from '../../types/curriculum';
 import type { CourseOption } from '../../components/curriculum/AddCourseForm';
@@ -112,6 +113,10 @@ export function useCurriculumDetail(id: string | undefined) {
       fetchCurriculum();
     }
   }, [id, fetchCurriculum]);
+
+  useLiveRefresh(['curriculum', 'courses'], () => {
+    if (id) void fetchCurriculum(true);
+  });
 
   useEffect(() => {
     if (curriculum) {

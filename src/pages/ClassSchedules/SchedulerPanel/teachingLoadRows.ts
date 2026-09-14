@@ -39,7 +39,16 @@ export interface LoadLine {
   totalUnits: number;
   /** Clock hours actually scheduled across every meeting of this subject. */
   totalHours: number;
+  /**
+   * The load band this subject landed in once classified. Pro bono subjects
+   * print in the Overload table, shaded so they read apart from paid overload.
+   */
+  band?: LoadBand;
+  /** A meeting of this subject was assigned over an instructor conflict on purpose. */
+  overridden?: boolean;
 }
+
+export type LoadBand = "basic" | "overload" | "probono";
 
 /**
  * Matches Print Schedule's "7:00 AM – 9:00 AM" format. Both ends carry their
@@ -97,6 +106,7 @@ export const buildLoadLines = (schedules: ScheduleItem[]): LoadLine[] => {
         laboratoryUnits: first.laboratoryUnits ?? 0,
         totalUnits: first.totalUnits ?? (first.lectureUnits ?? 0) + (first.laboratoryUnits ?? 0),
         totalHours: sorted.reduce((sum, meeting) => sum + hoursOf(meeting), 0),
+        overridden: sorted.some((meeting) => Boolean(meeting.facultyConflictOverride)),
       },
       dayIndex: first.dayIndex,
       startSlot: first.startSlot,
@@ -130,40 +140,48 @@ const sumOf = (lines: LoadLine[]): LoadTotals => ({
  * Basic Load as the server computes it -- max units less any administrative
  * deload. Falls back to the raw figures when the payload predates
  * `requiredUnits`, and to 21 units when a profile carries no ceiling at all.
+ * A Basic Load of 0 is real (an overload-only instructor), not "missing".
  */
 const basicLoadCeiling = (faculty: Faculty): number => {
-  if (typeof faculty.requiredUnits === "number") return faculty.requiredUnits;
+  if (typeof faculty.requiredUnits === "number") return Math.max(0, faculty.requiredUnits);
   return Math.max(0, (faculty.maxUnits ?? 21) - (faculty.deloadUnits ?? 0));
 };
 
 /**
- * Fills the Basic table up to the instructor's Basic Load, then sends the rest
- * to Overload. A subject that will not fit is skipped rather than ending the
- * fill, so a later 1-unit subject can still take the remaining space -- the same
- * order-preserving pass the scheduler panel already shows on screen.
+ * Fills the tables in the order the load bands stack, the same order the
+ * scheduler enforces and the Faculty page shows: Basic Load first, then the
+ * overload allowance, then pro bono.
  *
- * Part-time staff hold no built-in load at all, so every subject they teach is
- * listed under "B. Overload/Part Time Load", which is what that table is for.
+ * - A subject goes in the Basic table while it still fits the Basic Load.
+ * - Past that it goes in the Overload table, as overload while it fits the
+ *   overload allowance, and as pro bono once that is used up.
+ *
+ * A subject that will not fit a band is skipped rather than ending the fill, so
+ * a later 1-unit subject can still take the room left. An instructor with a
+ * Basic Load of 0 (overload only) therefore lists everything under Overload,
+ * which is what "B. Overload/Part Time Load" is for.
  */
 export const classifyLoad = (faculty: Faculty, schedules: ScheduleItem[]): ClassifiedLoad => {
   const lines = buildLoadLines(schedules);
   const basic: LoadLine[] = [];
   const overload: LoadLine[] = [];
 
-  if (faculty.employmentType === "part-time") {
-    overload.push(...lines);
-  } else {
-    const ceiling = basicLoadCeiling(faculty);
-    let assigned = 0;
-    lines.forEach((line) => {
-      if (assigned + line.totalUnits <= ceiling) {
-        assigned += line.totalUnits;
-        basic.push(line);
-      } else {
-        overload.push(line);
-      }
-    });
-  }
+  const basicCeiling = basicLoadCeiling(faculty);
+  const overloadAllowance = Math.max(0, faculty.overloadUnits ?? 0);
+  let basicAssigned = 0;
+  let overloadAssigned = 0;
+
+  lines.forEach((line) => {
+    if (basicAssigned + line.totalUnits <= basicCeiling) {
+      basicAssigned += line.totalUnits;
+      basic.push({ ...line, band: "basic" });
+    } else if (overloadAssigned + line.totalUnits <= overloadAllowance) {
+      overloadAssigned += line.totalUnits;
+      overload.push({ ...line, band: "overload" });
+    } else {
+      overload.push({ ...line, band: "probono" });
+    }
+  });
 
   const basicTotals = sumOf(basic);
   const overloadTotals = sumOf(overload);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildLoadLines } from "./teachingLoadRows";
-import type { ScheduleItem } from "./types";
+import { buildLoadLines, classifyLoad } from "./teachingLoadRows";
+import type { Faculty, ScheduleItem } from "./types";
 
 /**
  * Guards the Time column of the Individual Faculty Load Sheet: one range per
@@ -72,5 +72,54 @@ describe("buildLoadLines", () => {
 
     expect(line.day).toBe("TTh");
     expect(line.times).toEqual(["9:00 AM \u2013 11:00 AM", "10:00 AM \u2013 1:00 PM"]);
+  });
+});
+
+describe("classifyLoad", () => {
+  /** Six distinct 3-unit subjects, one per weekday slot, in a stable order. */
+  const subjects = Array.from({ length: 6 }, (_, index) =>
+    meeting({
+      id: String(index + 1),
+      courseId: `c${index + 1}`,
+      courseCode: `IT 10${index + 1}`,
+      dayIndex: index % 6,
+      day: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][index % 6],
+      totalUnits: 3,
+    }),
+  );
+  const bandsOf = (lines: { band?: string }[]) => lines.map((line) => line.band);
+
+  it("fills Basic up to the Basic Load, then Overload, then Pro Bono inside the Overload table", () => {
+    const faculty = { id: "f1", name: "A Cruz", employmentType: "full-time", requiredUnits: 9, overloadUnits: 6, probonoUnits: 3 } as Faculty;
+    const load = classifyLoad(faculty, subjects);
+
+    expect(bandsOf(load.basic)).toEqual(["basic", "basic", "basic"]);
+    expect(bandsOf(load.overload)).toEqual(["overload", "overload", "probono"]);
+    expect(load.basicTotals.units).toBe(9);
+    expect(load.overloadTotals.units).toBe(9);
+  });
+
+  it("lists everything under Overload for an overload-only instructor, part-time or not", () => {
+    const overloadOnly = { id: "f2", name: "R Del Rosario", maxUnits: 0, deloadUnits: 0, overloadUnits: 15, probonoUnits: 0 };
+    for (const employmentType of ["part-time", "full-time"] as const) {
+      const load = classifyLoad({ ...overloadOnly, employmentType } as Faculty, subjects.slice(0, 2));
+      expect(load.basic).toHaveLength(0);
+      expect(bandsOf(load.overload)).toEqual(["overload", "overload"]);
+    }
+  });
+
+  it("follows a part-timer's Basic Load instead of sending every subject to Overload", () => {
+    const partTimer = { id: "f3", name: "K Awitin", employmentType: "part-time", maxUnits: 6, deloadUnits: 0, overloadUnits: 15 } as Faculty;
+    const load = classifyLoad(partTimer, subjects.slice(0, 3));
+
+    expect(bandsOf(load.basic)).toEqual(["basic", "basic"]);
+    expect(bandsOf(load.overload)).toEqual(["overload"]);
+  });
+
+  it("lists anything past the overload allowance as pro bono, even with no pro bono granted", () => {
+    const faculty = { id: "f4", name: "J Pada", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3, probonoUnits: 0 } as Faculty;
+    const load = classifyLoad(faculty, subjects.slice(0, 4));
+
+    expect(bandsOf(load.overload)).toEqual(["overload", "probono", "probono"]);
   });
 });

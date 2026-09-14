@@ -43,7 +43,7 @@ export default function TimetableCardTooltip({
 
   return (
     <div
-      className={`pointer-events-none invisible absolute z-50 w-64 rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs text-white opacity-0 shadow-2xl backdrop-blur-md transition-all duration-200 group-hover:visible group-hover:opacity-100 ${
+      className={`pointer-events-none invisible absolute z-50 w-64 rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs text-white opacity-0 shadow-2xl transition-all duration-200 group-hover:visible group-hover:opacity-100 ${
         isVertical ? "space-y-2 leading-snug" : ""
       } ${positionClasses}`}
     >

@@ -58,4 +58,40 @@ describe('DashboardSkeleton', () => {
     expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(8);
     expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(0);
   });
+  describe('secretary layout', () => {
+    const fullLayout = {
+      tileCount: 8,
+      tileGridClassName: 'sm:grid-cols-4',
+      queueRowCount: 6,
+      showDraftingProgress: true,
+      showFacultyAssignment: true,
+      showTimetable: true,
+      readinessCheckCount: 6,
+    };
+
+    it('reserves exactly the tiles and column classes the page will render', () => {
+      const { container } = render(<DashboardSkeleton variant="secretary" secretaryLayout={{ ...fullLayout, tileCount: 5, tileGridClassName: 'sm:grid-cols-3 xl:grid-cols-5' }} />);
+      const metrics = container.querySelector('[data-skeleton="metrics"]')!;
+      expect(metrics.children).toHaveLength(5);
+      expect(metrics.className).toContain('sm:grid-cols-3');
+      expect(metrics.className).toContain('xl:grid-cols-5');
+    });
+
+    it('draws one queue line per queue row', () => {
+      const { container } = render(<DashboardSkeleton variant="secretary" secretaryLayout={{ ...fullLayout, queueRowCount: 2 }} />);
+      const queue = container.querySelector('.xl\\:col-span-4 .divide-y')!;
+      expect(queue.children).toHaveLength(2);
+    });
+
+    it('leaves out the panels a read-only account does not see', () => {
+      const full = render(<DashboardSkeleton variant="secretary" secretaryLayout={fullLayout} />);
+      expect(full.container.querySelectorAll('.xl\\:col-span-4')).toHaveLength(3);
+      expect(full.container.querySelector('.timetable-grid-root')).toBeTruthy();
+      cleanup();
+
+      const limited = render(<DashboardSkeleton variant="secretary" secretaryLayout={{ ...fullLayout, showDraftingProgress: false, showFacultyAssignment: false, showTimetable: false }} />);
+      expect(limited.container.querySelectorAll('.xl\\:col-span-4')).toHaveLength(1);
+      expect(limited.container.querySelector('.timetable-grid-root')).toBeNull();
+    });
+  });
 });

@@ -18,6 +18,11 @@ import {
   isHybridSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 import type { TimeBlockOption } from "./generationTypes";
+import type { ColumnDef } from "@tanstack/react-table";
+import DataTable from "../../../../components/ui/DataTable";
+import { useDataTable } from "../../../../components/ui/useDataTable";
+
+type SetupRow = { course: Course; hybrid: boolean; split: boolean; isField: boolean };
 
 /** The slice of a section's configuration this step reads and writes. */
 export type CourseSetupConfig = {
@@ -170,105 +175,96 @@ export default function SetupCoursesStep({
   const configuringRow =
     rows.find((row) => row.course.id === configuringCourseId) ?? null;
 
+  // Rebuilt each render: the flag cells read the live per-section configs.
+  const courseColumns: ColumnDef<SetupRow>[] = [
+    {
+      id: "course",
+      accessorFn: (row) => row.course.code,
+      header: "Courses",
+      cell: ({ row: { original: { course, isField } } }) => {
+        const CourseIcon = courseIcon(course, isField);
+        return (
+          <div className="flex items-start gap-2.5">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/10 text-[#4e0a10]"
+            >
+              <CourseIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-black leading-tight text-slate-900">{course.code}</p>
+              <p className="truncate text-xs font-semibold leading-tight text-slate-600">{course.name}</p>
+              {isField && (
+                <span className="mt-1 inline-flex rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-700">
+                  Field
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    ...FLAG_KEYS.map((key): ColumnDef<SetupRow> => ({
+      id: key,
+      header: key === "splitCourseIds" ? "Hybrid" : "Split",
+      size: 112,
+      enableSorting: false,
+      meta: { align: "center" },
+      cell: ({ row: { original: { course, hybrid, split } } }) => {
+        const eligible = key === "splitCourseIds" ? hybrid : split;
+        return eligible ? (
+          <FlagCell
+            label={`${flagLabels[key]} for ${course.code}`}
+            included={includedCount(course.id, key)}
+            total={sections.length}
+            disabled={actionsDisabled}
+            onToggle={(next) => setForAllSections(course.id, key, next)}
+          />
+        ) : (
+          <EmptyCell />
+        );
+      },
+    })),
+    {
+      id: "configure",
+      header: "Configure",
+      size: 160,
+      enableSorting: false,
+      meta: { align: "right" },
+      cell: ({ row }) => (
+        <button
+          type="button"
+          onClick={() => setConfiguringCourseId(row.original.course.id)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+        >
+          <Settings2 className="h-3.5 w-3.5" /> Configure
+        </button>
+      ),
+    },
+  ];
+  const courseTable = useDataTable<SetupRow>({
+    data: rows,
+    columns: courseColumns,
+    pageSize: false,
+    getRowId: (row) => String(row.course.id),
+  });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="min-h-0 max-h-[60vh] w-full flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[560px] border-collapse text-left">
-          <thead id="generator-setup-head" className="sticky top-0 z-10 bg-slate-50">
-            <tr>
-              <th className="px-3 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
-                Courses
-              </th>
-              <th className="w-28 px-3 py-2.5 text-center text-[11px] font-black uppercase tracking-wide text-slate-500">
-                Hybrid
-              </th>
-              <th className="w-28 px-3 py-2.5 text-center text-[11px] font-black uppercase tracking-wide text-slate-500">
-                Split
-              </th>
-              <th className="w-40 px-3 py-2.5 text-right text-[11px] font-black uppercase tracking-wide text-slate-500">
-                Configure
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td
-                  colSpan={4}
-                  className="px-3 py-6 text-center text-xs font-semibold text-slate-500"
-                >
-                  This curriculum has no courses for the selected year level and
-                  semester.
-                </td>
-              </tr>
-            )}
-            {rows.map(({ course, hybrid, split, isField }) => {
-              const CourseIcon = courseIcon(course, isField);
-
-              return (
-              <tr
-                key={course.id}
-                className="border-t border-slate-100 align-middle"
-              >
-                <td className="px-3 py-2.5">
-                  <div className="flex items-start gap-2.5">
-                    <span
-                      aria-hidden="true"
-                      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/10 text-[#4e0a10]"
-                    >
-                      <CourseIcon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-black leading-tight text-slate-900">
-                        {course.code}
-                      </p>
-                      <p className="truncate text-xs font-semibold leading-tight text-slate-600">
-                        {course.name}
-                      </p>
-                      {isField && (
-                        <span className="mt-1 inline-flex rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-700">
-                          Field
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                {FLAG_KEYS.map((key) => {
-                  const eligible = key === "splitCourseIds" ? hybrid : split;
-
-                  return (
-                    <td key={key} className="px-3 py-2.5 text-center">
-                      {eligible ? (
-                        <FlagCell
-                          label={`${flagLabels[key]} for ${course.code}`}
-                          included={includedCount(course.id, key)}
-                          total={sections.length}
-                          disabled={actionsDisabled}
-                          onToggle={(next) =>
-                            setForAllSections(course.id, key, next)
-                          }
-                        />
-                      ) : (
-                        <EmptyCell />
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="px-3 py-2.5 text-right">
-                  <button
-                    type="button"
-                    onClick={() => setConfiguringCourseId(course.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <Settings2 className="h-3.5 w-3.5" /> Configure
-                  </button>
-                </td>
-              </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        table={courseTable}
+        variant="embedded"
+        className="flex min-h-0 max-h-[60vh] w-full flex-1 flex-col overflow-hidden rounded-xl border border-slate-200"
+        scrollClassName="min-h-0 flex-1 overflow-auto"
+        tableClassName="min-w-[560px]"
+        headerId="generator-setup-head"
+        ariaLabel="Course setup"
+        emptyState={
+          <p className="text-xs font-semibold text-slate-500">
+            This curriculum has no courses for the selected year level and semester.
+          </p>
+        }
+      />
 
       {configuringRow && (
         <ConfigureModal
@@ -393,9 +389,64 @@ function ConfigureModal({
       (configs[section.id]?.[key] ?? []).includes(course.id),
     ).length;
 
+  const sectionColumns: ColumnDef<Section>[] = [
+    {
+      id: "section",
+      accessorKey: "name",
+      header: "Section",
+      cell: ({ row: { original: section } }) => (
+        <span className="flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500">
+            <Users className="h-3.5 w-3.5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-xs font-black text-slate-900">{section.name}</span>
+            <span className="flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+              <Clock3 className="h-3 w-3" />
+              {periodLabels[configs[section.id]?.preferredTimeBlock ?? "flexible"]}
+            </span>
+          </span>
+        </span>
+      ),
+    },
+    ...activeKeys.map((key): ColumnDef<Section> => ({
+      id: key,
+      header: flagLabels[key],
+      size: 80,
+      enableSorting: false,
+      meta: { align: "center" },
+      cell: ({ row: { original: section } }) => {
+        const checked = (configs[section.id]?.[key] ?? []).includes(course.id);
+        return (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            aria-label={`${flagLabels[key]} for ${course.code} in ${section.name}`}
+            disabled={disabled}
+            onClick={() => onToggleSection(section.id, key, !checked)}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              checked
+                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
+                : "border-slate-300 bg-white text-transparent hover:border-slate-400"
+            }`}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+        );
+      },
+    })),
+  ];
+  const sectionTable = useDataTable<Section>({
+    data: sections,
+    columns: sectionColumns,
+    pageSize: false,
+    getRowId: (section) => String(section.id),
+  });
+
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-3"
       role="dialog"
       aria-modal="true"
       aria-label={`Configure ${course.code}`}
@@ -455,77 +506,13 @@ function ConfigureModal({
                 })}
               </div>
 
-              <table className="mt-3 w-full border-collapse text-left">
-                <thead>
-                  <tr>
-                    <th className="px-2 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
-                      Section
-                    </th>
-                    {activeKeys.map((key) => (
-                      <th
-                        key={key}
-                        className="w-20 px-2 py-1.5 text-center text-[10px] font-black uppercase tracking-wide text-slate-500"
-                      >
-                        {flagLabels[key]}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sections.map((section) => {
-                    const period =
-                      configs[section.id]?.preferredTimeBlock ?? "flexible";
-
-                    return (
-                      <tr key={section.id} className="border-t border-slate-100">
-                        <td className="px-2 py-2">
-                          <span className="flex items-center gap-2">
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500">
-                              <Users className="h-3.5 w-3.5" />
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-xs font-black text-slate-900">
-                                {section.name}
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] font-semibold text-slate-500">
-                                <Clock3 className="h-3 w-3" />
-                                {periodLabels[period]}
-                              </span>
-                            </span>
-                          </span>
-                        </td>
-                        {activeKeys.map((key) => {
-                          const checked = (
-                            configs[section.id]?.[key] ?? []
-                          ).includes(course.id);
-
-                          return (
-                            <td key={key} className="px-2 py-2 text-center">
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={checked}
-                                aria-label={`${flagLabels[key]} for ${course.code} in ${section.name}`}
-                                disabled={disabled}
-                                onClick={() =>
-                                  onToggleSection(section.id, key, !checked)
-                                }
-                                className={`inline-flex h-6 w-6 items-center justify-center rounded border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                  checked
-                                    ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                                    : "border-slate-300 bg-white text-transparent hover:border-slate-400"
-                                }`}
-                              >
-                                <Check className="h-4 w-4" />
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <DataTable
+                table={sectionTable}
+                variant="embedded"
+                density="compact"
+                className="mt-3 overflow-hidden rounded-lg border border-slate-200"
+                ariaLabel={`Section rules for ${course.code}`}
+              />
             </>
           )}
         </div>

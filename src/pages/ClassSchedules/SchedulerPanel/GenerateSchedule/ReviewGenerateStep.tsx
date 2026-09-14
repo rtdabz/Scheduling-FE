@@ -10,6 +10,9 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import DataTable from "../../../../components/ui/DataTable";
+import { useDataTable } from "../../../../components/ui/useDataTable";
 import { useGenerationRun } from "../hooks/useGenerationRun";
 import type { Course, Section, Semester } from "../types";
 import type { TimeBlockOption } from "./generationTypes";
@@ -135,12 +138,63 @@ function Panel({
  * squeezing the course table beside it.
  */
 const VISIBLE_SECTION_ROWS = 7;
-/** One row: 16px line box, 6px padding top and bottom, 1px divider. */
-const SECTION_ROW_PX = 29;
+/** One row: a 16px tag, 8px padding top and bottom, 1px divider. */
+const SECTION_ROW_PX = 33;
+/** The sticky column header above those rows. */
+const SECTION_HEADER_PX = 33;
 
-const th =
-  "px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-500";
-const td = "px-3 py-1.5 align-middle text-xs font-semibold text-slate-700";
+type PlanRow = ReviewCourseRow & { forcedDays: string[]; field: boolean };
+
+const planColumns: ColumnDef<PlanRow>[] = [
+  {
+    id: "course",
+    accessorFn: (row) => row.course.code,
+    header: "Course",
+    cell: ({ row }) => (
+      <>
+        <span className="block text-xs font-black text-slate-900">{row.original.course.code}</span>
+        <span className="block truncate text-[11px] font-semibold text-slate-500">{row.original.course.name}</span>
+      </>
+    ),
+  },
+  {
+    id: "units",
+    accessorFn: (row) => Number(row.course.units) || 0,
+    header: "Units",
+    meta: { cellClassName: "whitespace-nowrap" },
+  },
+  {
+    id: "meetings",
+    accessorFn: (row) => (row.hybrid ? "Lecture + lab, separate" : row.split ? "Two sessions a week" : "Single meeting"),
+    header: "Meetings",
+  },
+  {
+    id: "rules",
+    header: "Rules",
+    enableSorting: false,
+    cell: ({ row: { original: row } }) => (
+      <span className="flex flex-wrap gap-1">
+        {row.forcedDays.map((day) => (
+          <Tag key={day} tone="bg-violet-100 text-violet-800">
+            <CalendarDays className="h-2.5 w-2.5" />
+            {day}
+          </Tag>
+        ))}
+        {row.field && (
+          <Tag tone="bg-emerald-100 text-emerald-800">
+            <MapPin className="h-2.5 w-2.5" />
+            Field
+          </Tag>
+        )}
+        {row.hybrid && <Tag tone="bg-sky-100 text-sky-800">Hybrid</Tag>}
+        {row.split && <Tag tone="bg-amber-100 text-amber-900">Split</Tag>}
+        {!row.field && !row.hybrid && !row.split && row.forcedDays.length === 0 && (
+          <span className="text-[11px] font-semibold text-slate-400">Standard</span>
+        )}
+      </span>
+    ),
+  },
+];
 
 function Tag({ tone, children }: { tone: string; children: React.ReactNode }) {
   return (
@@ -355,6 +409,33 @@ export default function ReviewGenerateStep({
       : []),
   ];
 
+  const planTable = useDataTable<PlanRow>({
+    data: planRows,
+    columns: planColumns,
+    pageSize: false,
+    getRowId: (row) => String(row.course.id),
+  });
+
+  const periodColumns: ColumnDef<Section>[] = [
+    { id: "section", accessorKey: "name", header: "Section", meta: { cellClassName: "font-black text-slate-900" } },
+    {
+      id: "period",
+      accessorFn: (section) => periodsBySectionId[section.id] ?? "flexible",
+      header: "Period",
+      meta: { align: "right" },
+      cell: ({ getValue }) => {
+        const period = getValue<TimeBlockOption>();
+        return <Tag tone={periodTones[period]}>{periodShortLabels[period]}</Tag>;
+      },
+    },
+  ];
+  const periodTable = useDataTable<Section>({
+    data: sections,
+    columns: periodColumns,
+    pageSize: false,
+    getRowId: (section) => String(section.id),
+  });
+
   const fullSemesterLabel = activeSemester
     ? `${activeSemester.academic_year} · ${activeSemester.semester.toUpperCase()} Semester`
     : "No active semester";
@@ -451,88 +532,15 @@ export default function ReviewGenerateStep({
               className="xl:col-span-2"
             >
               <div className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full min-w-[540px] border-collapse text-left">
-                  <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(241,245,249)]">
-                    <tr>
-                      <th className={th}>Course</th>
-                      <th className={th}>Units</th>
-                      <th className={th}>Meetings</th>
-                      <th className={th}>Rules</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {planRows.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          className="px-3 py-6 text-center text-xs font-semibold text-slate-500"
-                        >
-                          No courses in scope for this year level.
-                        </td>
-                      </tr>
-                    )}
-                    {planRows.map((row) => (
-                      <tr
-                        key={row.course.id}
-                        className="border-t border-slate-100"
-                      >
-                        <td className="px-3 py-1.5">
-                          <span className="block text-xs font-black text-slate-900">
-                            {row.course.code}
-                          </span>
-                          <span className="block truncate text-[11px] font-semibold text-slate-500">
-                            {row.course.name}
-                          </span>
-                        </td>
-                        <td className={`${td} whitespace-nowrap`}>
-                          {row.course.units}
-                        </td>
-                        <td className={td}>
-                          {row.hybrid
-                            ? "Lecture + lab, separate"
-                            : row.split
-                              ? "Two sessions a week"
-                              : "Single meeting"}
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <span className="flex flex-wrap gap-1">
-                            {row.forcedDays.map((day) => (
-                              <Tag
-                                key={day}
-                                tone="bg-violet-100 text-violet-800"
-                              >
-                                <CalendarDays className="h-2.5 w-2.5" />
-                                {day}
-                              </Tag>
-                            ))}
-                            {row.field && (
-                              <Tag tone="bg-emerald-100 text-emerald-800">
-                                <MapPin className="h-2.5 w-2.5" />
-                                Field
-                              </Tag>
-                            )}
-                            {row.hybrid && (
-                              <Tag tone="bg-sky-100 text-sky-800">Hybrid</Tag>
-                            )}
-                            {row.split && (
-                              <Tag tone="bg-amber-100 text-amber-900">
-                                Split
-                              </Tag>
-                            )}
-                            {!row.field &&
-                              !row.hybrid &&
-                              !row.split &&
-                              row.forcedDays.length === 0 && (
-                                <span className="text-[11px] font-semibold text-slate-400">
-                                  Standard
-                                </span>
-                              )}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable
+                  table={planTable}
+                  variant="embedded"
+                  scrollClassName="overflow-visible"
+                  density="compact"
+                  tableClassName="min-w-[540px]"
+                  ariaLabel="Course plan"
+                  emptyState={<p className="text-xs font-semibold text-slate-500">No courses in scope for this year level.</p>}
+                />
               </div>
             </Panel>
 
@@ -548,41 +556,18 @@ export default function ReviewGenerateStep({
                   style={{
                     maxHeight:
                       sections.length > VISIBLE_SECTION_ROWS
-                        ? VISIBLE_SECTION_ROWS * SECTION_ROW_PX
+                        ? VISIBLE_SECTION_ROWS * SECTION_ROW_PX + SECTION_HEADER_PX
                         : undefined,
                   }}
                 >
-                  <table className="w-full border-collapse text-left">
-                    <tbody>
-                      {sections.length === 0 && (
-                        <tr>
-                          <td className="px-3 py-4 text-center text-xs font-semibold text-slate-500">
-                            No sections in scope.
-                          </td>
-                        </tr>
-                      )}
-                      {sections.map((section) => {
-                        const period =
-                          periodsBySectionId[section.id] ?? "flexible";
-
-                        return (
-                          <tr
-                            key={section.id}
-                            className="border-t border-slate-100 first:border-t-0"
-                          >
-                            <td className="px-3 py-1.5 text-xs font-black text-slate-900">
-                              {section.name}
-                            </td>
-                            <td className="px-3 py-1.5 text-right">
-                              <Tag tone={periodTones[period]}>
-                                {periodShortLabels[period]}
-                              </Tag>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <DataTable
+                    table={periodTable}
+                    variant="embedded"
+                    scrollClassName="overflow-visible"
+                    density="compact"
+                    ariaLabel="Meeting periods"
+                    emptyState={<p className="text-xs font-semibold text-slate-500">No sections in scope.</p>}
+                  />
                 </div>
                 {restrictedSections.length > 0 && (
                   <p className="shrink-0 border-t border-slate-100 px-3 py-1.5 text-[11px] font-medium text-slate-500">

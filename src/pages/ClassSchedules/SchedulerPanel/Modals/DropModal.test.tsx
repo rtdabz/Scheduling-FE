@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DropModal from "./DropModal";
 import api from "../../../../lib/api";
 import type { DeliveryMode, ScheduleItem } from "../types";
@@ -9,16 +9,16 @@ vi.mock("../../../../lib/api", () => ({
   default: { post: vi.fn() },
 }));
 
-vi.mock("../../../../lib/storedUser", () => ({
-  getStoredUserRole: () => "secretary",
-}));
-
 function HybridModalHarness({
   schedules = [],
   modalConflict = null,
+  canGenerateSchedule = true,
+  modalValidationError = "",
 }: {
   schedules?: ScheduleItem[];
   modalConflict?: string | null;
+  canGenerateSchedule?: boolean;
+  modalValidationError?: string;
 }) {
   const [modalRoomId, setModalRoomId] = useState("lecture-room");
   const [modalClassMode, setModalClassModeState] = useState<DeliveryMode>("on-site");
@@ -90,6 +90,7 @@ function HybridModalHarness({
       setModalForceDayEnabled={setModalForceDayEnabled}
       modalForcedDayIndex={modalForcedDayIndex}
       setModalForcedDayIndex={setModalForcedDayIndex}
+      canGenerateSchedule={canGenerateSchedule}
       manualSchedulingSettings={{ lecture_lab_schedule_override_enabled: true }}
       modalPreferredPattern={modalPreferredPattern}
       setModalPreferredPattern={setModalPreferredPattern}
@@ -107,7 +108,7 @@ function HybridModalHarness({
       setModalDay2Duration={setModalDay2Duration}
       isDay2ModifiedByUser={false}
       setIsDay2ModifiedByUser={() => undefined}
-      modalValidationError=""
+      modalValidationError={modalValidationError}
       setModalValidationError={() => undefined}
       modalConflict={modalConflict}
       isModalLoading={false}
@@ -260,5 +261,48 @@ describe("DropModal Hybrid configuration", () => {
         confirmed_warning_rule_ids: ["same_day_concentration"],
       },
     });
+  });
+});
+
+describe("DropModal manual placement support", () => {
+  afterEach(cleanup);
+
+  beforeEach(() => {
+    cleanup();
+    vi.mocked(api.post).mockReset();
+    vi.mocked(api.post).mockResolvedValue({ data: { recommendations: [] } });
+  });
+
+  it("does not request alternatives without the schedule.generate capability", async () => {
+    render(<HybridModalHarness modalConflict="Section conflict" canGenerateSchedule={false} />);
+
+    expect(screen.queryByRole("complementary", { name: "Suggested alternatives" })).toBeNull();
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("reviews a valid placement and fetches alternatives only on request", async () => {
+    render(<HybridModalHarness />);
+
+    expect(screen.getByText("Placement review")).toBeTruthy();
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
+    expect(api.post).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Find better options/i }));
+
+    expect(screen.getByRole("complementary", { name: "Suggested alternatives" })).toBeTruthy();
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      "/schedule-recommendations/preview",
+      expect.objectContaining({ section_id: 1, course_ids: [1] }),
+      expect.anything(),
+    ));
+    expect(await screen.findByText("No alternatives found")).toBeTruthy();
+  });
+
+  it("shows why a save was refused instead of hiding it under the room field", () => {
+    render(<HybridModalHarness modalValidationError="Field courses must end by 5:00 PM." />);
+
+    expect(screen.getByText("This placement could not be saved")).toBeTruthy();
+    expect(screen.getByText("Field courses must end by 5:00 PM.")).toBeTruthy();
   });
 });

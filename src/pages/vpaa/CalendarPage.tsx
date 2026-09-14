@@ -23,6 +23,7 @@ import {
 import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid, {
   GRID_HEADER_HEIGHT_PX,
@@ -306,8 +307,8 @@ export default function VpaaCalendarPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen]);
 
-  const fetchData = async (force = false) => {
-    if (force || !hasCachedData(cacheKey)) setIsLoading(true);
+  const fetchData = async (force = false, silent = false) => {
+    if (!silent && (force || !hasCachedData(cacheKey))) setIsLoading(true);
     try {
       const [schedRes, deptRes, roomRes] = await Promise.all([
         api.get<ScheduleItem[]>('/schedules'),
@@ -330,6 +331,7 @@ export default function VpaaCalendarPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+  useLiveRefresh(['schedules', 'rooms', 'departments'], () => { void fetchData(false, true); });
 
   const filteredSchedules = useMemo(() => {
     return schedules.filter((item) => {
@@ -837,7 +839,7 @@ export default function VpaaCalendarPage() {
       )}
       {/* Schedule Item Detail Modal */}
       {selectedSchedule && (
-        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/60">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in duration-200">
             {/* Header */}
             <div className="bg-gradient-to-r from-[#5A1220] to-[#7B1113] p-5 text-white flex items-center justify-between">
@@ -923,7 +925,7 @@ export default function VpaaCalendarPage() {
 
       {/* Day Schedule Overview Modal */}
       {dayModalInfo && (
-        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/60">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="bg-gradient-to-r from-[#5A1220] to-[#7B1113] p-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -1009,7 +1011,7 @@ export default function VpaaCalendarPage() {
         </div>
       )}{/* Overlapping Cluster Modal (+N Schedules) */}
       {clusterModalSchedules && clusterModalSchedules.length > 0 && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] font-sans">
             <div className="bg-gradient-to-r from-[#4e0a10] to-[#7B1113] p-5 text-white flex items-center justify-between">
               <div>

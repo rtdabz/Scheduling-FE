@@ -17,6 +17,19 @@ const meeting = (overrides: Partial<SummaryMeeting>): SummaryMeeting => ({
 });
 
 describe("buildSummaryClasses", () => {
+  it("keeps meetings taught by different instructors as separate parts and carries their ids", () => {
+    const [gec] = buildSummaryClasses([
+      meeting({ id: "1", day: "Monday", faculty: "Ana Cruz" }),
+      meeting({ id: "2", day: "Wednesday", faculty: "Ana Cruz" }),
+      meeting({ id: "3", day: "Friday", faculty: "Ben Reyes" }),
+    ]);
+
+    expect(gec.parts.map((part) => [part.dayLabel, part.faculty, part.ids])).toEqual([
+      ["Mon/Wed", "Ana Cruz", ["1", "2"]],
+      ["Friday", "Ben Reyes", ["3"]],
+    ]);
+  });
+
   it("folds a repeating meeting into one part with combined days", () => {
     const [gec] = buildSummaryClasses([
       meeting({ day: "Wednesday" }),

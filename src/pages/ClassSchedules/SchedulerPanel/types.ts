@@ -148,8 +148,10 @@ export interface Faculty {
   name: string;
   profilePicture?: string | null;
   employmentType?: "full-time" | "part-time";
-  /** Printed as designation 1 on the Individual Faculty Load Sheet. */
+  /** The account role; printed on the load sheet only when no designation is held. */
   administrativeRole?: FacultyAdministrativePost | null;
+  /** Held designations as labels ("Director · Networking Dev't"), printed in section C of the load sheet. */
+  designations?: string[];
   departmentId?: number;
   departmentCode?: string;
   departmentName?: string;
@@ -215,6 +217,11 @@ export interface ScheduleItem {
   facultyName: string | null;
   facultyId: string | null;
   facultyAssignmentDone?: boolean;
+  /**
+   * The instructor was assigned over their own conflict on purpose (double-booked
+   * or outside availability). Shown as an override rather than a conflict.
+   */
+  facultyConflictOverride?: boolean;
   status: ScheduleStatus;
   dayIndex: number;
   startSlot: number;
@@ -383,6 +390,8 @@ export interface ApiFacultyRecord {
     department_name?: string;
   } | null;
   availabilities?: FacultyAvailability[];
+  /** Up to three held designations, in their listed order. */
+  designations?: { id: number; name: string; label?: string; parent?: { id: number; name: string } | null }[];
 }
 
 export interface ApiRoomRecord {
@@ -407,6 +416,7 @@ export interface ApiScheduleRecord {
   room_id: number | string | null;
   faculty_id?: number | string | null;
   faculty_assignment_done?: boolean | number;
+  faculty_conflict_override?: boolean | number;
   day: string;
   start_time: string;
   end_time: string;

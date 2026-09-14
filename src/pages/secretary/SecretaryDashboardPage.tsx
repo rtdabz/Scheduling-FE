@@ -33,6 +33,7 @@ import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
 import { MILESTONE_TITLES, SUBMISSION_MILESTONES, submissionProgress } from '../../lib/submissionStage';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
@@ -97,6 +98,8 @@ interface SecretaryDashboardPageProps {
   role?: 'secretary' | 'program_head';
 }
 
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'curriculum'] as const;
+
 export default function SecretaryDashboardPage({ role = 'secretary' }: SecretaryDashboardPageProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -131,6 +134,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
   const [submitting, setSubmitting] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
   const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
@@ -143,7 +147,8 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     let active = true;
 
     const load = async () => {
-      setLoading(!hasCachedData(cacheKey));
+      // A live refresh keeps the current figures on screen until new ones land.
+      setLoading(liveRevision === 0 && !hasCachedData(cacheKey));
       setLoadError(null);
       try {
         const overview = await loadCachedData<Overview>(cacheKey, async () => {
@@ -174,7 +179,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 
     load();
     return () => { active = false; };
-  }, [cacheKey, reloadKey]);
+  }, [cacheKey, reloadKey, liveRevision]);
 
   const {
     draftingProgress,
@@ -365,7 +370,20 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     ? yearLevels
     : [{ year_level:0, label:'All sections', total:visibleSections.length, drafted:scheduledSections, isComplete:remaining === 0 }];
 
-  if (loading) return <DashboardSkeleton variant="secretary" />;
+  if (loading) {
+    return <DashboardSkeleton
+      variant="secretary"
+      secretaryLayout={{
+        tileCount: tiles.length,
+        tileGridClassName: tileGrid,
+        queueRowCount: queue.length,
+        showDraftingProgress: canViewSchedules,
+        showFacultyAssignment: canAssignInstructors,
+        showTimetable: canViewSchedules,
+        readinessCheckCount: checks.length,
+      }}
+    />;
+  }
 
   return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
@@ -477,7 +495,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         </div>
       </Panel>}
 
-      {canAssignInstructors && <Panel title="Faculty Assignment" className="xl:col-span-4" action="Open Schedule Builder" onAction={() => navigate(paths.schedules)}>
+      {canAssignInstructors && <Panel title="Instructor Assignment" className="xl:col-span-4" action="Open Schedule Builder" onAction={() => navigate(paths.schedules)}>
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Workload Progress</span>
           <span className="text-[9px] text-slate-400">Assigned / Max units</span>

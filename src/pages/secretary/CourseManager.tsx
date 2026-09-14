@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
-import Skeleton from '../../components/ui/Skeleton';
+import DataTable from '../../components/ui/DataTable';
 import {
   Search,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown
 } from 'lucide-react';
 import {
   useReactTable,
@@ -13,11 +10,11 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
+import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
@@ -140,9 +137,11 @@ export default function CourseManager() {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  useLiveRefresh(['courses', 'curriculum'], () => { void fetchData(true); });
+
+  const fetchData = async (silent = false) => {
     // Only show skeleton loader if we don't have any cached courses
-    if (!hasCachedData(coursesCacheKey)) {
+    if (!silent && !hasCachedData(coursesCacheKey)) {
       setIsLoading(true);
     }
     try {
@@ -326,181 +325,16 @@ export default function CourseManager() {
 
       {/* Table Section */}
       <WorkflowGuideButton guideId="course-list" />
-      <div id="course-list-table" className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                  {headerGroup.headers.map(header => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none"
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr 
-                    key={`skeleton-row-${index}`} 
-                    className={`h-12 border-b border-gray-100 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-32" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-24" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-8" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-8" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-12" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-20 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-16" />
-                    </td>
-                  </tr>
-                ))
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No courses found in the active curriculum.</p>
-                      <p className="text-xs">Ensure an active curriculum is set with assigned courses.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr
-                    key={row.id}
-                    className={`transition-colors h-12 hover:bg-gray-50/70 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['course_code'].includes(cell.column.id);
-                      return (
-                        <td
-                          key={cell.id}
-                          className={`px-4 py-2.5 align-middle text-xs ${
-                            isNoWrap ? 'whitespace-nowrap' : ''
-                          }`}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination Section */}
-        {table.getFilteredRowModel().rows.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-gray-500">
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-                {Math.min(
-                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                  table.getFilteredRowModel().rows.length
-                )} of {table.getFilteredRowModel().rows.length} courses
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-semibold">Show</span>
-                <select
-                  value={table.getState().pagination.pageSize}
-                  onChange={e => {
-                    table.setPageSize(Number(e.target.value));
-                  }}
-                  className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-                >
-                  {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                First
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold text-gray-500 px-1">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
+      <div id="course-list-table">
+        <DataTable
+          table={table}
+          isLoading={isLoading}
+          totalLabel="courses"
+          ariaLabel="Courses"
+          emptyTitle="No courses found in the active curriculum."
+          emptyDescription="Ensure an active curriculum is set with assigned courses."
+          cellClassName={(columnId) => (columnId === 'course_code' ? 'whitespace-nowrap' : '')}
+        />
       </div>
     </div>
   );

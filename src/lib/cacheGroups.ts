@@ -36,12 +36,15 @@ export const CACHE_GROUPS = {
     'page:dean-schedules:',
     'page:schedule-viewer:',
     'page:vpaa-calendar:',
+    'page:schedule-overview',
     'global:schedules',
   ],
   /** Approval state shown per department. */
   approvals: ['department-schedule-status:'],
   /** Role dashboards, which summarise most of the above. */
   dashboards: ['dashboard:'],
+  /** Institution settings, semesters, timeslots and per-section scheduling settings. */
+  settings: ['page:settings', 'scheduler:scheduling-settings:'],
 } as const;
 
 export type CacheGroupName = keyof typeof CACHE_GROUPS;

@@ -168,7 +168,6 @@ describe('VpaaDashboardPage', () => {
       'Institutional Master Timetable (Preview)',
       'Faculty Load Overview',
       'Institutional Readiness',
-      'Campus Peak-Hour Load',
       'Recent Administrative Activity',
     ].forEach(title => expect(screen.getByText(title)).toBeTruthy());
   });
@@ -209,11 +208,6 @@ describe('VpaaDashboardPage', () => {
     expect(screen.getAllByText('Annex').length).toBeGreaterThan(1);
     expect(screen.getByText(/Unused this semester/)).toBeTruthy();
     expect(screen.getAllByText(/R 202/).length).toBeGreaterThan(0);
-  });
-
-  it('draws the peak-hour grid and calls out the busiest slot', async () => {
-    renderPage();
-    await waitFor(() => expect(screen.getByText(/Peak: 4 classes · Monday 8 AM/)).toBeTruthy());
   });
 
   it('names the overloaded instructor rather than only counting them', async () => {
@@ -284,7 +278,7 @@ describe('VpaaDashboardPage', () => {
     releaseInsights({ data: insights });
 
     await waitFor(() => expect(screen.getByText('Institutional Overview')).toBeTruthy());
-    expect(screen.getByText('Campus Peak-Hour Load')).toBeTruthy();
+    expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
   });
 
   it('serves a revisit from cache instead of refetching the aggregates', async () => {
@@ -298,7 +292,7 @@ describe('VpaaDashboardPage', () => {
     // Every panel is seeded from cache, so the revisit paints whole rather than
     // leaving the two aggregate panels to arrive behind the others.
     await waitFor(() => expect(screen.getByText('Institutional Overview')).toBeTruthy());
-    expect(screen.getByText('Campus Peak-Hour Load')).toBeTruthy();
+    expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
     expect(get.mock.calls.length).toBe(callsAfterFirstMount);
   });
 });

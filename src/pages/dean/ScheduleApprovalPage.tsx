@@ -1,14 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Eye, 
-  Check, 
-  X, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown,
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
+import {
+  Eye,
+  X,
   RefreshCw,
   List,
-  CalendarDays
+  CalendarDays,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -16,12 +13,11 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
-import Skeleton from '../../components/ui/Skeleton';
+import DataTable from '../../components/ui/DataTable';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX, WEEK_DAYS } from '../../components/scheduling/WeeklyTimetableGrid';
@@ -29,10 +25,16 @@ import { slotCount, timeToSlot } from '../../lib/timeGrid';
 import ScheduleApprovalList from '../../components/scheduling/ScheduleApprovalList';
 import type { ApprovalScheduleItem } from '../../components/scheduling/ScheduleApprovalList';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
+import ConfirmModal from '../../components/ui/ConfirmModal';
+import { splitSubmission } from '../../lib/approvalQueue';
+import { mapInitialData, type InitialDataResponse, type SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
+import type { SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
 
 interface ScheduleApproval {
   id: number;
   submissionId: number;
+  /** A partially recalled submission yields two entries sharing one id. */
+  entryKey: string;
   department: string;
   section: string;
   subjectsScheduled: number;
@@ -208,14 +210,6 @@ const scheduleStatusesForSubmission = (status: RawScheduleSubmission['status']):
   }
 };
 
-const submissionSectionIds = (submission: RawScheduleSubmission): string[] => {
-  const withdrawn = submission.sections.filter((section) => section.pivot?.state === 'withdrawn');
-  const sections = ['withdrawn', 'partially_withdrawn'].includes(submission.status) && withdrawn.length > 0
-    ? withdrawn
-    : submission.sections;
-  return sections.map((section) => String(section.id));
-};
-
 const parseApiDate = (value: string): Date => {
   const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
   const normalized = value.includes('T') ? value : value.replace(' ', 'T');
@@ -309,7 +303,7 @@ const formatTime24hTo12h = (timeStr: string): string => {
 };
 
 export default function DeanScheduleApprovalPage() {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const userDeptId = user?.department_id;
@@ -318,7 +312,7 @@ export default function DeanScheduleApprovalPage() {
   const [schedules, setSchedules] = useState<ScheduleApproval[]>([]);
   const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>([]);
   const [rawSections, setRawSections] = useState<RawSection[]>([]);
-  const [activeSemester, setActiveSemester] = useState<ApprovalSemester | null>(null);
+  const [, setActiveSemester] = useState<ApprovalSemester | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   // Filters
@@ -335,18 +329,24 @@ export default function DeanScheduleApprovalPage() {
   const [viewSchedule, setViewScheduleState] = useState<ScheduleApproval>(null as unknown as ScheduleApproval);
   const setViewSchedule = (value: ScheduleApproval | null) => setViewScheduleState(value as ScheduleApproval);
   const [approveConfirm, setApproveConfirm] = useState<ScheduleApproval | null>(null);
-  const [approveWithTba, setApproveWithTba] = useState(false);
   const [approvalOverrideReason, setApprovalOverrideReason] = useState('');
+  const [approvalOverrideError, setApprovalOverrideError] = useState('');
+  const [isApproving, setIsApproving] = useState(false);
+  // The same mapped payload Print consumes, so the preview is the printed document.
+  const [printSource, setPrintSource] = useState<SchedulerCacheData | null>(null);
   const [rejectConfirm, setRejectConfirm] = useState<ScheduleApproval | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
   const [modalViewMode, setModalViewMode] = useState<ModalViewMode>('list');
   const [selectedModalSectionId, setSelectedModalSectionId] = useState('');
 
+  const liveRevision = useLiveRevision(['approvals', 'schedules']);
+
   useEffect(() => {
     const loadData = async () => {
       try {
-        setIsLoading(true);
+        // A live refresh keeps the queue on screen while it reloads.
+        if (liveRevision === 0) setIsLoading(true);
         const data = await (async () => {
           const response = await api.get<{
             active_semester: ApprovalSemester | null;
@@ -355,6 +355,7 @@ export default function DeanScheduleApprovalPage() {
             schedule_submissions: RawScheduleSubmission[];
           }>('/initial-data');
           const semester = response.data.active_semester;
+          setPrintSource(mapInitialData(response.data as unknown as InitialDataResponse, { isVpaa: false, userDepartmentId: userDeptId ?? null }));
 
           let filteredSections = response.data.sections;
           if (semester) {
@@ -396,9 +397,14 @@ export default function DeanScheduleApprovalPage() {
           const mappedApprovals = response.data.schedule_submissions
             .filter((submission) => !semester || Number(submission.semester_id) === Number(semester.id))
             .filter((submission) => !userDeptId || Number(submission.department_id) === Number(userDeptId))
-            .map((submission): ScheduleApproval => {
+            .flatMap((rawSubmission) => {
+              const deptSchedules = schedulesByDepartment[String(rawSubmission.department_id)] ?? [];
+              return splitSubmission(rawSubmission, (sectionIds) => deptSchedules
+                .filter((schedule) => sectionIds.includes(String(schedule.section_id)))
+                .map((schedule) => String(schedule.status)));
+            })
+            .map(({ key, submission, sectionIds: workflowSectionIds }): ScheduleApproval => {
               const departmentId = String(submission.department_id);
-              const workflowSectionIds = submissionSectionIds(submission);
               const deptSchedules = schedulesByDepartment[departmentId] ?? [];
               const allowedStatuses = new Set(scheduleStatusesForSubmission(submission.status));
               const visibleDeptSchedules = deptSchedules.filter((schedule) =>
@@ -416,6 +422,7 @@ export default function DeanScheduleApprovalPage() {
               return {
                 id: Number(submission.department_id),
                 submissionId: submission.id,
+                entryKey: key,
                 department: firstSchedule?.department?.department_name ?? userDeptName ?? '',
                 section: formatSectionSummary(sectionsByDepartment[departmentId] ?? [], workflowSectionIds),
                 subjectsScheduled: new Set(visibleDeptSchedules.map((schedule) => getScheduleCourseId(schedule))).size,
@@ -449,7 +456,7 @@ export default function DeanScheduleApprovalPage() {
     };
 
     loadData();
-  }, [userDeptId, userDeptName]);
+  }, [userDeptId, userDeptName, liveRevision]);
 
   const resetFilters = () => {
     setSelectedQueueTab('pending');
@@ -457,8 +464,38 @@ export default function DeanScheduleApprovalPage() {
     setSelectedMode('All Modes');
   };
 
-  const handleApprove = (sched: ScheduleApproval) => {
-    setApproveConfirm(sched);
+  const submitApproval = async (sched: ScheduleApproval, overrideReason: string | null) => {
+    const withTba = overrideReason !== null;
+    const approvedStatus = withTba ? 'conditionally_approved' : 'approved_by_dean';
+    try {
+      const now = new Date().toISOString();
+      await api.post(`/departments/${sched.id}/approve-by-dean`, withTba ? { override_room_tba: true, override_reason: overrideReason } : {});
+
+      setSchedules((prev) =>
+        prev.map((s) =>
+          s.entryKey === sched.entryKey
+            ? { ...s, status: approvedStatus, deanReviewedAt: now }
+            : s
+        )
+      );
+      setRawSchedules((prev) =>
+        prev.map((s) =>
+          Number(s.department_id) === Number(sched.id)
+            && (sched.workflowSectionIds?.includes(String(s.section_id)) ?? true)
+            && s.status === 'submitted'
+            ? { ...s, status: approvedStatus, reviewed_by_dean: userId, reviewed_at_dean: now }
+            : s
+        )
+      );
+      invalidateCacheGroups('schedules', 'approvals', 'dashboards');
+
+      toast.success('Success', `${sched.department} schedule has been approved successfully.`);
+    } catch {
+      toast.error('Error', 'Failed to approve schedule.');
+    }
+  };
+
+  const handleApprove = async (sched: ScheduleApproval) => {
     const sectionIds = new Set(sched.workflowSectionIds ?? []);
     const hasTba = rawSchedules.some((row) =>
       Number(row.department_id) === Number(sched.id)
@@ -466,40 +503,39 @@ export default function DeanScheduleApprovalPage() {
       && row.mode === 'on-site'
       && !row.room
     );
-    setApproveWithTba(hasTba);
-    setApprovalOverrideReason('');
+
+    // A Room TBA approval has to collect a reason, which the shared confirm()
+    // cannot; it opens the same ConfirmModal with the field inside instead.
+    if (hasTba) {
+      setApprovalOverrideReason('');
+      setApprovalOverrideError('');
+      setApproveConfirm(sched);
+      return;
+    }
+
+    await confirm({
+      title: 'Approve Schedule',
+      message: `Are you sure you want to approve the complete department schedule for ${sched.department}?`,
+      eyebrow: 'Approval Required',
+      confirmLabel: 'Confirm Approve',
+      variant: 'maroon',
+      onConfirm: () => submitApproval(sched, null),
+    });
   };
 
-  const confirmApprove = async () => {
-    if (approveConfirm) {
-      try {
-        const now = new Date().toISOString();
-        await api.post(`/departments/${approveConfirm.id}/approve-by-dean`, approveWithTba ? { override_room_tba: true, override_reason: approvalOverrideReason } : {});
-
-        setSchedules((prev) =>
-          prev.map((s) =>
-            s.submissionId === approveConfirm.submissionId
-              ? { ...s, status: approveWithTba ? 'conditionally_approved' : 'approved_by_dean', deanReviewedAt: now }
-              : s
-          )
-        );
-        setRawSchedules((prev) =>
-          prev.map((s) =>
-            Number(s.department_id) === Number(approveConfirm.id)
-              && (approveConfirm.workflowSectionIds?.includes(String(s.section_id)) ?? true)
-              && s.status === 'submitted'
-              ? { ...s, status: approveWithTba ? 'conditionally_approved' : 'approved_by_dean', reviewed_by_dean: userId, reviewed_at_dean: now }
-              : s
-          )
-        );
-        invalidateCacheGroups('schedules', 'approvals', 'dashboards');
-
-        toast.success('Success', `${approveConfirm.department} schedule has been approved successfully.`);
-      } catch (err) {
-        toast.error('Error', 'Failed to approve schedule.');
-      } finally {
-        setApproveConfirm(null);
-      }
+  const confirmConditionalApprove = async () => {
+    if (!approveConfirm || isApproving) return;
+    const reason = approvalOverrideReason.trim();
+    if (reason.length < 3) {
+      setApprovalOverrideError('Give a reason for approving with Room TBA.');
+      return;
+    }
+    setIsApproving(true);
+    try {
+      await submitApproval(approveConfirm, reason);
+    } finally {
+      setIsApproving(false);
+      setApproveConfirm(null);
     }
   };
 
@@ -523,7 +559,7 @@ export default function DeanScheduleApprovalPage() {
 
         setSchedules((prev) =>
           prev.map((s) =>
-            s.submissionId === rejectConfirm.submissionId
+            s.entryKey === rejectConfirm.entryKey
               ? { ...s, status: 'rejected_by_dean', deanReviewedAt: now }
               : s
           )
@@ -719,6 +755,21 @@ export default function DeanScheduleApprovalPage() {
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [modalSchedules, rawSections, viewSchedule]);
 
+  const printInput = useMemo<SchedulePdfInput | null>(() => {
+    if (!viewSchedule || !printSource) return null;
+    const scheduleIds = new Set(modalSchedules.map((schedule) => String(schedule.id)));
+    const sectionIds = new Set(modalSections.map((section) => section.id));
+    const sections = printSource.sections.filter((section) => sectionIds.has(section.id));
+    return {
+      sections,
+      allSchedules: printSource.schedules.filter((schedule) => scheduleIds.has(String(schedule.id))),
+      selectedSectionId: sections[0]?.id ?? '',
+      departments: printSource.departments,
+      users: printSource.users,
+      activeSemester: printSource.activeSemester,
+    };
+  }, [modalSchedules, modalSections, printSource, viewSchedule]);
+
   useEffect(() => {
     if (!viewSchedule) {
       setModalViewMode('list');
@@ -843,7 +894,7 @@ export default function DeanScheduleApprovalPage() {
   const requestTabs: Array<{ id: DeanQueueTab; label: string }> = [
     { id: 'pending', label: 'Pending Approval' },
     { id: 'approved', label: 'Schedule Approved' },
-    { id: 'withdrawn', label: 'Withdrawn' },
+    { id: 'withdrawn', label: 'Recalled' },
     { id: 'rejected', label: 'Rejected' },
   ];
 
@@ -929,178 +980,16 @@ export default function DeanScheduleApprovalPage() {
       </div>
 
       {/* Table Card wrapper */}
-      <div id="schedule-approval-list" className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                  {headerGroup.headers.map((header, idx) => (
-                    <th 
-                      key={header.id} 
-                      className={`py-3 font-bold text-[11px] uppercase tracking-wider text-gray-500 select-none ${idx === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {header.column.getCanSort() && (
-                            <button
-                              onClick={header.column.getToggleSortingHandler()}
-                              className="ml-1.5 text-gray-400 hover:text-gray-600 inline-flex items-center cursor-pointer"
-                            >
-                              {header.column.getIsSorted() === 'asc' ? (
-                                <ArrowUp size={13} className="text-[#C9952A]" />
-                              ) : header.column.getIsSorted() === 'desc' ? (
-                                <ArrowDown size={13} className="text-[#C9952A]" />
-                              ) : (
-                                <ArrowUpDown size={13} />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr 
-                    key={`skeleton-row-${index}`} 
-                    className={`h-12 border-b border-gray-100 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    <td className="pl-6 pr-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-32" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-12 mx-auto" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-28" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-36" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap">
-                      <Skeleton className="h-4 w-36" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs">
-                      <Skeleton className="h-4 w-24 rounded-full" />
-                    </td>
-                    <td className="px-4 py-2.5 align-middle text-xs whitespace-nowrap text-right">
-                      <div className="flex justify-end gap-2">
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                        <Skeleton className="h-8 w-8 rounded-lg" />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <p className="text-base font-semibold">No schedules found.</p>
-                      <p className="text-xs">Adjust your status or mode filters and try again.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row, index) => (
-                  <tr 
-                    key={row.id} 
-                    className={`transition-colors h-12 hover:bg-gray-50/70 ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
-                    }`}
-                  >
-                    {row.getVisibleCells().map(cell => {
-                      const isNoWrap = ['subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(cell.column.id);
-                      return (
-                        <td 
-                          key={cell.id} 
-                          className={`px-4 py-2.5 align-middle text-xs ${
-                            isNoWrap ? 'whitespace-nowrap' : ''
-                          }`}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination bar */}
-        {filteredData.length > 0 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/30">
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-gray-500">
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}–
-                {Math.min(
-                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                  table.getFilteredRowModel().rows.length
-                )} of {table.getFilteredRowModel().rows.length} schedules
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-semibold">Show</span>
-                <select
-                  value={table.getState().pagination.pageSize}
-                  onChange={e => {
-                    table.setPageSize(Number(e.target.value));
-                  }}
-                  className="text-xs border border-gray-200 rounded-lg p-1 bg-white outline-none focus:ring-1 focus:ring-[#C9952A]"
-                >
-                  {[10, 25, 50].map(pageSize => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                First
-              </button>
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-bold text-gray-500 px-1">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-                className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer font-bold text-gray-600"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
+      <div id="schedule-approval-list">
+        <DataTable
+          table={table}
+          isLoading={isLoading}
+          totalLabel="schedules"
+          ariaLabel="Schedule submissions"
+          emptyTitle="No schedules found."
+          emptyDescription="Adjust your status or mode filters and try again."
+          cellClassName={(columnId) => (['subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
+        />
       </div>
 
       {/* View Weekly Timetable Modal */}
@@ -1110,15 +999,7 @@ export default function DeanScheduleApprovalPage() {
           title={`${viewSchedule.department} Department Schedule`}
           status={viewSchedule.status === 'submitted' ? 'pending' : viewSchedule.status.includes('reject') ? 'rejected' : 'approved'}
           statusLabel={getStatusLabel(viewSchedule.status)}
-          sections={modalSections}
-          schedules={modalSchedules}
-          getCourseCode={getScheduleCourseCode}
-          getCourseName={getScheduleCourseName}
-          getRoomName={getRoomName}
-          getModeLabel={getModeLabel}
-          formatTime={formatTime24hTo12h}
-          departmentLogoUrl={modalSchedules[0]?.department?.logo}
-          activeSemester={activeSemester}
+          printInput={printInput}
           canAct={viewSchedule.status === 'submitted' && viewSchedule.requestType === 'approval'}
           onApprove={() => { handleApprove(viewSchedule); setViewSchedule(null); }}
           onReject={() => { handleReject(viewSchedule); setViewSchedule(null); }}
@@ -1126,7 +1007,7 @@ export default function DeanScheduleApprovalPage() {
         />
       )}
       {viewSchedule ? false && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div>
@@ -1287,44 +1168,35 @@ export default function DeanScheduleApprovalPage() {
         </div>
       ) : null}
 
-      {/* Approve Confirmation Modal */}
-      {approveConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-4">
-              <div className="w-12 h-12 bg-[#C9952A]/10 text-[#C9952A] rounded-full flex items-center justify-center mx-auto border border-[#C9952A]/20">
-                <Check size={24} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-gray-800 font-display">Approve Schedule</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Are you sure you want to approve the complete department schedule for <strong>{approveConfirm.department}</strong>?
-                </p>
-              </div>
-              {approveWithTba && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-left"><p className="text-xs font-bold text-amber-800">Room TBA entries detected</p><p className="mt-1 text-xs text-amber-700">This will be a conditional approval. Assign all laboratory rooms before finalization.</p><textarea value={approvalOverrideReason} onChange={(e) => setApprovalOverrideReason(e.target.value)} rows={3} placeholder="Reason for approving with Room TBA" className="mt-2 w-full rounded-lg border border-amber-200 bg-white p-2 text-xs" /></div>}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setApproveConfirm(null)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer bg-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmApprove}
-                  disabled={approveWithTba && approvalOverrideReason.trim().length < 3}
-                  className="flex-1 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  Confirm Approve
-                </button>
-              </div>
-            </div>
-          </div>
+      {/* Room TBA approval: the shared confirmation modal, with the reason it must collect. */}
+      <ConfirmModal
+        isOpen={approveConfirm !== null}
+        title="Approve Schedule"
+        eyebrow="Conditional Approval"
+        message={`Are you sure you want to approve the complete department schedule for ${approveConfirm?.department ?? ''}?`}
+        confirmLabel="Confirm Approve"
+        variant="maroon"
+        isConfirming={isApproving}
+        onCancel={() => { if (!isApproving) setApproveConfirm(null); }}
+        onConfirm={confirmConditionalApprove}
+      >
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-left">
+          <p className="text-xs font-bold text-amber-800">Room TBA entries detected</p>
+          <p className="mt-1 text-xs text-amber-700">This will be a conditional approval. Assign all laboratory rooms before finalization.</p>
+          <textarea
+            value={approvalOverrideReason}
+            onChange={(e) => { setApprovalOverrideReason(e.target.value); setApprovalOverrideError(''); }}
+            rows={3}
+            placeholder="Reason for approving with Room TBA"
+            className={`mt-2 w-full rounded-lg border bg-white p-2 text-xs ${approvalOverrideError ? 'border-red-500' : 'border-amber-200'}`}
+          />
+          {approvalOverrideError && <p className="mt-1 text-xs font-semibold text-red-600">{approvalOverrideError}</p>}
         </div>
-      )}
+      </ConfirmModal>
 
       {/* Reject Reason Modal */}
       {rejectConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-gray-250 flex justify-between items-center bg-gray-50/50">
               <h3 className="text-lg font-bold text-gray-850 font-display">Reject Schedule</h3>

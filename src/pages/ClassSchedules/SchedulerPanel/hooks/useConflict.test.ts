@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   checkDayCategoryConstraint,
+  checkFieldEveningWindow,
+  checkOnlineCapacity,
+  checkRoomGrantWindow,
   checkSectionOnlineLimit,
+  resolveOnlineSlotLimit,
   isFieldSubject,
   isLaboratorySubject,
   isNstpSubject,
@@ -393,5 +397,69 @@ describe("shared room capacity window", () => {
     expect(conflictMap.first?.conflictType).toBe("room");
     expect(conflictMap.second?.conflictType).toBe("room");
     expect(conflictMap.third?.conflictType).toBe("room");
+  });
+});
+
+/**
+ * Rules the Rule Engine enforced that the placement dialog never checked, so a
+ * manual placement showed "Ready to place" and then failed on save.
+ * Slot 0 is 7:00 AM on the default grid; slot 20 is 5:00 PM.
+ */
+describe("checkFieldEveningWindow", () => {
+  it("lets a field placement end exactly at 5:00 PM", () => {
+    expect(checkFieldEveningWindow(true, 20, false)).toBeNull();
+  });
+
+  it("refuses a field placement that runs past 5:00 PM", () => {
+    expect(checkFieldEveningWindow(true, 22, false)?.message).toMatch(/5:00 PM/);
+  });
+
+  it("allows evening field placements once the department enables them", () => {
+    expect(checkFieldEveningWindow(true, 22, true)).toBeNull();
+  });
+
+  it("ignores non-field placements", () => {
+    expect(checkFieldEveningWindow(false, 26, false)).toBeNull();
+  });
+});
+
+describe("checkOnlineCapacity", () => {
+  const existing = [onlineSchedule("1", "1", "10"), onlineSchedule("2", "2", "11")];
+
+  it("treats an unset or non-positive limit as uncapped", () => {
+    expect(resolveOnlineSlotLimit(null)).toBe(Number.POSITIVE_INFINITY);
+    expect(resolveOnlineSlotLimit(0)).toBe(Number.POSITIVE_INFINITY);
+    expect(checkOnlineCapacity(existing, 2, 0, 2, 5, resolveOnlineSlotLimit(undefined), [])).toBeNull();
+  });
+
+  it("refuses a meeting once overlapping department online classes reach the limit", () => {
+    expect(checkOnlineCapacity(existing, 2, 0, 3, 6, 2, [])?.conflictType).toBe("room");
+  });
+
+  it("does not count classes that do not overlap, belong elsewhere, or are being edited", () => {
+    expect(checkOnlineCapacity(existing, 2, 0, 5, 8, 2, [])).toBeNull();
+    expect(checkOnlineCapacity(existing, 2, 1, 2, 5, 2, [])).toBeNull();
+    expect(checkOnlineCapacity(existing, 3, 0, 2, 5, 2, [])).toBeNull();
+    expect(checkOnlineCapacity(existing, 2, 0, 2, 5, 2, ["1"])).toBeNull();
+  });
+});
+
+describe("checkRoomGrantWindow", () => {
+  const borrowed: Room = {
+    id: "40", name: "HM Lab", departmentId: 3, roomType: "laboratory", status: "available",
+    grantWindows: [{ day: "Tuesday", start_time: "08:00", end_time: "12:00" }],
+  };
+
+  it("allows the department's own rooms at any time", () => {
+    expect(checkRoomGrantWindow({ ...borrowed, grantWindows: undefined }, 0, 0, 6)).toBeNull();
+  });
+
+  it("allows a borrowed room inside its granted window", () => {
+    expect(checkRoomGrantWindow(borrowed, 1, 2, 6)).toBeNull();
+  });
+
+  it("refuses a borrowed room outside its granted window", () => {
+    expect(checkRoomGrantWindow(borrowed, 1, 6, 6)?.message).toMatch(/borrowed/);
+    expect(checkRoomGrantWindow(borrowed, 0, 2, 6)?.conflictType).toBe("room");
   });
 });

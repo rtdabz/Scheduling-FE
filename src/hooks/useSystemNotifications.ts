@@ -2,6 +2,8 @@ import { formatPhilippineDate } from '../lib/philippineTime';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../lib/api';
+import { isLiveConnected } from '../lib/liveSocket';
+import { useLiveRefresh } from './useLiveRefresh';
 import type { ActivityFeedItem } from '../components/overview';
 
 interface NotificationUser {
@@ -82,7 +84,7 @@ const buildActionText = (notification: SystemNotification): string => {
     case 'schedule_submitted':
       return `${actor} submitted ${departmentName} for ${semester}. ${scheduleText} sent for Dean review.`;
     case 'schedule_withdrawn':
-      return `${actor} withdrew selected section${Number(notification.metadata?.sections_unlocked ?? 0) === 1 ? '' : 's'} from ${departmentName} for revision.`;
+      return `${actor} recalled selected section${Number(notification.metadata?.sections_unlocked ?? 0) === 1 ? '' : 's'} from ${departmentName} for revision.`;
     case 'schedule_approved_by_dean':
       return `${actor} approved and forwarded ${departmentName} for ${semester}. ${scheduleText} sent to VPAA review.`;
     case 'schedule_returned_by_dean':
@@ -143,7 +145,10 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
         inFlight = false;
         if (active) {
           setIsLoading(false);
-          const delay = document.visibilityState === 'visible' ? pollMs : pollMs * 4;
+          // With the live socket up, new notifications arrive as a push; the
+          // poll is only a safety net, so it can run far less often.
+          const baseDelay = isLiveConnected() ? pollMs * 4 : pollMs;
+          const delay = document.visibilityState === 'visible' ? baseDelay : baseDelay * 4;
           timerId = window.setTimeout(load, delay);
         }
       }
@@ -164,6 +169,11 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
   }, [limit, pollMs]);
+
+  // Approvals and returns also change what the activity feed says.
+  useLiveRefresh(['notifications', 'approvals'], () => {
+    void refresh().catch(() => undefined);
+  });
 
   const feedItems = useMemo<ActivityFeedItem[]>(() => notifications.map((notification) => ({
     id: notification.id,

@@ -5,32 +5,116 @@ import Skeleton from './Skeleton';
 
 type DashboardSkeletonVariant = 'secretary' | 'dean' | 'vpaa' | 'program' | 'institutional';
 
+/**
+ * What the secretary / program head dashboard will actually render, taken from
+ * the same capability checks the page uses. Those checks decide how many tiles
+ * and queue rows there are and which panels exist, so a fixed skeleton reflowed
+ * the page the moment the data arrived.
+ */
+export interface SecretaryDashboardLayout {
+  tileCount: number;
+  /** The page's own responsive column classes for its tile row. */
+  tileGridClassName: string;
+  queueRowCount: number;
+  showDraftingProgress: boolean;
+  showFacultyAssignment: boolean;
+  showTimetable: boolean;
+  readinessCheckCount: number;
+}
+
+/** A full-capability account: every tile, queue row and panel. */
+const DEFAULT_SECRETARY_LAYOUT: SecretaryDashboardLayout = {
+  tileCount: 8,
+  tileGridClassName: 'sm:grid-cols-4',
+  queueRowCount: 6,
+  showDraftingProgress: true,
+  showFacultyAssignment: true,
+  showTimetable: true,
+  readinessCheckCount: 6,
+};
+
 interface DashboardSkeletonProps {
   metricCount?: number;
   variant?: DashboardSkeletonVariant | 'dashboard' | 'summary';
+  /** Secretary variant only. */
+  secretaryLayout?: SecretaryDashboardLayout;
 }
 
-function PanelFrame({ className = '', children }: { className?: string; children?: ReactNode }) {
+function PanelFrame({ className = '', children, action = true }: { className?: string; children?: ReactNode; action?: boolean }) {
   return <section className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-    <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-2.5 w-14" /></div>
+    <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5"><Skeleton className="h-3 w-36" />{action && <Skeleton className="h-2.5 w-14" />}</div>
     {children}
   </section>;
 }
 
 function MetricCard({ className = '' }: { className?: string }) {
-  return <div className={`min-h-[90px] rounded-lg border border-slate-200 bg-white p-3 shadow-sm ${className}`}><div className="flex items-start gap-2.5"><Skeleton className="h-9 w-9 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-5 w-10" /><Skeleton className="mt-1 h-3 w-4/5" /><Skeleton className="mt-1.5 h-2.5 w-3/5" /></div></div></div>;
+  // Same box as DashboardMetricCard: the detail line sits at the foot of the tile.
+  return <div className={`flex h-full min-h-[90px] min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 shadow-sm ${className}`}><Skeleton className="h-9 w-9 shrink-0 rounded-full" /><div className="flex min-w-0 flex-1 flex-col"><Skeleton className="h-5 w-10" /><Skeleton className="mt-1 h-3 w-4/5" /><Skeleton className="mt-auto h-2.5 w-3/5" /></div></div>;
 }
 
-function QueueSkeleton() {
-  return <PanelFrame className="xl:col-span-4"><div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2.5"><Skeleton className="h-9 w-9 rounded-full" /><div className="mr-auto"><Skeleton className="h-5 w-8" /><Skeleton className="mt-1 h-2.5 w-28" /></div><Skeleton className="h-5 w-16 rounded-full" /></div><div className="mt-1 divide-y divide-slate-100">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex items-center gap-2.5 py-2.5"><Skeleton className="h-7 w-7 shrink-0 rounded-md" /><Skeleton className="h-2.5 flex-1" /><Skeleton className="h-2.5 w-7" /><Skeleton className="h-5 w-16 rounded-md" /></div>)}</div></PanelFrame>;
+/** Scheduling Work Queue: the attention band, then one line per queue row. */
+function QueueSkeleton({ rows }: { rows: number }) {
+  return <PanelFrame className="xl:col-span-4">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2.5"><Skeleton className="h-9 w-9 shrink-0 rounded-full" /><div><Skeleton className="h-5 w-8" /><Skeleton className="mt-1 h-2.5 w-28" /></div></div>
+      <Skeleton className="h-5 w-16 shrink-0 rounded-full" />
+    </div>
+    <div className="mt-1 divide-y divide-slate-100">{Array.from({ length: rows }).map((_, i) => <div key={i} className="flex items-center gap-2.5 py-2.5">
+      <Skeleton className="h-7 w-7 shrink-0 rounded-md" />
+      <Skeleton className={`h-2.5 flex-1 ${i % 2 ? 'max-w-[60%]' : 'max-w-[75%]'}`} />
+      <span className="flex w-7 shrink-0 justify-end"><Skeleton className="h-2.5 w-4" /></span>
+      <span className="flex w-[68px] shrink-0 justify-end"><Skeleton className="h-[22px] w-14 rounded-md" /></span>
+    </div>)}</div>
+  </PanelFrame>;
 }
 
+/** Department Drafting Progress: donut, year-level bars, three totals and a button. No header link. */
 function ProgressSkeleton() {
-  return <PanelFrame className="flex flex-col xl:col-span-4"><div className="grid gap-5 sm:grid-cols-[144px_1fr] sm:items-center"><Skeleton className="mx-auto h-32 w-32 rounded-full" /><div className="h-[168px] space-y-5 pt-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex items-center gap-2"><Skeleton className="h-2 w-14" /><Skeleton className="h-2 flex-1 rounded-full" /><Skeleton className="h-2 w-12" /></div>)}</div></div><div className="mt-auto border-t border-slate-100 pt-4"><div className="grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-md" />)}</div><Skeleton className="mt-3 h-8 w-full rounded-md" /></div></PanelFrame>;
+  return <PanelFrame action={false} className="flex flex-col xl:col-span-4">
+    <div className="grid gap-5 sm:grid-cols-[144px_1fr] sm:items-center">
+      <div className="relative mx-auto h-32 w-32"><Skeleton className="h-32 w-32 rounded-full" /><div className="absolute inset-[22%] rounded-full bg-white" /></div>
+      <div className="flex h-[168px] flex-col justify-center gap-5">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex items-center gap-2"><Skeleton className="h-2.5 w-[50px] shrink-0" /><Skeleton className="h-[7px] flex-1 rounded-full" /><Skeleton className="h-2 w-14 shrink-0" /></div>)}</div>
+    </div>
+    <div className="mt-auto border-t border-slate-100 pt-4">
+      <div className="grid grid-cols-3 gap-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-[42px] rounded-md" />)}</div>
+      <Skeleton className="mt-3 h-[30px] w-full rounded-md" />
+    </div>
+  </PanelFrame>;
 }
 
+/** Instructor Assignment: caption row, then the five busiest instructors at 46px a line. */
 function WorkloadSkeleton() {
-  return <PanelFrame className="xl:col-span-4"><div className="flex items-center justify-between"><Skeleton className="h-2.5 w-28" /><Skeleton className="h-2 w-24" /></div><div className="mt-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex h-[46px] items-center gap-2"><Skeleton className="h-7 w-7 shrink-0 rounded-full" /><Skeleton className="h-2.5 w-28" /><Skeleton className="h-3 flex-1 rounded-full" /></div>)}</div></PanelFrame>;
+  return <PanelFrame className="xl:col-span-4">
+    <div className="flex items-center justify-between"><Skeleton className="h-2.5 w-28" /><Skeleton className="h-2 w-24" /></div>
+    <div className="mt-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex h-[46px] items-center gap-2"><Skeleton className="h-7 w-7 shrink-0 rounded-full" /><Skeleton className="h-2.5 w-24 shrink-0" /><Skeleton className="h-[10px] flex-1 rounded-full" /><Skeleton className="h-2.5 w-8 shrink-0" /></div>)}</div>
+  </PanelFrame>;
+}
+
+/** Room Assignment: status button, four stat chips, the usage chart and its link. */
+function RoomAssignmentSkeleton() {
+  return <PanelFrame>
+    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5"><Skeleton className="h-9 w-9 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><Skeleton className="h-5 w-8" /><Skeleton className="mt-1 h-2.5 w-44" /></div><Skeleton className="h-4 w-4 shrink-0" /></div>
+    <div className="mt-3 grid grid-cols-4 gap-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex h-16 flex-col items-center justify-center gap-1 rounded-md border border-slate-100 bg-slate-50/60 p-2"><Skeleton className="h-3.5 w-3.5" /><Skeleton className="h-3.5 w-6" /><Skeleton className="h-2 w-10" /></div>)}</div>
+    <div className="mt-3.5 flex items-baseline justify-between"><Skeleton className="h-2.5 w-20" /><Skeleton className="h-2 w-28" /></div>
+    <div className="mt-2 flex h-[140px] flex-col justify-around py-1">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex items-center gap-2"><Skeleton className="h-2.5 w-[58px] shrink-0" /><Skeleton className="h-2 flex-1 rounded-full" /><Skeleton className="h-2 w-12 shrink-0" /></div>)}</div>
+    <Skeleton className="mt-3 h-3.5 w-40" />
+  </PanelFrame>;
+}
+
+/** Submission Overview: status band, the four milestones, readiness bar and checklist, then the button. No header link. */
+function SubmissionOverviewSkeleton({ checks }: { checks: number }) {
+  return <PanelFrame action={false} className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col gap-2.5">
+      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-2"><Skeleton className="h-8 w-8 shrink-0 rounded-full" /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><Skeleton className="h-3 w-28" /><Skeleton className="h-3 w-7 rounded-full" /></div><Skeleton className="mt-1 h-2 w-4/5" /></div></div>
+      <div className="flex items-start pt-0.5">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="min-w-0 flex-1"><Skeleton className="mx-auto h-6 w-6 rounded-full" /><Skeleton className="mx-auto mt-1.5 h-2 w-10" /></div>)}</div>
+      <div className="flex flex-1 flex-col border-t border-slate-100 pt-2.5">
+        <div className="flex items-baseline justify-between gap-2"><Skeleton className="h-2.5 w-16" /><Skeleton className="h-2 w-14" /></div>
+        <div className="mt-1 flex h-7 items-center gap-2"><Skeleton className="h-[9px] flex-1 rounded-full" /><Skeleton className="h-2 w-6 shrink-0" /></div>
+        <div className="mt-2 space-y-1.5">{Array.from({ length: checks }).map((_, i) => <div key={i} className="flex items-center gap-2"><Skeleton className="h-3.5 w-3.5 shrink-0 rounded-full" /><Skeleton className={`h-2.5 ${i % 2 ? 'w-3/5' : 'w-4/5'}`} /></div>)}</div>
+      </div>
+      <Skeleton className="h-[26px] w-full rounded-md" />
+    </div>
+  </PanelFrame>;
 }
 
 function SecretaryTimetableSkeleton() {
@@ -43,12 +127,25 @@ function SecretaryTimetableSkeleton() {
   return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><header className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/60 px-5 py-4 lg:flex-row lg:items-center lg:justify-between"><div><div className="flex items-center gap-2"><Skeleton className="h-5 w-5 rounded" /><Skeleton className="h-4 w-32" /></div><Skeleton className="mt-1 h-2.5 w-20" /></div><div className="flex flex-wrap items-center gap-2"><Skeleton className="h-9 w-40 rounded-xl" /><Skeleton className="h-7 w-28 rounded-full" /><Skeleton className="h-9 w-36 rounded-xl" /></div></header><div className="overflow-hidden bg-slate-50/70 p-4"><WeeklyTimetableGrid days={['Loading']} slotCount={slotCount()} minWidth={0} getTimeLabel={() => ''} isLoading>{scheduleCards.map(card => <div key={card.id} className="z-10 flex h-full flex-col justify-between overflow-hidden rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 shadow-sm" style={{ gridColumn: 2, gridRow: `${card.startSlot + 2} / span ${card.durationSlots}` }}><div><Skeleton className="h-3 w-16" /><Skeleton className="mt-1.5 h-2.5 w-24" /><Skeleton className="mt-1 h-2 w-12" /></div><div className="mt-1 flex items-center gap-1"><Skeleton className="h-3.5 w-12 rounded-full" /><Skeleton className="h-3.5 w-12 rounded-full" /></div></div>)}</WeeklyTimetableGrid></div><footer className="flex items-center gap-4 border-t border-slate-200 bg-slate-50/60 px-5 py-3"><Skeleton className="h-2.5 w-16" /><Skeleton className="h-3 w-14 rounded-full" /><Skeleton className="h-3 w-14 rounded-full" /></footer></section>;
 }
 
-function SecretarySkeleton() {
-  // Column count mirrors the secretary metric row in SecretaryDashboardPage;
-  // they have to stay in step or the tiles reflow when the data arrives. Eight
-  // tiles fill two rows at every breakpoint here, which is what the live row
-  // does for any capability set, so the reserved height is right either way.
-  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true"><div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">{Array.from({ length: 8 }).map((_, i) => <MetricCard key={i} />)}</div><div className="grid gap-4 xl:grid-cols-12"><QueueSkeleton /><ProgressSkeleton /><WorkloadSkeleton /></div><div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0"><SecretaryTimetableSkeleton /></div><div className="flex min-w-0 flex-col gap-4"><PanelFrame><Skeleton className="h-14 w-full rounded-lg" /><div className="mt-3 grid grid-cols-4 gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}</div><Skeleton className="mt-3.5 h-3 w-full" /><Skeleton className="mt-2 h-[140px] w-full rounded" /><Skeleton className="mt-3 h-4 w-44" /></PanelFrame><PanelFrame className="flex-1"><Skeleton className="h-14 w-full rounded-lg" /><Skeleton className="mt-2.5 h-8 w-full" /><Skeleton className="mt-2.5 h-7 w-full" /><div className="mt-2 space-y-1.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-3.5 w-full" />)}</div><Skeleton className="mt-3 h-7 w-full rounded-md" /></PanelFrame></div></div></div>;
+function SecretarySkeleton({ layout }: { layout: SecretaryDashboardLayout }) {
+  // Row for row the structure of SecretaryDashboardPage, driven by the layout
+  // the page computed from its capabilities: the same tile count and column
+  // classes, the same queue length, and only the panels the account will see.
+  return <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
+    <div data-skeleton="metrics" className={`grid grid-cols-2 gap-2.5 ${layout.tileGridClassName}`}>{Array.from({ length: layout.tileCount }).map((_, i) => <MetricCard key={i} />)}</div>
+    <div className="grid gap-4 xl:grid-cols-12">
+      <QueueSkeleton rows={layout.queueRowCount} />
+      {layout.showDraftingProgress && <ProgressSkeleton />}
+      {layout.showFacultyAssignment && <WorkloadSkeleton />}
+    </div>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {layout.showTimetable && <div className="min-w-0"><SecretaryTimetableSkeleton /></div>}
+      <div className="flex min-w-0 flex-col gap-4">
+        <RoomAssignmentSkeleton />
+        <SubmissionOverviewSkeleton checks={layout.readinessCheckCount} />
+      </div>
+    </div>
+  </div>;
 }
 
 /** Table shell used by the Dean's Review Queue and Review Overview panels. */
@@ -162,8 +259,8 @@ function InstitutionalSkeleton() {
   return <div className="grid grid-cols-1 items-stretch gap-5 xl:grid-cols-12" aria-label="Loading dashboard"><div className="flex flex-col gap-4 xl:col-span-6"><div className="grid grid-cols-2 gap-3.5">{Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}</div><TimetableSkeleton /></div><div className="flex flex-col gap-4 xl:col-span-6"><PanelSkeleton rows={5} /><PanelSkeleton rows={4} /><PanelSkeleton rows={4} /></div></div>;
 }
 
-export default function DashboardSkeleton({ metricCount, variant = 'institutional' }: DashboardSkeletonProps) {
-  if (variant === 'secretary') return <SecretarySkeleton />;
+export default function DashboardSkeleton({ metricCount, variant = 'institutional', secretaryLayout = DEFAULT_SECRETARY_LAYOUT }: DashboardSkeletonProps) {
+  if (variant === 'secretary') return <SecretarySkeleton layout={secretaryLayout} />;
   if (variant === 'dean') return <DeanSkeleton />;
   if (variant === 'vpaa') return <VpaaSkeleton />;
   if (variant === 'program' || variant === 'summary') return <ProgramSkeleton />;

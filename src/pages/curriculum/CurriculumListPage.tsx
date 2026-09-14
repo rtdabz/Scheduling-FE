@@ -1,14 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
+import DataTable from '../../components/ui/DataTable';
 import {
   Pencil,
   Trash2,
   Search,
   AlertTriangle,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Filter,
   Plus,
   List,
@@ -27,7 +25,6 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  flexRender,
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { useCurriculum } from '../../hooks/curriculum/useCurriculum';
@@ -476,56 +473,19 @@ export default function CurriculumListPage() {
           </div>
         )
       ) : viewMode === 'list' ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id} className="bg-gray-50/75 border-b border-gray-100">
-                    {headerGroup.headers.map((header) => (
-                      <th
-                        key={header.id}
-                        onClick={header.column.getToggleSortingHandler()}
-                        className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-wider text-gray-500 cursor-pointer hover:bg-gray-100/50 transition-colors select-none"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {{
-                            asc: <ArrowUp size={12} className="text-[#C9952A]" />,
-                            desc: <ArrowDown size={12} className="text-[#C9952A]" />,
-                          }[header.column.getIsSorted() as string] ?? (
-                            <ArrowUpDown size={12} className="text-gray-300" />
-                          )}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {table.getRowModel().rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={columns.length} className="px-5 py-12 text-center text-gray-400">
-                      <BookOpen size={36} className="mx-auto text-gray-300 mb-2" />
-                      <p className="font-semibold text-gray-600">No curriculum found</p>
-                      <p className="text-xs text-gray-400 mt-1">Try adjusting your filters or search criteria.</p>
-                    </td>
-                  </tr>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-5 py-3.5 text-xs text-gray-700">
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <DataTable
+          table={table}
+          variant="card"
+          totalLabel="curricula"
+          ariaLabel="Curriculum"
+          emptyState={
+            <>
+              <BookOpen size={36} className="mx-auto text-gray-300 mb-2" />
+              <p className="font-semibold text-gray-600">No curriculum found</p>
+              <p className="text-xs text-gray-400 mt-1">Try adjusting your filters or search criteria.</p>
+            </>
+          }
+        />
       ) : (
         /* Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

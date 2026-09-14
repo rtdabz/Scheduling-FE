@@ -84,7 +84,7 @@ describe("year-level generation eligibility", () => {
 
   it("uses the required blocked message", () => {
     expect(YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE).toBe(
-      "Schedules for this year level have already been plotted. Generation is unavailable unless the entire year level is withdrawn.",
+      "Schedules for this year level have already been plotted. Generation is unavailable unless the entire year level is recalled.",
     );
   });
 });

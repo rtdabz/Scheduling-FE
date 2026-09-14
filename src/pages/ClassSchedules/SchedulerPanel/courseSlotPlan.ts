@@ -57,3 +57,46 @@ export const getCourseSlotPlan = (course?: CourseHours | null): CourseSlotPlan =
 
 /** Slots to clock hours, for labels. Never call this "units". */
 export const slotsToHours = (slots: number): number => slots / SLOTS_PER_HOUR;
+
+/** The department's Custom Lab Duration settings, as `/scheduling-settings` returns them. */
+export interface LaboratoryDurationSettings {
+  custom_lab_duration_override_enabled?: boolean | null;
+  custom_lab_duration_minutes?: number | null;
+  custom_lab_duration_6_hours_enabled?: boolean | null;
+  custom_lab_duration_5_hours_enabled?: boolean | null;
+  custom_lab_duration_other_enabled?: boolean | null;
+}
+
+const SLOT_MINUTES = 30;
+
+/**
+ * The configured Custom Lab Duration in slots, or null when none applies.
+ * Mirrors `SchedulingPolicy::customLaboratoryDurationSlots`, including its
+ * preset precedence (6 hours, then 5 hours, then a custom minute count).
+ */
+export const customLaboratoryDurationSlots = (settings?: LaboratoryDurationSettings | null): number | null => {
+  if (!settings?.custom_lab_duration_override_enabled) return null;
+
+  const minutes = settings.custom_lab_duration_6_hours_enabled
+    ? 360
+    : settings.custom_lab_duration_5_hours_enabled
+      ? 300
+      : settings.custom_lab_duration_other_enabled
+        ? Number(settings.custom_lab_duration_minutes ?? 0)
+        : 0;
+
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes % SLOT_MINUTES !== 0) return null;
+  return minutes / SLOT_MINUTES;
+};
+
+/**
+ * Slots for the laboratory meeting of a lecture/laboratory split: the
+ * department's Custom Lab Duration when set, otherwise three hours per
+ * laboratory unit (`SchedulingPolicy::laboratoryComponentSlots`). A Hybrid
+ * saved with the per-unit length while a custom duration is configured is
+ * rejected by the Rule Engine as `hybrid_component_shape`.
+ */
+export const laboratoryComponentSlots = (
+  course?: CourseHours | null,
+  settings?: LaboratoryDurationSettings | null,
+): number => customLaboratoryDurationSlots(settings) ?? getCourseSlotPlan(course).laboratorySlots;

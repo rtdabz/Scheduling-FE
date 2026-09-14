@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../lib/dataCache';
+import { useLiveRevision } from './useLiveRefresh';
 
 export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'approved' | 'revision';
 
@@ -90,6 +91,7 @@ export function useDepartmentScheduleStatus(
   const [fetchKey, setFetchKey] = useState(0);
 
   const refetch = useCallback(() => setFetchKey(k => k + 1), []);
+  const liveRevision = useLiveRevision(['approvals', 'schedules', 'sections']);
 
   useEffect(() => {
     if (!departmentId) return;
@@ -97,7 +99,7 @@ export function useDepartmentScheduleStatus(
     let cancelled = false;
 
     const fetchStatus = async () => {
-      setLoading(!hasCachedData(statusCacheKey));
+      setLoading(liveRevision === 0 && !hasCachedData(statusCacheKey));
       setError(null);
       try {
         const data = await loadCachedData<DepartmentScheduleStatusData>(
@@ -132,7 +134,7 @@ export function useDepartmentScheduleStatus(
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [departmentId, fetchKey, statusCacheKey]);
+  }, [departmentId, fetchKey, statusCacheKey, liveRevision]);
 
   // ── Derived values ──
 

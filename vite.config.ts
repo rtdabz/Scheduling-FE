@@ -38,6 +38,13 @@ export default defineConfig(({ mode }) => {
           target: 'http://127.0.0.1:8000',
           changeOrigin: true,
         },
+        // Live-updates socket (Laravel Reverb). Proxied so the browser connects
+        // to the page's own origin, which also works through dev tunnels.
+        '^/app/': {
+          target: 'ws://127.0.0.1:8080',
+          ws: true,
+          changeOrigin: true,
+        },
       },
     },
   }

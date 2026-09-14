@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isDepartmentSectionWithdrawable } from "./constants";
 
-describe("department withdrawal eligibility", () => {
+describe("department recall eligibility", () => {
   it.each([
     "submitted",
     "approved_by_dean",
@@ -12,16 +12,14 @@ describe("department withdrawal eligibility", () => {
     expect(isDepartmentSectionWithdrawable(status)).toBe(true);
   });
 
-  it("allows reassignment after every instructor is cleared and the handoff is open", () => {
-    expect(isDepartmentSectionWithdrawable("reassignment", 0, false)).toBe(true);
-  });
-
-  it("keeps reassignment protected while an instructor remains assigned", () => {
-    expect(isDepartmentSectionWithdrawable("reassignment", 1, false)).toBe(false);
-  });
-
-  it("keeps reassignment protected after the instructor handoff is completed", () => {
-    expect(isDepartmentSectionWithdrawable("reassignment", 0, true)).toBe(false);
+  // Recalling releases the section's instructors, so reassignment qualifies
+  // whether or not instructors -- including a delegated college's -- remain.
+  it.each([
+    [0, false],
+    [1, false],
+    [0, true],
+  ] as const)("allows reassignment with %i instructor blocks (handoff done: %s)", (blocks, done) => {
+    expect(isDepartmentSectionWithdrawable("reassignment", blocks, done)).toBe(true);
   });
 
   it.each([

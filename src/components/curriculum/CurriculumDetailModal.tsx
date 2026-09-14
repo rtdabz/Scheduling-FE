@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import type { ColumnDef } from '@tanstack/react-table';
 import { X, BookOpen } from 'lucide-react';
+import DataTable from '../ui/DataTable';
+import { useDataTable } from '../ui/useDataTable';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import type { CurriculumDetail, CurriculumSemester } from '../../types/curriculum';
 import Skeleton from '../ui/Skeleton';
@@ -53,7 +56,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
       <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
           <h2 className="text-lg font-bold text-[#1A1410] font-display">Curriculum Details</h2>
@@ -136,32 +139,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
                           {semester.totals?.tu || 0} units total
                         </span>
                       </div>
-                      <table className="w-full text-left">
-                        <thead>
-                          <tr className="border-b border-gray-50">
-                            <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Code</th>
-                            <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Course</th>
-                            <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-right">Lec</th>
-                            <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-right">Lab</th>
-                            <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-right">Units</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {semester.courses.map((course) => (
-                            <tr key={course.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-                              <td className="px-4 py-2">
-                                <span className="bg-[#C9952A]/10 text-[#C9952A] px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase">
-                                  {course.code}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2 text-xs font-medium text-gray-700">{course.title}</td>
-                              <td className="px-4 py-2 text-xs text-gray-600 text-right">{course.lec_units}</td>
-                              <td className="px-4 py-2 text-xs text-gray-600 text-right">{course.lab_units}</td>
-                              <td className="px-4 py-2 text-xs font-bold text-gray-800 text-right">{course.total_units}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <SemesterCourseTable courses={semester.courses} />
                     </div>
                   ))}
                 </div>
@@ -173,4 +151,29 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
     </div>,
     document.body
   );
+}
+
+type SemesterCourse = CurriculumSemester['courses'][number];
+
+const semesterCourseColumns: ColumnDef<SemesterCourse>[] = [
+  {
+    id: 'code',
+    accessorKey: 'code',
+    header: 'Code',
+    cell: ({ row }) => (
+      <span className="bg-[#C9952A]/10 text-[#C9952A] px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase">
+        {row.original.code}
+      </span>
+    ),
+  },
+  { id: 'title', accessorKey: 'title', header: 'Course', meta: { cellClassName: 'font-medium text-gray-700' } },
+  { id: 'lec_units', accessorKey: 'lec_units', header: 'Lec', meta: { align: 'right', cellClassName: 'text-gray-600' } },
+  { id: 'lab_units', accessorKey: 'lab_units', header: 'Lab', meta: { align: 'right', cellClassName: 'text-gray-600' } },
+  { id: 'total_units', accessorKey: 'total_units', header: 'Units', meta: { align: 'right', cellClassName: 'font-bold text-gray-800' } },
+];
+
+function SemesterCourseTable({ courses }: { courses: SemesterCourse[] }) {
+  const data = useMemo(() => courses, [courses]);
+  const table = useDataTable({ data, columns: semesterCourseColumns, pageSize: false, getRowId: (course) => String(course.id) });
+  return <DataTable table={table} variant="embedded" density="compact" emptyTitle="No courses in this semester." emptyDescription="" />;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, RotateCcw, UserCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, X, UserMinus } from "lucide-react";
 import { isDepartmentSectionWithdrawable } from "../constants";
 import type { DepartmentSectionProgress, WithdrawalStage } from "../types";
 
@@ -33,7 +33,7 @@ export default function WithdrawSubmissionModal({
     [sections]
   );
 
-  const preservedInstructorBlocks = useMemo(
+  const releasedInstructorBlocks = useMemo(
     () => selectableSections
       .filter((section) => selectedIds.includes(section.sectionId))
       .reduce((total, section) => total + (section.assignedInstructorBlocks ?? 0), 0),
@@ -74,7 +74,7 @@ export default function WithdrawSubmissionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px] animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4 animate-in fade-in duration-200">
       <div className="flex w-full max-w-2xl flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" style={{ borderRadius: 10 }}>
         <div className="flex items-start gap-4 px-5 pb-4 pt-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center border bg-amber-50 text-amber-600 border-amber-100" style={{ borderRadius: 8 }}>
@@ -82,7 +82,7 @@ export default function WithdrawSubmissionModal({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b0f1a]">Schedule Submission</p>
-            <h3 className="mt-1 text-base font-bold leading-6 text-slate-950">Withdraw Selected Sections?</h3>
+            <h3 className="mt-1 text-base font-bold leading-6 text-slate-950">Recall Selected Sections?</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {withdrawalDescription}
             </p>
@@ -93,7 +93,7 @@ export default function WithdrawSubmissionModal({
             disabled={isWithdrawing}
             className="flex h-8 w-8 items-center justify-center bg-slate-50 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
             style={{ borderRadius: 8 }}
-            aria-label="Close withdrawal confirmation"
+            aria-label="Close recall confirmation"
           >
             <X size={16} />
           </button>
@@ -104,12 +104,12 @@ export default function WithdrawSubmissionModal({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             Select only the sections that need changes. All other sections remain unchanged.
           </div>
-          {preservedInstructorBlocks > 0 && (
-            <div className="mb-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
-              <UserCheck className="mt-0.5 h-4 w-4 shrink-0" />
-              {preservedInstructorBlocks === 1
-                ? "1 instructor assignment in the selected sections will remain assigned during revision."
-                : `${preservedInstructorBlocks} instructor assignments in the selected sections will remain assigned during revision.`}
+          {releasedInstructorBlocks > 0 && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              <UserMinus className="mt-0.5 h-4 w-4 shrink-0" />
+              {releasedInstructorBlocks === 1
+                ? "1 instructor assignment in the selected sections will be released. Assign it again once the revised schedule is approved."
+                : `${releasedInstructorBlocks} instructor assignments in the selected sections will be released. Assign them again once the revised schedule is approved.`}
             </div>
           )}
           <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -184,7 +184,7 @@ export default function WithdrawSubmissionModal({
             style={{ borderRadius: 8 }}
           >
             {isWithdrawing && <LoadingSpinner className="h-4 w-4" />}
-            {isWithdrawing ? "Withdrawing..." : "Withdraw Selected"}
+            {isWithdrawing ? "Recalling..." : "Recall Selected"}
           </button>
         </div>
       </div>

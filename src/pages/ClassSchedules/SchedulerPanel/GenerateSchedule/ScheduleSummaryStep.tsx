@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, Filter, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
-import { buildSummaryClasses, timeRangeLabel, type SummaryMeeting } from "./summaryRows";
+import { buildSummaryClasses, type SummaryMeeting } from "./summaryRows";
+import ClassSummaryTable from "../../../../components/scheduling/ClassSummaryTable";
 import GenerationChangesPanel from "./GenerationChangesPanel";
 import {
   changeBadgeLabel,
@@ -216,98 +217,23 @@ export default function ScheduleSummaryStep({
         </div>
       </section>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[720px] border-collapse text-left">
-          <thead className="sticky top-0 z-10 bg-slate-50">
-            <tr>
-              {["Section", "Course", "Day", "Time", "Room", "Mode"].map(
-                (heading) => (
-                  <th
-                    key={heading}
-                    className="px-3 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-500"
-                  >
-                    {heading}
-                  </th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-6 text-center text-xs font-semibold text-slate-500"
-                >
-                  No class meetings match these filters.
-                </td>
-              </tr>
-            )}
-            {filtered.map((item) => (
-              <tr key={item.key} className="border-t border-slate-100 align-top">
-                <td className="px-3 py-2.5 text-xs font-black text-slate-900">
-                  {item.sectionName}
-                </td>
-                <td className="px-3 py-2.5">
-                  <span className="block text-xs font-black text-slate-900">
-                    {item.courseCode}
-                  </span>
-                  <span className="block truncate text-[11px] font-semibold text-slate-600">
-                    {item.courseName}
-                  </span>
-                  {badgesByClass.get(classKey(item.sectionId, item.courseId))?.map((change) => (
-                    <span
-                      key={change.kind}
-                      className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black uppercase ${
-                        change.severity === "critical"
-                          ? "bg-rose-100 text-rose-700"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {changeBadgeLabel(change)}
-                    </span>
-                  ))}
-                </td>
-                {/* One line per part, so each day lines up with its own time and room. */}
-                <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">
-                  {item.parts.map((part, index) => (
-                    <span key={index} className="block leading-5">
-                      {part.dayLabel}
-                    </span>
-                  ))}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-700">
-                  {item.parts.map((part, index) => (
-                    <span key={index} className="block leading-5">
-                      {timeRangeLabel(part.start, part.end)}
-                      {part.meeting && (
-                        <span className="ml-1.5 text-[10px] font-bold uppercase text-slate-400">
-                          {part.meeting === "laboratory" ? "Lab" : part.meeting === "lecture" ? "Lec" : part.meeting}
-                        </span>
-                      )}
-                    </span>
-                  ))}
-                </td>
-                <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">
-                  {item.parts.map((part, index) => (
-                    <span key={index} className="block leading-5">
-                      {part.room}
-                    </span>
-                  ))}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase text-slate-700">
-                  {item.modes.map((mode, index) => (
-                    <span key={mode}>
-                      {index > 0 && <span className="mx-1 text-slate-300">|</span>}
-                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5">{mode}</span>
-                    </span>
-                  ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ClassSummaryTable
+        classes={filtered}
+        renderCourseExtras={(item) =>
+          badgesByClass.get(classKey(item.sectionId, item.courseId))?.map((change) => (
+            <span
+              key={change.kind}
+              className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                change.severity === "critical"
+                  ? "bg-rose-100 text-rose-700"
+                  : "bg-amber-100 text-amber-800"
+              }`}
+            >
+              {changeBadgeLabel(change)}
+            </span>
+          ))
+        }
+      />
     </div>
   );
 }
