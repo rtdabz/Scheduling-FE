@@ -1,17 +1,41 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, ChevronDown, DoorOpen, LayoutGrid, List, MapPin, X } from "lucide-react";
+import { CalendarClock, ChevronDown, DoorOpen, MapPin, X } from "lucide-react";
 import {
   DAYS,
-  GRID_HEADER_HEIGHT_PX,
-  SLOT_HEIGHT_PX,
-  getGridCardStyles,
-  slotToTimeStr
 } from "../constants";
 import type { Department, ScheduleItem, Room } from "../types";
-import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
-import { slotCount } from "../../../../lib/timeGrid";
+import { gridOpeningMinutes, slotCount, slotMinutes, slotToTime24h } from "../../../../lib/timeGrid";
 import { UNLIMITED_SHARED_SLOT_LIMIT } from "../hooks/useConflict";
+import MasterGantt from "../../../vpaa/calendar/MasterGantt";
+import ScheduleDetailModal from "../../../vpaa/calendar/ScheduleDetailModal";
+import {
+  buildGanttDays,
+  buildTimeWindow,
+  CALENDAR_DAYS,
+  findOverlaps,
+  type CalendarSchedule,
+  type StandardHours,
+} from "../../../vpaa/calendar/ganttLayout";
+
+/**
+ * Stable numeric id for a schedule the scheduler has not persisted yet.
+ *
+ * The timeline keys blocks and the overlap map by `id`, so a placeholder must
+ * never land on a real schedule's id. Real ids are positive, so hashed ones are
+ * pushed negative rather than merely hashed.
+ */
+const placeholderGanttId = (id: string): number => {
+  const hash = id.split("").reduce((acc, char) => ((acc << 5) - acc + char.charCodeAt(0)) | 0, 0);
+  return -(Math.abs(hash) + 1);
+};
+
+/** "Juan Dela Cruz" -> { first_name: "Juan", last_name: "Dela Cruz" }. */
+const splitFacultyName = (name: string): { first_name: string; last_name: string } => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { first_name: parts[0] ?? "", last_name: "" };
+  return { first_name: parts[0], last_name: parts.slice(1).join(" ") };
+};
 
 interface RoomViewModalProps {
   rooms: Room[];
@@ -40,9 +64,7 @@ export default function RoomViewModal({
    * at module scope: `/initial-data` configures the window after import.
    */
   const SLOT_COUNT = slotCount();
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [listPage, setListPage] = useState(1);
-  const [listPageSize, setListPageSize] = useState(10);
+  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
   // Close on Escape
   useEffect(() => {
     if (!isRoomViewOpen) return;
@@ -81,46 +103,54 @@ export default function RoomViewModal({
     });
   }, [schedules, roomViewRoomId, room, currentDepartmentId]);
 
-  const groupedRoomClasses = useMemo(() => {
-    const groups: Record<string, ScheduleItem[]> = {};
-    
-    roomClasses.forEach((sched) => {
-      const key = `${sched.dayIndex}-${sched.startSlot}-${sched.durationSlots}`;
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(sched);
-    });
-
-    return Object.values(groups).map((group) => {
-      const base = group[0];
-      return {
-        id: `${base.id}-${base.dayIndex}-${base.startSlot}-${base.durationSlots}`,
-        dayIndex: base.dayIndex,
-        startSlot: base.startSlot,
-        durationSlots: base.durationSlots,
-        startTime: base.startTime,
-        endTime: base.endTime,
-        items: group
-      };
-    });
-  }, [roomClasses]);
-
-  const sortedRoomClasses = useMemo(
-    () => [...roomClasses].sort((a, b) => a.dayIndex - b.dayIndex || a.startSlot - b.startSlot),
-    [roomClasses]
+  // Adapt the scheduler's compact client model to the shared VPAA timeline
+  // contract. The room filter above remains the single source of truth.
+  const ganttSchedules = useMemo<CalendarSchedule[]>(() => roomClasses.map((item) => {
+    const department = departments.find((candidate) => Number(candidate.id) === Number(item.departmentId));
+    const numericId = Number(item.id);
+    const faculty = item.facultyName ? splitFacultyName(item.facultyName) : null;
+    return {
+      id: Number.isFinite(numericId) ? numericId : placeholderGanttId(item.id),
+      /*
+       * The timeline works in minutes parsed from "HH:MM", while the scheduler
+       * carries 12-hour display labels ("7 AM", "1:30 PM") and slot offsets.
+       * Feeding it the labels made `toMinutes` return null for every meeting,
+       * so `buildGanttDays` skipped them all and the chart drew an empty week.
+       * Rebuild the times from the slots, which are the model's real position.
+       */
+      day: CALENDAR_DAYS[item.dayIndex] ?? item.day,
+      start_time: slotToTime24h(item.startSlot),
+      end_time: slotToTime24h(item.startSlot + item.durationSlots),
+      meeting_type: item.meetingType ?? "lecture",
+      mode: item.mode,
+      course_id: Number(item.courseId) || null,
+      department_id: Number(item.departmentId) || null,
+      department: department ? {
+        id: Number(department.id),
+        department_name: department.department_name,
+        department_code: department.department_code,
+        logo: department.logo,
+      } : null,
+      room_id: item.mode === "on-site" && item.roomId && item.roomId !== "tba" ? Number(item.roomId) || null : null,
+      room: item.mode === "on-site" && item.roomName ? { id: Number(item.roomId) || 0, room_code: item.roomName } : null,
+      faculty_id: item.facultyId ? Number(item.facultyId) || null : null,
+      faculty: faculty ? { id: Number(item.facultyId) || 0, ...faculty } : null,
+      section_id: Number(item.sectionId) || null,
+      section: { id: Number(item.sectionId) || 0, section_name: item.sectionName, department_id: Number(item.departmentId) },
+      course: { course_code: item.courseCode, course_name: item.courseName, units: item.totalUnits },
+    };
+  }), [roomClasses, departments]);
+  const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", [0, 1, 2, 3, 4, 5, 6]), [ganttSchedules]);
+  /* Keep the Gantt axis aligned with the scheduler's configured time grid. */
+  const ganttStandardHours = useMemo<StandardHours>(() => {
+    const opening = gridOpeningMinutes();
+    return { opening, closing: opening + SLOT_COUNT * slotMinutes(), slotMinutes: slotMinutes() };
+  }, [SLOT_COUNT]);
+  const ganttTimeWindow = useMemo(
+    () => buildTimeWindow(ganttStandardHours, ganttSchedules),
+    [ganttStandardHours, ganttSchedules],
   );
-  const listTotalPages = Math.max(1, Math.ceil(sortedRoomClasses.length / listPageSize));
-  const activeListPage = Math.min(listPage, listTotalPages);
-  const paginatedRoomClasses = useMemo(() => {
-    const start = (activeListPage - 1) * listPageSize;
-    return sortedRoomClasses.slice(start, start + listPageSize);
-  }, [sortedRoomClasses, activeListPage, listPageSize]);
-
-  useEffect(() => {
-    if (!isRoomViewOpen) return;
-    setListPage(1);
-  }, [isRoomViewOpen, roomViewRoomId, viewMode, listPageSize]);
+  const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules), [ganttSchedules]);
 
   const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
   const configuredSharedCapacity = room?.roomType === "online"
@@ -236,32 +266,6 @@ export default function RoomViewModal({
               Department capacity {peakSharedOccupancy}/{sharedRoomCapacityLabel}
             </span>
           )}
-          <div className="ml-auto flex items-center rounded-lg border border-slate-200 bg-white p-0.5" role="group" aria-label="Room view mode">
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              aria-pressed={viewMode === "grid"}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors ${
-                viewMode === "grid" ? "bg-[#4e0a10] text-white" : "text-slate-500 hover:bg-slate-50"
-              }`}
-              title="Grid view"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Grid
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              aria-pressed={viewMode === "list"}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors ${
-                viewMode === "list" ? "bg-[#4e0a10] text-white" : "text-slate-500 hover:bg-slate-50"
-              }`}
-              title="List view"
-            >
-              <List className="h-3.5 w-3.5" />
-              List
-            </button>
-          </div>
         </div>
 
         {/* Room timetable */}
@@ -271,213 +275,30 @@ export default function RoomViewModal({
               This room is fully available - no classes are booked this week.
             </div>
           )}
-          {viewMode === "list" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-              {roomClasses.length === 0 ? (
-                <div className="flex min-h-40 items-center justify-center px-4 text-sm font-semibold text-slate-500">
-                  No classes scheduled for this room.
-                </div>
-              ) : (
-                <>
-                <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
-                  {paginatedRoomClasses.map((schedule) => {
-                      const styles = getGridCardStyles(schedule.courseType || schedule.subjectType || "major");
-                      return (
-                        <div key={schedule.id} className="grid grid-cols-[4rem_6rem_minmax(0,1fr)] items-center gap-2 px-3 py-3 hover:bg-slate-50 sm:grid-cols-[6rem_8rem_minmax(0,1fr)_7rem] sm:gap-3 sm:px-4">
-                          <div className="text-xs font-black uppercase text-[#4e0a10]">{DAYS[schedule.dayIndex]}</div>
-                          <div className="text-xs font-semibold text-slate-500">
-                            {schedule.startTime} - {schedule.endTime}
-                          </div>
-                          <div className={`min-w-0 flex-1 border-l-4 px-3 py-1.5 ${styles.container}`}>
-                            <div className={`text-xs font-black uppercase ${styles.text}`}>
-                              {schedule.courseCode || schedule.subjectCode || "Unspecified"}
-                            </div>
-                            <div className="truncate text-xs font-bold text-slate-700">{schedule.courseName}</div>
-                            <div className="mt-0.5 truncate text-[10px] font-bold text-slate-500 sm:hidden">{schedule.sectionName}</div>
-                          </div>
-                          <div className="hidden text-right text-xs font-bold text-slate-600 sm:block">{schedule.sectionName}</div>
-                        </div>
-                      );
-                    })}
-                </div>
-                <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row">
-                  <div className="flex flex-wrap items-center justify-center gap-4 sm:justify-start">
-                    <span className="text-xs font-semibold text-slate-500">
-                      Showing {(activeListPage - 1) * listPageSize + 1}–
-                      {Math.min(activeListPage * listPageSize, sortedRoomClasses.length)} of {sortedRoomClasses.length} classes
-                    </span>
-                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                      Show
-                      <select
-                        value={listPageSize}
-                        onChange={(event) => setListPageSize(Number(event.target.value))}
-                        className="rounded-lg border border-slate-200 bg-white p-1 text-xs outline-none focus:ring-1 focus:ring-[#C9952A]"
-                        aria-label="Classes per page"
-                      >
-                        {[5, 10, 25].map((pageSize) => (
-                          <option key={pageSize} value={pageSize}>{pageSize}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setListPage(1)}
-                      disabled={activeListPage === 1}
-                      className="cursor-pointer rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 transition-all hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      First
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setListPage(Math.max(1, activeListPage - 1))}
-                      disabled={activeListPage === 1}
-                      className="cursor-pointer rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 transition-all hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Prev
-                    </button>
-                    <span className="px-1 text-xs font-bold text-slate-500">
-                      Page {activeListPage} of {listTotalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setListPage(Math.min(listTotalPages, activeListPage + 1))}
-                      disabled={activeListPage === listTotalPages}
-                      className="cursor-pointer rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 transition-all hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setListPage(listTotalPages)}
-                      disabled={activeListPage === listTotalPages}
-                      className="cursor-pointer rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 transition-all hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Last
-                    </button>
-                  </div>
-                </div>
-                </>
-              )}
-            </div>
-          ) : (
-          <div className="min-h-0 flex-1 overflow-auto">
-          <WeeklyTimetableGrid
-            days={DAYS}
-            slotCount={SLOT_COUNT}
-            headerHeight={GRID_HEADER_HEIGHT_PX}
-            rowTemplate={`repeat(${SLOT_COUNT}, minmax(${SLOT_HEIGHT_PX}px, auto))`}
-            minWidth={0}
-            className="w-full shrink-0"
-            getTimeLabel={slotToTimeStr}
-            getDayCount={(dayIndex) => roomClasses.filter((item) => item.dayIndex === dayIndex).length}
-          >
-            {/* Booked class blocks */}
-            {groupedRoomClasses.map((cellGroup) => {
-              const groupEndSlot = cellGroup.startSlot + cellGroup.durationSlots;
-              const groupOverlapCount = isSharedRoom
-                ? roomClasses.filter((item) => {
-                  const itemEndSlot = item.startSlot + item.durationSlots;
-                  return item.dayIndex === cellGroup.dayIndex
-                    && cellGroup.startSlot < itemEndSlot
-                    && item.startSlot < groupEndSlot;
-                }).length
-                : cellGroup.items.length;
-              const exceedsCapacity = isSharedRoom && groupOverlapCount > sharedRoomCapacity;
-
-              // Group items by courseCode
-              const subgroups: { courseCode: string; sections: string[]; courseType: ScheduleItem["courseType"] }[] = [];
-              const courseMap: Record<string, string[]> = {};
-              const courseTypeMap: Record<string, ScheduleItem["courseType"]> = {};
-
-              cellGroup.items.forEach((item) => {
-                const code = item.courseCode || item.subjectCode || "Unspecified";
-                if (!courseMap[code]) {
-                  courseMap[code] = [];
-                }
-                courseMap[code].push(item.sectionName);
-                courseTypeMap[code] = item.courseType || item.subjectType || "major";
-              });
-
-              Object.keys(courseMap).forEach((code) => {
-                subgroups.push({
-                  courseCode: code,
-                  sections: [...new Set(courseMap[code])].sort(),
-                  courseType: courseTypeMap[code]
-                });
-              });
-
-              const firstSub = subgroups[0];
-              const styles = getGridCardStyles(firstSub?.courseType ?? "major");
-              const tooltipTitle = cellGroup.items
-                .map((item) => `${item.courseCode || item.subjectCode || "PE"} - ${item.sectionName} - ${item.startTime}-${item.endTime}`)
-                .join("\n");
-
-              return (
-                <div
-                  key={cellGroup.id}
-                  className={`m-0.5 flex flex-col rounded-lg border-2 border-l-4 px-1.5 py-1 shadow-sm transform-gpu ${styles.container}`}
-                  style={{
-                    gridColumn: cellGroup.dayIndex + 2,
-                    gridRow: `${cellGroup.startSlot + 2} / span ${cellGroup.durationSlots}`
-                  }}
-                  title={tooltipTitle}
-                >
-                  {/*
-                    Rows are `minmax(slot, auto)`, so a card holding many classes
-                    stretches its time rows (and that row on every other day)
-                    instead of clipping or scrolling its contents.
-                  */}
-                  <div className="flex flex-wrap items-center justify-between gap-1">
-                    <span className="text-[11px] font-bold text-slate-500">
-                      {cellGroup.startTime} - {cellGroup.endTime}
-                    </span>
-                    {isSharedRoom && (
-                      <span className={`shrink-0 rounded px-1 py-px text-[10px] font-black uppercase leading-tight ${
-                        exceedsCapacity ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
-                      }`}>
-                        {groupOverlapCount}/{sharedRoomCapacityLabel}
-                      </span>
-                    )}
-                  </div>
-                  <ul className="mt-0.5 space-y-px">
-                    {subgroups.map((sub) => (
-                      <li
-                        key={`${cellGroup.id}-${sub.courseCode}-${sub.sections.join("|")}`}
-                        className={sub.sections.length > 1
-                          ? "min-w-0 leading-tight"
-                          : "flex min-w-0 flex-wrap items-baseline gap-x-1.5 leading-tight"}
-                      >
-                        <span className={`shrink-0 text-[13px] font-black uppercase ${getGridCardStyles(sub.courseType).text}`}>
-                          {sub.courseCode}
-                        </span>
-                        {sub.sections.length > 1 ? (
-                          // One course taught to many sections at once (ROTC,
-                          // PE): wrap the sections instead of truncating them.
-                          <div className="mt-px flex flex-wrap gap-x-1.5 gap-y-px">
-                            {sub.sections.map((section) => (
-                              <span key={section} className="text-xs font-bold text-slate-700">
-                                {section}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="break-words text-xs font-bold text-slate-700">
-                            {sub.sections[0]}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </WeeklyTimetableGrid>
-          </div>
-          )}
+          <MasterGantt
+            days={ganttDays}
+            timeWindow={ganttTimeWindow}
+            standardHours={ganttStandardHours}
+            groupBy="none"
+            zoom="fit"
+            density="comfortable"
+            overlaps={ganttOverlaps}
+            collapsedDays={new Set()}
+            onToggleDay={() => undefined}
+            onSelect={setSelectedSchedule}
+            now={new Date()}
+            fillHeight
+            className="h-full min-h-[420px]"
+          />
         </div>
       </div>
+      <ScheduleDetailModal
+        schedule={selectedSchedule}
+        allSchedules={ganttSchedules}
+        overlaps={ganttOverlaps}
+        onClose={() => setSelectedSchedule(null)}
+        onSelect={setSelectedSchedule}
+      />
     </div>
   );
 }

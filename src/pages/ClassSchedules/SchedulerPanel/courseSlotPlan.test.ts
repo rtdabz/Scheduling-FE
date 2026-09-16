@@ -16,12 +16,12 @@ import { getSubjectTotalSlots } from "./types";
  */
 
 describe("getCourseSlotPlan", () => {
-  it("derives a single block from units, matching CSPSolver::rawDurationSlots", () => {
+  it("derives a single block from units, matching CspSolver::rawDurationSlots", () => {
     expect(getCourseSlotPlan({ units: 3, lectureHours: 3, labHours: 0 }).singleBlockSlots).toBe(6);
     expect(getCourseSlotPlan({ units: 5, lectureHours: 2, labHours: 1 }).singleBlockSlots).toBe(10);
   });
 
-  it("derives split components from hours, matching CSPSolver::buildVariables", () => {
+  it("derives split components from hours, matching CspSolver::buildVariables", () => {
     const plan = getCourseSlotPlan({ units: 3, lectureHours: 2, labHours: 1 });
 
     expect(plan.lectureSlots).toBe(2 * SLOTS_PER_HOUR);

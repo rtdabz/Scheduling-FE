@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Settings from './Settings';
 
@@ -94,5 +94,32 @@ describe('VPAA Settings operating hours', () => {
       'Operating hours saved',
       'Schedule generation now uses the updated daily time range.',
     );
+  });
+
+  it('previews unsaved operating hours and blocks a reversed time range', async () => {
+    render(<Settings />);
+    await screen.findByRole('img', { name: 'Daily scheduling window: 7:00 AM to 7:00 PM' });
+    fireEvent.change(screen.getByLabelText('Closing time'), { target: { value: '20:00' } });
+    expect(screen.getByRole('img', { name: 'Daily scheduling window: 7:00 AM to 8:00 PM' })).toBeTruthy();
+    expect(screen.getByText('13h scheduling window')).toBeTruthy();
+    expect(mocks.apiPatch).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Closing time'), { target: { value: '06:00' } });
+    expect(screen.getByRole('img', { name: 'Daily scheduling window unavailable' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save operating hours' })).toHaveProperty('disabled', true);
+    expect(mocks.apiPatch).not.toHaveBeenCalled();
+  });
+
+  it('previews the signatory draft and saves the existing settings payload', async () => {
+    const settings = { president_name: 'Dr. Jane Doe', president_title: 'President' };
+    mocks.apiPatch.mockResolvedValue({ data: { settings } });
+    render(<Settings />);
+    const name = await screen.findByDisplayValue('College President');
+    fireEvent.change(name, { target: { value: 'Dr. Jane Doe' } });
+    expect(within(screen.getByRole('figure', { name: 'Document signature preview' })).getByText('Dr. Jane Doe')).toBeTruthy();
+    expect(mocks.apiPatch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save signatory' }));
+    await waitFor(() => expect(mocks.apiPatch).toHaveBeenCalledWith('/institution-settings', settings));
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('Saved', 'Printed schedules and teaching loads will use the new name.');
   });
 });

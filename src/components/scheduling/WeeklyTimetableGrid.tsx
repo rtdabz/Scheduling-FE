@@ -1,7 +1,7 @@
 import React from "react";
 import { Clock } from "lucide-react";
 import Skeleton from "../ui/Skeleton";
-import { slotCount as gridSlotCount, slotToTimeLabel } from "../../lib/timeGrid";
+import { slotCount as gridSlotCount, slotMinutes, slotToTimeLabel } from "../../lib/timeGrid";
 
 /**
  * Canonical grid geometry, shared by every timetable in the system.
@@ -18,6 +18,13 @@ import { slotCount as gridSlotCount, slotToTimeLabel } from "../../lib/timeGrid"
 export const GRID_SLOT_HEIGHT_PX = 24;
 export const GRID_HEADER_HEIGHT_PX = 48;
 export const GRID_TIME_COLUMN_WIDTH_PX = 80;
+
+/**
+ * The time axis is labelled in 1.5-hour bands (7:00, 8:30, 10:00 ...), the
+ * standard class period. Rows underneath stay 30 minutes so 1-hour and 2-hour
+ * classes still position and conflict-check exactly.
+ */
+const AXIS_BAND_MINUTES = 90;
 
 // Shared by calendar views that must use the same weekday ordering as the grid.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -70,6 +77,7 @@ export default function WeeklyTimetableGrid({
   isLoading = false,
 }: WeeklyTimetableGridProps) {
   const disabledDays = new Set(disabledDayIndexes);
+  const AXIS_BAND_SLOTS = Math.max(1, Math.round(AXIS_BAND_MINUTES / slotMinutes()));
 
   return (
     <div
@@ -119,17 +127,29 @@ export default function WeeklyTimetableGrid({
 
       {Array.from({ length: slotCount }).map((_, slotOffset) => {
         const slot = startSlot + slotOffset;
+        // Bands are anchored to the grid opening, not to startSlot, so a
+        // trimmed view still reads 7:00, 8:30, 10:00 rather than shifting.
+        const slotsIntoBand = ((slot % AXIS_BAND_SLOTS) + AXIS_BAND_SLOTS) % AXIS_BAND_SLOTS;
+        const bandSpan = Math.min(AXIS_BAND_SLOTS - slotsIntoBand, slotCount - slotOffset);
+        const endsBand = (slotsIntoBand + 1) % AXIS_BAND_SLOTS === 0;
         return (
           <React.Fragment key={`slot-${slot}`}>
-            {slotOffset % 2 === 0 && (
+            {(slotsIntoBand === 0 || slotOffset === 0) && (
               <div
-                className="sticky left-0 z-10 flex items-center justify-center border-b border-r border-slate-200 bg-slate-50/90 px-1 text-[9px] font-bold text-slate-500"
+                className="sticky left-0 z-10 flex flex-col items-center justify-center border-b border-r border-slate-200 bg-slate-50/90 px-1 text-[9px] font-bold text-slate-500"
                 style={{
                   gridColumn: 1,
-                  gridRow: `${slotOffset + 2} / span ${Math.min(2, slotCount - slotOffset)}`,
+                  gridRow: `${slotOffset + 2} / span ${bandSpan}`,
                 }}
               >
-                {isLoading ? <Skeleton className="h-2 w-10" /> : <span className="whitespace-nowrap font-extrabold text-slate-600">{getTimeLabel(slot)}</span>}
+                {isLoading ? <Skeleton className="h-2 w-10" /> : (
+                  <>
+                    <span className="whitespace-nowrap font-extrabold text-slate-600">{getTimeLabel(slot)}</span>
+                    {bandSpan > 1 && (
+                      <span className="whitespace-nowrap text-[8px] font-semibold text-slate-400">to {getTimeLabel(slot + bandSpan)}</span>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
@@ -137,7 +157,7 @@ export default function WeeklyTimetableGrid({
               <React.Fragment key={`cell-${dayIndex}-${slot}`}>
                 {renderCell ? renderCell(dayIndex, slot) : (
                   <div
-                    className={`border-b border-r border-slate-100 ${
+                    className={`border-b border-r ${endsBand ? "border-b-slate-200" : "border-b-slate-100"} border-r-slate-100 ${
                       isLoading ? "animate-pulse bg-slate-50/80" : disabledDays.has(dayIndex) ? "bg-slate-100/80" : "bg-white"
                     }`}
                     style={{ gridColumn: dayIndex + 2, gridRow: slotOffset + 2 }}

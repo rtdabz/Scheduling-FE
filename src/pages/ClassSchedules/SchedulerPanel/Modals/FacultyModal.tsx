@@ -123,14 +123,14 @@ export default function FacultyModal({
         aria-modal="true"
         aria-labelledby="faculty-modal-title"
         aria-describedby="faculty-modal-desc"
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-[34rem] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        className="bg-[#F7F4F0] rounded-2xl shadow-2xl w-full max-w-[34rem] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
       >
-        <div className="flex justify-between items-start px-5 pt-5 pb-3 border-b border-gray-100">
+        <div className="flex justify-between items-start px-5 py-4 bg-[#4e0a10]">
           <div className="flex items-start gap-3">
-            <UserCheck className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
+            <UserCheck className="w-5 h-5 text-[#C9952A] mt-0.5 shrink-0" />
             <div>
-              <h3 id="faculty-modal-title" className="text-lg font-semibold text-gray-800 leading-tight">Assign Instructor</h3>
-              <p id="faculty-modal-desc" className="text-sm text-gray-500 mt-0.5">
+              <h3 id="faculty-modal-title" className="text-lg font-semibold text-white leading-tight">Assign Instructor</h3>
+              <p id="faculty-modal-desc" className="text-sm text-amber-100/75 mt-0.5">
                 Choose the eligible instructor for this scheduled subject.
               </p>
             </div>
@@ -140,7 +140,7 @@ export default function FacultyModal({
             type="button"
             onClick={() => setFacultyAssignmentPopup(null)}
             aria-label="Close instructor assignment dialog"
-            className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1 transition-colors"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
           >
             <X className="w-4 h-4" />
           </button>

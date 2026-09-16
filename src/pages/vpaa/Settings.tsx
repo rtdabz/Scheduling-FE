@@ -3,7 +3,9 @@ import { useToast } from '../../context/ToastContext';
 import {
   ArrowRight,
   CalendarRange,
+  CheckCircle2,
   Clock3,
+  FileText,
   History,
   Save,
   Signature,
@@ -22,7 +24,7 @@ import DataTable from '../../components/ui/DataTable';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
-import { operatingHoursError, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
+import { operatingHoursError, timeInputMinutes, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
 import {
   academicYearError,
   followingYear,
@@ -110,12 +112,14 @@ const apiMessage = (error: unknown, fallback: string): string => {
 };
 
 function SectionCard({
+  id,
   icon: Icon,
   title,
   description,
   aside,
   children,
 }: {
+  id: string;
   icon: LucideIcon;
   title: string;
   description: string;
@@ -123,14 +127,14 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm target:border-[#C9952A]">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/10 text-[#4e0a10]">
             <Icon className="h-4 w-4" />
           </span>
           <div className="min-w-0">
-            <h2 className="font-display text-sm font-bold text-gray-800">{title}</h2>
+            <h2 id={`${id}-title`} className="font-sans text-sm font-bold text-slate-800">{title}</h2>
             <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{description}</p>
           </div>
         </div>
@@ -444,6 +448,19 @@ export default function Settings() {
     return [...semesters].sort((a, b) => semesterOrder[a.semester] - semesterOrder[b.semester]);
   }, [semesters]);
 
+  const activeSemester = semesters.find(semester => semester.is_active);
+  const openingMinutes = timeInputMinutes(operatingHoursDraft.opening_time);
+  const closingMinutes = timeInputMinutes(operatingHoursDraft.closing_time);
+  const hoursPreviewValid = !isLoadingOperatingHours && operatingHours !== null && !operatingHoursValidationError;
+  const dailyMinutes = hoursPreviewValid ? closingMinutes! - openingMinutes! : 0;
+  const durationLabel = `${Math.floor(dailyMinutes / 60)}h${dailyMinutes % 60 ? ` ${dailyMinutes % 60}m` : ''}`;
+  const settingsSections = [
+    { id: 'academic-semesters', label: 'Academic semesters', icon: CalendarRange, detail: activeSemester ? SEMESTER_LABELS[activeSemester.semester] : isLoading ? 'Loading semesters' : 'No active semester' },
+    { id: 'operating-hours', label: 'Operating hours', icon: Clock3, detail: 'Daily scheduling window' },
+    { id: 'document-signatories', label: 'Document signatories', icon: Signature, detail: 'Printed approval details' },
+    { id: 'activation-history', label: 'Activation history', icon: History, detail: 'Semester changes' },
+  ];
+
   const columns = useMemo<ColumnDef<ActivationHistoryEntry>[]>(
     () => [
       {
@@ -498,22 +515,35 @@ export default function Settings() {
   });
 
   return (
-    <div id="settings-page" className="space-y-6">
+    <div id="settings-page" className="grid items-start gap-4 font-sans xl:grid-cols-[200px_minmax(0,1fr)]">
+      <nav aria-label="Settings sections" className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-white p-2 sm:grid-cols-4 xl:sticky xl:top-4 xl:grid-cols-1">
+        {settingsSections.map(({ id, label, icon: Icon, detail }) => (
+          <a key={id} href={`#${id}`} className="group flex min-w-0 items-start gap-2.5 rounded-xl p-2.5 transition-colors hover:bg-[#5A1220]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]">
+            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#5A1220]" aria-hidden="true" />
+            <span className="min-w-0"><span className="block text-xs font-bold text-slate-700 group-hover:text-[#5A1220]">{label}</span><span className="mt-1 hidden text-[11px] leading-snug text-slate-500 xl:block">{detail}</span></span>
+          </a>
+        ))}
+      </nav>
+      <div className="min-w-0 space-y-4">
       <SectionCard
+        id="academic-semesters"
         icon={CalendarRange}
         title="Academic Semesters"
-        description="Set the years each semester covers, then activate the one in session. Activating a semester applies it system-wide."
+        description="Manage academic years and the semester used across the institution."
         aside={
-          <span className="rounded-full bg-[#C9952A]/15 px-2.5 py-1 text-[10px] font-bold text-[#7B1113]">
-            {semesters.length} semesters
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${activeSemester ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+            {activeSemester && <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}
+            {activeSemester ? `AY ${activeSemester.academic_year}` : isLoading ? 'Loading…' : 'No active semester'}
           </span>
         }
       >
-        <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
           {isLoading && semesters.length === 0 ? (
             Array.from({ length: 3 }).map((_, index) => (
               <div key={`card-skeleton-${index}`} className="h-64 animate-pulse rounded-2xl border border-slate-200/70 bg-slate-50" />
             ))
+          ) : sortedSemesters.length === 0 ? (
+            <p className="col-span-full rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">No academic semesters available.</p>
           ) : sortedSemesters.map(semester => {
             const isSummer = semester.semester === 'summer';
             const isCardDisabled = isSummer && !semester.is_enabled;
@@ -527,20 +557,20 @@ export default function Settings() {
             return (
               <article
                 key={semester.id}
-                className={`flex flex-col justify-between rounded-2xl border p-4 shadow-sm transition-all duration-200 ${
+                className={`relative flex flex-col justify-between rounded-xl border border-t-4 p-4 transition-colors ${
                   isCardDisabled
                     ? 'border-gray-200/60 bg-gray-50/80'
                     : semester.is_active
-                    ? 'border-[#4e0a10]/30 bg-[#4e0a10]/[0.03]'
-                    : 'border-slate-200/80 bg-[#F7F4F0]'
+                    ? 'border-[#5A1220]/20 border-t-[#5A1220] bg-[#5A1220]/[0.03]'
+                    : 'border-slate-200 border-t-[#C9952A]/60 bg-white'
                 }`}
               >
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h3 className="font-display text-base font-bold text-gray-800">{SEMESTER_LABELS[semester.semester]}</h3>
+                      <h3 className="font-sans text-base font-bold text-slate-800">{SEMESTER_LABELS[semester.semester]}</h3>
                       <div className="mt-1 flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${semester.is_active && !isCardDisabled ? 'animate-pulse bg-green-500' : 'bg-gray-300'}`} />
+                        <span className={`h-2 w-2 rounded-full ${semester.is_active && !isCardDisabled ? 'bg-green-500' : 'bg-gray-300'}`} />
                         <span className={`text-[11px] font-bold ${semester.is_active && !isCardDisabled ? 'text-green-700' : 'text-gray-400'}`}>
                           {semester.is_active && !isCardDisabled ? 'Active' : isCardDisabled ? 'Not offered' : 'Inactive'}
                         </span>
@@ -550,6 +580,9 @@ export default function Settings() {
                     {isSummer && (
                       <button
                         type="button"
+                        role="switch"
+                        aria-checked={semester.is_enabled}
+                        aria-label="Offer Summer semester"
                         onClick={() => handleToggleEnabled(semester, !semester.is_enabled)}
                         disabled={!isSummerToggleEnabled || togglingId === semester.id}
                         className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
@@ -681,18 +714,32 @@ export default function Settings() {
         </div>
       </SectionCard>
 
-      <div className="grid items-start gap-6 xl:grid-cols-2">
       <SectionCard
+        id="operating-hours"
         icon={Clock3}
         title="Institution Operating Hours"
-        description="Set the daily time range used by schedule generation, conflict validation, and faculty availability."
+        description="Define when classes can run during the day."
         aside={operatingHours && (
-          <span className="rounded-full bg-[#C9952A]/15 px-2.5 py-1 text-[10px] font-bold text-[#7B1113]">
-            {operatingHours.opening_time} - {operatingHours.closing_time}
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${operatingHoursDirty ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+            {operatingHoursDirty ? 'Unsaved changes' : 'Saved'}
           </span>
         )}
       >
-        <div className="grid gap-4 p-5 sm:grid-cols-2 sm:items-end">
+        <div className="mx-4 mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-bold text-slate-700">Daily hours preview</p>
+            <span className="text-xs font-semibold text-[#5A1220]">{hoursPreviewValid ? `${durationLabel} scheduling window` : isLoadingOperatingHours ? 'Loading hours…' : 'Choose valid hours to preview'}</span>
+          </div>
+          <div role="img" aria-label={hoursPreviewValid ? `Daily scheduling window: ${toApiTime(operatingHoursDraft.opening_time)} to ${toApiTime(operatingHoursDraft.closing_time)}` : 'Daily scheduling window unavailable'}>
+            <div className="relative h-10 overflow-hidden rounded-lg bg-slate-200/80">
+              {hoursPreviewValid && <div className="absolute inset-y-0 rounded-lg bg-[#5A1220]" style={{ left: `${openingMinutes! / 1440 * 100}%`, width: `${dailyMinutes / 1440 * 100}%` }} />}
+              {[6, 12, 18].map(hour => <span key={hour} className="absolute inset-y-0 border-l border-white/50" style={{ left: `${hour / 24 * 100}%` }} />)}
+            </div>
+            <div className="mt-2 flex justify-between text-[10px] font-semibold text-slate-500"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+          </div>
+          {hoursPreviewValid && <p className="mt-3 flex items-center gap-2 text-xs text-slate-600"><span className="h-2 w-2 rounded-full bg-[#5A1220]" />{toApiTime(operatingHoursDraft.opening_time)} – {toApiTime(operatingHoursDraft.closing_time)}<span className="ml-auto text-[11px] text-slate-500">{operatingHoursDirty ? 'Preview of unsaved hours' : 'Current operating hours'}</span></p>}
+        </div>
+        <div className="grid gap-4 p-4 sm:grid-cols-2 sm:items-end">
           <label className="block">
             <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Opening time</span>
             <input
@@ -716,7 +763,7 @@ export default function Settings() {
             />
           </label>
           <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
-            Extending the closing time expands the valid daily scheduling range. Explicit duration-specific start-time overrides remain authoritative.
+            Changes apply to schedule generation, conflict checks, and faculty availability. Course-specific start-time overrides still apply.
           </p>
           {operatingHoursValidationError && !isLoadingOperatingHours && (
             <p className="flex items-center gap-1 text-xs font-semibold text-red-600 sm:col-span-2">
@@ -735,14 +782,15 @@ export default function Settings() {
           </button>
         </div>
       </SectionCard>
-      </div>
 
       <SectionCard
+        id="document-signatories"
         icon={Signature}
         title="Document Signatories"
-        description="Printed schedules and teaching load sheets are approved by this officer. Update the name when the office changes hands."
+        description="Set the approval name and designation used on printed documents."
+        aside={<span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${signatoryDirty ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{signatoryDirty ? 'Unsaved changes' : 'Print settings'}</span>}
       >
-        <div className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
           <div className="space-y-4">
             <label className="block">
               <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
@@ -804,25 +852,29 @@ export default function Settings() {
           </div>
 
           {/* What the print builders will stamp, so it can be checked before saving. */}
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-[#F7F4F0] p-5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Preview on printed documents</p>
-            <div className="mt-6 text-center">
+          <figure aria-label="Document signature preview" className="m-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <figcaption className="flex items-center gap-2 text-[11px] font-semibold text-slate-500"><FileText className="h-4 w-4" />Preview on printed documents</figcaption>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-5">
+            <div aria-hidden="true" className="mb-8 space-y-2"><div className="h-1.5 w-2/3 rounded bg-slate-100" /><div className="h-1.5 w-full rounded bg-slate-100" /><div className="h-1.5 w-4/5 rounded bg-slate-100" /></div>
+            <div className="text-center">
               <p className="text-xs font-semibold text-gray-500">Approved by:</p>
               <p className="mt-4 border-t border-gray-400 pt-1.5 text-sm font-bold uppercase tracking-wide text-gray-800">
-                {signatoryDraft.president_name.trim() || DEFAULT_INSTITUTION_SETTINGS.president_name}
+                {signatoryDraft.president_name.trim() || 'President’s name'}
               </p>
               <p className="text-[11px] font-semibold text-gray-500">
-                {signatoryDraft.president_title.trim() || DEFAULT_INSTITUTION_SETTINGS.president_title}
+                {signatoryDraft.president_title.trim() || 'Designation'}
               </p>
             </div>
-          </div>
+            </div>
+          </figure>
         </div>
       </SectionCard>
 
       <SectionCard
+        id="activation-history"
         icon={History}
         title="Semester Activation History"
-        description="Every semester activation recorded by the system, including the currently active semester."
+        description="A record of semester changes across the institution."
         aside={
           <span className="text-xs font-semibold text-gray-500">{history.length} logged</span>
         }
@@ -835,7 +887,7 @@ export default function Settings() {
           cellClassName={columnId => columnId === 'academic_year' ? 'whitespace-nowrap' : ''}
         />
       </SectionCard>
-
+      </div>
     </div>
   );
 }

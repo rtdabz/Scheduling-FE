@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import SharedDepartmentLogo from '../../components/ui/DepartmentLogo';
 import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import {
@@ -13,7 +14,6 @@ import {
   X,
   Loader2,
   LayoutGrid,
-  Building2,
   List,
   Users as UsersIcon,
   Layers,
@@ -148,26 +148,7 @@ function DepartmentLogo({
   className: string;
   iconSize: number;
 }) {
-  if (logo) {
-    return (
-      <img
-        src={logo}
-        alt={`${name} logo`}
-        className={`${className} rounded-full object-cover border border-gray-200 bg-white shadow-2xs shrink-0`}
-      />
-    );
-  }
-
-  return (
-    <div
-      role="img"
-      aria-label={`${name} — no logo uploaded`}
-      title={`${name} — no logo uploaded`}
-      className={`${className} rounded-full border flex items-center justify-center shrink-0 shadow-2xs ${getDepartmentColor(name || '').bg}`}
-    >
-      <Building2 size={iconSize} />
-    </div>
-  );
+  return <SharedDepartmentLogo name={name} logo={logo} className={className} iconSize={iconSize} fallbackClassName={getDepartmentColor(name || '').bg} />;
 }
 
 export default function Departments() {
@@ -899,15 +880,15 @@ export default function Departments() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50 relative overflow-hidden">
-              <h2 className="text-lg font-bold text-[#1A1410] font-display">
+          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10] relative overflow-hidden">
+              <h2 className="text-lg font-bold text-white font-display">
                 {isEditMode ? 'Edit Department' : 'Add New Department'}
               </h2>
-              <button 
+              <button
                 type="button"
-                onClick={() => setIsModalOpen(false)} 
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors relative z-10"
+                onClick={() => setIsModalOpen(false)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer relative z-10"
               >
                 <X size={20} />
               </button>

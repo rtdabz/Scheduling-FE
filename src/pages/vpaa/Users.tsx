@@ -1,5 +1,5 @@
 import { formatPhilippineDate } from '../../lib/philippineTime';
-import { capitalizeNameInput } from '../../lib/formatters';
+import { NAME_SUFFIXES, capitalizeNameInput } from '../../lib/formatters';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
@@ -15,9 +15,7 @@ import {
   Link2Off,
   LayoutGrid,
   List,
-  ShieldCheck
 } from 'lucide-react';
-import UserAccessMatrixModal, { type MatrixUser } from './UserAccessMatrixModal';
 import {
   useReactTable,
   getCoreRowModel,
@@ -41,6 +39,7 @@ interface User {
   first_name: string;
   middle_initial: string;
   last_name: string;
+  suffix: string;
   username: string;
   email: string;
   role: string;
@@ -54,9 +53,6 @@ interface User {
   googleLinked: boolean;
   facultyProfileId?: number | null;
   createdAt: string;
-  permissions?: string[];
-  direct_permissions?: string[];
-  inherited_permissions?: string[];
 }
 
 /** How a new account relates to the instructor roster. Mirrors UserFacultyProfileService::MODES. */
@@ -104,6 +100,7 @@ interface ApiUser {
   first_name?: string | null;
   middle_initial?: string | null;
   last_name?: string | null;
+  suffix?: string | null;
   username: string;
   email: string | null;
   role: string;
@@ -116,9 +113,6 @@ interface ApiUser {
   google_id?: string | null;
   faculty_profile?: { id: number; administrative_role?: string | null } | null;
   created_at: string;
-  permissions?: string[];
-  direct_permissions?: string[];
-  inherited_permissions?: string[];
 }
 
 interface UsersPageData {
@@ -147,6 +141,7 @@ const mapApiUser = (u: ApiUser): User => ({
   first_name: u.first_name ?? '',
   middle_initial: u.middle_initial ?? '',
   last_name: u.last_name ?? '',
+  suffix: u.suffix ?? '',
   username: u.username,
   email: u.email || '',
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
@@ -160,10 +155,25 @@ const mapApiUser = (u: ApiUser): User => ({
   googleLinked: Boolean(u.google_id),
   facultyProfileId: u.faculty_profile?.id ?? null,
   createdAt: u.created_at,
-  permissions: u.permissions ?? [],
-  direct_permissions: u.direct_permissions ?? [],
-  inherited_permissions: u.inherited_permissions ?? [],
 });
+
+// Shared field styling for the account form, kept compact so the dialog fits
+// on screen without scrolling.
+const FORM_LABEL = 'block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1';
+const formInput = (hasError = false) =>
+  `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm bg-white transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
+    hasError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+  }`;
+const FORM_READONLY = 'w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed outline-none text-sm';
+const FieldError = ({ message }: { message: string }) =>
+  message ? <p className="text-[11px] text-red-500 mt-0.5 font-semibold">{message}</p> : null;
+
+const TEACHING_OPTIONS: { mode: FacultyMode; title: string; hint: string }[] = [
+  { mode: 'link', title: 'Link existing instructor', hint: 'Use the roster record, keeping its load and class history.' },
+  { mode: 'create', title: 'Create new instructor profile', hint: 'Adds a new full-time instructor (21 units) to the roster.' },
+  { mode: 'none', title: 'Non-teaching account', hint: 'No instructor profile. Classes cannot be assigned to this account.' },
+];
+
 
 export default function VpaaUsers() {
   const { toast, confirm } = useToast();
@@ -173,25 +183,6 @@ export default function VpaaUsers() {
   const [departments, setDepartments] = useState<Department[]>(cachedUsersData?.departments ?? []);
   const [programs, setPrograms] = useState<Program[]>(cachedUsersData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(usersCacheKey));
-
-  const [isAccessMatrixOpen, setIsAccessMatrixOpen] = useState(false);
-  const [selectedUserForAccess, setSelectedUserForAccess] = useState<MatrixUser | null>(null);
-
-  const handleOpenAccessMatrix = (user: User) => {
-    setSelectedUserForAccess({
-      id: user.id,
-      name: user.name,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      department: user.department,
-      program_id: user.program_id,
-      profile_picture: user.profile_picture,
-      status: user.status,
-      permissions: user.permissions ?? [],
-    });
-    setIsAccessMatrixOpen(true);
-  };
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -210,6 +201,7 @@ export default function VpaaUsers() {
     first_name: '',
     middle_initial: '',
     last_name: '',
+    suffix: '',
     username: '',
     email: '',
     password: '',
@@ -486,6 +478,7 @@ export default function VpaaUsers() {
           first_name: formData.first_name.trim(),
           middle_initial: formData.middle_initial.trim() || null,
           last_name: formData.last_name.trim(),
+          suffix: formData.suffix || null,
           email: formData.email.trim(),
           password: formData.password,
           role: apiRole,
@@ -507,6 +500,7 @@ export default function VpaaUsers() {
           first_name: formData.first_name.trim(),
           middle_initial: formData.middle_initial.trim() || null,
           last_name: formData.last_name.trim(),
+          suffix: formData.suffix || null,
           username: formData.username,
           email: formData.email.trim(),
           password: formData.password,
@@ -529,7 +523,7 @@ export default function VpaaUsers() {
         toast.success('Success', 'User account created successfully');
       }
 
-      setFormData({ first_name: '', middle_initial: '', last_name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
       resetTeachingProfile();
       setIsModalOpen(false);
       setIsEditMode(false);
@@ -549,6 +543,7 @@ export default function VpaaUsers() {
       first_name: user.first_name,
       middle_initial: user.middle_initial,
       last_name: user.last_name,
+      suffix: user.suffix,
       username: user.username,
       email: user.email,
       password: '••••••••',
@@ -726,21 +721,6 @@ export default function VpaaUsers() {
           <div className="flex justify-end gap-1.5">
             <div className="relative group/tooltip">
               <TableActionButton
-                label="Manage Access"
-                variant="neutral"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleOpenAccessMatrix(row.original);
-                }}
-              >
-                <ShieldCheck size={17} className="text-[#5A1220]" />
-              </TableActionButton>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                Manage Access
-              </span>
-            </div>
-            <div className="relative group/tooltip">
-              <TableActionButton
                 label="Edit"
                 variant="edit"
                 onClick={(event) => {
@@ -841,7 +821,7 @@ export default function VpaaUsers() {
               setIsEditMode(false);
               setEditingId(null);
               setIsDetailModalOpen(false);
-              setFormData({ first_name: '', middle_initial: '', last_name: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+              setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
               setFirstNameError('');
               setLastNameError('');
               setMiddleInitialError('');
@@ -961,16 +941,6 @@ export default function VpaaUsers() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenAccessMatrix(u);
-                        }}
-                        className="p-1.5 text-[#5A1220] hover:bg-[#5A1220]/10 rounded-lg transition-colors cursor-pointer"
-                        title="Manage Access"
-                      >
-                        <ShieldCheck size={16} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
                           handleEditClick(u);
                         }}
                         className="p-1.5 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
@@ -1009,380 +979,360 @@ export default function VpaaUsers() {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
-              <h2 className="text-lg font-bold text-[#1A1410] font-display">
+          <div className={`bg-[#F7F4F0] rounded-2xl w-full ${isEditMode ? 'max-w-2xl' : 'max-w-5xl'} max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200`}>
+            <div className="px-5 py-3.5 flex justify-between items-center bg-[#4e0a10] shrink-0">
+              <h2 className="text-lg font-bold text-white font-display">
                 {isEditMode ? 'Edit User Account' : 'Create New Account'}
               </h2>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
-              {/* Photo Upload Section */}
-              <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
-                <div className="relative group">
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
-                    title="Click to upload picture"
-                  >
-                    {profilePicture ? (
-                      <img src={profilePicture} alt="User Preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
-                        <Camera size={26} />
-                        <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Upload</span>
+            <form onSubmit={handleSubmit} noValidate className="flex flex-col min-h-0 flex-1">
+              {/* Very short viewports (phones) still get a scrollable body; desktop layouts fit without it. */}
+              <div className={`min-h-0 flex-1 overflow-y-auto p-5 grid gap-5 ${isEditMode ? '' : 'lg:grid-cols-[1.15fr_1fr]'}`}>
+                {/* Account details */}
+                <div className="space-y-3">
+                  <div className="flex gap-4 items-start">
+                    <div className="relative shrink-0">
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-[4.5rem] h-[4.5rem] rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer"
+                        title={profilePicture ? 'Click photo to change' : 'Click to upload user profile photo'}
+                      >
+                        {profilePicture ? (
+                          <img src={profilePicture} alt="User Preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
+                            <Camera size={20} />
+                            <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Photo</span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  {profilePicture && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setProfilePicture(null);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                      }}
-                      className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
-                      title="Remove Photo"
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  onChange={handlePhotoUpload}
-                  className="hidden"
-                />
-                <p className="text-[10px] font-semibold text-gray-500 font-sans">
-                  {profilePicture ? 'Click photo to change' : 'Click to upload user profile photo'}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_0.4fr]">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Last Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.last_name}
-                    onChange={(e) => {
-                      setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
-                      setLastNameError('');
-                    }}
-                    placeholder="e.g. Dela Cruz"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      lastNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                  {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold">{lastNameError}</p>}
-                </div>
+                      {profilePicture && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProfilePicture(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
+                          title="Remove Photo"
+                        >
+                          <X size={10} />
+                        </button>
+                      )}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    First Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.first_name}
-                    onChange={(e) => {
-                      setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
-                      setFirstNameError('');
-                    }}
-                    placeholder="e.g. Juan"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      firstNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                  {firstNameError && <p className="text-xs text-red-500 mt-1 font-semibold">{firstNameError}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    M.I.
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={1}
-                    value={formData.middle_initial}
-                    onChange={(e) => {
-                      setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
-                      setMiddleInitialError('');
-                    }}
-                    placeholder="D"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white uppercase transition-all ${
-                      middleInitialError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                  {middleInitialError && <p className="text-xs text-red-500 mt-1 font-semibold">{middleInitialError}</p>}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Institutional Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="name@school.edu.ph"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                />
-                <p className="mt-1 text-[11px] text-gray-500">Google sign-in will only accept this exact verified email.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Username
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.username}
-                    readOnly
-                    placeholder={isEditMode ? '' : 'Auto-generated'}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed outline-none text-sm font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">Password</label>
-                  <input type="text" value={formData.password} readOnly placeholder={isEditMode ? '' : 'Auto-generated'} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed outline-none text-sm" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Role
-                  </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => {
-                      const nextRole = e.target.value;
-                      setFormData({
-                        ...formData,
-                        role: nextRole,
-                        program_id: nextRole === 'Program Head' ? formData.program_id : '',
-                      });
-                      setProgramError('');
-                    }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
-                  >
-                    <option value="Dean">Dean</option>
-                    <option value="Program Head">Program Head</option>
-                    <option value="Secretary">Secretary</option>
-                    <option value="Director">Director</option>
-                  </select>
-                </div>
-                <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                      Status
-                    </label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Active' | 'Inactive' })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none bg-white text-sm cursor-pointer"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                </div>
-              </div>
-
-              <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 cursor-pointer">
-                <input type="checkbox" checked={formData.allow_google_login} onChange={(e) => setFormData({ ...formData, allow_google_login: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[#5A1220]" />
-                <span><span className="block text-sm font-bold text-gray-800">Allow Google login</span><span className="block text-xs text-gray-500 mt-0.5">The user links their own Google account during first sign-in.</span></span>
-              </label>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Assigned Department <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.department_id}
-                  onChange={(e) => {
-                    setFormData({ ...formData, department_id: e.target.value, program_id: '' });
-                    setDeptError('');
-                    setProgramError('');
-                                  }}
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm cursor-pointer transition-all ${
-                    deptError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                >
-                  <option value="">Select a department...</option>
-                  {departments.map((dept) => (
-                    <option key={dept.id} value={dept.id}>{dept.department_name}</option>
-                  ))}
-                </select>
-                {deptError && <p className="text-xs text-red-500 mt-1 font-semibold">{deptError}</p>}
-              </div>
-
-              {isProgramHeadRole && (
-                <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-bold text-[#4e0a10]">Program Assignment</h3>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      Assign this Program Head to a specific program or major within the selected department.
-                    </p>
+                    <div className="grid gap-3 grid-cols-[1fr_1fr_3.5rem_5.5rem] flex-1 min-w-0">
+                      <div>
+                        <label className={FORM_LABEL}>
+                          Last Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.last_name}
+                          onChange={(e) => {
+                            setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
+                            setLastNameError('');
+                          }}
+                          placeholder="e.g. Dela Cruz"
+                          className={formInput(!!lastNameError)}
+                        />
+                        <FieldError message={lastNameError} />
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL}>
+                          First Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.first_name}
+                          onChange={(e) => {
+                            setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
+                            setFirstNameError('');
+                          }}
+                          placeholder="e.g. Juan"
+                          className={formInput(!!firstNameError)}
+                        />
+                        <FieldError message={firstNameError} />
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL}>M.I.</label>
+                        <input
+                          type="text"
+                          maxLength={1}
+                          value={formData.middle_initial}
+                          onChange={(e) => {
+                            setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
+                            setMiddleInitialError('');
+                          }}
+                          placeholder="D"
+                          className={`${formInput(!!middleInitialError)} uppercase text-center`}
+                        />
+                        <FieldError message={middleInitialError} />
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL}>Suffix</label>
+                        <select
+                          value={formData.suffix}
+                          onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
+                          className={`${formInput()} cursor-pointer`}
+                        >
+                          <option value="">None</option>
+                          {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      </div>
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                      Program / Major <span className="text-red-500">*</span>
+                    <label className={FORM_LABEL}>
+                      Institutional Email <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      value={formData.program_id}
-                      disabled={!formData.department_id}
-                      onChange={(e) => {
-                        setFormData({ ...formData, program_id: e.target.value });
-                        setProgramError('');
-                      }}
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
-                        programError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                      }`}
-                    >
-                      <option value="">
-                        {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
-                      </option>
-                      {selectedDepartmentPrograms.map((program) => (
-                        <option key={program.id} value={program.id}>
-                          {program.code} - {program.name}{program.cluster ? ` (${program.cluster})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {programError && <p className="text-xs text-red-500 mt-1 font-semibold">{programError}</p>}
-                    {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
-                      <p className="text-xs text-gray-500 mt-1 font-semibold">
-                        This department has no programs yet. Add one in Department Management first.
-                      </p>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {!isEditMode && (
-                <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-bold text-[#4e0a10]">Teaching Profile</h3>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      Decide whether this account teaches. Link it if the person is already on the instructor roster, so they are not scheduled twice.
-                    </p>
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="name@school.edu.ph"
+                      className={formInput()}
+                    />
                   </div>
 
-                  <div role="radiogroup" aria-label="Teaching profile" className="grid gap-2">
-                    {([
-                      { mode: 'link', title: 'Link existing instructor', hint: 'Use the roster record, keeping its load and class history.' },
-                      { mode: 'create', title: 'Create new instructor profile', hint: 'Adds a new full-time instructor (21 units) to the roster.' },
-                      { mode: 'none', title: 'Non-teaching account', hint: 'No instructor profile. Classes cannot be assigned to this account.' },
-                    ] as { mode: FacultyMode; title: string; hint: string }[]).map((option) => (
-                      <label
-                        key={option.mode}
-                        className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
-                          facultyMode === option.mode ? 'border-[#5A1220] bg-[#5A1220]/5' : 'border-gray-200 bg-white hover:bg-gray-50'
-                        }`}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={FORM_LABEL}>Username</label>
+                      <input
+                        type="text"
+                        value={formData.username}
+                        readOnly
+                        placeholder={isEditMode ? '' : 'Auto-generated'}
+                        className={`${FORM_READONLY} font-mono`}
+                      />
+                    </div>
+                    <div>
+                      <label className={FORM_LABEL}>Password</label>
+                      <input type="text" value={formData.password} readOnly placeholder={isEditMode ? '' : 'Auto-generated'} className={FORM_READONLY} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={FORM_LABEL}>Role</label>
+                      <select
+                        value={formData.role}
+                        onChange={(e) => {
+                          const nextRole = e.target.value;
+                          setFormData({
+                            ...formData,
+                            role: nextRole,
+                            program_id: nextRole === 'Program Head' ? formData.program_id : '',
+                          });
+                          setProgramError('');
+                        }}
+                        className={`${formInput()} cursor-pointer`}
                       >
-                        <input
-                          type="radio"
-                          name="faculty_mode"
-                          value={option.mode}
-                          checked={facultyMode === option.mode}
-                          onChange={() => {
-                            setFacultyModeTouched(true);
-                            setFacultyMode(option.mode);
-                            setFacultyLinkError('');
-                          }}
-                          className="mt-0.5 h-4 w-4 accent-[#5A1220]"
-                        />
-                        <span>
-                          <span className="block text-sm font-bold text-gray-800">{option.title}</span>
-                          <span className="block text-xs text-gray-500 mt-0.5">{option.hint}</span>
-                        </span>
-                      </label>
-                    ))}
+                        <option value="Dean">Dean</option>
+                        <option value="Program Head">Program Head</option>
+                        <option value="Secretary">Secretary</option>
+                        <option value="Director">Director</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={FORM_LABEL}>Status</label>
+                      <select
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Active' | 'Inactive' })}
+                        className={`${formInput()} cursor-pointer`}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                    </div>
                   </div>
 
-                  {facultyMode === 'link' && (
-                    <div className="mt-3">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                        Instructor <span className="text-red-500">*</span>
+                  <div className={`grid gap-3 ${isProgramHeadRole ? 'grid-cols-2' : ''}`}>
+                    <div>
+                      <label className={FORM_LABEL}>
+                        Assigned Department <span className="text-red-500">*</span>
                       </label>
                       <select
-                        value={linkFacultyId}
-                        disabled={!formData.department_id || isLoadingLinkable}
+                        value={formData.department_id}
                         onChange={(e) => {
-                          setFacultyModeTouched(true);
-                          setLinkFacultyId(e.target.value);
-                          setFacultyLinkError('');
+                          setFormData({ ...formData, department_id: e.target.value, program_id: '' });
+                          setDeptError('');
+                          setProgramError('');
                         }}
-                        className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none bg-white text-sm transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
-                          facultyLinkError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                        }`}
+                        className={`${formInput(!!deptError)} cursor-pointer`}
                       >
-                        <option value="">
-                          {!formData.department_id
-                            ? 'Select a department first'
-                            : isLoadingLinkable
-                              ? 'Loading instructors...'
-                              : 'Select an instructor...'}
-                        </option>
-                        {linkableFaculty.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {linkableFacultyName(f)}{f.status === 'inactive' ? ' (inactive)' : ''}
-                          </option>
+                        <option value="">Select a department...</option>
+                        {departments.map((dept) => (
+                          <option key={dept.id} value={dept.id}>{dept.department_name}</option>
                         ))}
                       </select>
-                      {facultyLinkError && <p className="text-xs text-red-500 mt-1 font-semibold">{facultyLinkError}</p>}
-                      {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
-                        <p className="text-xs text-[#8a6412] mt-1 font-semibold">
-                          Matched by name to an instructor already on this department's roster.
-                        </p>
-                      )}
-                      {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
-                        <p className="text-xs text-gray-500 mt-1 font-semibold">
-                          Every instructor in this department is already linked to an account.
-                        </p>
-                      )}
+                      <FieldError message={deptError} />
                     </div>
-                  )}
 
-                  {facultyMode !== 'none' && designations.length > 0 && (
-                    <div className="mt-3">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                        Designations
-                      </label>
-                      <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {facultyMode === 'link' && designationIds.length === 0
-                          ? 'Leave empty to keep the instructor\'s current designations.'
-                          : 'A dean or program head usually carries a reduced load. Pick their posts so it is scheduled correctly.'}
+                    {isProgramHeadRole && (
+                      <div>
+                        <label className={FORM_LABEL}>
+                          Program / Major <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={formData.program_id}
+                          disabled={!formData.department_id}
+                          onChange={(e) => {
+                            setFormData({ ...formData, program_id: e.target.value });
+                            setProgramError('');
+                          }}
+                          className={formInput(!!programError)}
+                        >
+                          <option value="">
+                            {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
+                          </option>
+                          {selectedDepartmentPrograms.map((program) => (
+                            <option key={program.id} value={program.id}>
+                              {program.code} - {program.name}{program.cluster ? ` (${program.cluster})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <FieldError message={programError} />
+                        {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
+                          <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
+                            No programs yet. Add one in Department Management.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 cursor-pointer">
+                    <input type="checkbox" checked={formData.allow_google_login} onChange={(e) => setFormData({ ...formData, allow_google_login: e.target.checked })} className="h-4 w-4 accent-[#5A1220] shrink-0" />
+                    <span className="text-sm font-bold text-gray-800">Allow Google login</span>
+                    <span className="text-[11px] text-gray-500 truncate">Links on first sign-in; must match the email above.</span>
+                  </label>
+                </div>
+
+                {/* Teaching profile (create only) */}
+                {!isEditMode && (
+                  <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4 space-y-3 self-start w-full">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#4e0a10]">Teaching Profile</h3>
+                      <p className="mt-0.5 text-[11px] text-gray-500">
+                        Link the person if they are already on the instructor roster, so they are not scheduled twice.
                       </p>
                     </div>
-                  )}
-                </section>
-              )}
 
-              <div className="flex gap-3 pt-3">
+                    <div role="radiogroup" aria-label="Teaching profile" className="grid gap-2">
+                      {TEACHING_OPTIONS.map((option) => (
+                        <label
+                          key={option.mode}
+                          className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                            facultyMode === option.mode ? 'border-[#5A1220] bg-[#5A1220]/5' : 'border-gray-200 bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="faculty_mode"
+                            value={option.mode}
+                            checked={facultyMode === option.mode}
+                            onChange={() => {
+                              setFacultyModeTouched(true);
+                              setFacultyMode(option.mode);
+                              setFacultyLinkError('');
+                            }}
+                            className="mt-0.5 h-4 w-4 accent-[#5A1220]"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-bold text-gray-800">{option.title}</span>
+                            <span className="block text-[11px] text-gray-500">{option.hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {facultyMode === 'link' && (
+                      <div>
+                        <label className={FORM_LABEL}>
+                          Instructor <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={linkFacultyId}
+                          disabled={!formData.department_id || isLoadingLinkable}
+                          onChange={(e) => {
+                            setFacultyModeTouched(true);
+                            setLinkFacultyId(e.target.value);
+                            setFacultyLinkError('');
+                          }}
+                          className={formInput(!!facultyLinkError)}
+                        >
+                          <option value="">
+                            {!formData.department_id
+                              ? 'Select a department first'
+                              : isLoadingLinkable
+                                ? 'Loading instructors...'
+                                : 'Select an instructor...'}
+                          </option>
+                          {linkableFaculty.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {linkableFacultyName(f)}{f.status === 'inactive' ? ' (inactive)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <FieldError message={facultyLinkError} />
+                        {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
+                          <p className="text-[11px] text-[#8a6412] mt-0.5 font-semibold">
+                            Matched by name to an instructor already on this department's roster.
+                          </p>
+                        )}
+                        {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
+                          <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
+                            Every instructor in this department is already linked to an account.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {facultyMode !== 'none' && designations.length > 0 && (
+                      <div>
+                        <label className={FORM_LABEL}>Designations</label>
+                        <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} />
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          {facultyMode === 'link' && designationIds.length === 0
+                            ? 'Leave empty to keep the instructor\'s current designations.'
+                            : 'Deans and program heads usually carry a reduced load.'}
+                        </p>
+                      </div>
+                    )}
+                  </section>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 px-5 py-3.5 border-t border-gray-200/80 bg-gray-50/50 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
+                  className="min-w-[8rem] px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
+                  className="min-w-[8rem] flex items-center justify-center gap-2 px-4 py-2 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
                 >
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting
@@ -1483,17 +1433,6 @@ export default function VpaaUsers() {
                   <Link2Off size={14} /> Unlink Google
                 </button>
                 <button
-                  onClick={() => {
-                    const target = selectedUserForDetail;
-                    setIsDetailModalOpen(false);
-                    handleOpenAccessMatrix(target);
-                  }}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  <ShieldCheck size={14} className="text-[#5A1220]" />
-                  <span>Manage Access</span>
-                </button>
-                <button
                   onClick={() => setIsDetailModalOpen(false)}
                   className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
                 >
@@ -1515,33 +1454,6 @@ export default function VpaaUsers() {
         </div>
       )}
 
-      {/* User Access Matrix Modal */}
-      {isAccessMatrixOpen && selectedUserForAccess && (
-        <UserAccessMatrixModal
-          isOpen={isAccessMatrixOpen}
-          onClose={() => {
-            setIsAccessMatrixOpen(false);
-            setSelectedUserForAccess(null);
-          }}
-          user={selectedUserForAccess}
-          onSuccess={(updatedPermissions) => {
-            setUsers((prev) => {
-              const nextUsers = prev.map((u) =>
-                u.id === selectedUserForAccess.id ? { ...u, permissions: updatedPermissions } : u
-              );
-              setCachedData<UsersPageData>(usersCacheKey, {
-                users: nextUsers,
-                departments,
-                programs,
-              });
-              return nextUsers;
-            });
-            setSelectedUserForAccess((prev) =>
-              prev ? { ...prev, permissions: updatedPermissions } : null
-            );
-          }}
-        />
-      )}
     </div>
   );
 }

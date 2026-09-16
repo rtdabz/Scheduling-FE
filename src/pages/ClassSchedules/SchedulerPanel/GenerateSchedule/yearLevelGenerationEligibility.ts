@@ -33,3 +33,45 @@ export function canGenerateYearLevel(
     return sectionSchedules.length > 0 && sectionSchedules.every((schedule) => schedule.status === "revision");
   });
 }
+
+/**
+ * - `unscheduled`: no section of the year level has a class yet.
+ * - `scheduled`: classes exist but are still editable; generating again and
+ *   saving replaces them.
+ * - `locked`: classes have moved past plotting (submitted, approved, or only
+ *   partly recalled), so generation is refused.
+ */
+export type YearLevelScheduleState = {
+  kind: "unscheduled" | "scheduled" | "locked";
+  /** Sections of the year level that already have at least one class. */
+  scheduledSectionCount: number;
+  sectionCount: number;
+};
+
+export function getYearLevelScheduleState(
+  sections: Section[],
+  schedules: ScheduleItem[],
+  semesterId: number | string | null,
+): YearLevelScheduleState {
+  const sectionIds = new Set(sections.map((section) => String(section.id)));
+  const scheduledSectionIds = new Set(
+    schedules
+      .filter(
+        (schedule) =>
+          sectionIds.has(String(schedule.sectionId)) &&
+          (semesterId === null || Number(schedule.semesterId) === Number(semesterId)),
+      )
+      .map((schedule) => String(schedule.sectionId)),
+  );
+  const base = {
+    scheduledSectionCount: scheduledSectionIds.size,
+    sectionCount: sections.length,
+  };
+
+  if (scheduledSectionIds.size === 0) return { kind: "unscheduled", ...base };
+
+  return {
+    kind: canGenerateYearLevel(sections, schedules, semesterId) ? "scheduled" : "locked",
+    ...base,
+  };
+}

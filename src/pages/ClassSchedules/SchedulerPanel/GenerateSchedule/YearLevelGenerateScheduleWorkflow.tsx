@@ -40,7 +40,9 @@ import type {
 } from "./generationTypes";
 import {
   canGenerateYearLevel,
+  getYearLevelScheduleState,
   YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE,
+  type YearLevelScheduleState,
 } from "./yearLevelGenerationEligibility";
 import {
   balancedSplitSettingsOf,
@@ -181,7 +183,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   onSectionsChanged,
   onSavingChange,
 }: Props) {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const [step, setStep] = useState<Step>(1);
   // Steps slide in from the side you are travelling towards, so Back reads as
   // going back rather than as another forward move.
@@ -377,6 +379,25 @@ export default function YearLevelGenerateScheduleWorkflow({
       ),
     [activeSemester?.id, existingSchedules, scopedSections],
   );
+  // Every year level's state, so the picker can mark the ones already
+  // scheduled or locked before the user switches to them.
+  const yearStates = useMemo(
+    () =>
+      Object.fromEntries(
+        availableYears.map((year) => [
+          year,
+          getYearLevelScheduleState(
+            availableSections.filter(
+              (section) => Number(section.yearLevel) === year,
+            ),
+            existingSchedules,
+            activeSemester?.id ?? null,
+          ),
+        ]),
+      ) as Record<number, YearLevelScheduleState>,
+    [activeSemester?.id, availableSections, availableYears, existingSchedules],
+  );
+  const yearState = yearStates[yearLevel] ?? null;
   const roomCodeById = useMemo(
     () =>
       // Not narrowed to the department: a plan may place a class in a room
@@ -787,6 +808,25 @@ export default function YearLevelGenerateScheduleWorkflow({
     }
   };
 
+  /**
+   * The first run against a year level that already has classes asks first.
+   * Generating saves nothing, but saving the result replaces those classes, so
+   * this is the last calm moment to notice the year level was already done.
+   */
+  const generateFromReview = async () => {
+    if (yearState?.kind === "scheduled") {
+      const confirmed = await confirm({
+        title: "Year Level Already Scheduled",
+        message: `${yearLabel(yearLevel)} already has classes in ${yearState.scheduledSectionCount} of ${yearState.sectionCount} section${yearState.sectionCount === 1 ? "" : "s"}. Generating again is only a preview, but saving the result replaces those draft classes.`,
+        eyebrow: "Regenerate Schedule",
+        confirmLabel: "Generate Again",
+        variant: "maroon",
+      });
+      if (!confirmed) return;
+    }
+    await generate();
+  };
+
   const applyRecommendationAndRetry = (
     recommendation: GenerationRecommendation,
   ) => {
@@ -1063,6 +1103,8 @@ export default function YearLevelGenerateScheduleWorkflow({
                   setupDraft={setupDraft}
                   setSetupDraft={setSetupDraft}
                   sectionId={scopedSections[0]?.id ?? ""}
+                  yearStates={yearStates}
+                  yearChangeDisabled={generating}
                   actionsDisabled={!yearLevelGenerationAllowed || generating}
                   configs={configs}
                   onConfigChange={updateConfig}
@@ -1103,6 +1145,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   activeRules={activeRules}
                   generating={generating}
                   blockedReason={generationBlockedReason}
+                  yearState={yearState}
                 />
               )}
 
@@ -1168,7 +1211,7 @@ export default function YearLevelGenerateScheduleWorkflow({
             <button
               id="generator-generate"
               type="button"
-              onClick={() => void generate()}
+              onClick={() => void generateFromReview()}
               disabled={generating || generationBlockedReason !== null}
               className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
             >

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 
-const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const { get, post, confirm } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirm: vi.fn() }));
 
 vi.mock("../../../../lib/api", () => ({
   default: {
@@ -18,13 +18,14 @@ vi.mock("../../../../context/ToastContext", () => ({
       error: vi.fn(),
       success: vi.fn(),
     },
+    confirm,
   }),
 }));
 
 import YearLevelGenerateScheduleWorkflow from "./YearLevelGenerateScheduleWorkflow";
 import { GenerationRunProvider } from "../hooks/useGenerationRun";
 import { clearDataCache } from "../../../../lib/dataCache";
-import type { Course, Section, Semester } from "../types";
+import type { Course, ScheduleItem, Section, Semester } from "../types";
 
 afterEach(cleanup);
 
@@ -141,6 +142,61 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       if (curriculumResponse) return curriculumResponse;
       return Promise.resolve({ data: {} });
     });
+  });
+
+  it("marks an already scheduled year level and asks before generating it again", async () => {
+    localStorage.setItem("wicars.year-level-wizard.v5.2.1", JSON.stringify({
+      step: 3,
+      yearLevel: 1,
+      activeSectionId: "10",
+      configs: {},
+      setupDraft: { completed: true, allowedSplitCourseIds: [] },
+    }));
+    confirm.mockResolvedValue(false);
+    const draft = {
+      id: "900",
+      semesterId: 1,
+      departmentId: 2,
+      courseId: "20",
+      courseCode: "IT 101",
+      courseName: "Introduction to Computing",
+      courseType: "major",
+      lectureUnits: 3,
+      laboratoryUnits: 0,
+      totalUnits: 3,
+      sectionName: "BSIT 1A",
+      roomName: null,
+      day: "Monday",
+      startTime: "07:00",
+      endTime: "10:00",
+      mode: "on-site",
+      facultyName: null,
+      facultyId: null,
+      status: "draft",
+      dayIndex: 0,
+      startSlot: 0,
+      durationSlots: 6,
+      sectionId: "10",
+      roomId: null,
+    } as unknown as ScheduleItem;
+
+    renderWorkflow(
+      <YearLevelGenerateScheduleWorkflow
+        onClose={vi.fn()}
+        sections={sections}
+        courses={courses}
+        activeSemester={activeSemester}
+        departmentId={2}
+        existingSchedules={[draft]}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("Already scheduled")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("polls the queued result, saves it, and closes on the click while the refresh finishes", async () => {

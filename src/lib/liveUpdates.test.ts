@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCachedData, hasCachedData, setCachedData } from './dataCache';
-import { LIVE_UPDATE_EVENT, publishLiveTopics, stopLiveUpdates, type LiveUpdateDetail } from './liveUpdates';
+import { LIVE_UPDATE_EVENT, publishLiveTopics, scheduleResync, stopLiveUpdates, type LiveUpdateDetail } from './liveUpdates';
 import { getLiveSocketId } from './liveSocket';
 import api from './api';
 import { useLiveRefresh, useLiveRevision } from '../hooks/useLiveRefresh';
@@ -89,6 +89,30 @@ describe('live updates', () => {
 
     expect(onSchedules).toHaveBeenCalledTimes(1);
     expect(result.current).toBe(1);
+  });
+
+  it('drops cached data at once after a reconnect but waits to refetch', () => {
+    setCachedData('page:rooms:1', { rows: 1 });
+
+    scheduleResync(() => 0.5);
+
+    expect(hasCachedData('page:rooms:1')).toBe(false);
+    // 1000ms + half the 2000ms jitter, then the usual 300ms debounce.
+    vi.advanceTimersByTime(2000);
+    expect(received).toHaveLength(0);
+    vi.advanceTimersByTime(300);
+    expect(received).toHaveLength(1);
+  });
+
+  it('collapses repeated reconnects into one catch-up refetch', () => {
+    scheduleResync(() => 0);
+    vi.advanceTimersByTime(500);
+    scheduleResync(() => 0);
+    vi.advanceTimersByTime(500);
+    scheduleResync(() => 0);
+    vi.advanceTimersByTime(1300);
+
+    expect(received).toHaveLength(1);
   });
 
   it('sends no socket id while disconnected', async () => {

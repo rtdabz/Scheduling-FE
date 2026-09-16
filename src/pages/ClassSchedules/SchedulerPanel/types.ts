@@ -252,17 +252,17 @@ export interface DepartmentSectionProgress {
   facultyAssignmentDone: boolean;
 }
 
-/** One department section offered in the bulk "mark sections done" checklist. */
+/** One department section offered in the shared schedule-action checklist. */
 export interface SectionDoneCandidate {
   sectionId: string;
   sectionName: string;
   yearLevel: number;
   requiredSubjects: number;
   plottedSubjects: number;
-  /** Schedule row ids that would move to "completed" for this section. */
+  /** Schedule row ids affected by the checklist action for this section. */
   scheduleIds: number[];
   isReady: boolean;
-  /** Why the section cannot be marked done yet; empty when isReady. */
+  /** Why the section cannot be selected; empty when isReady. */
   blockedReason: string;
 }
 

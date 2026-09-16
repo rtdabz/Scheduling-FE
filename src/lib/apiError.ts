@@ -35,9 +35,20 @@ const asText = (value: unknown): string | null =>
  * offline browser, a proxy timeout, or a 500 with an empty body.
  */
 export const apiErrorMessage = (err: unknown, fallback: string): string => {
-  const response = (err as { response?: { status?: number; data?: ApiErrorBody } })?.response;
+  const failure = err as {
+    config?: { method?: string };
+    response?: { status?: number; data?: ApiErrorBody };
+  };
+  const response = failure?.response;
 
   if (!response) {
+    const method = (failure?.config?.method ?? 'get').toLowerCase();
+    // A write can reach the server and succeed even though the reply never
+    // made it back. Resending the identical change is safe: it carries the
+    // same idempotency key and is not applied twice (see lib/idempotency.ts).
+    if (method !== 'get' && method !== 'head') {
+      return 'The connection dropped before the server replied, so this change may already be saved. Refresh to check, or try again. It will not be saved twice.';
+    }
     return 'Could not reach the server. Check your connection and try again.';
   }
 

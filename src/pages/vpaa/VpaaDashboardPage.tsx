@@ -9,7 +9,6 @@ import {
   CalendarCheck2,
   Check,
   CheckCircle2,
-  DoorOpen,
   GaugeCircle,
   Landmark,
   LayoutGrid,
@@ -18,19 +17,24 @@ import {
   Minus,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   UserX,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
-import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
+import DashboardGantt from './calendar/DashboardGantt';
+import ScheduleDetailModal from './calendar/ScheduleDetailModal';
+import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarSchedule, type StandardHours } from './calendar/ganttLayout';
+import { isVpaaApproved } from '../../lib/scheduleStatus';
+import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 import ExecutiveHeader from '../../components/vpaa/ExecutiveHeader';
 import BuildingUtilizationPanel from '../../components/vpaa/BuildingUtilizationPanel';
 import FacultyLoadPanel, { type FacultyLoadRow } from '../../components/vpaa/FacultyLoadPanel';
 import AdministrativeActivityPanel, { type ActivityRow } from '../../components/vpaa/AdministrativeActivityPanel';
-import { Donut, DonutLegend, FilterSelect, Panel, StatChip, type Slice } from '../../components/vpaa/DashboardPrimitives';
+import { Donut, DonutLegend, FilterSelect, Panel, type Slice } from '../../components/vpaa/DashboardPrimitives';
 import { grouped } from '../../lib/dashboardFormat';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
@@ -66,6 +70,7 @@ import {
  */
 
 interface Schedule {
+  course_id?:number|null; department_id?:number|null; department?:Department|null; meeting_type?:string|null;
   id:number; semester_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
   day:string; start_time:string; end_time:string; mode?:'on-site'|'online'|'field'; status:string; updated_at?:string;
   section?:{ id:number; section_name:string; department_id:number; department?:{ department_code:string; department_name:string }|null }|null;
@@ -77,7 +82,7 @@ interface Schedule {
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null }
 interface Section { id:number; section_name:string; department_id:number }
 interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; probono_units?:number|null; department_id:number; status:string }
-interface Department { id:number; department_name:string; department_code:string }
+interface Department { id:number; department_name:string; department_code:string; logo?:string|null }
 interface Subject { id:number; subject_code:string; subject_name:string }
 interface Semester { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
 
@@ -85,11 +90,13 @@ interface DashboardData {
   schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[];
   departments:Department[]; subjects:Subject[]; activeSemester:Semester|null;
   submissions:OverviewSubmission[]; scheduleLimitReached:boolean;
+  standardHours:StandardHours;
 }
 interface InitialDataResponse {
   schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[];
   departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester;
   schedule_submissions?:OverviewSubmission[];
+  time_grid?:TimeGridConfigInput;
 }
 
 interface Tile { label:string; value:string; detail:string; icon:LucideIcon; path:string; tone:'brand'|'info'|'good'|'warn'|'alert'|'accent' }
@@ -145,6 +152,8 @@ export default function VpaaDashboardPage() {
   const [activeSemester, setActiveSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [submissions, setSubmissions] = useState<OverviewSubmission[]>(cached?.submissions ?? []);
   const [previewTruncated, setPreviewTruncated] = useState(cached?.scheduleLimitReached ?? false);
+  const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
+  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
 
   // Campus-wide aggregates. Loaded alongside the main payload rather than inside
   // it: it is a separate, individually cacheable endpoint.
@@ -173,6 +182,7 @@ export default function VpaaDashboardPage() {
   const [filterBuilding, setFilterBuilding] = useState('all');
   const [filterRoom, setFilterRoom] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showTimetableFilters, setShowTimetableFilters] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Minute ticker. Drives the queue's Age column so it stays current without a
@@ -209,6 +219,7 @@ export default function VpaaDashboardPage() {
             // The API caps the array rather than reporting a total, so hitting
             // the ceiling exactly is the only signal that rows were dropped.
             scheduleLimitReached: rows.length >= SCHEDULE_PREVIEW_LIMIT,
+            standardHours: buildStandardHours(d.time_grid?.opening_time, d.time_grid?.closing_time, d.time_grid?.slot_minutes),
           };
         }, reloadKey > 0);
 
@@ -222,6 +233,7 @@ export default function VpaaDashboardPage() {
         setActiveSemester(data.activeSemester);
         setSubmissions(data.submissions ?? []);
         setPreviewTruncated(Boolean(data.scheduleLimitReached));
+        setStandardHours(data.standardHours ?? DEFAULT_STANDARD_HOURS);
       } catch {
         if (active) setLoadError('Could not load institution-wide scheduling data. Figures below may be out of date.');
       } finally {
@@ -427,6 +439,16 @@ export default function VpaaDashboardPage() {
     [activeSemesterId, schedules],
   );
 
+  // Keep the dashboard a published view; the Master Calendar has a broader scope.
+  const publishedSchedules = useMemo(() => withCalendarDepartments(semesterSchedules, departments).filter((item) => isVpaaApproved(item.status)).map((item) => ({
+    ...item,
+    course_id: item.course_id ?? item.course?.id ?? item.subject_id,
+    // Preserve the old dashboard's virtual-room and field classification.
+    mode: item.mode?.toLowerCase().includes('online') || item.room?.room_type?.toLowerCase().includes('online') ? 'online' as const
+      : item.mode?.toLowerCase().includes('field') || item.room?.room_type?.toLowerCase().includes('field') ? 'field' as const : 'on-site' as const,
+  })), [semesterSchedules, departments]);
+  const timelineOverlaps = useMemo(() => findOverlaps(publishedSchedules), [publishedSchedules]);
+
   const buildingOptions = useMemo(
     () => Array.from(new Set(campusRooms.map(r => (r.building ?? '').trim()).filter(Boolean))).sort(),
     [campusRooms],
@@ -440,7 +462,7 @@ export default function VpaaDashboardPage() {
 
   const timetableSchedules = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return semesterSchedules.filter(s => {
+    return publishedSchedules.filter(s => {
       if (filterDept !== 'all' && Number(s.section?.department_id) !== Number(filterDept)) return false;
       if (filterBuilding !== 'all' && (s.room?.building ?? '').trim() !== filterBuilding) return false;
       if (filterRoom !== 'all' && String(s.room_id ?? '') !== filterRoom) return false;
@@ -456,13 +478,7 @@ export default function VpaaDashboardPage() {
         s.room?.building,
       ].some(value => (value ?? '').toLowerCase().includes(query));
     });
-  }, [semesterSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
-
-  const timetableRoomsUsed = useMemo(
-    () => new Set(timetableSchedules.map(s => s.room_id).filter(Boolean)).size,
-    [timetableSchedules],
-  );
-  const timetableRoomsFree = Math.max(0, campusRooms.length - timetableRoomsUsed);
+  }, [publishedSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
 
   /**
    * The room list is scoped by building, so switching building has to clear the
@@ -475,6 +491,7 @@ export default function VpaaDashboardPage() {
   };
 
   const filtersActive = filterDept !== 'all' || filterBuilding !== 'all' || filterRoom !== 'all' || searchQuery !== '';
+  const activeTimetableFilterCount = [filterDept, filterBuilding, filterRoom].filter(value => value !== 'all').length;
   const resetFilters = () => {
     setFilterDept('all');
     setFilterBuilding('all');
@@ -483,17 +500,21 @@ export default function VpaaDashboardPage() {
   };
 
   useEffect(() => {
-    document.body.style.overflow = isFullscreen ? 'hidden' : '';
+    if (!isFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [isFullscreen]);
 
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isFullscreen) setIsFullscreen(false);
+      if (event.key === 'Escape' && isFullscreen && !selectedSchedule) setIsFullscreen(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.body.style.overflow = '';
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isFullscreen]);
+  }, [isFullscreen, selectedSchedule]);
 
   const openApproval = () => navigate('/schedules/approval');
 
@@ -556,28 +577,11 @@ export default function VpaaDashboardPage() {
    * body for the full-window view without the grid remounting into a new shape.
    */
   const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex h-full min-w-0 flex-col'}>
-      <Panel
-        title="Institutional Master Timetable (Preview)"
-        subtitle="Campus-wide classes for today."
-        action="Open Master Timetable"
-        onAction={() => navigate('/calendar')}
-        className="flex flex-1 flex-col"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <FilterSelect label="Dept" value={filterDept} onChange={setFilterDept}>
-            <option value="all">All</option>
-            {departments.map(dept => <option key={dept.id} value={String(dept.id)}>{dept.department_code}</option>)}
-          </FilterSelect>
-          <FilterSelect label="Building" value={filterBuilding} onChange={changeBuilding}>
-            <option value="all">All</option>
-            {buildingOptions.map(building => <option key={building} value={building}>{building}</option>)}
-          </FilterSelect>
-          <FilterSelect label="Room" value={filterRoom} onChange={setFilterRoom}>
-            <option value="all">All</option>
-            {roomOptions.map(room => <option key={room.id} value={String(room.id)}>{room.room_code}</option>)}
-          </FilterSelect>
-
+    <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+      <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <header className="flex shrink-0 flex-wrap items-center gap-2">
+          <h2 className="font-sans text-sm font-bold text-[#5A1220]">Master timetable</h2>
+          <span title="Preview of VPAA-approved classes" className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">Preview</span>
           <div className="relative ml-auto">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
@@ -589,6 +593,11 @@ export default function VpaaDashboardPage() {
               className="w-40 rounded-md border border-slate-200 bg-white py-1.5 pl-7 pr-2 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition focus:border-primary/40"
             />
           </div>
+          <button type="button" aria-label="Timetable filters" aria-expanded={showTimetableFilters} aria-controls="dashboard-timetable-filters" onClick={() => setShowTimetableFilters(open => !open)}
+            className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${showTimetableFilters || activeTimetableFilterCount > 0 ? 'border-primary/30 bg-primary/5 text-primary' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+            <SlidersHorizontal className="h-3.5 w-3.5" />Filters
+            {activeTimetableFilterCount > 0 && <span>{activeTimetableFilterCount}</span>}
+          </button>
           <button
             type="button"
             onClick={() => setIsFullscreen(open => !open)}
@@ -607,35 +616,45 @@ export default function VpaaDashboardPage() {
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>}
-        </div>
+          <button type="button" onClick={() => navigate('/calendar')} className="inline-flex h-7 items-center gap-1 text-[11px] font-bold text-primary hover:underline">
+            Master Calendar <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </header>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <StatChip icon={CalendarCheck2} value={timetableSchedules.length} label="Scheduled Classes" />
-          <StatChip icon={Building2} value={timetableRoomsUsed} label="Rooms in Use" />
-          <StatChip icon={DoorOpen} value={timetableRoomsFree} label="Available Rooms" />
-        </div>
+        {showTimetableFilters && <div id="dashboard-timetable-filters" className="mt-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2">
+          <FilterSelect label="Dept" value={filterDept} onChange={setFilterDept}>
+            <option value="all">All</option>
+            {departments.map(dept => <option key={dept.id} value={String(dept.id)}>{dept.department_code}</option>)}
+          </FilterSelect>
+          <FilterSelect label="Building" value={filterBuilding} onChange={changeBuilding}>
+            <option value="all">All</option>
+            {buildingOptions.map(building => <option key={building} value={building}>{building}</option>)}
+          </FilterSelect>
+          <FilterSelect label="Room" value={filterRoom} onChange={setFilterRoom}>
+            <option value="all">All</option>
+            {roomOptions.map(room => <option key={room.id} value={String(room.id)}>{room.room_code}</option>)}
+          </FilterSelect>
+        </div>}
 
         {previewTruncated && <p className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Showing the most recent {grouped(SCHEDULE_PREVIEW_LIMIT)} meetings. Open the Master Timetable for the complete campus schedule — the figures elsewhere on this page cover every meeting.
+          Preview is based on the most recent {grouped(SCHEDULE_PREVIEW_LIMIT)} meetings; some classes and overlaps may be missing. Campus-wide figures elsewhere on this page cover every meeting.
         </p>}
 
-        <div className="mt-3 min-w-0">
-          <DashboardTimetableGrid
+        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col">
+          <DashboardGantt
             schedules={timetableSchedules}
-            sectionLabel={`${grouped(departments.length)} ${departments.length === 1 ? 'department' : 'departments'} · ${grouped(timetableSchedules.length)} ${timetableSchedules.length === 1 ? 'class' : 'classes'}`}
-            onOpenSchedule={() => navigate('/schedules')}
+            allSchedules={publishedSchedules}
+            standardHours={standardHours}
+            overlaps={timelineOverlaps}
+            now={now}
+            onSelect={setSelectedSchedule}
+            isFullscreen={isFullscreen}
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate('/calendar')}
-          className="mt-auto self-start pt-3 text-xs font-bold text-primary hover:underline"
-        >
-          Open Master Timetable <ArrowRight className="inline h-3.5 w-3.5" />
-        </button>
-      </Panel>
+      </section>
+      <ScheduleDetailModal schedule={selectedSchedule} allSchedules={publishedSchedules} overlaps={timelineOverlaps} onClose={() => setSelectedSchedule(null)} onSelect={setSelectedSchedule} />
     </div>
   );
 
@@ -844,7 +863,8 @@ export default function VpaaDashboardPage() {
     </section>
 
     <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0">
+      {/* Let the activity column set the desktop height, not the number of Gantt rows. */}
+      <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>
 
@@ -868,9 +888,7 @@ export default function VpaaDashboardPage() {
           </div>
         </Panel>
 
-        {/* The timetable is the tallest panel on the page, so the side column used to
-            run out of content well above its foot. The activity trail fills that gap
-            and scrolls within whatever height is left. */}
+        {/* Both columns share a bottom edge; the Gantt viewport absorbs extra height. */}
         <AdministrativeActivityPanel
           rows={activity}
           loading={activityLoading}

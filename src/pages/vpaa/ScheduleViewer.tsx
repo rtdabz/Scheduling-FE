@@ -43,6 +43,7 @@ export interface Department {
   id: string;
   name: string;
   code: string;
+  logo?: string | null;
 }
 
 export interface Section {
@@ -99,6 +100,7 @@ interface RawDepartment {
   id: number | string;
   department_name: string;
   department_code: string;
+  logo?: string | null;
 }
 
 interface RawSection {
@@ -540,7 +542,8 @@ export default function VpaaScheduleViewer() {
         const mappedDepts = response.data.departments.map((d) => ({
           id: d.id.toString(),
           name: d.department_name,
-          code: d.department_code
+          code: d.department_code,
+          logo: d.logo,
         }));
         setDepartments(mappedDepts);
 
@@ -932,6 +935,11 @@ export default function VpaaScheduleViewer() {
     : focus === "missing-room"
     ? "with meetings missing a room"
     : "";
+
+  const departmentLogos = useMemo(
+    () => Object.fromEntries(departments.map((department) => [department.id, department.logo])),
+    [departments],
+  );
 
   const visibleDepartments = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -1414,6 +1422,7 @@ export default function VpaaScheduleViewer() {
               ) : (
                 <DepartmentOverviewCards
                   departments={visibleDepartments}
+                  departmentLogos={departmentLogos}
                   isLoading={isOverviewLoading && overviewDepartments.length === 0}
                   onOpen={openDepartment}
                 />

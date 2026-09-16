@@ -3,7 +3,7 @@ import type { NavSection, NavItem } from '../../navigation/types';
 import Skeleton from '../ui/Skeleton';
 import { NavLink, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.jpg';
-import campusBg from '../../assets/campus-bg.jpg';
+import campusBg from '../../assets/campus-bg.webp';
 import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';

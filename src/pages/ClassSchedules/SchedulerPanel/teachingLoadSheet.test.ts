@@ -211,7 +211,7 @@ const recordColours = (doc: jsPDF) => {
 
 const PROBONO_TEXT = "107,114,128";
 const OVERLOAD_TEXT = "248,113,113";
-const CONFLICT_TEXT = "251,146,60";
+const CONFLICT_TEXT = "220,38,38";
 const PALE_FILLS = ["254,226,226", "255,237,213"];
 
 describe("drawSheet pro bono text", () => {
@@ -257,13 +257,13 @@ describe("drawSheet pro bono text", () => {
 });
 
 describe("drawSheet instructor conflict text", () => {
-  it("prints a subject assigned over a conflict in light orange text, over pro bono, with no label", () => {
-    // The third subject is pro bono and assigned over a conflict: light orange wins and nothing names it.
+  it("prints conflict overrides in red while keeping pro bono grey, with no conflict label", () => {
+    // All three bands have an override; pro bono must retain its grey text.
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
     const { fills, texts } = recordColours(doc);
 
     const schedules = [0, 1, 2].map((index) =>
-      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index], facultyConflictOverride: index === 2 }),
+      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index], facultyConflictOverride: true }),
     );
     const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3, probonoUnits: 3 } as Faculty;
     const load = classifyLoad(faculty, schedules);
@@ -274,10 +274,12 @@ describe("drawSheet instructor conflict text", () => {
       load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
     });
 
-    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(CONFLICT_TEXT);
+    expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe(CONFLICT_TEXT);
+    expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe(CONFLICT_TEXT);
+    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
     expect(texts.some((entry) => /override|conflict/i.test(entry.text))).toBe(false);
-    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
+    expect(texts.map((entry) => entry.text)).toContain("Grey text is Pro Bono");
   });
 });
 

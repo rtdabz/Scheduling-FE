@@ -57,7 +57,7 @@ export const formatCourseName = (name: string): string => {
 export const capitalizeNameInput = (value: string): string =>
   value.replace(/(^|[\s-])(\p{Ll})/gu, (_match, boundary: string, letter: string) => boundary + letter.toUpperCase());
 
-/** Name suffixes an instructor record accepts. Mirrors FacultyController::NAME_SUFFIXES. */
+/** Name suffixes an instructor record accepts. Mirrors Faculty::NAME_SUFFIXES. */
 export const NAME_SUFFIXES = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const;
 
 /**

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
 import logo from '../assets/logo.jpg';
-import campusBg from '../assets/campus-bg.jpg';
+import campusBg from '../assets/campus-bg.webp';
 import loginPattern from '../assets/login-pattern.jpg';
 import googleLogo from '../assets/google-logo.svg';
 import { useToast } from '../context/ToastContext';

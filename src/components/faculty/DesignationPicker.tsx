@@ -167,16 +167,16 @@ export default function DesignationPicker({
             role="dialog"
             aria-modal="true"
             aria-labelledby="designation-picker-title"
-            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200 bg-[#F7F4F0] shadow-2xl animate-in zoom-in-95 duration-200"
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex shrink-0 items-start gap-3 border-b border-gray-200 p-5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#5A1220]/10 text-[#5A1220]">
+            <div className="flex shrink-0 items-start gap-3 bg-[#4e0a10] p-5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#C9952A]">
                 <BadgeCheck size={18} />
               </span>
               <div className="flex-1">
-                <h2 id="designation-picker-title" className="text-base font-bold text-[#1A1410]">Select Designations</h2>
-                <p className="mt-0.5 text-[11px] font-semibold text-gray-500">
+                <h2 id="designation-picker-title" className="text-base font-bold text-white">Select Designations</h2>
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-100/75">
                   {draft.length} of {MAX_DESIGNATIONS_PER_INSTRUCTOR} selected
                 </p>
               </div>
@@ -184,7 +184,7 @@ export default function DesignationPicker({
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close"
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-200/60 hover:text-gray-600"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
               >
                 <X size={18} />
               </button>

@@ -30,18 +30,27 @@ describe("WeeklyTimetableGrid", () => {
       `${GRID_HEADER_HEIGHT_PX}px repeat(27, ${GRID_SLOT_HEIGHT_PX}px)`,
     );
     expect(screen.getByText("7 AM")).toBeTruthy();
-    expect(screen.getByText("8 PM")).toBeTruthy();
-    expect(screen.queryByText("9 PM")).toBeNull();
+    expect(screen.getByText("to 8:30 PM")).toBeTruthy();
+    expect(screen.queryByText("8:30 PM")).toBeNull();
   });
 
-  it("labels the axis on the hour, in the 12-hour form the cards use", () => {
+  it("labels the axis in 1.5-hour bands, in the 12-hour form the cards use", () => {
     render(<WeeklyTimetableGrid days={["Monday"]} />);
 
-    // Labels span two 30-minute rows, so only whole hours are drawn.
-    const labels = ["7 AM", "12 PM", "1 PM", "8 PM"];
-    labels.forEach((label) => expect(screen.getByText(label)).toBeTruthy());
-    expect(screen.queryByText("7:30 AM")).toBeNull();
+    const starts = ["7 AM", "8:30 AM", "10 AM", "11:30 AM", "1 PM", "2:30 PM", "4 PM", "5:30 PM", "7 PM"];
+    starts.forEach((label) => expect(screen.getByText(label)).toBeTruthy());
+    expect(screen.queryByText("8 AM")).toBeNull();
+    expect(screen.queryByText("12 PM")).toBeNull();
     expect(screen.queryByText("07:00")).toBeNull();
+  });
+
+  it("keeps bands anchored to the opening when the view starts mid-band", () => {
+    render(<WeeklyTimetableGrid days={["Monday"]} startSlot={2} slotCount={4} />);
+
+    // Slot 2 (8:00) is the tail of the 7:00 band; the next band starts at 8:30.
+    expect(screen.getByText("8 AM")).toBeTruthy();
+    expect(screen.getByText("8:30 AM")).toBeTruthy();
+    expect(screen.getByText("to 10 AM")).toBeTruthy();
   });
 
   it("sizes the header row and the time gutter from the shared geometry", () => {
@@ -61,8 +70,9 @@ describe("WeeklyTimetableGrid", () => {
 
     expect(slotCount()).toBe(30);
     expect(screen.getByText("6 AM")).toBeTruthy();
-    // The axis labels whole hours, so the 20:30-21:00 closing row is unlabelled.
-    expect(screen.getByText("8 PM")).toBeTruthy();
+    // 90-minute bands from 06:00: the last one is 19:30-21:00.
+    expect(screen.getByText("7:30 PM")).toBeTruthy();
+    expect(screen.getByText("to 9 PM")).toBeTruthy();
     expect(gridRoot().style.gridTemplateRows).toBe(
       `${GRID_HEADER_HEIGHT_PX}px repeat(30, ${GRID_SLOT_HEIGHT_PX}px)`,
     );

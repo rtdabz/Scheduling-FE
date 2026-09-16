@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import api from "../../../../lib/api";
+import { getConnectionStatus } from "../../../../lib/connectionStatus";
 import type { ApiScheduleRecord } from "../types";
 import {
   parseYearLevelFailurePayload,
@@ -66,6 +67,16 @@ type GenerationRunSnapshot = {
 };
 
 const POLL_INTERVAL_MS = 1500;
+// On a slow link a status check can take longer than the interval itself, so
+// back off rather than keep the connection busy. A hidden tab needs no live
+// progress; it catches up the moment it is shown again.
+const SLOW_POLL_INTERVAL_MS = 5000;
+const HIDDEN_POLL_INTERVAL_MS = 10_000;
+
+const pollDelayMs = (): number => {
+  if (document.visibilityState === "hidden") return HIDDEN_POLL_INTERVAL_MS;
+  return getConnectionStatus().quality === "online" ? POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS;
+};
 // The queue worker not running is the most common reason a run never starts,
 // and it is not a generation failure. Surface it as its own hint well before
 // the server expires the run at its queue-wait limit.
@@ -322,9 +333,12 @@ export function GenerationRunProvider({
     if (!snapshot.runId || !isActiveStatus(snapshot.status)) return;
     const requestId = requestIdRef.current;
     let cancelled = false;
+    let inFlight = false;
     let timer = 0;
 
     const tick = async () => {
+      timer = 0;
+      inFlight = true;
       try {
         const { data } = await api.get<GenerationRunRecord>(
           `/schedule-recommendations/generation-runs/${snapshot.runId}`,
@@ -344,9 +358,21 @@ export function GenerationRunProvider({
           }));
           return;
         }
+      } finally {
+        inFlight = false;
       }
-      if (!cancelled) timer = window.setTimeout(tick, POLL_INTERVAL_MS);
+      if (!cancelled) timer = window.setTimeout(tick, pollDelayMs());
     };
+
+    // Returning to the tab should show current progress, not wait out the
+    // longer hidden-tab interval. Only a loop that is waiting for its next
+    // tick is sped up; one that stopped (404, superseded) stays stopped.
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible" || inFlight || cancelled || timer === 0) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(tick, 0);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     // Poll once straight away so a fast run is not held back by the interval.
     timer = window.setTimeout(tick, 0);
@@ -354,6 +380,7 @@ export function GenerationRunProvider({
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [applyRun, snapshot.runId, snapshot.status]);
 

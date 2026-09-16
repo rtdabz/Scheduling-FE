@@ -28,6 +28,7 @@ import type {
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
 import { getCourseSlotPlan, laboratoryComponentSlots, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { buildSectionDoneCandidates } from "../sectionDoneCandidates";
+import { buildSectionClearCandidates } from "../sectionClearCandidates";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
 import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
@@ -1860,6 +1861,10 @@ export const useScheduler = () => {
   }, [isEditable, schedules, refreshSchedules, refreshData, schedulerCacheKey, toast]);
 
   const [isClearingAll, setIsClearingAll] = useState(false);
+  const sectionClearCandidates = useMemo(
+    () => buildSectionClearCandidates(sections, schedules, selectedDepartmentId, activeSemester ? Number(activeSemester.id) : null),
+    [sections, schedules, selectedDepartmentId, activeSemester],
+  );
 
   const handleClearAll = useCallback(() => {
     if (!isEditable || isClearingAll) return;
@@ -1867,20 +1872,14 @@ export const useScheduler = () => {
     setIsClearAllModalOpen(true);
   }, [isEditable, isClearingAll, schedules]);
 
-  const confirmClearAll = async (scope: "section" | "all" = "section") => {
+  const confirmClearAll = async (sectionIds: string[]) => {
     if (!isEditable || isClearingAll) {
       setIsClearAllModalOpen(false);
       return;
     }
-    const targetSecId = selectedSectionId;
-    const departmentSectionIds = new Set(
-      sections
-        .filter((section) => selectedDepartmentId === null || Number(section.departmentId) === Number(selectedDepartmentId))
-        .map((section) => section.id)
-    );
-    const targetSchedules = scope === "all"
-      ? schedules.filter((s) => departmentSectionIds.has(s.sectionId))
-      : schedules.filter((s) => s.sectionId === targetSecId);
+    const eligibleIds = new Set(sectionClearCandidates.filter((candidate) => candidate.isReady).map((candidate) => candidate.sectionId));
+    const selectedIds = new Set(sectionIds.filter((id) => eligibleIds.has(id)));
+    const targetSchedules = schedules.filter((schedule) => selectedIds.has(schedule.sectionId));
     if (targetSchedules.length === 0) {
       setIsClearAllModalOpen(false);
       return;
@@ -1888,14 +1887,11 @@ export const useScheduler = () => {
 
     setIsClearingAll(true);
     const clearedCount = targetSchedules.length;
-    const sectionName = sections.find((s) => s.id === targetSecId)?.name ?? "the section";
     const validSchedules = targetSchedules.filter((s) => !isNaN(Number(s.id)));
 
     // Optimistic UI update: immediately clear local state & update local storage cache
     setSchedules((prev) => {
-      const updated = scope === "all"
-        ? prev.filter((s) => !departmentSectionIds.has(s.sectionId))
-        : prev.filter((s) => s.sectionId !== targetSecId);
+      const updated = prev.filter((schedule) => !selectedIds.has(schedule.sectionId));
       const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
       if (cachedData) {
         setCachedData<SchedulerCacheData>(schedulerCacheKey, {
@@ -1911,17 +1907,8 @@ export const useScheduler = () => {
     setMovingScheduleId(null);
     setIsClearAllModalOpen(false);
 
-    toast.success(
-      "Schedule Cleared",
-      scope === "all"
-        ? `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from the schedule.`
-        : `Removed ${clearedCount} class${clearedCount !== 1 ? "es" : ""} from ${sectionName}.`
-    );
-
     try {
-      const targetSectionIds = Array.from(
-        scope === "all" ? departmentSectionIds : new Set([targetSecId]),
-      )
+      const targetSectionIds = Array.from(selectedIds)
         .map(Number)
         .filter((id) => id > 0);
 
@@ -1944,6 +1931,7 @@ export const useScheduler = () => {
       // scheduler snapshot before reopening generation. A schedule-only refresh
       // can leave cached sections/configuration and eligibility state stale.
       await refreshData();
+      toast.success("Schedules Cleared", `Cleared schedules from ${selectedIds.size} selected section${selectedIds.size === 1 ? "" : "s"} (${clearedCount} loaded meeting${clearedCount === 1 ? "" : "s"}).`);
     } catch (err) {
       const apiMsg = getApiErrorMessage(err);
       toast.error("Failed to clear schedules", apiMsg || "An error occurred.");
@@ -2956,6 +2944,7 @@ export const useScheduler = () => {
     isSectionDropdownOpen,
     setIsSectionDropdownOpen,
     isClearAllModalOpen,
+    sectionClearCandidates,
     isClearingAll,
     isSubmitApprovalModalOpen,
     isWithdrawSubmissionModalOpen,

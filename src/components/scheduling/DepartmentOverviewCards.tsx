@@ -1,5 +1,6 @@
 import { AlertTriangle, ChevronRight, DoorOpen, UserX } from 'lucide-react';
 import Skeleton from '../ui/Skeleton';
+import DepartmentLogo from '../ui/DepartmentLogo';
 import { getDeptAccentClass } from '../../lib/departmentTheme';
 import {
   SCHEDULE_STAGE_LABELS,
@@ -11,6 +12,7 @@ export type OverviewFocus = 'conflicts' | 'missing-faculty' | 'missing-room';
 
 interface Props {
   departments: DepartmentOverview[];
+  departmentLogos?: Record<string, string | null | undefined>;
   isLoading: boolean;
   /**
    * `focus` carries the reason the user clicked, so opening a department from
@@ -101,7 +103,7 @@ function Chip({
   );
 }
 
-export default function DepartmentOverviewCards({ departments, isLoading, onOpen }: Props) {
+export default function DepartmentOverviewCards({ departments, departmentLogos, isLoading, onOpen }: Props) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -145,9 +147,12 @@ export default function DepartmentOverviewCards({ departments, isLoading, onOpen
             <span className={`absolute inset-y-0 left-0 w-1.5 ${getDeptAccentClass(department.code, department.name)}`} />
 
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-base font-black text-[#4e0a10] leading-tight">{department.code}</p>
-                <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{department.name}</p>
+              <div className="flex min-w-0 items-center gap-3">
+                <DepartmentLogo name={department.name} logo={departmentLogos?.[department.department_id]} className="h-10 w-10" iconSize={20} />
+                <div className="min-w-0">
+                  <p className="text-base font-black text-[#4e0a10] leading-tight">{department.code}</p>
+                  <p title={department.name} className="mt-0.5 truncate text-xs font-semibold text-slate-400">{department.name}</p>
+                </div>
               </div>
               <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${toneStyles[tone].label}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${toneStyles[tone].band}`} />

@@ -53,6 +53,13 @@ const TOPIC_CACHE_GROUPS: Record<LiveTopic, CacheGroupName[]> = {
 };
 
 const DEBOUNCE_MS = 300;
+/**
+ * After a reconnect every topic is refetched. Waiting a moment (with jitter, so
+ * every open tab does not refetch at once) lets a connection that is flapping
+ * settle, and a drop before the wait ends cancels the refetch outright.
+ */
+const RESYNC_DELAY_MIN_MS = 1000;
+const RESYNC_DELAY_JITTER_MS = 2000;
 
 interface RealtimeConfig {
   enabled: boolean;
@@ -67,6 +74,23 @@ const isLiveTopic = (value: unknown): value is LiveTopic =>
 
 const pending = new Set<LiveTopic>();
 let debounceTimer: number | undefined;
+let resyncTimer: number | undefined;
+
+const cancelResync = (): void => {
+  if (resyncTimer !== undefined) window.clearTimeout(resyncTimer);
+  resyncTimer = undefined;
+};
+
+/** Exported for tests. Signals sent while the socket was down are lost; catch up once. */
+export const scheduleResync = (random: () => number = Math.random): void => {
+  // Cached data is already out of date, so drop it now; only the refetch waits.
+  invalidateTopics(LIVE_TOPICS);
+  cancelResync();
+  resyncTimer = window.setTimeout(() => {
+    resyncTimer = undefined;
+    publishLiveTopics(LIVE_TOPICS);
+  }, RESYNC_DELAY_MIN_MS + Math.round(random() * RESYNC_DELAY_JITTER_MS));
+};
 
 const dispatchPending = (): void => {
   debounceTimer = undefined;
@@ -77,18 +101,22 @@ const dispatchPending = (): void => {
   window.dispatchEvent(new CustomEvent<LiveUpdateDetail>(LIVE_UPDATE_EVENT, { detail: { topics } }));
 };
 
+const invalidateTopics = (topics: readonly LiveTopic[]): void => {
+  const groups = new Set<CacheGroupName>();
+  topics.forEach((topic) => {
+    TOPIC_CACHE_GROUPS[topic].forEach((group) => groups.add(group));
+    if (DASHBOARD_TOPICS.has(topic)) groups.add('dashboards');
+  });
+  invalidateCacheGroups(...groups);
+};
+
 /** Record topics as changed. Exported for tests and for same-tab broadcasts. */
 export const publishLiveTopics = (topics: readonly LiveTopic[]): void => {
   if (topics.length === 0) return;
 
-  const groups = new Set<CacheGroupName>();
-  topics.forEach((topic) => {
-    pending.add(topic);
-    TOPIC_CACHE_GROUPS[topic].forEach((group) => groups.add(group));
-    if (DASHBOARD_TOPICS.has(topic)) groups.add('dashboards');
-  });
+  topics.forEach((topic) => pending.add(topic));
   // Invalidate right away, even in a hidden tab, so navigating shows fresh data.
-  invalidateCacheGroups(...groups);
+  invalidateTopics(topics);
 
   if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
   debounceTimer = window.setTimeout(dispatchPending, DEBOUNCE_MS);
@@ -108,6 +136,7 @@ export const stopLiveUpdates = (): void => {
   startedForUser = null;
   starting = null;
   pending.clear();
+  cancelResync();
   if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
   debounceTimer = undefined;
   document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -165,9 +194,12 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
         const isConnected = current === 'connected';
         setLiveSocketState(isConnected ? pusher.connection.socket_id : null, isConnected);
 
-        if (!isConnected) return;
-        // Signals sent while the socket was down are lost; resync once.
-        if (hasConnectedBefore) publishLiveTopics(LIVE_TOPICS);
+        if (!isConnected) {
+          // Dropped again before catching up; the next reconnect reschedules.
+          cancelResync();
+          return;
+        }
+        if (hasConnectedBefore) scheduleResync();
         hasConnectedBefore = true;
       });
 

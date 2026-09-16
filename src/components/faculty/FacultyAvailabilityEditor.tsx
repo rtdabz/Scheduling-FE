@@ -140,18 +140,18 @@ export default function FacultyAvailabilityEditor({
 
   return createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
-      <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-        <div className="p-5 border-b border-gray-200 flex shrink-0 justify-between items-center bg-gray-50/50">
+      <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+        <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
           <div>
-            <h2 className="text-base font-bold text-[#1A1410]">Teaching Availability</h2>
-            <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
+            <h2 className="text-base font-bold text-white">Teaching Availability</h2>
+            <p className="text-[11px] text-amber-100/75 font-semibold mt-0.5">
               {facultyName} &middot; {employmentType === 'part-time' ? 'Part-time' : 'Full-time'}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -233,7 +233,7 @@ export default function FacultyAvailabilityEditor({
           ))}
         </div>
 
-        <div className="p-5 border-t border-gray-200 bg-gray-50/50 flex justify-between items-center gap-3">
+        <div className="p-5 border-t border-black/5 bg-[#F7F4F0] flex justify-between items-center gap-3">
           <button
             type="button"
             onClick={() => setDrafts([])}

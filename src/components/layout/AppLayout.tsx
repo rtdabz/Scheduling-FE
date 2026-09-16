@@ -4,6 +4,7 @@ import PageHeader from './PageHeader'
 import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
 import SessionTimeoutGuard from './SessionTimeoutGuard'
+import ConnectionBanner from './ConnectionBanner'
 import Skeleton from '../ui/Skeleton'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
@@ -143,6 +144,7 @@ export default function AppLayout() {
         className="flex flex-col flex-1 min-w-0 overflow-hidden"
       >
         <SystemHeader activeSemester={activeSemester} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
+        <ConnectionBanner />
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
           <PageHeader navItems={navItems} homePath={homePath} />
           <Suspense fallback={

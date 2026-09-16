@@ -107,15 +107,15 @@ export default function CurriculumFormModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-      <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-        <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
-          <h2 className="text-lg font-bold text-[#1A1410] font-display">
+      <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+        <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
+          <h2 className="text-lg font-bold text-white font-display">
             {isEditMode ? 'Edit Curriculum' : 'Add New Curriculum'}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
           >
             <X size={20} />
           </button>

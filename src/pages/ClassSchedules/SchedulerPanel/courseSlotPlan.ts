@@ -7,9 +7,9 @@ import type { Course } from "./types";
  * "three inconsistent slot-duration formulas". Two of the three are in fact the
  * server's own, and they are different on purpose:
  *
- *  - a **single block** lasts `units * 2` slots — `CSPSolver::rawDurationSlots`
+ *  - a **single block** lasts `units * 2` slots — `CspSolver::rawDurationSlots`
  *  - a **lecture/laboratory split** lasts `lectureHours * 2` for the lecture and
- *    `labHours * 6` for the laboratory — `CSPSolver::buildVariables`, where one
+ *    `labHours * 6` for the laboratory — `CspSolver::buildVariables`, where one
  *    laboratory unit is three clock hours
  *
  * The third was neither: `(isMajor && hasBoth) ? 6 : totalSlots` hardcoded a

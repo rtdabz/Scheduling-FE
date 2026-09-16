@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ScheduleItem, Section } from "../types";
 import {
   canGenerateYearLevel,
+  getYearLevelScheduleState,
   YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE,
 } from "./yearLevelGenerationEligibility";
 
@@ -80,6 +81,31 @@ describe("year-level generation eligibility", () => {
 
   it("blocks protected workflow stages", () => {
     expect(canGenerateYearLevel(sections, sections.map((section) => schedule(section.id, "submitted")), 20)).toBe(false);
+  });
+
+  it("reports an unplotted year level as unscheduled", () => {
+    expect(getYearLevelScheduleState(sections, [], 20)).toEqual({
+      kind: "unscheduled",
+      scheduledSectionCount: 0,
+      sectionCount: 3,
+    });
+  });
+
+  it("reports editable classes as scheduled and counts sections, not meetings", () => {
+    expect(getYearLevelScheduleState(sections, [
+      schedule("1", "draft"),
+      { ...schedule("1", "draft"), id: "1-draft-2", day: "Wednesday" },
+      schedule("2", "completed"),
+    ], 20)).toEqual({ kind: "scheduled", scheduledSectionCount: 2, sectionCount: 3 });
+  });
+
+  it("reports protected stages as locked", () => {
+    expect(getYearLevelScheduleState(sections, [schedule("1", "submitted")], 20).kind).toBe("locked");
+  });
+
+  it("ignores classes from another semester", () => {
+    expect(getYearLevelScheduleState(sections, [{ ...schedule("1", "submitted"), semesterId: 99 }], 20).kind)
+      .toBe("unscheduled");
   });
 
   it("uses the required blocked message", () => {

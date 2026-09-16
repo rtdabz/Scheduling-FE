@@ -280,7 +280,7 @@ export default function SectionModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="section-modal-title"
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white animate-in zoom-in-95 duration-150"
+        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] animate-in zoom-in-95 duration-150"
       >
         <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-5 py-4 text-white">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#C9952A]/40 bg-[#39060b] text-[#C9952A]">
@@ -473,7 +473,7 @@ export default function SectionModal({
             )}
           </div>
 
-          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-black/5 bg-[#F7F4F0] px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <p className={`text-xs ${duplicateCount ? 'font-semibold text-red-600' : 'text-slate-500'}`}>
               {duplicateCount
                 ? `Rename ${duplicateCount === 1 ? 'the highlighted section' : `the ${duplicateCount} highlighted sections`} to continue.`

@@ -1,3 +1,11 @@
+import { reportShowingSavedData } from './connectionStatus';
+
+/** An Axios request that ended with no answer from the server, and was not cancelled on purpose. */
+const isUnansweredRequest = (error: unknown): boolean => {
+  const failure = error as { isAxiosError?: boolean; response?: unknown; code?: string } | undefined;
+  return failure?.isAxiosError === true && !failure.response && failure.code !== 'ERR_CANCELED';
+};
+
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
@@ -173,6 +181,17 @@ export const loadCachedData = async <T>(
     .then((data) => {
       writeStoredData(key, data);
       return data;
+    })
+    .catch((error: unknown) => {
+      // On a dropped or stalled connection, the last copy beats an error page.
+      // Pages stay read-accurate as of that copy, and every save is still
+      // checked against the server's current data, so this cannot let a
+      // conflict through. Only transport failures qualify: a real error answer
+      // or a bug in the loader must still surface.
+      const stale = isUnansweredRequest(error) ? getCachedData<T>(key) : undefined;
+      if (stale === undefined) throw error;
+      reportShowingSavedData();
+      return stale;
     })
     .finally(() => {
       pendingRequests.delete(key);

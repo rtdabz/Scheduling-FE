@@ -43,6 +43,11 @@ describe('apiErrorMessage', () => {
   it('describes a bare 403 with no body', () => {
     expect(apiErrorMessage(rejection(403, {}), 'fallback')).toContain('not permitted');
   });
+
+  it('warns that an unanswered write may already be saved', () => {
+    expect(apiErrorMessage({ config: { method: 'post' } }, 'fallback')).toContain('may already be saved');
+    expect(apiErrorMessage({ config: { method: 'get' } }, 'fallback')).toContain('Could not reach the server');
+  });
 });
 
 describe('apiFieldErrors', () => {

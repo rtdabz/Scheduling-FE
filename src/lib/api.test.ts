@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import api from './api';
+import { IDEMPOTENCY_HEADER, clearIdempotencyKeys } from './idempotency';
 import { LAST_ACTIVITY_KEY, SESSION_ENDED_EVENT, type SessionEndedReason } from './sessionTimeout';
 
 const rejectWith = (status: number, url: string) => {
@@ -67,5 +68,82 @@ describe('api response interceptor', () => {
 
     expect(onEnded).not.toHaveBeenCalled();
     window.removeEventListener(SESSION_ENDED_EVENT, onEnded);
+  });
+});
+
+describe('api resilience on a slow connection', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem('token', 'valid-token');
+    clearIdempotencyKeys();
+    api.defaults.adapter = () => Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config: {} as never });
+    void api.post('/login').catch(() => undefined);
+  });
+
+  const networkError = (config: unknown) =>
+    Promise.reject(Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK', config }));
+
+  it('resends an unanswered write with the same idempotency key', async () => {
+    const keys: string[] = [];
+    let calls = 0;
+    api.defaults.adapter = (config) => {
+      keys.push(String(config.headers[IDEMPOTENCY_HEADER]));
+      calls += 1;
+      return calls === 1
+        ? networkError(config)
+        : Promise.resolve({ data: {}, status: 201, statusText: 'Created', headers: {}, config });
+    };
+
+    await expect(api.post('/schedules', { room: 1 })).rejects.toThrow();
+    await api.post('/schedules', { room: 1 });
+    await api.post('/schedules', { room: 1 });
+
+    expect(calls).toBe(3);
+    expect(keys[1]).toBe(keys[0]);
+    // Answered, so a later deliberate repeat is a new write.
+    expect(keys[2]).not.toBe(keys[1]);
+  });
+
+  it('gives writes a longer timeout than reads', async () => {
+    const timeouts: Record<string, number | undefined> = {};
+    api.defaults.adapter = (config) => {
+      timeouts[config.method ?? ''] = config.timeout;
+      return Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    await api.get('/schedules');
+    await api.put('/schedules/1', { room: 1 });
+
+    expect(timeouts.put).toBeGreaterThan(timeouts.get ?? 0);
+  });
+
+  it('quietly retries a read that got no answer', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    api.defaults.adapter = (config) => {
+      calls += 1;
+      return calls === 1
+        ? networkError(config)
+        : Promise.resolve({ data: { ok: true }, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    const pending = api.get('/schedules');
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(pending).resolves.toMatchObject({ data: { ok: true } });
+    expect(calls).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it('does not retry a write that got no answer', async () => {
+    let calls = 0;
+    api.defaults.adapter = (config) => {
+      calls += 1;
+      return networkError(config);
+    };
+
+    await expect(api.post('/schedules', { room: 1 })).rejects.toThrow();
+    expect(calls).toBe(1);
   });
 });

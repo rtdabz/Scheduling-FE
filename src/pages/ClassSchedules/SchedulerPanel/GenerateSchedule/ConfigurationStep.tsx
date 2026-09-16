@@ -23,6 +23,8 @@ import {
   isBalancedSplitSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 import type { TimeBlockOption } from "./generationTypes";
+import { YearLevelStateBadge } from "./YearLevelStateNotice";
+import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 
 export type ConstraintCourse = { id: number; code: string; name: string };
 export type ForcedDayRule = { course_id: number; day: string };
@@ -208,6 +210,8 @@ export default function ConfigurationStep({
   setupDraft,
   setSetupDraft,
   sectionId,
+  yearStates,
+  yearChangeDisabled,
   actionsDisabled,
   configs,
   onConfigChange,
@@ -226,6 +230,12 @@ export default function ConfigurationStep({
   setupDraft: SetupDraft;
   setSetupDraft: Dispatch<SetStateAction<SetupDraft>>;
   sectionId: string;
+  yearStates: Record<number, YearLevelScheduleState>;
+  /**
+   * Kept apart from `actionsDisabled`: a locked year level disables its rules,
+   * but the picker must stay usable or the user is stuck on that year level.
+   */
+  yearChangeDisabled: boolean;
   actionsDisabled: boolean;
   configs: Record<string, PeriodConfig>;
   onConfigChange: (
@@ -441,17 +451,20 @@ export default function ConfigurationStep({
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <section className="grid gap-3 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <label className="block">
-            <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
-              Choose year level
-            </span>
+          <label
+            htmlFor="generator-year-level"
+            className="block text-[11px] font-black uppercase tracking-wide text-slate-500"
+          >
+            Choose year level
+          </label>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <select
               id="generator-year-level"
               aria-label="Year level"
               value={yearLevel}
-              disabled={actionsDisabled || years.length === 0}
+              disabled={yearChangeDisabled || years.length === 0}
               onChange={(event) => onYearChange(Number(event.target.value))}
-              className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-11 min-w-[9rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {years.map((value) => (
                 <option key={value} value={value}>
@@ -459,9 +472,10 @@ export default function ConfigurationStep({
                 </option>
               ))}
             </select>
-          </label>
-          <dl className="mt-3 grid grid-cols-2 gap-2 text-center">
-            <div className="rounded-lg bg-slate-50 px-2 py-2">
+            <YearLevelStateBadge state={yearStates[yearLevel] ?? null} />
+          </div>
+          <dl className="mt-3 flex flex-wrap gap-2 text-center">
+            <div className="min-w-[6rem] flex-1 rounded-lg bg-slate-50 px-2 py-2">
               <dt className="text-[10px] font-black uppercase tracking-wide text-slate-500">
                 Sections
               </dt>
@@ -469,7 +483,7 @@ export default function ConfigurationStep({
                 {sections.length}
               </dd>
             </div>
-            <div className="rounded-lg bg-slate-50 px-2 py-2">
+            <div className="min-w-[6rem] flex-1 rounded-lg bg-slate-50 px-2 py-2">
               <dt className="text-[10px] font-black uppercase tracking-wide text-slate-500">
                 Courses
               </dt>

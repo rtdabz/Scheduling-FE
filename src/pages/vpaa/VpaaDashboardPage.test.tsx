@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { cloneElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ResponsiveContainer measures its parent, and jsdom reports 0x0 — recharts then
@@ -25,7 +25,7 @@ import { clearDataCache } from '../../lib/dataCache';
 
 afterEach(cleanup);
 
-const department = (id: number, code: string, name: string) => ({ id, department_code: code, department_name: name });
+const department = (id: number, code: string, name: string) => ({ id, department_code: code, department_name: name, logo: id === 1 ? '/cba-logo.png' : null });
 const section = (id: number, name: string, departmentId: number) => ({ id, section_name: name, department_id: departmentId });
 
 /**
@@ -65,11 +65,12 @@ const submission = (id: number, departmentId: number, status: string, sectionIds
 });
 
 const initialData = {
+  time_grid: { opening_time: '06:00', closing_time: '18:00', slot_minutes: 30 },
   active_semester: { id: 1, academic_year: '2026-2027', semester: '2nd', is_active: true },
   departments: [department(1, 'CBA', 'Business Administration'), department(2, 'CIT', 'Information Technology'), department(3, 'CED', 'Education')],
   sections: [section(1, 'BSBA 1A', 1), section(2, 'BSBA 2A', 1), section(3, 'BSIT 1A', 2), section(4, 'BEED 1A', 3)],
   schedules: [
-    schedule(1, 1, 1, 'faculty_assignment'),
+    { ...schedule(1, 1, 1, 'faculty_assignment'), department: { id: 1, department_code: 'CBA', department_name: 'Business Administration' } },
     schedule(2, 2, 1, 'faculty_assignment'),
     schedule(3, 3, 2, 'conditionally_approved'),
     schedule(4, 4, 3, 'draft'),
@@ -156,6 +157,68 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><VpaaDashboardPage /></MemoryRouter>);
 
 describe('VpaaDashboardPage', () => {
+  it('reuses the Gantt with configured hours and only published classes in the weekly view', async () => {
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Master calendar timeline' });
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+
+    const blocks = within(chart).getAllByRole('button', { name: /^IT 101 lecture/ });
+    expect(blocks).toHaveLength(2);
+    expect(within(blocks[0]).getByRole('img', { name: 'Business Administration logo' }).getAttribute('src')).toBe('/cba-logo.png');
+    expect(blocks.map((block) => block.getAttribute('data-schedule-id'))).toEqual(['1', '2']);
+    expect(Number.parseFloat(blocks[0].style.left)).toBeCloseTo(100 * 120 / 720);
+    expect(within(chart).getByText('6 AM')).toBeTruthy();
+    expect(screen.queryByText('Timetable Grid')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Timetable filters' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Dept' }), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Timetable filters' }));
+    expect(screen.queryByRole('combobox', { name: 'Dept' })).toBeNull();
+    expect(within(chart).queryAllByRole('button', { name: /^IT 101 lecture/ })).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
+    expect(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ })).toHaveLength(2);
+  });
+
+  it('opens shared class details in fullscreen and leaves fullscreen open when the details close', async () => {
+    renderPage();
+    await screen.findByRole('region', { name: 'Master calendar timeline' });
+    fireEvent.click(screen.getByRole('button', { name: 'Full window view' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    const chart = screen.getByRole('region', { name: 'Master calendar timeline' });
+    fireEvent.click(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ })[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Intro to IT')).toBeTruthy();
+    expect(within(dialog).getByText('Overlapping classes (1)')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Exit full window' })).toBeTruthy();
+  });
+
+  it('separates on-site, online and field meetings while preserving semester scope', async () => {
+    const today = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+    get.mockImplementation((url: string) => {
+      if (url === '/initial-data') return Promise.resolve({ data: { ...initialData, schedules: [
+        { ...schedule(10, 1, 1, 'finalized'), day: today, meeting_type: 'laboratory' },
+        { ...schedule(11, 2, 1, 'reassignment'), day: today, room: { id: 3, room_code: 'ONLINE', room_type: 'online' } },
+        { ...schedule(12, 1, 1, 'finalized'), day: today, semester_id: 99 },
+        { ...schedule(13, 1, 1, 'finalized'), day: today, mode: 'field', room: null, room_id: null },
+        { ...schedule(14, 2, 1, 'finalized'), day: today, room: { id: 4, room_code: 'FIELD', room_type: 'field' } },
+      ] } });
+      if (url === '/vpaa/dashboard-insights') return Promise.resolve({ data: insights });
+      return Promise.resolve({ data: activityLog });
+    });
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Master calendar timeline' });
+    expect(within(chart).getByRole('button', { name: /^IT 101 laboratory/ }).getAttribute('data-schedule-id')).toBe('10');
+    expect(within(chart).queryByRole('button', { name: /^IT 101 lecture/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Online' }));
+    expect(within(chart).getByRole('button', { name: /^IT 101 lecture/ }).getAttribute('data-schedule-id')).toBe('11');
+    expect(within(chart).queryByRole('button', { name: /^IT 101 laboratory/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Field' }));
+    expect(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ }).map(block => block.getAttribute('data-schedule-id'))).toEqual(['13', '14']);
+    expect(within(chart).queryByRole('button', { name: /^IT 101 laboratory/ })).toBeNull();
+  });
+
   it('renders every section of the executive overview', async () => {
     renderPage();
 
@@ -165,7 +228,7 @@ describe('VpaaDashboardPage', () => {
       'Requires Attention',
       'Workflow · Department Scheduling Progress',
       'Room Utilisation by Building',
-      'Institutional Master Timetable (Preview)',
+      'Master timetable',
       'Faculty Load Overview',
       'Institutional Readiness',
       'Recent Administrative Activity',
@@ -204,6 +267,7 @@ describe('VpaaDashboardPage', () => {
 
     // Building names appear twice by design: once as a timetable filter option
     // and once as a row of the utilisation table.
+    fireEvent.click(await screen.findByRole('button', { name: 'Timetable filters' }));
     await waitFor(() => expect(screen.getAllByText('Main').length).toBeGreaterThan(1));
     expect(screen.getAllByText('Annex').length).toBeGreaterThan(1);
     expect(screen.getByText(/Unused this semester/)).toBeTruthy();
@@ -225,7 +289,9 @@ describe('VpaaDashboardPage', () => {
     renderPage();
     // Two physical rooms; the ONLINE placeholder is excluded.
     await waitFor(() => expect(screen.getByText('Across campus')).toBeTruthy());
-    expect(screen.getByText('Available Rooms')).toBeTruthy();
+    const roomCard = screen.getByText('Across campus').closest('button');
+    expect(roomCard).toBeTruthy();
+    expect(within(roomCard!).getByText('2')).toBeTruthy();
   });
 
   it('asks the API for the full schedule window rather than the default cap', async () => {

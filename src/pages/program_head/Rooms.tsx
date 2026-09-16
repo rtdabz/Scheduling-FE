@@ -3,7 +3,7 @@ import { getPhilippineNowParts } from '../../lib/philippineTime';
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { BuildingsTable, RoomsTable } from '../../components/rooms/RoomListTables';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -15,9 +15,6 @@ import {
   Building2,
   ArrowLeft,
   Clock,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
   LayoutGrid,
   List,
   Filter,
@@ -95,7 +92,7 @@ interface RoomsPageData {
   rooms: Room[];
   departments: Department[];
   schedules?: Schedule[];
-  activeSemester?: any;
+  activeSemester?: unknown;
 }
 
 const mapApiRoom = (r: ApiRoom): Room => ({
@@ -111,7 +108,6 @@ const mapApiRoom = (r: ApiRoom): Room => ({
 });
 
 export default function ProgramHeadRooms() {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
@@ -120,19 +116,20 @@ export default function ProgramHeadRooms() {
   const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
-  const [activeSemester, setActiveSemester] = useState<any | null>(cachedRoomsData?.activeSemester ?? null);
+  const [activeSemester, setActiveSemester] = useState<unknown>(cachedRoomsData?.activeSemester ?? null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+  const userDepartmentId = user?.department_id;
   const canManageRooms = isVpaa;
 
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
-    if (!user?.department_id) return [];
-    return rooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(user.department_id));
-  }, [rooms, isVpaa, user?.department_id]);
+    if (!userDepartmentId) return [];
+    return rooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(userDepartmentId));
+  }, [rooms, isVpaa, userDepartmentId]);
 
   // Card view and schedule details states
   const [globalFilter, setGlobalFilter] = useState('');
@@ -165,36 +162,34 @@ export default function ProgramHeadRooms() {
   const [buildingError, setBuildingError] = useState('');
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const fetchData = async () => {
+      try {
+        const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
+          const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_semester?: unknown }>('/initial-data?include=rooms,departments,schedules');
+          const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
+          const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
+          const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
+          const activeSemester = initialDataRes.data?.active_semester || null;
 
-  const fetchData = async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(roomsCacheKey));
-    try {
-      const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-        const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_semester?: any }>('/initial-data?include=rooms,departments,schedules');
-        const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
-        const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
-        const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
-        const activeSemester = initialDataRes.data?.active_semester || null;
-
-        return {
-          rooms: rawRooms.map(mapApiRoom),
-          departments: rawDepts,
-          schedules: rawSchedules,
-          activeSemester: activeSemester,
-        };
-      }, forceRefresh);
-      setRooms(data.rooms);
-      setDepartments(data.departments);
-      setSchedules(data.schedules || []);
-      setActiveSemester(data.activeSemester || null);
-    } catch {
-      toast.error('Error', 'Failed to load rooms and schedules data.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+          return {
+            rooms: rawRooms.map(mapApiRoom),
+            departments: rawDepts,
+            schedules: rawSchedules,
+            activeSemester: activeSemester,
+          };
+        });
+        setRooms(data.rooms);
+        setDepartments(data.departments);
+        setSchedules(data.schedules || []);
+        setActiveSemester(data.activeSemester || null);
+      } catch {
+        toast.error('Error', 'Failed to load rooms and schedules data.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void fetchData();
+  }, [roomsCacheKey, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,8 +340,7 @@ export default function ProgramHeadRooms() {
       return { status: 'free-all-day', text: 'Free all day' };
     }
     
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const currentMinutes = hour * 60 + minute;
     
     const activeClass = todaySchedules.find(s => {
       const start = getMinutes(s.start_time);
@@ -739,14 +733,14 @@ export default function ProgramHeadRooms() {
                       <div className="flex justify-end gap-2 border-t border-gray-100 pt-3" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => handleEditClick(room)}
-                          className="px-3 py-1.5 bg-white border border-gray-250 text-gray-700 hover:text-[#C9952A] hover:bg-gray-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
+                          className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
                         >
                           <Pencil size={13} />
                           <span>Edit</span>
                         </button>
                         <button
                           onClick={() => triggerDeleteConfirmation(room.id)}
-                          className="px-3 py-1.5 bg-white border border-gray-250 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer font-sans"
+                          className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
                         >
                           <Trash2 size={13} />
                           <span>Archive</span>
@@ -777,19 +771,19 @@ export default function ProgramHeadRooms() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
-              <h2 className="text-lg font-bold text-[#1A1410] font-display">
-                {isEditMode 
-                  ? 'Edit Room Details' 
+          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
+              <h2 className="text-lg font-bold text-white font-display">
+                {isEditMode
+                  ? 'Edit Room Details'
                   : (selectedBuilding ? 'Add New Room' : 'Add New Building')}
               </h2>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">

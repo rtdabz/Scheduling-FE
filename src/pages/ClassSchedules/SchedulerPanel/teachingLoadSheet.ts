@@ -122,14 +122,14 @@ const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 const OVERLOAD_TEXT = [248, 113, 113] as const;
 const PROBONO_TEXT = [107, 114, 128] as const;
 /**
- * A subject assigned over an instructor conflict prints in light orange text.
- * It wins over both band colours, and carries no printed label by design.
+ * A subject assigned over an instructor conflict prints in red text.
+ * Pro bono remains grey; conflict colour carries no printed label by design.
  */
-const CONFLICT_TEXT = [251, 146, 60] as const;
+const CONFLICT_TEXT = [220, 38, 38] as const;
 
 const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined => {
-  if (line.overridden) return CONFLICT_TEXT;
   if (line.band === "probono") return PROBONO_TEXT;
+  if (line.overridden) return CONFLICT_TEXT;
   if (line.band === "overload") return OVERLOAD_TEXT;
   return undefined;
 };
@@ -380,9 +380,9 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
 
   // Rows 28-38 -- B. Overload / Part Time Load.
   drawText(doc, "B. Overload/Part Time Load", { from: "A", to: "C", row: 28 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  // Names the band colours only; the light orange conflict text is deliberately unlabelled.
+  // Names the band colours only; the red conflict text is deliberately unlabelled.
   const hasOverload = ctx.overloadLines.some((line) => line.band === "overload" && !line.overridden);
-  const hasProbono = ctx.overloadLines.some((line) => line.band === "probono" && !line.overridden);
+  const hasProbono = ctx.overloadLines.some((line) => line.band === "probono");
   if (hasProbono) {
     drawText(doc, "Grey text is Pro Bono", { from: "H", to: "K", row: 28 }, {
       size: SIZE.small,

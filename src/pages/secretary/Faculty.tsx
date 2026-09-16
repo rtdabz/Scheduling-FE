@@ -653,7 +653,7 @@ export default function SecretaryFaculty() {
       clearTimeout(fade);
     };
   }, [highlightedId, sortedFaculties, pageSize]);
-
+
   const editingDesignations = faculties.find((f) => f.id === editingId)?.designations ?? [];
   const previewLoad = {
 
@@ -873,7 +873,14 @@ export default function SecretaryFaculty() {
                           </div>
                         )}
                         <div className="space-y-1">
-                          <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-bold text-gray-800 text-sm leading-snug">{name}</h3>
+                            {f.department?.department_code && (
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${getDepartmentColor(f.department.department_code || f.department.department_name)}`}>
+                                {f.department.department_code}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-gray-500 font-semibold block">
                             {f.department?.department_name || 'No Department'}
                           </span>
@@ -1102,15 +1109,15 @@ export default function SecretaryFaculty() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
-              <h2 className="text-lg font-bold text-[#1A1410] font-display">
+          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
+              <h2 className="text-lg font-bold text-white font-display">
                 {isEditMode ? 'Edit Instructor' : 'Add New Instructor'}
               </h2>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
               >
                 <X size={20} />
               </button>

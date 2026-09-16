@@ -16,6 +16,8 @@ import { useDataTable } from "../../../../components/ui/useDataTable";
 import { useGenerationRun } from "../hooks/useGenerationRun";
 import type { Course, Section, Semester } from "../types";
 import type { TimeBlockOption } from "./generationTypes";
+import YearLevelStateNotice from "./YearLevelStateNotice";
+import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 
 export type ReviewCourseRow = {
   course: Course;
@@ -347,6 +349,7 @@ export default function ReviewGenerateStep({
   activeRules,
   generating,
   blockedReason,
+  yearState = null,
 }: {
   activeSemester: Semester | null;
   yearLevel: number;
@@ -359,6 +362,7 @@ export default function ReviewGenerateStep({
   activeRules: string[];
   generating: boolean;
   blockedReason: string | null;
+  yearState?: YearLevelScheduleState | null;
 }) {
   const hybridCourses = courseRows.filter((row) => row.hybrid);
   const splitCourses = courseRows.filter((row) => row.split);
@@ -500,6 +504,10 @@ export default function ReviewGenerateStep({
               </p>
             )}
           </section>
+
+          {!blockedReason && (
+            <YearLevelStateNotice state={yearState} className="shrink-0" />
+          )}
 
           {(costNotices.length > 0 || blockedReason) && (
             <div className="shrink-0 space-y-1.5">

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, CheckSquare, Lock, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, CheckSquare, Lock, Trash2, X } from "lucide-react";
 import { yearLevelLabel } from "../constants";
 import type { SectionDoneCandidate } from "../types";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 
-export type SectionChecklistVariant = "done" | "finalize" | "reassign";
+export type SectionChecklistVariant = "done" | "finalize" | "reassign" | "clear";
 
 interface MarkSectionsDoneModalProps {
   candidates: SectionDoneCandidate[];
@@ -17,6 +17,7 @@ interface MarkSectionsDoneModalProps {
    * reopens finalized assignments. Same checklist in every case.
    */
   variant?: SectionChecklistVariant;
+  contextText?: string;
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : word.endsWith("s") ? "es" : "s"}`;
@@ -40,6 +41,20 @@ const COPY: Record<SectionChecklistVariant, {
    */
   preselect: "ready" | "open";
 }> = {
+  clear: {
+    eyebrow: "Schedule Management",
+    title: "Clear section schedules",
+    description: "Tick the sections whose schedules you want to clear. Only the selected sections will be affected.",
+    empty: "No sections are available in this department for the active semester.",
+    noneReady: "No section has a working schedule that can be cleared.",
+    progress: (_done, total) => plural(total, "class"),
+    lockNote: (meetings) => `${plural(meetings, "loaded meeting")} to clear`,
+    selectAll: "Select all available",
+    closeLabel: "Close clear schedules",
+    working: "Clearing...",
+    confirm: (count) => count > 0 ? `Clear ${count} Section${count === 1 ? "" : "s"}` : "Clear Sections",
+    preselect: "open",
+  },
   done: {
     eyebrow: "Department Readiness",
     title: "Mark sections done",
@@ -100,8 +115,16 @@ export default function MarkSectionsDoneModal({
   onConfirm,
   onCancel,
   variant = "done",
+  contextText,
 }: MarkSectionsDoneModalProps) {
   const copy = COPY[variant];
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (variant !== "clear") return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    cancelButtonRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, [variant]);
   // The modal is mounted only while open, so the ready sections are pre-checked
   // once on mount instead of being resynced from an effect.
   const [selectedIds, setSelectedIds] = useState<string[]>(() => (
@@ -142,8 +165,8 @@ export default function MarkSectionsDoneModal({
     setSelectedIds(allReadySelected ? [] : readySections.map((candidate) => candidate.sectionId));
   };
 
-  const selectedSlotCount = candidates
-    .filter((candidate) => selectedIds.includes(candidate.sectionId))
+  const selectedCandidates = readySections.filter((candidate) => selectedIds.includes(candidate.sectionId));
+  const selectedSlotCount = selectedCandidates
     .reduce((total, candidate) => total + candidate.scheduleIds.length, 0);
 
   return (
@@ -152,16 +175,17 @@ export default function MarkSectionsDoneModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="mark-sections-done-title"
-        className="flex w-full max-w-2xl flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+        className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
         style={{ borderRadius: 10 }}
       >
         <div className="flex items-start gap-4 px-5 pb-4 pt-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-emerald-100 bg-emerald-50 text-emerald-600" style={{ borderRadius: 8 }}>
-            <CheckSquare size={20} />
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center border ${variant === "clear" ? "border-rose-100 bg-rose-50 text-rose-600" : "border-emerald-100 bg-emerald-50 text-emerald-600"}`} style={{ borderRadius: 8 }}>
+            {variant === "clear" ? <Trash2 size={20} /> : <CheckSquare size={20} />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b0f1a]">{copy.eyebrow}</p>
             <h3 id="mark-sections-done-title" className="mt-1 text-base font-bold leading-6 text-slate-950">{copy.title}</h3>
+            {contextText && <p className="mt-1 text-xs font-medium text-slate-500">{contextText}</p>}
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {copy.description}
             </p>
@@ -178,7 +202,11 @@ export default function MarkSectionsDoneModal({
           </button>
         </div>
 
-        <div className="px-5 pb-5">
+        <div className="min-h-0 overflow-y-auto px-5 pb-5">
+          {variant === "clear" && <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>Clearing removes working schedules from the selected sections, including meetings beyond this preview. They cannot be restored from the Archive. Schedule history is retained.</p>
+          </div>}
           {candidates.length === 0 ? (
             <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-600">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -195,17 +223,17 @@ export default function MarkSectionsDoneModal({
               <div className="overflow-hidden rounded-xl border border-slate-200">
                 <label className="flex cursor-pointer items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
                   <span className="text-xs font-bold text-slate-700">
-                    {allReadySelected ? "Clear all" : copy.selectAll}
+                    {allReadySelected ? "Deselect all" : copy.selectAll}
                   </span>
                   <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                    {selectedIds.length} of {readySections.length} selected
+                    {selectedCandidates.length} of {readySections.length} selected
                     <input
                       type="checkbox"
                       checked={allReadySelected}
                       onChange={toggleAllSections}
                       disabled={isMarking || readySections.length === 0}
                       className="h-4 w-4 cursor-pointer accent-[#4e0a10] disabled:cursor-not-allowed"
-                      aria-label={allReadySelected ? "Clear all sections" : "Select all ready sections"}
+                      aria-label={allReadySelected ? "Deselect all sections" : variant === "clear" ? "Select all available sections" : "Select all ready sections"}
                     />
                   </span>
                 </label>
@@ -270,10 +298,10 @@ export default function MarkSectionsDoneModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2.5 border-t border-slate-100 bg-slate-50 px-5 py-4">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-t border-slate-100 bg-slate-50 px-5 py-4">
           <span className="text-[11px] font-medium text-slate-500">
-            {selectedIds.length > 0
-              ? `${selectedIds.length} section${selectedIds.length === 1 ? "" : "s"} · ${selectedSlotCount} meeting${selectedSlotCount === 1 ? "" : "s"}`
+            {selectedCandidates.length > 0
+              ? `${selectedCandidates.length} section${selectedCandidates.length === 1 ? "" : "s"} · ${selectedSlotCount} meeting${selectedSlotCount === 1 ? "" : "s"}`
               : "Nothing selected"}
           </span>
           <span className="flex items-center gap-2.5">
@@ -281,6 +309,7 @@ export default function MarkSectionsDoneModal({
               type="button"
               onClick={onCancel}
               disabled={isMarking}
+              ref={cancelButtonRef}
               className="border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-50"
               style={{ borderRadius: 8 }}
             >
@@ -288,13 +317,13 @@ export default function MarkSectionsDoneModal({
             </button>
             <button
               type="button"
-              onClick={() => onConfirm(selectedIds)}
-              disabled={selectedIds.length === 0 || isMarking}
+              onClick={() => onConfirm(selectedCandidates.map((candidate) => candidate.sectionId))}
+              disabled={selectedCandidates.length === 0 || isMarking}
               className="inline-flex items-center gap-2 bg-[#4e0a10] px-5 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ borderRadius: 8 }}
             >
               {isMarking && <LoadingSpinner className="h-4 w-4" />}
-              {isMarking ? copy.working : copy.confirm(selectedIds.length)}
+              {isMarking ? copy.working : copy.confirm(selectedCandidates.length)}
             </button>
           </span>
         </div>
