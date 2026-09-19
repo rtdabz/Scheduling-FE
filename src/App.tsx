@@ -33,7 +33,6 @@ const SecretaryScheduleBuilder = lazy(() => import('./pages/secretary/ScheduleBu
 const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
 const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
 const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
-const SecretarySettings = lazy(() => import('./pages/secretary/Settings'));
 const SecretarySectionTimetables = lazy(() => import('./pages/secretary/SectionTimetables'));
 const ProgramHeadScheduleBuilder = lazy(() => import('./pages/program_head/ScheduleBuilder'));
 const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
@@ -234,7 +233,7 @@ export default function App() {
                 keep the old URL as a compatibility alias after the menu rename. */}
             <Route path="/secretary/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross Department Assignments"><CrossDepartmentAssignments /></CapabilityRoute>} />
             <Route path="/secretary/course-teaching-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Teaching Assignments"><CourseTeachingAssignments /></CapabilityRoute>} />
-            <Route path="/secretary/settings" element={<SecretarySettings />} />
+            <Route path="/secretary/settings" element={<Navigate to="/secretary/schedule-builder" replace />} />
             
             {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
@@ -256,7 +255,7 @@ export default function App() {
             <Route path="/program_head/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross Department Assignments"><CrossDepartmentAssignments /></CapabilityRoute>} />
             <Route path="/program_head/course-teaching-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Teaching Assignments"><CourseTeachingAssignments /></CapabilityRoute>} />
-            <Route path="/program_head/settings" element={<SecretarySettings />} />
+            <Route path="/program_head/settings" element={<Navigate to="/program_head/schedule-builder" replace />} />
             <Route path="/director/dashboard" element={<DashboardRoute />} />
             <Route path="/director/settings" element={<AccountSettingsPage />} />
           </Route>

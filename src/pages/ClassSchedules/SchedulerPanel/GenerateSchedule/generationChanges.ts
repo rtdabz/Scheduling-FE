@@ -25,6 +25,8 @@ export type GenerationChange = {
   title: string;
   description: string;
   items: GenerationChangeItem[];
+  status?: "active" | "resolved" | string;
+  resolved?: boolean;
 };
 
 /** Short labels for the badge a changed class carries in the summary table. */
@@ -71,6 +73,8 @@ export function resolveGenerationChanges(result: {
     {
       kind: "preference_relaxed",
       severity: "warning",
+      status: "resolved",
+      resolved: true,
       title: result.applied_strategy.label,
       description: result.applied_strategy.description,
       items: adjustments.filter((adjustment) => !isSplit(adjustment)).map(toItem),
@@ -78,6 +82,8 @@ export function resolveGenerationChanges(result: {
     {
       kind: "split_session_single_meeting",
       severity: "warning",
+      status: "resolved",
+      resolved: true,
       title: "Split session changed to one meeting",
       description: "These courses were set to meet twice a week, but no second slot was free, so each meets once instead.",
       items: adjustments.filter(isSplit).map(toItem),

@@ -49,7 +49,11 @@ export const timeInputMinutes = (value: string): number | null => {
   return (hour * 60) + minute;
 };
 
-export const operatingHoursError = (openingTime: string, closingTime: string): string | null => {
+/**
+ * Mirrors TimeslotController::validateClosingTime and ::validateFieldEndTime.
+ * An empty field end time is left out of the save, so it is not an error.
+ */
+export const operatingHoursError = (openingTime: string, closingTime: string, fieldEndTime = ''): string | null => {
   const openingMinutes = timeInputMinutes(openingTime);
   const closingMinutes = timeInputMinutes(closingTime);
 
@@ -60,6 +64,14 @@ export const operatingHoursError = (openingTime: string, closingTime: string): s
   if (closingMinutes <= openingMinutes) {
     return 'Closing time must be later than opening time.';
   }
+
+  if (fieldEndTime === '') return null;
+
+  const fieldEndMinutes = timeInputMinutes(fieldEndTime);
+  if (fieldEndMinutes === null) return 'Choose a valid field end time.';
+  if (fieldEndMinutes <= openingMinutes) return 'Field end time must be later than opening time.';
+  if (fieldEndMinutes > closingMinutes) return 'Field end time cannot be later than closing time.';
+  if ((fieldEndMinutes - openingMinutes) % 30 !== 0) return 'Field end time must fall on a 30-minute slot.';
 
   return null;
 };

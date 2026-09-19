@@ -94,8 +94,6 @@ const ROOM_TBA = "tba";
 
 export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
   lecture_lab_schedule_override_enabled?: boolean;
-  field_evening_schedule_enabled?: boolean;
-  online_slot_limit?: number | null;
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
   forced_day_rules?: Array<{ course_id: number; day: string }>;
@@ -108,7 +106,7 @@ const sortSplitMeetingsForEdit = (
   laboratoryFirst = false,
   laboratorySettings: LaboratoryDurationSettings | null = null,
 ): ScheduleItem[] => {
-  const lectureSlots = Number(subject?.lectureHours ?? 0) * 2;
+  const lectureSlots = getCourseSlotPlan(subject).lectureSlots;
   const labSlots = Number(subject?.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratorySettings) : 0;
   const meetingRank = (item: ScheduleItem): number => {
     if (item.meetingType === "laboratory") return laboratoryFirst ? 0 : 1;
@@ -940,9 +938,6 @@ export const useScheduler = () => {
     faculties,
     fieldCourseAssignmentEnabled,
     fieldCourseCodes,
-    fieldEveningScheduleEnabled: Boolean(manualSchedulingSettings?.field_evening_schedule_enabled),
-    // Undefined until settings load, so the department copy is used meanwhile.
-    onlineSlotLimit: manualSchedulingSettings ? (manualSchedulingSettings.online_slot_limit ?? null) : undefined,
   });
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
@@ -1629,7 +1624,7 @@ export const useScheduler = () => {
           } else if (hasLab) {
             const duration = targetDay.duration;
             const labSlots = laboratoryComponentSlots(subject, manualSchedulingSettings);
-            const lecSlots = Number(subject.lectureHours ?? 0) * 2;
+            const lecSlots = getCourseSlotPlan(subject).lectureSlots;
             if (duration === labSlots) {
               meetingType = "laboratory";
             } else if (duration === lecSlots) {

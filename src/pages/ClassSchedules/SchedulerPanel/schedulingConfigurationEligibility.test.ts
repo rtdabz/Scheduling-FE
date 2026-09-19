@@ -3,6 +3,7 @@ import type { Course } from "./types";
 import {
   isBalancedSplitSchedulingEligible,
   isConfiguredFieldCourse,
+  isHybridSplitEligible,
   isHybridSchedulingEligible,
 } from "./schedulingConfigurationEligibility";
 
@@ -50,7 +51,7 @@ describe("scheduling configuration eligibility", () => {
     const lectureOnlyMajor: Course = { ...minorCourse, category: "major" };
     const labMajor: Course = { ...lectureOnlyMajor, labHours: 1, units: 4 };
 
-    it("offers a minor split only under the minor setting", () => {
+    it("offers a minor split regardless of retired department settings", () => {
       expect(
         isBalancedSplitSchedulingEligible(minorCourse, {
           minorEnabled: true,
@@ -62,10 +63,10 @@ describe("scheduling configuration eligibility", () => {
           minorEnabled: false,
           majorLectureEnabled: true,
         }),
-      ).toBe(false);
+      ).toBe(true);
     });
 
-    it("offers a lecture-only major split only under the major setting", () => {
+    it("offers a lecture-only major split regardless of retired department settings", () => {
       expect(
         isBalancedSplitSchedulingEligible(lectureOnlyMajor, {
           minorEnabled: false,
@@ -77,7 +78,7 @@ describe("scheduling configuration eligibility", () => {
           minorEnabled: true,
           majorLectureEnabled: false,
         }),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it("never offers a split for a major carrying laboratory units", () => {
@@ -87,6 +88,12 @@ describe("scheduling configuration eligibility", () => {
           majorLectureEnabled: true,
         }),
       ).toBe(false);
+    });
+
+    it("only offers Hybrid Split for three-unit lecture-only courses", () => {
+      expect(isHybridSplitEligible(minorCourse)).toBe(true);
+      expect(isHybridSplitEligible({ ...minorCourse, labHours: 1 })).toBe(false);
+      expect(isHybridSplitEligible({ ...minorCourse, lectureHours: 0 })).toBe(false);
     });
   });
 });

@@ -67,7 +67,7 @@ export interface LaboratoryDurationSettings {
   custom_lab_duration_other_enabled?: boolean | null;
 }
 
-const SLOT_MINUTES = 30;
+export const SLOT_MINUTES = 30;
 
 /**
  * The configured Custom Lab Duration in slots, or null when none applies.

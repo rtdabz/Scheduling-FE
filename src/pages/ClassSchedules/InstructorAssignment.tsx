@@ -21,6 +21,7 @@ import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { apiErrorMessage } from "../../lib/apiError";
 import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
+import { coveredContinuously } from "../../lib/availabilityWindows";
 import type { LoadTier, OverloadConfirmation } from "../../lib/overloadConfirmation";
 import OverloadConfirmationModal from "../../components/faculty/OverloadConfirmationModal";
 import ConfirmModal from "../../components/ui/ConfirmModal";
@@ -252,14 +253,14 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
   );
   if (dayAvailabilities.length === 0) return true;
 
-  const attemptStart = timeToMinutes(schedule.start_time);
-  const attemptEnd = timeToMinutes(schedule.end_time);
-
-  return !dayAvailabilities.some((window) => {
-    const windowStart = timeToMinutes(window.start_time);
-    const windowEnd = timeToMinutes(window.end_time);
-    return attemptStart >= windowStart && attemptEnd <= windowEnd;
-  });
+  return !coveredContinuously(
+    dayAvailabilities.map((window): [number, number] => [
+      timeToMinutes(window.start_time),
+      timeToMinutes(window.end_time),
+    ]),
+    timeToMinutes(schedule.start_time),
+    timeToMinutes(schedule.end_time)
+  );
 };
 
 const getRoomName = (schedule: ApiSchedule): string =>

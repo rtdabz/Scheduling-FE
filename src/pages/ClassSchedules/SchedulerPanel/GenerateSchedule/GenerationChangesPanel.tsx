@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, ListChecks } from "lucide-react";
 import type { GenerationChange, GenerationChangeItem } from "./generationChanges";
+import ResolutionDetailsButton from "./ResolutionDetails";
+import { resolutionDetailsForChange } from "./resolutionDetailsData";
 
 const severityTone: Record<string, { box: string; icon: string; count: string }> = {
   critical: {
@@ -66,6 +68,12 @@ export default function GenerationChangesPanel({
                 <p className="flex items-center gap-1.5 text-xs font-black text-slate-900">
                   <AlertTriangle className={`h-3.5 w-3.5 shrink-0 ${tone.icon}`} />
                   {change.title}
+                  {(change.resolved || change.status === "resolved") && (
+                    <>
+                      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">Resolved</span>
+                      <ResolutionDetailsButton details={resolutionDetailsForChange(change)} />
+                    </>
+                  )}
                   <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-black ${tone.count}`}>
                     {change.items.length}
                   </span>

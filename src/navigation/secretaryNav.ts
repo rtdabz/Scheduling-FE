@@ -9,7 +9,6 @@ import {
   UserPlus,
   GraduationCap,
   UserRoundCheck,
-  Settings,
   Layers,
   History,
   FileBarChart,
@@ -70,7 +69,6 @@ export const secretaryNav: NavSection[] = [
     items: [
       { label: 'Reports', path: '/secretary/reports', icon: FileBarChart, id: 'sidebar-reports', requiredCapability: 'schedule.view' },
       { label: 'Schedule History', path: '/secretary/schedule-history', icon: History, id: 'sidebar-schedule-history', requiredCapability: 'schedule.view' },
-      { label: 'Settings', path: '/secretary/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }
 ]

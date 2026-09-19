@@ -20,20 +20,19 @@ export const isConfiguredFieldCourse = (
 
 export const isHybridSchedulingEligible = (
   course: Course | null | undefined,
-  overrideEnabled: boolean,
+  _overrideEnabled = true,
   fieldCourseCodes: ReadonlySet<string> = new Set(),
 ): boolean => Boolean(
-  overrideEnabled
-  && course?.category === "major"
+  course?.category === "major"
   && !isConfiguredFieldCourse(course, fieldCourseCodes)
   && Number(course.lectureHours ?? 0) > 0
   && Number(course.labHours ?? 0) > 0
 );
 
 export type BalancedSplitSettings = {
-  /** Department setting: Minor Course Split Sessions. */
+  /** Retained for compatibility with older settings payloads. */
   minorEnabled: boolean;
-  /** Department setting: Major Lecture Split Sessions. */
+  /** Retained for compatibility with older settings payloads. */
   majorLectureEnabled: boolean;
 };
 
@@ -41,9 +40,11 @@ export const balancedSplitSettingsOf = (settings: {
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
 } | null | undefined): BalancedSplitSettings => ({
-  minorEnabled: settings?.gec_split_schedule_override_enabled === true,
-  majorLectureEnabled:
-    settings?.major_lecture_split_schedule_override_enabled === true,
+  // Split Session is selected per course in Step 2. Keep this compatibility
+  // shape for callers that still pass the old settings payload, but never let
+  // the removed department switches gate an eligible course.
+  minorEnabled: true,
+  majorLectureEnabled: true,
 });
 
 /**
@@ -60,14 +61,37 @@ export const isBalancedSplitSchedulingEligible = (
 
   if (course.category === "major") {
     return Boolean(
-      settings.majorLectureEnabled
-      && Number(course.lectureHours ?? 0) > 0
+      Number(course.lectureHours ?? 0) > 0
       && Number(course.labHours ?? 0) === 0,
     );
   }
 
-  return settings.minorEnabled;
+  return settings.minorEnabled || settings.majorLectureEnabled;
 };
+
+/**
+ * Length of each Hybrid Split meeting — one online, one face-to-face.
+ * Mirrors `SchedulingPolicy::HYBRID_SPLIT_MEETING_MINUTES`.
+ */
+export const HYBRID_SPLIT_MEETING_MINUTES = 90;
+
+/**
+ * Hybrid Split is the fixed shape of two {@link HYBRID_SPLIT_MEETING_MINUTES}
+ * meetings, so a course qualifies when they add up to exactly its weekly
+ * contact time (`units × 60`). Courses with a different total stay regular or
+ * use the ordinary Split Session shape.
+ */
+export const isHybridSplitEligible = (
+  course: Course | null | undefined,
+): boolean => Boolean(
+  isBalancedSplitSchedulingEligible(course, {
+    minorEnabled: true,
+    majorLectureEnabled: true,
+  })
+  && Math.round(Number(course?.units ?? 0) * 60) === 2 * HYBRID_SPLIT_MEETING_MINUTES
+  && Number(course?.lectureHours ?? 0) > 0
+  && Number(course?.labHours ?? 0) === 0,
+);
 
 export const isFieldSchedulingEligible = (course: Course | null | undefined): boolean => (
   Boolean(course) && Number(course?.labHours ?? 0) <= 0

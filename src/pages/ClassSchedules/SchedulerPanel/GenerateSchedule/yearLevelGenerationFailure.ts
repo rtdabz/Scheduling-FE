@@ -11,6 +11,8 @@ export type AdjustmentType =
   | "clear_pattern"
   | "disable_lecture_lab_split"
   | "set_delivery_mode"
+  | "set_preferred_period"
+  | "set_time_preference"
   | "split_session_single_meeting_fallback";
 
 export type GenerationAdjustment = {
@@ -34,6 +36,8 @@ export type GenerationRecommendation = {
   course_code: string | null;
   impact: "low" | "medium" | "high" | string;
   adjustments: GenerationAdjustment[];
+  status?: "active" | "resolved" | string;
+  resolved?: boolean;
 };
 
 export type BlockingConstraint = {
@@ -88,6 +92,8 @@ export type AdjustableSectionConfig = {
   gecSplitCourseIds: string[];
   gecSplitPatternsByCourseId: Record<string, string>;
   modesByCourseId: Record<string, string>;
+  preferredTimeBlock?: "flexible" | "morning" | "afternoon" | "evening";
+  preferencesByCourseId?: Record<string, string>;
 };
 
 const stageLabels: Record<string, string> = {
@@ -129,6 +135,8 @@ export function parseYearLevelFailurePayload(data: unknown): YearLevelGeneration
     ? (payload.recommendations as GenerationRecommendation[]).map((recommendation) => ({
         ...recommendation,
         adjustments: Array.isArray(recommendation.adjustments) ? recommendation.adjustments : [],
+        status: recommendation.status ?? (recommendation.resolved ? "resolved" : "active"),
+        resolved: recommendation.resolved ?? recommendation.status === "resolved",
       }))
     : [];
 
@@ -195,6 +203,25 @@ function preflightFailure(payload: Record<string, unknown>): YearLevelGeneration
   };
 }
 
+/** A recommendation the wizard can apply itself, rather than advice to read. */
+export const isApplicableRecommendation = (recommendation: GenerationRecommendation): boolean =>
+  recommendation.adjustments.length > 0
+  && !recommendation.resolved
+  && recommendation.status !== "resolved";
+
+/**
+ * What an Apply button changes: "PE 101 in BSIT 1A" for a course, "BSIT 1A"
+ * for a section-wide setting.
+ */
+export function recommendationTarget(recommendation: GenerationRecommendation): string {
+  const first = recommendation.adjustments[0];
+  const courseCode = recommendation.course_code || first?.course_code || "";
+  const sectionName = recommendation.section_name || first?.section_name || "";
+
+  if (courseCode && sectionName) return `${courseCode} in ${sectionName}`;
+  return courseCode || sectionName || "the configuration";
+}
+
 /** Human-readable summary of one adjustment, used in the panel and the toast. */
 export function describeAdjustment(adjustment: GenerationAdjustment): string {
   const course = adjustment.course_code || `course ${adjustment.course_id}`;
@@ -209,6 +236,10 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
       return `${course} in ${section}: lecture/lab split turned off`;
     case "set_delivery_mode":
       return `${course} in ${section}: mode set to ${adjustment.value === "automatic" ? "Automatic" : adjustment.value}`;
+    case "set_preferred_period":
+      return `${section}: preferred period set to ${periodLabel(adjustment.value)}`;
+    case "set_time_preference":
+      return `${course} in ${section}: preferred time set to ${periodLabel(adjustment.value)}`;
     case "split_session_single_meeting_fallback":
       return `${course} in ${section}: Can't split, switched to one meeting.`;
     default:
@@ -276,7 +307,44 @@ function applyOne<T extends AdjustableSectionConfig>(
       if (config.modesByCourseId[courseKey] === value) return null;
       return { ...config, modesByCourseId: { ...config.modesByCourseId, [courseKey]: value } };
     }
+    case "set_preferred_period": {
+      const value = isPeriodValue(adjustment.value) ? adjustment.value : null;
+      if (!value || config.preferredTimeBlock === value) return null;
+      return { ...config, preferredTimeBlock: value };
+    }
+    case "set_time_preference": {
+      const value = isCourseTimePreference(adjustment.value) ? adjustment.value : null;
+      if (!value || config.preferencesByCourseId?.[courseKey] === value) return null;
+      return {
+        ...config,
+        preferencesByCourseId: {
+          ...(config.preferencesByCourseId ?? {}),
+          [courseKey]: value,
+        },
+      };
+    }
     default:
       return null;
   }
 }
+
+const isPeriodValue = (value: string | null): value is "flexible" | "morning" | "afternoon" | "evening" =>
+  value === "flexible" || value === "morning" || value === "afternoon" || value === "evening";
+
+const isCourseTimePreference = (value: string | null): value is "morning" | "afternoon" | "evening" =>
+  value === "morning" || value === "afternoon" || value === "evening";
+
+const periodLabel = (value: string | null): string => {
+  switch (value) {
+    case "morning":
+      return "Morning";
+    case "afternoon":
+      return "Afternoon";
+    case "evening":
+      return "Evening";
+    case "flexible":
+      return "Any time";
+    default:
+      return value || "Automatic";
+  }
+};

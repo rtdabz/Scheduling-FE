@@ -210,7 +210,6 @@ const recordColours = (doc: jsPDF) => {
 };
 
 const PROBONO_TEXT = "107,114,128";
-const OVERLOAD_TEXT = "248,113,113";
 const CONFLICT_TEXT = "220,38,38";
 const PALE_FILLS = ["254,226,226", "255,237,213"];
 
@@ -235,23 +234,23 @@ describe("drawSheet pro bono text", () => {
     return { fills, texts };
   };
 
-  it("prints overload in light red and pro bono in grey, without shading the rows, and says why", () => {
+  it("prints pro bono in grey and paid overload in plain black, without shading the rows, and says why", () => {
     const { fills, texts } = renderWith(3);
     // Line 1 of the Overload table (IT 101) is paid overload, line 2 (IT 102) pro bono.
     expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
-    expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe(OVERLOAD_TEXT);
+    expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe("0,0,0");
     // The basic subject keeps plain black text.
     expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe("0,0,0");
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
     expect(texts.map((entry) => entry.text)).toContain("Grey text is Pro Bono");
-    expect(texts.map((entry) => entry.text)).toContain("Light red text is Overload");
+    expect(texts.map((entry) => entry.text)).not.toContain("Light red text is Overload");
   });
 
   it("colours nothing when no subject reached pro bono", () => {
     // A 6-unit overload allowance holds both subjects past Basic Load.
     const { texts } = renderWith(0, null, 6);
     expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === PROBONO_TEXT)).toHaveLength(0);
-    expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === OVERLOAD_TEXT)).toHaveLength(2);
+    expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === "0,0,0")).toHaveLength(3);
     expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
   });
 });

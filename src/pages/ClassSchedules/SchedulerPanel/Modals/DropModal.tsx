@@ -6,7 +6,7 @@ import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
 import { FULL_DAY_NAMES, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Semester } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { laboratoryComponentSlots, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { getCourseSlotPlan, laboratoryComponentSlots, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { evaluatePlacementQuality, type PlannedMeeting } from "../placementQuality";
 import {
   isFieldSchedulingEligible,
@@ -33,6 +33,8 @@ interface DropRecommendationRow {
 }
 
 interface DropRecommendation {
+  /** Lets select save exactly this previewed plan instead of solving again. */
+  plan_id?: string;
   rank: number;
   score: number;
   schedules: DropRecommendationRow[];
@@ -801,6 +803,7 @@ export default function DropModal({
           ...recommendationPayload,
           ...(confirmedConfiguration ? { configuration_confirmation: confirmedConfiguration } : {}),
           selected_rank: recommendation.rank,
+          ...(recommendation.plan_id ? { plan_id: recommendation.plan_id } : {}),
         }
       );
 
@@ -822,7 +825,7 @@ export default function DropModal({
     setIsDay2ModifiedByUser(false);
     if (enabled) {
       const preservedDayIndex = modalDay1Index;
-      const lectureSlots = Number(dropSubject.lectureHours) * 2;
+      const lectureSlots = getCourseSlotPlan(dropSubject).lectureSlots;
       // Custom Lab Duration wins over three hours per unit, as in the Rule Engine.
       const laboratorySlots = laboratoryComponentSlots(dropSubject, manualSchedulingSettings);
       const secondDay = preservedDayIndex === modalDay2Index

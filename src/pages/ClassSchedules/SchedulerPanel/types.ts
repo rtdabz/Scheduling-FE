@@ -34,8 +34,6 @@ export interface Department {
   department_name: string;
   department_code: string;
   logo?: string | null;
-  online_slot_limit?: number;
-  field_slot_limit?: number;
   /** Defaults to true server-side when null; mirrors RuleEngine's Sunday rule. */
   sunday_online_only_enabled?: boolean | number | null;
 }
@@ -181,7 +179,6 @@ export interface Room {
   departmentId: number | null;
   roomType: RoomType;
   status: RoomStatus;
-  maxConcurrentClasses?: number;
   /** Set when another department lent this room for the semester: the only windows it may be used in. */
   grantWindows?: RoomGrantWindow[];
 }
@@ -292,8 +289,6 @@ export interface ApiDepartmentRecord {
   department_name: string;
   department_code: string;
   logo?: string | null;
-  online_slot_limit?: number;
-  field_slot_limit?: number;
   sunday_online_only_enabled?: boolean | number | null;
 }
 
@@ -402,7 +397,6 @@ export interface ApiRoomRecord {
   allow_lecture_usage?: boolean;
   status: RoomStatus;
   department_id: number | null;
-  max_concurrent_classes?: number | string | null;
   grant_windows?: RoomGrantWindow[];
 }
 

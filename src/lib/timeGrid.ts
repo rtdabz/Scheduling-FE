@@ -29,13 +29,16 @@ const DEFAULT_GRID = {
   openingMinutes: 7 * 60,
   closingMinutes: 20 * 60 + 30,
   slotMinutes: 30,
+  /** schedule_settings.field_end_time; field classes must end by it. */
+  fieldEndMinutes: 17 * 60,
 } as const;
 
-let gridConfig: { openingMinutes: number; closingMinutes: number; slotMinutes: number } = { ...DEFAULT_GRID };
+let gridConfig: { openingMinutes: number; closingMinutes: number; slotMinutes: number; fieldEndMinutes: number } = { ...DEFAULT_GRID };
 
 export interface TimeGridConfigInput {
   opening_time?: string | null;
   closing_time?: string | null;
+  field_end_time?: string | null;
   slot_minutes?: number | null;
   slot_count?: number | null;
 }
@@ -46,12 +49,14 @@ export const configureTimeGrid = (config: TimeGridConfigInput | null | undefined
 
   const opening = parseClockTime(config.opening_time);
   const closing = parseClockTime(config.closing_time);
+  const fieldEnd = parseClockTime(config.field_end_time);
   const slotMinutes = Number(config.slot_minutes);
 
   gridConfig = {
     openingMinutes: opening ?? DEFAULT_GRID.openingMinutes,
     closingMinutes: closing ?? DEFAULT_GRID.closingMinutes,
     slotMinutes: Number.isFinite(slotMinutes) && slotMinutes > 0 ? slotMinutes : DEFAULT_GRID.slotMinutes,
+    fieldEndMinutes: fieldEnd ?? DEFAULT_GRID.fieldEndMinutes,
   };
 };
 
@@ -72,6 +77,13 @@ export const slotCount = (): number =>
 
 /** Closing time as a 24-hour "HH:MM" label, for user-facing messages. */
 export const closingTimeLabel = (): string => slotToTime24h(slotCount());
+
+/**
+ * Latest end time for a field class, in minutes from midnight. Mirrors
+ * SchedulingPolicy::fieldDayEndTime, including its clamp into the grid window.
+ */
+export const fieldEndMinutes = (): number =>
+  Math.min(Math.max(gridConfig.fieldEndMinutes, gridConfig.openingMinutes), gridConfig.closingMinutes);
 
 /** Full weekday names, in grid column order. */
 export const FULL_DAY_NAMES = [

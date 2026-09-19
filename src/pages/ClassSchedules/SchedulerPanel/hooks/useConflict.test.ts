@@ -1,11 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { configureTimeGrid, resetTimeGrid } from "../../../../lib/timeGrid";
 import {
   checkDayCategoryConstraint,
   checkFieldEveningWindow,
-  checkOnlineCapacity,
   checkRoomGrantWindow,
   checkSectionOnlineLimit,
-  resolveOnlineSlotLimit,
   isFieldSubject,
   isLaboratorySubject,
   isNstpSubject,
@@ -80,8 +79,9 @@ describe("isFieldSubject", () => {
     expect(isFieldSubject(subject({ roomTypeRequired: "field" }), false, NO_FIELD_CODES)).toBe(true);
   });
 
-  it("treats NSTP as a field course", () => {
-    expect(isFieldSubject(subject({ code: "CWTS1" }), false, NO_FIELD_CODES)).toBe(true);
+  it("never treats a course as field by its NSTP/ROTC/CWTS name alone", () => {
+    expect(isFieldSubject(subject({ code: "CWTS1" }), false, NO_FIELD_CODES)).toBe(false);
+    expect(isFieldSubject(subject({ code: "CWTS1" }), true, new Set(["CWTS1"]))).toBe(true);
   });
 
   it("uses configured codes only when the setting is enabled", () => {
@@ -301,146 +301,67 @@ describe("requiredRoomTypeForMeeting", () => {
 });
 
 /**
- * Guards the fix for audit finding #39: the client fell back to the room's own
- * `maxConcurrentClasses` (usually 1) for shared online/field rooms, while
- * DepartmentResourceSlotLimitService falls back to 3 — so the browser reported a
- * capacity conflict the server would have accepted.
+ * The field is open ground: any number of classes, from any department, may
+ * share it at once. RoomAvailabilityRule::booking never reports a field clash,
+ * so the board must not either.
  */
-describe("shared room capacity defaults", () => {
+describe("shared field room", () => {
   const fieldRoom: Room = {
-    id: "9", name: "FIELD", departmentId: null, roomType: "field",
-    status: "available", maxConcurrentClasses: 1,
+    id: "9", name: "FIELD", departmentId: null, roomType: "field", status: "available",
   };
-  const rooms = [fieldRoom];
-
-  const fieldSchedule = (id: string, courseId: string, sectionId: string, departmentId: number): ScheduleItem => ({
-    ...onlineSchedule(id, courseId, sectionId),
-    departmentId,
-    mode: "field",
-    roomId: "9",
-    roomName: "Field",
-  });
-
-  it("treats an unconfigured department as allowing three concurrent classes", () => {
-    const unconfigured: Department[] = [{ id: 2, department_name: "Info Tech", department_code: "IT" }];
-
-    // Two already placed; a third is still within the server's default of 3.
-    const existing = [fieldSchedule("1", "1", "10", 2), fieldSchedule("2", "2", "11", 2)];
-    const conflictMap = getConflictedScheduleMap(existing, [], rooms, [], unconfigured);
-
-    expect(Object.keys(conflictMap)).toEqual([]);
-  });
-
-  it("honours a configured limit below the default", () => {
-    const configured: Department[] = [
-      { id: 2, department_name: "Info Tech", department_code: "IT", field_slot_limit: 1 },
-    ];
-
-    const existing = [fieldSchedule("1", "1", "10", 2), fieldSchedule("2", "2", "11", 2)];
-    const conflictMap = getConflictedScheduleMap(existing, [], rooms, [], configured);
-
-    expect(Object.keys(conflictMap).length).toBeGreaterThan(0);
-  });
-});
-
-/**
- * Guards the fix for audit finding #25: each pair is evaluated once, at the
- * first slot where the two schedules overlap, but the shared-room capacity check
- * was handed s1's *full* span. Concurrency was therefore measured across hours
- * where the pair does not overlap, so a short class could be reported as a room
- * conflict because of two other classes placed later in the day.
- */
-describe("shared room capacity window", () => {
-  const fieldRoom: Room = {
-    id: "9", name: "FIELD", departmentId: null, roomType: "field",
-    status: "available", maxConcurrentClasses: 1,
+  const lectureRoom: Room = {
+    id: "5", name: "LEC 101", departmentId: 2, roomType: "lecture", status: "available",
   };
-  const rooms = [fieldRoom];
-  const capacityTwo: Department[] = [
-    { id: 2, department_name: "Info Tech", department_code: "IT", field_slot_limit: 2 },
-  ];
+  const rooms = [fieldRoom, lectureRoom];
 
-  const span = (id: string, sectionId: string, startSlot: number, durationSlots: number): ScheduleItem => ({
+  const placed = (id: string, sectionId: string, roomId: string, mode: ScheduleItem["mode"]): ScheduleItem => ({
     ...onlineSchedule(id, id, sectionId),
     departmentId: 2,
-    mode: "field",
-    roomId: "9",
-    roomName: "Field",
-    dayIndex: 0,
-    startSlot,
-    durationSlots,
+    mode,
+    roomId,
+    roomName: roomId,
   });
 
-  it("measures concurrency over the pair's overlap, not the longer schedule's whole span", () => {
-    // long spans the morning; short only overlaps it at slots 0-2, where the two
-    // of them are exactly at the limit of 2. lateA and lateB genuinely exceed it
-    // at slots 4-6, which is outside short's hours entirely.
-    const long = span("long", "10", 0, 8);
-    const short = span("short", "11", 0, 2);
-    const lateA = span("lateA", "12", 4, 2);
-    const lateB = span("lateB", "13", 4, 2);
+  it("never reports concurrent field classes as a room conflict", () => {
+    const existing = ["1", "2", "3", "4"].map((id) => placed(id, `1${id}`, "9", "field"));
 
-    const conflictMap = getConflictedScheduleMap([long, short, lateA, lateB], [], rooms, [], capacityTwo);
-
-    expect(conflictMap.short).toBeUndefined();
-    expect(conflictMap.lateA?.conflictType).toBe("room");
-    expect(conflictMap.lateB?.conflictType).toBe("room");
+    expect(Object.keys(getConflictedScheduleMap(existing, [], rooms, []))).toEqual([]);
   });
 
-  it("still reports a genuine overlap that exceeds the limit", () => {
-    const first = span("first", "10", 0, 4);
-    const second = span("second", "11", 0, 4);
-    const third = span("third", "12", 0, 4);
+  it("still reports two classes in one lecture room", () => {
+    const existing = [placed("1", "10", "5", "on-site"), placed("2", "11", "5", "on-site")];
+    const conflictMap = getConflictedScheduleMap(existing, [], rooms, []);
 
-    const conflictMap = getConflictedScheduleMap([first, second, third], [], rooms, [], capacityTwo);
-
-    expect(conflictMap.first?.conflictType).toBe("room");
-    expect(conflictMap.second?.conflictType).toBe("room");
-    expect(conflictMap.third?.conflictType).toBe("room");
+    expect(conflictMap["1"]?.conflictType).toBe("room");
+    expect(conflictMap["2"]?.conflictType).toBe("room");
   });
 });
 
 /**
- * Rules the Rule Engine enforced that the placement dialog never checked, so a
- * manual placement showed "Ready to place" and then failed on save.
+ * Mirrors OperatingHoursRule::fieldEveningWindow. The cut-off is the VPAA's
+ * field end time (schedule_settings.field_end_time), not a hardcoded 5:00 PM.
  * Slot 0 is 7:00 AM on the default grid; slot 20 is 5:00 PM.
  */
 describe("checkFieldEveningWindow", () => {
-  it("lets a field placement end exactly at 5:00 PM", () => {
-    expect(checkFieldEveningWindow(true, 20, false)).toBeNull();
+  afterEach(() => resetTimeGrid());
+
+  it("lets a field placement end exactly at the default 5:00 PM", () => {
+    expect(checkFieldEveningWindow(true, 20)).toBeNull();
   });
 
-  it("refuses a field placement that runs past 5:00 PM", () => {
-    expect(checkFieldEveningWindow(true, 22, false)?.message).toMatch(/5:00 PM/);
+  it("refuses a field placement that runs past the field end time", () => {
+    expect(checkFieldEveningWindow(true, 22)?.message).toMatch(/5:00 PM/);
   });
 
-  it("allows evening field placements once the department enables them", () => {
-    expect(checkFieldEveningWindow(true, 22, true)).toBeNull();
+  it("follows the configured field end time", () => {
+    configureTimeGrid({ opening_time: "07:00", closing_time: "20:30", field_end_time: "18:00" });
+
+    expect(checkFieldEveningWindow(true, 22)).toBeNull();
+    expect(checkFieldEveningWindow(true, 24)?.message).toMatch(/6:00 PM/);
   });
 
   it("ignores non-field placements", () => {
-    expect(checkFieldEveningWindow(false, 26, false)).toBeNull();
-  });
-});
-
-describe("checkOnlineCapacity", () => {
-  const existing = [onlineSchedule("1", "1", "10"), onlineSchedule("2", "2", "11")];
-
-  it("treats an unset or non-positive limit as uncapped", () => {
-    expect(resolveOnlineSlotLimit(null)).toBe(Number.POSITIVE_INFINITY);
-    expect(resolveOnlineSlotLimit(0)).toBe(Number.POSITIVE_INFINITY);
-    expect(checkOnlineCapacity(existing, 2, 0, 2, 5, resolveOnlineSlotLimit(undefined), [])).toBeNull();
-  });
-
-  it("refuses a meeting once overlapping department online classes reach the limit", () => {
-    expect(checkOnlineCapacity(existing, 2, 0, 3, 6, 2, [])?.conflictType).toBe("room");
-  });
-
-  it("does not count classes that do not overlap, belong elsewhere, or are being edited", () => {
-    expect(checkOnlineCapacity(existing, 2, 0, 5, 8, 2, [])).toBeNull();
-    expect(checkOnlineCapacity(existing, 2, 1, 2, 5, 2, [])).toBeNull();
-    expect(checkOnlineCapacity(existing, 3, 0, 2, 5, 2, [])).toBeNull();
-    expect(checkOnlineCapacity(existing, 2, 0, 2, 5, 2, ["1"])).toBeNull();
+    expect(checkFieldEveningWindow(false, 26)).toBeNull();
   });
 });
 

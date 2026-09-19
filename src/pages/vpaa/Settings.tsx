@@ -84,12 +84,20 @@ interface SettingsPageData {
 interface TimeslotSettings {
   opening_time: string;
   closing_time: string;
+  /** Latest end time for field classes (schedule_settings.field_end_time). */
+  field_end_time?: string;
   slot_interval: number;
 }
 
 interface TimeslotResponse {
   settings: TimeslotSettings;
 }
+
+const operatingHoursDraftOf = (settings: TimeslotSettings) => ({
+  opening_time: toTimeInputValue(settings.opening_time),
+  closing_time: toTimeInputValue(settings.closing_time),
+  field_end_time: settings.field_end_time ? toTimeInputValue(settings.field_end_time) : '',
+});
 
 const SEMESTER_LABELS: Record<Semester['semester'], string> = {
   '1st': '1st Semester',
@@ -163,7 +171,7 @@ export default function Settings() {
   const [signatoryDraft, setSignatoryDraft] = useState<InstitutionSettings>(DEFAULT_INSTITUTION_SETTINGS);
   const [isSavingSignatory, setIsSavingSignatory] = useState(false);
   const [operatingHours, setOperatingHours] = useState<TimeslotSettings | null>(null);
-  const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '' });
+  const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '', field_end_time: '' });
   const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
   const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
   // State-driven disabled props update after a render. These synchronous
@@ -243,10 +251,7 @@ export default function Settings() {
       .then(({ data }) => {
         if (!active) return;
         setOperatingHours(data.settings);
-        setOperatingHoursDraft({
-          opening_time: toTimeInputValue(data.settings.opening_time),
-          closing_time: toTimeInputValue(data.settings.closing_time),
-        });
+        setOperatingHoursDraft(operatingHoursDraftOf(data.settings));
       })
       .catch((error) => toast.error('Error', apiMessage(error, 'Failed to load operating hours.')))
       .finally(() => {
@@ -402,6 +407,7 @@ export default function Settings() {
     const validationError = operatingHoursError(
       operatingHoursDraft.opening_time,
       operatingHoursDraft.closing_time,
+      operatingHoursDraft.field_end_time,
     );
     if (validationError) {
       toast.error('Invalid operating hours', validationError);
@@ -414,13 +420,13 @@ export default function Settings() {
       const { data } = await api.patch<TimeslotResponse>('/timeslots/settings', {
         opening_time: toApiTime(operatingHoursDraft.opening_time),
         closing_time: toApiTime(operatingHoursDraft.closing_time),
+        ...(operatingHoursDraft.field_end_time
+          ? { field_end_time: toApiTime(operatingHoursDraft.field_end_time) }
+          : {}),
         slot_interval: operatingHours.slot_interval,
       });
       setOperatingHours(data.settings);
-      setOperatingHoursDraft({
-        opening_time: toTimeInputValue(data.settings.opening_time),
-        closing_time: toTimeInputValue(data.settings.closing_time),
-      });
+      setOperatingHoursDraft(operatingHoursDraftOf(data.settings));
       toast.success('Operating hours saved', 'Schedule generation now uses the updated daily time range.');
     } catch (error) {
       toast.error('Not saved', apiMessage(error, 'Failed to update operating hours.'));
@@ -430,17 +436,16 @@ export default function Settings() {
     }
   };
 
-  const savedOperatingHoursDraft = operatingHours ? {
-    opening_time: toTimeInputValue(operatingHours.opening_time),
-    closing_time: toTimeInputValue(operatingHours.closing_time),
-  } : null;
+  const savedOperatingHoursDraft = operatingHours ? operatingHoursDraftOf(operatingHours) : null;
   const operatingHoursDirty = savedOperatingHoursDraft !== null && (
     operatingHoursDraft.opening_time !== savedOperatingHoursDraft.opening_time
     || operatingHoursDraft.closing_time !== savedOperatingHoursDraft.closing_time
+    || operatingHoursDraft.field_end_time !== savedOperatingHoursDraft.field_end_time
   );
   const operatingHoursValidationError = operatingHoursError(
     operatingHoursDraft.opening_time,
     operatingHoursDraft.closing_time,
+    operatingHoursDraft.field_end_time,
   );
 
   const sortedSemesters = useMemo(() => {
@@ -761,6 +766,20 @@ export default function Settings() {
               disabled={isLoadingOperatingHours || isSavingOperatingHours}
               className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
             />
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Field classes end by</span>
+            <input
+              type="time"
+              step={1800}
+              value={operatingHoursDraft.field_end_time}
+              onChange={event => setOperatingHoursDraft(current => ({ ...current, field_end_time: event.target.value }))}
+              disabled={isLoadingOperatingHours || isSavingOperatingHours}
+              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-1/2"
+            />
+            <span className="mt-1 block text-xs text-gray-500">
+              Classes held on the field must finish by this time. Set it to the closing time to allow evening field classes.
+            </span>
           </label>
           <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
             Changes apply to schedule generation, conflict checks, and faculty availability. Course-specific start-time overrides still apply.

@@ -96,6 +96,25 @@ describe('VPAA Settings operating hours', () => {
     );
   });
 
+  it('saves a field end time and blocks one past closing', async () => {
+    render(<Settings />);
+
+    const fieldEnd = await screen.findByLabelText(/Field classes end by/);
+    fireEvent.change(fieldEnd, { target: { value: '20:00' } });
+    expect(screen.getByText('Field end time cannot be later than closing time.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save operating hours' })).toHaveProperty('disabled', true);
+
+    fireEvent.change(fieldEnd, { target: { value: '18:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save operating hours' }));
+
+    await waitFor(() => expect(mocks.apiPatch).toHaveBeenCalledWith('/timeslots/settings', {
+      opening_time: '7:00 AM',
+      closing_time: '7:00 PM',
+      field_end_time: '6:00 PM',
+      slot_interval: 30,
+    }));
+  });
+
   it('previews unsaved operating hours and blocks a reversed time range', async () => {
     render(<Settings />);
     await screen.findByRole('img', { name: 'Daily scheduling window: 7:00 AM to 7:00 PM' });

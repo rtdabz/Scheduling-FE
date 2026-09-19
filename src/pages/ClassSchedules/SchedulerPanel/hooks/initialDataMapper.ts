@@ -335,18 +335,12 @@ export const mapInitialData = (
     (a, b) => Number((a.grant_windows?.length ?? 0) > 0) - Number((b.grant_windows?.length ?? 0) > 0)
   );
 
-  // maxConcurrentClasses stays the room's own column. It used to be overwritten
-  // with the *requesting* department's slot limit, which then served as the
-  // fallback capacity when judging another department's use of the same shared
-  // room (audit finding #39). Per-department limits live on `departments` and are
-  // resolved per check in useConflict.
   const mappedRooms = apiRooms.map((r): Room => ({
     id: r.id.toString(),
     name: r.room_code,
     departmentId: r.department_id,
     roomType: r.room_type,
     status: r.status,
-    maxConcurrentClasses: Number(r.max_concurrent_classes ?? 1) || 1,
     ...(r.grant_windows?.length ? { grantWindows: r.grant_windows } : {}),
   }));
 

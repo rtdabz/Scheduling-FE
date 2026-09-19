@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  DoorOpen,
   Layers,
   Loader2,
   MapPin,
@@ -15,21 +16,21 @@ import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
 import { useGenerationRun } from "../hooks/useGenerationRun";
 import type { Course, Section, Semester } from "../types";
-import type { TimeBlockOption } from "./generationTypes";
+import { PERIOD_LABELS, type TimeBlockOption } from "./generationTypes";
 import YearLevelStateNotice from "./YearLevelStateNotice";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 
 export type ReviewCourseRow = {
   course: Course;
+  /** Integrated: lecture and laboratory as two separate sessions. */
   hybrid: boolean;
+  /** Integrated On-site: both sessions face-to-face rather than an online lecture. */
+  integratedOnSite?: boolean;
   split: boolean;
-};
-
-const periodLabels: Record<TimeBlockOption, string> = {
-  flexible: "Any time",
-  morning: "Morning (7:00 AM - 11:30 AM)",
-  afternoon: "Afternoon (11:30 AM - 4:00 PM)",
-  evening: "Evening (4:00 PM - 8:30 PM)",
+  /** Setup Courses Custom Time Duration, e.g. "2h", when one was chosen. */
+  customDuration?: string | null;
+  /** Setup Courses Preferred Room code, when one was chosen. */
+  preferredRoom?: string | null;
 };
 
 const periodShortLabels: Record<TimeBlockOption, string> = {
@@ -188,9 +189,28 @@ const planColumns: ColumnDef<PlanRow>[] = [
             Field
           </Tag>
         )}
-        {row.hybrid && <Tag tone="bg-sky-100 text-sky-800">Hybrid</Tag>}
+        {row.hybrid && (
+          <Tag tone="bg-sky-100 text-sky-800">{row.integratedOnSite ? "Integrated" : "Hybrid"}</Tag>
+        )}
         {row.split && <Tag tone="bg-amber-100 text-amber-900">Split</Tag>}
-        {!row.field && !row.hybrid && !row.split && row.forcedDays.length === 0 && (
+        {row.customDuration && (
+          <Tag tone="bg-rose-100 text-rose-900">
+            <Clock3 className="h-2.5 w-2.5" />
+            {row.customDuration}
+          </Tag>
+        )}
+        {row.preferredRoom && (
+          <Tag tone="bg-slate-200 text-slate-800">
+            <DoorOpen className="h-2.5 w-2.5" />
+            {row.preferredRoom}
+          </Tag>
+        )}
+        {!row.field &&
+          !row.hybrid &&
+          !row.split &&
+          !row.customDuration &&
+          !row.preferredRoom &&
+          row.forcedDays.length === 0 && (
           <span className="text-[11px] font-semibold text-slate-400">Standard</span>
         )}
       </span>
@@ -246,7 +266,7 @@ function GeneratingView({
     {
       key: "validating",
       label: "Checking every rule",
-      note: "Rooms, faculty, conflicts and forced days",
+      note: "Rooms, faculty, conflicts and required days",
       done: false,
       active: false,
     },
@@ -344,6 +364,7 @@ export default function ReviewGenerateStep({
   sections,
   courseRows,
   periodsBySectionId,
+  preferredDays = [],
   forcedDayRules,
   fieldCourseCodes,
   activeRules,
@@ -357,6 +378,8 @@ export default function ReviewGenerateStep({
   sections: Section[];
   courseRows: ReviewCourseRow[];
   periodsBySectionId: Record<string, TimeBlockOption>;
+  /** Step 1's Preferred Days; empty means any day. */
+  preferredDays?: string[];
   forcedDayRules: Array<{ course_id: number; day: string }>;
   fieldCourseCodes: string[];
   activeRules: string[];
@@ -387,7 +410,13 @@ export default function ReviewGenerateStep({
     field: fieldCodes.has(row.course.code),
   }));
   const ruledCourseCount = planRows.filter(
-    (row) => row.hybrid || row.split || row.field || row.forcedDays.length > 0,
+    (row) =>
+      row.hybrid ||
+      row.split ||
+      row.field ||
+      Boolean(row.customDuration) ||
+      Boolean(row.preferredRoom) ||
+      row.forcedDays.length > 0,
   ).length;
 
   /**
@@ -409,6 +438,11 @@ export default function ReviewGenerateStep({
     ...(restrictedSections.length > 0
       ? [
           `${restrictedSections.length} section${restrictedSections.length === 1 ? " is" : "s are"} restricted to a teaching period. A period that cannot hold a section's courses fails the run instead of spilling outside it.`,
+        ]
+      : []),
+    ...(preferredDays.length > 0
+      ? [
+          `Classes are limited to the Preferred Days (${preferredDays.join(", ")}). Fewer days leave less room, and a load the days cannot hold fails the run instead of using another day.`,
         ]
       : []),
   ];
@@ -464,7 +498,10 @@ export default function ReviewGenerateStep({
                   {yearLabel(yearLevel)}
                 </h2>
                 <p className="truncate text-[11px] font-semibold text-white/75">
-                  {fullSemesterLabel} · {curriculumName ?? "No curriculum assigned"}
+                  {fullSemesterLabel} · {curriculumName ?? "No curriculum assigned"} ·{" "}
+                  {preferredDays.length > 0
+                    ? preferredDays.map((day) => day.slice(0, 3)).join(", ")
+                    : "Any day"}
                 </p>
               </div>
               <div className="grid w-full max-w-lg grid-cols-2 gap-2 sm:grid-cols-4">
@@ -579,7 +616,7 @@ export default function ReviewGenerateStep({
                 </div>
                 {restrictedSections.length > 0 && (
                   <p className="shrink-0 border-t border-slate-100 px-3 py-1.5 text-[11px] font-medium text-slate-500">
-                    {periodLabels[
+                    {PERIOD_LABELS[
                       periodsBySectionId[restrictedSections[0].id] ?? "flexible"
                     ]}
                     {restrictedSections.length > 1 ? " and others" : ""} are

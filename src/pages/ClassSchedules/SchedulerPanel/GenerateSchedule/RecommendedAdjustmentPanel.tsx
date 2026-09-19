@@ -4,9 +4,13 @@ import {
   describeAdjustment,
   failureStageLabel,
   impactLabels,
+  isApplicableRecommendation,
+  recommendationTarget,
   type GenerationRecommendation,
   type YearLevelGenerationFailure,
 } from "./yearLevelGenerationFailure";
+import ResolutionDetailsButton from "./ResolutionDetails";
+import { resolutionDetailsForRecommendation } from "./resolutionDetailsData";
 
 interface Props {
   failure: YearLevelGenerationFailure;
@@ -31,7 +35,15 @@ const outcomeLabels: Record<string, string> = {
 
 export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRetry, onReviewConstraints, onCancel }: Props) {
   const applicable = useMemo(
-    () => failure.recommendations.filter((recommendation) => recommendation.adjustments.length > 0),
+    () => failure.recommendations.filter(isApplicableRecommendation),
+    [failure.recommendations],
+  );
+  const advisoryRecommendations = useMemo(
+    () => failure.recommendations.filter((recommendation) => recommendation.adjustments.length === 0 && !recommendation.resolved && recommendation.status !== "resolved"),
+    [failure.recommendations],
+  );
+  const resolvedRecommendations = useMemo(
+    () => failure.recommendations.filter((recommendation) => recommendation.resolved || recommendation.status === "resolved"),
     [failure.recommendations],
   );
   // Resolved at render time rather than synced through an effect, so a report
@@ -59,7 +71,7 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
             </h3>
             <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{failure.message}</p>
             <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
-              Nothing was saved. Pick an adjustment below, or open the constraints to change it yourself.
+              Nothing was saved. Pick an automatic adjustment below, or review a manual recommendation and change the constraints yourself.
             </p>
           </div>
         </div>
@@ -95,63 +107,114 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
 
         <div className="mt-3">
           <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Suggested adjustments</p>
-          {applicable.length === 0 ? (
+          {applicable.length === 0 && advisoryRecommendations.length === 0 ? (
             <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs font-semibold leading-relaxed text-slate-600">
-              No adjustment can be applied automatically for this failure. Review the constraints and free up rooms, patterns,
-              or delivery modes before generating again.
+              No recommendation is available for this failure. Review the constraints and free up rooms, patterns, or delivery
+              modes before generating again.
             </div>
           ) : (
-            <ul className="mt-1.5 grid gap-2">
-              {applicable.map((recommendation) => {
-                const active = recommendation.id === selected?.id;
-                return (
-                  <li key={recommendation.id}>
-                    <label
-                      className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition ${active ? "border-[#4e0a10] bg-[#4e0a10]/5" : "border-slate-200 bg-white hover:bg-slate-50"}`}
-                    >
-                      <input
-                        type="radio"
-                        name="recommended-adjustment"
-                        checked={active}
-                        onChange={() => setSelectedId(recommendation.id)}
-                        className="mt-0.5 h-4 w-4 shrink-0 border-slate-300 text-[#4e0a10]"
-                      />
-                      <div className="min-w-0">
+            <>
+              {applicable.length > 0 && (
+                <ul className="mt-1.5 grid gap-2">
+                  {applicable.map((recommendation) => {
+                    const active = recommendation.id === selected?.id;
+                    return (
+                      <li key={recommendation.id}>
+                        <label
+                          className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition ${active ? "border-[#4e0a10] bg-[#4e0a10]/5" : "border-slate-200 bg-white hover:bg-slate-50"}`}
+                        >
+                          <input
+                            type="radio"
+                            name="recommended-adjustment"
+                            checked={active}
+                            onChange={() => setSelectedId(recommendation.id)}
+                            className="mt-0.5 h-4 w-4 shrink-0 border-slate-300 text-[#4e0a10]"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-black text-slate-950">{recommendation.title}</p>
+                              {(recommendation.resolved || recommendation.status === "resolved") && (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">Resolved</span>
+                              )}
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${impactTone[recommendation.impact] ?? "bg-slate-100 text-slate-600"}`}>
+                                {impactLabels[recommendation.impact] ?? recommendation.impact}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{recommendation.suggested_adjustment}</p>
+                            <ul className="mt-1.5 grid gap-1">
+                              {recommendation.adjustments.map((adjustment, index) => (
+                                <li key={`${recommendation.id}-${index}`} className="flex items-start gap-1.5 text-[11px] font-bold text-slate-500">
+                                  <ArrowRight className="mt-0.5 h-3 w-3 shrink-0" />
+                                  <span>{describeAdjustment(adjustment)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {active && (
+                              <button
+                                type="button"
+                                onClick={() => onApplyAndRetry(recommendation)}
+                                disabled={busy}
+                                className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {busy ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}
+                                Apply this to {recommendationTarget(recommendation)}
+                              </button>
+                            )}
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {advisoryRecommendations.length > 0 && (
+                <div className={`${applicable.length > 0 ? "mt-3" : "mt-1.5"} rounded-lg border border-sky-200 bg-sky-50/60 p-3`}>
+                  <p className="text-[11px] font-black uppercase tracking-wide text-sky-700">Manual recommendations</p>
+                  <ul className="mt-1.5 grid gap-2">
+                    {advisoryRecommendations.map((recommendation) => (
+                      <li key={recommendation.id} className="rounded-lg border border-sky-100 bg-white p-2.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-black text-slate-950">{recommendation.title}</p>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${impactTone[recommendation.impact] ?? "bg-slate-100 text-slate-600"}`}>
                             {impactLabels[recommendation.impact] ?? recommendation.impact}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{recommendation.suggested_adjustment}</p>
-                        <ul className="mt-1.5 grid gap-1">
-                          {recommendation.adjustments.map((adjustment, index) => (
-                            <li key={`${recommendation.id}-${index}`} className="flex items-start gap-1.5 text-[11px] font-bold text-slate-500">
-                              <ArrowRight className="mt-0.5 h-3 w-3 shrink-0" />
-                              <span>{describeAdjustment(adjustment)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
+                        <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-600">{recommendation.detected_cause}</p>
+                        <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-700">{recommendation.suggested_adjustment}</p>
+                        <button
+                          type="button"
+                          onClick={() => onReviewConstraints(recommendation.section_id ?? reviewSectionId)}
+                          disabled={busy}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-sky-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Settings2 className="h-3.5 w-3.5" /> Review Constraints
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {failure.recommendations.some((recommendation) => recommendation.adjustments.length === 0) && (
-          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Also worth doing</p>
-            <ul className="mt-1.5 grid gap-1.5">
-              {failure.recommendations
-                .filter((recommendation) => recommendation.adjustments.length === 0)
-                .map((recommendation) => (
-                  <li key={recommendation.id} className="text-xs font-semibold leading-relaxed text-slate-600">
-                    <span className="font-black text-slate-800">{recommendation.title}.</span> {recommendation.suggested_adjustment}
-                  </li>
-                ))}
+        {resolvedRecommendations.length > 0 && (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+            <p className="text-[11px] font-black uppercase tracking-wide text-emerald-700">Resolved recommendations</p>
+            <ul className="mt-1.5 grid gap-2">
+              {resolvedRecommendations.map((recommendation) => (
+                <li key={`resolved-${recommendation.id}`} className="rounded-lg border border-emerald-100 bg-white p-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-black text-slate-900">{recommendation.title}</p>
+                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">Resolved</span>
+                    <ResolutionDetailsButton details={resolutionDetailsForRecommendation(recommendation)} />
+                  </div>
+                  {recommendation.suggested_adjustment && (
+                    <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-600">{recommendation.suggested_adjustment}</p>
+                  )}
+                </li>
+              ))}
             </ul>
           </div>
         )}
@@ -173,7 +236,9 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
         <p className="text-[11px] font-bold text-slate-500">
           {selected
-            ? `Apply & Retry updates ${selected.adjustments.length} setting${selected.adjustments.length === 1 ? "" : "s"} and generates again.`
+            ? `Applying updates ${selected.adjustments.length} setting${selected.adjustments.length === 1 ? "" : "s"} in the generator and generates again.`
+            : advisoryRecommendations.length > 0
+              ? "Review a manual recommendation above, update the constraints, then generate again."
             : "No automatic adjustment is available for this failure."}
         </p>
         <div className="flex flex-wrap justify-end gap-2">
@@ -192,14 +257,6 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Settings2 className="h-4 w-4" /> Review Constraints
-          </button>
-          <button
-            type="button"
-            onClick={() => selected && onApplyAndRetry(selected)}
-            disabled={busy || !selected}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy ? <LoadingSpinner className="h-4 w-4" /> : <Wrench className="h-4 w-4" />} Apply &amp; Retry
           </button>
         </div>
       </footer>

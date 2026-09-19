@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, Filter, X } from "lucide-react";
+import { CheckCircle2, Filter, Wrench, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
 import { buildSummaryClasses, type SummaryMeeting } from "./summaryRows";
@@ -12,6 +12,13 @@ import {
   type GenerationChange,
   type GenerationChangeItem,
 } from "./generationChanges";
+import {
+  isApplicableRecommendation,
+  recommendationTarget,
+  type GenerationRecommendation,
+} from "./yearLevelGenerationFailure";
+import ResolutionDetailsButton from "./ResolutionDetails";
+import { resolutionDetailsForRecommendation } from "./resolutionDetailsData";
 
 const ALL = "all";
 
@@ -29,6 +36,9 @@ export default function ScheduleSummaryStep({
   courses,
   roomCodeById,
   changes,
+  recommendations = [],
+  onApplyRecommendation,
+  applying = false,
 }: {
   preview: ApiScheduleRecord[];
   sections: Section[];
@@ -36,7 +46,12 @@ export default function ScheduleSummaryStep({
   roomCodeById: Map<string, string>;
   /** `null` when the run predates change reports and its changes are unknown. */
   changes: GenerationChange[] | null;
+  recommendations?: GenerationRecommendation[];
+  /** Writes the recommendation into the generator's configuration and regenerates. */
+  onApplyRecommendation?: (recommendation: GenerationRecommendation) => void;
+  applying?: boolean;
 }) {
+  const [selectedRecommendationId, setSelectedRecommendationId] = useState("");
   const [sectionFilter, setSectionFilter] = useState(ALL);
   const [dayFilter, setDayFilter] = useState(ALL);
   const [courseFilter, setCourseFilter] = useState(ALL);
@@ -153,6 +168,63 @@ export default function ScheduleSummaryStep({
 
       {changes !== null && (
         <GenerationChangesPanel changes={changes} onFocusClass={focusClass} />
+      )}
+
+      {recommendations.length > 0 && (
+        <section className="shrink-0 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5">
+          <p className="text-sm font-black text-sky-900">Scheduling recommendations</p>
+          <ul className="mt-1.5 grid gap-1.5">
+            {recommendations.map((recommendation) => {
+              const resolved = recommendation.resolved || recommendation.status === "resolved";
+              if (onApplyRecommendation && isApplicableRecommendation(recommendation)) {
+                const selected = recommendation.id === selectedRecommendationId;
+                return (
+                  <li key={recommendation.id}>
+                    <label
+                      className={`flex cursor-pointer gap-2.5 rounded-lg border px-2.5 py-2 transition ${selected ? "border-[#4e0a10] bg-white" : "border-sky-100 bg-white/70 hover:bg-white"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="summary-recommendation"
+                        checked={selected}
+                        onChange={() => setSelectedRecommendationId(recommendation.id)}
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0 border-slate-300 text-[#4e0a10]"
+                      />
+                      <span className="min-w-0 text-xs font-semibold leading-relaxed text-slate-700">
+                        <span className="block font-black text-slate-900">{recommendation.title}</span>
+                        <span className="block">{recommendation.detected_cause}</span>
+                        <span className="block text-slate-500">{recommendation.suggested_adjustment}</span>
+                        {selected && (
+                          <button
+                            type="button"
+                            onClick={() => onApplyRecommendation(recommendation)}
+                            disabled={applying}
+                            className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-2.5 py-1 text-[11px] font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Wrench className="h-3.5 w-3.5" /> Apply this to {recommendationTarget(recommendation)}
+                          </button>
+                        )}
+                      </span>
+                    </label>
+                  </li>
+                );
+              }
+
+              return (
+                <li key={recommendation.id} className="text-xs font-semibold leading-relaxed text-slate-700">
+                  <span className="font-black text-slate-900">{recommendation.title}</span>{" "}
+                  {resolved && (
+                    <>
+                      <span className="mr-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">Resolved</span>
+                      <ResolutionDetailsButton details={resolutionDetailsForRecommendation(recommendation)} />
+                    </>
+                  )}
+                  {recommendation.suggested_adjustment}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">

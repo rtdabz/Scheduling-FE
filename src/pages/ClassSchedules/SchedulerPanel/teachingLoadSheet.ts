@@ -115,11 +115,11 @@ const drawLetterhead = (
 const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 
 /**
- * Table B prints each subject in its band's colour -- light red for overload,
- * grey for pro bono -- matching the load badges on screen. The row itself is
- * not shaded; the colour is on the letters.
+ * Only two things are coloured on the sheet: pro bono subjects (grey) and
+ * subjects assigned over an instructor conflict (red). Basic Load and paid
+ * Overload print in plain black. The row itself is not shaded; the colour is
+ * on the letters.
  */
-const OVERLOAD_TEXT = [248, 113, 113] as const;
 const PROBONO_TEXT = [107, 114, 128] as const;
 /**
  * A subject assigned over an instructor conflict prints in red text.
@@ -130,7 +130,6 @@ const CONFLICT_TEXT = [220, 38, 38] as const;
 const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined => {
   if (line.band === "probono") return PROBONO_TEXT;
   if (line.overridden) return CONFLICT_TEXT;
-  if (line.band === "overload") return OVERLOAD_TEXT;
   return undefined;
 };
 
@@ -380,8 +379,7 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
 
   // Rows 28-38 -- B. Overload / Part Time Load.
   drawText(doc, "B. Overload/Part Time Load", { from: "A", to: "C", row: 28 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  // Names the band colours only; the red conflict text is deliberately unlabelled.
-  const hasOverload = ctx.overloadLines.some((line) => line.band === "overload" && !line.overridden);
+  // Names the pro bono colour only; the red conflict text is deliberately unlabelled.
   const hasProbono = ctx.overloadLines.some((line) => line.band === "probono");
   if (hasProbono) {
     drawText(doc, "Grey text is Pro Bono", { from: "H", to: "K", row: 28 }, {
@@ -390,15 +388,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
       align: "right",
       padding: 1.6,
       color: PROBONO_TEXT,
-    });
-  }
-  if (hasOverload) {
-    drawText(doc, "Light red text is Overload", { from: "E", to: "G", row: 28 }, {
-      size: SIZE.small,
-      style: "bold",
-      align: "right",
-      padding: 1.6,
-      color: OVERLOAD_TEXT,
     });
   }
   drawTableHeader(doc, 29);

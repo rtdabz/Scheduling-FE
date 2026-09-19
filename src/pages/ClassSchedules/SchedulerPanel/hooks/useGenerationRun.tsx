@@ -15,6 +15,7 @@ import {
   parseYearLevelFailurePayload,
   type AppliedStrategy,
   type GenerationAdjustment,
+  type GenerationRecommendation,
   type YearLevelGenerationFailure,
 } from "../GenerateSchedule/yearLevelGenerationFailure";
 import type { GenerationChange } from "../GenerateSchedule/generationChanges";
@@ -38,6 +39,7 @@ export type GenerationResult = {
   applied_strategy?: AppliedStrategy | null;
   applied_adjustments?: GenerationAdjustment[];
   generation_changes?: GenerationChange[];
+  recommendations?: GenerationRecommendation[];
 };
 
 type GenerationRunRecord = {

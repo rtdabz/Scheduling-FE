@@ -1,8 +1,9 @@
 import { useCallback, useMemo } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { closingTimeLabel, parsePreferredPattern, slotCount, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { closingTimeLabel, fieldEndMinutes, formatTime12h, gridOpeningMinutes, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
+import { coveredContinuously } from "../../../../lib/availabilityWindows";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
@@ -18,13 +19,6 @@ interface UseConflictParams {
   faculties: Faculty[];
   fieldCourseAssignmentEnabled?: boolean;
   fieldCourseCodes?: string[];
-  /** From `/scheduling-settings`; false keeps field placements inside the day window. */
-  fieldEveningScheduleEnabled?: boolean;
-  /**
-   * The department's online limit from `/scheduling-settings`, fresher than the
-   * copy on `departments`. Undefined falls back to that copy.
-   */
-  onlineSlotLimit?: number | null;
 }
 
 const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => {
@@ -48,44 +42,6 @@ const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean 
   );
 };
 
-/**
- * Server default for an unset online/field slot limit.
- *
- * DepartmentResourceSlotLimitService falls back to 3. The client used to fall back
- * to the room's own `max_concurrent_classes`, which is usually 1, so a department
- * with no configured limit saw a capacity conflict on the second concurrent class
- * while the server would have accepted three (audit finding #39).
- */
-// A field is open ground and an online class occupies no room, so neither is
-// capped unless a department deliberately sets a limit. The backend treats an
-// absent limit the same way; keeping the two in step stops the board flagging
-// conflicts the generator does not consider conflicts.
-export const UNLIMITED_SHARED_SLOT_LIMIT = Number.POSITIVE_INFINITY;
-
-const getRoomCapacity = (room: Room | undefined): number => {
-  return Math.max(1, Number(room?.maxConcurrentClasses ?? 1) || 1);
-};
-
-const getDepartmentRoomCapacity = (
-  room: Room | undefined,
-  departmentId: number | null,
-  departments: Department[]
-): number => {
-  const isSharedCapacityRoom = room?.roomType === "field" || room?.roomType === "online";
-  if (!isSharedCapacityRoom) {
-    return getRoomCapacity(room);
-  }
-
-  const department = departments.find((item) => Number(item.id) === Number(departmentId));
-  const configuredLimit = room?.roomType === "field"
-    ? department?.field_slot_limit
-    : department?.online_slot_limit;
-
-  return configuredLimit == null
-    ? UNLIMITED_SHARED_SLOT_LIMIT
-    : Math.max(1, Number(configuredLimit) || 1);
-};
-
 const resolveRoom = (rooms: Room[], roomId: string): Room | undefined => {
   if (roomId === "field") {
     return rooms.find((r) => r.roomType === "field");
@@ -107,37 +63,6 @@ const samePhysicalRoom = (leftRoomId: string, rightRoomId: string, rooms: Room[]
   }
 
   return String(leftRoomId) === String(rightRoomId);
-};
-
-const exceedsSharedRoomCapacity = (
-  schedules: ScheduleItem[],
-  dayIndex: number,
-  startSlot: number,
-  endSlot: number,
-  capacity: number,
-  excludeIds: string[] = [],
-  includeCandidate = true
-): boolean => {
-  const events: Array<[number, number]> = includeCandidate ? [[startSlot, 1], [endSlot, -1]] : [];
-
-  schedules.forEach((s) => {
-    if (excludeIds.includes(s.id)) return;
-    if (s.dayIndex !== dayIndex) return;
-    const sEnd = s.startSlot + s.durationSlots;
-    if (startSlot < sEnd && s.startSlot < endSlot) {
-      events.push([s.startSlot, 1], [sEnd, -1]);
-    }
-  });
-
-  events.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
-
-  let concurrent = 0;
-  for (const [, delta] of events) {
-    concurrent += delta;
-    if (concurrent > capacity) return true;
-  }
-
-  return false;
 };
 
 // ---------------------------------------------------------------------------
@@ -191,7 +116,6 @@ export const isFieldSubject = (
   if (!subject) return false;
   if (subjectHasCategory(subject, "Field")) return true;
   if (subject.roomTypeRequired === "field") return true;
-  if (isNstpSubject(subject)) return true;
   if (!fieldCourseAssignmentEnabled) return false;
 
   return configuredFieldCourseCodes.has(normalizeCourseCode(subject.code ?? ""));
@@ -320,72 +244,24 @@ export const checkSectionOnlineLimit = (
     : null;
 };
 
-/** Mirrors SchedulingPolicy::FIELD_DAY_END_TIME. */
-const FIELD_DAY_END_TIME = "17:00";
-
 /**
- * Mirrors RuleEngine::checkFieldEveningWindow: a field placement (field delivery,
- * or a course the department classifies as field) ends by 5:00 PM unless the
- * department has enabled evening field scheduling.
+ * Mirrors OperatingHoursRule::fieldEveningWindow: a field placement (field
+ * delivery, or a course the department classifies as field) must end by the
+ * VPAA's field end time (schedule_settings.field_end_time, default 5:00 PM).
  */
 export const checkFieldEveningWindow = (
   isFieldPlacement: boolean,
-  endSlot: number,
-  fieldEveningScheduleEnabled: boolean
+  endSlot: number
 ): ConflictResult => {
-  if (!isFieldPlacement || fieldEveningScheduleEnabled) return null;
-  if (slotToTime24h(endSlot) <= FIELD_DAY_END_TIME) return null;
+  if (!isFieldPlacement) return null;
+  if (gridOpeningMinutes() + endSlot * slotMinutes() <= fieldEndMinutes()) return null;
 
+  const fieldEnd = fieldEndMinutes();
+  const fieldEndLabel = formatTime12h(`${Math.floor(fieldEnd / 60)}:${String(fieldEnd % 60).padStart(2, "0")}`);
   return {
     conflictType: "section",
-    message: "Field window: field courses must end by 5:00 PM unless evening field scheduling is enabled for this department."
+    message: `Field window: field courses must end by ${fieldEndLabel}.`
   };
-};
-
-/**
- * Concurrent online classes a department may run. Mirrors
- * DepartmentResourceSlotLimitService::resolve: null, zero or negative is uncapped.
- */
-export const resolveOnlineSlotLimit = (limit: number | string | null | undefined): number => {
-  if (limit === null || limit === undefined || limit === "") return UNLIMITED_SHARED_SLOT_LIMIT;
-  const numeric = Number(limit);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : UNLIMITED_SHARED_SLOT_LIMIT;
-};
-
-/**
- * Mirrors RuleEngine::checkOnlineCapacity: the department's online classes that
- * overlap the meeting, counted directly (not as peak concurrency), must stay
- * below the configured limit.
- *
- * The room-conflict loop in checkConflict skips the "online" sentinel entirely,
- * so this was never checked on the client.
- */
-export const checkOnlineCapacity = (
-  schedules: ScheduleItem[],
-  departmentId: number | null,
-  dayIndex: number,
-  startSlot: number,
-  endSlot: number,
-  limit: number,
-  excludeIds: string[]
-): ConflictResult => {
-  if (!Number.isFinite(limit)) return null;
-
-  const overlapping = schedules.filter((item) =>
-    item.mode === "online"
-    && item.dayIndex === dayIndex
-    && (departmentId === null || Number(item.departmentId) === Number(departmentId))
-    && !excludeIds.includes(item.id)
-    && item.startSlot < endSlot
-    && startSlot < item.startSlot + item.durationSlots
-  ).length;
-
-  return overlapping >= limit
-    ? {
-        conflictType: "room",
-        message: `Online capacity: this department already runs ${overlapping} online class${overlapping === 1 ? "" : "es"} at this time, and its limit is ${limit}.`
-      }
-    : null;
 };
 
 /**
@@ -441,22 +317,21 @@ export const isPartTimeOutsideAvailability = (
   );
   if (dayAvailabilities.length === 0) return true;
 
-  const attemptStart = startSlot;
-  const attemptEnd = startSlot + durationSlots;
-
-  return !dayAvailabilities.some((window) => {
-    const windowStart = timeToSlotUnclamped(window.start_time);
-    const windowEnd = timeToSlotUnclamped(window.end_time);
-    return attemptStart >= windowStart && attemptEnd <= windowEnd;
-  });
+  return !coveredContinuously(
+    dayAvailabilities.map((window): [number, number] => [
+      timeToSlotUnclamped(window.start_time),
+      timeToSlotUnclamped(window.end_time),
+    ]),
+    startSlot,
+    startSlot + durationSlots
+  );
 };
 
 export const getConflictedScheduleMap = (
   schedules: ScheduleItem[],
   subjects: Subject[],
   rooms: Room[],
-  faculties: Faculty[],
-  departments: Department[] = []
+  faculties: Faculty[]
 ): Record<string, NonNullable<ConflictResult>> => {
   const conflictMap: Record<string, NonNullable<ConflictResult>> = {};
 
@@ -480,18 +355,6 @@ export const getConflictedScheduleMap = (
     String(resolveRoomCached(roomId)?.id ?? roomId);
   const subjectFor = (schedule: ScheduleItem): Subject | undefined =>
     subjectsById.get(String(schedule.courseId ?? schedule.subjectId));
-
-  const schedulesByRoomAndDepartment = new Map<string, ScheduleItem[]>();
-  schedules.forEach((item) => {
-    if (isRoomTba(item.roomId)) return;
-    const key = `${physicalRoomKey(item.roomId)}::${Number(item.departmentId)}`;
-    const bucket = schedulesByRoomAndDepartment.get(key);
-    if (bucket) {
-      bucket.push(item);
-    } else {
-      schedulesByRoomAndDepartment.set(key, [item]);
-    }
-  });
 
   // Build grid slot-occupancy index: [dayIndex][slotIndex]
   const grid: ScheduleItem[][][] = Array.from({ length: 7 }, () =>
@@ -551,36 +414,14 @@ export const getConflictedScheduleMap = (
         ) {
           const room = resolveRoomCached(s1.roomId);
           const isSharedField = room?.roomType === "field" || s1.roomId === "field" || s1.mode === "field" || s2.mode === "field";
-          const isDifferentFieldDepartment = isSharedField
-            && Number(s1.departmentId) !== Number(s2.departmentId);
-
-          if (!isDifferentFieldDepartment) {
-            const isSharedCapacityRoom = isSharedField;
-            const sharedCapacity = getDepartmentRoomCapacity(room, s1.departmentId, departments);
-            const sameRoomSchedules = isSharedCapacityRoom
-              ? schedulesByRoomAndDepartment.get(`${physicalRoomKey(s1.roomId)}::${Number(s1.departmentId)}`) ?? []
-              : schedules;
-            // Each pair is evaluated once, at the first slot where they overlap.
-            // Measuring concurrency across s1's whole span counted classes in
-            // hours where these two do not actually overlap — a false positive.
-            const overlapStart = Math.max(start, Math.max(0, Math.min(slotCount() - 1, s2.startSlot)));
-            const overlapEnd = Math.min(end, Math.max(0, Math.min(slotCount(), s2.startSlot + s2.durationSlots)));
-            const hasRoomConflict = !isSharedCapacityRoom || exceedsSharedRoomCapacity(
-              sameRoomSchedules,
-              day,
-              overlapStart,
-              overlapEnd,
-              sharedCapacity,
-              [],
-              false
-            );
-            if (hasRoomConflict) {
-              const roomName = room?.name ?? (isSharedField ? "FIELD" : "Selected room");
-              const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-              const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
-              if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
-              if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
-            }
+          // The field is shared ground with no class limit; only a lecture or
+          // laboratory room is exclusive.
+          if (!isSharedField) {
+            const roomName = room?.name ?? "Selected room";
+            const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
+            const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+            if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
+            if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
           }
         }
 
@@ -617,12 +458,10 @@ export const useConflict = ({
   faculties,
   fieldCourseAssignmentEnabled = false,
   fieldCourseCodes = [],
-  fieldEveningScheduleEnabled = false,
-  onlineSlotLimit
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
-    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties, departments),
-    [schedules, subjects, rooms, faculties, departments]
+    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
+    [schedules, subjects, rooms, faculties]
   );
 
   // Memoized so React.memo on GridCell (168 instances) and ScheduleCard is
@@ -703,8 +542,7 @@ export const useConflict = ({
 
     const fieldWindowConflict = checkFieldEveningWindow(
       deliveryMode === "field" || subjectRequiresField,
-      endSlot,
-      fieldEveningScheduleEnabled
+      endSlot
     );
     if (fieldWindowConflict) {
       return fieldWindowConflict;
@@ -714,22 +552,6 @@ export const useConflict = ({
       const onlineLimitConflict = checkSectionOnlineLimit(schedules, sectionId, excludeIdList);
       if (onlineLimitConflict) {
         return onlineLimitConflict;
-      }
-
-      const departmentOnlineLimit = onlineSlotLimit !== undefined
-        ? onlineSlotLimit
-        : departments.find((item) => Number(item.id) === Number(candidateDepartmentId))?.online_slot_limit;
-      const onlineCapacityConflict = checkOnlineCapacity(
-        schedules,
-        candidateDepartmentId,
-        dayIndex,
-        startSlot,
-        endSlot,
-        resolveOnlineSlotLimit(departmentOnlineLimit),
-        excludeIdList
-      );
-      if (onlineCapacityConflict) {
-        return onlineCapacityConflict;
       }
     }
 
@@ -798,43 +620,31 @@ export const useConflict = ({
             message: `Section conflict: This section already has a class (${s.courseCode || s.subjectCode || "another class"}) scheduled at this time.`
           };
         }
+        // subject_section_time_conflict: one online session cannot serve two
+        // sections, so the same course online for another section must not overlap.
+        if (
+          deliveryMode === "online"
+          && s.mode === "online"
+          && String(s.courseId ?? s.subjectId ?? "") === String(subjectId)
+        ) {
+          return {
+            conflictType: "section",
+            message: `Online course conflict: ${s.courseCode || s.subjectCode || "This course"} is already running online for section ${s.sectionName} at this time.`
+          };
+        }
         if (!isTbaPlacement && !isOnlinePlacement && !isRoomTba(s.roomId) && samePhysicalRoom(s.roomId, roomId, rooms)) {
           const room = resolveRoom(rooms, roomId);
-          // Shared capacity is a property of the room, not of the course. Keying
-          // it off the subject would apply the department FIELD limit to ordinary
-          // lecture rooms whenever the course merely *may* use a field room.
-          const isSharedField = room?.roomType === "field" || roomId === "field";
-          const isSharedOnline = room?.roomType === "online" || roomId === "online";
-          const isSharedCapacityRoom = isSharedField || isSharedOnline;
-          const isDifferentFieldDepartment = isSharedField
-            && candidateDepartmentId !== null
-            && Number(s.departmentId) !== Number(candidateDepartmentId);
+          // Sharing is a property of the room, not of the course: field and
+          // online rooms hold any number of classes, a lecture or laboratory
+          // room holds one.
+          const isSharedRoom = room?.roomType === "field" || roomId === "field"
+            || room?.roomType === "online" || roomId === "online";
 
-          if (!isDifferentFieldDepartment) {
-            const sharedCapacity = getDepartmentRoomCapacity(room, candidateDepartmentId, departments);
-            const sameRoomSchedules = isSharedCapacityRoom
-              ? schedules.filter((item) =>
-                  Number(item.departmentId) === Number(candidateDepartmentId)
-                  && item.roomId
-                  && samePhysicalRoom(item.roomId, roomId, rooms)
-                )
-              : schedules;
-            const hasRoomConflict = !isSharedCapacityRoom || exceedsSharedRoomCapacity(
-              sameRoomSchedules,
-              dayIndex,
-              startSlot,
-              endSlot,
-              sharedCapacity,
-              excludeScheduleId ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId]) : []
-            );
-            if (hasRoomConflict) {
-              return {
-                conflictType: "room",
-                message: isSharedCapacityRoom
-                  ? `Room capacity conflict: ${room?.name ?? "Selected room"} is already at this department's shared capacity (${sharedCapacity} concurrent classes).`
-                  : `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
-              };
-            }
+          if (!isSharedRoom) {
+            return {
+              conflictType: "room",
+              message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
+            };
           }
         }
         if (facultyId && s.facultyId === facultyId) {
@@ -847,7 +657,7 @@ export const useConflict = ({
       }
     }
     return null;
-  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, fieldEveningScheduleEnabled, onlineSlotLimit]);
+  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes]);
 
   const checkFacultyConflict = useCallback((facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);

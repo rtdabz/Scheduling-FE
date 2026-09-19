@@ -6,7 +6,6 @@ import {
 import type { Department, ScheduleItem, Room } from "../types";
 import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTime24h } from "../../../../lib/timeGrid";
-import { UNLIMITED_SHARED_SLOT_LIMIT } from "../hooks/useConflict";
 import MasterGantt from "../../../vpaa/calendar/MasterGantt";
 import ScheduleDetailModal from "../../../vpaa/calendar/ScheduleDetailModal";
 import {
@@ -81,10 +80,6 @@ export default function RoomViewModal({
   );
 
   const currentDepartmentId = useMemo(() => getStoredUserDepartmentId(), []);
-  const currentDepartment = useMemo(
-    () => departments.find((department) => Number(department.id) === currentDepartmentId),
-    [currentDepartmentId, departments],
-  );
 
   const roomClasses = useMemo(() => {
     return schedules.filter((s) => {
@@ -152,20 +147,9 @@ export default function RoomViewModal({
   );
   const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules), [ganttSchedules]);
 
+  // Field and online rooms are shared without a limit, so the chip reports how
+  // busy the room gets rather than measuring against a capacity.
   const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
-  const configuredSharedCapacity = room?.roomType === "online"
-    ? currentDepartment?.online_slot_limit
-    : room?.roomType === "field"
-      ? currentDepartment?.field_slot_limit
-      : null;
-  // No configured limit means the shared resource is uncapped, matching the
-  // scheduler. Only fall back to the room's own concurrency when one is set.
-  const sharedRoomCapacity = configuredSharedCapacity == null
-    ? UNLIMITED_SHARED_SLOT_LIMIT
-    : Math.max(1, Number(configuredSharedCapacity) || 1);
-  const sharedRoomCapacityLabel = Number.isFinite(sharedRoomCapacity)
-    ? String(sharedRoomCapacity)
-    : "no limit";
   const peakSharedOccupancy = useMemo(() => {
     if (!isSharedRoom) return 0;
 
@@ -258,12 +242,8 @@ export default function RoomViewModal({
             {roomClasses.length} class{roomClasses.length !== 1 ? "es" : ""} booked
           </span>
           {isSharedRoom && (
-            <span className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-lg text-xs font-bold ${
-              peakSharedOccupancy > sharedRoomCapacity
-                ? "bg-red-50 text-red-700 border-red-200"
-                : "bg-emerald-50 text-emerald-700 border-emerald-200"
-            }`}>
-              Department capacity {peakSharedOccupancy}/{sharedRoomCapacityLabel}
+            <span className="flex items-center gap-1.5 border px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border-emerald-200">
+              Up to {peakSharedOccupancy} at once · no limit
             </span>
           )}
         </div>
