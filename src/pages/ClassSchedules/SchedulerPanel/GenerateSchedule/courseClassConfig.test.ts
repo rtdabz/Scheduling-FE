@@ -255,7 +255,6 @@ describe("courseClassConfig", () => {
         durationMinutesByCourseId: {},
         preferredRoomsByCourseId: {},
         componentMinutesByCourseId: {},
-        preferredPeriodsByCourseId: {},
       });
     }
   });
@@ -282,37 +281,6 @@ describe("courseClassConfig", () => {
       preferredRoomsByCourseId: { c1: "7" },
     }));
     expect(onConfigChange).not.toHaveBeenCalledWith("sec-2", expect.anything());
-  });
-
-  it("saves a field course's Preferred Meeting on every section, whatever the scope, and reads it back", () => {
-    const onConfigChange = vi.fn();
-    const fieldConfig: CourseClassConfig = {
-      ...baseConfig,
-      component: "field",
-      preferredPeriods: ["morning", "afternoon"],
-      sectionScope: "selected",
-      selectedSectionIds: ["sec-1"],
-    };
-
-    syncCourseConfigToSectionConfigs(gecCourse, fieldConfig, dummySections, emptyConfigs, onConfigChange);
-
-    for (const sectionId of ["sec-1", "sec-2"]) {
-      expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({
-        preferredPeriodsByCourseId: { c3: ["morning", "afternoon"] },
-      }));
-    }
-
-    const saved: Record<string, CourseSetupConfig> = {
-      "sec-1": { ...emptyConfigs["sec-1"], preferredPeriodsByCourseId: { c3: ["morning", "afternoon"] } },
-      "sec-2": { ...emptyConfigs["sec-2"], preferredPeriodsByCourseId: { c3: ["morning", "afternoon"] } },
-    };
-    expect(inferInitialCourseClassConfig(gecCourse, saved, dummySections, new Set()).preferredPeriods)
-      .toEqual(["morning", "afternoon"]);
-
-    // Clearing it removes it from every section.
-    const cleared = vi.fn();
-    syncCourseConfigToSectionConfigs(gecCourse, { ...fieldConfig, preferredPeriods: [] }, dummySections, saved, cleared);
-    expect(cleared).toHaveBeenCalledWith("sec-2", expect.objectContaining({ preferredPeriodsByCourseId: {} }));
   });
 
   it("does not send a duration that equals the course's own, or one for a Hybrid shape", () => {
@@ -362,7 +330,6 @@ describe("courseClassConfig", () => {
       durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
       componentMinutesByCourseId: {},
-      preferredPeriodsByCourseId: {},
     });
     // sec-2 was already empty, so no change triggered
     expect(onConfigChange).not.toHaveBeenCalledWith("sec-2", expect.anything());

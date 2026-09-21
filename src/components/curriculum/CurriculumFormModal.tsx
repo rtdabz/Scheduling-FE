@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, } from 'lucide-react';
 import type { Curriculum, CurriculumStatus, Department, Program } from '../../types/curriculum';
+import { programLabel } from '../../lib/programLabel';
 
 interface CurriculumFormModalProps {
   isOpen: boolean;
@@ -226,7 +227,7 @@ export default function CurriculumFormModal({
                 <option value="">Department-wide curriculum (no program)</option>
                 {departmentPrograms.map((program) => (
                   <option key={program.id} value={program.id}>
-                    {program.code} - {program.name || program.cluster || 'Unnamed program'}
+                    {programLabel(program)}
                   </option>
                 ))}
               </select>

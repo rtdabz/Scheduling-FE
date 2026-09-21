@@ -261,6 +261,7 @@ export default function RoomViewModal({
             standardHours={ganttStandardHours}
             groupBy="none"
             zoom="fit"
+            lockHorizontalScroll
             density="comfortable"
             overlaps={ganttOverlaps}
             collapsedDays={new Set()}

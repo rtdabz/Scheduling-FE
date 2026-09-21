@@ -120,6 +120,18 @@ describe("applyAdjustments", () => {
     expect(next["5"].splitCourseIds).toEqual([]);
   });
 
+  it("turns off every lecture/lab split in the section for disable_section_hybrid", () => {
+    const configs = { "5": config() };
+    const { configs: next, applied } = applyAdjustments(configs, [
+      adjustment({ type: "disable_section_hybrid", course_id: 0, value: null }),
+    ]);
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].splitCourseIds).toEqual([]);
+    // Nothing left to turn off: not reported as applied, so Apply & Retry never claims a no-op.
+    expect(applyAdjustments(next, [adjustment({ type: "disable_section_hybrid", course_id: 0, value: null })]).applied).toEqual([]);
+  });
+
   it("returns a forced delivery mode to automatic", () => {
     const { configs: next } = applyAdjustments({ "5": config() }, [
       adjustment({ type: "set_delivery_mode", course_id: 31, value: "automatic" }),

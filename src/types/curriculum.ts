@@ -9,7 +9,7 @@ export interface Program {
   id: number;
   code: string;
   name: string | null;
-  cluster?: string | null;
+  major?: string | null;
   department_id: number;
 }
 

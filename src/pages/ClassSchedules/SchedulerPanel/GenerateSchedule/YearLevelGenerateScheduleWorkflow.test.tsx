@@ -221,12 +221,10 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         "10": {
           courseIds: ["20"],
           locked: true,
-          preferredTimeBlock: "flexible",
           splitCourseIds: [],
           gecSplitCourseIds: [],
           gecSplitPatternsByCourseId: { "20": "MW" },
           modesByCourseId: { "20": "automatic" },
-          preferencesByCourseId: { "20": "automatic" },
         },
       },
       setupDraft: {
@@ -508,6 +506,11 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Allow Friday and Saturday as Paired Days" }));
     fireEvent.click(screen.getByRole("button", { name: /Apply Defaults/ }));
     expect(screen.queryByRole("region", { name: "Default Settings" })).toBeNull();
+    // Saved per department, apart from the draft an accepted year level wipes,
+    // so the next year level opens with the same defaults.
+    expect(
+      JSON.parse(localStorage.getItem("wicars.generator-course-defaults.v1.2") ?? "{}"),
+    ).toMatchObject({ allowFridaySaturdaySplit: true });
     fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
     fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
 
@@ -521,6 +524,72 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
               course_ids: [20],
               allow_friday_saturday_split: true,
             }),
+          ],
+        }),
+      ),
+    );
+  });
+
+  it("opens every year level with the saved Default Settings, even without a draft", async () => {
+    // An accepted year level wipes the wizard draft; the defaults survive it.
+    localStorage.setItem(
+      "wicars.generator-course-defaults.v1.2",
+      JSON.stringify({ allowFridaySaturdaySplit: true }),
+    );
+    get.mockImplementation((url: string) => {
+      if (url === "/scheduling-settings") {
+        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+      }
+      if (url === "/rooms") return Promise.resolve({ data: [] });
+      if (url === "/curriculum") return curriculumEndpoints(url);
+      if (url === "/courses") {
+        return Promise.resolve({
+          data: [
+            {
+              id: 20, course_code: "IT 101", course_name: "Introduction to Computing",
+              units: 3, lecture_hours: 3, lab_hours: 0, course_category: "major",
+              semester: "1st", department_id: 2, year_level: "1",
+              room_type_required: "lecture", status: "active",
+            },
+          ],
+        });
+      }
+      if (url === "/schedule-recommendations/generation-runs/run-3") {
+        return Promise.resolve({ data: { run_id: "run-3", status: "queued" } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    post.mockImplementation((url: string) =>
+      url === "/schedule-recommendations/year-level-preview/queue"
+        ? Promise.resolve({ data: { run_id: "run-3" } })
+        : Promise.reject(new Error(`Unexpected POST ${url}`)),
+    );
+
+    renderWorkflow(
+      <YearLevelGenerateScheduleWorkflow
+        onClose={vi.fn()}
+        sections={sections}
+        courses={courses}
+        activeSemester={activeSemester}
+        departmentId={2}
+        existingSchedules={[]}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    const continueButton = screen.getByRole("button", { name: /^Continue/ });
+    await waitFor(() => expect((continueButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(continueButton);
+    await screen.findByRole("checkbox", { name: "Include IT 101 in generation" });
+    fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/schedule-recommendations/year-level-preview/queue",
+        expect.objectContaining({
+          section_configs: [
+            expect.objectContaining({ allow_friday_saturday_split: true }),
           ],
         }),
       ),
@@ -618,10 +687,10 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     }
     expect(screen.queryByText("Choose Year")).toBeNull();
 
-    // Scope on top, the section-level Preferred Meetings board below. Course
-    // rules (Required Day, Preferred Room) moved to Step 2's Configure panel.
+    // Scope on top, then the Preferred Days. Course rules (Required Day,
+    // Preferred Room) live in Step 2's Configure panel.
     expect(screen.getByLabelText("Year level")).toBeTruthy();
-    expect(screen.getByText("Preferred Meetings")).toBeTruthy();
+    expect(screen.queryByText("Preferred Meetings")).toBeNull();
     expect(screen.queryByText("Forced Day")).toBeNull();
     expect(screen.queryByText("Field Courses")).toBeNull();
     // The step area scrolls: the modal sizes itself to its content, so when
@@ -738,70 +807,6 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(bySection.get(11)?.selected_gec_course_ids).toEqual([]);
   });
 
-  it("restricts a section to the period picked on the Preferred Meetings board", async () => {
-    post.mockImplementation((url: string) => {
-      if (url === "/schedule-recommendations/year-level-preview/queue") {
-        return Promise.resolve({ data: { run_id: "run-3" } });
-      }
-      return Promise.reject(new Error(`Unexpected POST ${url}`));
-    });
-
-    renderWorkflow(
-      <YearLevelGenerateScheduleWorkflow
-        onClose={vi.fn()}
-        sections={sections}
-        courses={courses}
-        activeSemester={activeSemester}
-        departmentId={2}
-        existingSchedules={[]}
-        onAccepted={vi.fn()}
-      />,
-    );
-
-    // The board lives on step 1, one group of periods per section.
-    const periods = await screen.findByRole("group", {
-      name: "Preferred meeting period for BSIT 1A",
-    });
-    const afternoon = within(periods).getByRole("button", { name: "Afternoon" });
-    expect(afternoon.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(afternoon);
-    await waitFor(() =>
-      expect(
-        within(
-          screen.getByRole("group", {
-            name: "Preferred meeting period for BSIT 1A",
-          }),
-        )
-          .getByRole("button", { name: "Afternoon" })
-          .getAttribute("aria-pressed"),
-      ).toBe("true"),
-    );
-
-    for (let step = 1; step <= 2; step += 1) {
-      const continueButton = screen.getByRole("button", { name: /^Continue/ });
-      await waitFor(() =>
-        expect((continueButton as HTMLButtonElement).disabled).toBe(false),
-      );
-      fireEvent.click(continueButton);
-    }
-
-    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
-
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith(
-        "/schedule-recommendations/year-level-preview/queue",
-        expect.objectContaining({
-          section_configs: [
-            expect.objectContaining({
-              section_id: 10,
-              preferred_period: "afternoon",
-            }),
-          ],
-        }),
-      ),
-    );
-  });
-
   it("limits every section to the Preferred Days picked on step 1", async () => {
     post.mockImplementation((url: string) => {
       if (url === "/schedule-recommendations/year-level-preview/queue") {
@@ -896,41 +901,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
   });
 
-  it("warns on the review step that a set period can fail the run", async () => {
-    renderWorkflow(
-      <YearLevelGenerateScheduleWorkflow
-        onClose={vi.fn()}
-        sections={sections}
-        courses={courses}
-        activeSemester={activeSemester}
-        departmentId={2}
-        existingSchedules={[]}
-        onAccepted={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(
-      within(
-        await screen.findByRole("group", {
-          name: "Preferred meeting period for BSIT 1A",
-        }),
-      ).getByRole("button", { name: "Morning" }),
-    );
-
-    for (let step = 1; step <= 2; step += 1) {
-      const continueButton = screen.getByRole("button", { name: /^Continue/ });
-      await waitFor(() =>
-        expect((continueButton as HTMLButtonElement).disabled).toBe(false),
-      );
-      fireEvent.click(continueButton);
-    }
-
-    expect(
-      await screen.findByText(/restricted to a teaching period/),
-    ).toBeTruthy();
-  });
-
-  it("sends no period for a section left on any time", async () => {
+  it("sends no day limit when no Preferred Days are picked", async () => {
     post.mockImplementation((url: string) => {
       if (url === "/schedule-recommendations/year-level-preview/queue") {
         return Promise.resolve({ data: { run_id: "run-4" } });
@@ -965,7 +936,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         "/schedule-recommendations/year-level-preview/queue",
         expect.objectContaining({
           section_configs: [
-            expect.objectContaining({ preferred_period: null, allowed_days: null }),
+            expect.objectContaining({ allowed_days: null }),
           ],
         }),
       ),

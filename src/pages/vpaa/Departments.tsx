@@ -35,6 +35,7 @@ import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
+import { programLabel, programMajorLabel } from '../../lib/programLabel';
 
 const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
   'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
@@ -111,7 +112,7 @@ interface Department {
 interface Program {
   id: number;
   department_id: number;
-  cluster?: string | null;
+  major?: string | null;
   code: string;
   name?: string | null;
 }
@@ -180,9 +181,9 @@ export default function Departments() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState('');
-  const [newProgram, setNewProgram] = useState({ cluster: '', code: '', name: '' });
+  const [newProgram, setNewProgram] = useState({ major: '', code: '', name: '' });
   const [programFormError, setProgramFormError] = useState('');
-  const [isCreatingProgram, setIsCreatingProgram] = useState(false);
+  const [isSavingProgram, setIsSavingProgram] = useState(false);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -237,12 +238,33 @@ export default function Departments() {
   const [selectedDeptForDetail, setSelectedDeptForDetail] = useState<Department | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [showProgramForm, setShowProgramForm] = useState(false);
+  /** Null while the form is adding a program; the program's id while editing one. */
+  const [editingProgramId, setEditingProgramId] = useState<number | null>(null);
+
+  const closeProgramForm = () => {
+    setShowProgramForm(false);
+    setEditingProgramId(null);
+    setNewProgram({ major: '', code: '', name: '' });
+    setProgramFormError('');
+  };
+
+  const openProgramCreateForm = () => {
+    setEditingProgramId(null);
+    setNewProgram({ major: '', code: '', name: '' });
+    setProgramFormError('');
+    setShowProgramForm(true);
+  };
+
+  const openProgramEditForm = (program: Program) => {
+    setEditingProgramId(program.id);
+    setNewProgram({ code: program.code, name: program.name ?? '', major: program.major ?? '' });
+    setProgramFormError('');
+    setShowProgramForm(true);
+  };
 
   const openDepartmentDetail = (department: Department) => {
     setSelectedDeptForDetail(department);
-    setNewProgram({ cluster: '', code: '', name: '' });
-    setProgramFormError('');
-    setShowProgramForm(false);
+    closeProgramForm();
     setIsDetailModalOpen(true);
   };
 
@@ -274,28 +296,41 @@ export default function Departments() {
     programs: department.programs ?? [],
   });
 
-  const createProgram = async () => {
+  /**
+   * Adds a program, or saves the one being edited. Both paths land in the same
+   * place -- the department's directory, re-sorted -- so they share a handler
+   * rather than drifting apart over the cache and the detail copy.
+   */
+  const saveProgram = async () => {
     if (!selectedDeptForDetail) return;
 
     const code = newProgram.code.trim();
     const name = newProgram.name.trim();
+    const major = newProgram.major.trim();
     if (!code || !name) {
       setProgramFormError('Program code and name are required.');
       return;
     }
 
-    setIsCreatingProgram(true);
+    setIsSavingProgram(true);
     setProgramFormError('');
     try {
-      const response = await api.post<{ data: Program }>('/programs', {
-        department_id: selectedDeptForDetail.id,
-        cluster: newProgram.cluster.trim() || null,
-        code,
-        name,
-      });
-      const createdProgram = response.data.data;
-      const nextPrograms = [...selectedDeptForDetail.programs, createdProgram].sort((first, second) =>
-        (first.cluster ?? '').localeCompare(second.cluster ?? '') || first.code.localeCompare(second.code)
+      const saved = editingProgramId === null
+        ? (await api.post<{ data: Program }>('/programs', {
+          department_id: selectedDeptForDetail.id,
+          code,
+          name,
+          major,
+        })).data.data
+        : (await api.patch<{ data: Program }>(`/programs/${editingProgramId}`, {
+          code,
+          name,
+          major,
+        })).data.data;
+
+      const withoutSaved = selectedDeptForDetail.programs.filter((program) => program.id !== saved.id);
+      const nextPrograms = [...withoutSaved, saved].sort((first, second) =>
+        first.code.localeCompare(second.code) || (first.major ?? '').localeCompare(second.major ?? '')
       );
 
       setDepartments((previousDepartments) => {
@@ -306,13 +341,37 @@ export default function Departments() {
         return nextDepartments;
       });
       setSelectedDeptForDetail({ ...selectedDeptForDetail, programs: nextPrograms });
-      setNewProgram({ cluster: '', code: '', name: '' });
-      toast.success('Program Added', 'The program is now available under this department.');
+
+      if (editingProgramId === null) {
+        setNewProgram({ major: '', code: '', name: '' });
+        toast.success('Program Added', 'The program is now available under this department.');
+      } else {
+        closeProgramForm();
+        toast.success('Program Updated', 'The program now reads the same everywhere it appears.');
+      }
     } catch (error) {
-      setProgramFormError(apiErrorMessage(error, 'Failed to add program.'));
+      setProgramFormError(apiErrorMessage(error, 'Failed to save program.'));
     } finally {
-      setIsCreatingProgram(false);
+      setIsSavingProgram(false);
     }
+  };
+
+  // Code and name are what make a program readable in every other screen, so the
+  // form refuses to submit without them; the major stays genuinely optional.
+  const canSubmitProgram = newProgram.code.trim() !== '' && newProgram.name.trim() !== '';
+
+  // The major changes what the program is called everywhere else, so the form
+  // shows the resulting label before it is saved.
+  const programPreview = programLabel(
+    { code: newProgram.code.trim(), name: newProgram.name.trim(), major: newProgram.major.trim() },
+    'Unnamed program'
+  );
+
+  const handleProgramFormKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+
+    event.preventDefault();
+    if (!isSavingProgram && canSubmitProgram) void saveProgram();
   };
 
   const fetchDepartments = async (forceRefresh = false, silent = false) => {
@@ -526,7 +585,6 @@ export default function Departments() {
           const val = info.getValue() as string;
           if (!val) return '—';
           try {
-            const date = new Date(val);
             return formatPhilippineDate(val, { month: 'short', day: '2-digit', year: 'numeric' });
           } catch {
             return '—';
@@ -1001,99 +1059,184 @@ export default function Departments() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
       {/* Department Detail Modal */}
       {isDetailModalOpen && selectedDeptForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-6xl w-full max-h-[calc(100dvh-1.5rem)] overflow-hidden shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
+          <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-3xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 font-sans">
             {/* Header Banner */}
-            <div className="relative overflow-hidden border-b border-slate-200/80 bg-white px-8 py-7">
+            <div className="relative shrink-0 overflow-hidden border-b border-slate-200/80 bg-white px-7 py-5">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#4e0a10] via-[#C9952A] to-[#4e0a10]" />
               <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <DepartmentLogo
-                  name={selectedDeptForDetail.name}
-                  logo={selectedDeptForDetail.logo}
-                  className="w-14 h-14 rounded-2xl shadow-sm"
-                  iconSize={26}
-                />
-                <div>
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#C9952A]">Department profile</p>
-                  <h2 className="text-xl font-bold text-[#1A1410] font-display break-words leading-tight">{selectedDeptForDetail.name}</h2>
-                  <p className="mt-1 text-sm text-gray-500 font-medium">Dean <span className="text-gray-700">{selectedDeptForDetail.dean || 'Not Assigned'}</span></p>
+                <div className="flex items-center gap-4">
+                  <DepartmentLogo
+                    name={selectedDeptForDetail.name}
+                    logo={selectedDeptForDetail.logo}
+                    className="w-12 h-12 rounded-2xl shadow-sm"
+                    iconSize={23}
+                  />
+                  <div className="min-w-0">
+                    <p className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#C9952A]">Department profile</p>
+                    <h2 className="text-lg font-bold text-[#1A1410] font-display break-words leading-tight">{selectedDeptForDetail.name}</h2>
+                    <p className="mt-0.5 text-xs text-gray-500 font-medium">
+                      {selectedDeptForDetail.code} &middot; Dean <span className="text-gray-700">{selectedDeptForDetail.dean || 'Not assigned'}</span>
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDetailModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-              >
-                <X size={20} />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDetailModalOpen(false)}
+                  aria-label="Close department profile"
+                  className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
+                >
+                  <X size={20} />
+                </button>
               </div>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-10 space-y-10">
-              {!showProgramForm && <>
+            {/* Modal Body - scrolls on its own so the header and the actions stay put. */}
+            <div className="flex-1 overflow-y-auto px-7 py-6 space-y-6">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div className="bg-white p-3 rounded-xl border border-gray-200/80 space-y-1 shadow-sm">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Faculty Count</p>
-                  <p className="text-xs font-bold text-gray-800">{selectedDeptForDetail.facultyCount ?? 0} Instructors</p>
-                </div>
-
-                <div className="bg-white p-3 rounded-xl border border-gray-200/80 space-y-1 shadow-sm">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Sections Count</p>
-                  <p className="text-xs font-bold text-gray-800">{selectedDeptForDetail.sectionsCount ?? 0} Sections</p>
-                </div>
-
-                <div className="bg-white p-3 rounded-xl border border-gray-200/80 space-y-1 shadow-sm">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Scheduling Profile</p>
-                  <p className="text-xs font-bold text-gray-800">
-                    {selectedDeptForDetail.schedulingProfile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard'}
-                  </p>
-                </div>
-
-                <div className="bg-white p-3 rounded-xl border border-gray-200/80 space-y-1 shadow-sm">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date Created</p>
-                  <p className="text-xs font-bold text-gray-700">
-                    {selectedDeptForDetail.createdAt
+                {[
+                  { label: 'Instructors', value: String(selectedDeptForDetail.facultyCount ?? 0) },
+                  { label: 'Sections', value: String(selectedDeptForDetail.sectionsCount ?? 0) },
+                  {
+                    label: 'Scheduling profile',
+                    value: selectedDeptForDetail.schedulingProfile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard',
+                  },
+                  {
+                    label: 'Date created',
+                    value: selectedDeptForDetail.createdAt
                       ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
-                      : '—'}
-                  </p>
-                </div>
+                      : '-',
+                  },
+                ].map((tile) => (
+                  <div key={tile.label} className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{tile.label}</p>
+                    <p className="mt-1 text-xs font-bold text-gray-800">{tile.value}</p>
+                  </div>
+                ))}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Secretary</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{selectedDeptForDetail.secretary || 'Not Assigned'}</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">{selectedDeptForDetail.secretary || 'Not assigned'}</p>
                 </div>
                 <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Program Heads</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Program heads</p>
                   <p className="mt-1 text-sm font-semibold text-gray-800">
-                    {selectedDeptForDetail.programHeads.length > 0 ? selectedDeptForDetail.programHeads.join(', ') : 'Not Assigned'}
+                    {selectedDeptForDetail.programHeads.length > 0 ? selectedDeptForDetail.programHeads.join(', ') : 'Not assigned'}
                   </p>
                 </div>
               </div>
-              </>}
 
-              <section className={showProgramForm ? 'grid gap-8 sm:grid-cols-2 sm:items-start' : ''}>
-                <div className={showProgramForm ? 'col-span-1 sm:col-span-2 flex items-end justify-between gap-3' : 'mb-3 flex items-end justify-between gap-3'}>
+              <section className="space-y-3">
+                <div className="flex items-end justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <LibraryBig size={16} className="text-[#4e0a10]" />
                       <p className="text-sm font-bold text-[#1A1410]">Program directory</p>
+                      <span className="min-w-6 rounded-full bg-[#4e0a10] px-2 py-0.5 text-center text-[10px] font-bold text-white">
+                        {selectedDeptForDetail.programs.length}
+                      </span>
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">Programs offered by this department.</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Programs offered by this department. Each major is its own program, so one code can appear more than once.
+                    </p>
                   </div>
-                  <span className="min-w-8 rounded-full bg-[#4e0a10] px-2.5 py-1 text-center text-[11px] font-bold text-white shadow-sm">
-                    {selectedDeptForDetail.programs.length}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
+                    className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${showProgramForm
+                      ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                      : 'bg-[#4e0a10] text-white shadow-sm hover:bg-[#C9952A]'}`}
+                  >
+                    {showProgramForm ? <X size={14} /> : <Plus size={14} />}
+                    {showProgramForm ? 'Cancel' : 'Add program'}
+                  </button>
                 </div>
-                <div className={showProgramForm ? 'order-2 mb-0 space-y-2' : 'mb-5 space-y-2'}>
+
+                {showProgramForm && (
+                  <div className="rounded-2xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] p-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#4e0a10] text-white">
+                        {editingProgramId === null ? <Plus size={15} /> : <Pencil size={13} />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[#4e0a10]">
+                          {editingProgramId === null ? 'Add a program' : 'Edit program'}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          {editingProgramId === null
+                            ? 'Use the official code and program name.'
+                            : 'Renaming a program changes how it reads in every schedule and curriculum.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+                      <label className="text-[11px] font-bold text-gray-500">
+                        Program code
+                        <input
+                          aria-label="Program code"
+                          value={newProgram.code}
+                          onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value.toUpperCase() })}
+                          onKeyDown={handleProgramFormKeyDown}
+                          placeholder="BSED"
+                          maxLength={50}
+                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-mono outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+                        />
+                      </label>
+                      <label className="text-[11px] font-bold text-gray-500">
+                        Program name
+                        <input
+                          aria-label="Program name"
+                          value={newProgram.name}
+                          onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })}
+                          onKeyDown={handleProgramFormKeyDown}
+                          placeholder="Bachelor of Secondary Education"
+                          maxLength={255}
+                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+                        />
+                      </label>
+                      <label className="text-[11px] font-bold text-gray-500 sm:col-span-2">
+                        Major <span className="font-normal text-gray-400">(optional - leave blank when the program has no majors)</span>
+                        <input
+                          aria-label="Major"
+                          value={newProgram.major}
+                          onChange={(event) => setNewProgram({ ...newProgram, major: event.target.value })}
+                          onKeyDown={handleProgramFormKeyDown}
+                          placeholder="English"
+                          maxLength={255}
+                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+                        />
+                      </label>
+                    </div>
+                    <p className="mt-2.5 text-[11px] text-gray-500">
+                      Saved as <span className="font-semibold text-gray-700">{programPreview}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={saveProgram}
+                      disabled={isSavingProgram || !canSubmitProgram}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isSavingProgram
+                        ? <Loader2 size={14} className="animate-spin" />
+                        : (editingProgramId === null ? <Plus size={14} /> : <Pencil size={13} />)}
+                      {editingProgramId === null ? 'Add program' : 'Save changes'}
+                    </button>
+                    {programFormError && <p className="mt-2 text-xs font-semibold text-red-500">{programFormError}</p>}
+                  </div>
+                )}
+
+                <div className="space-y-2">
                   {selectedDeptForDetail.programs.length > 0 ? selectedDeptForDetail.programs.map((program) => (
-                    <div key={program.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm transition-colors hover:border-[#C9952A]/50">
+                    <div
+                      key={program.id}
+                      className={`flex items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 shadow-sm transition-colors ${editingProgramId === program.id
+                        ? 'border-[#C9952A] ring-2 ring-[#C9952A]/20'
+                        : 'border-slate-200/80 hover:border-[#C9952A]/50'}`}
+                    >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.07] text-[#4e0a10]">
                           <LibraryBig size={15} />
@@ -1103,60 +1246,52 @@ export default function Departments() {
                           <p className="truncate text-[11px] text-gray-500">{program.name || 'Unnamed program'}</p>
                         </div>
                       </div>
-                      {program.cluster && <span className="shrink-0 rounded-full bg-[#C9952A]/10 px-2 py-1 text-[10px] font-semibold text-[#8b681b]">{program.cluster}</span>}
+                      <div className="flex shrink-0 items-center gap-2">
+                        {programMajorLabel(program) && (
+                          <span className="rounded-full bg-[#C9952A]/10 px-2.5 py-1 text-[10px] font-semibold text-[#8b681b]">
+                            {programMajorLabel(program)}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openProgramEditForm(program)}
+                          aria-label={`Edit ${program.code}`}
+                          title="Edit program"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </div>
                     </div>
-                  )) : <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-4 py-7 text-center">
-                    <LibraryBig size={22} className="mx-auto mb-2 text-slate-300" />
-                    <p className="text-xs font-semibold text-slate-500">No programs added yet.</p>
-                    <p className="mt-1 text-[11px] text-slate-400">Use Add Program to add the first program to this department&apos;s directory.</p>
-                  </div>}
+                  )) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-4 py-7 text-center">
+                      <LibraryBig size={22} className="mx-auto mb-2 text-slate-300" />
+                      <p className="text-xs font-semibold text-slate-500">No programs added yet.</p>
+                      <p className="mt-1 text-[11px] text-slate-400">Use Add program to add the first program to this department&apos;s directory.</p>
+                    </div>
+                  )}
                 </div>
-                {showProgramForm && <div className="order-1 rounded-2xl border border-[#C9952A]/25 bg-[#C9952A]/[0.06] p-6">
-                  <div className="mb-3 flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#4e0a10] text-white"><Plus size={15} /></div>
-                    <div>
-                      <p className="text-sm font-bold text-[#4e0a10]">Add a program</p>
-                      <p className="text-[11px] text-gray-500">Use the official code and program name.</p>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-[0.8fr_1.2fr]">
-                    <label className="text-[11px] font-bold text-gray-500">Program code
-                      <input aria-label="Program Code" value={newProgram.code} onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value })} placeholder="e.g. BSIT" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-mono outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20" />
-                    </label>
-                    <label className="text-[11px] font-bold text-gray-500">Program name
-                      <input aria-label="Program Name" value={newProgram.name} onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })} placeholder="e.g. Information Technology" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20" />
-                    </label>
-                    <label className="text-[11px] font-bold text-gray-500 sm:col-span-2">Major or cluster <span className="font-normal text-gray-400">(optional)</span>
-                      <input aria-label="Major (If Applicable)" value={newProgram.cluster} onChange={(event) => setNewProgram({ ...newProgram, cluster: event.target.value })} placeholder="e.g. Software Engineering" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20" />
-                    </label>
-                  </div>
-                  <button type="button" onClick={createProgram} disabled={isCreatingProgram} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60">
-                    {isCreatingProgram ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                    Add Program
-                  </button>
-                  {programFormError && <p className="mt-1 text-xs font-semibold text-red-500">{programFormError}</p>}
-                </div>}
               </section>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="pt-3 border-t border-gray-200/80 flex items-center justify-end gap-3">
-                <button
-                  onClick={() => setIsDetailModalOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    setIsDetailModalOpen(false);
-                    handleEditClick(selectedDeptForDetail);
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                >
-                  <Pencil size={14} />
-                  <span>Edit Department</span>
-                </button>
-              </div>
+            {/* Action Buttons */}
+            <div className="shrink-0 border-t border-gray-200/80 bg-[#F8F6F2] px-7 py-4 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setIsDetailModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  handleEditClick(selectedDeptForDetail);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Pencil size={14} />
+                <span>Edit Department</span>
+              </button>
             </div>
           </div>
         </div>

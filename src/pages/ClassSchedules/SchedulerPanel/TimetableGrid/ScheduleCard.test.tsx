@@ -81,4 +81,16 @@ describe("ScheduleCard Hybrid component labels", () => {
     expect(laboratoryLabels.some((label) => label.className.includes("bg-blue-50"))).toBe(true);
     expect(screen.queryByText("Hybrid LAB")).toBeNull();
   });
+
+  it("labels the face-to-face half of a Hybrid Split by its own mode, not Online", () => {
+    const { rerender } = render(
+      <ScheduleCard {...commonProps} schedule={schedule("lecture", "on-site")} />
+    );
+    expect(screen.getAllByText("On-Site LEC").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Online")).toBeNull();
+
+    rerender(<ScheduleCard {...commonProps} schedule={schedule("lecture", "online")} />);
+    expect(screen.getAllByText("Online").length).toBeGreaterThan(0);
+    expect(screen.queryByText("On-Site LEC")).toBeNull();
+  });
 });

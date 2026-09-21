@@ -65,7 +65,7 @@ const scheduleSignature = (items: ScheduleItem[]): string =>
     .sort()
     .join("~");
 
-import { requiredRoomTypeForMeeting, useConflict } from "./useConflict";
+import { isCustomDayPattern, relocatedPairPattern, requiredRoomTypeForMeeting, useConflict } from "./useConflict";
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
@@ -90,7 +90,32 @@ const isNotFoundError = (err: unknown): boolean => {
 
 const getNextMeetingDayIndex = (dayIndex: number): number => (dayIndex + 1) % DAYS.length;
 
+// A two-meeting Split Session or Hybrid Split meets at one time on both days
+// (split_group_same_time); only a course with a laboratory keeps two times.
+const meetsAtOneTime = (subject: { labHours?: number | string | null }): boolean =>
+  Number(subject.labHours ?? 0) === 0;
+
 const ROOM_TBA = "tba";
+
+/**
+ * Rows a relocation changed: the moved meeting, plus the Split Session /
+ * Hybrid Split partner the server carried to the same time (`moved_partners`).
+ * Merging both keeps the partner from showing its old time until the next
+ * background refresh.
+ */
+const relocatedRows = (data: ApiScheduleRecord & { moved_partners?: ApiScheduleRecord[] }): ScheduleItem[] => [
+  mapApiScheduleToItem(data),
+  ...(data.moved_partners ?? []).map(mapApiScheduleToItem),
+];
+
+/**
+ * The scheduler checks every placement against the rows it holds, so it asks
+ * for the server's maximum rather than the 500-row default. A department past
+ * it is told (schedules_truncated) instead of silently losing classes from the
+ * grid and from conflict detection.
+ */
+const SCHEDULER_SCHEDULE_LIMIT = 2000;
+const SCHEDULER_INITIAL_DATA_PARAMS = { schedule_limit: SCHEDULER_SCHEDULE_LIMIT };
 
 export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
   lecture_lab_schedule_override_enabled?: boolean;
@@ -250,7 +275,9 @@ export const useScheduler = () => {
   const canSubmitSchedule = hasStoredCapability('schedule.submit');
   const canWithdrawSubmission = hasStoredCapability('schedule.withdraw');
   const canAssignInstructor = hasStoredCapability('schedule.assign_instructor');
-  const schedulerCacheKey = `scheduler:v16:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
+  // v17: schedules are fetched up to SCHEDULER_SCHEDULE_LIMIT; a v16 cache
+  // holds the old 500-row slice.
+  const schedulerCacheKey = `scheduler:v17:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -265,6 +292,9 @@ export const useScheduler = () => {
   const [hasDean, setHasDean] = useState(canUseInitialCache ? cachedSchedulerData.hasDean !== false : true);
   const [users, setUsers] = useState<UserSummary[]>(canUseInitialCache ? cachedSchedulerData.users : []);
   const [schedules, setSchedules] = useState<ScheduleItem[]>(canUseInitialCache ? cachedSchedulerData.schedules : []);
+  const [schedulesTruncated, setSchedulesTruncated] = useState<boolean>(
+    canUseInitialCache ? cachedSchedulerData.schedulesTruncated === true : false
+  );
   const [fieldCourseAssignmentEnabled, setFieldCourseAssignmentEnabled] = useState<boolean>(
     canUseInitialCache ? cachedSchedulerData.fieldCourseAssignmentEnabled : false
   );
@@ -341,7 +371,7 @@ export const useScheduler = () => {
     // loadCachedData hands back the very same cached object while it is fresh,
     // which is how the no-op case is recognised below.
     loadCachedData<SchedulerCacheData>(schedulerCacheKey, async () => {
-      const response = await api.get<InitialDataResponse>('/initial-data', { signal });
+      const response = await api.get<InitialDataResponse>('/initial-data', { signal, params: SCHEDULER_INITIAL_DATA_PARAMS });
       return mapInitialData(response.data, { isVpaa, userDepartmentId: user?.department_id });
     }, !canUseCachedData)
       .then((data) => {
@@ -360,6 +390,7 @@ export const useScheduler = () => {
         // in flight; the edit already merged the server's own rows.
         if (!canUseCachedData || schedulesRef.current === cachedData.schedules) {
           setSchedules(data.schedules);
+          setSchedulesTruncated(data.schedulesTruncated === true);
         }
         setFieldCourseAssignmentEnabled(data.fieldCourseAssignmentEnabled);
         setFieldCourseCodes(data.fieldCourseCodes);
@@ -383,6 +414,23 @@ export const useScheduler = () => {
 
 
 
+
+  // Said once when the list becomes truncated, not on every live refresh.
+  const truncationWarnedRef = useRef(false);
+  useEffect(() => {
+    if (!schedulesTruncated) {
+      truncationWarnedRef.current = false;
+      return;
+    }
+    if (truncationWarnedRef.current) return;
+    truncationWarnedRef.current = true;
+    toast.warning(
+      "Timetable Partly Loaded",
+      `This semester has more than ${SCHEDULER_SCHEDULE_LIMIT.toLocaleString()} class meetings, so only the most recent `
+        + `${SCHEDULER_SCHEDULE_LIMIT.toLocaleString()} are shown. Older classes are missing from the grid and from conflict `
+        + "checks here; the server still checks every save against all of them.",
+    );
+  }, [schedulesTruncated, toast]);
 
   const [dragSubjectId, setDragSubjectId] = useState<string | null>(null);
   const [draggedScheduleId, setDraggedScheduleId] = useState<string | null>(null);
@@ -420,8 +468,11 @@ export const useScheduler = () => {
       // every relation in full (a ~40 KB department logo per meeting row), so
       // each refresh downloaded megabytes and never matched the page's own
       // signature — replacing the whole grid after every save.
-      const res = await api.get<Pick<InitialDataResponse, "schedules">>('/initial-data', { params: { include: 'schedules' } });
+      const res = await api.get<Pick<InitialDataResponse, "schedules" | "schedules_truncated">>('/initial-data', {
+        params: { ...SCHEDULER_INITIAL_DATA_PARAMS, include: 'schedules' },
+      });
       if (!Array.isArray(res.data.schedules)) return;
+      setSchedulesTruncated(res.data.schedules_truncated === true);
       let apiData = res.data.schedules;
       if (activeSemester) {
         apiData = apiData.filter((item) => Number(item.semester_id) === Number(activeSemester.id));
@@ -439,6 +490,7 @@ export const useScheduler = () => {
         setCachedData<SchedulerCacheData>(schedulerCacheKey, {
           ...cachedData,
           schedules: mapped,
+          schedulesTruncated: res.data.schedules_truncated === true,
         });
       }
     } catch {
@@ -489,7 +541,7 @@ export const useScheduler = () => {
     setIsLoading(true);
     try {
       clearCachedKey(schedulerCacheKey);
-      const response = await api.get<InitialDataResponse>('/initial-data');
+      const response = await api.get<InitialDataResponse>('/initial-data', { params: SCHEDULER_INITIAL_DATA_PARAMS });
       const freshData = mapInitialData(response.data, { isVpaa, userDepartmentId: user?.department_id });
 
       setCachedData<SchedulerCacheData>(schedulerCacheKey, freshData);
@@ -503,6 +555,7 @@ export const useScheduler = () => {
       setFieldCourseCodes(freshData.fieldCourseCodes);
       setSections(freshData.sections);
       setSchedules(freshData.schedules);
+      setSchedulesTruncated(freshData.schedulesTruncated === true);
       toast.success("Synchronized", "Successfully loaded fresh sections and schedules from database.");
     } catch {
       toast.error("Synchronize Failed", "Could not load fresh data from database.");
@@ -926,7 +979,36 @@ export const useScheduler = () => {
     });
   }, [semesterSubjects, selectedSection, subjectClassFilter, searchQuery]);
 
-  const { checkConflict, checkFacultyConflict, getDragOverConflict, conflictedMap } = useConflict({
+  // The selected section's saved Required Days, so moving a placed class is
+  // checked against them before the save refuses it (forced_course_day).
+  const forcedDayByCourseId = useMemo<Record<string, number>>(() => {
+    const byCourse: Record<string, number> = {};
+    (manualSchedulingSettings?.forced_day_rules ?? []).forEach((rule) => {
+      const dayIndex = FULL_DAY_NAMES.findIndex((day) => day === rule.day);
+      if (dayIndex >= 0) byCourse[String(rule.course_id)] = dayIndex;
+    });
+    // Like the field list below, the dialog's Force Day choice is only saved on
+    // placement, so the open dialog's own pick stands in for the saved rule.
+    if (dropSubject) {
+      const key = String(dropSubject.id);
+      if (modalForceDayEnabled) byCourse[key] = modalForcedDayIndex;
+      else delete byCourse[key];
+    }
+    return byCourse;
+  }, [manualSchedulingSettings, dropSubject, modalForceDayEnabled, modalForcedDayIndex]);
+
+  // The dialog's Field Course choice is only saved on placement, so validating
+  // against the saved list judged a Field room as a mismatch for a course the
+  // dialog was about to make a field course — and that blocked the placement
+  // that would have saved it.
+  const effectiveFieldCourseCodes = useMemo(() => {
+    if (!dropSubject) return fieldCourseCodes;
+    const code = dropSubject.code.trim().toUpperCase();
+    const others = fieldCourseCodes.filter((c) => c.trim().toUpperCase() !== code);
+    return modalFieldEnabled ? [...others, dropSubject.code] : others;
+  }, [dropSubject, modalFieldEnabled, fieldCourseCodes]);
+
+  const { checkConflict, checkMoveConflict, checkFacultyConflict, getDragOverConflict, conflictedMap, resolvedIds } = useConflict({
     schedules,
     selectedSectionId,
     dragSubjectId,
@@ -936,8 +1018,10 @@ export const useScheduler = () => {
     departments,
     subjects,
     faculties,
-    fieldCourseAssignmentEnabled,
-    fieldCourseCodes,
+    fieldCourseAssignmentEnabled: fieldCourseAssignmentEnabled || effectiveFieldCourseCodes.length > 0,
+    fieldCourseCodes: effectiveFieldCourseCodes,
+    forcedDayByCourseId,
+    laboratoryDurationSettings: manualSchedulingSettings,
   });
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
@@ -1049,17 +1133,24 @@ export const useScheduler = () => {
           // The 2-meeting path below overrides these with sorted[0] values.
           setModalRoomId(targetSched.roomId || (targetSched.mode === "on-site" ? ROOM_TBA : targetSched.mode));
           setModalClassMode(targetSched.mode ?? "on-site");
-          setModalIsHybrid(targetSched.isHybrid ?? false);
           setModalPreferredPattern(targetSched.preferredPattern ?? null);
           const patternDays = parsePreferredPattern(targetSched.preferredPattern);
 
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
           );
-          const sorted = sortSplitMeetingsForEdit(existing, subject, Boolean(targetSched.isHybrid), manualSchedulingSettings);
+          // Integrated On-site is saved without is_hybrid, so the reopened
+          // dialog recognises it by its shape: a lecture-plus-laboratory course
+          // met twice on a day pair that is not a Split Session.
+          const isBalancedSplitPattern = ["MW", "TTh"].includes(targetSched.preferredPattern ?? "");
+          const hasLectureAndLab = Number(subject?.lectureHours ?? 0) > 0 && Number(subject?.labHours ?? 0) > 0;
+          const isIntegrated = Boolean(targetSched.isHybrid)
+            || (existing.length >= 2 && hasLectureAndLab && !isBalancedSplitPattern);
+          setModalIsHybrid(isIntegrated);
+          const sorted = sortSplitMeetingsForEdit(existing, subject, isIntegrated, manualSchedulingSettings);
 
           if (sorted.length >= 2) {
-            setModalSplitEnabled(!targetSched.isHybrid && ["MW", "TTh"].includes(targetSched.preferredPattern ?? ""));
+            setModalSplitEnabled(!isIntegrated && isBalancedSplitPattern);
             // Preserve each stored meeting exactly. Editing must not silently
             // convert a saved on-site lecture to Online just because it is the
             // lecture component of a split course.
@@ -1310,10 +1401,11 @@ export const useScheduler = () => {
       : null;
     if (meeting1) return meeting1.message;
 
+    const day2StartSlot = meetsAtOneTime(subject) ? modalDay1StartSlot : modalDay2StartSlot;
     const meeting2 = modalDay2Duration > 0
       ? checkConflict(
           courseId, selectedSectionId, null, modalDay2RoomId,
-          patternDays[1], modalDay2StartSlot, modalDay2Duration, excludeIds, modalPreferredPattern
+          patternDays[1], day2StartSlot, modalDay2Duration, excludeIds, modalPreferredPattern
         )
       : null;
 
@@ -1334,7 +1426,27 @@ export const useScheduler = () => {
     checkConflict
   ]);
 
-  const onScheduleRelocated = useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
+  // The modal is where a manual conflict is fixed, before the class exists on
+  // the grid. Remember that this open dialog had one so the saved class can be
+  // marked Resolved; validation still decides, via conflictedMap.
+  const [modalWasConflicted, setModalWasConflicted] = useState(false);
+  useEffect(() => {
+    if (!dropContext) setModalWasConflicted(false);
+    else if (modalConflict) setModalWasConflicted(true);
+  }, [dropContext, modalConflict]);
+  const [placedResolvedIds, setPlacedResolvedIds] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    setPlacedResolvedIds((prev) => {
+      const next = new Set([...prev].filter((id) => !conflictedMap[id]));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [conflictedMap]);
+  const allResolvedIds = useMemo<ReadonlySet<string>>(
+    () => new Set([...resolvedIds, ...placedResolvedIds]),
+    [resolvedIds, placedResolvedIds]
+  );
+
+  const onScheduleRelocated =useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
     const sched = schedules.find((s) => s.id === scheduleId);
     if (!sched) return;
     // Mirrors the drag path's guard (useDragDrop.handleDragOver/handleDrop).
@@ -1361,18 +1473,31 @@ export const useScheduler = () => {
       return;
     }
 
+    // A linked pair's days live in two places: each row's own day, and the
+    // days:X-Y pattern both rows carry. Moving one meeting without rewriting
+    // the pattern leaves the pair describing a day it no longer uses, and the
+    // server's preferred_pattern rule then refuses the row. Both rows get the
+    // new pattern, so they never disagree.
+    const groupPartner = sched.splitGroupId
+      ? schedules.find((s) => s.splitGroupId === sched.splitGroupId && s.id !== sched.id) ?? null
+      : null;
+    const nextPattern = groupPartner && isCustomDayPattern(sched.preferredPattern)
+      ? relocatedPairPattern(sched, groupPartner, dayIndex)
+      : null;
+
     try {
       const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, {
         day: dayName,
         start_time: startTime24h,
-        end_time: endTime24h
+        end_time: endTime24h,
+        ...(nextPattern !== null ? { preferred_pattern: nextPattern } : {}),
       });
-      const updatedSchedule = mapApiScheduleToItem(response.data);
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-        )
-      );
+      if (nextPattern !== null && groupPartner && !isNaN(Number(groupPartner.id))) {
+        await api.put<ApiScheduleRecord>(`/schedules/${groupPartner.id}`, {
+          preferred_pattern: nextPattern,
+        });
+      }
+      applyUpdatedSchedules(relocatedRows(response.data));
       toast.success("Schedule Relocated", "Class schedule successfully updated.");
       // Background reconciliation: the server's own response is already
       // merged above, so blocking the user on a second full-semester fetch only
@@ -1397,7 +1522,7 @@ export const useScheduler = () => {
         toast.error("Relocation Failed", "Could not save the new schedule slot.");
       }
     }
-  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey]);
+  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules]);
 
   const dragDrop = useDragDrop({
     schedules,
@@ -1412,7 +1537,7 @@ export const useScheduler = () => {
     setSchedules,
     setDropContext,
     setConflictInfo,
-    checkConflict,
+    checkMoveConflict,
     onScheduleRelocated,
     activeSemester
   });
@@ -1442,6 +1567,13 @@ export const useScheduler = () => {
       return;
     }
 
+    const sameTimePair = Boolean(patternDays) && meetsAtOneTime(subject);
+    if (sameTimePair && d1 !== d2) {
+      setModalValidationError("Both meetings of a Split Session or Hybrid Split must have the same duration.");
+      return;
+    }
+    const day2StartSlot = sameTimePair ? modalDay1StartSlot : modalDay2StartSlot;
+
 
 
 
@@ -1459,7 +1591,7 @@ export const useScheduler = () => {
     let currentHasConflict = false;
     if (patternDays) {
       const conflictDay1 = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
-      const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], modalDay2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
+      const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], day2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
       if (conflictDay1 || conflictDay2) currentHasConflict = true;
     } else {
       const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern);
@@ -1468,7 +1600,7 @@ export const useScheduler = () => {
 
     if (!currentHasConflict) {
       resolvedDay1StartSlot = modalDay1StartSlot;
-      resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? modalDay2StartSlot : -1;
+      resolvedDay2StartSlot = modalPreferredPattern && d2 > 0 ? day2StartSlot : -1;
     } else {
       // Slot search resolution: look circularly for a slot where both segments fit
       const maxSlots = slotCount();
@@ -1484,8 +1616,9 @@ export const useScheduler = () => {
             const conflictDay1 = checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], day1Slot, d1, excludeIds, modalPreferredPattern);
             if (conflictDay1) continue;
 
-            for (let day2Offset = 0; day2Offset < maxSlots; day2Offset++) {
-              const day2Slot = (modalDay2StartSlot + day2Offset) % (maxSlots - d2 + 1);
+            // A same-time pair only moves together, so meeting 2 tries meeting 1's slot alone.
+            for (let day2Offset = 0; day2Offset < (sameTimePair ? 1 : maxSlots); day2Offset++) {
+              const day2Slot = sameTimePair ? day1Slot : (day2StartSlot + day2Offset) % (maxSlots - d2 + 1);
               if (day2Slot + d2 > maxSlots) continue;
               const conflictDay2 = checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], day2Slot, d2, excludeIds, modalPreferredPattern);
               if (conflictDay2) continue;
@@ -1568,6 +1701,12 @@ export const useScheduler = () => {
 
     setIsModalLoading(true);
     let shouldCloseModal = true;
+    // Force Day and Field Course are department settings, and the placement is
+    // validated against them, so they are saved first. When the placement is
+    // then refused, the department is put back as it was: a class that was
+    // never placed must not change every other section's rules.
+    let settingsBeforePlacement: ManualSchedulingSettings | null = null;
+    let placementSaved = false;
     try {
       if (manualSchedulingSettings !== null) {
         const currentForcedRules = manualSchedulingSettings.forced_day_rules ?? [];
@@ -1591,6 +1730,7 @@ export const useScheduler = () => {
             forced_day_rules: nextForcedRules,
             field_course_codes: nextFieldCodes,
           });
+          settingsBeforePlacement = manualSchedulingSettings;
           setManualSchedulingSettings(settingsResponse.data);
           setFieldCourseCodes(settingsResponse.data.field_course_codes ?? nextFieldCodes);
           setFieldCourseAssignmentEnabled((settingsResponse.data.field_course_codes ?? nextFieldCodes).length > 0);
@@ -1619,7 +1759,9 @@ export const useScheduler = () => {
         const hasLab = Number(subject.labHours ?? 0) > 0;
         let meetingType: "lecture" | "laboratory" | null = null;
         if (isSplit) {
-          if (modalIsHybrid) {
+          // Integrated Hybrid is laboratory + lecture. A Hybrid Split is a
+          // lecture-only course met twice, so both of its meetings are lectures.
+          if (modalIsHybrid && hasLab) {
             meetingType = index === 0 ? "laboratory" : "lecture";
           } else if (hasLab) {
             const duration = targetDay.duration;
@@ -1652,7 +1794,10 @@ export const useScheduler = () => {
           start_time: slotToTime24h(targetDay.startSlot),
           end_time: slotToTime24h(targetDay.startSlot + targetDay.duration),
           mode: index === 0 ? modalClassMode : modalDay2ClassMode,
-          is_hybrid: modalIsHybrid,
+          // Integrated is hybrid only while its lecture is online; On-site keeps
+          // both meetings face-to-face and so is an ordinary linked pair. Other
+          // hybrid shapes (Hybrid Split) have no laboratory and keep the flag.
+          is_hybrid: modalIsHybrid && (!hasLab || modalDay2ClassMode === "online"),
           preferred_pattern: modalPreferredPattern,
           split_group_id: sharedSplitGroupId,
           meeting_type: meetingType,
@@ -1690,6 +1835,8 @@ export const useScheduler = () => {
         deletedScheduleRecordIds = response.data.deleted_schedule_ids ?? [];
       }
 
+      placementSaved = true;
+
       if (recommendationIdToRejectAfterBatch !== null) {
         // The recommendation was used as a validated placement preview; the
         // actual persistence was performed by /schedules/batch.
@@ -1713,6 +1860,10 @@ export const useScheduler = () => {
         } else {
           toast.success("Schedule Created", "Class schedule successfully plotted.");
         }
+      }
+
+      if (modalWasConflicted) {
+        setPlacedResolvedIds((prev) => new Set([...prev, ...savedScheduleItems.map((item) => item.id)]));
       }
 
       setSchedules((previousSchedules) => {
@@ -1756,6 +1907,28 @@ export const useScheduler = () => {
       // Nothing was saved, so keep the dialog open with the server's reason
       // instead of discarding everything the user configured.
       shouldCloseModal = false;
+
+      const restore: ManualSchedulingSettings | null = placementSaved ? null : settingsBeforePlacement;
+      if (restore !== null) {
+        // Sent in the same shape as the save above, so the server applies the
+        // exact inverse of it.
+        const restoredFieldCodes = restore.field_course_codes ?? fieldCourseCodes;
+        try {
+          const restored = await api.patch<ManualSchedulingSettings>("/scheduling-settings", {
+            section_id: Number(selectedSectionId),
+            forced_day_rules: restore.forced_day_rules ?? [],
+            field_course_codes: restoredFieldCodes,
+          });
+          setManualSchedulingSettings(restored.data);
+          setFieldCourseCodes(restored.data.field_course_codes ?? restoredFieldCodes);
+          setFieldCourseAssignmentEnabled((restored.data.field_course_codes ?? restoredFieldCodes).length > 0);
+        } catch {
+          toast.warning(
+            "Department Settings Changed",
+            `The class was not placed, but the Force Day or Field Course change for ${subject.code} could not be undone. Review it in Scheduling Settings.`,
+          );
+        }
+      }
     } finally {
       setIsModalLoading(false);
       if (shouldCloseModal) {
@@ -1773,8 +1946,11 @@ export const useScheduler = () => {
   const handleModalConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     const subject = dropContext ? subjects.find((item) => String(item.id) === String(dropContext.subjectId)) : null;
-    const isLabMeeting = (duration: number): boolean => {
+    const isLabMeeting = (duration: number, isFirstMeeting: boolean): boolean => {
       if (Number(subject?.labHours ?? 0) <= 0) return false;
+      // Integrated's first meeting is the laboratory whatever it lasts: both of
+      // its sessions are the user's to size, so a length no longer names one.
+      if (modalIsHybrid) return isFirstMeeting;
       // The per-unit length still identifies an unsplit laboratory block; a
       // department's Custom Lab Duration identifies the split laboratory meeting.
       return duration === getCourseSlotPlan(subject).laboratorySlots
@@ -1785,8 +1961,8 @@ export const useScheduler = () => {
       && modalDay2Duration > 0
       && modalDay2ClassMode === "on-site"
       && !modalDay2RoomId;
-    const invalidTba = (modalRoomId === "tba" && !isLabMeeting(modalDay1Duration))
-      || (modalDay2RoomId === "tba" && !isLabMeeting(modalDay2Duration));
+    const invalidTba = (modalRoomId === "tba" && !isLabMeeting(modalDay1Duration, true))
+      || (modalDay2RoomId === "tba" && !isLabMeeting(modalDay2Duration, false));
     if (missingFirstRoom || missingSecondRoom || invalidTba) {
       setModalValidationError(invalidTba
         ? "Room TBA is allowed only for a laboratory meeting."
@@ -1879,6 +2055,17 @@ export const useScheduler = () => {
       setIsClearAllModalOpen(false);
       return;
     }
+
+    const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
+    const confirmed = await confirm({
+      title: "Clear Schedules",
+      message: `Are you sure you want to clear the schedules of ${sectionLabel}? `
+        + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`,
+      eyebrow: "Irreversible Action",
+      confirmLabel: "Yes, Clear Schedules",
+      variant: "danger",
+    });
+    if (!confirmed) return;
 
     setIsClearingAll(true);
     const clearedCount = targetSchedules.length;
@@ -2781,17 +2968,7 @@ export const useScheduler = () => {
         setMovingScheduleId(null);
         return;
       }
-      const conflict = checkConflict(
-        sched.courseId ?? sched.subjectId ?? "",
-        sched.sectionId,
-        null,
-        sched.roomId,
-        dayIndex,
-        timeIndex,
-        sched.durationSlots,
-        sched.id,
-        sched.preferredPattern
-      );
+      const conflict = checkMoveConflict(sched.id, dayIndex, timeIndex);
       if (conflict) {
         // Keep the class armed so the user can try another slot
         setConflictInfo({
@@ -2812,12 +2989,7 @@ export const useScheduler = () => {
           start_time: startTime24h,
           end_time: endTime24h
         });
-        const updatedSchedule = mapApiScheduleToItem(response.data);
-        setSchedules((previousSchedules) =>
-          previousSchedules.map((schedule) =>
-            schedule.id === updatedSchedule.id ? updatedSchedule : schedule
-          )
-        );
+        applyUpdatedSchedules(relocatedRows(response.data));
         toast.success("Schedule Relocated", "Class schedule successfully relocated.");
         // Background reconciliation: the server's own response is already
         // merged above, so blocking the user on a second full-semester fetch only
@@ -2838,7 +3010,7 @@ export const useScheduler = () => {
         setConflictInfo(null);
       }
     }
-  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkConflict, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast]);
+  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast]);
 
 
   const activeSemesterText = useMemo(() => {
@@ -2995,6 +3167,8 @@ export const useScheduler = () => {
     sectionCourses,
     checkConflict,
     conflictedMap,
+    resolvedIds: allResolvedIds,
+    modalWasConflicted,
     checkFacultyConflict,
     canManageScheduleFaculty,
     getFacultyRestrictionMessage,

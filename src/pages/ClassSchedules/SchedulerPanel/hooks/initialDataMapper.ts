@@ -41,6 +41,12 @@ export interface SchedulerCacheData {
   schedulingReady: boolean;
   /** False when no active Dean is assigned; submitting is refused server-side. */
   hasDean: boolean;
+  /**
+   * True when the server cut the schedule list at its limit. Classes past it
+   * are neither drawn nor checked for conflicts. Optional so cached payloads
+   * from before the flag stay usable.
+   */
+  schedulesTruncated?: boolean;
 }
 
 export interface InitialDataResponse {
@@ -52,6 +58,8 @@ export interface InitialDataResponse {
   faculties: ApiFacultyRecord[];
   sections: ApiSectionRecord[];
   schedules: ApiScheduleRecord[];
+  /** The schedule list was cut at `schedule_limit`. */
+  schedules_truncated?: boolean;
   departments: ApiDepartmentRecord[];
   scheduling_ready?: boolean;
   has_dean?: boolean;
@@ -389,5 +397,6 @@ export const mapInitialData = (
     fieldCourseCodes: initialData.field_course_codes ?? [],
     schedulingReady: initialData.scheduling_ready !== false,
     hasDean: initialData.has_dean !== false,
+    schedulesTruncated: initialData.schedules_truncated === true,
   };
 };

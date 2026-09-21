@@ -14,7 +14,6 @@ import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
 import { programHeadNav } from '../../navigation/programHeadNav'
-import { directorNav } from '../../navigation/directorNav'
 import type { NavItem, NavSection } from '../../navigation/types'
 
 export default function AppLayout() {
@@ -68,8 +67,6 @@ export default function AppLayout() {
     if (role === 'dean') return processNav(deanNav);
     if (role === 'secretary') return processNav(secretaryNav);
     if (role === 'program_head') return processNav(programHeadNav);
-    if (role === 'director') return processNav(directorNav);
-
     if (location.pathname.startsWith('/dean')) return processNav(deanNav);
     if (location.pathname.startsWith('/secretary')) return processNav(secretaryNav);
     if (location.pathname.startsWith('/program_head')) return processNav(programHeadNav);
@@ -84,9 +81,7 @@ export default function AppLayout() {
       ? '/secretary/dashboard'
         : role === 'program_head'
         ? '/program_head/dashboard'
-        : role === 'director'
-          ? '/director/dashboard'
-          : '/dashboard'
+        : '/dashboard'
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && sidebarOpen) {
@@ -147,7 +142,10 @@ export default function AppLayout() {
         <ConnectionBanner />
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
           <PageHeader navItems={navItems} homePath={homePath} />
-          <Suspense fallback={
+          {/* Keyed by path: React Router runs navigations inside a transition,
+              so without a fresh boundary per route React keeps the previous page
+              on screen while the next route's lazy chunk downloads. */}
+          <Suspense key={location.pathname} fallback={
             <div className="space-y-4" aria-busy="true" aria-label="Loading module">
               <Skeleton className="h-8 w-64 rounded-lg" />
               <Skeleton className="h-4 w-96 max-w-full rounded" />

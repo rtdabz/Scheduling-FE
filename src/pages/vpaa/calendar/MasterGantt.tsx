@@ -50,6 +50,8 @@ interface MasterGanttProps {
   className?: string;
   /** Continue the time grid through unused viewport space below the meetings. */
   fillHeight?: boolean;
+  /** Suppress sideways scrolling; only meaningful alongside zoom="fit", where the timeline already matches the viewport width. */
+  lockHorizontalScroll?: boolean;
 }
 
 interface HoverState {
@@ -58,7 +60,7 @@ interface HoverState {
 }
 
 const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function MasterGantt(
-  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false },
+  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,12 +83,14 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     ? Math.max(1, timelineMinWidth, viewportWidth - labelWidth)
     : hours * ZOOM_PX_PER_HOUR[zoom];
   const pixelsPerHour = trackWidth / hours;
-  const tickStep = Math.max(1, Math.ceil(58 / pixelsPerHour)) * 60;
+  // Ticks are spaced in 90-minute units (7, 8:30, 10, ...) rather than whole hours,
+  // widening to multiples of 90 minutes only when the track is too narrow to fit them.
+  const tickStep = Math.max(1, Math.ceil(58 / (pixelsPerHour * 1.5))) * 90;
   const laneHeight = LANE_HEIGHT[density];
 
   const hourTicks = useMemo(() => {
     const ticks: number[] = [];
-    for (let minute = Math.ceil(timeWindow.start / tickStep) * tickStep; minute <= timeWindow.end; minute += tickStep) ticks.push(minute);
+    for (let minute = timeWindow.start; minute <= timeWindow.end; minute += tickStep) ticks.push(minute);
     return ticks;
   }, [timeWindow, tickStep]);
 
@@ -234,7 +238,7 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         onScroll={() => { if (hover) setHover(null); }}
         role="region"
         aria-label="Master calendar timeline"
-        className={`relative overflow-auto rounded-xl border border-slate-200 bg-white print:h-auto print:min-h-0 print:max-h-none print:overflow-visible ${className}`}
+        className={`relative rounded-xl border border-slate-200 bg-white print:h-auto print:min-h-0 print:max-h-none print:overflow-visible ${lockHorizontalScroll ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto'} ${className}`}
       >
         <div className={fillHeight ? 'flex min-h-full flex-col [&>section]:shrink-0' : undefined}>
         {/* Time axis, pinned to the top while the days scroll beneath it. */}

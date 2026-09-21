@@ -1,56 +1,96 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState, lazy } from 'react';
+import { useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
 import api from './lib/api';
 import { getStoredUser, getStoredUserRole, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
 import LockedModuleView from './components/ui/LockedModuleView';
+import { lazyPage, registerPagePrefetch } from './lib/pagePrefetch';
 
 // VPAA Pages
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const VpaaSchedules = lazy(() => import('./pages/vpaa/Schedules'));
-const VpaaScheduleApprovalPage = lazy(() => import('./pages/vpaa/ScheduleApprovalPage'));
-const VpaaCalendarPage = lazy(() => import('./pages/vpaa/CalendarPage'));
-const VpaaFaculty = lazy(() => import('./pages/vpaa/Faculty'));
-const VpaaRooms = lazy(() => import('./pages/vpaa/Rooms'));
-const VpaaUsers = lazy(() => import('./pages/vpaa/Users'));
-const Departments = lazy(() => import('./pages/vpaa/Departments'));
-const Reports = lazy(() => import('./pages/shared/Reports'));
-const RoomRequests = lazy(() => import('./pages/shared/RoomRequests'));
-const VpaaActivityLog = lazy(() => import('./pages/vpaa/ActivityLog'));
-const VpaaScheduleHistory = lazy(() => import('./pages/vpaa/ScheduleHistory'));
-const VpaaArchive = lazy(() => import('./pages/vpaa/Archive'));
-const Settings = lazy(() => import('./pages/vpaa/Settings'));
-const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
+const Dashboard = lazyPage(() => import('./pages/Dashboard'));
+const VpaaSchedules = lazyPage(() => import('./pages/vpaa/Schedules'));
+const VpaaScheduleApprovalPage = lazyPage(() => import('./pages/vpaa/ScheduleApprovalPage'));
+const VpaaCalendarPage = lazyPage(() => import('./pages/vpaa/CalendarPage'));
+const VpaaFaculty = lazyPage(() => import('./pages/vpaa/Faculty'));
+const VpaaRooms = lazyPage(() => import('./pages/vpaa/Rooms'));
+const VpaaUsers = lazyPage(() => import('./pages/vpaa/Users'));
+const Departments = lazyPage(() => import('./pages/vpaa/Departments'));
+const Reports = lazyPage(() => import('./pages/shared/Reports'));
+const RoomRequests = lazyPage(() => import('./pages/shared/RoomRequests'));
+const VpaaActivityLog = lazyPage(() => import('./pages/vpaa/ActivityLog'));
+const VpaaScheduleHistory = lazyPage(() => import('./pages/vpaa/ScheduleHistory'));
+const VpaaArchive = lazyPage(() => import('./pages/vpaa/Archive'));
+const Settings = lazyPage(() => import('./pages/vpaa/Settings'));
 
 // Other Role Pages
-const DeanSchedules = lazy(() => import('./pages/dean/Schedules'));
-const DeanScheduleApprovalPage = lazy(() => import('./pages/dean/ScheduleApprovalPage'));
-const DeanFaculty = lazy(() => import('./pages/dean/Faculty'));
-const DeanRooms = lazy(() => import('./pages/dean/Rooms'));
-const SecretaryScheduleBuilder = lazy(() => import('./pages/secretary/ScheduleBuilder'));
-const SecretarySchedules = lazy(() => import('./pages/secretary/Schedules'));
-const SecretaryRooms = lazy(() => import('./pages/secretary/Rooms'));
-const SecretaryFaculty = lazy(() => import('./pages/secretary/Faculty'));
-const SecretarySectionTimetables = lazy(() => import('./pages/secretary/SectionTimetables'));
-const ProgramHeadScheduleBuilder = lazy(() => import('./pages/program_head/ScheduleBuilder'));
-const ProgramHeadSchedules = lazy(() => import('./pages/program_head/Schedules'));
-const ProgramHeadSectionTimetables = lazy(() => import('./pages/program_head/SectionTimetables'));
-const ProgramHeadFaculty = lazy(() => import('./pages/program_head/Faculty'));
+const DeanSchedules = lazyPage(() => import('./pages/dean/Schedules'));
+const DeanScheduleApprovalPage = lazyPage(() => import('./pages/dean/ScheduleApprovalPage'));
+const DeanFaculty = lazyPage(() => import('./pages/dean/Faculty'));
+const DeanRooms = lazyPage(() => import('./pages/dean/Rooms'));
+const SecretaryScheduleBuilder = lazyPage(() => import('./pages/secretary/ScheduleBuilder'));
+const SecretarySchedules = lazyPage(() => import('./pages/secretary/Schedules'));
+const SecretaryRooms = lazyPage(() => import('./pages/secretary/Rooms'));
+const SecretaryFaculty = lazyPage(() => import('./pages/secretary/Faculty'));
+const SecretarySectionTimetables = lazyPage(() => import('./pages/secretary/SectionTimetables'));
+const ProgramHeadScheduleBuilder = lazyPage(() => import('./pages/program_head/ScheduleBuilder'));
+const ProgramHeadSchedules = lazyPage(() => import('./pages/program_head/Schedules'));
+const ProgramHeadSectionTimetables = lazyPage(() => import('./pages/program_head/SectionTimetables'));
+const ProgramHeadFaculty = lazyPage(() => import('./pages/program_head/Faculty'));
 // VPAA-only: a designation rewrites an instructor's Basic Load, so the list is
 // maintained by the office that owns faculty loading. Other roles read the
 // designation badge on their roster screens but have no route to this page.
-const Designations = lazy(() => import('./pages/shared/Designations'));
-const ProgramHeadRooms = lazy(() => import('./pages/program_head/Rooms'));
-const InstructorAssignment = lazy(() => import('./pages/ClassSchedules/InstructorAssignment'));
-const CrossDepartmentAssignments = lazy(() => import('./pages/ClassSchedules/CrossDepartmentAssignments'));
-const CourseTeachingAssignments = lazy(() => import('./pages/ClassSchedules/CourseTeachingAssignments'));
-const SecretaryCourses = lazy(() => import('./pages/secretary/Courses'));
+const Designations = lazyPage(() => import('./pages/shared/Designations'));
+const ProgramHeadRooms = lazyPage(() => import('./pages/program_head/Rooms'));
+const InstructorAssignment = lazyPage(() => import('./pages/ClassSchedules/InstructorAssignment'));
+const CrossDepartmentAssignments = lazyPage(() => import('./pages/ClassSchedules/CrossDepartmentAssignments'));
+const CourseTeachingAssignments = lazyPage(() => import('./pages/ClassSchedules/CourseTeachingAssignments'));
+const SecretaryCourses = lazyPage(() => import('./pages/secretary/Courses'));
 
-const CurriculumListPage = lazy(() => import('./pages/curriculum/CurriculumListPage'));
-const CurriculumDetailPage = lazy(() => import('./pages/curriculum/CurriculumDetailPage'));
-const SecretarySections = lazy(() => import('./pages/secretary/Sections'));
+const CurriculumListPage = lazyPage(() => import('./pages/curriculum/CurriculumListPage'));
+const CurriculumDetailPage = lazyPage(() => import('./pages/curriculum/CurriculumDetailPage'));
+const SecretarySections = lazyPage(() => import('./pages/secretary/Sections'));
+
+// Menu path -> page chunk, so the sidebar can start the download on hover.
+// Paths that share a page share its chunk; a path missing here still works,
+// it just loads on click. Keep in step with the routes below.
+registerPagePrefetch([
+  [VpaaSchedules, ['/schedules']],
+  [VpaaScheduleApprovalPage, ['/schedules/approval']],
+  [VpaaCalendarPage, ['/calendar', '/vpaa/calendar']],
+  [VpaaFaculty, ['/faculty']],
+  [Designations, ['/designations']],
+  [VpaaRooms, ['/rooms']],
+  [CurriculumListPage, ['/curriculum', '/dean/curriculum', '/secretary/curriculum', '/program_head/curriculum']],
+  [VpaaUsers, ['/users']],
+  [Departments, ['/departments']],
+  [Reports, ['/reports', '/dean/reports', '/secretary/reports', '/program_head/reports']],
+  [RoomRequests, ['/room-requests', '/secretary/room-requests', '/program_head/room-requests']],
+  [VpaaActivityLog, ['/activity-log']],
+  [VpaaScheduleHistory, ['/schedule-history', '/dean/schedule-history', '/secretary/schedule-history', '/program_head/schedule-history']],
+  [VpaaArchive, ['/archive']],
+  [Settings, ['/settings']],
+  [DeanSchedules, ['/dean/schedules']],
+  [DeanScheduleApprovalPage, ['/dean/schedules/approval']],
+  [DeanFaculty, ['/dean/faculty']],
+  [DeanRooms, ['/dean/rooms']],
+  [SecretaryScheduleBuilder, ['/secretary/schedule-builder']],
+  [SecretarySchedules, ['/secretary/schedules']],
+  [SecretarySectionTimetables, ['/secretary/section-timetables']],
+  [SecretaryRooms, ['/secretary/rooms']],
+  [SecretaryCourses, ['/secretary/courses', '/secretary/course-list', '/secretary/subjects', '/program_head/courses', '/program_head/course-list']],
+  [SecretarySections, ['/secretary/sections', '/program_head/sections']],
+  [SecretaryFaculty, ['/secretary/instructors']],
+  [InstructorAssignment, ['/secretary/instructor-assignment', '/program_head/instructor-assignment']],
+  [CrossDepartmentAssignments, ['/secretary/cross-department-assignments', '/program_head/cross-department-assignments']],
+  [CourseTeachingAssignments, ['/secretary/course-teaching-assignments', '/program_head/course-teaching-assignments']],
+  [ProgramHeadScheduleBuilder, ['/program_head/schedule-builder']],
+  [ProgramHeadSchedules, ['/program_head/schedules']],
+  [ProgramHeadSectionTimetables, ['/program_head/section-timetables']],
+  [ProgramHeadFaculty, ['/program_head/faculty', '/program_head/instructors']],
+  [ProgramHeadRooms, ['/program_head/rooms']],
+]);
 
 type CapabilityUser = Pick<StoredUser, 'permissions' | 'scheduling_ready' | 'capability_catalog'>;
 
@@ -75,7 +115,6 @@ const getDashboardPath = (role: string): string => {
   if (role === 'dean') return '/dean/dashboard';
   if (role === 'secretary') return '/secretary/dashboard';
   if (role === 'program_head') return '/program_head/dashboard';
-  if (role === 'director') return '/director/dashboard';
   return '/dashboard';
 };
 
@@ -209,7 +248,8 @@ export default function App() {
             <Route path="/dean/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/dean/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/dean/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
-            <Route path="/dean/settings" element={<AccountSettingsPage />} />
+            {/* Dean account settings were retired; keep old bookmarks inside the Dean shell. */}
+            <Route path="/dean/settings" element={<Navigate to="/dean/dashboard" replace />} />
 
             {/* Secretary Routes */}
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
@@ -256,8 +296,6 @@ export default function App() {
             <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross Department Assignments"><CrossDepartmentAssignments /></CapabilityRoute>} />
             <Route path="/program_head/course-teaching-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Teaching Assignments"><CourseTeachingAssignments /></CapabilityRoute>} />
             <Route path="/program_head/settings" element={<Navigate to="/program_head/schedule-builder" replace />} />
-            <Route path="/director/dashboard" element={<DashboardRoute />} />
-            <Route path="/director/settings" element={<AccountSettingsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

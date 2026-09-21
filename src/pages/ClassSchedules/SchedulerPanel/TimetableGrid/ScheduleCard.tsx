@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, CheckCircle2, UserPlus, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Flag, UserPlus, X } from "lucide-react";
 import {
   getGridCardStyles,
   getGridModeBadgeClass
@@ -12,6 +12,8 @@ interface ScheduleCardProps {
   schedule: ScheduleItem;
   subject: Subject;
   conflict?: { conflictType: "room" | "faculty" | "section"; message: string } | null;
+  /** Validation flagged this class earlier and no longer does. */
+  isResolved?: boolean;
   isEditable: boolean;
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
@@ -45,6 +47,7 @@ const ScheduleCard = memo(function ScheduleCard({
   schedule,
   subject,
   conflict,
+  isResolved = false,
   isEditable,
   isPhase2Active,
   currentStatus,
@@ -76,13 +79,10 @@ const ScheduleCard = memo(function ScheduleCard({
     : inferredMeetingType === "lecture"
     ? "LEC"
     : "";
-  const displayModeLabel = schedule.isHybrid
-    ? inferredMeetingType === "lecture"
-      ? "Online"
-      : inferredMeetingType === "laboratory"
-        ? "On-Site LAB"
-        : modeLabel
-    : meetingTypeLabel && schedule.mode === "on-site"
+  // The badge is the meeting's own delivery. A hybrid course is not "online"
+  // as a whole: a Hybrid Split has one face-to-face lecture and one online
+  // lecture, so labelling every hybrid lecture Online showed both as Online.
+  const displayModeLabel = meetingTypeLabel && schedule.mode === "on-site"
     ? `${modeLabel} ${meetingTypeLabel}`
     : modeLabel;
   const isDraggingThis = draggedScheduleId === schedule.id;
@@ -114,6 +114,17 @@ const ScheduleCard = memo(function ScheduleCard({
     : isMedium
     ? `p-1.5 px-2 ${isAwaitingFaculty ? "pb-7" : ""}`
     : `p-2 px-2.5 ${isAwaitingFaculty ? "pb-7" : ""}`;
+
+  const showResolved = isResolved && !conflict;
+  const resolvedFlag = (
+    <span
+      className="inline-flex items-center rounded bg-emerald-600 p-0.5 text-white"
+      title="Conflict resolved"
+      aria-label="Conflict resolved"
+    >
+      <Flag className="h-2.5 w-2.5 shrink-0 fill-white" />
+    </span>
+  );
 
   return (
     <div
@@ -244,7 +255,8 @@ const ScheduleCard = memo(function ScheduleCard({
             {roomDisplayName ? (
               <span className="break-words whitespace-normal font-semibold leading-tight min-w-0">{roomDisplayName}</span>
             ) : null}
-            <span className={`shrink-0 text-slate-400 font-semibold ${!roomDisplayName ? "ml-auto" : ""}`}>
+            <span className={`shrink-0 flex items-center gap-1 text-slate-400 font-semibold ${!roomDisplayName ? "ml-auto" : ""}`}>
+              {showResolved && resolvedFlag}
               {schedule.startTime}
             </span>
           </div>
@@ -286,7 +298,10 @@ const ScheduleCard = memo(function ScheduleCard({
                 {schedule.facultyName}
               </div>
             )}
-            {schedule.startTime} – {schedule.endTime}
+            <div className="flex items-center gap-1.5">
+              <span>{schedule.startTime} – {schedule.endTime}</span>
+              {showResolved && resolvedFlag}
+            </div>
           </div>
         </div>
       )}

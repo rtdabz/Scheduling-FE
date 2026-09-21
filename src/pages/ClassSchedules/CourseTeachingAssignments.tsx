@@ -13,6 +13,7 @@ import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import { programLabel, programName } from '../../lib/programLabel';
 
 interface ApiErrorResponse { message?: string }
 interface DepartmentOption { id: number; department_code: string; department_name: string; logo?: string | null }
@@ -35,10 +36,10 @@ interface CourseRow {
   teaching_program_name?: string | null;
   program_code?: string | null;
   program_name?: string | null;
-  program_cluster?: string | null;
+  program_major?: string | null;
   curriculum_program_code?: string | null;
   curriculum_program_name?: string | null;
-  curriculum_program_cluster?: string | null;
+  curriculum_program_major?: string | null;
   delegable: boolean;
   /**
    * Classes this semester that already have an instructor. While any do, the
@@ -49,7 +50,7 @@ interface CourseRow {
 interface PageData {
   courses: CourseRow[];
   departments: DepartmentOption[];
-  programs: { id: number; department_id: number; code: string; name?: string | null; cluster?: string | null }[];
+  programs: { id: number; department_id: number; code: string; name?: string | null; major?: string | null }[];
   /** The department whose courses these are — the acting user's own. */
   currentDepartmentId: number | null;
   /** False when the department has published no curriculum, so there is nothing to offer. */
@@ -92,11 +93,13 @@ const yearOf = (course: CourseRow) => Number(course.year_level ?? 0) || 0;
 const ownerOf = (course: CourseRow) => course.department_code ?? 'Shared';
 const programOf = (course: CourseRow) => ({
   code: course.curriculum_program_code ?? course.program_code ?? 'Shared',
-  name: course.curriculum_program_name
-    ?? course.curriculum_program_cluster
-    ?? course.program_name
-    ?? course.program_cluster
-    ?? 'All programs',
+  name: programName(
+    {
+      name: course.curriculum_program_name ?? course.program_name,
+      major: course.curriculum_program_major ?? course.program_major,
+    },
+    'All programs'
+  ),
 });
 
 /**
@@ -279,7 +282,7 @@ export default function CourseTeachingAssignments() {
         teaching_department_name: department.department_name,
         teaching_program_id: program?.id ?? null,
         teaching_program_code: program?.code ?? null,
-        teaching_program_name: program?.name ?? program?.cluster ?? null,
+        teaching_program_name: program ? programName(program, '') || null : null,
       }
       : course));
 
@@ -598,7 +601,7 @@ export default function CourseTeachingAssignments() {
                   label="Program (optional)"
                   value={targetProgramId}
                   onChange={(value) => { setTargetProgramId(value); setSelectedIds([]); }}
-                  options={[['', `Whole ${targetDepartment?.department_code ?? 'department'}`], ...targetPrograms.map((program) => [String(program.id), `${program.code} - ${program.name || program.cluster || 'Unnamed program'}`])]}
+                  options={[['', `Whole ${targetDepartment?.department_code ?? 'department'}`], ...targetPrograms.map((program) => [String(program.id), programLabel(program)])]}
                 />
               </div>
             </div>

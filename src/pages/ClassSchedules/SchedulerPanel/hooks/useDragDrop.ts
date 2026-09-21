@@ -3,16 +3,11 @@ import { useCallback } from "react";
 import { DAYS, slotToTimeStr } from "../constants";
 import type { ConflictInfo, DropContext, ScheduleItem, Subject, Semester } from "../types";
 
-type CheckConflict = (
-  subjectId: string,
-  sectionId: string,
-  facultyId: string | null,
-  roomId: string,
+/** useConflict.checkMoveConflict: judges moving a placed class as a whole. */
+type CheckMoveConflict = (
+  scheduleId: string,
   dayIndex: number,
-  startSlot: number,
-  durationSlots: number,
-  excludeScheduleId?: string | string[],
-  preferredPattern?: string | null
+  startSlot: number
 ) => { conflictType: "room" | "faculty" | "section"; message: string } | null;
 
 interface UseDragDropParams {
@@ -28,7 +23,7 @@ interface UseDragDropParams {
   setSchedules: React.Dispatch<React.SetStateAction<ScheduleItem[]>>;
   setDropContext: React.Dispatch<React.SetStateAction<DropContext | null>>;
   setConflictInfo: React.Dispatch<React.SetStateAction<ConflictInfo | null>>;
-  checkConflict: CheckConflict;
+  checkMoveConflict: CheckMoveConflict;
   onScheduleRelocated?: (scheduleId: string, dayIndex: number, timeIndex: number) => void;
   activeSemester: Semester | null;
 }
@@ -56,7 +51,7 @@ export const useDragDrop = ({
   setSchedules,
   setDropContext,
   setConflictInfo,
-  checkConflict,
+  checkMoveConflict,
   onScheduleRelocated,
   activeSemester
 }: UseDragDropParams) => {
@@ -108,17 +103,7 @@ export const useDragDrop = ({
       const sched = schedules.find((s) => s.id === draggedScheduleId);
       if (!sched) return;
 
-      const conflict = checkConflict(
-        sched.courseId ?? sched.subjectId ?? "",
-        sched.sectionId,
-        null,
-        sched.roomId,
-        dayIndex,
-        timeIndex,
-        sched.durationSlots,
-        sched.id,
-        sched.preferredPattern
-      );
+      const conflict = checkMoveConflict(sched.id, dayIndex, timeIndex);
 
       if (conflict) {
         setConflictInfo({ dayIndex, startSlot: timeIndex, durationSlots: sched.durationSlots, message: conflict.message });
@@ -161,7 +146,7 @@ export const useDragDrop = ({
     dragSubjectId,
     schedules,
     subjects,
-    checkConflict,
+    checkMoveConflict,
     onScheduleRelocated,
     setHoveredCell,
     setConflictInfo,

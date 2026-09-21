@@ -10,7 +10,6 @@ import {
   type LaboratoryDurationSettings,
 } from "../courseSlotPlan";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
-import type { PeriodOption } from "./generationTypes";
 
 export type ClassConfiguration = "regular" | "split" | "integrated";
 export type ClassComponent = "lecture" | "laboratory" | "field";
@@ -61,13 +60,6 @@ export interface CourseClassConfig {
   requiredDay: string | null;
   /** A ranking preference, never a restriction. */
   preferredRoomId: string | null;
-  /**
-   * The course's own Preferred Meeting: the periods it may meet in, used in
-   * place of each section's for this course only; the sections keep theirs
-   * for every other course. Empty follows the section. A field course is
-   * only offered periods ending by the field end time.
-   */
-  preferredPeriods?: PeriodOption[];
   sectionScope: SectionScope;
   selectedSectionIds: string[];
 }
@@ -403,10 +395,6 @@ export function inferInitialCourseClassConfig(
   const savedComponents = targets
     .map((s) => configs[s.id]?.componentMinutesByCourseId?.[course.id])
     .find(Boolean);
-  // Saved on every section, whatever the scope.
-  const savedPeriods = sections
-    .map((s) => configs[s.id]?.preferredPeriodsByCourseId?.[course.id])
-    .find((periods) => Array.isArray(periods) && periods.length > 0);
 
   const shared = {
     durationMinutes: savedMinutes ?? defaultDurationMinutes(course),
@@ -414,7 +402,6 @@ export function inferInitialCourseClassConfig(
     laboratoryMinutes: savedComponents?.laboratory,
     requiredDay,
     preferredRoomId: savedRoom ?? null,
-    preferredPeriods: savedPeriods ?? [],
     sectionScope,
     selectedSectionIds,
   };
@@ -501,7 +488,6 @@ export function syncCourseConfigToSectionConfigs(
     const currentDurations = current?.durationMinutesByCourseId ?? {};
     const currentRooms = current?.preferredRoomsByCourseId ?? {};
     const currentComponents = current?.componentMinutesByCourseId ?? {};
-    const currentPeriods = current?.preferredPeriodsByCourseId ?? {};
 
     const without = (ids: string[]) => ids.filter((id) => id !== courseId);
     const withCourse = (ids: string[]) => Array.from(new Set([...ids, courseId]));
@@ -516,11 +502,6 @@ export function syncCourseConfigToSectionConfigs(
     delete nextDurations[courseId];
     delete nextRooms[courseId];
     delete nextComponents[courseId];
-    // Every section, not only the scope, like Required Day: a course meets in
-    // one period across the year level.
-    const nextPeriods = { ...currentPeriods };
-    if (courseConfig.preferredPeriods?.length) nextPeriods[courseId] = courseConfig.preferredPeriods;
-    else delete nextPeriods[courseId];
 
     if (isTarget) {
       if (courseConfig.configuration === "split") {
@@ -549,8 +530,7 @@ export function syncCourseConfigToSectionConfigs(
       JSON.stringify(nextModes) !== JSON.stringify(currentModes) ||
       JSON.stringify(nextDurations) !== JSON.stringify(currentDurations) ||
       JSON.stringify(nextRooms) !== JSON.stringify(currentRooms) ||
-      JSON.stringify(nextComponents) !== JSON.stringify(currentComponents) ||
-      JSON.stringify(nextPeriods) !== JSON.stringify(currentPeriods);
+      JSON.stringify(nextComponents) !== JSON.stringify(currentComponents);
 
     if (changed) {
       onConfigChange(section.id, {
@@ -561,7 +541,6 @@ export function syncCourseConfigToSectionConfigs(
         durationMinutesByCourseId: nextDurations,
         preferredRoomsByCourseId: nextRooms,
         componentMinutesByCourseId: nextComponents,
-        preferredPeriodsByCourseId: nextPeriods,
       });
     }
   }

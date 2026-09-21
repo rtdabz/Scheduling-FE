@@ -3,26 +3,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import RecommendedAdjustmentPanel from "./RecommendedAdjustmentPanel";
 import ScheduleSummaryStep from "./ScheduleSummaryStep";
 import {
-  applyAdjustments,
   type GenerationRecommendation,
   type YearLevelGenerationFailure,
 } from "./yearLevelGenerationFailure";
 
-const afternoonSession: GenerationRecommendation = {
-  id: "session-course-10-20-afternoon",
-  title: "Put BAC 11 in the Afternoon Session",
-  detected_cause: "BAC 11 asked for the Morning session, but no free time was left there.",
-  suggested_adjustment: "Afternoon (11:30 AM - 4:00 PM) still has 6 free start times for BAC 11.",
+const onlineRecommendation: GenerationRecommendation = {
+  id: "delivery-course-10-20-online",
+  title: "Move BAC 11 online",
+  detected_cause: "BAC 11 ran out of free classroom time.",
+  suggested_adjustment: "Deliver BAC 11 online so it no longer needs a classroom.",
   section_id: 10,
   section_name: "BSBA 1A",
   course_id: 20,
   course_code: "BAC 11",
   impact: "low",
   adjustments: [{
-    type: "set_time_preference",
+    type: "set_delivery_mode",
     section_id: 10,
     course_id: 20,
-    value: "afternoon",
+    value: "online",
     section_name: "BSBA 1A",
     course_code: "BAC 11",
   }],
@@ -31,25 +30,25 @@ const afternoonSession: GenerationRecommendation = {
 };
 
 const advisoryFailure: YearLevelGenerationFailure = {
-  message: "No timetable fits the preferred meeting period.",
+  message: "No timetable fits the available rooms.",
   stage: "search",
   blockingConstraints: [],
   bottleneck: {
-    type: "preferred_period",
+    type: "room_capacity",
     section_id: 10,
     section_name: "BSBA 1G",
     course_id: 20,
     course_code: "PATH FIT",
-    detected_cause: "Courses ran out of eligible room-time inside the selected period.",
+    detected_cause: "Courses ran out of eligible room-time.",
     iterations: 0,
     search_limit_reached: false,
   },
   attempts: [],
   recommendations: [{
-    id: "preferred-period-too-narrow",
-    title: "Widen or clear BSBA 1G's meeting period",
-    detected_cause: "The section is restricted to Evening.",
-    suggested_adjustment: "Set the Preferred Meetings period back to Any time, then generate again.",
+    id: "free-room-time",
+    title: "Free room time for BSBA 1G",
+    detected_cause: "Every eligible room is booked.",
+    suggested_adjustment: "Add a room or add another Preferred Day, then generate again.",
     section_id: 10,
     section_name: "BSBA 1G",
     course_id: 20,
@@ -78,18 +77,18 @@ describe("RecommendedAdjustmentPanel", () => {
     );
 
     expect(screen.getByText("Manual recommendations")).toBeTruthy();
-    expect(screen.getByText("Widen or clear BSBA 1G's meeting period")).toBeTruthy();
+    expect(screen.getByText("Free room time for BSBA 1G")).toBeTruthy();
     expect(screen.queryByText("No recommendation is available for this failure.")).toBeNull();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Review Constraints" })[0]);
     expect(onReviewConstraints).toHaveBeenCalledWith(10);
   });
 
-  it("offers Apply this to the course once a session recommendation is selected", () => {
+  it("offers Apply this to the course once an applicable recommendation is selected", () => {
     const onApplyAndRetry = vi.fn();
     render(
       <RecommendedAdjustmentPanel
-        failure={{ ...advisoryFailure, recommendations: [afternoonSession] }}
+        failure={{ ...advisoryFailure, recommendations: [onlineRecommendation] }}
         busy={false}
         onApplyAndRetry={onApplyAndRetry}
         onReviewConstraints={vi.fn()}
@@ -98,7 +97,7 @@ describe("RecommendedAdjustmentPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Apply this to BAC 11 in BSBA 1A/ }));
-    expect(onApplyAndRetry).toHaveBeenCalledWith(afternoonSession);
+    expect(onApplyAndRetry).toHaveBeenCalledWith(onlineRecommendation);
   });
 });
 
@@ -112,33 +111,14 @@ describe("ScheduleSummaryStep recommendations", () => {
         courses={[]}
         roomCodeById={new Map()}
         changes={null}
-        recommendations={[afternoonSession]}
+        recommendations={[onlineRecommendation]}
         onApplyRecommendation={onApply}
       />,
     );
 
     expect(screen.queryByRole("button", { name: /Apply this to/ })).toBeNull();
-    fireEvent.click(screen.getByRole("radio", { name: /Put BAC 11 in the Afternoon Session/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Move BAC 11 online/ }));
     fireEvent.click(screen.getByRole("button", { name: /Apply this to BAC 11 in BSBA 1A/ }));
-    expect(onApply).toHaveBeenCalledWith(afternoonSession);
-  });
-});
-
-describe("applying a session recommendation", () => {
-  it("writes the session into the course's preference", () => {
-    const configs = {
-      "10": {
-        splitCourseIds: [],
-        gecSplitCourseIds: [],
-        gecSplitPatternsByCourseId: {},
-        modesByCourseId: {},
-        preferencesByCourseId: { "20": "morning" },
-      },
-    };
-
-    const { configs: next, applied } = applyAdjustments(configs, afternoonSession.adjustments);
-
-    expect(applied).toHaveLength(1);
-    expect(next["10"].preferencesByCourseId?.["20"]).toBe("afternoon");
+    expect(onApply).toHaveBeenCalledWith(onlineRecommendation);
   });
 });

@@ -1,24 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { renderHook } from "@testing-library/react";
 import { configureTimeGrid, resetTimeGrid } from "../../../../lib/timeGrid";
 import {
-  checkDayCategoryConstraint,
   checkFieldEveningWindow,
   checkRoomGrantWindow,
-  checkSectionOnlineLimit,
   isFieldSubject,
   isLaboratorySubject,
-  isNstpSubject,
   requiredRoomTypeForMeeting,
   getConflictedScheduleMap,
   resolveDeliveryMode,
+  useConflict,
 } from "./useConflict";
 import type { Department, Room, ScheduleItem, Subject } from "../types";
 
 /**
  * Guards the fix for audit finding #2: the client conflict engine must mirror
- * RuleEngine::checkDayCategoryConstraint and ::checkSectionOnlineLimit, so the
- * placement modal stops reporting "ready to be added" for placements the save
- * rejects with a 422.
+ * the server's day/category rules, so the placement modal stops reporting
+ * "ready to be added" for placements the save rejects with a 422.
  *
  * Day indexes: 0 = Monday … 5 = Saturday, 6 = Sunday.
  */
@@ -42,37 +40,14 @@ const subject = (overrides: Partial<Subject> = {}): Subject => ({
 
 const departments: Department[] = [
   { id: 2, department_name: "Info Tech", department_code: "IT" },
-  { id: 3, department_name: "Hospitality", department_code: "HM", sunday_online_only_enabled: false },
+  { id: 3, department_name: "Hospitality", department_code: "HM" },
 ];
 
 const NO_FIELD_CODES = new Set<string>();
 
-const dayCheck = (
-  s: Subject | undefined,
-  dayIndex: number,
-  mode: Parameters<typeof checkDayCategoryConstraint>[2] = "on-site",
-  departmentId: number | null = 2,
-  fieldEnabled = false,
-  codes: Set<string> = NO_FIELD_CODES,
-) => checkDayCategoryConstraint(s, dayIndex, mode, departmentId, departments, fieldEnabled, codes);
-
-describe("isNstpSubject", () => {
-  it.each(["NSTP1", "ROTC 1", "CWTS2", "LTS1"])("detects %s by code", (code) => {
-    expect(isNstpSubject(subject({ code }))).toBe(true);
-  });
-
-  it("detects NSTP by course name", () => {
-    expect(isNstpSubject(subject({ code: "GE9", name: "National Service Training (NSTP)" }))).toBe(true);
-  });
-
-  it("does not flag ordinary courses", () => {
-    expect(isNstpSubject(subject())).toBe(false);
-  });
-});
-
 describe("isFieldSubject", () => {
-  it("treats a Field category as a field course", () => {
-    expect(isFieldSubject(subject({ categories: [{ id: 1, name: "Field" }] }), false, NO_FIELD_CODES)).toBe(true);
+  it("does not treat a Field category tag as a field course, matching the server", () => {
+    expect(isFieldSubject(subject({ categories: [{ id: 1, name: "Field" }] }), false, NO_FIELD_CODES)).toBe(false);
   });
 
   it("treats roomTypeRequired=field as a field course", () => {
@@ -97,60 +72,38 @@ describe("isFieldSubject", () => {
   });
 });
 
-describe("checkDayCategoryConstraint", () => {
-  it("allows NSTP on every day including Sunday", () => {
-    const nstp = subject({ code: "NSTP1" });
+describe("day limits by course category", () => {
+  /**
+   * Field courses were Monday-Friday, minors Monday-Saturday, and a major's
+   * Sunday had to be online — the last gated by a per-department switch. All
+   * three rules are gone, so no day may be refused on the course's kind alone.
+   */
+  const dayIsAllowed = (course: Subject, dayIndex: number, roomId: string) => renderHook(() => useConflict({
+    schedules: [],
+    selectedSectionId: "10",
+    dragSubjectId: null,
+    draggedScheduleId: null,
+    rooms: [
+      { id: "5", name: "Room 101", departmentId: 2, roomType: "lecture", status: "available" },
+      { id: "9", name: "Field", departmentId: null, roomType: "field", status: "available" },
+    ],
+    sections: [{ id: "10", name: "BSIT-1A", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" }],
+    departments,
+    subjects: [course],
+    faculties: [],
+  })).result.current.checkConflict(course.id, "10", null, roomId, dayIndex, 2, 2);
+
+  it.each([
+    ["a field course", subject({ id: "20", code: "PATHFIT 1", roomTypeRequired: "field" }), "9"],
+    ["a minor", subject({ id: "21", code: "GEC1", category: "minor" }), "5"],
+    ["a major", subject({ id: "22", code: "IT101", category: "major" }), "5"],
+  ])("allows %s on every day of the week", (_label, course, roomId) => {
     for (let dayIndex = 0; dayIndex <= 6; dayIndex += 1) {
-      expect(dayCheck(nstp, dayIndex)).toBeNull();
+      expect(dayIsAllowed(course, dayIndex, roomId), `day ${dayIndex}`).toBeNull();
     }
-  });
-
-  it("restricts non-NSTP field courses to Monday through Friday", () => {
-    const pathfit = subject({ code: "PATHFIT 1" });
-    const codes = new Set(["PATHFIT 1"]);
-
-    for (let dayIndex = 0; dayIndex <= 4; dayIndex += 1) {
-      expect(dayCheck(pathfit, dayIndex, "on-site", 2, true, codes)).toBeNull();
-    }
-    expect(dayCheck(pathfit, 5, "on-site", 2, true, codes)?.message).toMatch(/Monday through Friday/);
-    expect(dayCheck(pathfit, 6, "on-site", 2, true, codes)?.message).toMatch(/Monday through Friday/);
-  });
-
-  it("restricts minor courses to Monday through Saturday", () => {
-    const gec = subject({ code: "GEC1", category: "minor" });
-
-    for (let dayIndex = 0; dayIndex <= 5; dayIndex += 1) {
-      expect(dayCheck(gec, dayIndex)).toBeNull();
-    }
-    expect(dayCheck(gec, 6)?.message).toMatch(/Monday through Saturday/);
-  });
-
-  it("requires online delivery for majors on Sunday", () => {
-    const major = subject();
-
-    expect(dayCheck(major, 6, "on-site")?.message).toMatch(/Sunday must use online/);
-    expect(dayCheck(major, 6, "field")?.message).toMatch(/Sunday must use online/);
-    expect(dayCheck(major, 6, "online")).toBeNull();
-  });
-
-  it("allows on-site majors on Sunday when the department disables the rule", () => {
-    expect(dayCheck(subject(), 6, "on-site", 3)).toBeNull();
-  });
-
-  it("defaults the Sunday rule to enabled for an unknown department", () => {
-    expect(dayCheck(subject(), 6, "on-site", 999)?.message).toMatch(/Sunday must use online/);
-  });
-
-  it("allows majors Monday through Saturday", () => {
-    for (let dayIndex = 0; dayIndex <= 5; dayIndex += 1) {
-      expect(dayCheck(subject(), dayIndex)).toBeNull();
-    }
-  });
-
-  it("returns null when the course is unknown", () => {
-    expect(dayCheck(undefined, 6)).toBeNull();
   });
 });
+
 
 const onlineSchedule = (id: string, courseId: string, sectionId = "10"): ScheduleItem => ({
   id,
@@ -180,43 +133,64 @@ const onlineSchedule = (id: string, courseId: string, sectionId = "10"): Schedul
   roomId: "online",
 });
 
-describe("checkSectionOnlineLimit", () => {
-  const fiveOnline = ["1", "2", "3", "4", "5"].map((courseId, index) =>
-    onlineSchedule(String(100 + index), courseId));
+/**
+ * section_online_limit was removed from the server; online balance is only a
+ * soft solver target. The client kept a hard limit of five online courses per
+ * section and refused a sixth that the save accepts.
+ */
+describe("online courses per section", () => {
+  it("does not limit how many online courses a section may take", () => {
+    // Five online courses on Monday morning; the sixth goes online on Tuesday.
+    const fiveOnline = ["1", "2", "3", "4", "5"].map((courseId, index) =>
+      onlineSchedule(String(100 + index), courseId));
+    const sixth = subject({ id: "6", code: "IT106" });
+    const { result } = renderHook(() => useConflict({
+      schedules: fiveOnline,
+      selectedSectionId: "10",
+      dragSubjectId: null,
+      draggedScheduleId: null,
+      rooms: [{ id: "8", name: "Online", departmentId: null, roomType: "online", status: "available" }],
+      sections: [{ id: "10", name: "BSIT-1A", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" }],
+      departments,
+      subjects: [sixth],
+      faculties: [],
+    }));
 
-  it("allows a sixth online meeting of an already-online course set below the limit", () => {
-    const fourOnline = fiveOnline.slice(0, 4);
-    expect(checkSectionOnlineLimit(fourOnline, "10", [])).toBeNull();
+    expect(result.current.checkConflict("6", "10", null, "online", 1, 2, 3)).toBeNull();
+  });
+});
+
+/** Server rules class_duration and room_availability, mirrored in the browser. */
+describe("class_duration and room_availability parity", () => {
+  const sections = [{ id: "10", name: "BSIT-1A", yearLevel: 1 as const, semester: "1st" as const, departmentId: 2, semesterId: 7, status: "active" as const }];
+  const lectureRoom = (status: Room["status"] = "available"): Room =>
+    ({ id: "5", name: "Room 101", departmentId: 2, roomType: "lecture", status });
+  const setup = (schedules: ScheduleItem[], rooms: Room[]) => renderHook(() => useConflict({
+    schedules,
+    selectedSectionId: "10",
+    dragSubjectId: null,
+    draggedScheduleId: null,
+    rooms,
+    sections,
+    departments,
+    subjects: [subject()],
+    faculties: [],
+  })).result.current;
+
+  it("refuses a meeting that adds time past the course's weekly ceiling", () => {
+    const placed = { ...onlineSchedule("100", "1"), durationSlots: 6, mode: "on-site" as const, roomId: "5" };
+    const conflict = setup([placed], [lectureRoom()]).checkConflict("1", "10", null, "5", 1, 2, 3);
+    expect(conflict?.message).toMatch(/would meet 4\.5 hours a week/);
   });
 
-  it("blocks a new online course once the section has five distinct online courses", () => {
-    expect(checkSectionOnlineLimit(fiveOnline, "10", [])?.message).toMatch(/already has 5 online courses/);
+  it("allows replacing the existing meetings with the same total", () => {
+    const placed = { ...onlineSchedule("100", "1"), durationSlots: 6, mode: "on-site" as const, roomId: "5" };
+    expect(setup([placed], [lectureRoom()]).checkConflict("1", "10", null, "5", 1, 2, 6, "100")).toBeNull();
   });
 
-  it("counts distinct courses, not meetings", () => {
-    const manyMeetingsFewCourses = [
-      onlineSchedule("200", "1"),
-      onlineSchedule("201", "1"),
-      onlineSchedule("202", "2"),
-      onlineSchedule("203", "2"),
-      onlineSchedule("204", "3"),
-    ];
-    expect(checkSectionOnlineLimit(manyMeetingsFewCourses, "10", [])).toBeNull();
-  });
-
-  it("ignores online classes belonging to other sections", () => {
-    const otherSection = fiveOnline.map((item, index) =>
-      onlineSchedule(String(300 + index), item.courseId, "99"));
-    expect(checkSectionOnlineLimit(otherSection, "10", [])).toBeNull();
-  });
-
-  it("skips the check when the schedule being edited is already online", () => {
-    expect(checkSectionOnlineLimit(fiveOnline, "10", ["100"])).toBeNull();
-  });
-
-  it("still blocks when the excluded schedule is not online", () => {
-    const withOnsite = [...fiveOnline, { ...onlineSchedule("999", "6"), mode: "on-site" as const }];
-    expect(checkSectionOnlineLimit(withOnsite, "10", ["999"])?.message).toMatch(/maximum allowed/);
+  it("refuses a room that is not available for scheduling", () => {
+    const conflict = setup([], [lectureRoom("not available")]).checkConflict("1", "10", null, "5", 1, 2, 6);
+    expect(conflict?.message).toBe("Room Room 101 is not available for scheduling.");
   });
 });
 
@@ -382,5 +356,116 @@ describe("checkRoomGrantWindow", () => {
   it("refuses a borrowed room outside its granted window", () => {
     expect(checkRoomGrantWindow(borrowed, 1, 6, 6)?.message).toMatch(/borrowed/);
     expect(checkRoomGrantWindow(borrowed, 0, 2, 6)?.conflictType).toBe("room");
+  });
+});
+
+/**
+ * Moving a placed class keeps its instructor, its Required Day and its
+ * Split Session / Hybrid Split partner, so the move pre-check judges all three
+ * before the save does (faculty_conflict, forced_course_day,
+ * split_group_same_time / split_group_day_separation).
+ */
+describe("checkMoveConflict", () => {
+  const rooms: Room[] = [
+    { id: "5", name: "LEC 101", departmentId: 2, roomType: "lecture", status: "available" },
+    { id: "6", name: "LEC 102", departmentId: 2, roomType: "lecture", status: "available" },
+    { id: "7", name: "LAB 201", departmentId: 2, roomType: "laboratory", status: "available" },
+  ];
+  const lecture = subject({ id: "1", code: "GEC 101", category: "minor", lectureHours: 3, labHours: 0 });
+  const withLab = subject({ id: "2", code: "IT 102", lectureHours: 2, labHours: 1, roomTypeRequired: "laboratory" });
+
+  const meeting = (overrides: Partial<ScheduleItem>): ScheduleItem => ({
+    ...onlineSchedule(overrides.id ?? "1", "1"),
+    mode: "on-site",
+    roomId: "5",
+    roomName: "LEC 101",
+    ...overrides,
+  });
+
+  const moveCheck = (schedules: ScheduleItem[], forcedDayByCourseId: Record<string, number> = {}) =>
+    renderHook(() => useConflict({
+      schedules,
+      selectedSectionId: "10",
+      dragSubjectId: null,
+      draggedScheduleId: null,
+      rooms,
+      sections: [{ id: "10", name: "BSIT-1A", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" }],
+      departments,
+      subjects: [lecture, withLab],
+      faculties: [{ id: "9", name: "Ada Reyes", employmentType: "full-time", departmentId: 2, status: "active" }],
+      forcedDayByCourseId,
+    })).result.current.checkMoveConflict;
+
+  it("checks the class's own instructor at the new time", () => {
+    const moving = meeting({ id: "1", facultyId: "9", dayIndex: 0, startSlot: 0 });
+    const busy = meeting({ id: "2", courseId: "7", subjectId: "7", sectionId: "11", roomId: "6", facultyId: "9", dayIndex: 1, startSlot: 4 });
+
+    expect(moveCheck([moving, busy])("1", 1, 4)?.conflictType).toBe("faculty");
+    expect(moveCheck([moving, { ...busy, facultyId: "8" }])("1", 1, 4)).toBeNull();
+  });
+
+  it("keeps a class on its saved Required Day", () => {
+    const moving = meeting({ id: "1", dayIndex: 0, startSlot: 0 });
+
+    expect(moveCheck([moving], { 1: 0 })("1", 2, 4)?.message).toMatch(/Required Day: .* Monday/);
+    expect(moveCheck([moving], { 1: 0 })("1", 0, 4)).toBeNull();
+  });
+
+  describe("a Split Session pair", () => {
+    const monday = meeting({ id: "1", splitGroupId: "g", preferredPattern: "MW", dayIndex: 0, startSlot: 0 });
+    const wednesday = meeting({ id: "2", splitGroupId: "g", preferredPattern: "MW", dayIndex: 2, startSlot: 0 });
+
+    it("checks the partner at the new time on its own day", () => {
+      const blocksWednesday = meeting({ id: "3", courseId: "7", subjectId: "7", sectionId: "11", dayIndex: 2, startSlot: 6 });
+
+      const conflict = moveCheck([monday, wednesday, blocksWednesday])("1", 0, 6);
+      expect(conflict?.conflictType).toBe("room");
+      expect(conflict?.message).toMatch(/^Paired Wednesday meeting: Room conflict/);
+      expect(moveCheck([monday, wednesday])("1", 0, 6)).toBeNull();
+    });
+
+    it("refuses moving a meeting onto its partner's day", () => {
+      expect(moveCheck([monday, wednesday])("1", 2, 6)?.message).toMatch(/must be on different days/);
+    });
+  });
+
+  describe("an Integrated pair, whose days:X-Y pattern only records where it sits", () => {
+    // Monday laboratory + Tuesday online lecture, the shape the dialog writes.
+    const laboratory = meeting({
+      id: "1", splitGroupId: "g", preferredPattern: "days:0-1",
+      dayIndex: 0, startSlot: 0, durationSlots: 6, isHybrid: true,
+    });
+    const lecture = meeting({
+      id: "2", splitGroupId: "g", preferredPattern: "days:0-1",
+      dayIndex: 1, startSlot: 8, durationSlots: 4, isHybrid: true, mode: "online", roomId: "online",
+    });
+
+    it("allows moving a meeting to an empty day outside the recorded pattern", () => {
+      // Thursday holds nothing, so the move is legal — the drop rewrites the
+      // pattern to days:0-3. Judged against the old pattern it was refused
+      // with "Meeting pattern conflict" on a day with no class at all.
+      expect(moveCheck([laboratory, lecture])("2", 3, 8)).toBeNull();
+    });
+
+    it("still refuses the day its partner already holds", () => {
+      expect(moveCheck([laboratory, lecture])("2", 0, 8)?.message).toMatch(/must be on different days/);
+    });
+
+    it("still reports a real clash on the new day", () => {
+      const busy = meeting({ id: "3", courseId: "7", subjectId: "7", dayIndex: 3, startSlot: 8 });
+
+      expect(moveCheck([laboratory, lecture, busy])("2", 3, 8)?.conflictType).toBe("section");
+    });
+  });
+
+  it("does not move the partner of a course with a laboratory", () => {
+    // Integrated Hybrid: laboratory and lecture keep their own times.
+    const lab = meeting({ id: "1", courseId: "2", subjectId: "2", splitGroupId: "h", isHybrid: true, roomId: "7", dayIndex: 0, startSlot: 0 });
+    const onlineLecture = meeting({ id: "2", courseId: "2", subjectId: "2", splitGroupId: "h", isHybrid: true, mode: "online", roomId: "online", dayIndex: 2, startSlot: 0 });
+    // The same section is busy on Wednesday at the new time: a clash only if
+    // the lecture were (wrongly) carried along.
+    const blocksWednesday = meeting({ id: "3", courseId: "7", subjectId: "7", mode: "online", roomId: "online", dayIndex: 2, startSlot: 6 });
+
+    expect(moveCheck([lab, onlineLecture, blocksWednesday])("1", 0, 6)).toBeNull();
   });
 });

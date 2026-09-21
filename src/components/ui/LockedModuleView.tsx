@@ -16,7 +16,6 @@ export default function LockedModuleView({ moduleName = 'This Module', requiredC
     if (role === 'dean') return '/dean/dashboard';
     if (role === 'secretary') return '/secretary/dashboard';
     if (role === 'program_head') return '/program_head/dashboard';
-    if (role === 'director') return '/director/dashboard';
     return '/dashboard';
   };
 

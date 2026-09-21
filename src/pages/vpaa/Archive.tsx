@@ -23,7 +23,6 @@ const typeLabels: Record<string, string> = {
   faculties: 'Faculty',
   courses: 'Courses',
   semesters: 'Semesters',
-  sections: 'Sections',
   schedules: 'Schedules',
   'schedule-splits': 'Schedule splits',
   'timeslot-overrides': 'Timeslot overrides',

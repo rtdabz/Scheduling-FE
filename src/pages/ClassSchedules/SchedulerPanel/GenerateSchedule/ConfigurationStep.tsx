@@ -1,8 +1,8 @@
-import { AlertTriangle, CalendarDays, Clock3 } from "lucide-react";
+import { AlertTriangle, CalendarDays } from "lucide-react";
 import { FULL_DAY_NAMES } from "../../../../lib/timeGrid";
 import type { Course, Section, Semester } from "../types";
 import YearLevelCurriculumSelector from "./YearLevelCurriculumSelector";
-import { orderDays, PERIOD_RANGES, type TimeBlockOption } from "./generationTypes";
+import { orderDays } from "./generationTypes";
 import { YearLevelStateBadge } from "./YearLevelStateNotice";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 import type { CourseDefaults } from "./courseClassConfig";
@@ -24,26 +24,6 @@ export type SetupDraft = {
   customizedCourseIds: string[];
 };
 
-/** The slice of a section's configuration this step writes. */
-export type PeriodConfig = {
-  preferredTimeBlock?: TimeBlockOption;
-};
-
-/**
- * The teaching periods a section can be restricted to. These are wall-clock
- * windows, and the generator treats an assignment as a hard limit rather than
- * a nudge: a section placed in Morning never receives an afternoon class.
- */
-const PERIOD_OPTIONS: Array<{
-  value: Exclude<TimeBlockOption, "flexible">;
-  label: string;
-  range: string;
-}> = [
-  { value: "morning", label: "Morning", range: PERIOD_RANGES.morning },
-  { value: "afternoon", label: "Afternoon", range: PERIOD_RANGES.afternoon },
-  { value: "evening", label: "Evening", range: PERIOD_RANGES.evening },
-];
-
 const yearLabel = (yearLevel: number) => {
   const ordinal =
     yearLevel === 1
@@ -58,12 +38,11 @@ const yearLabel = (yearLevel: number) => {
 };
 
 /**
- * Step 1 — scope on top, the year level's Preferred Days, then the
- * section-level Preferred Meetings board.
+ * Step 1 — scope on top, then the year level's Preferred Days.
  *
  * Course-level rules (Required Day, Preferred Room, Custom Time Duration)
  * live in each course's Configure panel in Step 2, next to the rest of that
- * course's setup. What is left here applies to whole sections.
+ * course's setup. What is left here applies to the whole year level.
  */
 export default function ConfigurationStep({
   activeSemester,
@@ -77,13 +56,9 @@ export default function ConfigurationStep({
   yearStates,
   yearChangeDisabled,
   actionsDisabled,
-  configs,
-  onConfigChange,
   preferredDays,
   onPreferredDaysChange,
   requiredDayRules = [],
-  sundayOnlineOnly = null,
-  onSundayOnlineOnlyChange,
 }: {
   activeSemester: Semester | null;
   years: number[];
@@ -100,21 +75,10 @@ export default function ConfigurationStep({
    */
   yearChangeDisabled: boolean;
   actionsDisabled: boolean;
-  configs: Record<string, PeriodConfig>;
-  onConfigChange: (
-    sectionId: string,
-    change: { preferredTimeBlock: TimeBlockOption },
-  ) => void;
   preferredDays: string[];
   onPreferredDaysChange: (days: string[]) => void;
   /** The department's Required Days, to flag one the chosen days leave out. */
   requiredDayRules?: Array<{ course_id: number; day: string }>;
-  /**
-   * The department's Sunday rule for major courses; null while it loads.
-   * Minor courses never meet on Sunday, and field NSTP keeps its own rule.
-   */
-  sundayOnlineOnly?: boolean | null;
-  onSundayOnlineOnlyChange?: (onlineOnly: boolean) => void;
 }) {
   const toggleDay = (day: string) =>
     onPreferredDaysChange(
@@ -137,17 +101,6 @@ export default function ConfigurationStep({
             ? [`${course.code} (${rule.day})`]
             : [];
         });
-
-  const periodOf = (id: string): TimeBlockOption =>
-    configs[id]?.preferredTimeBlock ?? "flexible";
-  const assignedPeriodCount = sections.filter(
-    (section) => periodOf(section.id) !== "flexible",
-  ).length;
-  // Clicking the period a section already has clears it back to any time.
-  const togglePeriod = (id: string, value: TimeBlockOption) =>
-    onConfigChange(id, {
-      preferredTimeBlock: periodOf(id) === value ? "flexible" : value,
-    });
 
   const disabled = actionsDisabled;
 
@@ -281,142 +234,6 @@ export default function ConfigurationStep({
             Add the day here, or change the Required Day in Setup Courses.
           </p>
         )}
-        {sundayOnlineOnly !== null && onSundayOnlineOnlyChange && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-black leading-tight text-slate-900">
-                Sunday classes
-              </p>
-              <p className="text-[11px] font-semibold leading-tight text-slate-500">
-                {preferredDays.length > 0 && !preferredDays.includes("Sunday")
-                  ? "Sunday is not in the Preferred Days, so this run places nothing on it."
-                  : sundayOnlineOnly
-                    ? "Major courses may meet on Sunday online only. Minor courses never meet on Sunday."
-                    : "Major courses may meet on Sunday face-to-face or online. Minor courses never meet on Sunday."}
-              </p>
-            </div>
-            <div
-              role="group"
-              aria-label="Sunday classes"
-              className="grid shrink-0 grid-cols-2 gap-1"
-            >
-              {[
-                { onlineOnly: true, label: "Online only" },
-                { onlineOnly: false, label: "Face-to-face" },
-              ].map((option) => {
-                const selected = sundayOnlineOnly === option.onlineOnly;
-
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    aria-pressed={selected}
-                    disabled={disabled}
-                    onClick={() => {
-                      if (!selected) onSundayOnlineOnlyChange(option.onlineOnly);
-                    }}
-                    className={`rounded-md border px-2 py-1 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      selected
-                        ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                        : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section
-        id="generator-rules"
-        className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white/70"
-      >
-        <header
-          id="generator-column-periods"
-          className="flex items-start gap-2 border-b border-slate-200 px-3 py-2.5"
-        >
-          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#4e0a10]/10 text-[#4e0a10]">
-            <Clock3 className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-black leading-tight text-slate-900">
-              Preferred Meetings
-            </p>
-            <p className="text-[11px] font-semibold leading-tight text-slate-500">
-              Click a period to keep a section inside it. Required Day and Preferred Room are
-              set per course in Setup Courses.
-            </p>
-          </div>
-          <span className="shrink-0 rounded-full bg-[#4e0a10] px-2 py-0.5 text-[11px] font-black text-white">
-            {assignedPeriodCount}
-          </span>
-        </header>
-        <div className="max-h-[22rem] min-h-[120px] flex-1 overflow-y-auto p-2.5">
-          {sections.length === 0 ? (
-            <p className="px-1 py-2 text-[11px] font-semibold text-slate-500">
-              No active sections for this year level.
-            </p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {sections.map((section) => {
-                const period = periodOf(section.id);
-                const active = PERIOD_OPTIONS.find(
-                  (option) => option.value === period,
-                );
-
-                return (
-                  <div
-                    key={section.id}
-                    className={`rounded-lg border p-2 transition ${
-                      active
-                        ? "border-[#4e0a10] bg-[#fff8e8] ring-1 ring-[#4e0a10]/25"
-                        : "border-slate-200 bg-white"
-                    }`}
-                  >
-                    <p className="truncate text-xs font-black leading-tight text-slate-900">
-                      {section.name}
-                    </p>
-                    <div
-                      role="group"
-                      aria-label={`Preferred meeting period for ${section.name}`}
-                      className="mt-1.5 grid grid-cols-3 gap-1"
-                    >
-                      {PERIOD_OPTIONS.map((option) => {
-                        const selected = period === option.value;
-
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            aria-pressed={selected}
-                            title={`${option.label}: ${option.range}`}
-                            disabled={disabled}
-                            onClick={() =>
-                              togglePeriod(section.id, option.value)
-                            }
-                            className={`rounded-md border px-1 py-1 text-[10px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                              selected
-                                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="mt-1 text-[10px] font-semibold leading-tight text-slate-500">
-                      {active ? active.range : "Any time within operating hours"}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </section>
     </div>
   );

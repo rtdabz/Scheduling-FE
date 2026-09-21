@@ -10,9 +10,8 @@ export type AdjustmentType =
   | "set_pattern"
   | "clear_pattern"
   | "disable_lecture_lab_split"
+  | "disable_section_hybrid"
   | "set_delivery_mode"
-  | "set_preferred_period"
-  | "set_time_preference"
   | "split_session_single_meeting_fallback";
 
 export type GenerationAdjustment = {
@@ -92,8 +91,6 @@ export type AdjustableSectionConfig = {
   gecSplitCourseIds: string[];
   gecSplitPatternsByCourseId: Record<string, string>;
   modesByCourseId: Record<string, string>;
-  preferredTimeBlock?: "flexible" | "morning" | "afternoon" | "evening";
-  preferencesByCourseId?: Record<string, string>;
 };
 
 const stageLabels: Record<string, string> = {
@@ -234,12 +231,10 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
       return `${course} in ${section}: pattern set to Automatic`;
     case "disable_lecture_lab_split":
       return `${course} in ${section}: lecture/lab split turned off`;
+    case "disable_section_hybrid":
+      return `${section}: hybrid split sessions turned off`;
     case "set_delivery_mode":
       return `${course} in ${section}: mode set to ${adjustment.value === "automatic" ? "Automatic" : adjustment.value}`;
-    case "set_preferred_period":
-      return `${section}: preferred period set to ${periodLabel(adjustment.value)}`;
-    case "set_time_preference":
-      return `${course} in ${section}: preferred time set to ${periodLabel(adjustment.value)}`;
     case "split_session_single_meeting_fallback":
       return `${course} in ${section}: Can't split, switched to one meeting.`;
     default:
@@ -302,49 +297,17 @@ function applyOne<T extends AdjustableSectionConfig>(
       if (!config.splitCourseIds.includes(courseKey)) return null;
       return { ...config, splitCourseIds: config.splitCourseIds.filter((id) => id !== courseKey) };
     }
+    case "disable_section_hybrid": {
+      // Section-wide, like the backend: every lecture/lab split in the section.
+      if (config.splitCourseIds.length === 0) return null;
+      return { ...config, splitCourseIds: [] };
+    }
     case "set_delivery_mode": {
       const value = adjustment.value === null || adjustment.value === "automatic" ? "automatic" : adjustment.value;
       if (config.modesByCourseId[courseKey] === value) return null;
       return { ...config, modesByCourseId: { ...config.modesByCourseId, [courseKey]: value } };
     }
-    case "set_preferred_period": {
-      const value = isPeriodValue(adjustment.value) ? adjustment.value : null;
-      if (!value || config.preferredTimeBlock === value) return null;
-      return { ...config, preferredTimeBlock: value };
-    }
-    case "set_time_preference": {
-      const value = isCourseTimePreference(adjustment.value) ? adjustment.value : null;
-      if (!value || config.preferencesByCourseId?.[courseKey] === value) return null;
-      return {
-        ...config,
-        preferencesByCourseId: {
-          ...(config.preferencesByCourseId ?? {}),
-          [courseKey]: value,
-        },
-      };
-    }
     default:
       return null;
   }
 }
-
-const isPeriodValue = (value: string | null): value is "flexible" | "morning" | "afternoon" | "evening" =>
-  value === "flexible" || value === "morning" || value === "afternoon" || value === "evening";
-
-const isCourseTimePreference = (value: string | null): value is "morning" | "afternoon" | "evening" =>
-  value === "morning" || value === "afternoon" || value === "evening";
-
-const periodLabel = (value: string | null): string => {
-  switch (value) {
-    case "morning":
-      return "Morning";
-    case "afternoon":
-      return "Afternoon";
-    case "evening":
-      return "Evening";
-    case "flexible":
-      return "Any time";
-    default:
-      return value || "Automatic";
-  }
-};

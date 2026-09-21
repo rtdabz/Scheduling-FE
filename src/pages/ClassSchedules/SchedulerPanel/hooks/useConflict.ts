@@ -1,7 +1,8 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { closingTimeLabel, fieldEndMinutes, formatTime12h, gridOpeningMinutes, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { buildPreferredPattern, closingTimeLabel, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { coveredContinuously } from "../../../../lib/availabilityWindows";
 
@@ -19,7 +20,64 @@ interface UseConflictParams {
   faculties: Faculty[];
   fieldCourseAssignmentEnabled?: boolean;
   fieldCourseCodes?: string[];
+  /** Saved Required Day per course id (0 = Monday), for moving a placed class. */
+  forcedDayByCourseId?: Record<string, number>;
+  /** The department's Custom Lab Duration, which sets a laboratory meeting's length. */
+  laboratoryDurationSettings?: LaboratoryDurationSettings | null;
 }
+
+const NO_FORCED_DAYS: Record<string, number> = {};
+
+/**
+ * The other meeting of a two-meeting group that must keep one time, mirroring
+ * MeetingGroupRule's split_group_same_time: a Split Session (MW/TTh), or a
+ * Hybrid Split of a course with no laboratory. Moving one meeting carries this
+ * partner to the new time on its own day (ScheduleController::update).
+ */
+export const sameTimePartner = (
+  schedule: ScheduleItem,
+  schedules: ScheduleItem[],
+  subjects: Subject[]
+): ScheduleItem | null => {
+  if (!schedule.splitGroupId) return null;
+  const group = schedules.filter((item) => item.splitGroupId === schedule.splitGroupId);
+  if (group.length !== 2) return null;
+
+  const courseId = String(schedule.courseId ?? schedule.subjectId ?? "");
+  const subject = subjects.find((item) => String(item.id) === courseId);
+  if (!subject) return null;
+  const sameTime = group.some((item) => item.isHybrid)
+    ? Number(subject.labHours ?? 0) === 0
+    : ["MW", "TTh"].includes(schedule.preferredPattern ?? "");
+
+  return sameTime ? group.find((item) => item.id !== schedule.id) ?? null : null;
+};
+
+/**
+ * "days:X-Y" — the two days an Integrated pair happens to use, written by the
+ * dialog and rewritten whenever either meeting moves. Unlike MW and TTh it is
+ * a record, not a restriction the user chose.
+ */
+export const isCustomDayPattern = (preferredPattern?: string | null): boolean =>
+  /^days:[0-6]-[0-6]$/.test(preferredPattern ?? "");
+
+/**
+ * The pattern a pair carries once `schedule` moves to `nextDayIndex`, keeping
+ * whichever meeting was the pattern's first day first. Both rows of the pair
+ * must end up with this same string.
+ */
+export const relocatedPairPattern = (
+  schedule: ScheduleItem,
+  partner: ScheduleItem,
+  nextDayIndex: number
+): string => {
+  const current = parsePreferredPattern(schedule.preferredPattern);
+  const movedWasFirst = current === null || current[0] === schedule.dayIndex;
+
+  return movedWasFirst
+    ? buildPreferredPattern(nextDayIndex, partner.dayIndex)
+    : buildPreferredPattern(partner.dayIndex, nextDayIndex);
+};
 
 const isLinkedMeetingBlock = (left: ScheduleItem, right: ScheduleItem): boolean => {
   if (left.splitGroupId && right.splitGroupId) {
@@ -66,12 +124,17 @@ const samePhysicalRoom = (leftRoomId: string, rightRoomId: string, rooms: Room[]
 };
 
 // ---------------------------------------------------------------------------
-// Day/category rules — client mirror of RuleEngine::checkDayCategoryConstraint
-// and RuleEngine::checkSectionOnlineLimit.
+// Day/category rules — client mirror of MeetingDayRule (field_day_constraint,
+// minor_day_constraint) and DeliveryModeRule (major_sunday_mode_constraint).
 //
 // These used to exist only server-side, so the placement modal reported
 // "Placement is ready to be added" for placements the save then rejected with a
-// 422. Keep this block in step with RuleEngine when the server rules change.
+// 422. Keep this block in step with the server rules, and name the server rule
+// id of every mirror so removing a server rule finds its client copy too.
+//
+// There is no per-section online limit: section_online_limit was removed and
+// online balance is only a soft solver target. A client copy of that limit
+// outlived the server rule and refused a sixth online course the save accepts.
 // ---------------------------------------------------------------------------
 
 /** Mon–Fri. Non-NSTP field courses (PATHFIT and similar). */
@@ -79,9 +142,6 @@ const WEEKDAY_INDEXES = [0, 1, 2, 3, 4];
 /** Mon–Sat. Minor courses (GEC, GEE and similar). */
 const WEEKDAY_AND_SATURDAY_INDEXES = [0, 1, 2, 3, 4, 5];
 const SUNDAY_INDEX = 6;
-/** Mirrors RuleEngine::checkSectionOnlineLimit. */
-const SECTION_ONLINE_COURSE_LIMIT = 5;
-const NSTP_KEYWORDS = ["NSTP", "ROTC", "CWTS", "LTS"];
 
 const normalizeCourseCode = (courseCode: string): string =>
   courseCode.trim().replace(/\s+/g, " ").toUpperCase();
@@ -95,26 +155,16 @@ export const subjectHasCategory = (subject: Subject | undefined, categoryName: s
   );
 
 /**
- * Mirrors SchedulingPolicy::isNstpCourse. The server also treats a course
- * category of nstp/rotc/cwts/lts as NSTP, but the client narrows category to
- * "major" | "minor", so code and name keywords are the discriminator here.
+ * Mirrors SchedulingPolicy::isFieldCourse: the course record or the
+ * department's field list, nothing else. A category tag named "Field" made a
+ * course field here while the server, which has no such rule, disagreed.
  */
-export const isNstpSubject = (subject: Subject | undefined): boolean => {
-  if (!subject) return false;
-  const code = (subject.code ?? "").toUpperCase();
-  const name = (subject.name ?? "").toUpperCase();
-
-  return NSTP_KEYWORDS.some((keyword) => code.includes(keyword) || name.includes(keyword));
-};
-
-/** Mirrors SchedulingPolicy::isFieldCourse. */
 export const isFieldSubject = (
   subject: Subject | undefined,
   fieldCourseAssignmentEnabled: boolean,
   configuredFieldCourseCodes: Set<string>
 ): boolean => {
   if (!subject) return false;
-  if (subjectHasCategory(subject, "Field")) return true;
   if (subject.roomTypeRequired === "field") return true;
   if (!fieldCourseAssignmentEnabled) return false;
 
@@ -149,99 +199,6 @@ export const requiredRoomTypeForMeeting = (
   if (isLaboratorySubject(subject)) return "laboratory";
 
   return subject.roomTypeRequired ?? null;
-};
-
-const isSundayOnlineOnlyEnabled = (
-  departments: Department[],
-  departmentId: number | null
-): boolean => {
-  const department = departments.find((item) => Number(item.id) === Number(departmentId));
-  const configured = department?.sunday_online_only_enabled;
-
-  // Server default is true when the column is null.
-  return configured == null ? true : Boolean(configured);
-};
-
-/** Mirrors RuleEngine::checkDayCategoryConstraint. */
-export const checkDayCategoryConstraint = (
-  subject: Subject | undefined,
-  dayIndex: number,
-  mode: DeliveryMode,
-  departmentId: number | null,
-  departments: Department[],
-  fieldCourseAssignmentEnabled: boolean,
-  configuredFieldCourseCodes: Set<string>
-): ConflictResult => {
-  if (!subject) return null;
-
-  // NSTP/ROTC/CWTS/LTS may use any day, Monday through Sunday.
-  if (isNstpSubject(subject)) return null;
-
-  if (isFieldSubject(subject, fieldCourseAssignmentEnabled, configuredFieldCourseCodes)) {
-    return WEEKDAY_INDEXES.includes(dayIndex)
-      ? null
-      : {
-          conflictType: "section",
-          message: `Day restriction: ${subject.code || "Field courses"} must be scheduled Monday through Friday.`
-        };
-  }
-
-  if (subject.category === "minor") {
-    return WEEKDAY_AND_SATURDAY_INDEXES.includes(dayIndex)
-      ? null
-      : {
-          conflictType: "section",
-          message: `Day restriction: ${subject.code || "Minor courses"} (GEC, GEE and similar) must be scheduled Monday through Saturday.`
-        };
-  }
-
-  // Major courses: any day Mon–Sat; Sunday requires online delivery.
-  if (
-    dayIndex === SUNDAY_INDEX
-    && mode !== "online"
-    && isSundayOnlineOnlyEnabled(departments, departmentId)
-  ) {
-    return {
-      conflictType: "section",
-      message: `Day restriction: ${subject.code || "Major courses"} scheduled on Sunday must use online delivery mode.`
-    };
-  }
-
-  return null;
-};
-
-/** Mirrors RuleEngine::checkSectionOnlineLimit. */
-export const checkSectionOnlineLimit = (
-  schedules: ScheduleItem[],
-  sectionId: string,
-  excludeIds: string[]
-): ConflictResult => {
-  // An existing schedule that is already online is not adding a new online
-  // course to the section.
-  if (excludeIds.length > 0) {
-    const alreadyOnline = schedules.some(
-      (item) => excludeIds.includes(item.id) && item.mode === "online"
-    );
-    if (alreadyOnline) return null;
-  }
-
-  const onlineCourseIds = new Set(
-    schedules
-      .filter((item) =>
-        String(item.sectionId) === String(sectionId)
-        && item.mode === "online"
-        && !excludeIds.includes(item.id)
-      )
-      .map((item) => String(item.courseId ?? item.subjectId ?? ""))
-      .filter(Boolean)
-  );
-
-  return onlineCourseIds.size >= SECTION_ONLINE_COURSE_LIMIT
-    ? {
-        conflictType: "section",
-        message: `Online limit: this section already has ${SECTION_ONLINE_COURSE_LIMIT} online courses, which is the maximum allowed.`
-      }
-    : null;
 };
 
 /**
@@ -458,11 +415,32 @@ export const useConflict = ({
   faculties,
   fieldCourseAssignmentEnabled = false,
   fieldCourseCodes = [],
+  forcedDayByCourseId = NO_FORCED_DAYS,
+  laboratoryDurationSettings = null,
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
     () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
     [schedules, subjects, rooms, faculties]
   );
+
+  // A class is "resolved" when validation flagged it and no longer does. It is
+  // derived from conflictedMap transitions, never from a recommendation being
+  // applied, so it clears itself the moment the conflict comes back.
+  const [resolvedIds, setResolvedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const previousConflictedRef = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    const now = new Set(Object.keys(conflictedMap));
+    const before = previousConflictedRef.current;
+    previousConflictedRef.current = now;
+    const existing = new Set(schedules.map((s) => s.id));
+    setResolvedIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => { if (!now.has(id) && existing.has(id)) next.add(id); });
+      before?.forEach((id) => { if (!now.has(id) && existing.has(id)) next.add(id); });
+      if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev;
+      return next;
+    });
+  }, [conflictedMap, schedules]);
 
   // Memoized so React.memo on GridCell (168 instances) and ScheduleCard is
   // not defeated by a new function identity on every parent render.
@@ -520,39 +498,19 @@ export const useConflict = ({
     const isOnlinePlacement = roomId === "online";
     const isTbaPlacement = isRoomTba(roomId);
     const deliveryMode = resolveDeliveryMode(roomId, rooms);
-    const excludeIdList = excludeScheduleId
-      ? (Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId])
-      : [];
 
-    // Day/category rules (Mon–Fri field, Mon–Sat minor, Sunday-online majors).
-    // Enforced server-side by RuleEngine::checkDayCategoryConstraint; without
-    // them the modal reported a valid placement that the save then rejected.
-    const dayCategoryConflict = checkDayCategoryConstraint(
-      subject,
-      dayIndex,
-      deliveryMode,
-      candidateDepartmentId,
-      departments,
-      fieldCourseAssignmentEnabled,
-      configuredFieldCourseCodes
-    );
-    if (dayCategoryConflict) {
-      return dayCategoryConflict;
-    }
+    // No day/category rule to mirror any more: field courses were Mon-Fri,
+    // minors Mon-Sat and a major's Sunday was online-only. Every course may now
+    // use every day, so only a Required Day or a meeting pattern narrows it.
 
-    const fieldWindowConflict = checkFieldEveningWindow(
-      deliveryMode === "field" || subjectRequiresField,
-      endSlot
-    );
+    // Mirrors RuleEngine::checkRoomTypeMatch, which accepts a field room for any
+    // course whenever the placement's delivery mode is field. Field is a choice
+    // made per meeting; only the department's field list makes it course-wide.
+    const isFieldPlacement = deliveryMode === "field" || subjectRequiresField;
+
+    const fieldWindowConflict = checkFieldEveningWindow(isFieldPlacement, endSlot);
     if (fieldWindowConflict) {
       return fieldWindowConflict;
-    }
-
-    if (deliveryMode === "online") {
-      const onlineLimitConflict = checkSectionOnlineLimit(schedules, sectionId, excludeIdList);
-      if (onlineLimitConflict) {
-        return onlineLimitConflict;
-      }
     }
 
     if (!isTbaPlacement && !isOnlinePlacement) {
@@ -561,16 +519,23 @@ export const useConflict = ({
       if (grantWindowConflict) {
         return grantWindowConflict;
       }
+      // room_availability: the room itself must be open for scheduling.
+      if (room && room.status && room.status !== "available") {
+        return {
+          conflictType: "room",
+          message: `Room ${room.name} is not available for scheduling.`
+        };
+      }
       if (room?.roomType === "online") {
         return {
           conflictType: "room",
           message: `Room type mismatch: ${subject?.code ?? "This class"} must use a physical lecture or laboratory room for on-site delivery.`
         };
       }
-      if (room?.roomType === "field" && !subjectRequiresField) {
+      if (room?.roomType === "field" && !isFieldPlacement) {
         return {
           conflictType: "room",
-          message: `Room type mismatch: ${subject?.code ?? "This class"} must use FIELD only when the course requires field delivery.`
+          message: `Room type mismatch: ${subject?.code ?? "This class"} must use FIELD only when the meeting uses field delivery.`
         };
       }
 
@@ -592,7 +557,7 @@ export const useConflict = ({
           room?.roomType
           && requiredRoomType
           && room.roomType !== requiredRoomType
-          && !(room.roomType === "field" && subjectRequiresField)
+          && !(room.roomType === "field" && isFieldPlacement)
           // A course with no laboratory component may fall back to a
           // lecture-capable lab room, matching RuleEngine::canUseLaboratoryForLecture.
           && !(requiredRoomType === "lecture" && room.roomType === "laboratory")
@@ -602,6 +567,36 @@ export const useConflict = ({
             message: requiredRoomType === "laboratory"
               ? `Room type mismatch: ${subject?.code ?? "This class"} has a laboratory component, so it must be scheduled in a laboratory room, but '${room.name}' is a '${room.roomType}' room.`
               : `Room type mismatch: ${subject?.code ?? "This class"} requires a '${requiredRoomType}' room, but '${room.name}' is a '${room.roomType}' room.`
+          };
+        }
+      }
+    }
+    // class_duration (RuleEngine): a section's meetings for one course may not
+    // add up to more weekly time than the course carries. Only a save that adds
+    // time past the ceiling is refused, like the server.
+    if (subject) {
+      const plan = getCourseSlotPlan(subject);
+      const ceilingSlots = Math.max(
+        plan.singleBlockSlots,
+        plan.lectureSlots + (Number(subject.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratoryDurationSettings) : 0)
+      );
+      if (ceilingSlots > 0) {
+        const ignored = excludeScheduleId
+          ? new Set(Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId])
+          : null;
+        const sameCourse = schedules.filter((s) =>
+          String(s.sectionId) === String(sectionId)
+          && String(s.courseId ?? s.subjectId ?? "") === String(subjectId)
+        );
+        const before = sameCourse.reduce((sum, s) => sum + s.durationSlots, 0);
+        const total = sameCourse
+          .filter((s) => !ignored?.has(s.id))
+          .reduce((sum, s) => sum + s.durationSlots, 0) + durationSlots;
+        if (total > ceilingSlots && total > before) {
+          const hours = (slots: number) => `${slots * SLOT_MINUTES / 60} ${slots * SLOT_MINUTES === 60 ? "hour" : "hours"}`;
+          return {
+            conflictType: "section",
+            message: `${subject.code ?? "This class"} would meet ${hours(total)} a week for this section, but the course carries at most ${hours(ceilingSlots)}.`
           };
         }
       }
@@ -657,7 +652,7 @@ export const useConflict = ({
       }
     }
     return null;
-  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes]);
+  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, forcedDayByCourseId, laboratoryDurationSettings]);
 
   const checkFacultyConflict = useCallback((facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);
@@ -682,41 +677,87 @@ export const useConflict = ({
     return null;
   }, [schedules, faculties]);
 
-  const getDragOverConflict = useCallback((d: number, t: number): boolean => {
-    // Every branch either assigns all of these or returns, so no placeholder
-    // initial values are needed.
-    let dur: number;
-    let subjectId: string;
-    let excludeId: string | undefined;
-    let prefPattern: string | null;
-    // Relocating a card keeps its room, so the preview can judge room-type and
-    // room-capacity rules too. Passing "" skipped both, and the cell showed a
-    // "Place" hint for a drop the modal then rejected on a room conflict.
-    let roomId: string;
+  /**
+   * Pre-check for moving a placed class (drag, click-to-move, and the hint
+   * while dragging). Beyond checkConflict it judges what a move changes and a
+   * new placement does not:
+   *  - the assigned instructor's clashes and part-time availability, since the
+   *    class keeps its instructor (faculty_conflict,
+   *    part_time_faculty_availability);
+   *  - the course's saved Required Day (forced_course_day). This is not part of
+   *    checkConflict because the placement dialog may be setting a new one;
+   *  - a Split Session / Hybrid Split partner, which moves to the same time on
+   *    its own day and must be free there too (split_group_same_time,
+   *    split_group_day_separation).
+   */
+  const checkMoveConflict = useCallback((scheduleId: string, dayIndex: number, startSlot: number): ConflictResult => {
+    const schedule = schedules.find((item) => item.id === scheduleId);
+    if (!schedule) return null;
+    const courseId = String(schedule.courseId ?? schedule.subjectId ?? "");
+    const courseLabel = schedule.courseCode || schedule.subjectCode || "This course";
 
-    if (draggedScheduleId) {
-      const sched = schedules.find((s) => s.id === draggedScheduleId);
-      if (!sched) return false;
-      dur = sched.durationSlots;
-      subjectId = sched.courseId ?? sched.subjectId ?? "";
-      excludeId = sched.id;
-      prefPattern = sched.preferredPattern ?? null;
-      roomId = sched.roomId ?? "";
-    } else if (dragSubjectId) {
-      const sub = subjects.find((s) => String(s.id) === String(dragSubjectId));
-      if (!sub) return false;
-      dur = getSubjectTotalSlots(sub);
-      subjectId = String(sub.id);
-      excludeId = undefined;
-      prefPattern = null;
-      // A new placement has no room yet; the room is chosen in the modal.
-      roomId = "";
-    } else {
-      return false;
+    const forcedDay = forcedDayByCourseId[courseId];
+    if (forcedDay !== undefined && forcedDay !== dayIndex) {
+      return {
+        conflictType: "section",
+        message: `Required Day: ${courseLabel} is configured to meet on ${FULL_DAY_NAMES[forcedDay]}.`,
+      };
     }
 
-    return checkConflict(subjectId, selectedSectionId, null, roomId, d, t, dur, excludeId, prefPattern) !== null;
-  }, [draggedScheduleId, dragSubjectId, schedules, subjects, selectedSectionId, checkConflict]);
+    // Every linked meeting, not just a same-time pair: split_group_day_separation
+    // refuses two meetings of one course on the same day whatever their shape.
+    const groupPartner = schedule.splitGroupId
+      ? schedules.find((item) => item.splitGroupId === schedule.splitGroupId && item.id !== schedule.id) ?? null
+      : null;
+    if (groupPartner && groupPartner.dayIndex === dayIndex) {
+      return {
+        conflictType: "section",
+        message: `Split meetings: ${courseLabel} already meets on ${FULL_DAY_NAMES[dayIndex]}; its two meetings must be on different days.`,
+      };
+    }
 
-  return { checkConflict, checkFacultyConflict, getDragOverConflict, conflictedMap };
+    const partner = sameTimePartner(schedule, schedules, subjects);
+
+    // A custom days:X-Y pattern records where the pair sits today, not where it
+    // may go — the drop rewrites it (useScheduler.onScheduleRelocated), so the
+    // move is judged against the pattern it will produce. Judging it against
+    // the old one reported a conflict on a day that held nothing at all. MW and
+    // TTh are a real choice and stay binding.
+    const movePattern = groupPartner && isCustomDayPattern(schedule.preferredPattern)
+      ? relocatedPairPattern(schedule, groupPartner, dayIndex)
+      : schedule.preferredPattern;
+
+    const movingIds = partner ? [schedule.id, partner.id] : [schedule.id];
+    const own = checkConflict(
+      courseId, schedule.sectionId, schedule.facultyId ?? null, schedule.roomId,
+      dayIndex, startSlot, schedule.durationSlots, movingIds, movePattern
+    );
+    if (own || !partner || partner.startSlot === startSlot) return own;
+
+    const partnerConflict = checkConflict(
+      String(partner.courseId ?? partner.subjectId ?? ""), partner.sectionId, partner.facultyId ?? null, partner.roomId,
+      partner.dayIndex, startSlot, partner.durationSlots, movingIds, partner.preferredPattern
+    );
+
+    return partnerConflict
+      ? { ...partnerConflict, message: `Paired ${FULL_DAY_NAMES[partner.dayIndex]} meeting: ${partnerConflict.message}` }
+      : null;
+  }, [schedules, subjects, forcedDayByCourseId, checkConflict]);
+
+  const getDragOverConflict = useCallback((d: number, t: number): boolean => {
+    // Relocating a card keeps its room, instructor and partner, so the hint
+    // judges the same move the drop will.
+    if (draggedScheduleId) {
+      return checkMoveConflict(draggedScheduleId, d, t) !== null;
+    }
+    if (!dragSubjectId) return false;
+
+    const sub = subjects.find((s) => String(s.id) === String(dragSubjectId));
+    if (!sub) return false;
+
+    // A new placement has no room yet; the room is chosen in the modal.
+    return checkConflict(String(sub.id), selectedSectionId, null, "", d, t, getSubjectTotalSlots(sub), undefined, null) !== null;
+  }, [draggedScheduleId, dragSubjectId, subjects, selectedSectionId, checkConflict, checkMoveConflict]);
+
+  return { checkConflict, checkMoveConflict, checkFacultyConflict, getDragOverConflict, conflictedMap, resolvedIds };
 };

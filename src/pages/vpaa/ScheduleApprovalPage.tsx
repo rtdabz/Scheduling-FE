@@ -346,7 +346,10 @@ export default function VpaaScheduleApprovalPage() {
             sections: RawSection[];
             schedules: RawSchedule[];
             schedule_submissions: RawScheduleSubmission[];
-          }>('/initial-data');
+            // The VPAA portal is otherwise limited to approved meetings. This
+            // screen has to show what is still awaiting that approval, so it
+            // asks for the pending rows explicitly.
+          }>('/initial-data?approval_queue=1');
           const semester = response.data.active_semester;
           setPrintSource(mapInitialData(response.data as unknown as InitialDataResponse, { isVpaa: true }));
 

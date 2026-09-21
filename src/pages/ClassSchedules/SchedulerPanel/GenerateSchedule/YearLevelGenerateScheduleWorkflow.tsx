@@ -35,12 +35,7 @@ import {
   describeAdjustment,
   type GenerationRecommendation,
 } from "./yearLevelGenerationFailure";
-import type {
-  DeliveryModeOption,
-  PeriodOption,
-  SchedulingPreference,
-  TimeBlockOption,
-} from "./generationTypes";
+import type { DeliveryModeOption } from "./generationTypes";
 import {
   canGenerateYearLevel,
   getYearLevelScheduleState,
@@ -64,6 +59,7 @@ import type { LaboratoryDurationSettings } from "../courseSlotPlan";
 import {
   EMPTY_COURSE_DEFAULTS,
   formatHours,
+  type CourseDefaults,
   type PreferredRoomOption,
 } from "./courseClassConfig";
 import {
@@ -88,21 +84,17 @@ type GecSplitPattern = FixedGecSplitPattern | "auto";
 type SectionConfig = {
   courseIds: string[];
   locked: boolean;
-  preferredTimeBlock: TimeBlockOption;
   splitCourseIds: string[];
   gecSplitCourseIds: string[];
   hybridSplitCourseIds?: string[];
   gecSplitPatternsByCourseId: Record<string, GecSplitPattern>;
   modesByCourseId: Record<string, CourseMode>;
-  preferencesByCourseId: Record<string, SchedulingPreference>;
   /** Setup Courses Custom Time Duration: weekly minutes per course. */
   durationMinutesByCourseId?: Record<string, number>;
   /** Setup Courses Preferred Room: a room id per course. */
   preferredRoomsByCourseId?: Record<string, string>;
   /** Integrated Hybrid: the online lecture's and on-site laboratory's minutes. */
   componentMinutesByCourseId?: Record<string, { lecture: number; laboratory: number }>;
-  /** Setup Courses Preferred Meeting: a course's own period, in place of the section's. */
-  preferredPeriodsByCourseId?: Record<string, PeriodOption[]>;
 };
 
 type SettingsResponse = LaboratoryDurationSettings & {
@@ -116,7 +108,6 @@ type SettingsResponse = LaboratoryDurationSettings & {
   major_lecture_split_schedule_override_enabled?: boolean;
   lecture_lab_schedule_override_enabled?: boolean;
   /** Sunday majors: online only (true) or face-to-face allowed (false). */
-  sunday_online_only_enabled?: boolean;
   preferred_room_options?: PreferredRoomOption[];
 };
 
@@ -179,6 +170,22 @@ const defaultSetupDraft: SetupDraft = {
   courseDefaults: EMPTY_COURSE_DEFAULTS,
   excludedCourseIds: [],
   customizedCourseIds: [],
+};
+/**
+ * Step 2's Default Settings are saved per department, apart from the wizard
+ * draft: the draft is wiped once a year level is accepted, and the defaults
+ * should carry over to every year level instead of being set again each time.
+ */
+const courseDefaultsStorageKey = (departmentId: string | number | null | undefined) =>
+  `wicars.generator-course-defaults.v1.${departmentId ?? "none"}`;
+const readSavedCourseDefaults = (key: string): CourseDefaults => {
+  try {
+    const saved = window.localStorage.getItem(key);
+    const parsed = saved ? (JSON.parse(saved) as Partial<CourseDefaults>) : {};
+    return { ...EMPTY_COURSE_DEFAULTS, ...parsed };
+  } catch {
+    return EMPTY_COURSE_DEFAULTS;
+  }
 };
 const stringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String) : [];
@@ -264,6 +271,7 @@ export default function YearLevelGenerateScheduleWorkflow({
       `wicars.year-level-wizard.${storageVersion}.${departmentId ?? "none"}.${activeSemester?.id ?? "none"}`,
     [activeSemester?.id, departmentId],
   );
+  const defaultsStorageKey = courseDefaultsStorageKey(departmentId);
   const departmentSections = useMemo(
     () =>
       sections.filter(
@@ -324,7 +332,11 @@ export default function YearLevelGenerateScheduleWorkflow({
    */
   const handleCurriculumApplied = async () => {
     setConfigs({});
-    setSetupDraft(defaultSetupDraft);
+    // The saved Default Settings are not about any one curriculum's courses.
+    setSetupDraft({
+      ...defaultSetupDraft,
+      courseDefaults: readSavedCourseDefaults(defaultsStorageKey),
+    });
     run.clear();
     await onSectionsChanged?.();
   };
@@ -471,6 +483,8 @@ export default function YearLevelGenerateScheduleWorkflow({
 
   useEffect(() => {
     const initialYear = availableYears[0] ?? 1;
+    // The saved Default Settings win over whatever copy an older draft carries.
+    const savedDefaults = readSavedCourseDefaults(defaultsStorageKey);
     let restored = false;
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -503,12 +517,8 @@ export default function YearLevelGenerateScheduleWorkflow({
                 ? parsed.setupDraft.preferredDays
                 : [],
             ),
-            // Drafts saved before Step 2's Default Settings and course
-            // checkboxes existed have none of these.
-            courseDefaults: {
-              ...EMPTY_COURSE_DEFAULTS,
-              ...parsed.setupDraft?.courseDefaults,
-            },
+            // Drafts saved before the course checkboxes existed have none.
+            courseDefaults: savedDefaults,
             excludedCourseIds: stringList(parsed.setupDraft?.excludedCourseIds),
             customizedCourseIds: stringList(parsed.setupDraft?.customizedCourseIds),
           });
@@ -524,9 +534,9 @@ export default function YearLevelGenerateScheduleWorkflow({
       setStep(1);
       setActiveSectionId("");
       setConfigs({});
-      setSetupDraft(defaultSetupDraft);
+      setSetupDraft({ ...defaultSetupDraft, courseDefaults: savedDefaults });
     }
-  }, [availableYears, storageKey]);
+  }, [availableYears, defaultsStorageKey, storageKey]);
 
   useEffect(() => {
     if (scopedSections.length === 0) return;
@@ -545,7 +555,6 @@ export default function YearLevelGenerateScheduleWorkflow({
           // run is sent, not here, so re-checking one restores it.
           courseIds: scopedCourses.map((course) => course.id),
           locked: existing?.locked ?? false,
-          preferredTimeBlock: existing?.preferredTimeBlock ?? "flexible",
           splitCourseIds:
             existing?.splitCourseIds?.filter((id) =>
               scopedCourses.some((course) => course.id === id),
@@ -575,15 +584,6 @@ export default function YearLevelGenerateScheduleWorkflow({
             ),
             ...(existing?.modesByCourseId ?? {}),
           },
-          preferencesByCourseId: {
-            ...Object.fromEntries(
-              scopedCourses.map((course) => [
-                course.id,
-                "automatic" as SchedulingPreference,
-              ]),
-            ),
-            ...(existing?.preferencesByCourseId ?? {}),
-          },
           durationMinutesByCourseId: Object.fromEntries(
             Object.entries(existing?.durationMinutesByCourseId ?? {}).filter(([id]) =>
               scopedCourses.some((course) => course.id === id),
@@ -596,11 +596,6 @@ export default function YearLevelGenerateScheduleWorkflow({
           ),
           componentMinutesByCourseId: Object.fromEntries(
             Object.entries(existing?.componentMinutesByCourseId ?? {}).filter(([id]) =>
-              scopedCourses.some((course) => course.id === id),
-            ),
-          ),
-          preferredPeriodsByCourseId: Object.fromEntries(
-            Object.entries(existing?.preferredPeriodsByCourseId ?? {}).filter(([id]) =>
               scopedCourses.some((course) => course.id === id),
             ),
           ),
@@ -785,27 +780,6 @@ export default function YearLevelGenerateScheduleWorkflow({
   };
 
   /**
-   * Sunday delivery is the department's rule, not a run setting: the Rule
-   * Engine enforces it on manual edits too, so it is saved straight away.
-   */
-  const saveSundayOnlineOnly = async (onlineOnly: boolean) => {
-    if (!settingsSectionId || !settings) return;
-    try {
-      const response = await api.patch<SettingsResponse>(
-        "/scheduling-settings",
-        { sunday_online_only_enabled: onlineOnly },
-        { params: { section_id: settingsSectionId } },
-      );
-      const next = { ...settings, ...response.data, sunday_online_only_enabled: onlineOnly };
-      setSettings(next);
-      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
-      run.clear();
-    } catch {
-      toast.error("Save failed", "Unable to update Sunday classes.");
-    }
-  };
-
-  /**
    * A course is a field course only while a field room is its Preferred
    * Room. The department's field list is what the Generator and the Rule
    * Engine read, so the choice is saved straight away, like Required Day.
@@ -916,13 +890,6 @@ export default function YearLevelGenerateScheduleWorkflow({
                 .filter(([, mode]) => mode !== "automatic")
                 .map(([id, mode]) => [Number(id), mode]),
             ),
-            time_preferences_by_course_id: Object.fromEntries(
-              Object.entries(config.preferencesByCourseId)
-                .filter(([, preference]) =>
-                  preference === "morning" || preference === "afternoon" || preference === "evening",
-                )
-                .map(([id, preference]) => [Number(id), preference]),
-            ),
             // Setup Courses "Configure" choices. The server fits each
             // duration to the shape the course is generated in and refuses
             // one the save would reject.
@@ -940,19 +907,6 @@ export default function YearLevelGenerateScheduleWorkflow({
             preferred_rooms_by_course_id: Object.fromEntries(
               Object.entries(config.preferredRoomsByCourseId ?? {}).map(
                 ([id, roomId]) => [Number(id), Number(roomId)],
-              ),
-            ),
-            // A section assigned to a teaching period is restricted to it;
-            // "flexible" means the whole operating day is available.
-            preferred_period:
-              config.preferredTimeBlock === "flexible"
-                ? null
-                : config.preferredTimeBlock,
-            // Configure's Preferred Meeting: a course's own period, used in
-            // place of the section's for that course only.
-            preferred_periods_by_course_id: Object.fromEntries(
-              Object.entries(config.preferredPeriodsByCourseId ?? {}).map(
-                ([id, period]) => [Number(id), period],
               ),
             ),
             // Step 1's Preferred Days, the same for every section. No days
@@ -1322,18 +1276,12 @@ export default function YearLevelGenerateScheduleWorkflow({
                   yearStates={yearStates}
                   yearChangeDisabled={generating}
                   actionsDisabled={!yearLevelGenerationAllowed || generating}
-                  configs={configs}
-                  onConfigChange={updateConfig}
                   preferredDays={setupDraft.preferredDays}
                   onPreferredDaysChange={(preferredDays) => {
                     setSetupDraft((draft) => ({ ...draft, preferredDays }));
                     run.clear();
                   }}
                   requiredDayRules={settings?.forced_day_rules ?? []}
-                  sundayOnlineOnly={
-                    settings ? settings.sunday_online_only_enabled ?? true : null
-                  }
-                  onSundayOnlineOnlyChange={saveSundayOnlineOnly}
                 />
               )}
 
@@ -1347,9 +1295,19 @@ export default function YearLevelGenerateScheduleWorkflow({
                   onRequiredDayChange={saveRequiredDay}
                   onFieldCourseChange={saveFieldCourse}
                   defaults={setupDraft.courseDefaults}
-                  onDefaultsChange={(courseDefaults) =>
-                    setSetupDraft((current) => ({ ...current, courseDefaults }))
-                  }
+                  onDefaultsChange={(courseDefaults) => {
+                    setSetupDraft((current) => ({ ...current, courseDefaults }));
+                    // Saved so every year level -- and the next visit -- opens
+                    // with the same Default Settings.
+                    try {
+                      window.localStorage.setItem(
+                        defaultsStorageKey,
+                        JSON.stringify(courseDefaults),
+                      );
+                    } catch {
+                      // Storage unavailable: they still apply for this session.
+                    }
+                  }}
                   excludedCourseIds={setupDraft.excludedCourseIds}
                   onExcludedChange={(excludedCourseIds) =>
                     setSetupDraft((current) => ({ ...current, excludedCourseIds }))
@@ -1373,12 +1331,6 @@ export default function YearLevelGenerateScheduleWorkflow({
                   }
                   sections={scopedSections}
                   courseRows={reviewCourseRows}
-                  periodsBySectionId={Object.fromEntries(
-                    scopedSections.map((section) => [
-                      section.id,
-                      configs[section.id]?.preferredTimeBlock ?? "flexible",
-                    ]),
-                  )}
                   preferredDays={setupDraft.preferredDays}
                   forcedDayRules={settings?.forced_day_rules ?? []}
                   fieldCourseCodes={settings?.field_course_codes ?? []}
@@ -1561,14 +1513,6 @@ const generatorGuideSteps: WorkflowGuideStep[] = [
     align: "end",
   },
   {
-    id: "rule-periods",
-    element: "#generator-rules",
-    title: "Preferred Meetings",
-    description:
-      "Keeps a section inside the morning, afternoon, or evening. Click a period to set it, click it again to clear it back to any time within operating hours. This one is per section; course rules such as Required Day and Preferred Room are set in each course's Configure panel in the next step.",
-    side: "top",
-  },
-  {
     id: "to-setup",
     element: "#generator-continue:not([disabled])",
     action: "click",
@@ -1587,7 +1531,7 @@ const generatorGuideSteps: WorkflowGuideStep[] = [
     waitFor: "#generator-setup-head",
     title: "Tune each course",
     description:
-      "One row per course. Hybrid switches delivery between face-to-face and online, Split lets the course meet twice, and Configure sets the meeting period it prefers.",
+      "One row per course. Hybrid switches delivery between face-to-face and online, Split lets the course meet twice, and Configure sets its duration, Required Day and Preferred Room.",
     side: "bottom",
     align: "start",
   },
@@ -1636,7 +1580,7 @@ const generatorGuideSteps: WorkflowGuideStep[] = [
 ];
 
 const helpText: Record<Step, string> = {
-  1: "Pick the year level and curriculum, then set each section's preferred meeting period.",
+  1: "Pick the year level and curriculum, then choose the Preferred Days.",
   2: "Set each course's split and hybrid delivery. Use Configure for its duration, Required Day and Preferred Room.",
   3: "Check every selection, then generate. Nothing is saved until you apply the result.",
   4: "Review the generated timetable, then save it as draft schedules.",

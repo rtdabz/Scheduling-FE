@@ -1,21 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { BookOpen, CheckCircle2, FlaskConical, Info, MapPin } from "lucide-react";
+import { BookOpen, CheckCircle2, FlaskConical, MapPin } from "lucide-react";
 import SlideOverPanel from "./SlideOverPanel";
 import type { Course, Section } from "../types";
 import { DAYS } from "../constants";
 import { SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
-import {
-  fieldPeriodWarning,
-  latestEndLabel,
-  PERIOD_LABELS,
-  PERIOD_NAMES,
-  PERIOD_OPTIONS,
-  PERIOD_RANGES,
-  periodReachable,
-  periodRunsPastFieldEnd,
-  type PeriodOption,
-  type TimeBlockOption,
-} from "./generationTypes";
 import type {
   ClassComponent,
   CourseClassConfig,
@@ -40,7 +28,6 @@ const MEETING_PRESETS = [1, 1.5, 2, 2.5];
 interface ConfigureClassSidebarProps {
   course: Course;
   sections: Section[];
-  preferredTimeBlocks: Record<string, TimeBlockOption | undefined>;
   initialConfig: CourseClassConfig;
   isFieldCourse: boolean;
   labSettings?: LaboratoryDurationSettings | null;
@@ -224,7 +211,6 @@ function ResetLink({ disabled, onClick }: { disabled: boolean; onClick: () => vo
 export default function ConfigureClassSidebar({
   course,
   sections,
-  preferredTimeBlocks,
   initialConfig,
   isFieldCourse,
   labSettings,
@@ -306,33 +292,6 @@ export default function ConfigureClassSidebar({
   const classroomOptions = compatibleRooms.filter((room) => room.room_type !== "field");
   const fieldRoomOptions = compatibleRooms.filter((room) => room.room_type === "field");
 
-  // Preferred Meeting: the periods this course may meet in, in place of the
-  // section's; ticking Morning and Afternoon lets it land in either. None
-  // ticked follows the section, which keeps its period for every other
-  // course. A period whose end the course cannot reach -- the field end time
-  // for a field course, closing time otherwise -- is shown but disabled, and
-  // a section whose period runs past the field end (Evening, by default) is
-  // warned about.
-  const sectionPeriods = Array.from(
-    new Set(sections.map((s) => PERIOD_LABELS[preferredTimeBlocks[s.id] ?? "flexible"])),
-  ).join(" / ");
-  const isReachable = (period: PeriodOption) => periodReachable(period, meetsInField);
-  const [preferredPeriods, setPreferredPeriods] = useState<PeriodOption[]>(
-    initialConfig.preferredPeriods ?? [],
-  );
-  // In day order; a disabled period (ticked before the course became a
-  // field course, say) is dropped.
-  const chosenPeriods = PERIOD_OPTIONS.filter(
-    (period) => isReachable(period) && preferredPeriods.includes(period),
-  );
-  const togglePeriod = (period: PeriodOption) =>
-    setPreferredPeriods((current) =>
-      current.includes(period) ? current.filter((p) => p !== period) : [...current, period],
-    );
-  const lateSections = meetsInField && chosenPeriods.length === 0
-    ? sections.filter((s) => periodRunsPastFieldEnd(preferredTimeBlocks[s.id]))
-    : [];
-
   // Section scope state
   const [sectionScope, setSectionScope] = useState<SectionScope>(
     initialConfig.sectionScope,
@@ -363,7 +322,6 @@ export default function ConfigureClassSidebar({
       ...(isIntegratedShape(shape) ? { lectureMinutes, laboratoryMinutes } : {}),
       requiredDay: requiredDay || null,
       preferredRoomId: preferredRoomId || null,
-      preferredPeriods: chosenPeriods,
       sectionScope,
       selectedSectionIds:
         sectionScope === "all" ? sections.map((s) => s.id) : selectedSectionIds,
@@ -376,7 +334,6 @@ export default function ConfigureClassSidebar({
   // With a Required Day the payload drops the course's Split/Hybrid markers,
   // so it is generated as one meeting on that day. Say so where it is chosen.
   const requiredDayCollapsesShape = requiredDay !== "" && shape !== "single";
-  const unreachablePeriods = PERIOD_OPTIONS.filter((period) => !isReachable(period));
   const roomLabel = (room: PreferredRoomOption) =>
     `${room.room_code}${room.building ? ` · ${room.building}` : ""}`;
 
@@ -627,56 +584,6 @@ export default function ConfigureClassSidebar({
         )}
       </ConfigSection>
 
-      {/* Preferred Meeting: the periods this course may meet in. */}
-      <ConfigSection label="Preferred Meeting" labelId="configure-preferred-meeting-label" optional>
-        <div role="group" aria-labelledby="configure-preferred-meeting-label">
-          {lateSections.length > 0 && (
-            <p
-              role="alert"
-              className="mb-1.5 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-semibold leading-snug text-amber-900"
-            >
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {fieldPeriodWarning()}
-            </p>
-          )}
-          <div className="grid grid-cols-3 gap-1.5">
-            {PERIOD_OPTIONS.map((period) => {
-              const checked = chosenPeriods.includes(period);
-              const reachable = isReachable(period);
-              return (
-                <label
-                  key={period}
-                  title={`${PERIOD_RANGES[period]}${reachable ? "" : ` · ends by ${latestEndLabel(meetsInField)}`}`}
-                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs font-bold transition ${
-                    !reachable
-                      ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-                      : checked
-                        ? "cursor-pointer border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
-                        : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={disabled || !reachable}
-                    onChange={() => togglePeriod(period)}
-                    className="h-3.5 w-3.5 rounded border-slate-300 accent-[#4e0a10]"
-                  />
-                  {PERIOD_NAMES[period]}
-                </label>
-              );
-            })}
-          </div>
-          <Hint>
-            {chosenPeriods.length > 0
-              ? "Other courses keep the section's Preferred Meeting."
-              : `None selected: follows each section (${sectionPeriods}).`}
-            {unreachablePeriods.length > 0 &&
-              ` ${unreachablePeriods.map((p) => PERIOD_NAMES[p]).join(", ")} unavailable: ${meetsInField ? "field courses" : "classes"} end by ${latestEndLabel(meetsInField)}.`}
-          </Hint>
-        </div>
-      </ConfigSection>
-
       {/* Apply To */}
       <ConfigSection label="Apply To">
         <div className="grid grid-cols-2 gap-1.5">
@@ -735,7 +642,6 @@ export default function ConfigureClassSidebar({
                 return (
                   <label
                     key={section.id}
-                    title={PERIOD_LABELS[preferredTimeBlocks[section.id] ?? "flexible"]}
                     className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${
                       isChecked
                         ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"

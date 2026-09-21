@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SetupCoursesStep from "./SetupCoursesStep";
 import type { Course, Section } from "../types";
@@ -259,7 +259,6 @@ describe("SetupCoursesStep", () => {
       durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
       componentMinutesByCourseId: {},
-      preferredPeriodsByCourseId: {},
     });
     expect(onConfigChange).toHaveBeenCalledWith("s2", {
       splitCourseIds: [],
@@ -269,7 +268,6 @@ describe("SetupCoursesStep", () => {
       durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
       componentMinutesByCourseId: {},
-      preferredPeriodsByCourseId: {},
     });
 
     // IT 101 dropdown should now offer On-Site | Hybrid
@@ -307,7 +305,6 @@ describe("SetupCoursesStep", () => {
       durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
       componentMinutesByCourseId: {},
-      preferredPeriodsByCourseId: {},
     });
 
     // Hybrid moves only the lecture online: the on-site mode is dropped.
@@ -322,7 +319,6 @@ describe("SetupCoursesStep", () => {
       durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
       componentMinutesByCourseId: {},
-      preferredPeriodsByCourseId: {},
     });
   });
 
@@ -500,93 +496,5 @@ describe("SetupCoursesStep", () => {
 
     expect(screen.queryByLabelText(/Duration in hours/i)).toBeNull();
     expect(screen.getByText(/Hybrid Split · two separate sessions/i)).toBeDefined();
-  });
-
-  it("sets a regular course's own Preferred Meeting in Configure", () => {
-    const onConfigChange = vi.fn();
-    render(
-      <SetupCoursesStep
-        courses={mockCourses}
-        sections={mockSections}
-        configs={mockConfigs}
-        onConfigChange={onConfigChange}
-        settings={null}
-        actionsDisabled={false}
-      />,
-    );
-
-    fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[0]);
-    const group = within(screen.getByRole("group", { name: /Preferred Meeting/i }));
-    const boxes = group.getAllByRole("checkbox") as HTMLInputElement[];
-    expect(boxes.map((box) => box.labels?.[0]?.textContent)).toEqual(["Morning", "Afternoon", "Evening"]);
-    // Closing time is 8:30 PM, so every period is open to a regular course.
-    expect(boxes.every((box) => !box.checked && !box.disabled)).toBe(true);
-    // No field course, so no warning.
-    expect(screen.queryByText(/Field Courses cannot be scheduled/)).toBeNull();
-
-    // Ticked out of order; saved in day order.
-    fireEvent.click(group.getByRole("checkbox", { name: /Afternoon/ }));
-    fireEvent.click(group.getByRole("checkbox", { name: /Morning/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
-
-    for (const sectionId of ["s1", "s2"]) {
-      expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({
-        preferredPeriodsByCourseId: { c1: ["morning", "afternoon"] },
-      }));
-    }
-  });
-
-  it("warns about a field course in Evening sections and moves only that course in Configure", () => {
-    const fieldCourse: Course = {
-      ...mockCourses[0],
-      id: "c3",
-      code: "PATHFIT 1",
-      name: "Movement Competency Training",
-      units: 2,
-      lectureHours: 2,
-      category: "minor",
-      roomTypeRequired: "field",
-    };
-    const onConfigChange = vi.fn();
-    render(
-      <SetupCoursesStep
-        courses={[mockCourses[0], fieldCourse]}
-        sections={mockSections}
-        configs={{
-          s1: { ...mockConfigs.s1, preferredTimeBlock: "evening" },
-          s2: { ...mockConfigs.s2, preferredTimeBlock: "evening" },
-        }}
-        onConfigChange={onConfigChange}
-        settings={null}
-        actionsDisabled={false}
-      />,
-    );
-
-    const warning = screen.getByText(/Field Courses cannot be scheduled beyond 5:00 PM/);
-    expect(warning.textContent).toContain("Sections BSIT 1A and BSIT 1B are assigned to Evening");
-    expect(warning.textContent).toContain("You can change this course’s preference to Morning or Afternoon in Configure.");
-    // Only the field course is flagged.
-    expect(screen.queryByText(/IT 101/, { selector: "span.font-black" })).toBeNull();
-
-    // The warning's own Configure opens the field course.
-    fireEvent.click(within(warning.closest("[role='alert']") as HTMLElement).getByRole("button", { name: /Configure/ }));
-    const group = within(screen.getByRole("group", { name: /Preferred Meeting/i }));
-    // A field course ends by 5:00 PM, so the Evening is shown but disabled.
-    expect(group.getAllByRole("checkbox")).toHaveLength(3);
-    expect((group.getByRole("checkbox", { name: /Evening/ }) as HTMLInputElement).disabled).toBe(true);
-    expect((group.getByRole("checkbox", { name: /Morning/ }) as HTMLInputElement).disabled).toBe(false);
-    expect(group.getByText(/Evening unavailable: field courses end by 5:00 PM/)).toBeDefined();
-
-    fireEvent.click(group.getByRole("checkbox", { name: /Morning/ }));
-    fireEvent.click(group.getByRole("checkbox", { name: /Afternoon/ }));
-    // Once ticked, the warning in Configure goes away.
-    expect(screen.queryAllByText(/Field Courses cannot be scheduled/)).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
-
-    for (const sectionId of ["s1", "s2"]) {
-      expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({
-        preferredPeriodsByCourseId: { c3: ["morning", "afternoon"] },
-      }));
-    }
   });
 });

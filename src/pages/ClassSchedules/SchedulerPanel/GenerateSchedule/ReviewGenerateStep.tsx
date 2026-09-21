@@ -16,7 +16,6 @@ import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
 import { useGenerationRun } from "../hooks/useGenerationRun";
 import type { Course, Section, Semester } from "../types";
-import { PERIOD_LABELS, type TimeBlockOption } from "./generationTypes";
 import YearLevelStateNotice from "./YearLevelStateNotice";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 
@@ -31,20 +30,6 @@ export type ReviewCourseRow = {
   customDuration?: string | null;
   /** Setup Courses Preferred Room code, when one was chosen. */
   preferredRoom?: string | null;
-};
-
-const periodShortLabels: Record<TimeBlockOption, string> = {
-  flexible: "Any time",
-  morning: "Morning",
-  afternoon: "Afternoon",
-  evening: "Evening",
-};
-
-const periodTones: Record<TimeBlockOption, string> = {
-  flexible: "bg-slate-100 text-slate-600",
-  morning: "bg-amber-100 text-amber-800",
-  afternoon: "bg-sky-100 text-sky-800",
-  evening: "bg-indigo-100 text-indigo-800",
 };
 
 const yearLabel = (yearLevel: number) => {
@@ -133,18 +118,6 @@ function Panel({
     </section>
   );
 }
-
-/**
- * How many sections the meeting-period list shows before it starts to
- * scroll. A year level normally runs to seven sections, so seven rows keep
- * the common case fully visible; a larger year level scrolls rather than
- * squeezing the course table beside it.
- */
-const VISIBLE_SECTION_ROWS = 7;
-/** One row: a 16px tag, 8px padding top and bottom, 1px divider. */
-const SECTION_ROW_PX = 33;
-/** The sticky column header above those rows. */
-const SECTION_HEADER_PX = 33;
 
 type PlanRow = ReviewCourseRow & { forcedDays: string[]; field: boolean };
 
@@ -363,7 +336,6 @@ export default function ReviewGenerateStep({
   curriculumName,
   sections,
   courseRows,
-  periodsBySectionId,
   preferredDays = [],
   forcedDayRules,
   fieldCourseCodes,
@@ -377,7 +349,6 @@ export default function ReviewGenerateStep({
   curriculumName: string | null;
   sections: Section[];
   courseRows: ReviewCourseRow[];
-  periodsBySectionId: Record<string, TimeBlockOption>;
   /** Step 1's Preferred Days; empty means any day. */
   preferredDays?: string[];
   forcedDayRules: Array<{ course_id: number; day: string }>;
@@ -389,10 +360,6 @@ export default function ReviewGenerateStep({
 }) {
   const hybridCourses = courseRows.filter((row) => row.hybrid);
   const splitCourses = courseRows.filter((row) => row.split);
-  const restrictedSections = sections.filter(
-    (section) => (periodsBySectionId[section.id] ?? "flexible") !== "flexible",
-  );
-
   const fieldCodes = new Set(fieldCourseCodes);
   const forcedDaysByCourseId = new Map<string, string[]>();
   forcedDayRules.forEach((rule) => {
@@ -422,22 +389,15 @@ export default function ReviewGenerateStep({
   /**
    * What this configuration will cost to generate.
    *
-   * Both shapes below were measured with the year-level benchmark: a section
-   * carrying three or more split courses quadruples the solver's per-section
-   * budget, and a period that cannot hold a section's load is the one case
-   * that fails outright. Saying so here is cheaper than a user waiting out a
-   * run and then reading a diagnostic.
+   * Measured with the year-level benchmark: a section carrying three or more
+   * split courses quadruples the solver's per-section budget. Saying so here
+   * is cheaper than a user waiting out a run and then reading a diagnostic.
    */
   const splitLoad = hybridCourses.length + splitCourses.length;
   const costNotices: string[] = [
     ...(splitLoad >= 3
       ? [
           `${splitLoad} courses are split into two meetings across ${sections.length} section${sections.length === 1 ? "" : "s"}. Splitting raises the search budget, so expect this run to take noticeably longer.`,
-        ]
-      : []),
-    ...(restrictedSections.length > 0
-      ? [
-          `${restrictedSections.length} section${restrictedSections.length === 1 ? " is" : "s are"} restricted to a teaching period. A period that cannot hold a section's courses fails the run instead of spilling outside it.`,
         ]
       : []),
     ...(preferredDays.length > 0
@@ -452,26 +412,6 @@ export default function ReviewGenerateStep({
     columns: planColumns,
     pageSize: false,
     getRowId: (row) => String(row.course.id),
-  });
-
-  const periodColumns: ColumnDef<Section>[] = [
-    { id: "section", accessorKey: "name", header: "Section", meta: { cellClassName: "font-black text-slate-900" } },
-    {
-      id: "period",
-      accessorFn: (section) => periodsBySectionId[section.id] ?? "flexible",
-      header: "Period",
-      meta: { align: "right" },
-      cell: ({ getValue }) => {
-        const period = getValue<TimeBlockOption>();
-        return <Tag tone={periodTones[period]}>{periodShortLabels[period]}</Tag>;
-      },
-    },
-  ];
-  const periodTable = useDataTable<Section>({
-    data: sections,
-    columns: periodColumns,
-    pageSize: false,
-    getRowId: (section) => String(section.id),
   });
 
   const fullSemesterLabel = activeSemester
@@ -509,11 +449,6 @@ export default function ReviewGenerateStep({
                   icon={Users}
                   label="Sections"
                   value={sections.length}
-                  hint={
-                    restrictedSections.length > 0
-                      ? `${restrictedSections.length} with a set period`
-                      : "All flexible"
-                  }
                 />
                 <StatTile
                   icon={BookOpen}
@@ -590,42 +525,6 @@ export default function ReviewGenerateStep({
             </Panel>
 
             <div className="flex min-h-0 min-w-0 flex-col gap-2.5">
-              <Panel
-                icon={Clock3}
-                title="Meeting periods"
-                meta={`${restrictedSections.length} of ${sections.length} set`}
-                className="min-h-0 flex-1"
-              >
-                <div
-                  className="min-h-0 flex-1 overflow-auto"
-                  style={{
-                    maxHeight:
-                      sections.length > VISIBLE_SECTION_ROWS
-                        ? VISIBLE_SECTION_ROWS * SECTION_ROW_PX + SECTION_HEADER_PX
-                        : undefined,
-                  }}
-                >
-                  <DataTable
-                    table={periodTable}
-                    variant="embedded"
-                    scrollClassName="overflow-visible"
-                    density="compact"
-                    ariaLabel="Meeting periods"
-                    emptyState={<p className="text-xs font-semibold text-slate-500">No sections in scope.</p>}
-                  />
-                </div>
-                {restrictedSections.length > 0 && (
-                  <p className="shrink-0 border-t border-slate-100 px-3 py-1.5 text-[11px] font-medium text-slate-500">
-                    {PERIOD_LABELS[
-                      periodsBySectionId[restrictedSections[0].id] ?? "flexible"
-                    ]}
-                    {restrictedSections.length > 1 ? " and others" : ""} are
-                    hard limits — generation fails rather than placing a class
-                    outside the period.
-                  </p>
-                )}
-              </Panel>
-
               <Panel
                 icon={ShieldCheck}
                 title="Rules applied"

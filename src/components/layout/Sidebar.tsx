@@ -8,6 +8,8 @@ import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
+import { programLabel, programName } from '../../lib/programLabel';
+import { prefetchPage } from '../../lib/pagePrefetch';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -26,7 +28,7 @@ interface ProgramInfo {
   id: number;
   code?: string | null;
   name?: string | null;
-  cluster?: string | null;
+  major?: string | null;
 }
 
 interface StoredUser {
@@ -69,8 +71,8 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   const userDepartment = user?.department || departments.find(d => d.id === user?.department_id) || null;
   const deptLogo = userDepartment?.logo || null;
   const deptName = userDepartment?.department_name || (role === 'vpaa' ? 'Vice President for Academic Affairs' : null);
-  const programLabel = user?.program?.code || user?.program?.name || user?.program?.cluster || null;
-  const programTitle = user?.program?.name || user?.program?.cluster || programLabel || undefined;
+  const sidebarProgramLabel = user?.program?.code || programName(user?.program, '') || null;
+  const programTitle = user?.program ? programLabel(user.program, '') || undefined : undefined;
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -197,12 +199,12 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                   {deptName}
                 </span>
               )}
-              {programLabel && (
+              {sidebarProgramLabel && (
                 <span
                   className="mt-1 block truncate text-[9.5px] font-semibold uppercase tracking-wide text-[#C9952A]"
                   title={programTitle}
                 >
-                  Program: {programLabel}
+                  Program: {sidebarProgramLabel}
                 </span>
               )}
             </div>
@@ -252,6 +254,9 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                           }
                           toggleExpand(item.label);
                         }}
+                        onPointerEnter={() => (item.children ?? []).forEach((child) => {
+                          if (!child.isLocked) prefetchPage(child.path);
+                        })}
                         id={item.id}
                         className={`
                           w-full flex items-center h-10 rounded-lg
@@ -291,6 +296,8 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                 key={child.path}
                                 to={child.isLocked ? '#' : child.path || ''}
                                 id={child.id}
+                                onPointerEnter={() => { if (!child.isLocked) prefetchPage(child.path); }}
+                                onFocus={() => { if (!child.isLocked) prefetchPage(child.path); }}
                                 style={{ animationDelay: `${childIdx * 45}ms` }}
                                 className={`
                                   sidebar-submenu-item
@@ -351,6 +358,8 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                     key={item.path}
                     to={item.isLocked ? '#' : item.path || ''}
                     id={item.id}
+                    onPointerEnter={() => { if (!item.isLocked) prefetchPage(item.path); }}
+                    onFocus={() => { if (!item.isLocked) prefetchPage(item.path); }}
                     className={({ isActive }) => `
                       flex items-center h-10 rounded-lg
                       transition-all duration-200

@@ -36,6 +36,7 @@ interface TimetableGridProps {
   conflictInfo: ConflictInfo | null;
   setConflictInfo: (value: ConflictInfo | null) => void;
   conflictedMap?: Record<string, { conflictType: "room" | "faculty" | "section"; message: string }>;
+  resolvedIds?: ReadonlySet<string>;
   placementSubjectId: string | null;
   movingScheduleId: string | null;
   cancelPlacement: () => void;
@@ -93,6 +94,7 @@ export default function TimetableGrid({
   conflictInfo,
   setConflictInfo,
   conflictedMap,
+  resolvedIds,
   placementSubjectId,
   movingScheduleId,
   cancelPlacement,
@@ -364,6 +366,7 @@ export default function TimetableGrid({
                       schedule={schedule}
                       subject={subject}
                       conflict={conflictedMap?.[schedule.id] ?? null}
+                      isResolved={!conflictedMap?.[schedule.id] && !!resolvedIds?.has(schedule.id)}
                       isEditable={isEditable}
                       isPhase2Active={isPhase2Active}
                       currentStatus={currentStatus}

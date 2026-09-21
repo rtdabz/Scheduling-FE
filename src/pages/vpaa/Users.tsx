@@ -32,6 +32,7 @@ import DesignationPicker from '../../components/faculty/DesignationPicker';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
+import { programLabel } from '../../lib/programLabel';
 
 interface User {
   id: number;
@@ -89,7 +90,7 @@ interface ApiDepartment {
 interface Program {
   id: number;
   department_id: number;
-  cluster: string | null;
+  major: string | null;
   code: string;
   name: string;
 }
@@ -125,14 +126,12 @@ const DISPLAY_ROLE_MAP: Record<string, string> = {
   'dean': 'Dean',
   'program_head': 'Program Head',
   'secretary': 'Secretary',
-  'director': 'Director',
 };
 
 const API_ROLE_MAP: Record<string, string> = {
   'Dean': 'dean',
   'Program Head': 'program_head',
   'Secretary': 'secretary',
-  'Director': 'director',
 };
 
 const mapApiUser = (u: ApiUser): User => ({
@@ -1148,7 +1147,6 @@ export default function VpaaUsers() {
                         <option value="Dean">Dean</option>
                         <option value="Program Head">Program Head</option>
                         <option value="Secretary">Secretary</option>
-                        <option value="Director">Director</option>
                       </select>
                     </div>
                     <div>
@@ -1205,7 +1203,7 @@ export default function VpaaUsers() {
                           </option>
                           {selectedDepartmentPrograms.map((program) => (
                             <option key={program.id} value={program.id}>
-                              {program.code} - {program.name}{program.cluster ? ` (${program.cluster})` : ''}
+                              {programLabel(program)}
                             </option>
                           ))}
                         </select>

@@ -22,8 +22,6 @@ import {
   isHybridSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 import type { LaboratoryDurationSettings } from "../courseSlotPlan";
-import type { PeriodOption, TimeBlockOption } from "./generationTypes";
-import { fieldPeriodWarning, PERIOD_LABELS, periodRunsPastFieldEnd } from "./generationTypes";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
@@ -64,10 +62,6 @@ export type CourseSetupConfig = {
   preferredRoomsByCourseId?: Record<string, string>;
   /** Integrated Hybrid: the online lecture's and on-site laboratory's minutes. */
   componentMinutesByCourseId?: Record<string, { lecture: number; laboratory: number }>;
-  /** Set on the Configuration step; shown here as read-only context. */
-  preferredTimeBlock?: TimeBlockOption;
-  /** Configure's per-course Preferred Meeting; see CourseClassConfig.preferredPeriods. */
-  preferredPeriodsByCourseId?: Record<string, PeriodOption[]>;
 };
 
 export type RequiredDayRule = { course_id: number; day: string };
@@ -297,7 +291,6 @@ export default function SetupCoursesStep({
         durationMinutesByCourseId: merged.durationMinutesByCourseId,
         preferredRoomsByCourseId: merged.preferredRoomsByCourseId,
         componentMinutesByCourseId: merged.componentMinutesByCourseId,
-        preferredPeriodsByCourseId: merged.preferredPeriodsByCourseId,
       });
     }
   };
@@ -549,42 +542,6 @@ export default function SetupCoursesStep({
     () => rows.find((r) => r.course.id === configuringCourseId) ?? null,
     [rows, configuringCourseId],
   );
-
-  const preferredTimeBlocks = useMemo(() => {
-    const map: Record<string, TimeBlockOption | undefined> = {};
-    for (const section of sections) {
-      map[section.id] = configs[section.id]?.preferredTimeBlock;
-    }
-    return map;
-  }, [configs, sections]);
-
-  // Field courses held to a Preferred Meeting that runs past the field end
-  // time. Configure can give the course an earlier period of its own; the
-  // sections keep theirs for every other course.
-  const fieldPeriodConflicts = useMemo(() => {
-    const late = sections.filter((s) => periodRunsPastFieldEnd(preferredTimeBlocks[s.id]));
-    if (late.length === 0) return [];
-    const names = late.map((s) => s.name);
-    const sectionList =
-      names.length === 1
-        ? names[0]
-        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-    const periods = Array.from(
-      new Set(late.map((s) => PERIOD_LABELS[preferredTimeBlocks[s.id] ?? "flexible"])),
-    ).join(" / ");
-    return rows
-      .filter(
-        (row) =>
-          row.included &&
-          (row.isField || row.config.component === "field") &&
-          (!row.config.preferredPeriods?.length ||
-            row.config.preferredPeriods.some((period) => periodRunsPastFieldEnd(period))),
-      )
-      .map((row) => ({
-        course: row.course,
-        summary: `${names.length === 1 ? "Section" : "Sections"} ${sectionList} ${names.length === 1 ? "is" : "are"} assigned to ${periods}.`,
-      }));
-  }, [preferredTimeBlocks, rows, sections]);
 
   // Helper to render configuration checkbox cell with partial support
   const renderConfigCheckbox = (
@@ -999,28 +956,6 @@ export default function SetupCoursesStep({
         </p>
       )}
 
-      {fieldPeriodConflicts.map(({ course, summary }) => (
-        <div
-          key={course.id}
-          role="alert"
-          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-900"
-        >
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1">
-            <span className="font-black">{course.code}</span> · {summary} {fieldPeriodWarning()}
-          </span>
-          <button
-            type="button"
-            disabled={actionsDisabled}
-            onClick={() => setConfiguringCourseId(course.id)}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-1 text-[11px] font-bold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Settings2 className="h-3 w-3" />
-            Configure
-          </button>
-        </div>
-      ))}
-
       {/* Main Course Table */}
       <DataTable
         table={courseTable}
@@ -1059,7 +994,6 @@ export default function SetupCoursesStep({
         <ConfigureClassSidebar
           course={configuringRow.course}
           sections={sections}
-          preferredTimeBlocks={preferredTimeBlocks}
           initialConfig={configuringRow.config}
           isFieldCourse={configuringRow.isField}
           labSettings={settings}

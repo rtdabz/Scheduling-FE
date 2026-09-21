@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   Building2,
   CalendarDays,
@@ -15,6 +16,11 @@ import api from "../../lib/api";
 import { yearLevelLabel } from "../../lib/semesterLabel";
 import { useToast } from "../../context/ToastContext";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt } from "../../lib/conflictOverride";
+import { fetchConflicts, type ConflictRule } from "../../lib/conflicts";
+import ResolveConflictModal from "./SchedulerPanel/Modals/ResolveConflictModal";
+
+/** Module scope so the prop identity is stable across renders. */
+const FACULTY_CONFLICT_ONLY: ConflictRule[] = ["faculty_conflict"];
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
@@ -395,6 +401,19 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
   const [selectedSection, setSelectedSection] = useState("all");
+  // An instructor double-booked between two saved classes. Placement never sees
+  // these: they appear when an assignment is overridden, when a class moves
+  // after its instructor was set, or when another department delegates a class.
+  const [facultyConflictCount, setFacultyConflictCount] = useState(0);
+  const [isConflictsOpen, setIsConflictsOpen] = useState(false);
+  const [conflictsRevision, setConflictsRevision] = useState(0);
+  const conflictFacultyOptions = useMemo(
+    () => faculties.map((faculty) => ({
+      id: Number(faculty.id),
+      label: `${faculty.first_name} ${faculty.last_name}`.trim(),
+    })),
+    [faculties],
+  );
   const [viewMode, setViewMode] = useState<AssignmentView>(storedViewMode);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "assigned">("all");
@@ -472,7 +491,33 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     return () => {
       active = false;
     };
-  }, [assignmentsCacheKey, refreshToken, user.department_id, liveRevision]);
+  }, [assignmentsCacheKey, refreshToken, user.department_id, liveRevision, conflictsRevision]);
+
+  /**
+   * Count the instructors double-booked in this semester.
+   *
+   * The same derived scan the server does everywhere else, narrowed to the one
+   * rule this screen can act on. It follows the loaded schedules rather than
+   * polling, because a conflict can only change when the timetable does.
+   */
+  useEffect(() => {
+    const semesterId = activeSemester ? Number(activeSemester.id) : null;
+    if (semesterId === null || assignmentLocked) return;
+
+    const controller = new AbortController();
+    void fetchConflicts({
+      semesterId,
+      departmentId: selectedDepartmentId ?? currentDepartmentId,
+      signal: controller.signal,
+    })
+      .then((conflicts) => setFacultyConflictCount(
+        conflicts.filter((conflict) => conflict.rule === "faculty_conflict").length,
+      ))
+      // A failed scan must not blank the page; the count simply stays put.
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [activeSemester, assignmentLocked, currentDepartmentId, selectedDepartmentId, schedules]);
 
   const subjectMap = useMemo(
     () => new Map(subjects.map((subject) => [Number(subject.id), subject])),
@@ -1349,6 +1394,23 @@ const selectedSchedule = assignmentSchedules.find(
                 <UserMinus className="h-4 w-4" />
                 {selectedSection === "all" ? "Clear All Instructors" : "Clear Instructor"}
               </button>
+              {/* Only when there is one. A clash between two saved classes has
+                  no assignment dialog to surface it, so this is the only place
+                  it can be seen -- and the only screen whose actions fix it. */}
+              {facultyConflictCount > 0 && activeSemester && !assignmentLocked && (
+                <button
+                  type="button"
+                  onClick={() => setIsConflictsOpen(true)}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-100"
+                  title="An instructor is booked for two classes at the same time"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Instructor Conflicts
+                  <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-black leading-4 text-white">
+                    {facultyConflictCount}
+                  </span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5">
@@ -1492,6 +1554,25 @@ const selectedSchedule = assignmentSchedules.find(
           // "No" sends nothing, so the drawer is left exactly as the user had it:
           // the instructor is still only selected, never assigned.
           onCancel={() => setOverloadPrompt(null)}
+        />
+      )}
+
+      {/* Mounted only while open so each visit starts from a fresh scan. Rooms
+          are not passed because a faculty conflict never offers a room change:
+          its fixes are reassigning the instructor, moving the class, or letting
+          it stand with a reason. */}
+      {isConflictsOpen && (
+        <ResolveConflictModal
+          isOpen
+          onClose={() => setIsConflictsOpen(false)}
+          semesterId={activeSemester ? Number(activeSemester.id) : null}
+          departmentId={selectedDepartmentId ?? currentDepartmentId}
+          rooms={[]}
+          faculties={conflictFacultyOptions}
+          canUpdateSchedule={!assignmentLocked}
+          canAssignInstructor={!assignmentLocked}
+          rules={FACULTY_CONFLICT_ONLY}
+          onResolved={() => setConflictsRevision((revision) => revision + 1)}
         />
       )}
     </div>
