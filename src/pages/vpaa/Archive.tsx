@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive as ArchiveIcon, RotateCcw, Search } from 'lucide-react';
+import { Archive as ArchiveIcon, Filter, RotateCcw } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { clearDataCache } from '../../lib/dataCache';
@@ -7,6 +7,8 @@ import { useToast } from '../../context/ToastContext';
 import type { ColumnDef } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import { useDataTable } from '../../components/ui/useDataTable';
+import SearchInput from '../../components/ui/SearchInput';
+import TableActionButton from '../../components/ui/TableActionButton';
 
 interface ArchivedRecord {
   id: number;
@@ -95,37 +97,61 @@ export default function Archive() {
 
   // Rebuilt each render: the restore cell reads the live restoringKey.
   const columns: ColumnDef<ArchivedRecord>[] = [
-    { id: 'label', accessorKey: 'label', header: 'Record', meta: { cellClassName: 'text-sm font-semibold text-gray-900' } },
+    {
+      id: 'label',
+      accessorKey: 'label',
+      header: 'Record',
+      meta: { cellClassName: 'text-sm font-semibold text-gray-900' },
+    },
     {
       id: 'type',
       accessorFn: (record) => typeLabels[record.type] ?? record.type,
       header: 'Type',
       meta: { cellClassName: 'text-gray-600' },
+      cell: ({ row }) => (
+        <span className="inline-flex items-center rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 border border-gray-200">
+          {typeLabels[row.original.type] ?? row.original.type}
+        </span>
+      ),
     },
     {
       id: 'deleted_at',
       accessorKey: 'deleted_at',
-      header: 'Archived',
+      header: 'Archived Date',
       meta: { cellClassName: 'text-gray-600' },
-      cell: ({ row }) => new Date(row.original.deleted_at).toLocaleString(),
+      cell: ({ row }) => (
+        <span className="text-xs text-gray-600 font-semibold whitespace-nowrap">
+          {new Date(row.original.deleted_at).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          })}
+        </span>
+      ),
     },
     {
       id: 'action',
       header: 'Action',
-      size: 96,
+      size: 80,
       enableSorting: false,
       meta: { align: 'right' },
       cell: ({ row: { original: record } }) => (
-        <button
-          type="button"
-          onClick={() => void restore(record)}
-          disabled={restoringKey !== null}
-          title={`Restore ${record.label}`}
-          aria-label={`Restore ${record.label}`}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[#5A1220] hover:bg-[#5A1220]/10 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RotateCcw size={17} className={restoringKey === `${record.type}:${record.id}` ? 'animate-spin' : ''} />
-        </button>
+        <div className="relative group/tooltip inline-block">
+          <TableActionButton
+            label={`Restore ${record.label}`}
+            variant="neutral"
+            onClick={() => void restore(record)}
+            disabled={restoringKey !== null}
+          >
+            <RotateCcw size={15} className={restoringKey === `${record.type}:${record.id}` ? 'animate-spin' : ''} />
+          </TableActionButton>
+          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+            Restore
+          </span>
+        </div>
       ),
     },
   ];
@@ -139,29 +165,23 @@ export default function Archive() {
   });
 
   return (
-    <div id="archive-page" className="mx-auto w-full max-w-7xl">
-      <div className="mb-6 flex flex-col gap-4 border-b border-gray-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-[#5A1220]">
-            <ArchiveIcon size={20} />
-            <span className="text-xs font-bold uppercase text-gray-500">System records</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Archive</h1>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <label className="relative min-w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search archived records"
-              className="h-10 w-full rounded-md border border-gray-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/10"
-            />
-          </label>
+    <div id="archive-page" className="space-y-6 font-sans">
+      {/* Search and Filters Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+        {/* Search Input using reusable SearchInput component */}
+        <SearchInput
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search archived records..."
+        />
+
+        {/* Record Type Filter */}
+        <div className="flex items-center gap-1.5">
+          <Filter size={13} className="text-gray-400" />
           <select
             value={type}
             onChange={(event) => setType(event.target.value)}
-            className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/10"
+            className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
           >
             <option value="all">All record types</option>
             {availableTypes.map((recordType) => (
@@ -172,7 +192,7 @@ export default function Archive() {
       </div>
 
       {error ? (
-        <div className="border-l-4 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="border-l-4 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800 rounded-r-lg">
           {error}
           <button type="button" onClick={() => void loadArchive()} className="ml-3 font-bold underline">Retry</button>
         </div>
@@ -183,13 +203,16 @@ export default function Archive() {
           totalLabel="archived records"
           ariaLabel="Archived records"
           emptyState={
-            <>
+            <div className="py-12 text-center">
               <ArchiveIcon className="mx-auto mb-3 text-gray-300" size={36} />
-              <p className="font-semibold text-gray-700">No archived records found</p>
-            </>
+              <p className="font-semibold text-gray-700 text-sm">No archived records found</p>
+              <p className="text-xs text-gray-400 mt-1">Try adjusting your search query or filter selection.</p>
+            </div>
           }
         />
       )}
     </div>
   );
 }
+
+

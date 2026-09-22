@@ -149,3 +149,38 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar-submenu-item { animation: none; }
 }
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+
+  html, body, #root {
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  aside,
+  nav,
+  header,
+  .print\:hidden,
+  [id*="sidebar"] {
+    display: none !important;
+  }
+
+  div, section, main {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

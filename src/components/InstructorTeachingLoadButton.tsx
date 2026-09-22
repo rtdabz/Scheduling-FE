@@ -163,13 +163,16 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
   }),
 });
 
+import { buildInstructorTimetablePdf } from "../pages/ClassSchedules/SchedulerPanel/instructorTimetablePdf";
+import LoadingSpinner from "./ui/LoadingSpinner";
+
 export default function InstructorTeachingLoadButton({ facultyId }: InstructorTeachingLoadButtonProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [teachingLoadData, setTeachingLoadData] = useState<TeachingLoadData | null>(null);
 
-  const handlePrint = async () => {
+  const handlePrintLoad = async () => {
     if (isLoading) return;
     setIsLoading(true);
 
@@ -184,17 +187,58 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     }
   };
 
+  const handlePrintGrid = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const response = await api.get<InitialTeachingLoadData>("/initial-data");
+      const data = mapInitialData(response.data);
+      const faculty = data.faculties.find((f) => Number(f.id) === Number(facultyId));
+      if (!faculty) {
+        toast.warning("Faculty Not Found", "Instructor information could not be located.");
+        return;
+      }
+      const facultySchedules = data.schedules.filter((s) => Number(s.facultyId) === Number(facultyId));
+      const dept = data.departments.find((d) => Number(d.id) === Number(faculty.departmentId));
+      const blob = await buildInstructorTimetablePdf({
+        title: `INSTRUCTOR: ${faculty.name.toUpperCase()}`,
+        facultyName: faculty.name,
+        departmentCode: dept?.department_code ?? faculty.departmentCode ?? "",
+        departmentName: dept?.department_name ?? faculty.departmentName ?? "",
+        departmentLogo: dept?.logo ?? null,
+        schedules: facultySchedules,
+        activeSemester: data.activeSemester,
+      });
+      window.open(URL.createObjectURL(blob), "_blank");
+    } catch {
+      toast.error("Print Failed", "Instructor timetable could not be generated.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <>
+    <div className="flex items-center gap-2">
       <button
         type="button"
-        onClick={() => void handlePrint()}
+        onClick={() => void handlePrintGrid()}
         disabled={isLoading}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-[#4e0a10]/20 px-2.5 py-1.5 text-xs font-bold text-[#4e0a10] transition-colors hover:border-[#4e0a10]/40 hover:bg-[#4e0a10]/5 disabled:cursor-wait disabled:opacity-60"
-        title="Print Teaching Load"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+        title="Print Instructor Timetable Grid (Gantt)"
       >
         {isLoading ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
-        Print
+        Print Timetable Grid
+      </button>
+
+      <button
+        type="button"
+        onClick={() => void handlePrintLoad()}
+        disabled={isLoading}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+        title="Print Official Teaching Load Form"
+      >
+        {isLoading ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
+        Print Load Sheet
       </button>
 
       {teachingLoadData && (
@@ -211,7 +255,6 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
           selectedFacultyId={String(facultyId)}
         />
       )}
-    </>
+    </div>
   );
 }
-import LoadingSpinner from "./ui/LoadingSpinner";

@@ -8,6 +8,8 @@ import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "./scheduling/WeeklyTim
 import { slotCount, slotToTimeLabel, timeToSlot } from "../lib/timeGrid";
 import Skeleton from "./ui/Skeleton";
 import { scheduleLocationLabel } from "../lib/scheduleLocation";
+import { buildInstructorTimetablePdf } from "../pages/ClassSchedules/SchedulerPanel/instructorTimetablePdf";
+import type { ScheduleItem } from "../pages/ClassSchedules/SchedulerPanel/types";
 
 interface ApiScheduleRecord {
   id: number;
@@ -199,207 +201,40 @@ export default function InstructorTimetableModal({
     return schedules.filter((s) => s.dayIndex === dIdx).length;
   };
 
-  // Generate HTML Print Document matching the exact layout requested by user
-  const handlePrintTimetable = () => {
+  const handlePrintTimetable = async () => {
     if (!facultyName) return;
 
-    const nameParts = facultyName.trim().split(/\s+/);
-    let lastName = nameParts[nameParts.length - 1] || "INSTRUCTOR";
-    let firstName = nameParts.slice(0, nameParts.length - 1).join(" ") || "";
-    if (nameParts.length === 1) {
-      lastName = nameParts[0];
-      firstName = "";
-    }
-    const formattedTitleName = firstName
-      ? `${lastName.toUpperCase()}_${firstName.toUpperCase()}`
-      : lastName.toUpperCase();
+    try {
+      const pdfSchedules: ScheduleItem[] = schedules.map((s) => ({
+        id: String(s.id),
+        departmentId: "",
+        facultyId: String(facultyId),
+        facultyName,
+        subjectId: String(s.id),
+        subjectCode: s.courseCode,
+        subjectTitle: s.courseName,
+        roomId: "",
+        roomName: s.roomName,
+        day: s.day,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        sectionId: "",
+        sectionName: s.sectionName,
+        mode: s.mode,
+        meetingType: "lec",
+        status: "finalized",
+      }));
 
-    const totalSlots = slotCount();
+      const blob = await buildInstructorTimetablePdf({
+        title: `INSTRUCTOR: ${facultyName.toUpperCase()}`,
+        facultyName,
+        departmentName: departmentName || "",
+        schedules: pdfSchedules,
+      });
 
-    const gridCells: (TimetableSlotItem | null)[][] = Array.from({ length: totalSlots }, () =>
-      Array(7).fill(null)
-    );
-
-    const cellSkip: boolean[][] = Array.from({ length: totalSlots }, () =>
-      Array(7).fill(false)
-    );
-
-    schedules.forEach((item) => {
-      if (item.dayIndex >= 0 && item.dayIndex < 7 && item.startSlot >= 0 && item.startSlot < totalSlots) {
-        gridCells[item.startSlot][item.dayIndex] = item;
-        for (let i = 1; i < item.durationSlots; i++) {
-          if (item.startSlot + i < totalSlots) {
-            cellSkip[item.startSlot + i][item.dayIndex] = true;
-          }
-        }
-      }
-    });
-
-    let tableRowsHtml = "";
-    for (let slot = 0; slot < totalSlots; slot++) {
-      const timeStr = slotToTime24hStr(slot);
-      tableRowsHtml += `<tr><td class="time-cell">${timeStr}</td>`;
-
-      for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
-        if (cellSkip[slot][dayIdx]) {
-          continue;
-        }
-
-        const item = gridCells[slot][dayIdx];
-        if (item) {
-          const rowSpan = item.durationSlots;
-          tableRowsHtml += `
-            <td rowspan="${rowSpan}" class="schedule-cell ${item.category === "major" ? "major-cell" : "minor-cell"}">
-              <div class="course-code">${item.courseCode}</div>
-              <div class="section-name">${item.sectionName}</div>
-              <div class="room-name">${item.roomName}</div>
-            </td>
-          `;
-        } else {
-          tableRowsHtml += `<td class="empty-cell"></td>`;
-        }
-      }
-      tableRowsHtml += `</tr>`;
-    }
-
-    const printHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Timetable - ${formattedTitleName}</title>
-          <style>
-            @page {
-              size: A4 landscape;
-              margin: 8mm;
-            }
-            body {
-              font-family: 'Arial', sans-serif;
-              margin: 0;
-              padding: 10px;
-              color: #1a1a1a;
-              background-color: #ffffff;
-            }
-            .header-banner {
-              background-color: #4e0a10;
-              color: #ffffff;
-              text-align: center;
-              padding: 10px;
-              font-size: 20px;
-              font-weight: 900;
-              letter-spacing: 1px;
-              text-transform: uppercase;
-              border: 2px solid #36070b;
-              margin-bottom: 10px;
-            }
-            .dept-subtitle {
-              font-size: 12px;
-              font-weight: normal;
-              margin-top: 3px;
-              color: #f3d38c;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              table-layout: fixed;
-            }
-            th {
-              background-color: #f1f5f9;
-              border: 1px solid #64748b;
-              padding: 6px;
-              font-size: 11px;
-              font-weight: 800;
-              text-align: center;
-              text-transform: uppercase;
-            }
-            th.time-header {
-              width: 55px;
-              background-color: #e2e8f0;
-            }
-            td {
-              border: 1px solid #cbd5e1;
-              font-size: 10px;
-              text-align: center;
-              vertical-align: middle;
-              height: 18px;
-            }
-            td.time-cell {
-              font-weight: bold;
-              background-color: #f8fafc;
-              color: #334155;
-              font-size: 9px;
-            }
-            td.empty-cell {
-              background-color: #ffffff;
-            }
-            td.schedule-cell {
-              font-weight: bold;
-              padding: 4px 2px;
-            }
-            td.major-cell {
-              background-color: #dbeafe;
-              border-color: #3b82f6;
-              color: #1e40af;
-            }
-            td.minor-cell {
-              background-color: #f3e8ff;
-              border-color: #a855f7;
-              color: #6b21a8;
-            }
-            .course-code {
-              font-size: 11px;
-              font-weight: 900;
-              line-height: 1.1;
-            }
-            .section-name {
-              font-size: 10px;
-              font-weight: 800;
-              margin-top: 2px;
-            }
-            .room-name {
-              font-size: 9px;
-              font-weight: 600;
-              margin-top: 1px;
-              opacity: 0.9;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header-banner">
-            INSTRUCTOR: ${formattedTitleName}
-            ${departmentName ? `<div class="dept-subtitle">${departmentName}</div>` : ""}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th class="time-header">TIME</th>
-                <th>MONDAY</th>
-                <th>TUESDAY</th>
-                <th>WEDNESDAY</th>
-                <th>THURSDAY</th>
-                <th>FRIDAY</th>
-                <th>SATURDAY</th>
-                <th>SUNDAY</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRowsHtml}
-            </tbody>
-          </table>
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `;
-
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(printHtml);
-      printWindow.document.close();
-    } else {
-      toast.error("Error", "Pop-up blocked. Please allow pop-ups to print the timetable.");
+      window.open(URL.createObjectURL(blob), "_blank");
+    } catch {
+      toast.error("Print Failed", "Could not generate instructor timetable PDF.");
     }
   };
 

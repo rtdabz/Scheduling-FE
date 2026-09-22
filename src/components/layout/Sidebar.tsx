@@ -167,6 +167,7 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
         bg-[#4e0a10]
         flex flex-col
         transition-[transform,width] duration-150 ease-out
+        print:hidden
         ${isOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
       `}
     >

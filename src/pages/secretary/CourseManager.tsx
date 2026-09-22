@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
+import SearchInput from '../../components/ui/SearchInput';
 import {
   Search,
   Filter,
@@ -273,16 +274,11 @@ export default function CourseManager() {
       {/* Search and Filters Bar */}
       <div id="course-list-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
         {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search course code, name, etc..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
-          />
-        </div>
+        <SearchInput
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Search course code, name, etc..."
+        />
 
         {/* Dropdowns */}
         <div className="flex flex-wrap items-center gap-3">

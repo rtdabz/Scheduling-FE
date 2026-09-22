@@ -7,7 +7,7 @@ import {
   FileBarChart,
   Calendar,
   ClipboardCheck,
-  History
+  History,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -23,18 +23,18 @@ export const deanNav: NavSection[] = [
         requiredCapability: ['schedule.view', 'schedule.approve_dean'],
         children: [
           {
-            label: 'All Schedules',
-            path: '/dean/schedules',
-            icon: Calendar,
-            id: 'sidebar-all-schedules',
-            requiredCapability: 'schedule.view',
-          },
-          {
             label: 'Schedule Approval',
             path: '/dean/schedules/approval',
             icon: ClipboardCheck,
             id: 'sidebar-schedule-approval',
             requiredCapability: 'schedule.approve_dean',
+          },
+          {
+            label: 'All Schedules',
+            path: '/dean/schedules',
+            icon: Calendar,
+            id: 'sidebar-all-schedules',
+            requiredCapability: 'schedule.view',
           },
         ]
       },

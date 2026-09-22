@@ -3,6 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import TableActionButton from '../../components/ui/TableActionButton';
+import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
@@ -391,16 +392,12 @@ export default function SecretarySections() {
     <div>
       {/* Top Bar Section */}
       <div id="sections-toolbar" className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
-        <div className="relative flex-1 sm:max-w-md">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search section name, semester, etc..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm shadow-sm bg-white"
-          />
-        </div>
+        <SearchInput
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Search section name, semester, etc..."
+          containerClassName="relative flex-1 sm:max-w-md"
+        />
         {canManageSections && (
           <button
             id="sections-add-button"

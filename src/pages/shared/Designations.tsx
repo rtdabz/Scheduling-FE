@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import NumberInput from '../../components/ui/NumberInput';
-import { AlertTriangle, ArrowRight, Award, CornerDownRight, FolderTree, Pencil, Plus, Search, TrendingDown, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Award, CornerDownRight, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Trash2, Users, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -10,6 +10,7 @@ import DataTable from '../../components/ui/DataTable';
 import { useDataTable } from '../../components/ui/useDataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import { hasStoredCapability } from '../../lib/storedUser';
+import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import {
   basicLoadAfterDeload,
   createDesignation,
@@ -44,7 +45,8 @@ export default function Designations() {
   const { toast } = useToast();
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [designationSearch, setDesignationSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
   const [editing, setEditing] = useState<Designation | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -85,11 +87,11 @@ export default function Designations() {
     });
     designations.forEach((d) => { if (!ordered.includes(d)) ordered.push(d); });
 
-    const needle = search.trim().toLowerCase();
+    const needle = designationSearch.trim().toLowerCase();
     if (!needle) return ordered;
     const matches = new Set(ordered.filter((d) => designationLabel(d).toLowerCase().includes(needle)).map((d) => d.id));
     return ordered.filter((d) => matches.has(d.id) || designations.some((child) => child.parent_id === d.id && matches.has(child.id)));
-  }, [designations, search]);
+  }, [designations, designationSearch]);
 
   /** Top-level designations another may be placed under. */
   const parentOptions = useMemo(
@@ -125,6 +127,7 @@ export default function Designations() {
       id: 'name',
       accessorKey: 'name',
       header: 'Designation',
+      meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => {
         const designation = row.original;
         const isSub = designation.parent_id !== null;
@@ -138,23 +141,30 @@ export default function Designations() {
             >
               {initialsOf(designation.name)}
             </span>
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-sm font-bold text-gray-900">
-                <span className="truncate">{designation.name}</span>
+            <div className="min-w-0 flex-1">
+              {/* Line 1: Designation Name (single line, no wrapping) */}
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-900 whitespace-nowrap">
+                <span className="truncate whitespace-nowrap font-bold text-gray-900" title={designation.name}>{designation.name}</span>
                 {designation.code && (
-                  <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-[10px] font-bold uppercase text-gray-500">
+                  <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-[10px] font-bold uppercase text-gray-500">
                     {designation.code}
                   </span>
                 )}
                 {subCount > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-px text-[10px] font-bold text-[#5A1220]">
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-px text-[10px] font-bold text-[#5A1220]">
                     <FolderTree size={10} /> Heading · {subCount} sub-designation{subCount === 1 ? '' : 's'}
                   </span>
                 )}
-              </p>
-              <p className="max-w-xs truncate text-xs font-medium text-gray-400">
-                {isSub ? `Under ${designation.parent?.name ?? 'another designation'}` : designation.description || 'No description'}
-              </p>
+              </div>
+              {/* Line 2: Deload Units directly below */}
+              <div className="mt-0.5 flex items-center gap-2 text-xs font-semibold text-[#8a6412] whitespace-nowrap">
+                <span>{unitsLabel(designation.deload_units)} deload</span>
+                {isSub && (
+                  <span className="text-gray-400 font-normal text-[11px] truncate">
+                    (Under {designation.parent?.name ?? 'parent designation'})
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -325,111 +335,301 @@ export default function Designations() {
   const totalHolders = designations.reduce((sum, d) => sum + (d.faculties_count ?? 0), 0);
   const activeCount = designations.filter((d) => d.status !== 'inactive').length;
   const unitsReleased = designations.reduce((sum, d) => sum + d.deload_units * (d.faculties_count ?? 0), 0);
-  const isSearching = search.trim() !== '';
+  const isSearching = designationSearch.trim() !== '';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {/* The page title is rendered by the layout's PageHeader. */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
           label="Designations"
           value={designations.length}
           hint={`${activeCount} active`}
-          icon={<Award size={18} />}
+          icon={<Award size={16} />}
           isLoading={isLoading}
         />
         <StatCard
           label="Instructors holding one"
           value={totalHolders}
           hint="Across every designation"
-          icon={<Users size={18} />}
+          icon={<Users size={16} />}
           isLoading={isLoading}
         />
         <StatCard
           label="Units deloaded"
           value={unitsReleased}
           hint="Deload × holders, freed from teaching"
-          icon={<TrendingDown size={18} />}
+          icon={<TrendingDown size={16} />}
           isLoading={isLoading}
         />
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        {/* Toolbar lives on the card, so the list and its controls read as one unit. */}
-        <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="min-w-0">
-            <h2 className="text-sm font-black text-gray-900">Designation register</h2>
-            <p className="text-xs text-gray-500">
-              Each post takes its deload off a holder&apos;s maximum units to give their Basic Load.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative w-full sm:w-72">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search designations"
-                aria-label="Search designations"
-                className="w-full rounded-xl border border-gray-200 bg-gray-50/60 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[#C9952A] focus:bg-white focus:ring-2 focus:ring-[#C9952A]/20"
-              />
-            </div>
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => openCreate()}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#5A1220] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#4a0f1a]"
-              >
-                <Plus size={16} />
-                Add Designation
-              </button>
-            )}
-          </div>
+      {/* Standalone Dedicated Search Bar & Control Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white border border-gray-200 rounded-2xl p-3.5 shadow-xs">
+        {/* Reused search bar component style */}
+        <div className="relative w-full sm:w-80">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={designationSearch}
+            onChange={(event) => setDesignationSearch(event.target.value)}
+            placeholder="Search designations..."
+            aria-label="Search designations"
+            className="w-full rounded-xl border border-gray-200 bg-gray-50/60 py-2 pl-9 pr-8 text-sm outline-none transition focus:border-[#C9952A] focus:bg-white focus:ring-2 focus:ring-[#C9952A]/20 font-sans font-semibold text-gray-800"
+          />
+          {designationSearch && (
+            <button
+              type="button"
+              onClick={() => setDesignationSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <DataTable
-          table={table}
-          variant="embedded"
-          isLoading={isLoading}
-          loadingRows={4}
-          totalLabel="designations"
-          ariaLabel="Designations"
-          emptyState={
-            <div className="mx-auto flex max-w-sm flex-col items-center">
-              <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C9952A]/10 text-[#C9952A]">
-                {isSearching ? <Search size={22} /> : <Award size={22} />}
-              </span>
-              <p className="text-sm font-bold text-gray-800">
-                {isSearching ? `No designations match “${search.trim()}”.` : 'No designations yet.'}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                {isSearching
-                  ? 'Check the spelling or clear the search to see every designation.'
-                  : canManage
-                    ? 'Add the posts your institution recognises — each with the units it deloads.'
-                    : 'Ask the VPAA to add the designations your institution recognises.'}
-              </p>
-              {isSearching ? (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
-                >
-                  <X size={14} /> Clear search
-                </button>
-              ) : canManage && (
-                <button
-                  type="button"
-                  onClick={() => openCreate()}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#5A1220] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a0f1a]"
-                >
-                  <Plus size={14} /> Add the first designation
-                </button>
-              )}
-            </div>
-          }
-        />
+        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+          {/* View Mode Switcher (Grid / List) */}
+          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+              title="List View"
+            >
+              <List size={15} />
+            </button>
+          </div>
+
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => openCreate()}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#5A1220] px-3.5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#4a0f1a] cursor-pointer"
+            >
+              <Plus size={16} />
+              Add Designation
+            </button>
+          )}
+        </div>
+      </div>
+
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {viewMode === 'grid' ? (
+          <div className="p-4 font-sans">
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-xs flex flex-col justify-between space-y-3 font-sans animate-pulse"
+                  >
+                    {/* Top accent line matching stat cards */}
+                    <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220]/40 via-[#8a2434]/40 to-[#C9952A]/40" />
+
+                    <div className="space-y-2.5 pt-0.5">
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            <Skeleton className="h-4 w-32 rounded" />
+                            <Skeleton className="h-3 w-20 rounded" />
+                          </div>
+                        </div>
+                        <Skeleton className="h-5 w-14 rounded-full shrink-0" />
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        <Skeleton className="h-4 w-12 rounded" />
+                        <Skeleton className="h-4 w-24 rounded-md" />
+                      </div>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between">
+                      <Skeleton className="h-4 w-20 rounded" />
+                      <div className="flex items-center gap-1">
+                        <Skeleton className="h-6 w-6 rounded-lg" />
+                        <Skeleton className="h-6 w-6 rounded-lg" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : visible.length === 0 ? (
+              <div className="py-12 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white">
+                <p className="text-sm font-bold text-gray-800">
+                  {isSearching ? `No designations match “${designationSearch.trim()}”.` : 'No designations yet.'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {isSearching ? 'Try adjusting your search criteria.' : 'Add your first designation to get started.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {visible.map((d) => {
+                  const isSub = d.parent_id !== null;
+                  const subCount = d.children_count ?? 0;
+                  const holders = d.faculties_count ?? 0;
+                  const active = d.status !== 'inactive';
+
+                  return (
+                    <div
+                      key={d.id}
+                      className={`relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-xs flex flex-col justify-between space-y-3 font-sans group hover:border-[#C9952A]/50 transition-all ${GRID_CARD_HOVER}`}
+                    >
+                      {/* Top accent line matching dashboard StatCards */}
+                      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220] via-[#8a2434] to-[#C9952A]" />
+
+                      <div className="space-y-2 pt-0.5">
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span
+                              aria-hidden="true"
+                              className={`flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5A1220] to-[#8a2434] font-black tracking-wide text-white shadow-xs ${
+                                isSub ? 'h-9 w-9 text-[10px] opacity-85' : 'h-10 w-10 text-xs'
+                              }`}
+                            >
+                              {initialsOf(d.name)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              {/* Line 1: Designation on Line 1 (single line, no wrapping) */}
+                              <h3
+                                className="text-sm font-bold text-gray-900 leading-tight whitespace-nowrap truncate"
+                                title={d.name}
+                              >
+                                {d.name}
+                              </h3>
+                              {/* Line 2: Units on Line 2 directly below designation */}
+                              <p className="mt-0.5 text-xs font-semibold text-[#8a6412] whitespace-nowrap">
+                                {unitsLabel(d.deload_units)} deload
+                              </p>
+                            </div>
+                          </div>
+
+                          <span
+                            className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                              active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-500'
+                            }`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                            {active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+
+                        {/* Hierarchical metadata & badges */}
+                        {(d.code || isSub || subCount > 0) && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            {d.code && (
+                              <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-gray-500">
+                                {d.code}
+                              </span>
+                            )}
+                            {isSub && (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 truncate max-w-full">
+                                <CornerDownRight size={11} className="shrink-0 text-slate-400" />
+                                <span className="truncate">Under {d.parent?.name ?? 'Parent'}</span>
+                              </span>
+                            )}
+                            {subCount > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-0.5 text-[10px] font-bold text-[#5A1220]">
+                                <FolderTree size={10} /> Heading ({subCount})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Footer / Metrics & Actions */}
+                      <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <Users size={13} className="text-gray-400" />
+                          <span className="font-semibold text-gray-700">
+                            {holders > 0 ? `${holders} holder${holders === 1 ? '' : 's'}` : 'Unassigned'}
+                          </span>
+                        </div>
+
+                        {canManage && (
+                          <div className="flex items-center gap-1">
+                            {d.parent_id === null && (d.faculties_count ?? 0) === 0 && (
+                              <TableActionButton label={`Add sub-designation under ${d.name}`} variant="view" onClick={() => openCreate(d)}>
+                                <Plus size={14} />
+                              </TableActionButton>
+                            )}
+                            <TableActionButton label={`Edit ${d.name}`} variant="edit" onClick={() => openEdit(d)}>
+                              <Pencil size={14} />
+                            </TableActionButton>
+                            <TableActionButton label={`Archive ${d.name}`} variant="danger" onClick={() => setPendingDelete(d)}>
+                              <Trash2 size={14} />
+                            </TableActionButton>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <DataTable
+            table={table}
+            variant="embedded"
+            isLoading={isLoading}
+            loadingRows={4}
+            totalLabel="designations"
+            ariaLabel="Designations"
+            emptyState={
+              <div className="mx-auto flex max-w-sm flex-col items-center py-8">
+                <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C9952A]/10 text-[#C9952A]">
+                  {isSearching ? <Search size={22} /> : <Award size={22} />}
+                </span>
+                <p className="text-sm font-bold text-gray-800">
+                  {isSearching ? `No designations match “${designationSearch.trim()}”.` : 'No designations yet.'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {isSearching
+                    ? 'Check the spelling or clear the search to see every designation.'
+                    : canManage
+                      ? 'Add the posts your institution recognises — each with the units it deloads.'
+                      : 'Ask the VPAA to add the designations your institution recognises.'}
+                </p>
+                {isSearching ? (
+                  <button
+                    type="button"
+                    onClick={() => setDesignationSearch('')}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    <X size={14} /> Clear search
+                  </button>
+                ) : canManage && (
+                  <button
+                    type="button"
+                    onClick={() => openCreate()}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#5A1220] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a0f1a]"
+                  >
+                    <Plus size={14} /> Add the first designation
+                  </button>
+                )}
+              </div>
+            }
+          />
+        )}
       </section>
       <Modal
         isOpen={isFormOpen}
@@ -460,6 +660,23 @@ export default function Designations() {
         {/* Modal renders children with no padding of its own, so the body
             supplies it -- matching the header and footer insets. */}
         <div className="space-y-4 p-5 sm:p-6">
+          {/* Designation Details preview showing Designation on Line 1 and Units directly below */}
+          {(editing || form.name.trim()) && (
+            <div className="rounded-xl border border-gray-200/90 bg-gray-50/70 p-3 flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#5A1220] to-[#8a2434] text-xs font-black text-white shadow-xs">
+                {initialsOf(form.name.trim() || editing?.name || '')}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold text-gray-900 whitespace-nowrap truncate" title={form.name.trim() || editing?.name}>
+                  {form.name.trim() || editing?.name || 'New Designation'}
+                </div>
+                <div className="text-xs font-semibold text-[#8a6412] whitespace-nowrap">
+                  {unitsLabel(form.deload_units)} deload
+                </div>
+              </div>
+            </div>
+          )}
+
           <Field label="Parent Designation" error={fieldErrors.parent_id}>
             <select
               value={form.parent_id ?? ''}
@@ -582,17 +799,17 @@ function StatCard({
   isLoading: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="relative overflow-hidden rounded-xl border border-gray-200/90 bg-white p-3 shadow-xs">
       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220] via-[#8a2434] to-[#C9952A]" />
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-2.5 pt-0.5">
         <div className="min-w-0">
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">{label}</p>
           {isLoading
-            ? <Skeleton className="mt-2 h-8 w-12" />
-            : <p className="mt-1 text-3xl font-black tabular-nums text-[#5A1220]">{value}</p>}
-          <p className="mt-1 truncate text-xs text-gray-400">{hint}</p>
+            ? <Skeleton className="mt-1 h-6 w-10" />
+            : <p className="mt-0.5 text-xl font-black tabular-nums text-[#5A1220]">{value}</p>}
+          <p className="truncate text-[11px] text-gray-400 leading-tight">{hint}</p>
         </div>
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#C9952A]/10 text-[#C9952A]">{icon}</span>
+        <span className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-[#C9952A]/10 text-[#C9952A]">{icon}</span>
       </div>
     </div>
   );

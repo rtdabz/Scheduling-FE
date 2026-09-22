@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import api from '../../lib/api';
 import Skeleton from '../../components/ui/Skeleton';
+import SearchInput from '../../components/ui/SearchInput';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { useToast } from '../../context/ToastContext';
@@ -338,18 +339,14 @@ export default function VpaaCalendarPage() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <div className="relative min-w-[180px] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search classes…"
-            aria-label="Search classes"
-            title="Search by course, instructor, room or section"
-            className="h-9 w-full rounded-xl border border-gray-300 bg-gray-50/40 pl-9 pr-3 text-xs font-semibold text-gray-800 outline-none focus:border-[#5A1220] focus:bg-white focus:ring-1 focus:ring-[#5A1220]"
-          />
-        </div>
+        <SearchInput
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search classes..."
+          containerClassName="relative min-w-[180px] flex-1"
+          aria-label="Search classes"
+          title="Search by course, instructor, room or section"
+        />
         <select
           value={departmentId}
           onChange={(event) => setDepartmentId(event.target.value)}

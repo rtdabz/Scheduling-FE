@@ -16,11 +16,15 @@ import {
   Building2,
   AlertTriangle,
   BookOpen,
-  X
+  X,
+  Printer
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../../lib/api";
-import Skeleton from "../../components/ui/Skeleton";
+import PrintSchedule from "../ClassSchedules/SchedulerPanel/PrintSchedule";
+import { buildInstructorTimetablePdf } from "../ClassSchedules/SchedulerPanel/instructorTimetablePdf";
+import type { UserSummary } from "../ClassSchedules/SchedulerPanel/types";
+import SearchInput from "../../components/ui/SearchInput";
 import DepartmentOverviewCards, { type OverviewFocus } from "../../components/scheduling/DepartmentOverviewCards";
 import SectionOverviewCards from "../../components/scheduling/SectionOverviewCards";
 import ScheduleScopeSummary, { type ScopeStats } from "../../components/scheduling/ScheduleScopeSummary";
@@ -519,6 +523,16 @@ export default function VpaaScheduleViewer() {
   
   // Detail State
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+
+  useEffect(() => {
+    api.get<UserSummary[]>('/users').then((res) => {
+      if (Array.isArray(res.data)) {
+        setUsers(res.data);
+      }
+    }).catch(() => {});
+  }, []);
 
   const liveRevision = useLiveRevision(['schedules', 'sections', 'rooms', 'departments']);
 
@@ -1063,7 +1077,80 @@ export default function VpaaScheduleViewer() {
     return { start: 0, end: Math.max(slotCount(), latestEnd) };
   }, [filteredSchedules]);
 
-  const timeSlots = useMemo(() => generateTimeSlots(gridRange.start, gridRange.end), [gridRange]);
+  const pdfSections = useMemo(() => {
+    let targetSections = sections;
+    if (selectedSectionId !== "All") {
+      targetSections = sections.filter((s) => s.id === selectedSectionId);
+    } else if (selectedDeptId !== "All") {
+      targetSections = sections.filter((s) => s.departmentId === selectedDeptId);
+    }
+    return targetSections.map((sec) => ({
+      id: String(sec.id),
+      name: sec.name || "Section",
+      yearLevel: 1 as const,
+      semester: (activeSemester?.semester || "1st") as any,
+      departmentId: Number(sec.departmentId || 0),
+      semesterId: Number(activeSemester?.id || 0),
+    }));
+  }, [sections, selectedSectionId, selectedDeptId, activeSemester]);
+
+  const pdfSchedules = useMemo(() => {
+    return filteredSchedules.map((sch) => ({
+      id: String(sch.id),
+      sectionId: String(sch.sectionId),
+      sectionName: sch.sectionName,
+      subjectCode: sch.subjectCode,
+      subjectName: sch.subjectName,
+      day: sch.day as any,
+      startTime: sch.startTime,
+      endTime: sch.endTime,
+      facultyName: sch.facultyName,
+      roomName: sch.roomName,
+      mode: sch.mode,
+      meetingType: sch.meetingType,
+      status: "finalized",
+    }));
+  }, [filteredSchedules]);
+
+  const pdfDepartments = useMemo(() => {
+    return departments.map((dept) => ({
+      id: Number(dept.id),
+      logo: dept.logo || null,
+    }));
+  }, [departments]);
+
+  const handlePrintTimetable = async () => {
+    let printTitle = "MASTER CLASS TIMETABLE";
+    let activeDeptId = selectedDeptId;
+
+    if (selectedFacultyId !== "All") {
+      const faculty = faculties.find((f) => f.id === selectedFacultyId);
+      printTitle = `INSTRUCTOR: ${(faculty?.name || "Instructor").toUpperCase()}`;
+      if (faculty?.departmentId) activeDeptId = faculty.departmentId;
+    } else if (selectedSectionId !== "All") {
+      const sec = sections.find((s) => s.id === selectedSectionId);
+      printTitle = `SECTION: ${(sec?.name || "Section").toUpperCase()}`;
+      if (sec?.departmentId) activeDeptId = sec.departmentId;
+    } else if (selectedRoomId !== "All") {
+      const rm = rooms.find((r) => r.id === selectedRoomId);
+      printTitle = `ROOM: ${(rm?.name || "Room").toUpperCase()}`;
+    } else if (selectedDeptId !== "All") {
+      const dept = departments.find((d) => d.id === selectedDeptId);
+      printTitle = `DEPARTMENT: ${(dept?.name || "Department").toUpperCase()}`;
+    }
+
+    const dept = departments.find((d) => d.id === activeDeptId);
+
+    const blob = await buildInstructorTimetablePdf({
+      title: printTitle,
+      departmentCode: dept?.code || "",
+      departmentName: dept?.name || "",
+      departmentLogo: dept?.logo || null,
+      schedules: pdfSchedules,
+      activeSemester,
+    });
+    window.open(URL.createObjectURL(blob), "_blank");
+  };
 
   const summary = (
     <ScheduleScopeSummary
@@ -1187,54 +1274,61 @@ export default function VpaaScheduleViewer() {
           </div>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/80 shadow-inner w-fit">
-            {(["overview", "list", "grid"] as ViewMode[]).map((mode) => {
-              const isDisabled = mode === "grid" && !hasGridScope;
-              const Icon = mode === "overview" ? LayoutDashboard : mode === "list" ? List : CalendarDays;
-              const label = mode === "overview" ? "Overview" : mode === "list" ? "Schedule List" : "Weekly Grid";
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => {
-                    if (isDisabled) return;
-                    // Overview is the drill-down, so from inside a section it
-                    // steps up to that section's department rather than
-                    // highlighting "Overview" over a section's breadcrumb.
-                    if (mode === "overview" && selectedSectionId !== "All") {
-                      openDepartment(selectedDeptId);
-                      return;
-                    }
-                    setViewMode(mode === "overview" ? drillViewMode : mode);
-                  }}
-                  title={isDisabled ? "Open a section first (or pick a faculty or room in Schedule List)" : undefined}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
-                    viewMode === mode || (mode === "overview" && viewMode === "sections")
-                      ? "bg-[#4e0a10] text-[#E8D5C4] shadow-md scale-[1.02]"
-                      : isDisabled
-                      ? "text-slate-300 cursor-not-allowed opacity-50"
-                      : "text-slate-600 hover:text-[#4e0a10] hover:bg-white/50"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {label}
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/80 shadow-inner w-fit">
+              {(["overview", "list", "grid"] as ViewMode[]).map((mode) => {
+                const isDisabled = mode === "grid" && !hasGridScope;
+                const Icon = mode === "overview" ? LayoutDashboard : mode === "list" ? List : CalendarDays;
+                const label = mode === "overview" ? "Overview" : mode === "list" ? "Schedule List" : "Weekly Grid";
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => {
+                      if (isDisabled) return;
+                      if (mode === "overview" && selectedSectionId !== "All") {
+                        openDepartment(selectedDeptId);
+                        return;
+                      }
+                      setViewMode(mode === "overview" ? drillViewMode : mode);
+                    }}
+                    title={isDisabled ? "Open a section first (or pick a faculty or room in Schedule List)" : undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
+                      viewMode === mode || (mode === "overview" && viewMode === "sections")
+                        ? "bg-[#4e0a10] text-[#E8D5C4] shadow-md scale-[1.02]"
+                        : isDisabled
+                        ? "text-slate-300 cursor-not-allowed opacity-50"
+                        : "text-slate-600 hover:text-[#4e0a10] hover:bg-white/50"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handlePrintTimetable()}
+              title="Print timetable for current view scope"
+              aria-label="Print Timetable"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-xs transition-all hover:border-[#4e0a10]/30 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10] cursor-pointer"
+            >
+              <Printer className="w-4 h-4 text-[#4e0a10]" />
+              <span>Print Timetable</span>
+            </button>
           </div>
         </div>
 
         <div className={`grid gap-3 select-none ${isFlatView ? "grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr_auto]" : "grid-cols-1"}`}>
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input 
-              value={searchTerm} 
-              onChange={(event) => setSearchTerm(event.target.value)} 
-              placeholder={isFlatView ? "Search subject, section, faculty, room..." : "Search departments and sections..."} 
-              className="w-full h-11 pl-10 pr-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none transition-all focus:border-[#C9952A] focus:ring-1 focus:ring-[#C9952A]/30" 
-            />
-          </div>
+          <SearchInput
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder={isFlatView ? "Search subject, section, faculty, room..." : "Search departments and sections..."}
+            containerClassName="relative"
+          />
 
           {/*
             * Picking a department from a select duplicates clicking its card,
@@ -1745,6 +1839,18 @@ export default function VpaaScheduleViewer() {
           </div>
         </div>
       )}
+
+      <PrintSchedule
+        sections={pdfSections}
+        departments={pdfDepartments}
+        users={users}
+        isPrintModalOpen={isPrintModalOpen}
+        setIsPrintModalOpen={setIsPrintModalOpen}
+        allSchedules={pdfSchedules}
+        selectedSectionId={selectedSectionId !== "All" ? selectedSectionId : (pdfSections[0]?.id ?? "")}
+        activeSemester={activeSemester}
+        printAllSections={selectedSectionId === "All"}
+      />
     </div>
   );
 }

@@ -95,14 +95,21 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'designation',
       header: 'Designation',
+      meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row: { original: f } }) => {
         const held = f.designations?.length ? f.designations : f.designation ? [f.designation] : [];
         return held.length === 0 ? (
           <span className="text-gray-400 text-xs">—</span>
         ) : (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-2 min-w-0">
             {held.map((d) => (
-              <FacultyRoleBadge key={d.id} label={designationLabel(d)} tone="gold" hint={d.deload_units ? `-${d.deload_units}u` : null} />
+              <FacultyRoleBadge
+                key={d.id}
+                label={designationLabel(d)}
+                tone="gold"
+                hint={d.deload_units ? `${d.deload_units} ${d.deload_units === 1 ? 'unit' : 'units'} deload` : null}
+                stacked
+              />
             ))}
           </div>
         );

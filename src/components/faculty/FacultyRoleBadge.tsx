@@ -14,6 +14,8 @@ interface FacultyRoleBadgeProps {
   tone?: 'maroon' | 'gold';
   /** Appended in parentheses, e.g. the deload a designation carries. */
   hint?: string | null;
+  /** When true, renders designation on line 1 (no wrapping) and units on line 2 directly below. */
+  stacked?: boolean;
 }
 
 const TONES = {
@@ -33,13 +35,31 @@ export default function FacultyRoleBadge({
   label,
   tone = 'maroon',
   hint,
+  stacked = false,
 }: FacultyRoleBadgeProps) {
   const text = label?.trim() || (role ? humanise(role) : '');
   if (!text) return null;
 
+  if (stacked && hint) {
+    return (
+      <div className="flex flex-col items-start min-w-0 leading-tight">
+        <span
+          className={`inline-block max-w-full truncate whitespace-nowrap rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${TONES[tone]}`}
+          title={text}
+        >
+          {text}
+        </span>
+        <span className="mt-0.5 text-[10px] font-bold text-[#8a6412] whitespace-nowrap pl-0.5">
+          {hint}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <span
-      className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${TONES[tone]}`}
+      className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap truncate max-w-full ${TONES[tone]}`}
+      title={text}
     >
       {text}
       {hint && <span className="font-bold normal-case opacity-75">({hint})</span>}

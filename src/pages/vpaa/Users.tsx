@@ -4,6 +4,7 @@ import { NAME_SUFFIXES, capitalizeNameInput } from '../../lib/formatters';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
@@ -614,6 +615,7 @@ export default function VpaaUsers() {
       {
         accessorKey: 'name',
         header: 'Name',
+        meta: { cellClassName: 'whitespace-nowrap font-bold text-gray-900' },
         cell: info => {
           const nameStr = info.getValue() as string;
           const userObj = info.row.original;
@@ -633,17 +635,9 @@ export default function VpaaUsers() {
         }
       },
       {
-        accessorKey: 'username',
-        header: 'Username',
-        cell: info => (
-          <span className="font-mono text-xs text-gray-600 bg-gray-100/80 px-2 py-1 rounded border border-gray-200/50">
-            {info.getValue() as string}
-          </span>
-        )
-      },
-      {
         accessorKey: 'role',
         header: 'Role',
+        meta: { cellClassName: 'whitespace-nowrap' },
         cell: info => {
           const roleStr = info.getValue() as string;
           let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200/50';
@@ -653,7 +647,7 @@ export default function VpaaUsers() {
             badgeColor = 'bg-purple-100 text-purple-800 border border-purple-200/50';
           }
           return (
-            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${badgeColor}`}>
+            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider inline-block whitespace-nowrap ${badgeColor}`}>
               {roleStr}
             </span>
           );
@@ -662,9 +656,14 @@ export default function VpaaUsers() {
       {
         accessorKey: 'department',
         header: 'Department',
+        meta: { cellClassName: 'whitespace-nowrap' },
         cell: info => {
           const deptVal = info.getValue();
-          return <span className="text-gray-600 text-sm">{deptVal ? (deptVal as string) : '—'}</span>;
+          return (
+            <span className="text-gray-700 text-sm font-semibold whitespace-nowrap truncate block max-w-xs md:max-w-md" title={deptVal ? (deptVal as string) : '—'}>
+              {deptVal ? (deptVal as string) : '—'}
+            </span>
+          );
         }
       },
       {
@@ -676,8 +675,8 @@ export default function VpaaUsers() {
           if (!program) return <span className="text-gray-400 text-sm">-</span>;
           return (
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-700">{program.code}</p>
-              <p className="max-w-44 truncate text-[11px] text-gray-500">{program.name}</p>
+              <p className="text-sm font-semibold text-gray-700 whitespace-nowrap">{program.code}</p>
+              <p className="max-w-44 truncate text-[11px] text-gray-500" title={program.name}>{program.name}</p>
             </div>
           );
         }
@@ -685,11 +684,12 @@ export default function VpaaUsers() {
       {
         accessorKey: 'status',
         header: 'Status',
+        meta: { cellClassName: 'whitespace-nowrap' },
         cell: info => {
           const statusVal = info.getValue() as string;
           const isActive = statusVal.toLowerCase() === 'active';
           return (
-            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border inline-block whitespace-nowrap ${
               isActive
                 ? 'bg-emerald-100 text-emerald-850 border-emerald-200/60'
                 : 'bg-gray-100 text-gray-600 border-gray-200'
@@ -702,6 +702,7 @@ export default function VpaaUsers() {
       {
         accessorKey: 'createdAt',
         header: 'Created At',
+        meta: { cellClassName: 'whitespace-nowrap' },
         cell: info => {
           const val = info.getValue() as string;
           if (!val) return '—';
@@ -716,6 +717,7 @@ export default function VpaaUsers() {
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
         enableSorting: false,
+        meta: { cellClassName: 'whitespace-nowrap text-right' },
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
             <div className="relative group/tooltip">
@@ -774,16 +776,11 @@ export default function VpaaUsers() {
       {/* Search and Actions Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
         {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search name, username, or role..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
-          />
-        </div>
+        <SearchInput
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Search name, username, or role..."
+        />
 
         {/* Action Group: View Mode Toggle + Add User */}
         <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
