@@ -25,7 +25,10 @@ import {
 } from 'lucide-react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
-import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
+import DashboardGantt from '../vpaa/calendar/DashboardGantt';
+import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
+import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
+import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import type { SectionStatusItem } from '../../hooks/useDepartmentScheduleStatus';
@@ -47,11 +50,12 @@ interface Schedule {
   faculty?:{ id?:number; first_name:string; last_name:string }|null;
   room?:{ id?:number; room_code?:string; room_type?:string; building?:string|null }|null;
   section?:{ id?:number; section_name?:string }|null;
+  meeting_type?:string|null; course_id?:number|null; subject_id?:number|null;
 }
 interface Semester { id:number; academic_year?:string; semester?:string; is_active?:boolean }
 interface DeptUser { id:number; name?:string; role?:string; department_id?:number|null }
-interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeSemester:Semester|null }
-interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_semester?:Semester }
+interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeSemester:Semester|null; standardHours?:StandardHours }
+interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_semester?:Semester; time_grid?:TimeGridConfigInput }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
@@ -133,6 +137,15 @@ export default function DeanDashboardPage() {
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
   const [users, setUsers] = useState<DeptUser[]>(cached?.users ?? []);
   const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
+  const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
+  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
+
+  // Ticks once a minute so the timeline's "now" line keeps moving.
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ── Timetable controls ──
   const [yearFilter, setYearFilter] = useState('all');
@@ -160,6 +173,7 @@ export default function DeanDashboardPage() {
             schedules: Array.isArray(data.schedules) ? data.schedules : [],
             users: Array.isArray(data.users) ? data.users : [],
             activeSemester: data.active_semester || null,
+            standardHours: buildStandardHours(data.time_grid?.opening_time, data.time_grid?.closing_time, data.time_grid?.slot_minutes),
           };
         }, reloadKey > 0);
 
@@ -171,6 +185,7 @@ export default function DeanDashboardPage() {
         setSchedules(overview.schedules);
         setUsers(overview.users);
         setSemester(overview.activeSemester);
+        setStandardHours(overview.standardHours ?? DEFAULT_STANDARD_HOURS);
       } catch {
         if (active) setLoadError('Could not load department scheduling data. Figures below may be out of date.');
       } finally {
@@ -420,6 +435,26 @@ export default function DeanDashboardPage() {
     });
   }, [visibleSchedules, yearFilter, sectionFilter, facultyFilter, roomFilter, searchQuery, yearBySection]);
 
+  /**
+   * The timetable rows in the shape the VPAA Gantt reads. Delivery mode follows
+   * the VPAA dashboard: virtual and field placeholder rooms count as online/field.
+   */
+  const calendarSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map(item => ({
+    ...item,
+    course_id: item.course_id ?? item.course?.id ?? item.subject_id,
+    room: item.room?.id ? { id: item.room.id, room_code: item.room.room_code ?? '', building: item.room.building } : null,
+    section: item.section?.id ? { id: item.section.id, section_name: item.section.section_name ?? '' } : null,
+    faculty: item.faculty?.id ? { id: item.faculty.id, first_name: item.faculty.first_name, last_name: item.faculty.last_name } : null,
+    mode: item.mode?.toLowerCase().includes('online') || item.room?.room_type?.toLowerCase().includes('online') ? 'online'
+      : item.mode?.toLowerCase().includes('field') || item.room?.room_type?.toLowerCase().includes('field') ? 'field' : 'on-site',
+  })), [visibleSchedules]);
+  const calendarById = useMemo(() => new Map(calendarSchedules.map(item => [item.id, item])), [calendarSchedules]);
+  const timetableCalendar = useMemo(
+    () => timetableSchedules.map(item => calendarById.get(item.id)).filter((item): item is CalendarSchedule => Boolean(item)),
+    [timetableSchedules, calendarById],
+  );
+  const timelineOverlaps = useMemo(() => findOverlaps(calendarSchedules), [calendarSchedules]);
+
   const timetableRoomsUsed = useMemo(
     () => new Set(timetableSchedules.map(s => s.room_id).filter(Boolean)).size,
     [timetableSchedules],
@@ -439,14 +474,14 @@ export default function DeanDashboardPage() {
     document.body.style.overflow = isFullscreen ? 'hidden' : '';
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isFullscreen) setIsFullscreen(false);
+      if (event.key === 'Escape' && isFullscreen && !selectedSchedule) setIsFullscreen(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isFullscreen]);
+  }, [isFullscreen, selectedSchedule]);
 
   const pendingApprovals = stageCounts.submitted;
   const openApproval = () => navigate('/dean/schedules/approval');
@@ -468,13 +503,13 @@ export default function DeanDashboardPage() {
    * for the full-window view without the grid remounting into a different shape.
    */
   const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex h-full min-w-0 flex-col'}>
+    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <Panel
         title="Department Academic Timetable"
         subtitle="Overview of department timetable."
         action="View full timetable"
         onAction={() => navigate('/dean/schedules')}
-        className="flex flex-1 flex-col"
+        className="flex min-h-0 flex-1 flex-col"
       >
         <div className="flex flex-wrap items-center gap-2">
           <FilterSelect label="Year Level" value={yearFilter} onChange={setYearFilter}>
@@ -531,22 +566,19 @@ export default function DeanDashboardPage() {
           <StatChip icon={DoorOpen} value={timetableRoomsFree} label="Available Rooms" />
         </div>
 
-        <div className="mt-3 min-w-0">
-          <DashboardTimetableGrid
-            schedules={timetableSchedules}
-            sectionLabel={`${deptSections.length} ${deptSections.length === 1 ? 'section' : 'sections'} · ${timetableSchedules.length} ${timetableSchedules.length === 1 ? 'class' : 'classes'}`}
-            onOpenSchedule={() => navigate('/dean/schedules')}
+        <div className="mt-3 flex min-h-0 min-w-0 flex-1 flex-col">
+          <DashboardGantt
+            schedules={timetableCalendar}
+            allSchedules={calendarSchedules}
+            standardHours={standardHours}
+            overlaps={timelineOverlaps}
+            now={now}
+            onSelect={setSelectedSchedule}
+            isFullscreen={isFullscreen}
           />
         </div>
-
-        <button
-          type="button"
-          onClick={() => navigate('/dean/schedules')}
-          className="mt-auto self-start pt-3 text-[11px] font-bold text-primary hover:underline"
-        >
-          View full timetable <ArrowRight className="inline h-3 w-3" />
-        </button>
       </Panel>
+      <ScheduleDetailModal schedule={selectedSchedule} allSchedules={calendarSchedules} overlaps={timelineOverlaps} onClose={() => setSelectedSchedule(null)} onSelect={setSelectedSchedule} />
     </div>
   );
 
@@ -640,42 +672,40 @@ export default function DeanDashboardPage() {
         className="xl:col-span-4"
       >
         {packages.length ? <>
-          <div className="-mx-1 overflow-x-auto px-1">
-            <div className="min-w-[520px]">
-              <div className="grid gap-2 border-b border-slate-100 pb-2 text-[9px] font-bold uppercase tracking-wide text-slate-400" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
-                <span>Schedule Package</span>
-                <span>Submitted By</span>
-                <span>Submitted On</span>
-                <span>Completion</span>
-                <span className="text-right">Actions</span>
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {packages.map(item => <li key={item.code} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-primary/70" />
-                    <b className="truncate text-[11px] text-slate-700" title={`${item.code} Schedule`}>{item.code} Schedule</b>
-                  </span>
-                  <span className="truncate text-[10px] font-semibold text-slate-500" title={coordinator}>{coordinator}</span>
-                  <span className="truncate text-[10px] font-semibold text-slate-500" title={formatSubmittedOn(item.submittedOn)}>{formatSubmittedOn(item.submittedOn)}</span>
-                  <span className="h-6 min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[{ readiness: item.completion, label: `${item.completion}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
-                        <XAxis type="number" domain={[0, 100]} hide />
-                        <YAxis type="category" hide />
-                        <Bar dataKey="readiness" fill={item.completion === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
-                          <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </span>
-                  <span className="flex items-center justify-end gap-1">
-                    <QueueAction icon={Check} label={`Approve ${item.code} Schedule`} tone="good" disabled={!item.awaitingReview} onClick={openApproval} />
-                    <QueueAction icon={RotateCcw} label={`Return ${item.code} Schedule for revision`} tone="warn" disabled={!item.awaitingReview} onClick={openApproval} />
-                    <QueueAction icon={X} label={`Reject ${item.code} Schedule`} tone="alert" disabled={!item.awaitingReview} onClick={openApproval} />
-                  </span>
-                </li>)}
-              </ul>
+          <div className="min-w-0">
+            <div className="grid gap-2 border-b border-slate-100 pb-2 text-[9px] font-bold uppercase leading-tight tracking-wide text-slate-400" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
+              <span>Schedule Package</span>
+              <span>Submitted By</span>
+              <span>Submitted On</span>
+              <span>Completion</span>
+              <span className="text-right">Actions</span>
             </div>
+            <ul className="divide-y divide-slate-100">
+              {packages.map(item => <li key={item.code} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+                  <b className="truncate text-[11px] text-slate-700" title={`${item.code} Schedule`}>{item.code} Schedule</b>
+                </span>
+                <span className="truncate text-[10px] font-semibold text-slate-500" title={coordinator}>{coordinator}</span>
+                <span className="truncate text-[10px] font-semibold text-slate-500" title={formatSubmittedOn(item.submittedOn)}>{formatSubmittedOn(item.submittedOn)}</span>
+                <span className="h-6 min-w-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[{ readiness: item.completion, label: `${item.completion}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
+                      <XAxis type="number" domain={[0, 100]} hide />
+                      <YAxis type="category" hide />
+                      <Bar dataKey="readiness" fill={item.completion === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
+                        <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </span>
+                <span className="flex items-center justify-end gap-1">
+                  <QueueAction icon={Check} label={`Approve ${item.code} Schedule`} tone="good" disabled={!item.awaitingReview} onClick={openApproval} />
+                  <QueueAction icon={RotateCcw} label={`Return ${item.code} Schedule for revision`} tone="warn" disabled={!item.awaitingReview} onClick={openApproval} />
+                  <QueueAction icon={X} label={`Reject ${item.code} Schedule`} tone="alert" disabled={!item.awaitingReview} onClick={openApproval} />
+                </span>
+              </li>)}
+            </ul>
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-[10px] font-semibold text-slate-500">
@@ -735,7 +765,8 @@ export default function DeanDashboardPage() {
     </section>
 
     <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0">
+      {/* Let the side column set the desktop height, not the number of Gantt rows. */}
+      <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>
 

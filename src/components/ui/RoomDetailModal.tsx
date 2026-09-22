@@ -81,10 +81,13 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
     // The Rooms page already has the room and timetable payload. Seed the
     // detail view synchronously so printing never captures an async skeleton,
     // including for rooms whose schedule list is empty.
+    // The page owns and live-refreshes that payload, so refetching here only
+    // swapped the cards a second time once the request came back.
     if (initialRoom && initialRoom.id === roomId) {
       setRoom(initialRoom);
       setSchedules(initialSchedules);
       setIsLoading(false);
+      return;
     }
 
     const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');

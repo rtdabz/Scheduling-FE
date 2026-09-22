@@ -6,7 +6,9 @@ import {
 import type { Department, ScheduleItem, Room } from "../types";
 import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTime24h } from "../../../../lib/timeGrid";
-import MasterGantt from "../../../vpaa/calendar/MasterGantt";
+import MasterGantt, { type GanttReservation } from "../../../vpaa/calendar/MasterGantt";
+import { useRoomGrants } from "../../../../hooks/useRoomGrants";
+import { toMinutes } from "../../../../lib/roomRequests";
 import ScheduleDetailModal from "../../../vpaa/calendar/ScheduleDetailModal";
 import {
   buildGanttDays,
@@ -80,6 +82,20 @@ export default function RoomViewModal({
   );
 
   const currentDepartmentId = useMemo(() => getStoredUserDepartmentId(), []);
+
+  // Only a real lecture room or laboratory can be lent to another department.
+  const lendableRoomId = room && (room.roomType === "lecture" || room.roomType === "laboratory") && isRoomViewOpen
+    ? Number(room.id) || null
+    : null;
+  const { grants } = useRoomGrants(lendableRoomId);
+  const reservations = useMemo<GanttReservation[]>(() => grants
+    .map((grant) => ({
+      dayIndex: CALENDAR_DAYS.indexOf(grant.day as (typeof CALENDAR_DAYS)[number]),
+      start: toMinutes(grant.start_time),
+      end: toMinutes(grant.end_time),
+      label: `Borrowed by ${grant.department_code ?? "another department"}`,
+    }))
+    .filter((reservation) => reservation.dayIndex >= 0), [grants]);
 
   const roomClasses = useMemo(() => {
     return schedules.filter((s) => {
@@ -250,7 +266,11 @@ export default function RoomViewModal({
 
         {/* Room timetable */}
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden p-3 bg-slate-50/30 [contain:layout_paint]">
-          {roomClasses.length === 0 && (
+          {reservations.length > 0 ? (
+            <div className="mb-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-800">
+              Dashed windows mark time this room is lent to another department; only that department can schedule there.
+            </div>
+          ) : roomClasses.length === 0 && (
             <div className="mb-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800">
               This room is fully available - no classes are booked this week.
             </div>
@@ -269,6 +289,7 @@ export default function RoomViewModal({
             onSelect={setSelectedSchedule}
             now={new Date()}
             fillHeight
+            reservations={reservations}
             className="h-full min-h-[420px]"
           />
         </div>

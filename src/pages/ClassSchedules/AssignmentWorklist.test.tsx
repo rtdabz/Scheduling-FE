@@ -95,7 +95,7 @@ describe("AssignmentWorklist", () => {
 
     const conflicting = screen.getByRole("option", { name: /John Doe/ }) as HTMLOptionElement;
     expect(conflicting.disabled).toBe(false);
-    expect(conflicting.textContent).toMatch(/— Conflict$/);
+    expect(conflicting.textContent).toMatch(/ - Conflict$/);
 
     fireEvent.change(screen.getByRole("combobox"), { target: { value: conflicting.value } });
     expect(onAssign).toHaveBeenCalledWith(501, Number(conflicting.value));

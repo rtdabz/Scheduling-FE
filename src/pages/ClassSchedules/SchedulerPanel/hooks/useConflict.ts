@@ -264,12 +264,12 @@ export const isPartTimeOutsideAvailability = (
   if (!faculty) return false;
   if (faculty.employmentType !== "part-time") return false;
 
-  // Mirrors RuleEngine's part_time_faculty_availability: the meeting has to fit
-  // inside a recorded window for that day. No window for the day - including the
-  // case of no windows at all - is outside availability, so an unrecorded
-  // part-timer shows as blocked here exactly as the server refuses them. The old
-  // guess of "weekday mornings only" offered slots the server then rejected.
-  const dayAvailabilities = (faculty.availabilities ?? []).filter(
+  // Mirrors RuleEngine's part_time_faculty_availability: a part-timer with no
+  // windows recorded at all is unrestricted. Otherwise the meeting has to fit
+  // inside a recorded window for that day, and a day with no window is outside.
+  const recorded = faculty.availabilities ?? [];
+  if (recorded.length === 0) return false;
+  const dayAvailabilities = recorded.filter(
     (a) => Number(a.day_index) === dayIndex
   );
   if (dayAvailabilities.length === 0) return true;

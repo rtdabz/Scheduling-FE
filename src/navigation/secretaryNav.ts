@@ -37,17 +37,17 @@ export const secretaryNav: NavSection[] = [
         requiredCapability: ['schedule.view', 'room.request'],
         children: [
           { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
-          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request', badge: 'Under Implementation' },
+          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
         ],
       },
       { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },
       {
-        label: 'Timetabling',
+        label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         requiredCapability: ['schedule.view', 'schedule.create', 'schedule.assign_instructor'],
         children: [
-          { label: 'Schedule Builder', path: '/secretary/schedule-builder', icon: CalendarRange, id: 'sidebar-schedule-builder', requiredCapability: 'schedule.create' },
+          { label: 'Schedule Management', path: '/secretary/schedule-builder', icon: CalendarRange, id: 'sidebar-schedule-builder', requiredCapability: 'schedule.create' },
           { label: 'Schedules', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-section-timetables', requiredCapability: 'schedule.view' },
           { label: 'Course Assignment', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
           { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, CheckCircle2, Flag, UserPlus, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Flag, Move, Pencil, Trash2, UserPlus } from "lucide-react";
 import {
   getGridCardStyles,
   getGridModeBadgeClass
@@ -26,6 +26,8 @@ interface ScheduleCardProps {
   onDragEnd: () => void;
   onDelete: (id: string) => void;
   onCardClick: (id: string) => void;
+  /** Opens the edit dialog for the selected card. */
+  onEdit?: () => void;
   slotHeight?: number;
   isWideView?: boolean;
   isReadOnlyViewer?: boolean;
@@ -60,6 +62,7 @@ const ScheduleCard = memo(function ScheduleCard({
   onDragEnd,
   onDelete,
   onCardClick,
+  onEdit,
   slotHeight,
   isWideView = false,
   isReadOnlyViewer = false
@@ -115,6 +118,10 @@ const ScheduleCard = memo(function ScheduleCard({
     ? `p-1.5 px-2 ${isAwaitingFaculty ? "pb-7" : ""}`
     : `p-2 px-2.5 ${isAwaitingFaculty ? "pb-7" : ""}`;
 
+  // A selected (armed-to-move) card pins its tooltip open with Edit / Remove.
+  const showActions = isMoving && isEditable && !isPhase2Active;
+  const isConfirmingDelete = showActions && deleteConfirmScheduleId === schedule.id;
+
   const showResolved = isResolved && !conflict;
   const resolvedFlag = (
     <span
@@ -149,7 +156,7 @@ const ScheduleCard = memo(function ScheduleCard({
           : isReadOnlyViewer
           ? "cursor-default"
           : "cursor-not-allowed"
-      } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-20" : ""} ${currentStatus === "finalized" && !isFinalizedFacultyEditing ? "cursor-default" : ""}`}
+      } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-40" : ""} ${currentStatus === "finalized" && !isFinalizedFacultyEditing ? "cursor-default" : ""}`}
       style={{
         gridColumn: schedule.dayIndex + 2,
         gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}`,
@@ -165,6 +172,7 @@ const ScheduleCard = memo(function ScheduleCard({
         instructor={hasFaculty ? schedule.facultyName : <span className="text-amber-400 italic">Unassigned</span>}
         location={isRedundantRoomName ? modeLabel : roomDisplayName}
         time={`${schedule.startTime} – ${schedule.endTime}`}
+        open={showActions}
       >
         {conflict && (
           <div className="p-2 bg-red-950/90 border border-red-500/60 rounded-lg text-red-200 text-[11px] font-semibold flex items-start gap-1.5 shadow-inner">
@@ -178,53 +186,62 @@ const ScheduleCard = memo(function ScheduleCard({
             {displayModeLabel}
           </span>
         </div>
+
+        {showActions && (
+          isConfirmingDelete ? (
+            <div className="space-y-2 border-t border-slate-800 pt-2">
+              <p className="text-[11px] font-semibold text-slate-200">Remove {subject.code} from the timetable?</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onDelete(schedule.id)}
+                  className="flex-1 rounded-lg bg-red-600 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-red-700 cursor-pointer"
+                >
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmScheduleId(null)}
+                  className="flex-1 rounded-lg border border-slate-600 bg-slate-800 py-1.5 text-[11px] font-bold text-slate-200 transition-colors hover:bg-slate-700 cursor-pointer"
+                >
+                  Keep
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 border-t border-slate-800 pt-2">
+              <p className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
+                <Move className="h-3 w-3 shrink-0 text-blue-300" />
+                Click an empty slot to move it here.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#C9952A] py-1.5 text-[11px] font-bold text-slate-900 transition-colors hover:bg-[#d9a73c] cursor-pointer"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmScheduleId(schedule.id)}
+                  aria-label={`Remove ${subject.code}`}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-500/50 bg-red-500/10 py-1.5 text-[11px] font-bold text-red-300 transition-colors hover:bg-red-600 hover:text-white cursor-pointer"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Remove
+                </button>
+              </div>
+            </div>
+          )
+        )}
       </TimetableCardTooltip>
 
       {conflict && (
         <div className="absolute top-1 left-1 z-20 flex items-center gap-1 bg-red-600 text-white px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-sm animate-pulse">
           <AlertTriangle className="w-3 h-3 text-white shrink-0" />
           {!isCompact && <span>Conflict</span>}
-        </div>
-      )}
-
-      {isEditable && !isPhase2Active && (
-        <div className="absolute top-1 right-1 z-20">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleteConfirmScheduleId(schedule.id);
-            }}
-            aria-label={`Remove ${subject.code}`}
-            title="Remove Schedule"
-            className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 w-5 h-5 rounded-md hover:bg-red-500 hover:text-white text-slate-400 flex items-center justify-center hover:shadow-sm cursor-pointer"
-          >
-            <X className="w-3 h-3" />
-          </button>
-          {deleteConfirmScheduleId === schedule.id && (
-            <div
-              className="absolute right-0 top-6 w-24 rounded-xl bg-white border border-slate-200 shadow-lg p-1.5 text-[10px] text-slate-700 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="font-bold text-center mb-1 text-slate-800">Remove?</div>
-              <div className="flex gap-1 mt-1">
-                <button
-                  type="button"
-                  onClick={() => onDelete(schedule.id)}
-                  className="flex-1 rounded-md bg-red-500 hover:bg-red-600 text-white py-0.5 font-bold cursor-pointer transition-colors"
-                >
-                  Yes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirmScheduleId(null)}
-                  className="flex-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 py-0.5 font-bold cursor-pointer transition-colors"
-                >
-                  No
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

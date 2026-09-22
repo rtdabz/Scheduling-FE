@@ -12,6 +12,7 @@ import { facultyEligibilityForSubject } from "../facultyEligibility";
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances } from "../../../../lib/facultyLoad";
 import type { LoadTier } from "../../../../lib/overloadConfirmation";
 import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
+import EmploymentBadge from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 
 /* Opening the wizard resets its local draft state. */
@@ -539,6 +540,7 @@ export default function AutoAssignModal({
                   {selectedFaculty ? (
                     <div className="mr-auto min-w-0 text-xs text-slate-600">
                       <span className="font-bold text-slate-900">{selectedFaculty.name}</span>
+                      <EmploymentBadge type={selectedFaculty.employmentType} className="ml-2" />
                       <span className="mx-1.5 text-slate-300">|</span>
                       <span className="font-semibold tabular-nums">{currentLoad}{selectedUnits > 0 && <span className="text-[#4e0a10]"> + {selectedUnits}</span>} / {projectedLoad.bands.basicLoad} units</span>
                       <span className={`ml-2 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${projectedLoad.badgeClass}`}>{projectedLoad.label}</span>
@@ -654,6 +656,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
                 <span className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-slate-500">
                   <span className={`h-1.5 w-1.5 rounded-full ${faculty.status === "inactive" ? "bg-slate-300" : "bg-emerald-500"}`} />
                   {faculty.status === "inactive" ? "Inactive" : "Active"}
+                  <EmploymentBadge type={faculty.employmentType} />
                   {tab === "external" && <span className="truncate text-slate-400">· {faculty.departmentCode ?? faculty.departmentName ?? "External"}</span>}
                 </span>
               </span>

@@ -6,6 +6,7 @@ import { BookOpen } from 'lucide-react';
 import CurriculumHeader from '../../components/curriculum/CurriculumHeader';
 import SemesterCard from '../../components/curriculum/SemesterCard';
 import { useCurriculumDetail } from '../../hooks/curriculum/useCurriculumDetail';
+import { getStoredUserRole, hasStoredCapability } from '../../lib/storedUser';
 
 export default function CurriculumDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -13,10 +14,10 @@ export default function CurriculumDetailPage() {
   const [searchParams] = useSearchParams();
   const [selectedSemester, setSelectedSemester] = useState(1);
 
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
-  const userRole = user?.role?.toLowerCase() || 'user';
-  const canManageCurriculum = userRole === 'vpaa';
+  const userRole = getStoredUserRole() || 'user';
+  // Same capability the write routes enforce, so the dean and the VPAA open this
+  // page read-only no matter which `mode` the URL asks for.
+  const canManageCurriculum = hasStoredCapability('curriculum.manage');
   const canEditCourses = canManageCurriculum && searchParams.get('mode') === 'edit';
 
   const {

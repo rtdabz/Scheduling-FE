@@ -2,6 +2,7 @@ import { getPhilippineNowParts } from '../../lib/philippineTime';
 
 import { useMemo, useState } from 'react';
 import {
+  ArrowLeftRight,
   Calendar,
   Clock,
   Building2,
@@ -14,6 +15,7 @@ import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
 import ScheduleCard from '../../pages/ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard';
 import { DAYS, GRID_HEADER_HEIGHT_PX, SLOT_HEIGHT_PX } from '../../pages/ClassSchedules/SchedulerPanel/constants';
 import { slotCount, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import { useRoomGrants } from '../../hooks/useRoomGrants';
 import type {
   Room as SchedulerRoom,
   ScheduleItem,
@@ -103,6 +105,15 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
     return days[getPhilippineNowParts().weekdayIndex];
   });
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(initialViewMode);
+  // Hold the timetable until the room's borrowed windows are known, so the
+  // cards and the windows render together instead of in two passes.
+  const { grants: roomGrants, ready: grantsReady } = useRoomGrants(room?.id ?? null);
+  const activeDayGrants = useMemo(
+    () => roomGrants
+      .filter((block) => block.day === activeTabDay)
+      .sort((a, b) => getMinutes(a.start_time) - getMinutes(b.start_time)),
+    [roomGrants, activeTabDay],
+  );
 
   const activeRoomSchedules = useMemo(() => {
     if (!room) return [];
@@ -186,7 +197,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
     status: room.status,
   }) : null, [room]);
 
-  if (isLoading || !room) {
+  if (isLoading || !room || !grantsReady) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -321,6 +332,26 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
               getTimeLabel={slotToTimeLabel}
               getDayCount={(dayIndex) => roomGridCards.filter(({ schedule }) => schedule.dayIndex === dayIndex).length}
             >
+              {roomGrants.map((block, index) => {
+                const dayIndex = DAYS.indexOf(block.day);
+                if (dayIndex < 0) return null;
+                const startSlot = timeToSlot(block.start_time);
+                const span = Math.max(1, timeToSlot(block.end_time) - startSlot);
+                return (
+                  <div
+                    key={`grant-${block.day}-${block.start_time}-${index}`}
+                    title={`Borrowed by ${block.department_code ?? 'another department'} · ${formatTime(block.start_time)} - ${formatTime(block.end_time)}`}
+                    className="m-0.5 overflow-hidden rounded-lg border-2 border-dashed border-orange-300 bg-orange-50/80 px-2 py-1 text-orange-800"
+                    style={{ gridColumn: dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
+                  >
+                    <p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide">
+                      <ArrowLeftRight size={11} />
+                      Borrowed by {block.department_code ?? 'another dept'}
+                    </p>
+                    <p className="text-[10px] font-semibold">{formatTime(block.start_time)} - {formatTime(block.end_time)}</p>
+                  </div>
+                );
+              })}
               {roomGridCards.map(({ schedule, subject }) => (
                 <ScheduleCard
                   key={schedule.id}
@@ -375,13 +406,28 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
 
             {/* Day Schedules List */}
             <div className="flex-1 overflow-y-auto p-6">
+              {activeDayGrants.length > 0 && (
+                <div className="mb-5 space-y-2">
+                  {activeDayGrants.map((block, index) => (
+                    <div key={`grant-${block.start_time}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border-2 border-dashed border-orange-300 bg-orange-50 px-4 py-2.5 text-orange-800">
+                      <span className="flex items-center gap-2 text-xs font-black uppercase tracking-wide">
+                        <ArrowLeftRight size={14} />
+                        Borrowed by {block.department_code ?? 'another department'}
+                      </span>
+                      <span className="text-xs font-bold">{formatTime(block.start_time)} - {formatTime(block.end_time)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {activeRoomSchedules.length === 0 ? (
                 <div className="py-8 flex flex-col items-center justify-center text-center text-gray-400">
                   <div className="w-10 h-10 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center border border-gray-200 mb-3">
                     <Calendar size={18} />
                   </div>
                   <p className="text-xs font-bold uppercase tracking-wider text-gray-400">No classes scheduled</p>
-                  <p className="text-[11px] text-gray-400 mt-1">Classroom is free and available during this timeframe.</p>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {activeDayGrants.length > 0 ? 'Outside the borrowed windows above, the classroom is free.' : 'Classroom is free and available during this timeframe.'}
+                  </p>
                 </div>
               ) : (
                 <div className="relative border-l border-gray-150 pl-6 space-y-6">

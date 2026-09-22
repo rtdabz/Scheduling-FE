@@ -51,8 +51,8 @@ export interface CourseClassConfig {
    */
   durationMinutes: number;
   /**
-   * Integrated Hybrid's two sessions, set separately: the online lecture and
-   * the on-site laboratory. Unset means the course's own length.
+   * Integrated's two sessions (On-site or Hybrid), set separately and used
+   * exactly. Unset (left blank) means the course's own length.
    */
   lectureMinutes?: number;
   laboratoryMinutes?: number;
@@ -97,9 +97,9 @@ export function defaultDurationMinutes(course: Course): number {
 /**
  * The longest weekly time the save will accept. A Split Session (and the
  * fixed Hybrid Split) is capped at the course's units
- * (`minor_split_duration`); a single meeting, and Integrated Hybrid's two
- * sessions together, at the larger of the Generator's two shapes
- * (`class_duration`).
+ * (`minor_split_duration`); a single meeting at the larger of the
+ * Generator's two shapes (`class_duration`). Integrated's two sessions are
+ * not capped by it: each takes the length the user sets.
  */
 export function maxDurationMinutes(
   course: Course,
@@ -180,7 +180,8 @@ export function applyCourseDefaults(
     const wanted = defaults.lectureMinutes !== null || defaults.laboratoryMinutes !== null;
     const lecture = defaults.lectureMinutes ?? own.lecture;
     const laboratory = defaults.laboratoryMinutes ?? own.laboratory;
-    const fits = lecture + laboratory <= maxDurationMinutes(course, shape, labSettings);
+    // Each session takes its length exactly; no unit-derived total caps the pair.
+    const fits = [lecture, laboratory].every((minutes) => minutes > 0 && minutes % SLOT_MINUTES === 0);
     return {
       config: {
         ...config,

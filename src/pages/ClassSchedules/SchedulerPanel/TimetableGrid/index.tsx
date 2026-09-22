@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, Loader2, MousePointerClick, Move, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, Loader2, MousePointerClick, Trash2, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -136,9 +136,7 @@ export default function TimetableGrid({
   const gridToolButtonClass = "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold shadow-sm transition-colors cursor-pointer";
   const placementLabel = placementSubjectId
     ? subjectsById.get(String(placementSubjectId))?.code ?? "subject"
-    : movingScheduleId
-      ? schedules.find((s) => s.id === movingScheduleId)?.subjectCode ?? "class"
-      : "";
+    : "";
   return (
     <div id="schedule-builder-timetable" className="flex min-h-[48rem] min-w-0 flex-1 flex-col overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-auto lg:min-h-0">
       <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200/80 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
@@ -250,24 +248,16 @@ export default function TimetableGrid({
             </div>
           </div>
         )}
-        {isPlacementMode && (
+        {/* A selected card carries its own Edit / Remove tooltip; the banner is
+            only for a course armed from the Course Bank, which has no card yet. */}
+        {placementSubjectId && !movingScheduleId && (
           <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
-            {movingScheduleId ? <Move className="w-5 h-5 text-blue-700 shrink-0" /> : <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />}
+            <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />
             <p className="text-sm font-semibold text-blue-900">
-              {movingScheduleId ? "Moving" : "Placing"}{" "}
-              <span className="font-extrabold">{placementLabel}</span>
+              Placing <span className="font-extrabold">{placementLabel}</span>
               {" "}— now click an empty time slot in the grid.
             </p>
             <div className="ml-auto flex items-center gap-2">
-              {movingScheduleId && (
-                <button
-                  type="button"
-                  onClick={handleEditMovingSchedule}
-                  className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
-                >
-                  Edit
-                </button>
-              )}
               <button
                 type="button"
                 onClick={cancelPlacement}
@@ -379,6 +369,7 @@ export default function TimetableGrid({
                       onDragEnd={handleDragEnd}
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
+                      onEdit={handleEditMovingSchedule}
                       isWideView={isWideView}
                       isReadOnlyViewer={isReadOnlyViewer}
                     />

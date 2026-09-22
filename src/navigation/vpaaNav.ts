@@ -56,7 +56,7 @@ export const vpaaNav: NavSection[] = [
         id: 'sidebar-rooms',
         children: [
           { label: 'Room List', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms-list' },
-          { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.review_requests', badge: 'Under Implementation' },
+          { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.review_requests' },
         ],
       },
       { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },

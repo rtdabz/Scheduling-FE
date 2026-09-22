@@ -16,7 +16,6 @@ import {
   durationShape,
   formatHours,
   hybridLaboratoryMinutes,
-  integratedHybridMinutes,
   isIntegratedShape,
   maxDurationMinutes,
   meetingParts,
@@ -148,6 +147,7 @@ function HoursInput({
   disabled,
   invalid,
   ariaLabel,
+  placeholder,
   onChange,
 }: {
   id: string;
@@ -156,6 +156,7 @@ function HoursInput({
   disabled: boolean;
   invalid: boolean;
   ariaLabel: string;
+  placeholder?: string;
   onChange: (value: number | "") => void;
 }) {
   return (
@@ -175,6 +176,7 @@ function HoursInput({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === "" ? "" : parseFloat(e.target.value))}
+        placeholder={placeholder}
         aria-label={ariaLabel}
         aria-invalid={invalid ? true : undefined}
         className="w-full min-w-0 px-2.5 text-xs font-bold text-slate-800 focus:outline-hidden"
@@ -251,25 +253,30 @@ export default function ConfigureClassSidebar({
             : null
       : null;
 
-  // Integrated: the lecture and the laboratory are set separately. They start at the course's own lengths (the laboratory at the
-  // department's Custom Lab Duration when set) and together may not exceed
-  // the course's weekly ceiling (`class_duration`).
+  // Integrated (On-site or Hybrid): the lecture and the laboratory are set
+  // separately and used exactly as entered. A blank field keeps the course's
+  // own length (one hour per lecture unit; the laboratory at three hours per
+  // unit or the department's Custom Lab Duration). No unit-derived total caps
+  // the pair; the server only requires each to fit the teaching day.
   const hybridDefaults = hybridLaboratoryMinutes(course, labSettings);
-  const initialHybrid = integratedHybridMinutes(initialConfig, course, labSettings);
-  const [lectureHours, setLectureHours] = useState<number | "">(initialHybrid.lecture / 60);
-  const [laboratoryHours, setLaboratoryHours] = useState<number | "">(initialHybrid.laboratory / 60);
-  const lectureMinutes = typeof lectureHours === "number" ? Math.round(lectureHours * 60) : 0;
-  const laboratoryMinutes = typeof laboratoryHours === "number" ? Math.round(laboratoryHours * 60) : 0;
+  const [lectureHours, setLectureHours] = useState<number | "">(
+    initialConfig.lectureMinutes !== undefined ? initialConfig.lectureMinutes / 60 : "",
+  );
+  const [laboratoryHours, setLaboratoryHours] = useState<number | "">(
+    initialConfig.laboratoryMinutes !== undefined ? initialConfig.laboratoryMinutes / 60 : "",
+  );
+  const minutesOr = (value: number | "", fallback: number) =>
+    typeof value === "number" ? Math.round(value * 60) : fallback;
+  const lectureMinutes = minutesOr(lectureHours, hybridDefaults.lecture);
+  const laboratoryMinutes = minutesOr(laboratoryHours, hybridDefaults.laboratory);
   const componentError =
     !isIntegratedShape(shape)
       ? null
-      : lectureHours === "" || laboratoryHours === "" || lectureMinutes <= 0 || laboratoryMinutes <= 0
-        ? "Enter a length for both the lecture and the laboratory."
+      : lectureMinutes <= 0 || laboratoryMinutes <= 0
+        ? "A lecture or laboratory length must be more than 0 hours."
         : lectureMinutes % SLOT_MINUTES !== 0 || laboratoryMinutes % SLOT_MINUTES !== 0
           ? "Use whole half-hours, e.g. 1.5 or 2."
-          : lectureMinutes + laboratoryMinutes > maxMinutes
-            ? `${course.code} carries at most ${formatHours(maxMinutes / 60)} a week; these add up to ${formatHours((lectureMinutes + laboratoryMinutes) / 60)}.`
-            : null;
+          : null;
 
   const [requiredDay, setRequiredDay] = useState<string>(initialConfig.requiredDay ?? "");
   const compatibleRooms = useMemo(
@@ -319,7 +326,13 @@ export default function ConfigureClassSidebar({
           : component,
       durationMinutes:
         shape === "single" || shape === "split" ? durationMinutes : initialConfig.durationMinutes,
-      ...(isIntegratedShape(shape) ? { lectureMinutes, laboratoryMinutes } : {}),
+      // A blank session stays unset, so it follows the course's own length.
+      ...(isIntegratedShape(shape)
+        ? {
+            lectureMinutes: lectureHours === "" ? undefined : lectureMinutes,
+            laboratoryMinutes: laboratoryHours === "" ? undefined : laboratoryMinutes,
+          }
+        : {}),
       requiredDay: requiredDay || null,
       preferredRoomId: preferredRoomId || null,
       sectionScope,
@@ -463,8 +476,8 @@ export default function ConfigureClassSidebar({
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
-                  { key: "lecture", label: "Lecture", mode: shape === "hybrid-laboratory" ? "Online" : "F2F", value: lectureHours, set: setLectureHours },
-                  { key: "laboratory", label: "Laboratory", mode: "F2F", value: laboratoryHours, set: setLaboratoryHours },
+                  { key: "lecture", label: "Lecture", mode: shape === "hybrid-laboratory" ? "Online" : "F2F", value: lectureHours, set: setLectureHours, fallback: hybridDefaults.lecture },
+                  { key: "laboratory", label: "Laboratory", mode: "F2F", value: laboratoryHours, set: setLaboratoryHours, fallback: hybridDefaults.laboratory },
                 ] as const
               ).map((part) => (
                 <div key={part.key}>
@@ -480,19 +493,20 @@ export default function ConfigureClassSidebar({
                     disabled={disabled}
                     invalid={componentError !== null}
                     ariaLabel={`${part.label} duration in hours`}
+                    placeholder={`${part.fallback / 60} (default)`}
                     onChange={part.set}
                   />
                 </div>
               ))}
             </div>
             <Hint error={componentError}>
-              {`Max ${formatHours(maxMinutes / 60)} a week together.`}
-              {(lectureMinutes !== hybridDefaults.lecture || laboratoryMinutes !== hybridDefaults.laboratory) && (
+              {`Leave blank for the course's own length (${formatHours(hybridDefaults.lecture / 60)} lecture, ${formatHours(hybridDefaults.laboratory / 60)} laboratory).`}
+              {(lectureHours !== "" || laboratoryHours !== "") && (
                 <ResetLink
                   disabled={disabled}
                   onClick={() => {
-                    setLectureHours(hybridDefaults.lecture / 60);
-                    setLaboratoryHours(hybridDefaults.laboratory / 60);
+                    setLectureHours("");
+                    setLaboratoryHours("");
                   }}
                 />
               )}

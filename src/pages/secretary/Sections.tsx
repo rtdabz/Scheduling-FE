@@ -188,10 +188,8 @@ export default function SecretarySections() {
           setCachedData<SectionsPageData>(sectionsCacheKey, { sections: nextSections, departments, programs, semesters });
           return nextSections;
         });
-        toast.success('Archived', 'Section archived successfully');
         toast.success('Deleted', 'Section deleted successfully');
       } catch {
-        toast.error('Error', 'Failed to archive section');
         toast.error('Error', 'Failed to delete section');
       } finally {
         setIsDeleteModalOpen(false);
@@ -345,7 +343,6 @@ export default function SecretarySections() {
                   <Trash2 size={17} />
                 </TableActionButton>
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                  Archive
                   Delete
                 </span>
               </div>
@@ -447,7 +444,6 @@ export default function SecretarySections() {
         existingSections={sections}
       />
 
-      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Archive Record" title="Archive Section" message="This section will be hidden from active lists and can be restored from the Archive." confirmLabel="Archive" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteSection} />
       <ConfirmModal
         isOpen={isDeleteModalOpen}
         eyebrow="Delete Record"

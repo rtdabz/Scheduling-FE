@@ -9,6 +9,7 @@ import {
   UserX,
 } from "lucide-react";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
+import { instructorOptionLabel } from "./SchedulerPanel/EmploymentBadge";
 
 /**
  * The list half of the instructor-assignment workspace.
@@ -36,6 +37,7 @@ export interface WorklistMeeting {
 export interface WorklistEligibleFaculty {
   id: number;
   name: string;
+  employmentType?: "full-time" | "part-time";
   /** Why this instructor cannot take the class, or null when they can. */
   conflict: string | null;
 }
@@ -280,7 +282,7 @@ function WorklistRow({
                 </option>
                 {item.eligible.map((faculty) => (
                   <option key={faculty.id} value={faculty.id}>
-                    {faculty.conflict ? `${faculty.name} — Conflict` : faculty.name}
+                    {instructorOptionLabel(faculty.name, faculty.employmentType, Boolean(faculty.conflict))}
                   </option>
                 ))}
               </select>

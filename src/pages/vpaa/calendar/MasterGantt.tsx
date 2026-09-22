@@ -52,6 +52,16 @@ interface MasterGanttProps {
   fillHeight?: boolean;
   /** Suppress sideways scrolling; only meaningful alongside zoom="fit", where the timeline already matches the viewport width. */
   lockHorizontalScroll?: boolean;
+  /** Time held for someone other than the classes drawn, e.g. a room lent to another department. */
+  reservations?: readonly GanttReservation[];
+}
+
+export interface GanttReservation {
+  dayIndex: number;
+  /** Minutes from midnight. */
+  start: number;
+  end: number;
+  label: string;
 }
 
 interface HoverState {
@@ -60,7 +70,7 @@ interface HoverState {
 }
 
 const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function MasterGantt(
-  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false },
+  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false, reservations },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -143,6 +153,10 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
   );
 
   /** Per-slot load across a day, drawn in the day header so a collapsed day still shows its shape. */
+  const dayReservations = (dayIndex: number) =>
+    (reservations ?? []).filter((reservation) => reservation.dayIndex === dayIndex
+      && reservation.end > timeWindow.start && reservation.start < timeWindow.end);
+
   const densityStrip = (day: GanttDay) => {
     const step = standardHours.slotMinutes > 0 ? standardHours.slotMinutes : 30;
     const buckets = buildTicks({ start: timeWindow.start, end: timeWindow.end - step }, step).map((from) => {
@@ -305,9 +319,19 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
                   </span>
                 </button>
                 <div className="relative">
+                  {dayReservations(day.dayIndex).map((reservation, index) => (
+                    <div
+                      key={`reservation-${reservation.start}-${index}`}
+                      title={`${reservation.label} · ${minutesToLabel(reservation.start)} - ${minutesToLabel(reservation.end)}`}
+                      className="absolute bottom-1 top-1 flex items-center overflow-hidden rounded-md border-2 border-dashed border-orange-300 bg-orange-50/90 px-1.5"
+                      style={span(Math.max(reservation.start, timeWindow.start), Math.min(reservation.end, timeWindow.end))}
+                    >
+                      <span className="truncate text-[10px] font-black uppercase tracking-wide text-orange-800">{reservation.label}</span>
+                    </div>
+                  ))}
                   {day.count > 0
                     ? densityStrip(day)
-                    : <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold italic text-slate-400">No classes in view</span>}
+                    : dayReservations(day.dayIndex).length === 0 && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold italic text-slate-400">No classes in view</span>}
                 </div>
               </div>
 

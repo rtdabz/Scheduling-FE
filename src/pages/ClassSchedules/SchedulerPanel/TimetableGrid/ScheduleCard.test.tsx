@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import ScheduleCard from "./ScheduleCard";
 import type { ScheduleItem, Subject } from "../types";
 
@@ -92,5 +92,53 @@ describe("ScheduleCard Hybrid component labels", () => {
     rerender(<ScheduleCard {...commonProps} schedule={schedule("lecture", "online")} />);
     expect(screen.getAllByText("Online").length).toBeGreaterThan(0);
     expect(screen.queryByText("On-Site LEC")).toBeNull();
+  });
+});
+
+describe("ScheduleCard selected-card tooltip", () => {
+  it("shows Edit and Remove only on the selected card, with no remove icon on the card", () => {
+    const onEdit = vi.fn();
+    const setDeleteConfirmScheduleId = vi.fn();
+    const onCardClick = vi.fn();
+    const { rerender } = render(
+      <ScheduleCard {...commonProps} isEditable schedule={schedule("lecture", "on-site")} onEdit={onEdit} />
+    );
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
+
+    rerender(
+      <ScheduleCard
+        {...commonProps}
+        isEditable
+        isMoving
+        schedule={schedule("lecture", "on-site")}
+        onEdit={onEdit}
+        onCardClick={onCardClick}
+        setDeleteConfirmScheduleId={setDeleteConfirmScheduleId}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(onEdit).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Remove IT 101" }));
+    expect(setDeleteConfirmScheduleId).toHaveBeenCalledWith("lecture");
+    // Clicks inside the tooltip must not toggle the card's selection.
+    expect(onCardClick).not.toHaveBeenCalled();
+  });
+
+  it("confirms the removal inside the tooltip", () => {
+    const onDelete = vi.fn();
+    render(
+      <ScheduleCard
+        {...commonProps}
+        isEditable
+        isMoving
+        deleteConfirmScheduleId="lecture"
+        schedule={schedule("lecture", "on-site")}
+        onDelete={onDelete}
+      />
+    );
+    expect(screen.getByText("Remove IT 101 from the timetable?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(onDelete).toHaveBeenCalledWith("lecture");
   });
 });

@@ -40,6 +40,7 @@ import {
   hasUsableSchedulerCache,
   mapApiFaculty,
   mapApiScheduleToItem,
+  mapApiSections,
   mapInitialData,
   slotToTime24h
 } from "./initialDataMapper";
@@ -586,11 +587,34 @@ export const useScheduler = () => {
     }
   }, [schedulerCacheKey]);
 
+  /**
+   * Refetches only the section list. A section created, renamed or
+   * reassigned elsewhere (Setup Sections, curriculum assignment) never
+   * reached an already-open builder without this: the generator kept
+   * resolving that section against its stale in-memory list and fell back to
+   * showing "Section {id}" instead of its name.
+   */
+  const refreshSections = useCallback(async () => {
+    try {
+      const response = await api.get<Pick<InitialDataResponse, "sections" | "active_semester">>('/initial-data', { params: { include: 'sections' } });
+      if (!Array.isArray(response.data.sections)) return;
+      const fresh = mapApiSections(response.data.sections, response.data.active_semester ?? null);
+      setSections(fresh);
+      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
+      if (cachedData) {
+        setCachedData<SchedulerCacheData>(schedulerCacheKey, { ...cachedData, sections: fresh });
+      }
+    } catch {
+      // Loads are advisory here; the local list is still usable.
+    }
+  }, [schedulerCacheKey]);
+
   // Changes made by others (another secretary, a Dean returning a section, a
   // VPAA approval) reconcile into the open builder. Both refreshers compare
   // before replacing state, so an unrelated department's change re-renders nothing.
   useLiveRefresh(["schedules", "approvals"], () => { void refreshSchedules(); });
   useLiveRefresh(["faculty", "assignments"], () => { void refreshFaculties(); });
+  useLiveRefresh(["sections"], () => { void refreshSections(); });
 
   const applyUpdatedSchedules = useCallback((updatedSchedules: ScheduleItem[]) => {
     const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));
@@ -2925,6 +2949,7 @@ export const useScheduler = () => {
     if (isEditable) {
       setPlacementSubjectId(null);
       setConflictInfo(null);
+      setDeleteConfirmScheduleId(null);
       setMovingScheduleId((prev) => (prev === scheduleId ? null : scheduleId));
     }
   }, [schedules, isPhase2Active, currentStatus, isEditable]);

@@ -51,7 +51,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
 
   const statusColors: Record<string, string> = {
     active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    draft: 'bg-gray-100 text-gray-700 border-gray-200',
+    deactivated: 'bg-slate-200 text-slate-700 border-slate-300',
     archived: 'bg-red-50 text-red-700 border-red-200',
   };
 
@@ -59,7 +59,10 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
       <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
         <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
-          <h2 className="text-lg font-bold text-[#1A1410] font-display">Curriculum Details</h2>
+          <div>
+            <h2 className="text-lg font-bold text-[#1A1410] font-display">Curriculum Details</h2>
+            <p className="text-xs text-gray-500 font-medium mt-1">View Only - No edits allowed</p>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -87,7 +90,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }:
               <div className="mb-6">
                 <div className="flex items-center gap-3 mb-2">
                   <h3 className="text-xl font-bold text-[#1A1410] font-display">{curriculum.name}</h3>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${statusColors[curriculum.status] || statusColors.draft}`}>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${statusColors[curriculum.status] || statusColors.deactivated}`}>
                     {curriculum.status}
                   </span>
                 </div>

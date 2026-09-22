@@ -40,6 +40,8 @@ import { curriculumLifecycleBadge } from '../../types/curriculum';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import { printCurriculum } from '../../lib/curriculumPrintable';
 import { useToast } from '../../context/ToastContext';
+import { hasStoredCapability } from '../../lib/storedUser';
+import CurriculumReviewPage from './CurriculumReviewPage';
 
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -47,7 +49,16 @@ const statusColors: Record<string, string> = {
   archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
+/**
+ * One route per role serves both audiences: the secretary, who holds
+ * `curriculum.manage`, gets the authoring page; the dean and the VPAA get the
+ * read-only review page laid out like Schedule Approval.
+ */
 export default function CurriculumListPage() {
+  return hasStoredCapability('curriculum.manage') ? <CurriculumManagePage /> : <CurriculumReviewPage />;
+}
+
+function CurriculumManagePage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const {
@@ -69,6 +80,15 @@ export default function CurriculumListPage() {
     handleArchive,
     programs,
   } = useCurriculum();
+
+  /**
+   * The VPAA portal is mounted at the root, every other role under its own
+   * prefix, so a curriculum link has to be built from the viewer's role.
+   */
+  const curriculumPathFor = useCallback(
+    (curriculumId: number) => (userRole === 'vpaa' ? `/curriculum/${curriculumId}` : `/${userRole}/curriculum/${curriculumId}`),
+    [userRole],
+  );
 
   // View mode
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -222,7 +242,7 @@ export default function CurriculumListPage() {
         header: 'Actions',
         cell: ({ row }) => {
           const item = row.original;
-          const curriculumPath = userRole === 'vpaa' ? `/curriculum/${item.id}` : `/${userRole}/curriculum/${item.id}`;
+          const curriculumPath = curriculumPathFor(item.id);
           return (
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               <TableActionButton
@@ -303,7 +323,7 @@ export default function CurriculumListPage() {
         },
       },
     ],
-    [navigate, canManageCurriculum, handleDuplicate, handleStatusChange, handleArchive, handlePrintCurriculum, printingCurriculumId, userRole]
+    [navigate, canManageCurriculum, handleDuplicate, handleStatusChange, handleArchive, handlePrintCurriculum, printingCurriculumId, curriculumPathFor]
   );
 
   const table = useReactTable({
@@ -498,10 +518,7 @@ export default function CurriculumListPage() {
                 key={item.id}
                 curriculum={item}
                 canEdit={canManageCurriculum}
-                onView={(id) => {
-                  const path = userRole === 'vpaa' ? `/curriculum/${id}?mode=view` : `/${userRole}/curriculum/${id}?mode=view`;
-                  navigate(path);
-                }}
+                onView={(id) => navigate(`${curriculumPathFor(id)}?mode=view`)}
                 onEdit={(c) => {
                   setEditingCurriculum(c);
                   setIsEditMode(true);
@@ -529,7 +546,10 @@ export default function CurriculumListPage() {
           const saved = await handleCreateOrUpdate(data, editingCurriculum);
           setIsFormModalOpen(false);
           if (!editingCurriculum) {
-            navigate(`/curriculum/${saved.id}?mode=edit`);
+            // Curriculum authoring moved to the secretary, whose curriculum
+            // pages are namespaced by role; this used to hard-code the VPAA
+            // path and dropped the creator on a route they cannot open.
+            navigate(`${curriculumPathFor(saved.id)}?mode=edit`);
           }
         }}
       />

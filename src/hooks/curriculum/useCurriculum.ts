@@ -3,6 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { hasStoredCapability } from '../../lib/storedUser';
 import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, Department, Program } from '../../types/curriculum';
@@ -29,10 +30,10 @@ export function useCurriculum() {
   const [programs, setPrograms] = useState<Program[]>(cachedData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(curriculumCacheKey));
 
-  // Role permissions
-  const canManageCurriculum = useMemo(() => {
-    return userRole === 'vpaa';
-  }, [userRole]);
+  // Curriculum authoring follows the capability, not the role: the secretary
+  // holds it, while the dean and the VPAA read the same list without the write
+  // actions. Mirrors `capability:curriculum.manage` on the write routes.
+  const canManageCurriculum = useMemo(() => hasStoredCapability('curriculum.manage'), []);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');

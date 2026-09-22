@@ -634,6 +634,15 @@ export default function DropModal({
     modalDay1Duration, modalDay2Duration, modalDay1Index, modalDay2Index, modalIsHybrid,
   ]);
 
+  /**
+   * The day the placement was dropped on -- where it collided. Both the ranked
+   * options and the full list look on that day first and then move day by day
+   * through the rest of the week. Read from dropContext, which holds still
+   * while the dialog is open, so applying an option on another day does not
+   * re-solve and reshuffle the list under the user.
+   */
+  const searchFromDay = dropContext ? FULL_DAY_NAMES[dropContext.dayIndex] : undefined;
+
   const availableSlotsPayload = useMemo(() => {
     if (!dropSubject || !selectedSectionId) return null;
     // getSubjectTotalSlots rather than the `totalSlots` const below: this memo
@@ -655,8 +664,9 @@ export default function DropModal({
       // both days to intersect them.
       excluded_days: slotMeetingPlan.excludedDays,
       tentative_schedules: tentativeSchedules,
+      ...(searchFromDay ? { search_from_day: searchFromDay } : {}),
     };
-  }, [dropSubject, selectedSectionId, slotMeetingPlan, tentativeSchedules]);
+  }, [dropSubject, selectedSectionId, slotMeetingPlan, tentativeSchedules, searchFromDay]);
 
   useEffect(() => {
     if (!shouldShowRecommendations || !availableSlotsPayload) {
@@ -846,6 +856,7 @@ export default function DropModal({
         ? { [dropSubject.id]: modalPreferredPattern }
         : {},
       tentative_schedules: tentativeSchedules,
+      ...(searchFromDay ? { search_from_day: searchFromDay } : {}),
       max_solutions: 3,
       timeout_seconds: 5,
     };
@@ -865,6 +876,7 @@ export default function DropModal({
     hasBoth,
     selectedSectionId,
     tentativeSchedules,
+    searchFromDay,
   ]);
 
   useEffect(() => {
@@ -1366,15 +1378,11 @@ export default function DropModal({
    * lecture unit, and three hours per laboratory unit unless the department
    * set a Custom Lab Duration -- but those are a starting point, not the
    * shape. They are the user's to change here exactly as they are in Setup
-   * Courses; what neither may cross is the week the course carries
-   * (`class_duration`) or the end of the teaching day.
+   * Courses, and each is used as set: no unit-derived total caps the pair
+   * (`class_duration` judges each session on its own). All a session may not
+   * cross is the end of the teaching day.
    */
-  const integratedCeilingSlots = Math.max(
-    totalSlots,
-    getCourseSlotPlan(dropSubject).lectureSlots + laboratoryComponentSlots(dropSubject, manualSchedulingSettings),
-  );
-  const integratedMaxSlots = (startSlot: number, partnerSlots: number): number =>
-    Math.max(1, Math.min(integratedCeilingSlots - partnerSlots, gridSlotCount - startSlot));
+  const integratedMaxSlots = (startSlot: number): number => Math.max(1, gridSlotCount - startSlot);
 
   /**
    * One session's length. It changes what the alternatives are being asked
@@ -1481,6 +1489,22 @@ export default function DropModal({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Pinned above the scrolling form so the conflict is visible without scrolling. */}
+        {hasConflict && (
+          <div role="alert" className="flex shrink-0 items-start gap-2.5 border-b border-red-200 bg-red-50 px-5 py-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <div className="min-w-0 flex-1 text-sm leading-snug">
+              <p className="break-words text-red-700">
+                <span className="font-bold text-red-800">This placement has a conflict: </span>
+                {modalConflict}
+              </p>
+              <p className="mt-0.5 text-xs text-red-600">
+                Choose another room, day or time, change the class mode{canUseRecommendations ? ", or use one of the suggested alternatives" : ""}.
+              </p>
+            </div>
+          </div>
+        )}
 
         <form
           onSubmit={handleModalConfirm}
@@ -1621,7 +1645,7 @@ export default function DropModal({
               }}
               durationSlots={modalDay1Duration}
               onDurationChange={isIntegrated ? (slots) => handleIntegratedDurationChange(false, slots) : undefined}
-              maxDurationSlots={integratedMaxSlots(modalDay1StartSlot, modalDay2Duration)}
+              maxDurationSlots={integratedMaxSlots(modalDay1StartSlot)}
               endLabelSuffix={isTwoMeetingPattern ? undefined : "(auto)"}
             />
 
@@ -1665,7 +1689,7 @@ export default function DropModal({
                 }}
                 durationSlots={modalDay2Duration}
                 onDurationChange={isIntegrated ? (slots) => handleIntegratedDurationChange(true, slots) : undefined}
-                maxDurationSlots={integratedMaxSlots(modalDay2StartSlot, modalDay1Duration)}
+                maxDurationSlots={integratedMaxSlots(modalDay2StartSlot)}
               />
             )}
           </div>
@@ -1726,21 +1750,6 @@ export default function DropModal({
                 </>
               )}
             </section>
-          )}
-
-          {hasConflict && (
-            <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-600">
-                <AlertTriangle className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-red-800">This placement has a conflict</p>
-                <p className="mt-0.5 text-sm text-red-700">{modalConflict}</p>
-                <p className="mt-1.5 text-xs text-red-600">
-                  Choose another room, day or time, change the class mode{canUseRecommendations ? ", or use one of the suggested alternatives" : ""}.
-                </p>
-              </div>
-            </div>
           )}
         </form>
 

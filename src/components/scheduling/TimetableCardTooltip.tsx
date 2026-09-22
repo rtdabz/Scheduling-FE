@@ -20,6 +20,11 @@ interface TimetableCardTooltipProps {
   verticalAlign?: "above" | "below";
   /** Extra rows rendered under the details, e.g. a conflict explanation. */
   children?: ReactNode;
+  /**
+   * Pins the panel open and makes it clickable, for when it carries actions
+   * (the scheduler's selected card). Otherwise it is a hover-only tooltip.
+   */
+  open?: boolean;
 }
 
 export default function TimetableCardTooltip({
@@ -33,6 +38,7 @@ export default function TimetableCardTooltip({
   align = "left",
   verticalAlign = "below",
   children,
+  open = false,
 }: TimetableCardTooltipProps) {
   const isVertical = placement === "vertical";
   const positionClasses = isVertical
@@ -43,7 +49,13 @@ export default function TimetableCardTooltip({
 
   return (
     <div
-      className={`pointer-events-none invisible absolute z-50 w-64 rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs text-white opacity-0 shadow-2xl transition-all duration-200 group-hover:visible group-hover:opacity-100 ${
+      role={open ? "dialog" : undefined}
+      onClick={open ? (e) => e.stopPropagation() : undefined}
+      className={`absolute z-50 w-64 cursor-default rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs text-white shadow-2xl transition-all duration-200 ${
+        open
+          ? "pointer-events-auto visible opacity-100"
+          : "pointer-events-none invisible opacity-0 group-hover:visible group-hover:opacity-100"
+      } ${
         isVertical ? "space-y-2 leading-snug" : ""
       } ${positionClasses}`}
     >

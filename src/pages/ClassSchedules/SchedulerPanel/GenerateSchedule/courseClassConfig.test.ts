@@ -430,17 +430,26 @@ describe("courseClassConfig", () => {
       expect(applyCourseDefaults(split, gecCourse, { ...defaults, lectureMinutes: 120 }).config.durationMinutes).toBe(120);
     });
 
-    it("sets each Integrated session, within the course's week", () => {
+    it("sets each Integrated session exactly, with no unit-derived week over the pair", () => {
       const integrated = { ...baseConfig, configuration: "integrated" as const };
 
       const fits = applyCourseDefaults(integrated, integratedCourse, { ...defaults, laboratoryMinutes: 150 });
       expect(fits.applied).toBe(true);
       expect(integratedHybridMinutes(fits.config, integratedCourse)).toEqual({ lecture: 120, laboratory: 150 });
 
-      // 2h lecture + 4h laboratory is past the 5h this course may meet.
-      const tooLong = applyCourseDefaults(integrated, integratedCourse, { ...defaults, laboratoryMinutes: 240 });
-      expect(tooLong.skipped).toBe(true);
-      expect(integratedHybridMinutes(tooLong.config, integratedCourse)).toEqual({ lecture: 120, laboratory: 180 });
+      // 3h lecture + 4h laboratory is past the old 5h unit total, and is kept.
+      const longer = applyCourseDefaults(integrated, integratedCourse, {
+        ...defaults,
+        lectureMinutes: 180,
+        laboratoryMinutes: 240,
+      });
+      expect(longer.applied).toBe(true);
+      expect(integratedHybridMinutes(longer.config, integratedCourse)).toEqual({ lecture: 180, laboratory: 240 });
+
+      // Not whole half-hours: the course keeps its own lengths.
+      const ragged = applyCourseDefaults(integrated, integratedCourse, { ...defaults, lectureMinutes: 100 });
+      expect(ragged.skipped).toBe(true);
+      expect(integratedHybridMinutes(ragged.config, integratedCourse)).toEqual({ lecture: 120, laboratory: 180 });
     });
 
     it("leaves field courses and blank defaults alone", () => {

@@ -32,12 +32,12 @@ const MONDAY_AFTERNOON = [{ day_index: 0, start_time: '13:00:00', end_time: '17:
  * windows, which offered slots the server then refused.
  */
 describe('isPartTimeOutsideAvailability', () => {
-  it('blocks every slot for a part-timer with no recorded windows', () => {
+  it('does not restrict a part-timer with no recorded windows', () => {
     const noWindows = faculty();
 
-    expect(outside(noWindows, 0, '08:00', '09:30')).toBe(true);
-    expect(outside(noWindows, 2, '14:00', '15:30')).toBe(true);
-    expect(outside(noWindows, 5, '10:00', '11:30')).toBe(true);
+    expect(outside(noWindows, 0, '08:00', '09:30')).toBe(false);
+    expect(outside(noWindows, 2, '14:00', '15:30')).toBe(false);
+    expect(outside(noWindows, 5, '10:00', '11:30')).toBe(false);
   });
 
   it('never restricts a full-time instructor', () => {

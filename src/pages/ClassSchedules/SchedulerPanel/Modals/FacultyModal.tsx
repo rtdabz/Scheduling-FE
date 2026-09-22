@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useRef } from "react";
 import { AlertTriangle, CalendarDays, ChevronDown, Clock, MapPin, User, UserCheck, X } from "lucide-react";
 import { getCategoryStyles } from "../constants";
+import EmploymentBadge, { instructorOptionLabel } from "../EmploymentBadge";
 import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "../facultyEligibility";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
@@ -218,7 +219,7 @@ export default function FacultyModal({
                     // A clash can be assigned over on purpose, so it is labelled
                     // rather than disabled.
                     <option key={faculty.id} value={faculty.id}>
-                      {conflict ? `${faculty.name} - Conflict` : faculty.name}
+                      {instructorOptionLabel(faculty.name, faculty.employmentType, Boolean(conflict))}
                     </option>
                   );
                 })}
@@ -252,6 +253,7 @@ export default function FacultyModal({
             {selectedFaculty && (
               <p className="text-xs font-semibold text-gray-500">
                 Selected instructor: <span className="text-gray-800">{selectedFaculty.name}</span>
+                <EmploymentBadge type={selectedFaculty.employmentType} className="ml-2 align-middle" />
               </p>
             )}
 

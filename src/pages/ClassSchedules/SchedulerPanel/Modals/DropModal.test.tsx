@@ -222,15 +222,15 @@ describe("DropModal Integrated configuration", () => {
     // rather than a fixed 3 + 2 the user cannot move.
     expect(duration("Laboratory Meeting").value).toBe("6");
     expect(duration("Lecture Meeting").value).toBe("4");
-    // Together they already fill the week IT 101 carries, so neither one grows
-    // until the other gives way.
-    expect(duration("Laboratory Meeting").options).toHaveLength(6);
-    expect(duration("Lecture Meeting").options).toHaveLength(4);
+    // Each session is the user's own length: no unit-derived week caps the
+    // pair, so the lecture grows past the 2 h its units give while the
+    // laboratory keeps its 3 h. Only the end of the teaching day bounds it.
+    expect(duration("Lecture Meeting").options.length).toBeGreaterThan(6);
 
-    fireEvent.change(duration("Lecture Meeting"), { target: { value: "2" } });
+    fireEvent.change(duration("Lecture Meeting"), { target: { value: "6" } });
 
-    expect(duration("Lecture Meeting").value).toBe("2");
-    expect(duration("Laboratory Meeting").options).toHaveLength(8);
+    expect(duration("Lecture Meeting").value).toBe("6");
+    expect(duration("Laboratory Meeting").value).toBe("6");
 
     fireEvent.change(duration("Laboratory Meeting"), { target: { value: "8" } });
 
@@ -238,7 +238,7 @@ describe("DropModal Integrated configuration", () => {
     // The lengths chosen are what the alternatives are asked for; without them
     // every option comes back in the shape the user has just changed.
     await waitFor(() => expect(previewCalls().at(-1)?.[1]).toMatchObject({
-      component_minutes_by_course_id: { 1: { lecture: 60, laboratory: 240 } },
+      component_minutes_by_course_id: { 1: { lecture: 180, laboratory: 240 } },
     }));
   });
 

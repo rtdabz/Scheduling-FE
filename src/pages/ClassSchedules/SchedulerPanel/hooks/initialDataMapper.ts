@@ -323,6 +323,35 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   availabilities: f.availabilities
 });
 
+/**
+ * Sections must match the active semester by id, or by semester *and*
+ * academic year. Matching on semester alone leaks sections from other
+ * academic years. Shared by the initial load and `refreshSections`, so a
+ * live-refresh sees the same set the page loaded with.
+ */
+export const mapApiSections = (
+  sections: ApiSectionRecord[],
+  semester: ApiSemesterRecord | null,
+): Section[] =>
+  sections
+    .filter((s) => {
+      if (!semester) return true;
+      if (s.semester_id && Number(s.semester_id) === Number(semester.id)) return true;
+      return !!(semester.semester && s.semester === semester.semester && s.academic_semester?.academic_year === semester.academic_year);
+    })
+    .map((s): Section => ({
+      id: s.id.toString(),
+      name: s.section_name,
+      yearLevel: normalizeYearLevel(s.year_level),
+      semester: s.semester,
+      departmentId: s.department_id,
+      programId: s.program_id == null ? null : Number(s.program_id),
+      curriculumId: s.curriculum_id == null ? null : Number(s.curriculum_id),
+      curriculumName: s.curriculum?.name ?? null,
+      semesterId: Number(s.semester_id),
+      status: s.status ?? "active"
+    }));
+
 export const mapInitialData = (
   initialData: InitialDataResponse,
   options: { isVpaa: boolean; userDepartmentId?: number | null },
@@ -358,27 +387,7 @@ export const mapInitialData = (
   const mappedFaculties = initialData.faculties.map(mapApiFaculty);
 
   const semester = initialData.active_semester;
-
-  // Sections must match the active semester by id, or by semester *and* academic
-  // year. Matching on semester alone leaks sections from other academic years.
-  const filteredSections = initialData.sections
-    .filter((s) => {
-      if (!semester) return true;
-      if (s.semester_id && Number(s.semester_id) === Number(semester.id)) return true;
-      return !!(semester.semester && s.semester === semester.semester && s.academic_semester?.academic_year === semester.academic_year);
-    })
-    .map((s): Section => ({
-      id: s.id.toString(),
-      name: s.section_name,
-      yearLevel: normalizeYearLevel(s.year_level),
-      semester: s.semester,
-      departmentId: s.department_id,
-      programId: s.program_id == null ? null : Number(s.program_id),
-      curriculumId: s.curriculum_id == null ? null : Number(s.curriculum_id),
-      curriculumName: s.curriculum?.name ?? null,
-      semesterId: Number(s.semester_id),
-      status: s.status ?? "active"
-    }));
+  const filteredSections = mapApiSections(initialData.sections, semester);
 
   const filteredSchedules = initialData.schedules
     .filter((item) => !semester || Number(item.semester_id) === Number(semester.id))

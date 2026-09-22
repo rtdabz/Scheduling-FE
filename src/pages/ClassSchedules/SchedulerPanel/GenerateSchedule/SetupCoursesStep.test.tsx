@@ -453,28 +453,29 @@ describe("SetupCoursesStep", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[1]);
 
-    // Starts at the course's own lengths: 2 lecture units, 1 laboratory unit.
+    // Blank means the course's own length: 2 lecture units, 1 laboratory unit.
     const lecture = screen.getByLabelText(/Lecture duration in hours/i) as HTMLInputElement;
     const laboratory = screen.getByLabelText(/Laboratory duration in hours/i) as HTMLInputElement;
-    expect(lecture.value).toBe("2");
-    expect(laboratory.value).toBe("3");
+    expect(lecture.value).toBe("");
+    expect(lecture.placeholder).toBe("2 (default)");
+    expect(laboratory.value).toBe("");
+    expect(laboratory.placeholder).toBe("3 (default)");
 
-    // Too long for the week (the course carries at most 5 h).
-    fireEvent.change(lecture, { target: { value: "3" } });
-    expect(screen.getByRole("alert").textContent).toContain("at most 5h a week");
+    fireEvent.change(lecture, { target: { value: "1.25" } });
+    expect(screen.getByRole("alert").textContent).toContain("whole half-hours");
     expect((screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.change(lecture, { target: { value: "1.5" } });
-    fireEvent.change(laboratory, { target: { value: "3.5" } });
+    // Past the old 5 h unit total, and used exactly; the laboratory stays blank.
+    fireEvent.change(lecture, { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
 
     for (const sectionId of ["s1", "s2"]) {
       expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({
-        componentMinutesByCourseId: { c2: { lecture: 90, laboratory: 210 } },
+        componentMinutesByCourseId: { c2: { lecture: 180, laboratory: 180 } },
       }));
     }
-    expect(screen.getByText(/Lecture 1\.5h Online/)).toBeDefined();
-    expect(screen.getByText(/Laboratory 3\.5h F2F/)).toBeDefined();
+    expect(screen.getByText(/Lecture 3h Online/)).toBeDefined();
+    expect(screen.getByText(/Laboratory 3h F2F/)).toBeDefined();
   });
 
   it("keeps Hybrid Split fixed", () => {
