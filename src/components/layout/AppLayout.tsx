@@ -110,14 +110,14 @@ export default function AppLayout() {
     // document flow, so the browser kept its own window scrollbar alongside
     // <main>'s — two vertical scrollbars, side by side. Taking the shell out of
     // flow leaves <main> as the only scroller on the page.
-    <div className="fixed inset-0 flex overflow-hidden bg-[#F7F4F0]">
+    <div className="fixed inset-0 flex overflow-hidden bg-[#F7F4F0] print:static print:h-auto print:w-full print:overflow-visible print:bg-white">
 
       {/* Ends the session and explains why after a spell of inactivity. */}
       <SessionTimeoutGuard />
 
       {/* Mobile overlay */}
       <div
-        className={`fixed inset-0 z-30 bg-black/50 transition-opacity duration-150 md:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 z-30 bg-black/50 transition-opacity duration-150 md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />
@@ -130,18 +130,22 @@ export default function AppLayout() {
       />
 
       <div className={`
-        flex-shrink-0 transition-[width] duration-150 ease-out
+        flex-shrink-0 transition-[width] duration-150 ease-out print:hidden
         ${sidebarOpen ? 'w-0 md:w-64' : 'w-0 md:w-16'}
       `} />
 
       {/* Main content */}
       <div
-        className="flex flex-col flex-1 min-w-0 overflow-hidden"
+        className="flex flex-col flex-1 min-w-0 overflow-hidden print:block print:w-full print:overflow-visible"
       >
-        <SystemHeader activeSemester={activeSemester} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
-        <ConnectionBanner />
-        <main className="min-h-0 flex-1 overflow-y-auto p-4">
-          <PageHeader navItems={navItems} homePath={homePath} />
+        <div className="print:hidden">
+          <SystemHeader activeSemester={activeSemester} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
+          <ConnectionBanner />
+        </div>
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 print:block print:w-full print:overflow-visible print:p-0 print:m-0">
+          <div className="print:hidden">
+            <PageHeader navItems={navItems} homePath={homePath} />
+          </div>
           {/* Keyed by path: React Router runs navigations inside a transition,
               so without a fresh boundary per route React keeps the previous page
               on screen while the next route's lazy chunk downloads. */}

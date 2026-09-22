@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import NumberInput from '../../components/ui/NumberInput';
 import SegmentedLoadBar from '../../components/faculty/SegmentedLoadBar';
+import SearchInput from '../../components/ui/SearchInput';
 import { LOAD_LEVELS, loadLevelOf } from '../../lib/facultyLoad';
 import { NAME_SUFFIXES, capitalizeNameInput, formatFacultyListName } from '../../lib/formatters';
 import { createPortal } from 'react-dom';
@@ -683,16 +684,11 @@ export default function VpaaFaculty() {
       {/* Search and Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search instructors by name..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
-          />
-        </div>
+        <SearchInput
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search instructors by name..."
+        />
 
         {/* Dropdowns */}
         <div className="flex flex-wrap items-center gap-3">
@@ -906,13 +902,19 @@ export default function VpaaFaculty() {
                     {/* Card stats / details */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
                       <div className="col-span-2">
-                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Designation</span>
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase mb-1">Designation</span>
                         {(f.designations?.length ? f.designations : f.designation ? [f.designation] : []).length === 0 ? (
-                          <span className="font-bold text-gray-400">—</span>
+                          <span className="font-bold text-gray-400 text-xs">—</span>
                         ) : (
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                          <div className="mt-1 flex flex-col gap-2 min-w-0">
                             {(f.designations?.length ? f.designations : f.designation ? [f.designation] : []).map((d) => (
-                              <FacultyRoleBadge key={d.id} label={designationLabel(d)} tone="gold" hint={d.deload_units ? `-${d.deload_units}u` : null} />
+                              <FacultyRoleBadge
+                                key={d.id}
+                                label={designationLabel(d)}
+                                tone="gold"
+                                hint={d.deload_units ? `${d.deload_units} ${d.deload_units === 1 ? 'unit' : 'units'} deload` : null}
+                                stacked
+                              />
                             ))}
                           </div>
                         )}

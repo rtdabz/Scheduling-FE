@@ -22,26 +22,6 @@ export const secretaryNav: NavSection[] = [
     items: [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       {
-        label: 'Courses',
-        icon: BookOpen,
-        id: 'sidebar-courses',
-        children: [
-          { label: 'Course List', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses-list', requiredCapability: 'schedule.view' },
-          { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
-        ],
-      },
-      {
-        label: 'Rooms',
-        icon: DoorOpen,
-        id: 'sidebar-rooms',
-        requiredCapability: ['schedule.view', 'room.request'],
-        children: [
-          { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
-          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
-        ],
-      },
-      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },
-      {
         label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
@@ -54,12 +34,32 @@ export const secretaryNav: NavSection[] = [
         ],
       },
       {
+        label: 'Courses',
+        icon: BookOpen,
+        id: 'sidebar-courses',
+        children: [
+          { label: 'Course List', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses-list', requiredCapability: 'schedule.view' },
+          { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
+        ],
+      },
+      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },
+      {
         label: 'Faculty Management',
         icon: GraduationCap,
         id: 'sidebar-faculty',
         requiredCapability: 'schedule.view',
         children: [
           { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
+        ],
+      },
+      {
+        label: 'Rooms',
+        icon: DoorOpen,
+        id: 'sidebar-rooms',
+        requiredCapability: ['schedule.view', 'room.request'],
+        children: [
+          { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
+          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
         ],
       },
     ]

@@ -7,6 +7,7 @@ import Skeleton from '../../components/ui/Skeleton';
 import SharedDepartmentLogo from '../../components/ui/DepartmentLogo';
 import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
+import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
@@ -21,6 +22,8 @@ import {
   Camera,
   LibraryBig,
   Eye,
+  GraduationCap,
+  UserRound,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -133,6 +136,28 @@ interface ApiDepartment {
   programs?: Program[];
 }
 
+interface ApiFacultyDesignation {
+  id: number;
+  name: string;
+  label?: string;
+  parent?: { id: number; name: string } | null;
+}
+
+interface ApiFacultyMember {
+  id: number;
+  first_name: string;
+  last_name: string;
+  middle_name?: string | null;
+  suffix?: string | null;
+  employment_type: 'full-time' | 'part-time';
+  department_id: number;
+  department?: { id: number; department_code?: string; department_name?: string } | null;
+  profile_picture?: string | null;
+  administrative_role?: string | null;
+  designation?: ApiFacultyDesignation | null;
+  designations?: ApiFacultyDesignation[];
+}
+
 interface DepartmentsPageData {
   departments: Department[];
 }
@@ -158,6 +183,11 @@ export default function Departments() {
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
+  
+  // Faculty List state for department detail view
+  const [faculties, setFaculties] = useState<ApiFacultyMember[]>([]);
+  const [isLoadingFaculties, setIsLoadingFaculties] = useState(false);
+  const [activeFacultyTab, setActiveFacultyTab] = useState<'full-time' | 'part-time'>('full-time');
   
   // Table & View States
   const [globalFilter, setGlobalFilter] = useState('');
@@ -275,11 +305,42 @@ export default function Departments() {
     setShowProgramForm(true);
   };
 
+  const fetchFaculties = async () => {
+    setIsLoadingFaculties(true);
+    try {
+      const res = await api.get<ApiFacultyMember[]>('/faculties');
+      setFaculties(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      // Non-blocking fallback
+    } finally {
+      setIsLoadingFaculties(false);
+    }
+  };
+
   useEffect(() => {
     fetchDepartments();
+    fetchFaculties();
   }, []);
 
-  useLiveRefresh(['departments', 'faculty', 'users'], () => { void fetchDepartments(true, true); });
+  useLiveRefresh(['departments', 'faculty', 'users'], () => {
+    void fetchDepartments(true, true);
+    void fetchFaculties();
+  });
+
+  const deptFaculties = useMemo(() => {
+    if (!selectedDeptForDetail) return [];
+    return faculties.filter(
+      (f) => f.department_id === selectedDeptForDetail.id || f.department?.id === selectedDeptForDetail.id
+    );
+  }, [faculties, selectedDeptForDetail]);
+
+  const fullTimeFaculty = useMemo(() => {
+    return deptFaculties.filter((f) => f.employment_type === 'full-time');
+  }, [deptFaculties]);
+
+  const partTimeFaculty = useMemo(() => {
+    return deptFaculties.filter((f) => f.employment_type === 'part-time');
+  }, [deptFaculties]);
 
   const mapDepartment = (department: ApiDepartment): Department => ({
     id: department.id,
@@ -544,15 +605,16 @@ export default function Departments() {
       {
         accessorKey: 'name',
         header: 'Department Name',
-        cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
+        cell: info => <span className="font-bold text-gray-800 whitespace-nowrap truncate block max-w-xs md:max-w-md" title={info.getValue() as string}>{info.getValue() as string}</span>
       },
       {
         accessorKey: 'schedulingProfile',
-        header: 'Scheduling Profile',
+        header: () => <span className="whitespace-nowrap">Scheduling Profile</span>,
+        meta: { cellClassName: 'whitespace-nowrap' },
         cell: info => {
           const profile = info.getValue() as Department['schedulingProfile'];
           return (
-            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${profile === 'laboratory_enabled'
+            <span className={`inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${profile === 'laboratory_enabled'
               ? 'bg-amber-50 border-amber-200 text-amber-800'
               : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
               {profile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard'}
@@ -693,16 +755,11 @@ export default function Departments() {
       {/* Search and Actions Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
         {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input 
-            type="text"
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            placeholder="Search department name..."
-            className="w-full pl-11 pr-4 py-2.5 border border-gray-300 rounded-xl outline-none text-sm focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] bg-gray-50/30 focus:bg-white transition-all font-sans font-semibold text-gray-800"
-          />
-        </div>
+        <SearchInput
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Search department name..."
+        />
 
         {/* Action Group: View Mode Toggle + Add Department */}
         <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
@@ -826,7 +883,7 @@ export default function Departments() {
                         </div>
                       </div>
 
-                      <h3 className="text-base font-bold text-gray-900 leading-snug">
+                      <h3 className="text-base font-bold text-gray-900 leading-snug whitespace-nowrap truncate" title={dept.name}>
                         {dept.name}
                       </h3>
                       <p className="text-xs font-medium text-gray-500 mt-1">
@@ -1093,42 +1150,162 @@ export default function Departments() {
               </div>
             </div>
 
-            {/* Modal Body - scrolls on its own so the header and the actions stay put. */}
-            <div className="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { label: 'Instructors', value: String(selectedDeptForDetail.facultyCount ?? 0) },
-                  { label: 'Sections', value: String(selectedDeptForDetail.sectionsCount ?? 0) },
-                  {
-                    label: 'Scheduling profile',
-                    value: selectedDeptForDetail.schedulingProfile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard',
-                  },
-                  {
-                    label: 'Date created',
-                    value: selectedDeptForDetail.createdAt
-                      ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
-                      : '-',
-                  },
-                ].map((tile) => (
-                  <div key={tile.label} className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{tile.label}</p>
-                    <p className="mt-1 text-xs font-bold text-gray-800">{tile.value}</p>
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto px-7 py-6 space-y-6 font-sans">
+              {!showProgramForm && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {[
+                      { label: 'Instructors', value: `${selectedDeptForDetail.facultyCount ?? 0} Instructors` },
+                      { label: 'Sections', value: `${selectedDeptForDetail.sectionsCount ?? 0} Sections` },
+                      {
+                        label: 'Scheduling profile',
+                        value: selectedDeptForDetail.schedulingProfile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard',
+                      },
+                      {
+                        label: 'Date created',
+                        value: selectedDeptForDetail.createdAt
+                          ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
+                          : '-',
+                      },
+                    ].map((tile) => (
+                      <div key={tile.label} className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{tile.label}</p>
+                        <p className="mt-1 text-xs font-bold text-gray-800">{tile.value}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Secretary</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{selectedDeptForDetail.secretary || 'Not assigned'}</p>
-                </div>
-                <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Program heads</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">
-                    {selectedDeptForDetail.programHeads.length > 0 ? selectedDeptForDetail.programHeads.join(', ') : 'Not assigned'}
-                  </p>
-                </div>
-              </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Secretary</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">{selectedDeptForDetail.secretary || 'Not assigned'}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Program heads</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">
+                        {selectedDeptForDetail.programHeads.length > 0 ? selectedDeptForDetail.programHeads.join(', ') : 'Not assigned'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Faculty Directory Section */}
+                  <section className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <GraduationCap size={18} className="text-[#4e0a10]" />
+                          <h3 className="text-sm font-bold text-gray-900 font-sans">Faculty Directory</h3>
+                        </div>
+                        <p className="mt-0.5 text-xs text-gray-500 font-sans">
+                          Instructors assigned to this department, grouped by employment status.
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setActiveFacultyTab('full-time')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            activeFacultyTab === 'full-time'
+                              ? 'bg-[#4e0a10] text-white shadow-xs'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          Full-Time ({fullTimeFaculty.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveFacultyTab('part-time')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            activeFacultyTab === 'part-time'
+                              ? 'bg-[#4e0a10] text-white shadow-xs'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          Part-Time ({partTimeFaculty.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {isLoadingFaculties ? (
+                      <div className="py-6 text-center text-xs text-gray-400 animate-pulse">
+                        Loading faculty members...
+                      </div>
+                    ) : (activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
+                        <UserRound className="mx-auto mb-2 text-gray-300" size={24} />
+                        <p className="text-xs font-bold text-gray-600">
+                          No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} faculty assigned.
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-gray-400">
+                          Instructors can be assigned to this department in the Faculty section.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {(activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).map((faculty) => {
+                          const fullName = `${faculty.first_name}${faculty.middle_name ? ' ' + faculty.middle_name[0] + '.' : ''} ${faculty.last_name}${faculty.suffix ? ' ' + faculty.suffix : ''}`;
+                          const designationsList = (faculty.designations && faculty.designations.length > 0
+                            ? faculty.designations
+                            : faculty.designation
+                            ? [faculty.designation]
+                            : []
+                          ).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
+
+                          return (
+                            <div
+                              key={faculty.id}
+                              className="flex items-center gap-3 rounded-xl border border-gray-200/80 bg-gray-50/40 p-3 shadow-2xs hover:bg-white hover:border-[#C9952A]/40 transition-all"
+                            >
+                              {faculty.profile_picture ? (
+                                <img
+                                  src={faculty.profile_picture}
+                                  alt={fullName}
+                                  className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0"
+                                />
+                              ) : (
+                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 text-slate-500 shrink-0">
+                                  <UserRound size={18} />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs font-bold text-gray-900 truncate">{fullName}</p>
+                                  <span
+                                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                      faculty.employment_type === 'full-time'
+                                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                        : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                    }`}
+                                  >
+                                    {faculty.employment_type}
+                                  </span>
+                                </div>
+
+                                {designationsList.length > 0 ? (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {designationsList.map((desigText, i) => (
+                                      <span
+                                        key={i}
+                                        className="inline-flex items-center rounded-md bg-[#C9952A]/10 px-2 py-0.5 text-[10px] font-bold text-[#7b5c18]"
+                                      >
+                                        {desigText}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="mt-0.5 text-[10px] font-medium text-gray-400">No designation</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
 
               <section className="space-y-3">
                 <div className="flex items-end justify-between gap-3">

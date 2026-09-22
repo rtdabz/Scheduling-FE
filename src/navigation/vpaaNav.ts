@@ -29,46 +29,46 @@ export const vpaaNav: NavSection[] = [
         id: 'sidebar-schedules',
         children: [
           {
-            label: 'All Schedules',
-            path: '/schedules',
-            id: 'sidebar-all-schedules'
-          },
-          {
             label: 'Schedule Approval',
             path: '/schedules/approval',
             id: 'sidebar-schedule-approval'
           },
+          {
+            label: 'All Schedules',
+            path: '/schedules',
+            id: 'sidebar-all-schedules'
+          },
         ]
       },
       { label: 'Master Calendar', path: '/calendar', icon: Calendar, id: 'sidebar-calendar' },
+      { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
       {
-        label: 'Faculty',
+        label: 'Instructor',
         icon: GraduationCap,
         id: 'sidebar-faculty',
         children: [
-          { label: 'Instructors', path: '/faculty', icon: UserPlus, id: 'sidebar-instructors' },
-          { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
+          { label: 'Instructor List', path: '/faculty', icon: UserPlus, id: 'sidebar-instructors' },
+          { label: 'Instructor Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
         ],
       },
       {
-        label: 'Rooms',
+        label: 'Facility',
         icon: DoorOpen,
         id: 'sidebar-rooms',
         children: [
-          { label: 'Room List', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms-list' },
+          { label: 'Facility List', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms-list' },
           { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.review_requests' },
         ],
       },
-      { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
     ]
   },
   {
     section: 'SYSTEM',
     items: [
+      { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
+      { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Reports', path: '/reports', icon: FileBarChart, id: 'sidebar-reports' },
       { label: 'Activity Log', path: '/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
-      { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
-      { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
       { label: 'Schedule History', path: '/schedule-history', icon: History, id: 'sidebar-schedule-history' },
       { label: 'Archive', path: '/archive', icon: Archive, id: 'sidebar-archive' },
       { label: 'Settings', path: '/settings', icon: Settings, id: 'sidebar-settings' },
