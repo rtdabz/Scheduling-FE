@@ -10,6 +10,9 @@ export type AdjustmentType =
   | "set_pattern"
   | "clear_pattern"
   | "disable_lecture_lab_split"
+  | "disable_minor_split"
+  | "enable_hybrid_split"
+  | "disable_hybrid_split"
   | "disable_section_hybrid"
   | "set_delivery_mode"
   | "split_session_single_meeting_fallback";
@@ -89,6 +92,7 @@ export type AppliedStrategy = {
 export type AdjustableSectionConfig = {
   splitCourseIds: string[];
   gecSplitCourseIds: string[];
+  hybridSplitCourseIds?: string[];
   gecSplitPatternsByCourseId: Record<string, string>;
   modesByCourseId: Record<string, string>;
 };
@@ -231,8 +235,14 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
       return `${course} in ${section}: pattern set to Automatic`;
     case "disable_lecture_lab_split":
       return `${course} in ${section}: lecture/lab split turned off`;
+    case "disable_minor_split":
+      return `${course} in ${section}: Split Session turned off, one regular meeting`;
+    case "enable_hybrid_split":
+      return `${course} in ${section}: Hybrid Split turned on, one meeting online`;
+    case "disable_hybrid_split":
+      return `${course} in ${section}: Hybrid Split turned off, both meetings on-site`;
     case "disable_section_hybrid":
-      return `${section}: hybrid split sessions turned off`;
+      return `${section}: lecture/lab hybrid splits turned off`;
     case "set_delivery_mode":
       return `${course} in ${section}: mode set to ${adjustment.value === "automatic" ? "Automatic" : adjustment.value}`;
     case "split_session_single_meeting_fallback":
@@ -296,6 +306,37 @@ function applyOne<T extends AdjustableSectionConfig>(
     case "disable_lecture_lab_split": {
       if (!config.splitCourseIds.includes(courseKey)) return null;
       return { ...config, splitCourseIds: config.splitCourseIds.filter((id) => id !== courseKey) };
+    }
+    case "disable_minor_split": {
+      // A Hybrid Split is a Split Session with one meeting online, so it goes too.
+      if (!config.gecSplitCourseIds.includes(courseKey)) return null;
+      return {
+        ...config,
+        gecSplitCourseIds: config.gecSplitCourseIds.filter((id) => id !== courseKey),
+        hybridSplitCourseIds: (config.hybridSplitCourseIds ?? []).filter((id) => id !== courseKey),
+      };
+    }
+    case "enable_hybrid_split": {
+      // Hybrid Split only exists on a course already set to Split Session.
+      const hybridIds = config.hybridSplitCourseIds ?? [];
+      if (!config.gecSplitCourseIds.includes(courseKey) || hybridIds.includes(courseKey)) return null;
+      // Setup Courses stores a Hybrid Split with no mode pin; an On-site or
+      // Online pin would contradict the one-online, one-on-site shape.
+      return {
+        ...config,
+        hybridSplitCourseIds: [...hybridIds, courseKey],
+        modesByCourseId: { ...config.modesByCourseId, [courseKey]: "automatic" },
+      };
+    }
+    case "disable_hybrid_split": {
+      const hybridIds = config.hybridSplitCourseIds ?? [];
+      if (!hybridIds.includes(courseKey)) return null;
+      // Back to an On-site Split Session: both meetings face-to-face.
+      return {
+        ...config,
+        hybridSplitCourseIds: hybridIds.filter((id) => id !== courseKey),
+        modesByCourseId: { ...config.modesByCourseId, [courseKey]: "on-site" },
+      };
     }
     case "disable_section_hybrid": {
       // Section-wide, like the backend: every lecture/lab split in the section.

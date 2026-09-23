@@ -132,6 +132,45 @@ describe("applyAdjustments", () => {
     expect(applyAdjustments(next, [adjustment({ type: "disable_section_hybrid", course_id: 0, value: null })]).applied).toEqual([]);
   });
 
+  it("turns a Split Session into one regular meeting, dropping its Hybrid Split", () => {
+    const configs = { "5": config({ hybridSplitCourseIds: ["11"] }) };
+    const { configs: next, applied } = applyAdjustments(configs, [
+      adjustment({ type: "disable_minor_split", value: null }),
+    ]);
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].gecSplitCourseIds).toEqual([]);
+    expect(next["5"].hybridSplitCourseIds).toEqual([]);
+    expect(applyAdjustments(next, [adjustment({ type: "disable_minor_split", value: null })]).applied).toEqual([]);
+  });
+
+  it("turns Hybrid Split on only for a Split Session course, clearing its mode pin", () => {
+    const { configs: next, applied } = applyAdjustments(
+      { "5": config({ modesByCourseId: { "11": "on-site" } }) },
+      [adjustment({ type: "enable_hybrid_split", value: null })],
+    );
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].hybridSplitCourseIds).toEqual(["11"]);
+    expect(next["5"].modesByCourseId["11"]).toBe("automatic");
+    // Course 31 is not a Split Session, so there is nothing to make hybrid.
+    expect(
+      applyAdjustments({ "5": config() }, [adjustment({ type: "enable_hybrid_split", course_id: 31, value: null })]).applied,
+    ).toEqual([]);
+  });
+
+  it("turns Hybrid Split off, back to an On-site Split Session", () => {
+    const { configs: next, applied } = applyAdjustments(
+      { "5": config({ hybridSplitCourseIds: ["11"] }) },
+      [adjustment({ type: "disable_hybrid_split", value: null })],
+    );
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].hybridSplitCourseIds).toEqual([]);
+    expect(next["5"].gecSplitCourseIds).toEqual(["11"]);
+    expect(next["5"].modesByCourseId["11"]).toBe("on-site");
+  });
+
   it("returns a forced delivery mode to automatic", () => {
     const { configs: next } = applyAdjustments({ "5": config() }, [
       adjustment({ type: "set_delivery_mode", course_id: 31, value: "automatic" }),
