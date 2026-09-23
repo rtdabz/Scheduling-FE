@@ -31,7 +31,6 @@ export default function CurriculumDetailPage() {
     setRemovingCourseId,
     isRemoving,
     highlightedCourseId,
-    overallStats,
     yearLevelStats,
     currentYearSemesters,
     handleActivate,
@@ -46,15 +45,7 @@ export default function CurriculumDetailPage() {
     <div className="w-full">
       {isLoading ? (
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-[#F7F4F0] border border-gray-100 shadow-sm p-6">
-            <Skeleton className="h-8 w-64 mb-3" />
-            <Skeleton className="h-5 w-40 mb-4" />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-16 rounded-xl" />
-              ))}
-            </div>
-          </div>
+          <Skeleton className="h-4 w-40" />
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <Skeleton className="h-12 w-full rounded-xl" />
           </div>
@@ -75,7 +66,6 @@ export default function CurriculumDetailPage() {
           {/* Header Component */}
           <CurriculumHeader
             curriculum={curriculum}
-            overallStats={overallStats}
             isActivating={isActivating}
             canActivate={canEditCourses}
             onBack={() => navigate(userRole === 'vpaa' ? '/curriculum' : `/${userRole}/curriculum`)}

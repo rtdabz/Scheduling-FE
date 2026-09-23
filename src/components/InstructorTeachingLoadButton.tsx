@@ -141,7 +141,11 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
       laboratoryUnits: Number(course?.lab_hours ?? 0),
       totalUnits: Number(course?.units ?? 0),
       sectionName: schedule.section?.section_name ?? "",
-      roomName: schedule.room?.building || schedule.room?.room_code || "",
+      // Building first, then the room: "Building 4 · CL 1".
+      roomName: [schedule.room?.building, schedule.room?.room_code]
+        .map((part) => part?.trim())
+        .filter(Boolean)
+        .join(" · "),
       day: schedule.day,
       startTime: schedule.start_time,
       endTime: schedule.end_time,
@@ -168,13 +172,15 @@ import LoadingSpinner from "./ui/LoadingSpinner";
 
 export default function InstructorTeachingLoadButton({ facultyId }: InstructorTeachingLoadButtonProps) {
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
+  // Which button is working, so only that one shows a spinner; both stay disabled meanwhile.
+  const [loadingAction, setLoadingAction] = useState<"schedule" | "load" | null>(null);
+  const isLoading = loadingAction !== null;
   const [isPrinting, setIsPrinting] = useState(false);
   const [teachingLoadData, setTeachingLoadData] = useState<TeachingLoadData | null>(null);
 
   const handlePrintLoad = async () => {
     if (isLoading) return;
-    setIsLoading(true);
+    setLoadingAction("load");
 
     try {
       const response = await api.get<InitialTeachingLoadData>("/initial-data");
@@ -183,13 +189,13 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     } catch {
       toast.error("Print Failed", "Teaching-load data could not be loaded.");
     } finally {
-      setIsLoading(false);
+      setLoadingAction(null);
     }
   };
 
   const handlePrintGrid = async () => {
     if (isLoading) return;
-    setIsLoading(true);
+    setLoadingAction("schedule");
     try {
       const response = await api.get<InitialTeachingLoadData>("/initial-data");
       const data = mapInitialData(response.data);
@@ -213,7 +219,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     } catch {
       toast.error("Print Failed", "Instructor timetable could not be generated.");
     } finally {
-      setIsLoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -224,10 +230,10 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
         onClick={() => void handlePrintGrid()}
         disabled={isLoading}
         className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
-        title="Print Instructor Timetable Grid (Gantt)"
+        title="Print Instructor Schedule"
       >
-        {isLoading ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
-        Print Timetable Grid
+        {loadingAction === "schedule" ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
+        Print Schedule
       </button>
 
       <button
@@ -237,7 +243,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
         className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
         title="Print Official Teaching Load Form"
       >
-        {isLoading ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
+        {loadingAction === "load" ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
         Print Load Sheet
       </button>
 

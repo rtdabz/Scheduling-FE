@@ -14,14 +14,14 @@ const props = () => ({
   activeSemesterText: '1st Semester AY 2026-2027', confirmClearAll: vi.fn(), cancelClearAll: vi.fn(),
 });
 
-describe('Clear schedules checklist', () => {
+describe('Reset schedules checklist', () => {
   it('selects only the open section initially and waits for explicit confirmation', () => {
     const input = props();
     render(<ClearAllModal {...input} />);
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.click(screen.getByRole('button', { name: /BSIT 12/ }));
     expect(input.confirmClearAll).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear 2 Sections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset 2 Sections' }));
     expect(input.confirmClearAll).toHaveBeenCalledWith(['1', '2']);
     expect(screen.getByText(/cannot be restored from the Archive/)).toBeTruthy();
   });
@@ -31,10 +31,10 @@ describe('Clear schedules checklist', () => {
     render(<ClearAllModal {...input} />);
     expect((screen.getByRole('button', { name: /BSIT 13/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select all available sections' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Clear 2 Sections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset 2 Sections' }));
     expect(input.confirmClearAll).toHaveBeenCalledWith(['1', '2']);
     fireEvent.click(screen.getByRole('checkbox', { name: 'Deselect all sections' }));
-    expect((screen.getByRole('button', { name: 'Clear Sections' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Reset Sections' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('blocks dismissal and selection while clearing', () => {
@@ -43,7 +43,7 @@ describe('Clear schedules checklist', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(input.cancelClearAll).not.toHaveBeenCalled();
     expect((screen.getByRole('button', { name: /BSIT 12/ }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: /Clearing\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /Resetting\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('resets selection when reopened', () => {
@@ -52,6 +52,6 @@ describe('Clear schedules checklist', () => {
     fireEvent.click(screen.getByRole('button', { name: /BSIT 12/ }));
     rerender(<ClearAllModal {...input} isClearAllModalOpen={false} />);
     rerender(<ClearAllModal {...input} />);
-    expect(screen.getByRole('button', { name: 'Clear 1 Section' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reset 1 Section' })).toBeTruthy();
   });
 });

@@ -11,7 +11,6 @@ import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
-  Search,
   X,
   Loader2,
   LayoutGrid,
@@ -605,7 +604,7 @@ export default function Departments() {
       {
         accessorKey: 'name',
         header: 'Department Name',
-        cell: info => <span className="font-bold text-gray-800 whitespace-nowrap truncate block max-w-xs md:max-w-md" title={info.getValue() as string}>{info.getValue() as string}</span>
+        cell: info => <span className="font-bold text-gray-800 whitespace-nowrap block" title={info.getValue() as string}>{info.getValue() as string}</span>
       },
       {
         accessorKey: 'schedulingProfile',
@@ -1246,12 +1245,7 @@ export default function Departments() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         {(activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).map((faculty) => {
                           const fullName = `${faculty.first_name}${faculty.middle_name ? ' ' + faculty.middle_name[0] + '.' : ''} ${faculty.last_name}${faculty.suffix ? ' ' + faculty.suffix : ''}`;
-                          const designationsList = (faculty.designations && faculty.designations.length > 0
-                            ? faculty.designations
-                            : faculty.designation
-                            ? [faculty.designation]
-                            : []
-                          ).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
+                          const designationsList = (faculty.designations ?? []).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
 
                           return (
                             <div

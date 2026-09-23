@@ -172,12 +172,12 @@ export function RoomsTable<T extends RoomListRow>({
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
-              <p className="text-xs font-bold text-emerald-600 max-w-[260px] truncate" title={live.text}>{live.text}</p>
+              <p className="text-xs font-bold text-emerald-600 whitespace-nowrap" title={live.text}>{live.text}</p>
             </div>
           );
         }
         return (
-          <p className="text-xs font-bold text-gray-500 max-w-[260px] truncate">
+          <p className="text-xs font-bold text-gray-500 whitespace-nowrap">
             Vacant
           </p>
         );

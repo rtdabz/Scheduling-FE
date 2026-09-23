@@ -297,6 +297,7 @@ export default function CurriculumReviewPage() {
       <CurriculumDetailModal
         isOpen={viewCurriculumId !== null}
         curriculumId={viewCurriculumId}
+        programs={programs}
         onClose={() => setViewCurriculumId(null)}
       />
     </div>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutGrid, CheckCircle2, Lock, ArrowRight, AlertTriangle } from 'lucide-react';
-import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from './Skeleton';
 import api from '../../lib/api';

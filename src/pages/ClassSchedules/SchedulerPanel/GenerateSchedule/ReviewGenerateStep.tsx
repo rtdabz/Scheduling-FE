@@ -129,7 +129,7 @@ const planColumns: ColumnDef<PlanRow>[] = [
     cell: ({ row }) => (
       <>
         <span className="block text-xs font-black text-slate-900">{row.original.course.code}</span>
-        <span className="block truncate text-[11px] font-semibold text-slate-500">{row.original.course.name}</span>
+        <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-500">{row.original.course.name}</span>
       </>
     ),
   },

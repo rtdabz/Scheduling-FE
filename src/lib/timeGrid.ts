@@ -204,13 +204,30 @@ export const formatTime12h = (time: string | null | undefined): string => {
 };
 
 /**
+ * Named Split Session patterns and their day indexes. Mirrors
+ * SchedulingPolicy::FIXED_MEETING_PATTERNS.
+ */
+export const FIXED_SPLIT_PATTERNS = {
+  MW: { days: [0, 2], label: "Monday–Wednesday" },
+  TTh: { days: [1, 3], label: "Tuesday–Thursday" },
+  FS: { days: [4, 5], label: "Friday–Saturday" },
+} as const satisfies Record<string, { days: readonly [number, number]; label: string }>;
+
+export type FixedSplitPattern = keyof typeof FIXED_SPLIT_PATTERNS;
+
+export const isFixedSplitPattern = (preferredPattern?: string | null): preferredPattern is FixedSplitPattern =>
+  !!preferredPattern && Object.prototype.hasOwnProperty.call(FIXED_SPLIT_PATTERNS, preferredPattern);
+
+/**
  * Day indexes a two-meeting pattern is allowed to use, or null when the pattern
  * is absent or unrecognized. Mirrors SchedulingPolicy::allowedDaysForPattern.
  */
 export const parsePreferredPattern = (preferredPattern?: string | null): [number, number] | null => {
   if (!preferredPattern) return null;
-  if (preferredPattern === "MW") return [0, 2];
-  if (preferredPattern === "TTh") return [1, 3];
+  if (isFixedSplitPattern(preferredPattern)) {
+    const [first, second] = FIXED_SPLIT_PATTERNS[preferredPattern].days;
+    return [first, second];
+  }
 
   const customMatch = preferredPattern.match(/^days:([0-6])-([0-6])$/);
   if (!customMatch) return null;

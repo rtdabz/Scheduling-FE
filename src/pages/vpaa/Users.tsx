@@ -8,14 +8,15 @@ import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
-  Search,
   X,
   Loader2,
   Camera,
   Plus,
   Link2Off,
+  Mail,
   LayoutGrid,
   List,
+  Power,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -204,7 +205,6 @@ export default function VpaaUsers() {
     suffix: '',
     username: '',
     email: '',
-    password: '',
     role: 'Secretary',
     department_id: '',
     program_id: '',
@@ -310,12 +310,9 @@ export default function VpaaUsers() {
           .map(word => word.charAt(0).toUpperCase() + word.slice(1))
           .join('');
         const generatedUser = `${dept.department_code}${roleName}`;
-        const bytes = crypto.getRandomValues(new Uint8Array(6));
-        const temporaryPassword = `Wi${Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')}A9`;
         setFormData(prev => ({
           ...prev,
           username: generatedUser.toLowerCase(),
-          password: temporaryPassword,
         }));
       }
     }
@@ -480,7 +477,6 @@ export default function VpaaUsers() {
           last_name: formData.last_name.trim(),
           suffix: formData.suffix || null,
           email: formData.email.trim(),
-          password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
@@ -503,7 +499,6 @@ export default function VpaaUsers() {
           suffix: formData.suffix || null,
           username: formData.username,
           email: formData.email.trim(),
-          password: formData.password,
           role: apiRole,
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
@@ -520,10 +515,10 @@ export default function VpaaUsers() {
           setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
-        toast.success('Success', 'User account created successfully');
+        toast.success('Success', `Account created. A setup link was emailed to ${createdUser.email}.`);
       }
 
-      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
       resetTeachingProfile();
       setIsModalOpen(false);
       setIsEditMode(false);
@@ -546,7 +541,6 @@ export default function VpaaUsers() {
       suffix: user.suffix,
       username: user.username,
       email: user.email,
-      password: '••••••••',
       role: user.role,
       department_id: user.department_id ? user.department_id.toString() : '',
       program_id: user.program_id ? user.program_id.toString() : '',
@@ -587,6 +581,62 @@ export default function VpaaUsers() {
       toast.success('Archived', 'User archived successfully');
     } catch {
       toast.error('Error', 'Failed to archive user');
+    }
+  };
+
+  // Only one active account may hold a role slot, so deactivating is how a
+  // replacement Dean, Program Head or Secretary is made possible.
+  const toggleActive = async (user: User) => {
+    const activate = user.status !== 'Active';
+    const confirmed = await confirm({
+      title: activate ? 'Activate User Account' : 'Deactivate User Account',
+      message: activate
+        ? `${user.name} will be able to sign in again. This fails if another active ${user.role} already holds the same assignment.`
+        : `${user.name} will be signed out and unable to sign in. Another ${user.role} can then be assigned in their place.`,
+      eyebrow: 'Account Status',
+      confirmLabel: activate ? 'Activate' : 'Deactivate',
+      variant: activate ? undefined : 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      const res = await api.put<{ data: ApiUser }>(`/user/${user.id}`, {
+        first_name: user.first_name,
+        middle_initial: user.middle_initial || null,
+        last_name: user.last_name,
+        suffix: user.suffix || null,
+        email: user.email,
+        role: API_ROLE_MAP[user.role] || user.role.toLowerCase(),
+        department_id: user.department_id,
+        program_id: user.program_id,
+        is_active: activate,
+      });
+      const updatedUser = mapApiUser(res.data.data);
+      setUsers(prev => {
+        const nextUsers = prev.map(u => u.id === user.id ? updatedUser : u);
+        setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
+        return nextUsers;
+      });
+      toast.success(activate ? 'Activated' : 'Deactivated', `${user.name} is now ${activate ? 'active' : 'inactive'}.`);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error('Unable to change status', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  const [isSendingSetupLink, setIsSendingSetupLink] = useState(false);
+
+  const sendSetupLink = async (user: User) => {
+    if (isSendingSetupLink) return;
+    setIsSendingSetupLink(true);
+    try {
+      const response = await api.post<{ message: string }>(`/user/${user.id}/invitation`);
+      toast.success('Setup link sent', response.data.message);
+    } catch (error) {
+      const axiosError = error as { response?: { data?: { message?: string } } };
+      toast.error('Unable to send setup link', axiosError.response?.data?.message || 'Please try again.');
+    } finally {
+      setIsSendingSetupLink(false);
     }
   };
 
@@ -660,7 +710,7 @@ export default function VpaaUsers() {
         cell: info => {
           const deptVal = info.getValue();
           return (
-            <span className="text-gray-700 text-sm font-semibold whitespace-nowrap truncate block max-w-xs md:max-w-md" title={deptVal ? (deptVal as string) : '—'}>
+            <span className="text-gray-700 text-sm font-semibold whitespace-nowrap block" title={deptVal ? (deptVal as string) : '—'}>
               {deptVal ? (deptVal as string) : '—'}
             </span>
           );
@@ -676,7 +726,7 @@ export default function VpaaUsers() {
           return (
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-700 whitespace-nowrap">{program.code}</p>
-              <p className="max-w-44 truncate text-[11px] text-gray-500" title={program.name}>{program.name}</p>
+              <p className="whitespace-nowrap text-[11px] text-gray-500" title={program.name}>{program.name}</p>
             </div>
           );
         }
@@ -733,6 +783,21 @@ export default function VpaaUsers() {
               </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Edit
+              </span>
+            </div>
+            <div className="relative group/tooltip">
+              <TableActionButton
+                label={row.original.status === 'Active' ? 'Deactivate' : 'Activate'}
+                variant={row.original.status === 'Active' ? 'neutral' : 'success'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void toggleActive(row.original);
+                }}
+              >
+                <Power size={17} />
+              </TableActionButton>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                {row.original.status === 'Active' ? 'Deactivate' : 'Activate'}
               </span>
             </div>
             <div className="relative group/tooltip">
@@ -817,7 +882,7 @@ export default function VpaaUsers() {
               setIsEditMode(false);
               setEditingId(null);
               setIsDetailModalOpen(false);
-              setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', password: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+              setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
               setFirstNameError('');
               setLastNameError('');
               setMiddleInitialError('');
@@ -943,6 +1008,18 @@ export default function VpaaUsers() {
                         title="Edit User"
                       >
                         <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleActive(u);
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          u.status === 'Active' ? 'text-gray-500 hover:bg-gray-100' : 'text-green-600 hover:bg-green-50'
+                        }`}
+                        title={u.status === 'Active' ? 'Deactivate User' : 'Activate User'}
+                      >
+                        <Power size={16} />
                       </button>
                       <button
                         onClick={(e) => {
@@ -1121,7 +1198,7 @@ export default function VpaaUsers() {
                     </div>
                     <div>
                       <label className={FORM_LABEL}>Password</label>
-                      <input type="text" value={formData.password} readOnly placeholder={isEditMode ? '' : 'Auto-generated'} className={FORM_READONLY} />
+                      <input type="text" value={isEditMode ? 'Set by the user' : 'Setup link emailed'} readOnly className={FORM_READONLY} />
                     </div>
                   </div>
 
@@ -1420,6 +1497,14 @@ export default function VpaaUsers() {
 
               {/* Action Buttons */}
               <div className="pt-3 border-t border-gray-200/80 flex flex-wrap items-center justify-end gap-3">
+                <button
+                  disabled={isSendingSetupLink || selectedUserForDetail.status !== 'Active'}
+                  onClick={() => sendSetupLink(selectedUserForDetail)}
+                  title="Email a one-time link the user can open to choose a new password"
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Mail size={14} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
+                </button>
                 <button
                   disabled={!selectedUserForDetail.googleLinked}
                   onClick={() => unlinkGoogle(selectedUserForDetail)}

@@ -3,7 +3,7 @@ import { AlertTriangle, Building2, CalendarPlus, CheckCircle2, ChevronDown, Cloc
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
 import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
-import { FULL_DAY_NAMES, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
+import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, isFixedSplitPattern, parsePreferredPattern, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Semester } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, SLOTS_PER_HOUR, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
@@ -1168,7 +1168,7 @@ export default function DropModal({
   ): void => {
     // Integrated On-site comes back as two linked meetings without the hybrid
     // flag, so the shape decides whether this is Integrated, not is_hybrid.
-    const isBalancedSplitPattern = ["MW", "TTh"].includes(rows[0]?.preferred_pattern ?? "");
+    const isBalancedSplitPattern = isFixedSplitPattern(rows[0]?.preferred_pattern);
     const isIntegratedRows = rows.length > 1 && Boolean(hasBoth) && !isBalancedSplitPattern;
     const laboratorySlots = laboratoryComponentSlots(dropSubject, manualSchedulingSettings);
     // The first card is the laboratory, which is the meeting of that length.
@@ -1598,13 +1598,14 @@ export default function DropModal({
                 Split pattern
                 <select value={modalPreferredPattern ?? "MW"} onChange={(event) => {
                   const pattern = event.target.value;
-                  const [firstDay, secondDay] = pattern === "TTh" ? [1, 3] : [0, 2];
+                  const [firstDay, secondDay] = parsePreferredPattern(pattern) ?? FIXED_SPLIT_PATTERNS.MW.days;
                   setModalPreferredPattern(pattern);
                   setModalDay1Index(firstDay);
                   setModalDay2Index(secondDay);
                 }} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15">
-                  <option value="MW">Monday–Wednesday</option>
-                  <option value="TTh">Tuesday–Thursday</option>
+                  {Object.entries(FIXED_SPLIT_PATTERNS).map(([value, { label }]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
               </label>
             )}

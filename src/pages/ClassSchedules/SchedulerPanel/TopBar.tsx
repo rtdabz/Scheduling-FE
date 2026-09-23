@@ -47,6 +47,9 @@ interface TopBarProps {
   isWithdrawingSubmission: boolean;
   onPrint: () => void;
   onGenerateYearLevel?: () => void;
+  onResetSchedules?: () => void;
+  canResetSchedules?: boolean;
+  isClearingAll?: boolean;
   onAutoAssign?: () => void;
   onClearInstructors?: () => void;
   clearableSectionInstructorCount: number;
@@ -314,6 +317,9 @@ export default function TopBar({
   isWithdrawingSubmission,
   onPrint,
   onGenerateYearLevel,
+  onResetSchedules,
+  canResetSchedules = false,
+  isClearingAll = false,
   onAutoAssign,
   onClearInstructors,
   clearableSectionInstructorCount,
@@ -649,12 +655,28 @@ export default function TopBar({
                 </button>
               )}
             </>
-          ) : onGenerateYearLevel && ["draft", "revision"].includes(currentStatus) && (
-            <div id="schedule-builder-generate">
-              <GenerateScheduleButton
-                onClick={onGenerateYearLevel}
-              />
-            </div>
+          ) : ["draft", "revision"].includes(currentStatus) && (
+            <>
+              {onGenerateYearLevel && (
+                <div id="schedule-builder-generate">
+                  <GenerateScheduleButton
+                    onClick={onGenerateYearLevel}
+                  />
+                </div>
+              )}
+              {onResetSchedules && (
+                <button
+                  type="button"
+                  onClick={onResetSchedules}
+                  disabled={!canResetSchedules || isClearingAll}
+                  className={`${toolButtonClass} border-slate-200 bg-white text-red-700 hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50`}
+                  title="Clear plotted schedules from selected sections"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>{isClearingAll ? "Resetting..." : "Reset"}</span>
+                </button>
+              )}
+            </>
           )}</>}
           <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
           {isLoading ? <Skeleton className="h-9 w-20 rounded-lg" /> : (

@@ -1,182 +1,100 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { ColumnDef } from '@tanstack/react-table';
-import { X, BookOpen } from 'lucide-react';
-import DataTable from '../ui/DataTable';
-import { useDataTable } from '../ui/useDataTable';
+import { X } from 'lucide-react';
+import LoadingSpinner from '../ui/LoadingSpinner';
 import { curriculumService } from '../../services/curriculum/curriculumService';
-import type { CurriculumDetail, CurriculumSemester } from '../../types/curriculum';
-import Skeleton from '../ui/Skeleton';
+import { buildCurriculumPdf } from '../../lib/curriculumPrintable';
+import type { Curriculum, Program } from '../../types/curriculum';
 
 interface CurriculumDetailModalProps {
   isOpen: boolean;
   curriculumId: number | null;
+  /** Used to title the printable; the program is looked up by the curriculum's program_id. */
+  programs?: Program[];
   onClose: () => void;
 }
 
-const semesterLabels: Record<number, string> = {
-  1: '1st Semester',
-  2: '2nd Semester',
-  3: 'Summer',
+type PdfState = { url: string | null; failed: boolean };
+
+const NO_PROGRAMS: Program[] = [];
+
+const statusColors: Record<string, string> = {
+  active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  deactivated: 'bg-slate-100 text-slate-700 border-slate-300',
+  archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
-const yearLabels: Record<number, string> = {
-  1: '1st Year',
-  2: '2nd Year',
-  3: '3rd Year',
-  4: '4th Year',
-};
-
-export default function CurriculumDetailModal({ isOpen, curriculumId, onClose }: CurriculumDetailModalProps) {
-  const [detail, setDetail] = useState<CurriculumDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+/**
+ * The curriculum view is the printed curriculum itself, embedded the same way
+ * the schedule approval preview embeds the printed schedule, so every role
+ * reviews the document that Print produces.
+ */
+export default function CurriculumDetailModal({ isOpen, curriculumId, programs = NO_PROGRAMS, onClose }: CurriculumDetailModalProps) {
+  const [curriculum, setCurriculum] = useState<Curriculum | null>(null);
+  const [pdf, setPdf] = useState<PdfState>({ url: null, failed: false });
 
   useEffect(() => {
-    if (isOpen && curriculumId) {
-      setIsLoading(true);
-      curriculumService.getCurriculumFull(curriculumId)
-        .then(res => setDetail(res))
-        .catch(() => setDetail(null))
-        .finally(() => setIsLoading(false));
-    } else {
-      setDetail(null);
-      setIsLoading(true);
-    }
-  }, [isOpen, curriculumId]);
+    if (!isOpen || !curriculumId) return undefined;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    curriculumService.getCurriculumFull(curriculumId)
+      .then(async (detail) => {
+        if (cancelled) return;
+        setCurriculum(detail.curriculum);
+        const blob = await buildCurriculumPdf({
+          curriculum: detail.curriculum,
+          semesters: detail.semesters ?? [],
+          program: programs.find((program) => program.id === detail.curriculum.program_id) ?? null,
+        });
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPdf({ url: objectUrl, failed: false });
+      })
+      .catch(() => {
+        if (!cancelled) setPdf({ url: null, failed: true });
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setCurriculum(null);
+      setPdf({ url: null, failed: false });
+    };
+  }, [isOpen, curriculumId, programs]);
 
   if (!isOpen) return null;
-
-  const curriculum = detail?.curriculum;
-  const semesters = detail?.semesters || [];
-
-  const statusColors: Record<string, string> = {
-    active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    deactivated: 'bg-slate-200 text-slate-700 border-slate-300',
-    archived: 'bg-red-50 text-red-700 border-red-200',
-  };
+  const title = curriculum?.name ?? 'Curriculum';
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-      <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-        <div className="p-5 border-b border-gray-200/80 flex shrink-0 justify-between items-center bg-gray-50/50">
-          <div>
-            <h2 className="text-lg font-bold text-[#1A1410] font-display">Curriculum Details</h2>
-            <p className="text-xs text-gray-500 font-medium mt-1">View Only - No edits allowed</p>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3">
+      <div className="flex h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-[#F7F4F0] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-300 bg-white px-5 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <h2 className="truncate font-serif text-lg font-bold text-[#1A1410]">{title}</h2>
+            {curriculum && (
+              <>
+                <span className="rounded-full border border-[#C9952A]/20 bg-[#C9952A]/10 px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-[#C9952A]">{curriculum.code}</span>
+                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusColors[curriculum.status] ?? statusColors.deactivated}`}>{curriculum.status}</span>
+              </>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-          >
-            <X size={20} />
-          </button>
+          <button type="button" onClick={onClose} aria-label="Close preview" className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"><X size={20} /></button>
         </div>
-
-        <div className="p-6 min-h-0 flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="space-y-4 rounded-xl border border-gray-100 bg-white p-5" aria-busy="true" aria-label="Loading curriculum details">
-              <Skeleton className="h-7 w-64" />
-              <Skeleton className="h-4 w-28 rounded-full" />
-              <div className="grid grid-cols-2 gap-4"><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div>
-              <Skeleton className="h-40 w-full rounded-xl" />
-            </div>
-          ) : !curriculum ? (
-            <div className="text-center py-12 text-gray-400">
-              <p className="font-semibold">Failed to load curriculum details.</p>
-            </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-100">
+          {pdf.failed ? (
+            <p className="text-sm text-red-600">The curriculum document could not be generated.</p>
+          ) : pdf.url ? (
+            <iframe title={`${title} print preview`} src={pdf.url} className="h-full w-full border-0" />
           ) : (
-            <>
-              {/* Header */}
-              <div className="mb-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-xl font-bold text-[#1A1410] font-display">{curriculum.name}</h3>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${statusColors[curriculum.status] || statusColors.deactivated}`}>
-                    {curriculum.status}
-                  </span>
-                </div>
-                <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
-                  {curriculum.code}
-                </span>
-              </div>
-
-              {/* Metadata Grid */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-white rounded-xl p-3 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Department</p>
-                  <p className="text-sm font-semibold text-gray-800">{curriculum.department?.department_code || 'N/A'}</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Effective Year</p>
-                  <p className="text-sm font-semibold text-gray-800">{curriculum.effective_school_year}</p>
-                </div>
-              </div>
-
-              {curriculum.description && (
-                <div className="mb-6 bg-white rounded-xl p-4 border border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Description</p>
-                  <p className="text-sm text-gray-700">{curriculum.description}</p>
-                </div>
-              )}
-
-              {/* Courses by Year/Semester */}
-              <div className="mb-2">
-                <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-                  <BookOpen size={16} className="text-[#C9952A]" />
-                  Course Structure ({curriculum.courses_count} courses)
-                </h4>
-              </div>
-
-              {semesters.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-100">
-                  <p className="font-semibold">No courses attached to this curriculum.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {semesters.map((semester: CurriculumSemester) => (
-                    <div key={`${semester.year_level}-${semester.semester}`} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                      <div className="px-4 py-2.5 bg-gray-50/75 border-b border-gray-100 flex justify-between items-center">
-                        <span className="text-xs font-bold text-gray-700">
-                          {yearLabels[semester.year_level] || `Year ${semester.year_level}`} - {semesterLabels[semester.semester] || `Sem ${semester.semester}`}
-                        </span>
-                        <span className="text-[10px] font-bold text-gray-500">
-                          {semester.totals?.tu || 0} units total
-                        </span>
-                      </div>
-                      <SemesterCourseTable courses={semester.courses} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
+            <div className="flex items-center gap-2 text-sm text-gray-500"><LoadingSpinner size={16} className="animate-spin" /> Preparing curriculum document…</div>
           )}
+        </div>
+        <div className="flex items-center justify-end border-t border-gray-300 bg-white px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50">Close</button>
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
-}
-
-type SemesterCourse = CurriculumSemester['courses'][number];
-
-const semesterCourseColumns: ColumnDef<SemesterCourse>[] = [
-  {
-    id: 'code',
-    accessorKey: 'code',
-    header: 'Code',
-    cell: ({ row }) => (
-      <span className="bg-[#C9952A]/10 text-[#C9952A] px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase">
-        {row.original.code}
-      </span>
-    ),
-  },
-  { id: 'title', accessorKey: 'title', header: 'Course', meta: { cellClassName: 'font-medium text-gray-700' } },
-  { id: 'lec_units', accessorKey: 'lec_units', header: 'Lec', meta: { align: 'right', cellClassName: 'text-gray-600' } },
-  { id: 'lab_units', accessorKey: 'lab_units', header: 'Lab', meta: { align: 'right', cellClassName: 'text-gray-600' } },
-  { id: 'total_units', accessorKey: 'total_units', header: 'Units', meta: { align: 'right', cellClassName: 'font-bold text-gray-800' } },
-];
-
-function SemesterCourseTable({ courses }: { courses: SemesterCourse[] }) {
-  const data = useMemo(() => courses, [courses]);
-  const table = useDataTable({ data, columns: semesterCourseColumns, pageSize: false, getRowId: (course) => String(course.id) });
-  return <DataTable table={table} variant="embedded" density="compact" emptyTitle="No courses in this semester." emptyDescription="" />;
 }

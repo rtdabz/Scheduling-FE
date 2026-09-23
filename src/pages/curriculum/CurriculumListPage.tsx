@@ -1,13 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
 import DataTable from '../../components/ui/DataTable';
 import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
-  Trash2,
-  Search,
-  AlertTriangle,
   Filter,
   Plus,
   List,
@@ -32,6 +29,7 @@ import { useCurriculum } from '../../hooks/curriculum/useCurriculum';
 import CurriculumFormModal from '../../components/curriculum/CurriculumFormModal';
 import CurriculumCard from '../../components/curriculum/CurriculumCard';
 import CurriculumArchiveModal from '../../components/curriculum/CurriculumArchiveModal';
+import CurriculumDetailModal from '../../components/curriculum/CurriculumDetailModal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import TableActionButton from '../../components/ui/TableActionButton';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -95,6 +93,7 @@ function CurriculumManagePage() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [printingCurriculumId, setPrintingCurriculumId] = useState<number | null>(null);
+  const [viewCurriculumId, setViewCurriculumId] = useState<number | null>(null);
 
   // Table states
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -249,7 +248,7 @@ function CurriculumManagePage() {
               <TableActionButton
                 label="View Curriculum"
                 variant="view"
-                onClick={() => navigate(`${curriculumPath}?mode=view`)}
+                onClick={() => setViewCurriculumId(item.id)}
                 aria-label={`View ${item.name}`}
               >
                 <Eye size={15} />
@@ -514,7 +513,7 @@ function CurriculumManagePage() {
                 key={item.id}
                 curriculum={item}
                 canEdit={canManageCurriculum}
-                onView={(id) => navigate(`${curriculumPathFor(id)}?mode=view`)}
+                onView={setViewCurriculumId}
                 onEdit={(c) => {
                   setEditingCurriculum(c);
                   setIsEditMode(true);
@@ -548,6 +547,13 @@ function CurriculumManagePage() {
             navigate(`${curriculumPathFor(saved.id)}?mode=edit`);
           }
         }}
+      />
+
+      <CurriculumDetailModal
+        isOpen={viewCurriculumId !== null}
+        curriculumId={viewCurriculumId}
+        programs={programs}
+        onClose={() => setViewCurriculumId(null)}
       />
 
       {/* Curriculum Archive Modal */}

@@ -207,7 +207,6 @@ export default function SectionTimetables() {
           handleCellClick={noOp}
           getClassesCountForDay={(dayIndex) => sectionSchedules.filter((schedule) => schedule.dayIndex === dayIndex).length}
           getDragOverConflict={() => false}
-          handleClearAll={noOp}
           setIsRoomViewOpen={noOp}
           handleDragOver={noOp}
           handleDragLeave={noOp}

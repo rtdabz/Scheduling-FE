@@ -72,7 +72,7 @@ export default function ClassSummaryTable({
       cell: ({ row }) => (
         <>
           <span className="block text-xs font-black text-slate-900">{row.original.courseCode}</span>
-          <span className="block truncate text-[11px] font-semibold text-slate-600">{row.original.courseName}</span>
+          <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">{row.original.courseName}</span>
           {renderCourseExtras?.(row.original)}
         </>
       ),
@@ -120,7 +120,7 @@ export default function ClassSummaryTable({
       header: "Faculty",
       meta: { cellClassName: "align-top text-slate-700" },
       cell: ({ row }: { row: { original: SummaryClass } }) => partLines(row.original, (part) => part.faculty || "Unassigned").map((faculty, index) => (
-        <span key={index} className={`block truncate leading-5 ${faculty === "Unassigned" ? "italic text-amber-700" : ""}`}>
+        <span key={index} className={`block whitespace-nowrap leading-5 ${faculty === "Unassigned" ? "italic text-amber-700" : ""}`}>
           {faculty}
         </span>
       )),

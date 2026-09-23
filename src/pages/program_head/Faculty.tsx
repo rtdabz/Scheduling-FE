@@ -11,12 +11,10 @@ import FacultyListTable from '../../components/faculty/FacultyListTable';
 import {
   Pencil,
   Trash2,
-  Search,
   X,
   Plus,
   ArrowUpDown,
   Filter,
-  HelpCircle,
   LayoutGrid,
   List,
   Camera,
@@ -117,8 +115,6 @@ interface FacultyMember {
   status: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
-  designation_id?: number | null;
-  designation?: Designation | null;
   designations?: Designation[];
   createdAt?: string;
 }
@@ -147,8 +143,6 @@ interface ApiFacultyMember {
   status?: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
-  designation_id?: number | null;
-  designation?: Designation | null;
   designations?: Designation[];
   created_at: string;
   updated_at: string;
@@ -188,8 +182,6 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   status: f.status || 'active',
   profile_picture: f.profile_picture || null,
   administrative_role: f.administrative_role || null,
-  designation_id: f.designation_id ?? null,
-  designation: f.designation ?? null,
   designations: f.designations ?? [],
   createdAt: f.created_at
 });
@@ -231,9 +223,6 @@ export default function ProgramHeadFaculty() {
   }, [searchQuery, departmentFilter, employmentFilter, sortBy]);
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isDean = user?.role?.toLowerCase() === 'dean';
-  const isSecretary = user?.role?.toLowerCase() === 'secretary';
-  const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageFaculty = isVpaa;
   // The roster itself (identity, department, program, status) is the VPAA's.
   // The unit allowances and the weekly availability windows are instructor
@@ -393,7 +382,7 @@ export default function ProgramHeadFaculty() {
     setProbonoUnits(faculty.probono_units);
     setDepartmentId(faculty.department_id ? faculty.department_id.toString() : '');
     setProgramId(faculty.program_id ? faculty.program_id.toString() : '');
-    setDesignationIds((faculty.designations?.length ? faculty.designations : faculty.designation ? [faculty.designation] : []).map((d) => d.id.toString()));
+    setDesignationIds((faculty.designations ?? []).map((d) => d.id.toString()));
     setStatus(faculty.status);
     setProfilePicture(faculty.profile_picture || null);
 
@@ -889,11 +878,11 @@ export default function ProgramHeadFaculty() {
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
                       <div className="col-span-2">
                         <span className="text-gray-400 font-semibold block text-[10px] uppercase">Designation</span>
-                        {(f.designations?.length ? f.designations : f.designation ? [f.designation] : []).length === 0 ? (
+                        {(f.designations ?? []).length === 0 ? (
                           <span className="font-bold text-gray-400">—</span>
                         ) : (
                           <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                            {(f.designations?.length ? f.designations : f.designation ? [f.designation] : []).map((d) => (
+                            {(f.designations ?? []).map((d) => (
                               <FacultyRoleBadge key={d.id} label={designationLabel(d)} tone="gold" hint={d.deload_units ? `-${d.deload_units}u` : null} />
                             ))}
                           </div>

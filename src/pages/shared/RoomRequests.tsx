@@ -210,8 +210,8 @@ export default function RoomRequests() {
         setSchedules(initialData.schedules ?? []);
       }
 
-      // A reviewer gets every department's requests; a requester only ever
-      // gets their own department's (the server scopes it either way).
+      // The VPAA gets every department's requests; a department gets the ones
+      // it sent and the ones for its rooms (the server scopes it either way).
       const requestData = await fetchRoomRequests({ scope: 'all' });
       if (mountedRef.current) setRequests(requestData);
     } catch (error) {
@@ -606,7 +606,7 @@ function RequestRoomModal({
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Request Room" description="Choose a day and an available time window. The VPAA reviews every request." size="md" footer={
+    <Modal isOpen onClose={onClose} title="Request Room" description="Choose a day and an available time window. The department that owns the room reviews your request." size="md" footer={
       <div className="flex w-full justify-end gap-2">
         <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50">Cancel</button>
         <button type="submit" form="room-request-form" disabled={!canSubmit} className="inline-flex items-center gap-2 rounded-lg bg-[#5A1220] px-4 py-2 text-sm font-extrabold text-white hover:bg-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-50"><Send size={15} /> {isSubmitting ? 'Submitting...' : 'Submit Request'}</button>
@@ -705,7 +705,8 @@ function RequestPreviewModal({
   const { toast, confirm } = useToast();
   const [remarks, setRemarks] = useState('');
   const [isBusy, setIsBusy] = useState(false);
-  const canReview = hasStoredCapability('room.review_requests');
+  // Only the secretary of the department that owns the room decides; the VPAA only watches.
+  const canReview = hasStoredCapability('room.review_requests') && departmentId !== null && getOwnerId(request) === departmentId;
   const isOwn = hasStoredCapability('room.request') && departmentId !== null && request.requesting_department?.id === departmentId;
   const isPending = request.status === 'pending';
   const isApproved = request.status === 'approved';

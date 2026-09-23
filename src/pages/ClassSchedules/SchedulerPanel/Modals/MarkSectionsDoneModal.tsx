@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, CheckSquare, Lock, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CheckSquare, Lock, RotateCcw, X } from "lucide-react";
 import { yearLevelLabel } from "../constants";
 import type { SectionDoneCandidate } from "../types";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
@@ -43,16 +43,16 @@ const COPY: Record<SectionChecklistVariant, {
 }> = {
   clear: {
     eyebrow: "Schedule Management",
-    title: "Clear section schedules",
-    description: "Tick the sections whose schedules you want to clear. Only the selected sections will be affected.",
+    title: "Reset section schedules",
+    description: "Tick the sections whose schedules you want to reset. Only the selected sections will be affected.",
     empty: "No sections are available in this department for the active semester.",
-    noneReady: "No section has a working schedule that can be cleared.",
+    noneReady: "No section has a working schedule that can be reset.",
     progress: (_done, total) => plural(total, "class"),
-    lockNote: (meetings) => `${plural(meetings, "loaded meeting")} to clear`,
+    lockNote: (meetings) => `${plural(meetings, "loaded meeting")} to remove`,
     selectAll: "Select all available",
-    closeLabel: "Close clear schedules",
-    working: "Clearing...",
-    confirm: (count) => count > 0 ? `Clear ${count} Section${count === 1 ? "" : "s"}` : "Clear Sections",
+    closeLabel: "Close reset schedules",
+    working: "Resetting...",
+    confirm: (count) => count > 0 ? `Reset ${count} Section${count === 1 ? "" : "s"}` : "Reset Sections",
     preselect: "open",
   },
   done: {
@@ -180,7 +180,7 @@ export default function MarkSectionsDoneModal({
       >
         <div className="flex items-start gap-4 px-5 pb-4 pt-5">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center border ${variant === "clear" ? "border-rose-100 bg-rose-50 text-rose-600" : "border-emerald-100 bg-emerald-50 text-emerald-600"}`} style={{ borderRadius: 8 }}>
-            {variant === "clear" ? <Trash2 size={20} /> : <CheckSquare size={20} />}
+            {variant === "clear" ? <RotateCcw size={20} /> : <CheckSquare size={20} />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#6b0f1a]">{copy.eyebrow}</p>
@@ -205,7 +205,7 @@ export default function MarkSectionsDoneModal({
         <div className="min-h-0 overflow-y-auto px-5 pb-5">
           {variant === "clear" && <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>Clearing removes working schedules from the selected sections, including meetings beyond this preview. They cannot be restored from the Archive. Schedule history is retained.</p>
+            <p>Resetting removes working schedules from the selected sections, including meetings beyond this preview. They cannot be restored from the Archive. Schedule history is retained.</p>
           </div>}
           {candidates.length === 0 ? (
             <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-600">

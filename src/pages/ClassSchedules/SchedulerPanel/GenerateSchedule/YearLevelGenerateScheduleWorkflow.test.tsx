@@ -530,6 +530,78 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
   });
 
+  describe("keeps the year level it is working on", () => {
+    const twoYears: Section[] = [
+      sections[0],
+      { ...sections[0], id: "30", name: "BSIT 3A", yearLevel: 3 },
+    ];
+    const draftKey = "wicars.year-level-wizard.v5.2.1";
+    const mockReads = (activeRun: Record<string, unknown> | null = null) =>
+      get.mockImplementation((url: string) => {
+        if (url === "/scheduling-settings") {
+          return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+        }
+        if (url === "/schedule-recommendations/active-generation-run") {
+          return Promise.resolve({ data: { run: activeRun } });
+        }
+        if (url.startsWith("/schedule-recommendations/generation-runs/")) {
+          return Promise.resolve({ data: activeRun });
+        }
+        return curriculumEndpoints(url) ?? Promise.resolve({ data: [] });
+      });
+    const workflow = (list: Section[]) => (
+      <YearLevelGenerateScheduleWorkflow
+        onClose={vi.fn()}
+        sections={list}
+        courses={courses}
+        activeSemester={activeSemester}
+        departmentId={2}
+        existingSchedules={[]}
+        onAccepted={vi.fn()}
+      />
+    );
+    const withProvider = (ui: ReactElement) => (
+      <GenerationRunProvider departmentId={2} semesterId={1}>{ui}</GenerationRunProvider>
+    );
+    const yearPicker = () => screen.getByRole("combobox", { name: "Year level" }) as HTMLSelectElement;
+
+    it("when the sections list is refreshed after a save", async () => {
+      mockReads();
+      const { rerender } = render(withProvider(workflow(twoYears)));
+      fireEvent.change(yearPicker(), { target: { value: "3" } });
+      expect(yearPicker().value).toBe("3");
+
+      // Saving a year level deletes the draft, then refreshes the list: the
+      // same years in a new array. That used to send the wizard to year 1.
+      localStorage.removeItem(draftKey);
+      rerender(withProvider(workflow(twoYears.map((section) => ({ ...section })))));
+
+      await waitFor(() => expect(yearPicker().value).toBe("3"));
+    });
+
+    it("when it opens before the sections have loaded", async () => {
+      mockReads();
+      localStorage.setItem(draftKey, JSON.stringify({ step: 1, yearLevel: 3, configs: {}, setupDraft: {} }));
+      const { rerender } = render(withProvider(workflow([])));
+
+      rerender(withProvider(workflow(twoYears)));
+
+      await waitFor(() => expect(yearPicker().value).toBe("3"));
+      expect(JSON.parse(localStorage.getItem(draftKey) ?? "{}").yearLevel).toBe(3);
+    });
+
+    it("while a run for another year level is in progress", async () => {
+      mockReads({ run_id: "run-9", status: "running", year_level: 3, created_at: new Date().toISOString() });
+      render(withProvider(workflow(twoYears)));
+
+      // The wizard's header names the run's year, not the first year level.
+      const header = (year: string) => (_: string, element: Element | null) =>
+        element?.tagName === "P" && (element.textContent ?? "").includes(`BSIT ${year} year`);
+      expect((await screen.findAllByText(header("3rd"))).length).toBeGreaterThan(0);
+      expect(screen.queryAllByText(header("1st"))).toHaveLength(0);
+    });
+  });
+
   it("opens every year level with the saved Default Settings, even without a draft", async () => {
     // An accepted year level wipes the wizard draft; the defaults survive it.
     localStorage.setItem(

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AlertTriangle, CalendarDays } from "lucide-react";
 import { FULL_DAY_NAMES } from "../../../../lib/timeGrid";
 import type { Course, Section, Semester } from "../types";
@@ -59,6 +60,10 @@ export default function ConfigurationStep({
   preferredDays,
   onPreferredDaysChange,
   requiredDayRules = [],
+  sundayClassesEnabled = null,
+  canManageSundayClasses = false,
+  sundayClassCount = 0,
+  onSundayClassesChange,
 }: {
   activeSemester: Semester | null;
   years: number[];
@@ -79,7 +84,28 @@ export default function ConfigurationStep({
   onPreferredDaysChange: (days: string[]) => void;
   /** The department's Required Days, to flag one the chosen days leave out. */
   requiredDayRules?: Array<{ course_id: number; day: string }>;
+  /**
+   * The department's Sunday Classes setting; null while it loads. Off, the
+   * generator and manual scheduling place nothing on Sunday.
+   */
+  sundayClassesEnabled?: boolean | null;
+  /** Only the department secretary may change it. */
+  canManageSundayClasses?: boolean;
+  /** Classes already on Sunday, which stay when Sunday is turned off. */
+  sundayClassCount?: number;
+  onSundayClassesChange?: (enabled: boolean) => void | Promise<void>;
 }) {
+  const [savingSunday, setSavingSunday] = useState(false);
+  const sundayClosed = sundayClassesEnabled === false;
+  const toggleSundayClasses = async () => {
+    if (!onSundayClassesChange || sundayClassesEnabled === null) return;
+    setSavingSunday(true);
+    try {
+      await onSundayClassesChange(!sundayClassesEnabled);
+    } finally {
+      setSavingSunday(false);
+    }
+  };
   const toggleDay = (day: string) =>
     onPreferredDaysChange(
       orderDays(
@@ -175,7 +201,9 @@ export default function ConfigurationStep({
             </p>
             <p className="text-[11px] font-semibold leading-tight text-slate-500">
               {preferredDays.length === 0
-                ? "Any day. Pick days to schedule this year level only on them."
+                ? sundayClosed
+                  ? "Any day from Monday to Saturday. Pick days to schedule this year level only on them."
+                  : "Any day. Pick days to schedule this year level only on them."
                 : `Every class, including Split Session and Hybrid, meets only on ${preferredDays.join(", ")}.`}
             </p>
           </div>
@@ -197,14 +225,15 @@ export default function ConfigurationStep({
         >
           {FULL_DAY_NAMES.map((day) => {
             const selected = preferredDays.includes(day);
+            const closed = day === "Sunday" && sundayClosed && !selected;
 
             return (
               <button
                 key={day}
                 type="button"
                 aria-pressed={selected}
-                title={day}
-                disabled={disabled}
+                title={closed ? "Sunday classes are not enabled for this department" : day}
+                disabled={disabled || closed}
                 onClick={() => toggleDay(day)}
                 className={`rounded-md border px-1 py-1.5 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
                   selected
@@ -217,6 +246,53 @@ export default function ConfigurationStep({
             );
           })}
         </div>
+        {sundayClassesEnabled !== null && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-black leading-tight text-slate-900">
+                Sunday classes
+              </p>
+              <p className="text-[11px] font-semibold leading-tight text-slate-500">
+                {sundayClassesEnabled
+                  ? "On. Generation and manual scheduling may use Sunday."
+                  : canManageSundayClasses
+                    ? "Off. Turn on after the dean approves Sunday classes for this department."
+                    : "Off. Only the department secretary can turn on Sunday classes."}
+              </p>
+            </div>
+            {canManageSundayClasses && onSundayClassesChange && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={sundayClassesEnabled}
+                aria-label="Sunday classes"
+                disabled={savingSunday}
+                onClick={() => void toggleSundayClasses()}
+                title={sundayClassesEnabled ? "Disable Sunday classes" : "Enable Sunday classes"}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  savingSunday
+                    ? "cursor-not-allowed bg-gray-200 opacity-50"
+                    : sundayClassesEnabled
+                      ? "cursor-pointer bg-[#4e0a10]"
+                      : "cursor-pointer bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    sundayClassesEnabled ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            )}
+          </div>
+        )}
+        {sundayClosed && sundayClassCount > 0 && (
+          <p className="mt-2 flex items-start gap-1.5 text-[11px] font-semibold leading-tight text-amber-800">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            {sundayClassCount} {sundayClassCount === 1 ? "class is" : "classes are"} already on Sunday this semester.
+            They stay on the timetable, but no new class can be placed on Sunday.
+          </p>
+        )}
         {preferredDays.length === 1 && (
           <p className="mt-2 flex items-start gap-1.5 text-[11px] font-semibold leading-tight text-amber-800">
             <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />

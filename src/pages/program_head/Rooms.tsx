@@ -11,7 +11,6 @@ import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
-  Search,
   X,
   Building2,
   ArrowLeft,
@@ -19,7 +18,7 @@ import {
   LayoutGrid,
   List,
   Filter,
-  Plus
+  Plus,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -354,7 +353,7 @@ export default function ProgramHeadRooms() {
       const section = activeClass.section?.section_name || '';
       return { 
         status: 'occupied', 
-        text: `Live: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
+        text: `Ongoing Class: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
         class: activeClass
       };
     }

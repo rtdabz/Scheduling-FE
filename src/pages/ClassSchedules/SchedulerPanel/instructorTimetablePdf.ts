@@ -1,6 +1,7 @@
-import type jsPDF from "jspdf";
 import tccLogo from "../../../assets/logo.jpg";
 import type { ScheduleItem, Semester } from "./types";
+import { fullSemesterLabel } from "../../../lib/semesterLabel";
+import { packLanes } from "../../vpaa/calendar/ganttLayout";
 
 export interface InstructorTimetablePdfInput {
   title?: string;
@@ -12,7 +13,7 @@ export interface InstructorTimetablePdfInput {
   activeSemester?: Semester | null;
 }
 
-const DAY_CODES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const DAY_NAMES = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
 
 function normalizeDay(dayStr: string): number | undefined {
   if (!dayStr) return undefined;
@@ -54,6 +55,19 @@ function formatMins12hShort(mins: number): string {
   const suffix = rawHrs >= 12 ? "PM" : "AM";
   const hrs = rawHrs % 12 === 0 ? 12 : rawHrs % 12;
   return m === 0 ? `${hrs} ${suffix}` : `${hrs}:${m.toString().padStart(2, "0")} ${suffix}`;
+}
+
+// Axis label for a block, e.g. "7-8:30 AM" or "11:30 AM-1 PM" when it crosses noon.
+function formatBlockRange(start: number, end: number): string {
+  const clock = (mins: number) => {
+    const hrs = Math.floor(mins / 60) % 12 || 12;
+    const m = mins % 60;
+    return m === 0 ? `${hrs}` : `${hrs}:${m.toString().padStart(2, "0")}`;
+  };
+  const suffix = (mins: number) => (Math.floor(mins / 60) % 24 >= 12 ? "PM" : "AM");
+  return suffix(start) === suffix(end)
+    ? `${clock(start)}-${clock(end)} ${suffix(end)}`
+    : `${clock(start)} ${suffix(start)}-${clock(end)} ${suffix(end)}`;
 }
 
 function formatTime12hShort(timeStr: string): string {
@@ -121,6 +135,53 @@ function createTransparentWatermarkDataUrl(img: HTMLImageElement, targetOpacity 
   }
 }
 
+type Rgb = [number, number, number];
+
+const MAROON: Rgb = [78, 10, 16];
+const MAROON_SOFT: Rgb = [104, 24, 32];
+const GOLD: Rgb = [201, 149, 42];
+const GOLD_LIGHT: Rgb = [245, 200, 66];
+const CREAM: Rgb = [236, 220, 204];
+const INK: Rgb = [15, 23, 42];
+const BODY: Rgb = [51, 65, 85];
+const MUTED: Rgb = [100, 116, 139];
+const FAINT: Rgb = [148, 163, 184];
+const HAIRLINE: Rgb = [226, 232, 240];
+const FRAME: Rgb = [203, 213, 225];
+const WHITE: Rgb = [255, 255, 255];
+
+// Class card text sizes (pt). The sheet is handed out on paper, so nothing
+// on a card goes below 7.5 pt.
+const CARD_CODE_PT = 10.5;
+const CARD_PILL_PT = 7.5;
+const CARD_BODY_PT = 8.5;
+const CARD_FOOTER_PT = 8;
+/** Baseline-to-baseline step (mm) for the card's body and footer lines. */
+const CARD_LINE_H = 3.4;
+
+type CardKind = "lecture" | "laboratory" | "online" | "field" | "conflict";
+
+/** Accent (strip, border, code) and tint per card kind; also drives the legend. */
+const CARD_STYLES: Record<CardKind, { label: string; accent: Rgb; tint: Rgb }> = {
+  lecture: { label: "Lecture", accent: [30, 64, 175], tint: [239, 246, 255] },
+  laboratory: { label: "Laboratory", accent: [109, 40, 217], tint: [245, 243, 255] },
+  online: { label: "Online", accent: [4, 120, 87], tint: [236, 253, 245] },
+  field: { label: "Field", accent: [180, 83, 9], tint: [255, 251, 235] },
+  conflict: { label: "Conflict (overlapping)", accent: [220, 38, 38], tint: [254, 242, 242] },
+};
+
+const cardKindOf = (sch: ScheduleItem, isConflict: boolean): CardKind => {
+  if (isConflict) return "conflict";
+  if (sch.mode === "online") return "online";
+  if (sch.mode === "field") return "field";
+  return sch.meetingType === "laboratory" ? "laboratory" : "lecture";
+};
+
+const formatHours = (minutes: number): string => {
+  const hours = Math.round((minutes / 60) * 10) / 10;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+};
+
 export async function buildInstructorTimetablePdf({
   title = "",
   facultyName = "",
@@ -137,344 +198,350 @@ export async function buildInstructorTimetablePdf({
   ]);
 
   const doc = new JsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const fill = (c: Rgb) => doc.setFillColor(c[0], c[1], c[2]);
+  const stroke = (c: Rgb) => doc.setDrawColor(c[0], c[1], c[2]);
+  const ink = (c: Rgb) => doc.setTextColor(c[0], c[1], c[2]);
+  const font = (style: "bold" | "normal" | "italic", size: number) => {
+    doc.setFont("Helvetica", style);
+    doc.setFontSize(size);
+  };
+  /** The part of `text` that fits `width` on one line, so nothing spills out of its box. */
+  const fit = (text: string, width: number): string =>
+    (doc.splitTextToSize(text, Math.max(1, width)) as string[])[0] ?? "";
 
-  const pageWidth = 297;
-  const headerX = 10;
+  const pageX = 10;
+  const pageW = 277;
+
+  // Classes on the week, packed into lanes with the VPAA calendar Gantt's own
+  // packing so overlapping classes sit in separate lanes instead of covering each other.
+  const items = schedules.flatMap((sch, index) => {
+    const dayIdx = normalizeDay(sch.day);
+    const start = parseTimeToMinutes(sch.startTime);
+    const end = parseTimeToMinutes(sch.endTime);
+    return dayIdx === undefined || start <= 0 || end <= start
+      ? []
+      : [{ schedule: { id: index }, sch, dayIdx, start, end }];
+  });
+  const days = DAY_NAMES.map((name, dayIdx) => {
+    const { blocks, laneCount } = packLanes(items.filter((item) => item.dayIdx === dayIdx));
+    const withConflicts = blocks.map((block) => ({
+      ...block,
+      isConflict: blocks.some((other) => other !== block && other.start < block.end && block.start < other.end),
+    }));
+    return { name, blocks: withConflicts, laneCount, y: 0, height: 0 };
+  });
+  const conflictCount = days.reduce((sum, day) => sum + day.blocks.filter((block) => block.isConflict).length, 0);
+  const weeklyMinutes = items.reduce((sum, item) => sum + (item.end - item.start), 0);
+
+  // 1. Header band: logo, name block, summary chips, department logo.
   const headerY = 8;
-  const headerW = 277;
-  const headerH = 18;
+  const headerH = 26;
+  fill(MAROON);
+  doc.rect(pageX, headerY, pageW, headerH, "F");
+  fill(GOLD);
+  doc.rect(pageX, headerY + headerH, pageW, 0.9, "F");
 
-  // 1. Top Maroon Header Bar (#4e0a10)
-  doc.setFillColor(78, 10, 16);
-  doc.rect(headerX, headerY, headerW, headerH, "F");
+  const logoTile = 20;
+  const drawLogoTile = (img: HTMLImageElement, x: number, format: string) => {
+    const tileY = headerY + (headerH - logoTile) / 2;
+    fill(WHITE);
+    doc.roundedRect(x, tileY, logoTile, logoTile, 2, 2, "F");
+    const max = logoTile - 3;
+    const ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+    const w = ar >= 1 ? max : max * ar;
+    const h = ar >= 1 ? max / ar : max;
+    doc.addImage(img, format, x + (logoTile - w) / 2, tileY + (logoTile - h) / 2, w, h);
+  };
 
-  // Header Title Text
-  const headerTitle = title
-    ? title.toUpperCase()
-    : facultyName
-    ? `INSTRUCTOR: ${facultyName.toUpperCase()}`
-    : "CLASS TIMETABLE SCHEDULE";
-
-  doc.setFont("Helvetica", "bold");
-  doc.setFontSize(12.5);
-  doc.setTextColor(245, 200, 66); // Amber Gold #F5C842
-  doc.text(headerTitle, pageWidth / 2, headerY + 6.8, { align: "center" });
-
-  const titleWidth = doc.getTextWidth(headerTitle);
-
-  // TCC Logo on the left side (flanking title text)
+  let textX = pageX + 5;
   if (tccLogoImg) {
-    const maxSize = 13;
-    const ar = (tccLogoImg.naturalWidth || 1) / (tccLogoImg.naturalHeight || 1);
-    const logoW = ar >= 1 ? maxSize : maxSize * ar;
-    const logoH = ar >= 1 ? maxSize / ar : maxSize;
-    const desiredX = (pageWidth - titleWidth) / 2 - logoW - 6;
-    const logoX = Math.max(headerX + 4, desiredX);
-    const logoY = headerY + (headerH - logoH) / 2;
-    doc.addImage(tccLogoImg, "JPEG", logoX, logoY, logoW, logoH);
+    drawLogoTile(tccLogoImg, pageX + 3, "JPEG");
+    textX = pageX + 3 + logoTile + 5;
   }
 
-  // Department Logo on the right side (closer to instructor name)
+  let rightEdge = pageX + pageW - 3;
   if (deptLogoImg) {
-    const maxSize = 13;
-    const ar = (deptLogoImg.naturalWidth || 1) / (deptLogoImg.naturalHeight || 1);
-    const logoW = ar >= 1 ? maxSize : maxSize * ar;
-    const logoH = ar >= 1 ? maxSize / ar : maxSize;
-    const desiredX = (pageWidth + titleWidth) / 2 + 6;
-    const logoX = Math.min(headerX + headerW - logoW - 4, desiredX);
-    const logoY = headerY + (headerH - logoH) / 2;
-    doc.addImage(
-      deptLogoImg,
-      departmentLogo?.match(/image\/jpe?g|\.jpe?g(?:$|\?)/i) ? "JPEG" : "PNG",
-      logoX,
-      logoY,
-      logoW,
-      logoH,
-    );
+    rightEdge -= logoTile;
+    drawLogoTile(deptLogoImg, rightEdge, departmentLogo?.match(/image\/jpe?g|\.jpe?g(?:$|\?)/i) ? "JPEG" : "PNG");
+    rightEdge -= 4;
   }
 
-  doc.setFont("Helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(255, 255, 255);
+  // Summary chips, laid out right to left.
+  const chips: Array<{ label: string; value: string; alert?: boolean }> = [
+    { label: "CONFLICTS", value: String(conflictCount), alert: conflictCount > 0 },
+    { label: "HOURS / WEEK", value: formatHours(weeklyMinutes) },
+    { label: "CLASSES", value: String(items.length) },
+  ];
+  const chipW = 25;
+  const chipH = 16;
+  const chipY = headerY + (headerH - chipH) / 2;
+  chips.forEach((chip) => {
+    const x = rightEdge - chipW;
+    fill(chip.alert ? [153, 27, 27] : MAROON_SOFT);
+    doc.roundedRect(x, chipY, chipW, chipH, 1.8, 1.8, "F");
+    font("bold", 13);
+    ink(chip.alert ? WHITE : GOLD_LIGHT);
+    doc.text(chip.value, x + chipW / 2, chipY + 8, { align: "center" });
+    font("bold", 5.6);
+    ink(CREAM);
+    doc.text(chip.label, x + chipW / 2, chipY + 12.6, { align: "center" });
+    rightEdge = x - 2.5;
+  });
 
-  const deptLabel = departmentCode
-    ? `${departmentCode} - ${departmentName.toUpperCase()}`
-    : departmentName.toUpperCase();
-  const semText = activeSemester ? ` | ${activeSemester.name.toUpperCase()}` : "";
-  const subTitle = (deptLabel || "COLLEGE OF INFORMATION TECHNOLOGY") + semText;
+  // Name block: "INSTRUCTOR: KAY WAGA" becomes an eyebrow and a heading.
+  const rawTitle = (title || (facultyName ? `INSTRUCTOR: ${facultyName}` : "CLASS TIMETABLE")).trim();
+  const colon = rawTitle.indexOf(":");
+  const eyebrow = colon > 0 ? `${rawTitle.slice(0, colon).trim().toUpperCase()} TIMETABLE` : "WEEKLY TIMETABLE";
+  const heading = (colon > 0 ? rawTitle.slice(colon + 1) : rawTitle).trim().toUpperCase();
+  const textW = rightEdge - textX - 4;
 
-  doc.text(subTitle, pageWidth / 2, headerY + 13.5, { align: "center" });
+  font("bold", 7);
+  ink(GOLD_LIGHT);
+  doc.text(eyebrow, textX, headerY + 7.5, { charSpace: 0.6 });
 
-  // 2. Timetable Grid Layout Setup
-  const gridTopY = 30;
-  const gridLeftX = 10;
-  const gridWidth = 277;
-  const colTimeWidth = 26;
-  const dayColWidth = (gridWidth - colTimeWidth) / 7;
-  const headerRowHeight = 11;
-  const totalSlots = 27; // 7:00 AM to 8:30 PM (27 slots of 30 mins)
-  const slotHeight = 5.5;
-  const slotsStartY = gridTopY + headerRowHeight;
+  let nameSize = 17;
+  font("bold", nameSize);
+  while (doc.getTextWidth(heading) > textW && nameSize > 10) {
+    nameSize -= 0.5;
+    doc.setFontSize(nameSize);
+  }
+  ink(WHITE);
+  doc.text(fit(heading, textW), textX, headerY + 15.5);
 
-  // Render Transparent TCC Watermark Background inside the timetable grid
+  const deptLabel = departmentCode && departmentName
+    ? `${departmentCode} - ${departmentName}`
+    : departmentName || departmentCode || "College of Information Technology";
+  const subTitle = [deptLabel, activeSemester ? fullSemesterLabel(activeSemester) : ""].filter(Boolean).join("  |  ");
+  font("normal", 8);
+  ink(CREAM);
+  doc.text(fit(subTitle, textW), textX, headerY + 21.5);
+
+  // 2. Chart geometry
+  const chartY = headerY + headerH + 4;
+  const labelW = 28;
+  const timelineX = pageX + labelW;
+  const timelineW = pageW - labelW;
+  const axisH = 9;
+  const rowsTopY = chartY + axisH;
+  const rowsBottomLimit = 194;
+  const emptyRowH = 8;
+
+  // 7:00 AM - 8:30 PM in 90-minute blocks, widened (on the same grid) only when a class falls outside it.
+  const BLOCK = 90;
+  const earliest = Math.min(420, ...items.map((item) => item.start));
+  const latest = Math.max(1230, ...items.map((item) => item.end));
+  const windowStart = 420 - Math.ceil((420 - earliest) / BLOCK) * BLOCK;
+  const windowEnd = windowStart + Math.ceil((latest - windowStart) / BLOCK) * BLOCK;
+  const minuteX = (minutes: number) => timelineX + ((minutes - windowStart) / (windowEnd - windowStart)) * timelineW;
+
+  // Days without classes collapse to a thin row; busy days share the rest.
+  const emptyDays = days.filter((day) => day.blocks.length === 0).length;
+  const busyLanes = days.reduce((sum, day) => sum + (day.blocks.length ? day.laneCount : 0), 0);
+  const laneH = busyLanes ? Math.min(22, (rowsBottomLimit - rowsTopY - emptyDays * emptyRowH) / busyLanes) : 0;
+  let nextY = rowsTopY;
+  days.forEach((day) => {
+    day.y = nextY;
+    day.height = day.blocks.length ? day.laneCount * laneH : emptyRowH;
+    nextY += day.height;
+  });
+  const rowsBottomY = nextY;
+
+  // Day label column and alternate row shading
+  fill([250, 247, 244]);
+  doc.rect(pageX, rowsTopY, labelW, rowsBottomY - rowsTopY, "F");
+  days.forEach((day, idx) => {
+    if (idx % 2 === 1) {
+      fill([250, 251, 253]);
+      doc.rect(timelineX, day.y, timelineW, day.height, "F");
+    }
+  });
+
+  // Faint watermark behind the timeline
   if (tccLogoImg) {
-    const wmSize = 100;
-    const wmX = gridLeftX + (gridWidth - wmSize) / 2;
-    const wmY = slotsStartY + (totalSlots * slotHeight - wmSize) / 2;
-    let drawn = false;
-    try {
-      // Try jsPDF native GState opacity if available
-      // @ts-ignore
-      if (typeof doc.GState === "function") {
-        // @ts-ignore
-        doc.setGState(new doc.GState({ opacity: 0.18 }));
-        doc.addImage(tccLogoImg, "JPEG", wmX, wmY, wmSize, wmSize);
-        // @ts-ignore
-        doc.setGState(new doc.GState({ opacity: 1.0 }));
-        drawn = true;
-      }
-    } catch {
-      drawn = false;
-    }
-
-    if (!drawn) {
-      const transparentWmUrl = createTransparentWatermarkDataUrl(tccLogoImg, 0.18);
-      if (transparentWmUrl) {
-        const transparentWmImg = await loadImgSafe(transparentWmUrl);
-        if (transparentWmImg) {
-          doc.addImage(transparentWmImg, "PNG", wmX, wmY, wmSize, wmSize);
-        }
-      }
-    }
-  }
-
-  // 3. Maroon Grid Header Row (#4e0a10)
-  doc.setFillColor(78, 10, 16);
-  doc.rect(gridLeftX, gridTopY, gridWidth, headerRowHeight, "F");
-
-  doc.setDrawColor(60, 8, 12);
-  doc.setLineWidth(0.3);
-  doc.rect(gridLeftX, gridTopY, gridWidth, headerRowHeight, "S");
-
-  // TIME column header
-  doc.setFont("Helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.setTextColor(245, 200, 66); // Gold #F5C842
-  doc.text("TIME", gridLeftX + colTimeWidth / 2, gridTopY + 7, { align: "center" });
-  doc.line(gridLeftX + colTimeWidth, gridTopY, gridLeftX + colTimeWidth, gridTopY + headerRowHeight);
-
-  // Day Headers (MON, TUE, WED, THU, FRI, SAT, SUN) with class count pill badges
-  DAY_CODES.forEach((dayCode, idx) => {
-    const dayX = gridLeftX + colTimeWidth + idx * dayColWidth;
-    const dayCenterX = dayX + dayColWidth / 2;
-
-    // Day Code Text
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(255, 255, 255);
-    doc.text(dayCode, dayCenterX, gridTopY + 4.5, { align: "center" });
-
-    // Class Count Badge
-    const daySchedules = schedules.filter((s) => normalizeDay(s.day) === idx);
-    const count = daySchedules.length;
-    const countText = `${count} ${count === 1 ? "CLASS" : "CLASSES"}`;
-
-    const badgeW = 16;
-    const badgeH = 3.8;
-    const badgeX = dayCenterX - badgeW / 2;
-    const badgeY = gridTopY + 5.8;
-
-    doc.setFillColor(60, 10, 16);
-    doc.setDrawColor(201, 149, 42); // Gold border
-    doc.setLineWidth(0.25);
-    doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.2, 1.2, "FD");
-
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(6.5);
-    doc.setTextColor(245, 200, 66); // Gold text
-    doc.text(countText, dayCenterX, badgeY + 2.7, { align: "center" });
-
-    if (idx < 6) {
-      doc.setDrawColor(100, 20, 28);
-      doc.line(dayX + dayColWidth, gridTopY, dayX + dayColWidth, gridTopY + headerRowHeight);
-    }
-  });
-
-  // 4. Time Rows & Grid Dividers with Bold Time Block Boundaries
-  for (let slotIndex = 0; slotIndex <= totalSlots; slotIndex++) {
-    const slotY = slotsStartY + slotIndex * slotHeight;
-    const isMajorBlock = slotIndex % 3 === 0;
-
-    if (isMajorBlock) {
-      // Bold divider line to mark where 1.5-hour time slots start and end
-      doc.setDrawColor(100, 116, 139); // Dark slate #64748B
-      doc.setLineWidth(0.45);
-      doc.line(gridLeftX, slotY, gridLeftX + gridWidth, slotY);
+    const wmSize = Math.min(90, rowsBottomY - rowsTopY - 6);
+    const wmX = timelineX + (timelineW - wmSize) / 2;
+    const wmY = rowsTopY + (rowsBottomY - rowsTopY - wmSize) / 2;
+    const pdf = doc as unknown as {
+      GState?: new (options: { opacity: number }) => unknown;
+      setGState?: (state: unknown) => void;
+    };
+    if (pdf.GState && pdf.setGState) {
+      pdf.setGState(new pdf.GState({ opacity: 0.06 }));
+      doc.addImage(tccLogoImg, "JPEG", wmX, wmY, wmSize, wmSize);
+      pdf.setGState(new pdf.GState({ opacity: 1 }));
     } else {
-      // Light dashed-feeling 30-min slot line
-      doc.setDrawColor(226, 232, 240); // Light slate #E2E8F0
-      doc.setLineWidth(0.15);
-      doc.line(gridLeftX, slotY, gridLeftX + gridWidth, slotY);
+      const transparentWmUrl = createTransparentWatermarkDataUrl(tccLogoImg, 0.06);
+      const transparentWmImg = transparentWmUrl ? await loadImgSafe(transparentWmUrl) : null;
+      if (transparentWmImg) doc.addImage(transparentWmImg, "PNG", wmX, wmY, wmSize, wmSize);
     }
   }
 
-  // Draw 1.5-hour interval time labels on the left column ("7 AM to 8:30 AM", "8:30 AM to 10 AM", etc.)
-  const intervalBlocks = 9; // 9 blocks of 1.5 hrs
-  for (let b = 0; b < intervalBlocks; b++) {
-    const blockStartMins = 420 + b * 90;
-    const blockEndMins = blockStartMins + 90;
-    const blockStartY = slotsStartY + b * 3 * slotHeight;
-    const blockH = 3 * slotHeight;
+  // Time axis
+  fill([248, 250, 252]);
+  doc.rect(pageX, chartY, pageW, axisH, "F");
+  fill(MAROON);
+  doc.rect(pageX, chartY, labelW, axisH, "F");
+  font("bold", 9);
+  ink(GOLD_LIGHT);
+  doc.text("DAY", pageX + labelW / 2, chartY + 5.6, { align: "center" });
+  font("bold", 8.5);
+  ink(INK);
+  for (let minutes = windowStart; minutes < windowEnd; minutes += BLOCK) {
+    const center = (minuteX(minutes) + minuteX(minutes + BLOCK)) / 2;
+    doc.text(formatBlockRange(minutes, minutes + BLOCK), center, chartY + 5.6, { align: "center" });
+  }
+  fill(GOLD);
+  doc.rect(pageX, chartY + axisH - 0.6, pageW, 0.6, "F");
 
-    const startLabel = formatMins12hShort(blockStartMins);
-    const endLabel = `to ${formatMins12hShort(blockEndMins)}`;
-
-    const textCenterY = blockStartY + blockH / 2;
-
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.setTextColor(30, 41, 59);
-    doc.text(startLabel, gridLeftX + colTimeWidth / 2, textCenterY - 0.8, { align: "center" });
-
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(endLabel, gridLeftX + colTimeWidth / 2, textCenterY + 2.6, { align: "center" });
+  // Gridlines: solid on block boundaries, dashed every 30 minutes inside a block
+  for (let minutes = windowStart; minutes <= windowEnd; minutes += 30) {
+    const isBoundary = (minutes - windowStart) % BLOCK === 0;
+    stroke(isBoundary ? HAIRLINE : [237, 241, 246]);
+    doc.setLineWidth(isBoundary ? 0.25 : 0.15);
+    if (!isBoundary) doc.setLineDashPattern([0.8, 0.8], 0);
+    doc.line(minuteX(minutes), isBoundary ? chartY : rowsTopY, minuteX(minutes), rowsBottomY);
+    doc.setLineDashPattern([], 0);
   }
 
-  // Draw Main Vertical Grid Lines
-  doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.3);
-  doc.line(gridLeftX, gridTopY, gridLeftX, slotsStartY + totalSlots * slotHeight);
-  doc.line(gridLeftX + colTimeWidth, gridTopY, gridLeftX + colTimeWidth, slotsStartY + totalSlots * slotHeight);
-  DAY_CODES.forEach((_, idx) => {
-    const dayX = gridLeftX + colTimeWidth + (idx + 1) * dayColWidth;
-    doc.line(dayX, gridTopY, dayX, slotsStartY + totalSlots * slotHeight);
+  // Day rows
+  days.forEach((day) => {
+    stroke(HAIRLINE);
+    doc.setLineWidth(0.25);
+    doc.line(pageX, day.y + day.height, pageX + pageW, day.y + day.height);
+
+    const centerY = day.y + day.height / 2;
+    const count = day.blocks.length;
+    if (count === 0) {
+      font("bold", 9.5);
+      ink(MUTED);
+      doc.text(day.name.slice(0, 3), pageX + labelW / 2, centerY + 1.2, { align: "center" });
+      font("italic", 8.5);
+      ink(FAINT);
+      doc.text("No classes", timelineX + 2, centerY + 1.1);
+      return;
+    }
+    font("bold", 11);
+    ink(MAROON);
+    doc.text(day.name, pageX + labelW / 2, centerY - 0.4, { align: "center" });
+    font("normal", 8.5);
+    ink(MUTED);
+    doc.text(`${count} ${count === 1 ? "class" : "classes"}`, pageX + labelW / 2, centerY + 4, { align: "center" });
   });
-  doc.line(gridLeftX, slotsStartY + totalSlots * slotHeight, gridLeftX + gridWidth, slotsStartY + totalSlots * slotHeight);
 
-  // 5. Render Schedule Class Cards with Overlap Handling
-  DAY_CODES.forEach((_, dayIdx) => {
-    const daySchedules = schedules.filter((s) => normalizeDay(s.day) === dayIdx);
-    if (daySchedules.length === 0) return;
+  stroke(FRAME);
+  doc.setLineWidth(0.3);
+  doc.line(timelineX, chartY, timelineX, rowsBottomY);
+  doc.roundedRect(pageX, chartY, pageW, rowsBottomY - chartY, 1.2, 1.2, "S");
 
-    // Sort by start time
-    daySchedules.sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
+  // 4. Class cards
+  days.forEach((day) => {
+    day.blocks.forEach(({ sch, start, end, lane, isConflict }) => {
+      const style = CARD_STYLES[cardKindOf(sch, isConflict)];
+      const x = minuteX(start) + 0.5;
+      const w = Math.max(3, minuteX(end) - minuteX(start) - 1);
+      const y = day.y + lane * laneH + 0.8;
+      const h = laneH - 1.6;
 
-    daySchedules.forEach((sch, sIndex) => {
-      const startMins = parseTimeToMinutes(sch.startTime);
-      const endMins = parseTimeToMinutes(sch.endTime);
-      if (startMins === 0 || endMins === 0 || endMins <= startMins) return;
+      fill(style.tint);
+      stroke(style.accent);
+      doc.setLineWidth(isConflict ? 0.45 : 0.25);
+      doc.roundedRect(x, y, w, h, 1.4, 1.4, "FD");
+      fill(style.accent);
+      doc.rect(x + 0.35, y + 1.2, 1.1, Math.max(0.5, h - 2.4), "F");
 
-      const startSlot = Math.max(0, Math.floor((startMins - 420) / 30));
-      const endSlot = Math.min(totalSlots, Math.ceil((endMins - 420) / 30));
-      const durationSlots = endSlot - startSlot;
-      if (durationSlots <= 0) return;
-
-      // Detect overlapping classes on the same day
-      const overlapping = daySchedules.filter((other, oIndex) => {
-        if (oIndex === sIndex) return false;
-        const oStart = parseTimeToMinutes(other.startTime);
-        const oEnd = parseTimeToMinutes(other.endTime);
-        return Math.max(startMins, oStart) < Math.min(endMins, oEnd);
-      });
-
-      let blockX = gridLeftX + colTimeWidth + dayIdx * dayColWidth + 1;
-      let blockW = dayColWidth - 2;
-
-      if (overlapping.length > 0) {
-        const overlapPos = sIndex % (overlapping.length + 1);
-        const subW = (dayColWidth - 2) / (overlapping.length + 1);
-        blockW = subW - 0.5;
-        blockX = gridLeftX + colTimeWidth + dayIdx * dayColWidth + 1 + overlapPos * subW;
-      }
-
-      const blockY = slotsStartY + startSlot * slotHeight + 0.8;
-      const blockH = durationSlots * slotHeight - 1.6;
-
-      // Rounded Soft Blue Card (#EFF6FF background, #3B82F6 border)
-      doc.setFillColor(239, 246, 255);
-      doc.setDrawColor(59, 130, 246);
-      doc.setLineWidth(0.4);
-      doc.roundedRect(blockX, blockY, blockW, blockH, 1.8, 1.8, "FD");
-
-      // Top Row: Subject Code & Section Badge
+      const padL = 3;
+      const innerW = w - padL - 1.5;
       const code = sch.subjectCode || sch.courseCode || "SUBJECT";
-      const sectionName = sch.sectionName || "";
+      const section = sch.sectionName || "";
+      const courseTitle = sch.courseName || sch.subjectName || "";
+      const roomOrMode = sch.mode === "online" ? "Online" : sch.mode === "field" ? "Field" : (sch.roomName || "Room TBA");
+      const timeRange = [formatTime12hShort(sch.startTime), formatTime12hShort(sch.endTime)].filter(Boolean).join(" - ");
 
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(30, 58, 138);
-      doc.text(code, blockX + 2.5, blockY + 4.5);
+      // Sizes are chosen for a printed page read at arm's length, older readers included.
+      // Section pill beside the code when the card is wide enough, else its own line.
+      font("bold", CARD_PILL_PT);
+      const pillW = section ? doc.getTextWidth(section) + 3.4 : 0;
+      font("bold", CARD_CODE_PT);
+      const pillBeside = Boolean(section) && innerW >= doc.getTextWidth(code) + pillW + 2;
 
-      if (sectionName && blockW > 22) {
-        doc.setFont("Helvetica", "bold");
-        doc.setFontSize(6.5);
-        const textWidth = doc.getTextWidth(sectionName);
-        const sectionBadgeW = Math.min(textWidth + 3.5, blockW / 2);
-        const sectionBadgeH = 3.6;
-        const sectionBadgeX = blockX + blockW - sectionBadgeW - 2;
-        const sectionBadgeY = blockY + 1.8;
-
-        doc.setFillColor(219, 234, 254);
-        doc.setDrawColor(147, 197, 253);
-        doc.setLineWidth(0.25);
-        doc.roundedRect(sectionBadgeX, sectionBadgeY, sectionBadgeW, sectionBadgeH, 1, 1, "FD");
-
-        doc.setTextColor(30, 64, 175);
-        doc.text(sectionName, sectionBadgeX + sectionBadgeW / 2, sectionBadgeY + 2.6, { align: "center" });
+      let lineY = y + 4.6;
+      ink(style.accent);
+      doc.text(fit(code, pillBeside ? innerW - pillW - 2 : innerW), x + padL, lineY);
+      if (pillBeside) {
+        const pillX = x + w - 1.5 - pillW;
+        fill(style.accent);
+        doc.roundedRect(pillX, y + 1.3, pillW, 4.2, 2, 2, "F");
+        font("bold", CARD_PILL_PT);
+        ink(WHITE);
+        doc.text(section, pillX + pillW / 2, y + 4.3, { align: "center" });
       }
 
-      // Middle Row: Subject / Course Title with text wrapping
-      const courseTitle = sch.subjectTitle || sch.courseTitle || "";
-      if (blockH > 7 && courseTitle) {
-        doc.setFont("Helvetica", "bold");
-        doc.setFontSize(7.5);
-        doc.setTextColor(30, 58, 138);
-        const maxTextW = blockW - 4;
-        const titleLines: string[] = doc.splitTextToSize(courseTitle, maxTextW);
-        const maxLines = blockH >= 15 ? 2 : 1;
-        titleLines.slice(0, maxLines).forEach((line, lineIdx) => {
-          doc.text(line, blockX + 2.5, blockY + 8.5 + lineIdx * 3.2);
+      // Room and time get a line each when the card is tall enough, else they share one.
+      const footerLines = h >= 18 && roomOrMode && timeRange
+        ? [roomOrMode, timeRange]
+        : [[roomOrMode, timeRange].filter(Boolean).join("  |  ")];
+      const hasFooter = h >= 13;
+      const footerY = y + h - 1.8;
+      const footerTop = footerY - (footerLines.length - 1) * CARD_LINE_H;
+      const textLimit = hasFooter ? footerTop - 4 : y + h - 0.8;
+      const bodyLines: Array<{ text: string; bold: boolean; color: Rgb }> = [
+        ...(section && !pillBeside ? [{ text: section, bold: true, color: style.accent }] : []),
+        ...(courseTitle ? [{ text: courseTitle, bold: false, color: BODY }] : []),
+      ];
+      for (const line of bodyLines) {
+        font(line.bold ? "bold" : "normal", CARD_BODY_PT);
+        ink(line.color);
+        // Long titles wrap onto the next line while there is room, instead of being cut off.
+        for (const wrapped of doc.splitTextToSize(line.text, Math.max(1, innerW)) as string[]) {
+          const nextLineY = lineY + CARD_LINE_H + 0.2;
+          if (nextLineY > textLimit) break;
+          lineY = nextLineY;
+          doc.text(wrapped, x + padL, lineY);
+        }
+      }
+
+      if (hasFooter) {
+        stroke(HAIRLINE);
+        doc.setLineWidth(0.2);
+        doc.line(x + padL, footerTop - 3.4, x + w - 1.5, footerTop - 3.4);
+        font("normal", CARD_FOOTER_PT);
+        ink(MUTED);
+        footerLines.forEach((text, index) => {
+          doc.text(fit(text, innerW), x + padL, footerTop + index * CARD_LINE_H);
         });
-      }
-
-      // Bottom Row: Room Location & Start Time (if space permits)
-      if (blockH >= 11) {
-        doc.setDrawColor(219, 234, 254);
-        doc.setLineWidth(0.25);
-        doc.line(blockX + 2, blockY + blockH - 4.8, blockX + blockW - 2, blockY + blockH - 4.8);
-
-        const roomOrMode = sch.mode === "online" ? "Online" : sch.mode === "field" ? "Field" : (sch.roomName || "");
-        doc.setFont("Helvetica", "bold");
-        doc.setFontSize(6.5);
-        doc.setTextColor(30, 58, 138);
-        if (roomOrMode) {
-          const maxRoomW = blockW - (sch.startTime ? 14 : 4);
-          const roomLines: string[] = doc.splitTextToSize(roomOrMode, maxRoomW);
-          if (roomLines.length > 0) {
-            doc.text(roomLines[0], blockX + 2.5, blockY + blockH - 1.5);
-          }
-        }
-
-        const startTimeStr = formatTime12hShort(sch.startTime);
-        if (startTimeStr && blockW > 24) {
-          doc.text(startTimeStr, blockX + blockW - 2.5, blockY + blockH - 1.5, { align: "right" });
-        }
       }
     });
   });
 
-  // 6. Footer Document Info
-  doc.setFont("Helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(148, 163, 184);
-  const printTimestamp = new Date().toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+  // 5. Footer: legend, then print details
+  const legendY = 200;
+  let legendX = pageX;
+  font("bold", 8);
+  ink(MUTED);
+  doc.text("LEGEND", legendX, legendY + 0.3);
+  legendX += doc.getTextWidth("LEGEND") + 4;
+  (Object.keys(CARD_STYLES) as CardKind[]).forEach((kind) => {
+    const style = CARD_STYLES[kind];
+    fill(style.tint);
+    stroke(style.accent);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(legendX, legendY - 2.3, 6, 3.2, 0.6, 0.6, "FD");
+    fill(style.accent);
+    doc.rect(legendX + 0.3, legendY - 2, 0.9, 2.6, "F");
+    font("normal", 8.5);
+    ink(BODY);
+    doc.text(style.label, legendX + 7.5, legendY + 0.3);
+    legendX += 7.5 + doc.getTextWidth(style.label) + 6;
   });
-  doc.text(`Generated on ${printTimestamp} | WICARS Academic Scheduling System`, gridLeftX, 203);
+  font("italic", 7.5);
+  ink(MUTED);
+  doc.text("Overlapping classes are placed in separate lanes so none is hidden.", pageX + pageW, legendY + 0.3, { align: "right" });
+
+  const printTimestamp = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  font("normal", 7.5);
+  ink(FAINT);
+  doc.text(`Generated on ${printTimestamp}  |  WICARS Academic Scheduling System`, pageX, 205);
+  doc.text("Page 1 of 1", pageX + pageW, 205, { align: "right" });
 
   return doc.output("blob");
 }

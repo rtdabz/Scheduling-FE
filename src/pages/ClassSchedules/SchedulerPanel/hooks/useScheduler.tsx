@@ -77,7 +77,7 @@ import { roomGrantFits } from "../../../../lib/roomRequests";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
-import { buildPreferredPattern, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
+import { buildPreferredPattern, FULL_DAY_NAMES, isFixedSplitPattern, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 import { resolveManualOperationStatus } from "../manualScheduleOperation";
 
 const isNotFoundError = (err: unknown): boolean => {
@@ -124,6 +124,7 @@ export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
   major_lecture_split_schedule_override_enabled?: boolean;
   forced_day_rules?: Array<{ course_id: number; day: string }>;
   field_course_codes?: string[];
+  sunday_classes_enabled?: boolean;
 }
 
 const sortSplitMeetingsForEdit = (
@@ -538,8 +539,10 @@ export const useScheduler = () => {
     [refreshSchedules, schedulerCacheKey]
   );
 
-  const refreshData = useCallback(async () => {
-    setIsLoading(true);
+  // `silent` reconciles in the background: no skeleton swap and no
+  // "Synchronized" toast, for callers that already reported their own result.
+  const refreshData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setIsLoading(true);
     try {
       clearCachedKey(schedulerCacheKey);
       const response = await api.get<InitialDataResponse>('/initial-data', { params: SCHEDULER_INITIAL_DATA_PARAMS });
@@ -557,11 +560,11 @@ export const useScheduler = () => {
       setSections(freshData.sections);
       setSchedules(freshData.schedules);
       setSchedulesTruncated(freshData.schedulesTruncated === true);
-      toast.success("Synchronized", "Successfully loaded fresh sections and schedules from database.");
+      if (!silent) toast.success("Synchronized", "Successfully loaded fresh sections and schedules from database.");
     } catch {
       toast.error("Synchronize Failed", "Could not load fresh data from database.");
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVpaa, schedulerCacheKey, user?.department_id]);
@@ -1046,6 +1049,8 @@ export const useScheduler = () => {
     fieldCourseCodes: effectiveFieldCourseCodes,
     forcedDayByCourseId,
     laboratoryDurationSettings: manualSchedulingSettings,
+    // Unknown until the settings load; the server refuses Sunday either way.
+    sundayClassesEnabled: manualSchedulingSettings?.sunday_classes_enabled ?? true,
   });
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
@@ -1166,7 +1171,7 @@ export const useScheduler = () => {
           // Integrated On-site is saved without is_hybrid, so the reopened
           // dialog recognises it by its shape: a lecture-plus-laboratory course
           // met twice on a day pair that is not a Split Session.
-          const isBalancedSplitPattern = ["MW", "TTh"].includes(targetSched.preferredPattern ?? "");
+          const isBalancedSplitPattern = isFixedSplitPattern(targetSched.preferredPattern);
           const hasLectureAndLab = Number(subject?.lectureHours ?? 0) > 0 && Number(subject?.labHours ?? 0) > 0;
           const isIntegrated = Boolean(targetSched.isHybrid)
             || (existing.length >= 2 && hasLectureAndLab && !isBalancedSplitPattern);
@@ -2082,11 +2087,11 @@ export const useScheduler = () => {
 
     const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
     const confirmed = await confirm({
-      title: "Clear Schedules",
-      message: `Are you sure you want to clear the schedules of ${sectionLabel}? `
+      title: "Reset Schedules",
+      message: `Are you sure you want to reset the schedules of ${sectionLabel}? `
         + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`,
       eyebrow: "Irreversible Action",
-      confirmLabel: "Yes, Clear Schedules",
+      confirmLabel: "Yes, Reset Schedules",
       variant: "danger",
     });
     if (!confirmed) return;
@@ -2133,14 +2138,15 @@ export const useScheduler = () => {
           delete_ids: validSchedules.map((s) => Number(s.id)),
         });
       }
+      toast.success("Schedules Reset", `Reset schedules of ${selectedIds.size} selected section${selectedIds.size === 1 ? "" : "s"} (${clearedCount} loaded meeting${clearedCount === 1 ? "" : "s"}).`);
       // Clear-all changes the persisted schedule set, so refresh the complete
       // scheduler snapshot before reopening generation. A schedule-only refresh
       // can leave cached sections/configuration and eligibility state stale.
-      await refreshData();
-      toast.success("Schedules Cleared", `Cleared schedules from ${selectedIds.size} selected section${selectedIds.size === 1 ? "" : "s"} (${clearedCount} loaded meeting${clearedCount === 1 ? "" : "s"}).`);
+      // The grid is already empty optimistically, so this runs silently.
+      await refreshData({ silent: true });
     } catch (err) {
       const apiMsg = getApiErrorMessage(err);
-      toast.error("Failed to clear schedules", apiMsg || "An error occurred.");
+      toast.error("Failed to reset schedules", apiMsg || "An error occurred.");
       // Restore the optimistic state from the database when deletion failed.
       await refreshSchedules();
     } finally {

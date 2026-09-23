@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
 import SearchInput from '../../components/ui/SearchInput';
 import {
-  Search,
   Filter,
 } from 'lucide-react';
 import {

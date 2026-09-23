@@ -12,12 +12,11 @@ import {
   LayoutDashboard,
   List,
   CalendarDays,
-  Search,
   Building2,
   AlertTriangle,
   BookOpen,
   X,
-  Printer
+  Printer,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../../lib/api";
@@ -25,6 +24,7 @@ import PrintSchedule from "../ClassSchedules/SchedulerPanel/PrintSchedule";
 import { buildInstructorTimetablePdf } from "../ClassSchedules/SchedulerPanel/instructorTimetablePdf";
 import type { UserSummary } from "../ClassSchedules/SchedulerPanel/types";
 import SearchInput from "../../components/ui/SearchInput";
+import Skeleton from "../../components/ui/Skeleton";
 import DepartmentOverviewCards, { type OverviewFocus } from "../../components/scheduling/DepartmentOverviewCards";
 import SectionOverviewCards from "../../components/scheduling/SectionOverviewCards";
 import ScheduleScopeSummary, { type ScopeStats } from "../../components/scheduling/ScheduleScopeSummary";
@@ -357,19 +357,6 @@ const parseTimeToSlotIndex = (timeStr: string): number => {
   const slotFraction = minutes >= 30 ? 1 : 0;
   const totalHalfHours = (hour * 2) + slotFraction;
   return Math.max(0, Math.round(((totalHalfHours * 30) - gridOpeningMinutes()) / slotMinutes()));
-};
-
-// Generates time slot structures for grid row labeling
-const generateTimeSlots = (startSlot = 0, endSlot = slotCount()) => {
-  const slots = [];
-  for (let slot = startSlot; slot < endSlot; slot += 1) {
-    slots.push({
-      start: slotToTimeStr12h(slot),
-      end: slotToTimeStr12h(slot + 1),
-      label: slotToTimeStr12h(slot)
-    });
-  }
-  return slots;
 };
 
 // Intersect/overlap layouts analyzer
@@ -1661,7 +1648,7 @@ export default function VpaaScheduleViewer() {
             <div className="overflow-x-auto">
               <WeeklyTimetableGrid
                 days={DAYS}
-                slotCount={timeSlots.length}
+                slotCount={gridRange.end - gridRange.start}
                 startSlot={gridRange.start}
                 minWidth={1120}
                 getTimeLabel={slotToTimeStr12h}

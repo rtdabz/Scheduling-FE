@@ -371,17 +371,25 @@ export const createCurriculumPdfDocument = (
   return doc;
 };
 
+const loadCurriculumPdf = async (options: PrintCurriculumOptions, autoPrint: boolean) => {
+  const [{ default: PdfDocument }, tccImage, municipalImage, departmentImage] = await Promise.all([
+    import('jspdf'),
+    loadImage(resolveAssetUrl(tccLogo)),
+    loadImage(resolveAssetUrl(municipalLogo)),
+    loadImage(options.curriculum.department?.logo),
+  ]);
+
+  return createCurriculumPdfDocument(PdfDocument, options, tccImage, municipalImage, departmentImage, autoPrint);
+};
+
+/** The printable as a blob, for embedding the exact print in a preview. */
+export const buildCurriculumPdf = async (options: PrintCurriculumOptions): Promise<Blob> =>
+  (await loadCurriculumPdf(options, false)).output('blob');
+
 export const printCurriculum = async (options: PrintCurriculumOptions): Promise<void> => {
   const previewWindow = window.open('', '_blank');
   try {
-    const [{ default: PdfDocument }, tccImage, municipalImage, departmentImage] = await Promise.all([
-      import('jspdf'),
-      loadImage(resolveAssetUrl(tccLogo)),
-      loadImage(resolveAssetUrl(municipalLogo)),
-      loadImage(options.curriculum.department?.logo),
-    ]);
-
-    const doc = createCurriculumPdfDocument(PdfDocument, options, tccImage, municipalImage, departmentImage, true);
+    const doc = await loadCurriculumPdf(options, true);
     const blobUrl = URL.createObjectURL(doc.output('blob'));
 
     if (previewWindow) {

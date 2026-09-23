@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, Loader2, MousePointerClick, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, Loader2, MousePointerClick, X } from "lucide-react";
 import {
   DAYS,
   GRID_HEADER_HEIGHT_PX,
@@ -43,7 +43,6 @@ interface TimetableGridProps {
   handleCellClick: (d: number, t: number) => void;
   getClassesCountForDay: (dayIdx: number) => number;
   getDragOverConflict: (d: number, t: number) => boolean;
-  handleClearAll: () => void;
   setIsRoomViewOpen: (value: boolean) => void;
   handleDragOver: (e: React.DragEvent, d: number, t: number) => void;
   handleDragLeave: () => void;
@@ -85,7 +84,6 @@ export default function TimetableGrid({
   isPhase2Active,
   currentStatus,
   isFinalizedFacultyEditing = false,
-  schedules,
   sectionSchedules,
   hoveredCell,
   draggedScheduleId,
@@ -101,7 +99,6 @@ export default function TimetableGrid({
   handleCellClick,
   getClassesCountForDay,
   getDragOverConflict,
-  handleClearAll,
   setIsRoomViewOpen,
   handleDragOver,
   handleDragLeave,
@@ -215,17 +212,6 @@ export default function TimetableGrid({
                 >
                   <DoorOpen className="h-3.5 w-3.5" />
                   Room View
-                </button>
-              )}
-              {isLoading ? <Skeleton className="h-9 w-24 rounded-lg" /> : (
-                <button
-                  type="button"
-                  onClick={handleClearAll}
-                  disabled={!isEditable || schedules.length === 0}
-                  className={`${gridToolButtonClass} border-slate-200 bg-white text-red-700 hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:border-slate-200 disabled:hover:bg-white`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Clear All
                 </button>
               )}
             </>

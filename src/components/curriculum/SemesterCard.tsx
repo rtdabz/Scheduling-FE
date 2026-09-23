@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { CalendarDays, ChevronDown, Plus } from 'lucide-react';
 import type { CurriculumCourse, CurriculumSemester, Program } from '../../types/curriculum';
 import CourseTable from './CourseTable';

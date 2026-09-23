@@ -143,7 +143,7 @@ export default function ActivityLog() {
         return (
           <div>
             <p className="text-sm font-semibold text-gray-900">{detail?.label || formatLabel(row.original.event)}</p>
-            <p className="text-xs text-gray-500 truncate max-w-xs">{detail?.description || categoryLabel}</p>
+            <p className="text-xs text-gray-500 whitespace-nowrap">{detail?.description || categoryLabel}</p>
           </div>
         );
       },

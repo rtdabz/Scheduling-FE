@@ -9,10 +9,10 @@ export interface InstitutionSettings {
   president_title: string;
 }
 
-/** What the print builders used before this was configurable. */
+/** Neutral fallback until the VPAA sets the real signatory in Settings. */
 export const DEFAULT_INSTITUTION_SETTINGS: InstitutionSettings = {
-  president_name: 'ATTY. NADYA B. EMANO-ELIPE',
-  president_title: 'OIC-College President',
+  president_name: 'College President',
+  president_title: 'President',
 };
 
 const clean = (value: unknown, fallback: string): string => {

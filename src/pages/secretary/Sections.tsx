@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -7,10 +7,7 @@ import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
-  Search,
-  X,
   Plus,
-  Layers,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -106,7 +103,6 @@ export default function SecretarySections() {
   const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isDean = user?.role?.toLowerCase() === 'dean';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageSections = isVpaa || isSecretary || isProgramHead;
@@ -454,4 +450,3 @@ export default function SecretarySections() {
     </div>
   );
 }
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

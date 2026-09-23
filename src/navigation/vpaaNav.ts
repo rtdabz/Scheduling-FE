@@ -57,7 +57,7 @@ export const vpaaNav: NavSection[] = [
         id: 'sidebar-rooms',
         children: [
           { label: 'Facility List', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms-list' },
-          { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.review_requests' },
+          { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.view_all_requests' },
         ],
       },
     ]

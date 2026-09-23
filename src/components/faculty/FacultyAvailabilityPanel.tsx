@@ -171,4 +171,3 @@ export default function FacultyAvailabilityPanel({
     </div>
   );
 }
-import LoadingSpinner from "../ui/LoadingSpinner";

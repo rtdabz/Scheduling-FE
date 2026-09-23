@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import {
   Eye,
   X,
-  RefreshCw,
   List,
   CalendarDays,
 } from 'lucide-react';

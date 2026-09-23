@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -107,8 +107,13 @@ type SettingsResponse = LaboratoryDurationSettings & {
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
   lecture_lab_schedule_override_enabled?: boolean;
-  /** Sunday majors: online only (true) or face-to-face allowed (false). */
   preferred_room_options?: PreferredRoomOption[];
+  /** Sunday is an overflow day; off, nothing may be placed on it. */
+  sunday_classes_enabled?: boolean;
+  /** Only the department secretary may turn Sunday classes on or off. */
+  can_manage_sunday_classes?: boolean;
+  /** Classes the department already holds on Sunday this semester. */
+  sunday_class_count?: number;
 };
 
 type ConstraintCourse = { id: number; code: string; name: string };
@@ -299,6 +304,11 @@ export default function YearLevelGenerateScheduleWorkflow({
       ].sort(),
     [availableSections],
   );
+  // The restore below keys on the years themselves: `availableYears` gets a new
+  // identity whenever the sections list is refreshed (after a save, a
+  // curriculum change, a run finishing), and re-running the restore then
+  // dropped the wizard back to the first year level.
+  const availableYearsKey = availableYears.join(",");
   const scopedSections = useMemo(
     () =>
       availableSections.filter(
@@ -481,8 +491,28 @@ export default function YearLevelGenerateScheduleWorkflow({
     (course) => !excludedCourseIdSet.has(course.id),
   );
 
+  // Read inside the restore without re-running it on every schedule change.
+  const yearStatesRef = useRef(yearStates);
+  yearStatesRef.current = yearStates;
+  const runYearLevel = run.status !== "idle" ? (run.meta?.yearLevel ?? null) : null;
+  const runYearLevelRef = useRef(runYearLevel);
+  runYearLevelRef.current = runYearLevel;
+  // The draft is only written back once it has been restored; persisting the
+  // initial state first overwrote the saved year level with year 1.
+  const draftRestoredRef = useRef(false);
+
   useEffect(() => {
-    const initialYear = availableYears[0] ?? 1;
+    const years = availableYearsKey === "" ? [] : availableYearsKey.split(",").map(Number);
+    // Sections not loaded yet: there is nothing to restore against, and falling
+    // back to year 1 here would replace the saved draft.
+    if (years.length === 0) return;
+    // A run in flight or awaiting review decides the year level; otherwise the
+    // first year level still to be scheduled, not always the first one.
+    const pendingYear = years.find((year) => yearStatesRef.current[year]?.kind === "unscheduled");
+    const initialYear =
+      runYearLevelRef.current !== null && years.includes(runYearLevelRef.current)
+        ? runYearLevelRef.current
+        : (pendingYear ?? years[0]);
     // The saved Default Settings win over whatever copy an older draft carries.
     const savedDefaults = readSavedCourseDefaults(defaultsStorageKey);
     let restored = false;
@@ -498,7 +528,8 @@ export default function YearLevelGenerateScheduleWorkflow({
         };
         if (
           parsed.yearLevel &&
-          availableYears.includes(Number(parsed.yearLevel))
+          years.includes(Number(parsed.yearLevel)) &&
+          (runYearLevelRef.current === null || Number(parsed.yearLevel) === runYearLevelRef.current)
         ) {
           setYearLevel(Number(parsed.yearLevel));
           setStep(
@@ -536,7 +567,16 @@ export default function YearLevelGenerateScheduleWorkflow({
       setConfigs({});
       setSetupDraft({ ...defaultSetupDraft, courseDefaults: savedDefaults });
     }
-  }, [availableYears, defaultsStorageKey, storageKey]);
+    draftRestoredRef.current = true;
+  }, [availableYearsKey, defaultsStorageKey, storageKey]);
+
+  // The header, sections and summary describe the run's year level, not
+  // whichever one the picker last showed.
+  useEffect(() => {
+    if (runYearLevel !== null && availableYears.includes(runYearLevel)) {
+      setYearLevel((current) => (current === runYearLevel ? current : runYearLevel));
+    }
+  }, [availableYears, runYearLevel]);
 
   useEffect(() => {
     if (scopedSections.length === 0) return;
@@ -711,6 +751,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   }, [roomsCacheKey]);
 
   useEffect(() => {
+    if (!draftRestoredRef.current) return;
     window.localStorage.setItem(
       storageKey,
       JSON.stringify({ step, yearLevel, activeSectionId, configs, setupDraft }),
@@ -802,6 +843,38 @@ export default function YearLevelGenerateScheduleWorkflow({
       setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
     } catch {
       toast.error("Save failed", `Unable to update whether ${courseCode} is a field course.`);
+    }
+  };
+
+  /**
+   * Sunday Classes is a department setting the secretary changes after the
+   * dean agrees. Turning it off also drops Sunday from this run's Preferred
+   * Days, since the server would refuse a run that still asks for it.
+   */
+  const saveSundayClasses = async (enabled: boolean) => {
+    if (!settingsSectionId || !settings) return;
+    try {
+      const response = await api.patch<SettingsResponse>(
+        "/scheduling-settings",
+        { sunday_classes_enabled: enabled },
+        { params: { section_id: settingsSectionId } },
+      );
+      const next = { ...settings, ...response.data, sunday_classes_enabled: enabled };
+      setSettings(next);
+      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
+      if (!enabled && setupDraft.preferredDays.includes("Sunday")) {
+        setSetupDraft((draft) => ({
+          ...draft,
+          preferredDays: draft.preferredDays.filter((day) => day !== "Sunday"),
+        }));
+      }
+      run.clear();
+    } catch (error) {
+      toast.error(
+        "Save failed",
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+          ?? "Unable to update Sunday classes.",
+      );
     }
   };
 
@@ -1282,6 +1355,10 @@ export default function YearLevelGenerateScheduleWorkflow({
                     run.clear();
                   }}
                   requiredDayRules={settings?.forced_day_rules ?? []}
+                  sundayClassesEnabled={settings ? Boolean(settings.sunday_classes_enabled) : null}
+                  canManageSundayClasses={Boolean(settings?.can_manage_sunday_classes)}
+                  sundayClassCount={settings?.sunday_class_count ?? 0}
+                  onSundayClassesChange={saveSundayClasses}
                 />
               )}
 

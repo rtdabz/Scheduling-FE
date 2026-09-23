@@ -38,6 +38,7 @@ export default function LoginPage() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirmation, setResetConfirmation] = useState('');
   const [isResetMode, setIsResetMode] = useState(false);
+  const [isInviteMode, setIsInviteMode] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const navigateAfterLogin = (user: LoginResponse['user']) => {
@@ -73,6 +74,7 @@ export default function LoginPage() {
       setResetToken(token);
       setUsername(email);
       setIsResetMode(true);
+      setIsInviteMode(params.get('invite') === '1');
     }
     const expectedGoogleState = sessionStorage.getItem('google_oauth_state');
     if (googleCode && googleState && expectedGoogleState && googleState === expectedGoogleState) {
@@ -138,13 +140,16 @@ export default function LoginPage() {
     if (isUpdatingPassword) return;
     setIsUpdatingPassword(true);
     try {
-      const { data } = await api.post<{ message: string }>('/reset-password', { token: resetToken, email: username, password: resetPassword, password_confirmation: resetConfirmation });
-      toast.success('Password updated', data.message);
+      const { data } = await api.post<{ message: string }>('/reset-password', { token: resetToken, email: username, password: resetPassword, password_confirmation: resetConfirmation, invite: isInviteMode });
+      toast.success(isInviteMode ? 'Account ready' : 'Password updated', data.message);
       setIsResetMode(false);
+      setIsInviteMode(false);
+      // Drop the spent token from the address bar so a refresh cannot resubmit it.
+      window.history.replaceState(null, '', window.location.pathname);
       setPassword('');
     } catch (error) {
       const axiosError = error as AxiosError<ApiErrorResponse>;
-      toast.error('Password reset failed', axiosError.response?.data?.message || 'Use a stronger password and try again.');
+      toast.error(isInviteMode ? 'Account setup failed' : 'Password reset failed', axiosError.response?.data?.message || 'Use a stronger password and try again.');
     } finally {
       setIsUpdatingPassword(false);
     }
@@ -197,13 +202,13 @@ export default function LoginPage() {
             className="text-text font-display text-3xl font-bold mb-2"
             style={{ animationDelay: '0.1s' }}
           >
-            {isResetMode ? 'Reset your password' : 'Welcome back'}
+            {isInviteMode ? 'Set up your account' : isResetMode ? 'Reset your password' : 'Welcome back'}
           </h3>
           <p 
             className="text-muted text-sm mb-8"
             style={{ animationDelay: '0.2s' }}
           >
-            {isResetMode ? 'Choose a new password for your WICARS account' : 'Sign in to your administrator account'}
+            {isInviteMode ? 'Choose a password for your new WICARS account' : isResetMode ? 'Choose a new password for your WICARS account' : 'Sign in to your administrator account'}
           </p>
 
           {isResetMode ? (
@@ -211,7 +216,7 @@ export default function LoginPage() {
               <input type="password" required minLength={10} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="New password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
               <input type="password" required minLength={10} value={resetConfirmation} onChange={(e) => setResetConfirmation(e.target.value)} placeholder="Confirm new password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
               <button type="submit" disabled={isUpdatingPassword} className="w-full h-12 bg-primary text-white font-semibold rounded-xl disabled:opacity-50 disabled:pointer-events-none">
-                {isUpdatingPassword ? 'Updating...' : 'Update password'}
+                {isUpdatingPassword ? 'Saving...' : isInviteMode ? 'Set password' : 'Update password'}
               </button>
             </form>
           ) : <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>

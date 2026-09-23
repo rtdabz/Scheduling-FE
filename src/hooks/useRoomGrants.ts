@@ -19,7 +19,7 @@ const grantCache = new Map<number, RoomOccupancyBlock[]>();
 export function useRoomGrants(roomId: number | null): { grants: RoomOccupancyBlock[]; ready: boolean } {
   const [, setRevision] = useState(0);
   const liveRevision = useLiveRevision(['rooms']);
-  const canSeeGrants = hasStoredCapability(['room.request', 'room.review_requests']);
+  const canSeeGrants = hasStoredCapability(['room.request', 'room.review_requests', 'room.view_all_requests']);
   const enabled = canSeeGrants && roomId !== null;
 
   useEffect(() => {

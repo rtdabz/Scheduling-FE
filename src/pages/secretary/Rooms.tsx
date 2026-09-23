@@ -11,7 +11,6 @@ import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
-  Search,
   X,
   Building2,
   ArrowLeft,
@@ -358,7 +357,7 @@ export default function SecretaryRooms() {
       const section = activeClass.section?.section_name || '';
       return { 
         status: 'occupied', 
-        text: `Live: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
+        text: `Ongoing Class: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
         class: activeClass
       };
     }
@@ -1037,7 +1036,12 @@ export default function SecretaryRooms() {
         body.room-timetable-printing .room-detail-print-info,
         body.room-timetable-printing .room-detail-print-toolbar { display: none !important; }
         body.room-timetable-printing .room-print-title { display: block !important; }
-        body.room-timetable-printing .room-detail-print-grid { margin: 0 !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
+        body.room-timetable-printing > div[role="presentation"],
+        body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal,
+        body.room-timetable-printing section.room-timetable-modal > div,
+        body.room-timetable-printing section.room-timetable-modal > div > div,
+        body.room-timetable-printing section.room-timetable-modal > div > div > div { display: block !important; height: auto !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; background: white !important; }
+        body.room-timetable-printing .room-detail-print-grid { display: block !important; zoom: 0.88; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; }
         body.room-timetable-printing .room-detail-print-grid > div:last-child { overflow: visible !important; padding: 0 !important; }
         body.room-timetable-printing .timetable-grid-root { width: 100% !important; min-height: 0 !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body.room-timetable-printing .timetable-grid-root,

@@ -224,18 +224,6 @@ export default function ScheduleHistory() {
 
   const snapshots = useMemo(() => selected?.snapshots ?? [], [selected]);
   const printSnapshots = useMemo(() => printingEntry?.snapshots ?? [], [printingEntry]);
-  const sections = useMemo(
-    () =>
-      Array.from(
-        new Map(
-          snapshots.map((item) => [
-            String(item.section_id ?? ""),
-            item.section_name || "Section",
-          ]),
-        ).entries(),
-      ),
-    [snapshots],
-  );
   const cards = useMemo(() => snapshots.map(gridCard), [snapshots]);
   const open = (entry: Entry) => {
     setSelected(entry);

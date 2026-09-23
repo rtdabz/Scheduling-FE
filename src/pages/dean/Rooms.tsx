@@ -6,10 +6,10 @@ import { BuildingsTable, RoomsTable } from '../../components/rooms/RoomListTable
 import { useLocation } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
-import ConfirmModal from '../../components/ui/ConfirmModal';
 import SearchInput from '../../components/ui/SearchInput';
-import { Trash2,
-  Search,
+import {
+  Pencil,
+  Trash2,
   X,
   Loader2,
   Building2,
@@ -18,7 +18,7 @@ import { Trash2,
   LayoutGrid,
   List,
   Filter,
-  Plus
+  Plus,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -350,7 +350,7 @@ export default function DeanRooms() {
       const section = activeClass.section?.section_name || '';
       return { 
         status: 'occupied', 
-        text: `Live: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
+        text: `Ongoing Class: ${code} - ${section} (${formatTime(activeClass.start_time)} - ${formatTime(activeClass.end_time)})`,
         class: activeClass
       };
     }

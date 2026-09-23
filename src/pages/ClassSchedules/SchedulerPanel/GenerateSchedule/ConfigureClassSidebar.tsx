@@ -31,6 +31,8 @@ interface ConfigureClassSidebarProps {
   isFieldCourse: boolean;
   labSettings?: LaboratoryDurationSettings | null;
   roomOptions: PreferredRoomOption[];
+  /** Off, Sunday is not offered as a Required Day (the server refuses it). */
+  sundayClassesEnabled?: boolean;
   disabled: boolean;
   onClose: () => void;
   onSave: (config: CourseClassConfig) => void;
@@ -217,6 +219,7 @@ export default function ConfigureClassSidebar({
   isFieldCourse,
   labSettings,
   roomOptions,
+  sundayClassesEnabled = true,
   disabled,
   onClose,
   onSave,
@@ -533,7 +536,10 @@ export default function ConfigureClassSidebar({
           className={SELECT_CLASS}
         >
           <option value="">None</option>
-          {DAYS.map((day) => (
+          {DAYS.filter(
+            // A Sunday already saved stays visible so it can be cleared.
+            (day) => day !== "Sunday" || sundayClassesEnabled || requiredDay === "Sunday",
+          ).map((day) => (
             <option key={day} value={day}>
               {day}
             </option>

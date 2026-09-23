@@ -807,7 +807,7 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, o
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
                 {selectedKeys.includes(row.original.key) ? "Conflict · confirmed" : "Conflict"}
               </span>
-              <span className="max-w-[260px] truncate text-[11px] font-medium text-orange-600/90">{conflict}</span>
+              <span className="whitespace-nowrap text-[11px] font-medium text-orange-600/90">{conflict}</span>
             </span>
           );
         }
@@ -1042,7 +1042,7 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
       cell: ({ row }) => (
         <>
           <p className="text-sm font-black text-slate-900">{row.original.courseCode}</p>
-          <p className="max-w-[260px] truncate text-xs font-medium text-slate-500">{row.original.courseName}</p>
+          <p className="whitespace-nowrap text-xs font-medium text-slate-500">{row.original.courseName}</p>
         </>
       ),
     },

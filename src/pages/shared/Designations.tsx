@@ -144,7 +144,7 @@ export default function Designations() {
             <div className="min-w-0 flex-1">
               {/* Line 1: Designation Name (single line, no wrapping) */}
               <div className="flex items-center gap-2 text-sm font-bold text-gray-900 whitespace-nowrap">
-                <span className="truncate whitespace-nowrap font-bold text-gray-900" title={designation.name}>{designation.name}</span>
+                <span className="whitespace-nowrap font-bold text-gray-900" title={designation.name}>{designation.name}</span>
                 {designation.code && (
                   <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-[10px] font-bold uppercase text-gray-500">
                     {designation.code}
@@ -160,7 +160,7 @@ export default function Designations() {
               <div className="mt-0.5 flex items-center gap-2 text-xs font-semibold text-[#8a6412] whitespace-nowrap">
                 <span>{unitsLabel(designation.deload_units)} deload</span>
                 {isSub && (
-                  <span className="text-gray-400 font-normal text-[11px] truncate">
+                  <span className="text-gray-400 font-normal text-[11px] whitespace-nowrap">
                     (Under {designation.parent?.name ?? 'parent designation'})
                   </span>
                 )}

@@ -192,7 +192,7 @@ export default function DataTable<T>({
                       key={cell.id}
                       onClick={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
                       onKeyDown={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
-                      className={`${cellPad} align-middle text-xs font-semibold text-gray-700 ${alignClass(meta?.align)} ${meta?.cellClassName ?? ''} ${cellClassName?.(cell.column.id) ?? ''} ${cellIndex === 0 ? 'relative' : ''}`}
+                      className={`whitespace-nowrap ${cellPad} align-middle text-xs font-semibold text-gray-700 ${alignClass(meta?.align)} ${meta?.cellClassName ?? ''} ${cellClassName?.(cell.column.id) ?? ''} ${cellIndex === 0 ? 'relative' : ''}`}
                     >
                       {cellIndex === 0 && (
                         <div className="absolute left-0 top-0 bottom-0 w-[2.5px] bg-[#C9952A] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />

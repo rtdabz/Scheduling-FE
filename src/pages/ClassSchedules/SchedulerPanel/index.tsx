@@ -118,6 +118,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
         onGenerateYearLevel={scheduler.canGenerateSchedule ? () => setIsGeneratorOpen(true) : undefined}
+        onResetSchedules={scheduler.handleClearAll}
+        canResetSchedules={scheduler.isEditable && scheduler.schedules.length > 0}
         onAutoAssign={scheduler.canAssignInstructor ? () => setIsAutoAssignOpen(true) : undefined}
         onClearInstructors={scheduler.canAssignInstructor ? () => { setClearInstructorScope(scheduler.clearableSectionInstructorCount > 0 ? "section" : "department"); setIsClearInstructorConfirmOpen(true); } : undefined}
       />

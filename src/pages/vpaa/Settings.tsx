@@ -820,7 +820,7 @@ export default function Settings() {
                 value={signatoryDraft.president_name}
                 onChange={e => setSignatoryDraft(prev => ({ ...prev, president_name: e.target.value }))}
                 maxLength={150}
-                placeholder="ATTY. NADYA B. EMANO-ELIPE"
+                placeholder="e.g. DR. JUAN DELA CRUZ"
                 className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm uppercase outline-none transition-all focus:ring-2 focus:ring-[#C9952A]"
               />
               <span className="mt-1 block text-[10px] text-gray-400">

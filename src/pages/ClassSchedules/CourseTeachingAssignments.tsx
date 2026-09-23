@@ -403,7 +403,7 @@ export default function CourseTeachingAssignments() {
       cell: ({ row }) => (
         <>
           <p className="font-black text-slate-900">{row.original.course_code}</p>
-          <p className="max-w-[280px] truncate font-medium text-slate-500">{row.original.course_name}</p>
+          <p className="whitespace-nowrap font-medium text-slate-500">{row.original.course_name}</p>
         </>
       ),
     },
@@ -416,7 +416,7 @@ export default function CourseTeachingAssignments() {
         return (
           <>
             <p className="font-bold text-slate-700">{program.code}</p>
-            <p className="max-w-[180px] truncate text-[11px] font-medium text-slate-500">{program.name}</p>
+            <p className="whitespace-nowrap text-[11px] font-medium text-slate-500">{program.name}</p>
           </>
         );
       },

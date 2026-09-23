@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Calendar, Printer, X, MapPin, Layers, CheckCircle2 } from "lucide-react";
+import { Calendar, Printer, X, MapPin, CheckCircle2 } from "lucide-react";
 import api from "../lib/api";
 import { useToast } from "../context/ToastContext";
-import { getCachedData, loadCachedData } from "../lib/dataCache";
+import { getCachedData } from "../lib/dataCache";
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "./scheduling/WeeklyTimetableGrid";
-import { slotCount, slotToTimeLabel, timeToSlot } from "../lib/timeGrid";
+import { slotToTimeLabel, timeToSlot } from "../lib/timeGrid";
 import Skeleton from "./ui/Skeleton";
 import { scheduleLocationLabel } from "../lib/scheduleLocation";
 import { buildInstructorTimetablePdf } from "../pages/ClassSchedules/SchedulerPanel/instructorTimetablePdf";
@@ -94,13 +94,6 @@ const DAY_MAP: Record<string, number> = {
 const parseTimeToSlot = (timeStr: string): number => (timeStr ? timeToSlot(timeStr) : 0);
 
 const slotToTimeStr12h = (slotIndex: number): string => slotToTimeLabel(slotIndex);
-
-const slotToTime24hStr = (slotIndex: number): string => {
-  const totalMinutes = 7 * 60 + slotIndex * 30;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}:${minutes.toString().padStart(2, "0")}`;
-};
 
 const getGridCardStyles = (category: "major" | "minor") => {
   if (category === "major") {

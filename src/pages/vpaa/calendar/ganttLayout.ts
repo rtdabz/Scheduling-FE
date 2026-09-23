@@ -245,7 +245,9 @@ export interface GanttDay {
  * start. Sorted by start (longest first on ties), this uses the fewest lanes the
  * busiest moment allows, so a row is exactly as tall as its peak concurrency.
  */
-export const packLanes = (items: readonly Omit<GanttBlock, 'lane'>[]): { blocks: GanttBlock[]; laneCount: number } => {
+export const packLanes = <T extends { schedule: { id: number }; start: number; end: number }>(
+  items: readonly T[],
+): { blocks: (T & { lane: number })[]; laneCount: number } => {
   const sorted = [...items].sort((a, b) => a.start - b.start || b.end - a.end || a.schedule.id - b.schedule.id);
   const laneEnds: number[] = [];
   const blocks = sorted.map((item) => {
@@ -324,7 +326,7 @@ export const buildGanttDays = (
   return [...visibleDays].sort((a, b) => a - b).map((dayIndex) => {
     const groups = perDay.get(dayIndex) ?? new Map();
     const rows: GanttRow[] = [...groups.entries()]
-      .map(([key, group]) => ({ key, label: group.label, isPlaceholder: group.isPlaceholder, ...packLanes(group.items) }))
+      .map(([key, group]) => ({ key, label: group.label, isPlaceholder: group.isPlaceholder, ...packLanes<Omit<GanttBlock, 'lane'>>(group.items) }))
       .sort((a, b) => Number(a.isPlaceholder) - Number(b.isPlaceholder) || a.label.localeCompare(b.label, undefined, { numeric: true }));
 
     return {

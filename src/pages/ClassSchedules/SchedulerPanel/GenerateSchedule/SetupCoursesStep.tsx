@@ -74,6 +74,7 @@ export type SetupCoursesSettings = LaboratoryDurationSettings & {
   /** Required Day, stored as the department's forced-day rules. */
   forced_day_rules?: RequiredDayRule[];
   preferred_room_options?: PreferredRoomOption[];
+  sunday_classes_enabled?: boolean;
 };
 
 type SetupCourseTableRow = {
@@ -692,7 +693,7 @@ export default function SetupCoursesStep({
                   </span>
                 )}
               </div>
-              <p className="truncate text-[11px] font-semibold leading-tight text-slate-600 mt-0.5">
+              <p className="whitespace-nowrap text-[11px] font-semibold leading-tight text-slate-600 mt-0.5">
                 {course.name}
               </p>
             </div>
@@ -998,6 +999,7 @@ export default function SetupCoursesStep({
           isFieldCourse={configuringRow.isField}
           labSettings={settings}
           roomOptions={roomOptions}
+          sundayClassesEnabled={settings?.sunday_classes_enabled ?? true}
           disabled={actionsDisabled}
           onClose={() => setConfiguringCourseId(null)}
           onSave={(updatedConfig) => {

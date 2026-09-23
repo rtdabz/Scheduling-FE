@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
-import { buildPreferredPattern, closingTimeLabel, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { buildPreferredPattern, closingTimeLabel, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { coveredContinuously } from "../../../../lib/availabilityWindows";
 
@@ -24,7 +24,11 @@ interface UseConflictParams {
   forcedDayByCourseId?: Record<string, number>;
   /** The department's Custom Lab Duration, which sets a laboratory meeting's length. */
   laboratoryDurationSettings?: LaboratoryDurationSettings | null;
+  /** The department's Sunday Classes setting (sunday_classes); off, Sunday is closed. */
+  sundayClassesEnabled?: boolean;
 }
+
+const SUNDAY_INDEX = 6;
 
 const NO_FORCED_DAYS: Record<string, number> = {};
 
@@ -48,7 +52,7 @@ export const sameTimePartner = (
   if (!subject) return null;
   const sameTime = group.some((item) => item.isHybrid)
     ? Number(subject.labHours ?? 0) === 0
-    : ["MW", "TTh"].includes(schedule.preferredPattern ?? "");
+    : isFixedSplitPattern(schedule.preferredPattern);
 
   return sameTime ? group.find((item) => item.id !== schedule.id) ?? null : null;
 };
@@ -136,12 +140,6 @@ const samePhysicalRoom = (leftRoomId: string, rightRoomId: string, rooms: Room[]
 // online balance is only a soft solver target. A client copy of that limit
 // outlived the server rule and refused a sixth online course the save accepts.
 // ---------------------------------------------------------------------------
-
-/** Mon–Fri. Non-NSTP field courses (PATHFIT and similar). */
-const WEEKDAY_INDEXES = [0, 1, 2, 3, 4];
-/** Mon–Sat. Minor courses (GEC, GEE and similar). */
-const WEEKDAY_AND_SATURDAY_INDEXES = [0, 1, 2, 3, 4, 5];
-const SUNDAY_INDEX = 6;
 
 const normalizeCourseCode = (courseCode: string): string =>
   courseCode.trim().replace(/\s+/g, " ").toUpperCase();
@@ -417,6 +415,7 @@ export const useConflict = ({
   fieldCourseCodes = [],
   forcedDayByCourseId = NO_FORCED_DAYS,
   laboratoryDurationSettings = null,
+  sundayClassesEnabled = true,
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
     () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
@@ -455,6 +454,13 @@ export const useConflict = ({
     excludeScheduleId?: string | string[],
     preferredPattern?: string | null
   ): ConflictResult => {
+    if (!sundayClassesEnabled && dayIndex === SUNDAY_INDEX) {
+      return {
+        conflictType: "section",
+        message: "Sunday classes are not enabled for this department. The department secretary can turn them on in Generate Schedule.",
+      };
+    }
+
     const allowedDays = parsePreferredPattern(preferredPattern);
     if (allowedDays && !allowedDays.includes(dayIndex)) {
       return {
@@ -483,10 +489,6 @@ export const useConflict = ({
 
     // Room-type compatibility check
     const subject = subjects.find((s) => String(s.id) === String(subjectId));
-    const candidateDepartmentId = sections.find((section) => String(section.id) === String(sectionId))?.departmentId
-      ?? schedules.find((schedule) => String(schedule.sectionId) === String(sectionId))?.departmentId
-      ?? subject?.departmentId
-      ?? null;
     const configuredFieldCourseCodes = new Set(
       fieldCourseCodes.map((code) => normalizeCourseCode(code)).filter(Boolean)
     );
@@ -652,7 +654,7 @@ export const useConflict = ({
       }
     }
     return null;
-  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, forcedDayByCourseId, laboratoryDurationSettings]);
+  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, forcedDayByCourseId, laboratoryDurationSettings, sundayClassesEnabled]);
 
   const checkFacultyConflict = useCallback((facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);

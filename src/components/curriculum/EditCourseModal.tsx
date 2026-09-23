@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Pencil, BookOpen, AlertCircle } from 'lucide-react';
+import { X, Pencil, AlertCircle } from 'lucide-react';
 import type { CurriculumCourse, Program } from '../../types/curriculum';
 import { formatCourseName } from '../../lib/formatters';
 

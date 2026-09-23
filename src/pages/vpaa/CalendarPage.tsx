@@ -13,7 +13,6 @@ import {
   RefreshCw,
   RotateCcw,
   Rows3,
-  Search,
   SlidersHorizontal,
 } from 'lucide-react';
 import api from '../../lib/api';

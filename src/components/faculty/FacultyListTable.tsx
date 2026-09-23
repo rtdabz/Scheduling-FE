@@ -27,7 +27,6 @@ export interface FacultyListRow {
   department: { department_code?: string | null; department_name?: string | null } | null;
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
-  designation?: Designation | null;
   designations?: Designation[];
 }
 
@@ -97,7 +96,7 @@ export default function FacultyListTable<T extends FacultyListRow>({
       header: 'Designation',
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row: { original: f } }) => {
-        const held = f.designations?.length ? f.designations : f.designation ? [f.designation] : [];
+        const held = f.designations ?? [];
         return held.length === 0 ? (
           <span className="text-gray-400 text-xs">—</span>
         ) : (
