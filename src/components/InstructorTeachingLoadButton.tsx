@@ -1,4 +1,4 @@
-import { designationLabel } from "../lib/designations";
+import { heldDesignation } from "../lib/designations";
 import { useState } from "react";
 import { Printer } from "lucide-react";
 import api from "../lib/api";
@@ -83,7 +83,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     name: `${faculty.first_name} ${faculty.last_name}`,
     employmentType: faculty.employment_type,
     administrativeRole: normalizeAdministrativePost(faculty.administrative_role),
-    designations: (faculty.designations ?? []).map(designationLabel),
+    designations: (faculty.designations ?? []).map(heldDesignation),
     departmentId: faculty.department_id,
     departmentCode: faculty.department?.department_code,
     departmentName: faculty.department?.department_name,

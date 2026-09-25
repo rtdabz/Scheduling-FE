@@ -23,13 +23,13 @@ describe('overloadConfirmationFrom', () => {
   it('decodes the instructors a 409 asks about', () => {
     const confirmation = overloadConfirmationFrom(
       rejection(409, {
-        message: 'This instructor will have an overload. Do you want to proceed?',
+        message: 'This instructor will have a pro bono load. Do you want to proceed?',
         overload_confirmation: { instructors: [projection()] },
       })
     );
 
     expect(confirmation?.message).toBe(
-      'This instructor will have an overload. Do you want to proceed?'
+      'This instructor will have a pro bono load. Do you want to proceed?'
     );
     expect(confirmation?.instructors).toHaveLength(1);
     expect(confirmation?.instructors[0].projected_units).toBe(18);
@@ -39,7 +39,7 @@ describe('overloadConfirmationFrom', () => {
   it('keeps every instructor a bulk assignment reports', () => {
     const confirmation = overloadConfirmationFrom(
       rejection(409, {
-        message: 'These instructors will have an overload. Do you want to proceed?',
+        message: 'These instructors will have a pro bono load. Do you want to proceed?',
         overload_confirmation: {
           instructors: [projection(), projection({ faculty_id: 9, faculty_name: 'Ben Reyes' })],
         },
@@ -55,7 +55,7 @@ describe('overloadConfirmationFrom', () => {
     );
 
     expect(confirmation?.message).toBe(
-      'This instructor will have an overload. Do you want to proceed?'
+      'This instructor will have a pro bono load. Do you want to proceed?'
     );
   });
 
@@ -67,7 +67,7 @@ describe('overloadConfirmationFrom', () => {
     );
 
     expect(confirmation?.message).toBe(
-      'These instructors will have an overload. Do you want to proceed?'
+      'These instructors will have a pro bono load. Do you want to proceed?'
     );
   });
 

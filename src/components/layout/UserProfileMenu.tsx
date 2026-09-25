@@ -5,25 +5,20 @@ import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import { logoutCurrentSession } from '../../lib/authSession';
 import ProfileAvatar from '../ui/ProfileAvatar';
-
-interface StoredUser {
-  name?: string;
-  username?: string;
-  email?: string | null;
-  role?: string;
-  profile_picture?: string | null;
-  photo?: string | null;
-  avatar?: string | null;
-}
+import UserProfileModal, { type ProfileUser as StoredUser } from './UserProfileModal';
 
 const roleLabel = (role?: string) => ({ vpaa: 'VPAA', dean: 'Dean', secretary: 'Secretary', program_head: 'Program Head' }[role?.toLowerCase() ?? ''] || role || 'User');
 
 export default function UserProfileMenu() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const [user, setUser] = useState<StoredUser | null>(() => {
+    const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
+    try { return raw ? JSON.parse(raw) as StoredUser : null; } catch { return null; }
+  });
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const role = user?.role?.toLowerCase() || 'vpaa';
   const photo = user?.profile_picture || user?.photo || user?.avatar;
@@ -34,10 +29,6 @@ export default function UserProfileMenu() {
   };
 
   useEffect(() => {
-    const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
-    if (raw) {
-      try { setUser(JSON.parse(raw) as StoredUser); } catch { /* use API fallback */ }
-    }
     api.get<StoredUser>('/me').then((response) => setUser(response.data)).catch(() => {});
   }, []);
 
@@ -48,6 +39,16 @@ export default function UserProfileMenu() {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
+
+  // Keeps the cached session user in step, since other pages read name and photo from it.
+  const handleProfileSaved = (saved: StoredUser) => {
+    setUser((prev) => ({ ...prev, ...saved }));
+    for (const storage of [localStorage, sessionStorage]) {
+      const raw = storage.getItem('user');
+      if (!raw) continue;
+      try { storage.setItem('user', JSON.stringify({ ...JSON.parse(raw), ...saved })); } catch { /* storage unavailable */ }
+    }
+  };
 
   const logout = () => {
     setLoggingOut(true);
@@ -64,8 +65,9 @@ export default function UserProfileMenu() {
     </button>
     {open && <div className="absolute right-0 top-full z-[60] mt-2 max-h-[calc(100vh-5rem)] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-slate-200 bg-[#F7F4F0] text-slate-700 shadow-2xl">
       <div className="flex items-center gap-2.5 border-b border-gray-100 bg-gray-50/50 p-2.5"><ProfileAvatar src={photo} className="h-9 w-9 rounded-full" /><div className="min-w-0"><p className="truncate text-xs font-bold">{user?.name || 'Administrator'}</p><p className="truncate text-[10px] text-gray-500">{user?.email || user?.username || ''}</p></div></div>
-      <div className="space-y-0.5 p-1.5">{!['secretary', 'program_head', 'dean'].includes(role) && <><button type="button" onClick={() => { setMenuOpen(false); navigate(`/${role}/settings`); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><User size={14} /> My Profile</button><button type="button" onClick={() => { setMenuOpen(false); navigate(`/${role}/settings`); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><Settings size={14} /> Settings</button></>}</div>
+      <div className="space-y-0.5 p-1.5"><button type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><User size={14} /> My Profile</button>{!['secretary', 'program_head', 'dean'].includes(role) && <><button type="button" onClick={() => { setMenuOpen(false); navigate(`/${role}/settings`); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><Settings size={14} /> Settings</button></>}</div>
       <div className="border-t border-gray-100 p-1.5"><button type="button" disabled={loggingOut} onClick={logout} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"><LogOut size={14} /> {loggingOut ? 'Signing out...' : 'Log Out'}</button></div>
     </div>}
+    {profileOpen && <UserProfileModal onClose={() => setProfileOpen(false)} user={user} roleLabel={roleLabel(user?.role)} onSaved={handleProfileSaved} />}
   </div>;
 }

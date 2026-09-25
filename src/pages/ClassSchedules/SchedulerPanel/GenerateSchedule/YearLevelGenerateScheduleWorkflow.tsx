@@ -28,9 +28,11 @@ import type {
   Semester,
 } from "../types";
 import RecommendedAdjustmentPanel from "./RecommendedAdjustmentPanel";
+import { APPLY_ALL_RECOMMENDATION_ID } from "./recommendationGroups";
 import { resolveGenerationChanges } from "./generationChanges";
 import {
   applyAdjustments,
+  applyYearLevelAdjustments,
   recommendationTarget,
   describeAdjustment,
   type GenerationRecommendation,
@@ -59,6 +61,7 @@ import type { LaboratoryDurationSettings } from "../courseSlotPlan";
 import {
   EMPTY_COURSE_DEFAULTS,
   formatHours,
+  type ConsecutiveDayRule,
   type CourseDefaults,
   type PreferredRoomOption,
 } from "./courseClassConfig";
@@ -100,6 +103,8 @@ type SectionConfig = {
 type SettingsResponse = LaboratoryDurationSettings & {
   /** Required Day, stored as the department's forced-day rules. */
   forced_day_rules?: ForcedDayRule[];
+  /** Consecutive Days, course-wide (section_id null) or per section. */
+  consecutive_day_rules?: ConsecutiveDayRule[];
   forced_day_courses?: ConstraintCourse[];
   field_course_assignment_enabled?: boolean;
   field_course_options?: ConstraintCourse[];
@@ -261,7 +266,13 @@ export default function YearLevelGenerateScheduleWorkflow({
     () => run.result?.schedules ?? [],
     [run.result],
   );
-  const failure = run.failure;
+  // "Keep searching" hides a provisional report for that run only; the final
+  // report, or a later run's provisional one, is shown again.
+  const [dismissedProvisionalRunId, setDismissedProvisionalRunId] = useState<string | null>(null);
+  const failure =
+    run.failure?.provisional && run.runId !== null && dismissedProvisionalRunId === run.runId
+      ? null
+      : run.failure;
   const generationChanges = useMemo(
     () => resolveGenerationChanges(run.result),
     [run.result],
@@ -480,6 +491,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     "Laboratory requirements",
     "Conflict prevention",
     ...(settings?.forced_day_rules?.length ? ["Required day rules"] : []),
+    ...(settings?.consecutive_day_rules?.length ? ["Consecutive days rules"] : []),
     ...(settings?.field_course_codes?.length ? ["Field course rules"] : []),
     ...(setupDraft.courseDefaults.allowFridaySaturdaySplit
       ? ["Friday + Saturday split pairs"]
@@ -821,6 +833,53 @@ export default function YearLevelGenerateScheduleWorkflow({
   };
 
   /**
+   * Consecutive Days is the department's rule for the course, saved straight
+   * away like Required Day: Manual Scheduling places the run from it too.
+   * The course's Required Day travels in the same request, because the
+   * server refuses a course that has both.
+   */
+  const saveConsecutiveDays = async (
+    courseId: string,
+    courseRules: ConsecutiveDayRule[],
+    requiredDay: string | null,
+  ) => {
+    if (!settingsSectionId || !settings) return;
+    const consecutiveRules = [
+      ...(settings.consecutive_day_rules ?? []).filter(
+        (rule) => String(rule.course_id) !== courseId,
+      ),
+      ...courseRules,
+    ];
+    const forcedRules = [
+      ...(settings.forced_day_rules ?? []).filter(
+        (rule) => String(rule.course_id) !== courseId,
+      ),
+      ...(requiredDay ? [{ course_id: Number(courseId), day: requiredDay }] : []),
+    ];
+    try {
+      const response = await api.patch<SettingsResponse>(
+        "/scheduling-settings",
+        { consecutive_day_rules: consecutiveRules, forced_day_rules: forcedRules },
+        { params: { section_id: settingsSectionId } },
+      );
+      const next = {
+        ...settings,
+        ...response.data,
+        consecutive_day_rules: response.data?.consecutive_day_rules ?? consecutiveRules,
+        forced_day_rules: forcedRules,
+      };
+      setSettings(next);
+      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
+    } catch (error) {
+      toast.error(
+        "Save failed",
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+          ?? "Unable to update Consecutive Days.",
+      );
+    }
+  };
+
+  /**
    * A course is a field course only while a field room is its Preferred
    * Room. The department's field list is what the Generator and the Rule
    * Engine read, so the choice is saved straight away, like Required Day.
@@ -878,10 +937,16 @@ export default function YearLevelGenerateScheduleWorkflow({
     }
   };
 
-  const generate = async (configsOverride?: Record<string, SectionConfig>) => {
+  const generate = async (
+    configsOverride?: Record<string, SectionConfig>,
+    draftOverride?: SetupDraft,
+  ) => {
     if (!activeSemester || departmentId === null) return;
     if (!yearLevelGenerationAllowed) return;
     const activeConfigs = configsOverride ?? configs;
+    // An applied recommendation passes the draft it just set, which state has
+    // not caught up with yet.
+    const activeDraft = draftOverride ?? setupDraft;
     const configuredFieldCourseIds = includedCourses
       .filter((course) =>
         isConfiguredFieldCourse(
@@ -985,13 +1050,13 @@ export default function YearLevelGenerateScheduleWorkflow({
             // Step 1's Preferred Days, the same for every section. No days
             // chosen means any day.
             allowed_days:
-              setupDraft.preferredDays.length > 0
-                ? setupDraft.preferredDays
+              activeDraft.preferredDays.length > 0
+                ? activeDraft.preferredDays
                 : null,
             // Step 2's Default Settings: Split courses may also meet Friday +
             // Saturday, after MW and TTh.
             allow_friday_saturday_split:
-              setupDraft.courseDefaults.allowFridaySaturdaySplit,
+              activeDraft.courseDefaults.allowFridaySaturdaySplit,
           };
         }),
       };
@@ -1031,13 +1096,32 @@ export default function YearLevelGenerateScheduleWorkflow({
     await generate();
   };
 
-  const applyRecommendationAndRetry = (
+  // Saved so every year level -- and the next visit -- opens with the same
+  // Default Settings.
+  const saveCourseDefaults = (courseDefaults: CourseDefaults) => {
+    try {
+      window.localStorage.setItem(defaultsStorageKey, JSON.stringify(courseDefaults));
+    } catch {
+      // Storage unavailable: they still apply for this session.
+    }
+  };
+
+  const applyRecommendationAndRetry = async (
     recommendation: GenerationRecommendation,
   ) => {
-    const { configs: nextConfigs, applied } = applyAdjustments(
+    const { configs: nextConfigs, applied: appliedToSections } = applyAdjustments(
       configs,
       recommendation.adjustments,
     );
+    const { settings: yearLevelSettings, applied: appliedToYearLevel } =
+      applyYearLevelAdjustments(
+        {
+          preferredDays: setupDraft.preferredDays,
+          allowFridaySaturdaySplit: setupDraft.courseDefaults.allowFridaySaturdaySplit,
+        },
+        recommendation.adjustments,
+      );
+    const applied = [...appliedToSections, ...appliedToYearLevel];
     if (applied.length === 0) {
       toast.error(
         "Nothing to Apply",
@@ -1049,11 +1133,33 @@ export default function YearLevelGenerateScheduleWorkflow({
     // The wizard's own configuration changes, so Setup Courses and
     // Configuration show the new session, and the run below uses it.
     setConfigs(nextConfigs);
+    const nextDraft: SetupDraft = {
+      ...setupDraft,
+      preferredDays: yearLevelSettings.preferredDays,
+      courseDefaults: {
+        ...setupDraft.courseDefaults,
+        allowFridaySaturdaySplit: yearLevelSettings.allowFridaySaturdaySplit,
+      },
+    };
+    if (appliedToYearLevel.length > 0) {
+      setSetupDraft(nextDraft);
+      if (nextDraft.courseDefaults !== setupDraft.courseDefaults) {
+        saveCourseDefaults(nextDraft.courseDefaults);
+      }
+    }
     toast.success(
-      `Applied to ${recommendationTarget(recommendation)}`,
+      recommendation.id === APPLY_ALL_RECOMMENDATION_ID
+        ? `Applied ${recommendation.title}`
+        : `Applied to ${recommendationTarget(recommendation)}`,
       applied.map((adjustment) => describeAdjustment(adjustment)).join(" | "),
     );
-    void generate(nextConfigs);
+    // Straight on to generating again, not back to Review: the new run is
+    // queued in this same update, so the loading view replaces the panel
+    // directly. A provisional report's run is still searching; starting over
+    // it cancels it on the server first, without an idle moment in between.
+    setStepDirection("forward");
+    setStep(3);
+    void generate(nextConfigs, nextDraft);
   };
 
   const reviewConstraints = (sectionId: number | null) => {
@@ -1063,7 +1169,8 @@ export default function YearLevelGenerateScheduleWorkflow({
     ) {
       setActiveSectionId(String(sectionId));
     }
-    run.clear();
+    if (run.isActive) void run.cancel();
+    else run.clear();
     goToStep(2);
   };
 
@@ -1318,10 +1425,11 @@ export default function YearLevelGenerateScheduleWorkflow({
           {failure ? (
             <RecommendedAdjustmentPanel
               failure={failure}
-              busy={generating}
-              onApplyAndRetry={applyRecommendationAndRetry}
+              busy={generating && !failure.provisional}
+              onApplyAndRetry={(recommendation) => void applyRecommendationAndRetry(recommendation)}
               onReviewConstraints={reviewConstraints}
-              onCancel={() => run.clear()}
+              onCancel={() => (run.isActive ? void run.cancel() : run.clear())}
+              onKeepSearching={() => setDismissedProvisionalRunId(run.runId)}
             />
           ) : (
             <div
@@ -1370,20 +1478,12 @@ export default function YearLevelGenerateScheduleWorkflow({
                   onConfigChange={updateConfig}
                   settings={settings}
                   onRequiredDayChange={saveRequiredDay}
+                  onConsecutiveDaysChange={saveConsecutiveDays}
                   onFieldCourseChange={saveFieldCourse}
                   defaults={setupDraft.courseDefaults}
                   onDefaultsChange={(courseDefaults) => {
                     setSetupDraft((current) => ({ ...current, courseDefaults }));
-                    // Saved so every year level -- and the next visit -- opens
-                    // with the same Default Settings.
-                    try {
-                      window.localStorage.setItem(
-                        defaultsStorageKey,
-                        JSON.stringify(courseDefaults),
-                      );
-                    } catch {
-                      // Storage unavailable: they still apply for this session.
-                    }
+                    saveCourseDefaults(courseDefaults);
                   }}
                   excludedCourseIds={setupDraft.excludedCourseIds}
                   onExcludedChange={(excludedCourseIds) =>
@@ -1410,6 +1510,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   courseRows={reviewCourseRows}
                   preferredDays={setupDraft.preferredDays}
                   forcedDayRules={settings?.forced_day_rules ?? []}
+                  consecutiveDayRules={settings?.consecutive_day_rules ?? []}
                   fieldCourseCodes={settings?.field_course_codes ?? []}
                   activeRules={activeRules}
                   generating={generating}
@@ -1585,7 +1686,7 @@ const generatorGuideSteps: WorkflowGuideStep[] = [
     taskHint: "Click Apply to year level to continue.",
     title: "Apply it to every section",
     description:
-      "This writes the curriculum onto each section in scope. Skip it if the button is greyed out — that means it is already applied.",
+      "This writes the curriculum onto each section in scope. The button only appears when there is something to apply.",
     side: "bottom",
     align: "end",
   },

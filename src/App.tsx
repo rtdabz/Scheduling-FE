@@ -32,6 +32,7 @@ const DeanRooms = lazyPage(() => import('./pages/dean/Rooms'));
 const SecretaryScheduleBuilder = lazyPage(() => import('./pages/secretary/ScheduleBuilder'));
 const SecretarySchedules = lazyPage(() => import('./pages/secretary/Schedules'));
 const SecretaryRooms = lazyPage(() => import('./pages/secretary/Rooms'));
+const SecretaryProgramRooms = lazyPage(() => import('./pages/secretary/ProgramRooms'));
 const SecretaryFaculty = lazyPage(() => import('./pages/secretary/Faculty'));
 const SecretarySectionTimetables = lazyPage(() => import('./pages/secretary/SectionTimetables'));
 const ProgramHeadScheduleBuilder = lazyPage(() => import('./pages/program_head/ScheduleBuilder'));
@@ -79,6 +80,7 @@ registerPagePrefetch([
   [SecretarySchedules, ['/secretary/schedules']],
   [SecretarySectionTimetables, ['/secretary/section-timetables']],
   [SecretaryRooms, ['/secretary/rooms']],
+  [SecretaryProgramRooms, ['/secretary/program-rooms']],
   [SecretaryCourses, ['/secretary/courses', '/secretary/course-list', '/secretary/subjects', '/program_head/courses', '/program_head/course-list']],
   [SecretarySections, ['/secretary/sections', '/program_head/sections']],
   [SecretaryFaculty, ['/secretary/instructors']],
@@ -210,7 +212,11 @@ export default function App() {
   }, []);
 
   return (
-    <BrowserRouter>
+    // Navigations commit immediately. With transitions on (the v7 default) React
+    // kept the previous page on screen until the next one finished rendering,
+    // which on heavy or constantly refreshing pages looked like the click did
+    // nothing. The per-route Suspense in AppLayout covers the chunk download.
+    <BrowserRouter useTransitions={false}>
       <Routes>
           <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
         
@@ -258,6 +264,7 @@ export default function App() {
             <Route path="/secretary/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><SecretarySectionTimetables /></CapabilityRoute>} />
             <Route path="/secretary/rooms" element={<CapabilityRoute capability="schedule.view" moduleName="Rooms"><SecretaryRooms /></CapabilityRoute>} />
             <Route path="/secretary/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
+            <Route path="/secretary/program-rooms" element={<CapabilityRoute capability="room.assign_program" moduleName="Program Rooms"><SecretaryProgramRooms /></CapabilityRoute>} />
 
             <Route path="/secretary/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/secretary/course-list" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />

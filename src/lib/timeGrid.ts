@@ -235,6 +235,15 @@ export const parsePreferredPattern = (preferredPattern?: string | null): [number
   return [Number(customMatch[1]), Number(customMatch[2])];
 };
 
+/**
+ * The N of a Consecutive Days meeting's `consecutive:N` pattern, or null. A
+ * run may start on any day, so it narrows no day the way a pair does.
+ */
+export const consecutiveDayCount = (preferredPattern?: string | null): number | null => {
+  const match = (preferredPattern ?? "").match(/^consecutive:([2-7])$/);
+  return match ? Number(match[1]) : null;
+};
+
 /** Serializes a custom two-day pattern back to its API form. */
 export const buildPreferredPattern = (day1Index: number, day2Index: number): string =>
   `days:${day1Index}-${day2Index}`;

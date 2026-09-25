@@ -1,4 +1,4 @@
-import { designationLabel } from "../../../../lib/designations";
+import { heldDesignation } from "../../../../lib/designations";
 import { DAYS, slotToTimeStr } from "../constants";
 import {
   configureTimeGrid,
@@ -302,7 +302,7 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   profilePicture: f.profile_picture ?? null,
   employmentType: f.employment_type,
   administrativeRole: normalizeAdministrativePost(f.administrative_role),
-  designations: (f.designations ?? []).map(designationLabel),
+  designations: (f.designations ?? []).map(heldDesignation),
   departmentId: f.department_id,
   departmentCode: f.department?.department_code,
   departmentName: f.department?.department_name,

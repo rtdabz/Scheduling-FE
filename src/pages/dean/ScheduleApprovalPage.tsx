@@ -16,6 +16,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiError';
 import DataTable from '../../components/ui/DataTable';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
@@ -468,7 +469,10 @@ export default function DeanScheduleApprovalPage() {
     const approvedStatus = withTba ? 'conditionally_approved' : 'approved_by_dean';
     try {
       const now = new Date().toISOString();
-      await api.post(`/departments/${sched.id}/approve-by-dean`, withTba ? { override_room_tba: true, override_reason: overrideReason } : {});
+      await api.post(`/departments/${sched.id}/approve-by-dean`, {
+        schedule_submission_id: sched.submissionId,
+        ...(withTba ? { override_room_tba: true, override_reason: overrideReason } : {}),
+      });
 
       setSchedules((prev) =>
         prev.map((s) =>
@@ -489,8 +493,8 @@ export default function DeanScheduleApprovalPage() {
       invalidateCacheGroups('schedules', 'approvals', 'dashboards');
 
       toast.success('Success', `${sched.department} schedule has been approved successfully.`);
-    } catch {
-      toast.error('Error', 'Failed to approve schedule.');
+    } catch (err) {
+      toast.error('Error', apiErrorMessage(err, 'Failed to approve schedule.'));
     }
   };
 
@@ -553,6 +557,7 @@ export default function DeanScheduleApprovalPage() {
       try {
         const now = new Date().toISOString();
         await api.post(`/departments/${rejectConfirm.id}/return-by-dean`, {
+          schedule_submission_id: rejectConfirm.submissionId,
           rejection_reason: rejectReason
         });
 
@@ -576,7 +581,7 @@ export default function DeanScheduleApprovalPage() {
 
         toast.error('Rejected', `${rejectConfirm.department} schedule has been returned for revision.`);
       } catch (err) {
-        toast.error('Error', 'Failed to reject schedule.');
+        toast.error('Error', apiErrorMessage(err, 'Failed to reject schedule.'));
       } finally {
         setRejectConfirm(null);
         setRejectReason('');

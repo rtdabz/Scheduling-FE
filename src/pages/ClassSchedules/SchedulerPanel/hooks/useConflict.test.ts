@@ -429,6 +429,30 @@ describe("checkMoveConflict", () => {
     });
   });
 
+  describe("a Consecutive Days run", () => {
+    // Thursday, Friday and Saturday at one time in one room.
+    const run = [3, 4, 5].map((dayIndex, index) => meeting({
+      id: String(index + 1), splitGroupId: "run", preferredPattern: "consecutive:3", dayIndex, startSlot: 0,
+    }));
+
+    it("moves as a whole, so its own days never block a shift", () => {
+      // Thursday -> Wednesday shifts the run to Wednesday-Friday, onto days the run holds itself.
+      expect(moveCheck(run)("1", 2, 4)).toBeNull();
+    });
+
+    it("judges every shifted day against other classes", () => {
+      const blocksThursday = meeting({ id: "9", courseId: "7", subjectId: "7", sectionId: "11", dayIndex: 3, startSlot: 4 });
+
+      const conflict = moveCheck([...run, blocksThursday])("1", 2, 4);
+      expect(conflict?.conflictType).toBe("room");
+      expect(conflict?.message).toMatch(/^Thursday: /);
+    });
+
+    it("refuses a shift past the end of the week", () => {
+      expect(moveCheck(run)("1", 5, 0)?.message).toMatch(/past the end of the week/);
+    });
+  });
+
   describe("an Integrated pair, whose days:X-Y pattern only records where it sits", () => {
     // Monday laboratory + Tuesday online lecture, the shape the dialog writes.
     const laboratory = meeting({

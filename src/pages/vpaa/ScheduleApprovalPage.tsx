@@ -16,6 +16,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiError';
 import DataTable from '../../components/ui/DataTable';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { useToast } from '../../context/ToastContext';
@@ -472,7 +473,7 @@ export default function VpaaScheduleApprovalPage() {
   const submitApproval = async (sched: ScheduleApproval) => {
     try {
       const now = new Date().toISOString();
-      await api.post(`/departments/${sched.id}/approve-by-vpaa`);
+      await api.post(`/departments/${sched.id}/approve-by-vpaa`, { schedule_submission_id: sched.submissionId });
 
       setSchedules((prev) =>
         prev.map((s) =>
@@ -491,8 +492,8 @@ export default function VpaaScheduleApprovalPage() {
       invalidateCacheGroups('schedules', 'approvals', 'dashboards');
 
       toast.success('Success', `${sched.department} schedule has been approved successfully.`);
-    } catch {
-      toast.error('Error', 'Failed to approve schedule.');
+    } catch (err) {
+      toast.error('Error', apiErrorMessage(err, 'Failed to approve schedule.'));
     }
   };
 
@@ -511,6 +512,7 @@ export default function VpaaScheduleApprovalPage() {
       try {
         const now = new Date().toISOString();
         await api.post(`/departments/${rejectConfirm.id}/return-by-vpaa`, {
+          schedule_submission_id: rejectConfirm.submissionId,
           rejection_reason: rejectReason
         });
 
@@ -532,7 +534,7 @@ export default function VpaaScheduleApprovalPage() {
 
         toast.error('Rejected', `${rejectConfirm.department} schedule has been returned for revision.`);
       } catch (err) {
-        toast.error('Error', 'Failed to reject schedule.');
+        toast.error('Error', apiErrorMessage(err, 'Failed to reject schedule.'));
       } finally {
         setRejectConfirm(null);
         setRejectReason('');

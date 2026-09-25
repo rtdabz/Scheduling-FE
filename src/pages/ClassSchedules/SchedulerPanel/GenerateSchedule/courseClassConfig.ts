@@ -9,6 +9,7 @@ import {
   SLOT_MINUTES,
   type LaboratoryDurationSettings,
 } from "../courseSlotPlan";
+import { DAYS } from "../constants";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
 
 export type ClassConfiguration = "regular" | "split" | "integrated";
@@ -20,14 +21,14 @@ export type SectionScope = "all" | "selected";
  * How a course's meetings are laid out, which decides whether its length can
  * be changed:
  * - `single` — one meeting (Regular)
- * - `split` — two equal meetings on different days
+ * - `split` — two equal meetings on different days, both online for an
+ *   Online Split
  * - `hybrid-split` — two fixed sessions, one online and one face-to-face,
  *   of `HYBRID_SPLIT_MEETING_MINUTES` each
  * - `integrated-onsite` (Integrated On-site) — a lecture and a laboratory
  *   as two separate sessions, both face-to-face
  * - `hybrid-laboratory` (Integrated Hybrid) — an online lecture and an
  *   on-site laboratory as two separate sessions
- *
  * Both Integrated shapes size each session from the course (the laboratory
  * from the department's Custom Lab Duration when set), and each can be
  * changed on its own.
@@ -58,6 +59,14 @@ export interface CourseClassConfig {
   laboratoryMinutes?: number;
   /** Department-wide: every section of the course meets on this day. */
   requiredDay: string | null;
+  /**
+   * Consecutive Days, a Regular class only: the class meets on this many
+   * back-to-back days, for its full length each day (8 units, 8 hours every
+   * day). Unset or null is one meeting a week.
+   */
+  consecutiveDays?: number | null;
+  /** Consecutive Days: the day the run should start on; null lets the Generator choose. */
+  preferredStartDay?: string | null;
   /** A ranking preference, never a restriction. */
   preferredRoomId: string | null;
   sectionScope: SectionScope;
@@ -88,6 +97,199 @@ export const isIntegratedShape = (shape: DurationShape): boolean =>
 
 export const isDurationEditable = (shape: DurationShape): boolean =>
   shape === "single" || shape === "split";
+
+/** A Regular class set to meet on back-to-back days. */
+export const isConsecutive = (
+  config: Pick<CourseClassConfig, "configuration" | "consecutiveDays">,
+): boolean =>
+  config.configuration === "regular" && (config.consecutiveDays ?? 0) >= MIN_CONSECUTIVE_DAYS;
+
+/** A saved Consecutive Days rule, as `/scheduling-settings` returns it. */
+export interface ConsecutiveDayRule {
+  course_id: number;
+  /** Null is the course-wide rule; a section's own rule overrides it. */
+  section_id: number | null;
+  day_count: number;
+  preferred_start_day: string | null;
+}
+
+export const MIN_CONSECUTIVE_DAYS = 2;
+export const DEFAULT_CONSECUTIVE_DAYS = 2;
+
+/** Monday-Saturday, or through Sunday once the department opens it. */
+export const teachingWeek = (sundayClassesEnabled: boolean): string[] =>
+  sundayClassesEnabled ? [...DAYS] : DAYS.filter((day) => day !== "Sunday");
+
+/**
+ * Every run of `dayCount` calendar-consecutive teaching days, in week order.
+ * Mirrors `SchedulingPolicy::consecutiveDayRuns`: the week does not wrap, and
+ * a day outside `allowedDays` (Step 1's Preferred Days) breaks a run.
+ */
+export function consecutiveDayRuns(
+  dayCount: number,
+  sundayClassesEnabled: boolean,
+  allowedDays: string[] | null = null,
+): string[][] {
+  const week = teachingWeek(sundayClassesEnabled);
+  if (dayCount < MIN_CONSECUTIVE_DAYS || dayCount > week.length) return [];
+  const allowed = allowedDays && allowedDays.length > 0 ? new Set(allowedDays) : null;
+  const runs: string[][] = [];
+  for (let start = 0; start + dayCount <= week.length; start += 1) {
+    const run = week.slice(start, start + dayCount);
+    if (!allowed || run.every((day) => allowed.has(day))) runs.push(run);
+  }
+  return runs;
+}
+
+/** "Thursday-Saturday", or "Monday-Tuesday" for two days. */
+export const runLabel = (run: string[]): string =>
+  run.length === 0 ? "" : `${run[0]}–${run[run.length - 1]}`;
+
+/**
+ * The course's Consecutive Days rules as the settings save expects them: one
+ * course-wide rule for every section, or one per selected section.
+ */
+export function consecutiveRulesForCourse(
+  courseId: string,
+  config: CourseClassConfig,
+  sections: Section[],
+): ConsecutiveDayRule[] {
+  if (!isConsecutive(config)) return [];
+  const base = {
+    course_id: Number(courseId),
+    day_count: config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS,
+    preferred_start_day: config.preferredStartDay ?? null,
+  };
+  if (config.sectionScope === "all") return [{ ...base, section_id: null }];
+  const known = new Set(sections.map((section) => section.id));
+  return config.selectedSectionIds
+    .filter((id) => known.has(id))
+    .map((id) => ({ ...base, section_id: Number(id) }));
+}
+
+/** Two rule lists for one course say the same thing, in any order. */
+export function sameConsecutiveRules(left: ConsecutiveDayRule[], right: ConsecutiveDayRule[]): boolean {
+  const key = (rule: ConsecutiveDayRule) =>
+    `${rule.section_id ?? "all"}:${rule.day_count}:${rule.preferred_start_day ?? ""}`;
+  const a = left.map(key).sort();
+  const b = right.map(key).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/**
+ * The Consecutive Days rule each of this run's sections follows for a
+ * course: its own, else the course-wide one. Mirrors
+ * `SchedulingPolicy::resolveConsecutiveDayRules`.
+ */
+export function consecutiveRulesBySection(
+  courseId: string,
+  rules: ConsecutiveDayRule[],
+  sections: Section[],
+): Map<string, ConsecutiveDayRule> {
+  const resolved = new Map<string, ConsecutiveDayRule>();
+  for (const section of sections) {
+    const rule = consecutiveRuleForSection(courseId, section.id, rules);
+    if (rule) resolved.set(section.id, rule);
+  }
+  return resolved;
+}
+
+/** One section's Consecutive Days rule for a course: its own, else the course-wide one. */
+export function consecutiveRuleForSection(
+  courseId: string,
+  sectionId: string,
+  rules: ConsecutiveDayRule[],
+): ConsecutiveDayRule | null {
+  const forCourse = rules.filter((rule) => String(rule.course_id) === String(courseId));
+  return (
+    forCourse.find((rule) => rule.section_id !== null && String(rule.section_id) === String(sectionId)) ??
+    forCourse.find((rule) => rule.section_id === null) ??
+    null
+  );
+}
+
+/** The marker every meeting of a run is saved with: `consecutive:N`. */
+export const consecutivePattern = (dayCount: number): string => `consecutive:${dayCount}`;
+
+/** A Consecutive Days placement in Manual Scheduling: its length and the runs the week allows. */
+export interface ConsecutivePlacement {
+  dayCount: number;
+  preferredStartDay: string | null;
+  runs: string[][];
+}
+
+export function consecutivePlacementFor(
+  courseId: string,
+  sectionId: string,
+  rules: ConsecutiveDayRule[],
+  sundayClassesEnabled: boolean,
+): ConsecutivePlacement | null {
+  const rule = consecutiveRuleForSection(courseId, sectionId, rules);
+  if (!rule) return null;
+  return {
+    dayCount: rule.day_count,
+    preferredStartDay: rule.preferred_start_day,
+    runs: consecutiveDayRuns(rule.day_count, sundayClassesEnabled),
+  };
+}
+
+/** The run that starts on this day, or null when it would run past the week. */
+export const runStartingOn = (placement: ConsecutivePlacement, dayIndex: number): string[] | null =>
+  placement.runs.find((run) => run[0] === DAYS[dayIndex]) ?? null;
+
+/** The days ticked in Setup Courses, which the class meets on, or null. */
+export const tickedRun = (placement: ConsecutivePlacement): string[] | null =>
+  placement.runs.find((run) => run[0] === placement.preferredStartDay) ?? null;
+
+/**
+ * Where a run starts when it is dropped on `dayIndex`: on its ticked days
+ * when it has them; else on that day if a run can, else the latest run that
+ * still covers it, else the first run of the week.
+ */
+export function runStartForDay(placement: ConsecutivePlacement, dayIndex: number): number {
+  const day = DAYS[dayIndex];
+  const covering = placement.runs.filter((run) => run.includes(day));
+  const chosen =
+    tickedRun(placement) ??
+    placement.runs.find((run) => run[0] === day) ??
+    covering[covering.length - 1] ??
+    placement.runs[0];
+  return chosen ? DAYS.indexOf(chosen[0]) : dayIndex;
+}
+
+/**
+ * The run of `dayCount` days starting on `startDay`, kept inside the teaching
+ * week: a run that would pass its end starts earlier instead (Friday + 3
+ * days without Sunday is Thursday-Saturday). Empty for a day not in the week.
+ */
+export function runFrom(startDay: string, dayCount: number, sundayClassesEnabled: boolean): string[] {
+  const week = teachingWeek(sundayClassesEnabled);
+  const start = week.indexOf(startDay);
+  if (start < 0 || dayCount > week.length) return [];
+  const from = Math.min(start, week.length - dayCount);
+  return week.slice(from, from + dayCount);
+}
+
+/**
+ * Whether `days` are distinct and calendar-consecutive, in any order. Mirrors
+ * `SchedulingPolicy::isConsecutiveDaySet`: Sunday -> Monday is the next week.
+ */
+export function isBackToBack(days: string[]): boolean {
+  const indexes = [...new Set(days)].map((day) => DAYS.indexOf(day)).sort((a, b) => a - b);
+  return (
+    indexes.length === days.length &&
+    indexes.every((index, position) => index >= 0 && index === indexes[0] + position)
+  );
+}
+
+/** "3 days · Thu–Sat" when the days are chosen, else "3 consecutive days". */
+export function consecutiveSummary(dayCount: number, startDay: string | null): string {
+  const start = startDay ? DAYS.indexOf(startDay) : -1;
+  const end = start >= 0 ? DAYS[start + dayCount - 1] : undefined;
+  return startDay && end
+    ? `${dayCount} days · ${startDay.slice(0, 3)}–${end.slice(0, 3)}`
+    : `${dayCount} consecutive days`;
+}
 
 /** The Generator's own weekly length for an editable shape: `units × 60`. */
 export function defaultDurationMinutes(course: Course): number {
@@ -241,11 +443,15 @@ export function meetingParts(
   labSettings?: LaboratoryDurationSettings | null,
 ): MeetingPart[] {
   switch (durationShape(config)) {
-    case "split":
+    case "split": {
+      // An Online Split meets online both times; an On-Site one keeps the
+      // Generator's own choice of room.
+      const mode = config.delivery === "online" ? "Online" : undefined;
       return [
-        { label: "Meeting 1", minutes: config.durationMinutes / 2 },
-        { label: "Meeting 2", minutes: config.durationMinutes / 2 },
+        { label: "Meeting 1", minutes: config.durationMinutes / 2, mode },
+        { label: "Meeting 2", minutes: config.durationMinutes / 2, mode },
       ];
+    }
     case "hybrid-split":
       return [
         { label: "Meeting 1", minutes: HYBRID_SPLIT_MEETING_MINUTES, mode: "Online" },
@@ -260,7 +466,14 @@ export function meetingParts(
       ];
     }
     default:
-      return [{ label: "Class", minutes: config.durationMinutes }];
+      // A Consecutive Days class meets for its full length on every day.
+      return isConsecutive(config)
+        ? Array.from({ length: config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS }, (_, index) => ({
+            label: `Day ${index + 1}`,
+            minutes: config.durationMinutes,
+            mode: config.delivery === "online" ? ("Online" as const) : undefined,
+          }))
+        : [{ label: "Class", minutes: config.durationMinutes }];
   }
 }
 
@@ -276,7 +489,12 @@ export function durationLabel(
   course: Course,
   labSettings?: LaboratoryDurationSettings | null,
 ): string {
-  return meetingParts(config, course, labSettings).map(describePart).join(" + ");
+  const parts = meetingParts(config, course, labSettings);
+  // A run's days are one class at one length: "3 days × 8h".
+  if (isConsecutive(config) && parts.length > 0) {
+    return `${parts.length} days × ${describePart(parts[0])}`;
+  }
+  return parts.map(describePart).join(" + ");
 }
 
 /** A room `/scheduling-settings` says this department can reach (RoomAccessPolicy). */
@@ -356,6 +574,7 @@ export function inferInitialCourseClassConfig(
   sections: Section[],
   fieldCourseCodes: ReadonlySet<string>,
   requiredDay: string | null = null,
+  consecutiveRules: ConsecutiveDayRule[] = [],
 ): CourseClassConfig {
   const isField = isConfiguredFieldCourse(course, fieldCourseCodes);
   const lecHours = Number(course.lectureHours ?? 0);
@@ -366,8 +585,13 @@ export function inferInitialCourseClassConfig(
   const sectionsWithSplit = sectionsWith("gecSplitCourseIds");
   const sectionsWithHybrid = sectionsWith("splitCourseIds");
   const sectionsWithHybridSplit = sectionsWith("hybridSplitCourseIds");
+  // Consecutive Days is the department's saved rule, so it outranks what the
+  // draft says: the server refuses a run that also splits the course.
+  const consecutiveBySection = consecutiveRulesBySection(course.id, consecutiveRules, sections);
+  const sectionsWithConsecutive = sections.filter((s) => consecutiveBySection.has(s.id));
 
-  const isAnySplit = sectionsWithSplit.length > 0;
+  const isAnyConsecutive = sectionsWithConsecutive.length > 0;
+  const isAnySplit = !isAnyConsecutive && sectionsWithSplit.length > 0;
   const isAnyHybrid = sectionsWithHybrid.length > 0;
   const isAnyHybridSplit = sectionsWithHybridSplit.length > 0;
 
@@ -380,7 +604,8 @@ export function inferInitialCourseClassConfig(
       selectedSectionIds = subset.map((s) => s.id);
     }
   };
-  if (isAnySplit) narrowTo(sectionsWithSplit);
+  if (isAnyConsecutive) narrowTo(sectionsWithConsecutive);
+  else if (isAnySplit) narrowTo(sectionsWithSplit);
   else if (isAnyHybrid) narrowTo(sectionsWithHybrid);
   else if (isAnyHybridSplit) narrowTo(sectionsWithHybridSplit);
 
@@ -407,12 +632,32 @@ export function inferInitialCourseClassConfig(
     selectedSectionIds,
   };
 
+  if (isAnyConsecutive) {
+    const rule = consecutiveBySection.get(sectionsWithConsecutive[0].id)!;
+    const isOnline = sectionsWithConsecutive.some(
+      (s) => configs[s.id]?.modesByCourseId?.[course.id] === "online",
+    );
+    return {
+      ...shared,
+      configuration: "regular",
+      component: isField ? "field" : labHours > 0 && lecHours === 0 ? "laboratory" : "lecture",
+      delivery: isOnline ? "online" : "onsite",
+      consecutiveDays: rule.day_count,
+      preferredStartDay: rule.preferred_start_day,
+      // A run cannot also have a Required Day; the server refuses the pair.
+      requiredDay: null,
+    };
+  }
+
   if (isAnySplit) {
+    const isOnlineSplit = sectionsWithSplit.some(
+      (s) => configs[s.id]?.modesByCourseId?.[course.id] === "online",
+    );
     return {
       ...shared,
       configuration: "split",
       component: labHours > 0 && lecHours === 0 ? "laboratory" : "lecture",
-      delivery: isAnyHybridSplit ? "hybrid" : "onsite",
+      delivery: isAnyHybridSplit ? "hybrid" : isOnlineSplit ? "online" : "onsite",
       hybridType: isAnyHybridSplit ? "split" : undefined,
     };
   }

@@ -1,4 +1,4 @@
-import { FileText } from "lucide-react";
+import { CheckCircle2, FileText } from "lucide-react";
 import { useState } from "react";
 import Modal from "../../../../components/ui/Modal";
 import type { ResolutionDetails } from "./resolutionDetailsData";
@@ -21,7 +21,7 @@ export default function ResolutionDetailsButton({ details }: { details: Resoluti
         isOpen={open}
         onClose={() => setOpen(false)}
         title="Resolution Summary"
-        description="How this scheduling recommendation was addressed."
+        description="What the generator found and how it was fixed."
         size="md"
         footer={(
           <button
@@ -33,32 +33,48 @@ export default function ResolutionDetailsButton({ details }: { details: Resoluti
           </button>
         )}
       >
-        <div className="grid gap-3 px-4 py-4 sm:px-5 sm:py-5">
-          <SummaryField label="Recommendation" value={details.recommendation} />
-          <SummaryField label="Original Issue" value={details.originalIssue} />
-          <SummaryField label="Action Taken" value={details.actionTaken} />
-          <div className="rounded-lg border border-slate-200 bg-white p-3">
-            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Changes Made</p>
-            <ul className="mt-1.5 grid gap-1.5">
-              {details.changesMade.map((change, index) => (
-                <li key={`${change}-${index}`} className="text-sm font-semibold leading-relaxed text-slate-700">
-                  {change}
+        <div className="px-4 py-4 sm:px-5 sm:py-5">
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <p className="text-base font-black leading-snug text-slate-900">{details.recommendation}</p>
+
+            <ol className="mt-4 grid gap-4">
+              {details.steps.map((step, index) => (
+                <li key={step.label} className="relative flex gap-3">
+                  {index < details.steps.length - 1 && (
+                    <span aria-hidden className="absolute bottom-[-1rem] left-3 top-7 w-px bg-slate-200" />
+                  )}
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#4e0a10]/10 text-[11px] font-black text-[#4e0a10]">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 pt-0.5">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{step.label}</p>
+                    {step.text && (
+                      <p className="mt-0.5 text-sm font-semibold leading-relaxed text-slate-700">{step.text}</p>
+                    )}
+                    {step.items && (
+                      <ul className="mt-0.5 grid gap-1">
+                        {step.items.map((item, itemIndex) => (
+                          <li key={`${item}-${itemIndex}`} className="text-sm font-semibold leading-relaxed text-slate-700">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {step.note && (
+                      <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{step.note}</p>
+                    )}
+                  </div>
                 </li>
               ))}
-            </ul>
+            </ol>
+
+            <p className="mt-4 flex items-start gap-2 border-t border-slate-100 pt-3 text-sm font-bold leading-relaxed text-emerald-800">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              {details.result}
+            </p>
           </div>
-          <SummaryField label="Result/Outcome" value={details.result} />
         </div>
       </Modal>
     </>
-  );
-}
-
-function SummaryField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-700">{value}</p>
-    </div>
   );
 }

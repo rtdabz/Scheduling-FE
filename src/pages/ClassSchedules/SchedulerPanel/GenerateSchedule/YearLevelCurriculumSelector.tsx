@@ -134,68 +134,79 @@ export default function YearLevelCurriculumSelector({
   const needsChoice = unassignedCount > 0 || isMixed;
 
   return (
-    <div className="shrink-0 rounded-lg border border-[#c9952a]/35 bg-[#fff8e8] p-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-0 flex-1 text-xs font-black uppercase text-slate-500">
-          <span className="flex items-center gap-1.5">
-            <BookMarked className="h-3.5 w-3.5 text-[#9a6a10]" />
-            Curriculum for this year level
-          </span>
-          <select
-            id="generator-curriculum-select"
-            value={selected ?? ""}
-            disabled={disabled || loading || applying || curricula.length === 0}
-            onChange={(event) =>
-              setChoice(event.target.value === "" ? null : Number(event.target.value))
-            }
-            className="mt-1.5 h-12 w-full rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold normal-case text-slate-900 outline-none transition focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/10 disabled:bg-slate-50 disabled:text-slate-400"
-          >
-            <option value="">
-              {loading
-                ? "Loading curricula…"
-                : isMixed
-                  ? "Mixed — choose one to unify"
-                  : "Select a curriculum"}
-            </option>
-            {curricula.map((curriculum) => {
-              const badge = curriculumLifecycleBadge(curriculum);
-              return (
-                <option key={curriculum.id} value={curriculum.id}>
-                  {curriculum.name}
-                  {badge ? ` — ${badge.label}` : ""} ({curriculum.effective_school_year})
-                </option>
-              );
-            })}
-          </select>
-        </label>
-
-        <button
-          id="generator-apply-curriculum"
-          type="button"
-          onClick={apply}
-          disabled={disabled || applying || selected === null || !dirty}
-          className="h-12 shrink-0 rounded-lg bg-[#4e0a10] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:bg-slate-300"
+    <div className="shrink-0">
+      <label className="block text-[11px] font-black uppercase tracking-wide text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <BookMarked className="h-3.5 w-3.5" aria-hidden />
+          Curriculum
+        </span>
+        <select
+          id="generator-curriculum-select"
+          value={selected ?? ""}
+          disabled={disabled || loading || applying || curricula.length === 0}
+          onChange={(event) =>
+            setChoice(event.target.value === "" ? null : Number(event.target.value))
+          }
+          className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/10 disabled:bg-slate-50 disabled:text-slate-400"
         >
-          {applying ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Applying
-            </span>
+          <option value="">
+            {loading
+              ? "Loading curricula…"
+              : isMixed
+                ? "Mixed — choose one to unify"
+                : "Select a curriculum"}
+          </option>
+          {curricula.map((curriculum) => {
+            const badge = curriculumLifecycleBadge(curriculum);
+            return (
+              <option key={curriculum.id} value={curriculum.id}>
+                {curriculum.name}
+                {badge ? ` — ${badge.label}` : ""} ({curriculum.effective_school_year})
+              </option>
+            );
+          })}
+        </select>
+      </label>
+
+      {selected !== null && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          {/* The badge is repeated outside the <option> because a select cannot
+              render styled markup in its own list. */}
+          <SelectedSummary
+            curriculum={curricula.find((item) => item.id === selected) ?? null}
+          />
+          {/* Only offered when there is something to apply; the guided tour
+              skips its Apply step while the button is absent. */}
+          {dirty || applying ? (
+            <button
+              id="generator-apply-curriculum"
+              type="button"
+              onClick={apply}
+              disabled={disabled || applying}
+              className="h-9 shrink-0 rounded-lg bg-[#4e0a10] px-4 text-xs font-black text-white shadow-sm transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {applying ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Applying
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Check className="h-3.5 w-3.5" />
+                  Apply to year level
+                </span>
+              )}
+            </button>
           ) : (
-            <span className="flex items-center gap-2">
-              <Check className="h-4 w-4" />
-              Apply to year level
+            <span
+              role="status"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-200"
+            >
+              <Check className="h-3.5 w-3.5" aria-hidden />
+              Applied to {sections.length === 1 ? "the section" : `all ${sections.length} sections`}
             </span>
           )}
-        </button>
-      </div>
-
-      {/* The badge is repeated outside the <option> because a select cannot
-          render styled markup in its own list. */}
-      {selected !== null && (
-        <SelectedSummary
-          curriculum={curricula.find((item) => item.id === selected) ?? null}
-        />
+        </div>
       )}
 
       {needsChoice && (
@@ -227,7 +238,7 @@ function SelectedSummary({ curriculum }: { curriculum: Curriculum | null }) {
   const badge = curriculumLifecycleBadge(curriculum);
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold text-slate-600">
         {curriculum.code} · {curriculum.courses_count} courses
       </span>

@@ -9,6 +9,7 @@ import {
   DoorOpen,
   FlaskConical,
   Layers,
+  ListOrdered,
   MapPin,
   Minus,
   Search,
@@ -20,6 +21,7 @@ import {
   isConfiguredFieldCourse,
   isHybridSplitEligible,
   isHybridSchedulingEligible,
+  isOnlineSplitEligible,
 } from "../schedulingConfigurationEligibility";
 import type { LaboratoryDurationSettings } from "../courseSlotPlan";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -30,6 +32,7 @@ import CourseDefaultsSidebar from "./CourseDefaultsSidebar";
 import { getForcedDayConcentration } from "./forcedDayConcentration";
 import type {
   ClassConfiguration,
+  ConsecutiveDayRule,
   CourseClassConfig,
   CourseDefaults,
   DeliveryMode,
@@ -37,6 +40,10 @@ import type {
 } from "./courseClassConfig";
 import {
   applyCourseDefaults,
+  consecutiveRulesForCourse,
+  consecutiveSummary,
+  isConsecutive,
+  DEFAULT_CONSECUTIVE_DAYS,
   EMPTY_COURSE_DEFAULTS,
   defaultDurationMinutes,
   durationLabel,
@@ -47,6 +54,7 @@ import {
   isIntegratedShape,
   isDurationEditable,
   meetingParts,
+  sameConsecutiveRules,
   syncCourseConfigToSectionConfigs,
 } from "./courseClassConfig";
 
@@ -73,6 +81,8 @@ export type SetupCoursesSettings = LaboratoryDurationSettings & {
   lecture_lab_schedule_override_enabled?: boolean;
   /** Required Day, stored as the department's forced-day rules. */
   forced_day_rules?: RequiredDayRule[];
+  /** Consecutive Days, stored as the department's rules (course-wide or per section). */
+  consecutive_day_rules?: ConsecutiveDayRule[];
   preferred_room_options?: PreferredRoomOption[];
   sunday_classes_enabled?: boolean;
 };
@@ -107,7 +117,8 @@ const courseIcon = (course: Course, isField: boolean) => {
  * - Delivery Mode dropdown (On-Site, Online, Hybrid)
  * - Duration display
  * - Configure button that opens the slide-over sidebar outside the modal:
- *   Class Component, Custom Time Duration, Required Day (optional),
+ *   Class Component, Custom Time Duration, Consecutive Days (optional, a
+ *   Regular class on back-to-back days), Required Day (optional),
  *   Preferred Room (optional) and the section scope
  */
 export default function SetupCoursesStep({
@@ -117,6 +128,7 @@ export default function SetupCoursesStep({
   onConfigChange,
   settings,
   onRequiredDayChange,
+  onConsecutiveDaysChange,
   onFieldCourseChange,
   defaults = EMPTY_COURSE_DEFAULTS,
   onDefaultsChange,
@@ -142,6 +154,16 @@ export default function SetupCoursesStep({
    */
   onRequiredDayChange?: (courseId: string, day: string | null) => void | Promise<unknown>;
   /**
+   * Consecutive Days is a department rule too (Manual Scheduling places the
+   * run as well), saved with the course's Required Day in one request since
+   * the server refuses a course that has both.
+   */
+  onConsecutiveDaysChange?: (
+    courseId: string,
+    rules: ConsecutiveDayRule[],
+    requiredDay: string | null,
+  ) => void | Promise<unknown>;
+  /**
    * Field status is a department rule too: a course becomes a field course
    * when a field room is its Preferred Room, and stops being one when not.
    */
@@ -164,9 +186,7 @@ export default function SetupCoursesStep({
     null,
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [configFilter, setConfigFilter] = useState<
-    "all" | "regular" | "split" | "integrated"
-  >("all");
+  const [configFilter, setConfigFilter] = useState<"all" | ClassConfiguration>("all");
 
   const fieldCourseCodes = useMemo(
     () => new Set(settings?.field_course_codes ?? []),
@@ -180,6 +200,12 @@ export default function SetupCoursesStep({
     () => new Map(requiredDayRules.map((rule) => [String(rule.course_id), rule.day])),
     [requiredDayRules],
   );
+  const consecutiveRules = useMemo(
+    () => settings?.consecutive_day_rules ?? [],
+    [settings?.consecutive_day_rules],
+  );
+  const savedConsecutiveRules = (courseId: string) =>
+    consecutiveRules.filter((rule) => String(rule.course_id) === courseId);
   const roomOptions = useMemo(
     () => settings?.preferred_room_options ?? [],
     [settings?.preferred_room_options],
@@ -197,6 +223,7 @@ export default function SetupCoursesStep({
       sections,
       fieldCourseCodes,
       requiredDays.get(course.id) ?? null,
+      consecutiveRules,
     );
 
   const hybridEnabled =
@@ -235,22 +262,26 @@ export default function SetupCoursesStep({
             sections,
             fieldCourseCodes,
             requiredDays.get(course.id) ?? null,
+            consecutiveRules,
           );
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [configs, courses, fieldCourseCodes, requiredDays, sections]);
+  }, [configs, consecutiveRules, courses, fieldCourseCodes, requiredDays, sections]);
 
   /**
    * The course's working configuration. Required Day is read from the
    * department rules every time, so a save elsewhere never shows stale here.
    */
-  const configFor = (course: Course): CourseClassConfig => ({
-    ...(courseConfigs[course.id] ?? infer(course)),
-    requiredDay: requiredDays.get(course.id) ?? null,
-  });
+  const configFor = (course: Course): CourseClassConfig => {
+    const config = courseConfigs[course.id] ?? infer(course);
+    return {
+      ...config,
+      requiredDay: isConsecutive(config) ? null : requiredDays.get(course.id) ?? null,
+    };
+  };
 
   const excluded = useMemo(() => new Set(excludedCourseIds), [excludedCourseIds]);
   const customized = useMemo(() => new Set(customizedCourseIds), [customizedCourseIds]);
@@ -350,8 +381,14 @@ export default function SetupCoursesStep({
       settings,
     );
 
-    if ((updatedConfig.requiredDay ?? null) !== (requiredDays.get(course.id) ?? null)) {
-      void onRequiredDayChange?.(course.id, updatedConfig.requiredDay);
+    // Consecutive Days and Required Day are saved together when the run
+    // changes, so clearing one and setting the other is a single request.
+    const nextRules = consecutiveRulesForCourse(course.id, updatedConfig, sections);
+    const nextRequiredDay = isConsecutive(updatedConfig) ? null : updatedConfig.requiredDay ?? null;
+    if (!sameConsecutiveRules(nextRules, savedConsecutiveRules(course.id))) {
+      void onConsecutiveDaysChange?.(course.id, nextRules, nextRequiredDay);
+    } else if (nextRequiredDay !== (requiredDays.get(course.id) ?? null)) {
+      void onRequiredDayChange?.(course.id, nextRequiredDay);
     }
 
     const nowField = updatedConfig.component === "field";
@@ -395,7 +432,7 @@ export default function SetupCoursesStep({
       if (nextDelivery === "hybrid") nextDelivery = "onsite";
       nextHybridType = undefined;
     } else if (targetConfigType === "split") {
-      if (nextDelivery === "online") nextDelivery = "onsite";
+      if (nextDelivery === "online" && !isOnlineSplitEligible(course, fieldCourseCodes)) nextDelivery = "onsite";
       if (nextDelivery === "hybrid" && !isHybridSplitEligible(course)) nextDelivery = "onsite";
       nextHybridType = nextDelivery === "hybrid" ? "split" : undefined;
     } else if (targetConfigType === "integrated") {
@@ -410,6 +447,8 @@ export default function SetupCoursesStep({
         configuration: targetConfigType,
         delivery: nextDelivery,
         hybridType: nextHybridType,
+        // Consecutive Days is a Regular class's option; a split drops it.
+        ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null }),
         sectionScope: "all",
         selectedSectionIds: sections.map((s) => s.id),
       }),
@@ -427,9 +466,12 @@ export default function SetupCoursesStep({
       : current.configuration === "integrated"
         ? isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes)
         : false;
-    const effectiveDelivery = nextDelivery === "hybrid" && !hybridAllowed
-      ? "onsite"
-      : nextDelivery;
+    const onlineAllowed = current.configuration !== "split"
+      || isOnlineSplitEligible(course, fieldCourseCodes);
+    const effectiveDelivery =
+      (nextDelivery === "hybrid" && !hybridAllowed) || (nextDelivery === "online" && !onlineAllowed)
+        ? "onsite"
+        : nextDelivery;
     const hybridType = effectiveDelivery === "hybrid"
       ? current.configuration === "split"
         ? "split"
@@ -451,10 +493,12 @@ export default function SetupCoursesStep({
   const rows = useMemo<SetupCourseTableRow[]>(() => {
     return courses.map((course) => {
       const isField = isConfiguredFieldCourse(course, fieldCourseCodes);
+      const base =
+        courseConfigs[course.id] ??
+        inferInitialCourseClassConfig(course, configs, sections, fieldCourseCodes, null, consecutiveRules);
       const config: CourseClassConfig = {
-        ...(courseConfigs[course.id] ??
-          inferInitialCourseClassConfig(course, configs, sections, fieldCourseCodes)),
-        requiredDay: requiredDays.get(course.id) ?? null,
+        ...base,
+        requiredDay: isConsecutive(base) ? null : requiredDays.get(course.id) ?? null,
       };
 
       const canSplit = isBalancedSplitSchedulingEligible(course, splitSettings);
@@ -477,6 +521,7 @@ export default function SetupCoursesStep({
     });
   }, [
     configs,
+    consecutiveRules,
     courseConfigs,
     courses,
     excluded,
@@ -674,6 +719,18 @@ export default function SetupCoursesStep({
                     {config.selectedSectionIds.length}/{sections.length} sections
                   </span>
                 )}
+                {isConsecutive(config) && (
+                  <span
+                    title="Consecutive Days"
+                    className="inline-flex items-center gap-0.5 rounded bg-teal-50 px-1 py-0.5 text-[9px] font-black uppercase text-teal-800"
+                  >
+                    <ListOrdered className="h-2.5 w-2.5" />
+                    {consecutiveSummary(
+                      config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS,
+                      config.preferredStartDay ?? null,
+                    )}
+                  </span>
+                )}
                 {config.requiredDay && (
                   <span
                     title="Required Day"
@@ -755,6 +812,9 @@ export default function SetupCoursesStep({
                   <option value="onsite">On-Site</option>
                   {isHybridSplitEligible(original.course) && (
                     <option value="hybrid">Hybrid</option>
+                  )}
+                  {isOnlineSplitEligible(original.course, fieldCourseCodes) && (
+                    <option value="online">Online</option>
                   )}
                 </>
               )}

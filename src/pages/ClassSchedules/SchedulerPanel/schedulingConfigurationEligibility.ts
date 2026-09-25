@@ -93,6 +93,24 @@ export const isHybridSplitEligible = (
   && Number(course?.labHours ?? 0) === 0,
 );
 
+/**
+ * Online Split: both Split Session meetings online. Mirrors
+ * `SchedulingPolicy::allowsOnlineRoomFallback`: only a lecture meets online,
+ * never a laboratory or field course.
+ */
+export const isOnlineSplitEligible = (
+  course: Course | null | undefined,
+  fieldCourseCodes: ReadonlySet<string> = new Set(),
+): boolean => Boolean(
+  isBalancedSplitSchedulingEligible(course, {
+    minorEnabled: true,
+    majorLectureEnabled: true,
+  })
+  && !isConfiguredFieldCourse(course, fieldCourseCodes)
+  && Number(course?.labHours ?? 0) === 0
+  && course?.roomTypeRequired !== "laboratory",
+);
+
 export const isFieldSchedulingEligible = (course: Course | null | undefined): boolean => (
   Boolean(course) && Number(course?.labHours ?? 0) <= 0
 );

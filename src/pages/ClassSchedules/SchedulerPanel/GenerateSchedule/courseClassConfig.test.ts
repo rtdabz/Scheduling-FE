@@ -4,6 +4,11 @@ import type { CourseSetupConfig } from "./SetupCoursesStep";
 import {
   applyCourseDefaults,
   compatibleRoomOptions,
+  consecutiveDayRuns,
+  consecutiveRulesForCourse,
+  consecutiveSummary,
+  isBackToBack,
+  runFrom,
   durationLabel,
   EMPTY_COURSE_DEFAULTS,
   integratedHybridMinutes,
@@ -471,5 +476,149 @@ describe("courseClassConfig", () => {
       { label: "Meeting 2", minutes: 90, mode: "F2F" },
     ]);
     expect(durationLabel(config, gecCourse)).toBe("1.5h Online + 1.5h F2F");
+  });
+
+  it("sends an Online Split as a Split Session delivered online, and reads it back", () => {
+    const config = { ...baseConfig, configuration: "split" as const, delivery: "online" as const };
+    expect(durationShape(config)).toBe("split");
+    expect(durationLabel(config, gecCourse)).toBe("1.5h Online + 1.5h Online");
+    // An online class uses no room, so none can be preferred.
+    expect(compatibleRoomOptions(gecCourse, config, false, [
+      { id: 1, room_code: "LEC 1", room_type: "lecture" },
+    ])).toEqual([]);
+
+    const sent: Record<string, CourseSetupConfig> = structuredClone(emptyConfigs);
+    syncCourseConfigToSectionConfigs(gecCourse, config, dummySections, emptyConfigs, (sectionId, change) => {
+      sent[sectionId] = { ...sent[sectionId], ...change };
+    });
+
+    for (const sectionId of ["sec-1", "sec-2"]) {
+      expect(sent[sectionId]).toMatchObject({
+        gecSplitCourseIds: ["c3"],
+        hybridSplitCourseIds: [],
+        modesByCourseId: { c3: "online" },
+      });
+    }
+    expect(inferInitialCourseClassConfig(gecCourse, sent, dummySections, new Set())).toMatchObject({
+      configuration: "split",
+      delivery: "online",
+      hybridType: undefined,
+    });
+  });
+
+  describe("Consecutive Days", () => {
+    // Eight units: eight hours straight on each day of its run.
+    const clinical: Course = {
+      id: "101",
+      code: "NCM 101",
+      name: "Clinical Duty",
+      units: 8,
+      lectureHours: 0,
+      labHours: 8,
+      category: "major",
+      semester: "1st",
+      departmentId: 1,
+      yearLevel: 1,
+      roomTypeRequired: "laboratory",
+      status: "active",
+    };
+    const emptyConfigs: Record<string, CourseSetupConfig> = {
+      "sec-1": { courseIds: ["101"], splitCourseIds: [], gecSplitCourseIds: [] },
+      "sec-2": { courseIds: ["101"], splitCourseIds: [], gecSplitCourseIds: [] },
+    };
+
+    it("lists back-to-back runs without wrapping the week or crossing a closed day", () => {
+      expect(consecutiveDayRuns(3, false)).toEqual([
+        ["Monday", "Tuesday", "Wednesday"],
+        ["Tuesday", "Wednesday", "Thursday"],
+        ["Wednesday", "Thursday", "Friday"],
+        ["Thursday", "Friday", "Saturday"],
+      ]);
+      expect(consecutiveDayRuns(3, true)).toContainEqual(["Friday", "Saturday", "Sunday"]);
+      expect(consecutiveDayRuns(7, false)).toEqual([]);
+      expect(
+        consecutiveDayRuns(3, false, ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"]),
+      ).toEqual([["Thursday", "Friday", "Saturday"]]);
+    });
+
+    it("checks ticked days are back-to-back and keeps a run inside the week", () => {
+      expect(isBackToBack(["Saturday", "Thursday", "Friday"])).toBe(true);
+      expect(isBackToBack(["Thursday", "Saturday"])).toBe(false);
+      expect(isBackToBack(["Sunday", "Monday"])).toBe(false);
+
+      expect(runFrom("Thursday", 3, false)).toEqual(["Thursday", "Friday", "Saturday"]);
+      expect(runFrom("Friday", 3, false)).toEqual(["Thursday", "Friday", "Saturday"]);
+      expect(runFrom("Friday", 3, true)).toEqual(["Friday", "Saturday", "Sunday"]);
+
+      expect(consecutiveSummary(3, "Thursday")).toBe("3 days · Thu–Sat");
+      expect(consecutiveSummary(3, null)).toBe("3 consecutive days");
+    });
+
+    it("reads a section's own rule as a Consecutive Days class for that section only", () => {
+      // Saved rules name sections by their numeric id.
+      const numericSections = dummySections.map((section, index) => ({ ...section, id: String(index + 1) }));
+      const scoped = inferInitialCourseClassConfig(
+        clinical,
+        { "1": emptyConfigs["sec-1"], "2": emptyConfigs["sec-2"] },
+        numericSections,
+        new Set(),
+        "Monday",
+        [{ course_id: 101, section_id: 2, day_count: 3, preferred_start_day: "Thursday" }],
+      );
+      // A Regular class, repeated on back-to-back days.
+      expect(scoped).toMatchObject({
+        configuration: "regular",
+        consecutiveDays: 3,
+        preferredStartDay: "Thursday",
+        requiredDay: null,
+        sectionScope: "selected",
+        selectedSectionIds: ["2"],
+      });
+    });
+
+    it("saves one course-wide rule for every section, or one per selected section", () => {
+      const base = inferInitialCourseClassConfig(clinical, emptyConfigs, dummySections, new Set());
+      const all: CourseClassConfig = { ...base, configuration: "regular", consecutiveDays: 3, preferredStartDay: null };
+      const numericSections = dummySections.map((section, index) => ({ ...section, id: String(index + 1) }));
+
+      expect(consecutiveRulesForCourse("101", all, numericSections)).toEqual([
+        { course_id: 101, section_id: null, day_count: 3, preferred_start_day: null },
+      ]);
+      expect(
+        consecutiveRulesForCourse(
+          "101",
+          { ...all, sectionScope: "selected", selectedSectionIds: ["2"], preferredStartDay: "Thursday" },
+          numericSections,
+        ),
+      ).toEqual([{ course_id: 101, section_id: 2, day_count: 3, preferred_start_day: "Thursday" }]);
+      expect(consecutiveRulesForCourse("101", { ...all, consecutiveDays: null }, numericSections)).toEqual([]);
+      // Only a Regular class meets on back-to-back days.
+      expect(consecutiveRulesForCourse("101", { ...all, configuration: "split" }, numericSections)).toEqual([]);
+    });
+
+    it("meets for the full class length on every day, and sends a custom length as each day's", () => {
+      const base = inferInitialCourseClassConfig(clinical, emptyConfigs, dummySections, new Set());
+      const run: CourseClassConfig = { ...base, consecutiveDays: 3 };
+
+      expect(durationShape(run)).toBe("single");
+      expect(durationLabel(run, clinical)).toBe("3 days × 8h");
+
+      const config: CourseClassConfig = { ...run, durationMinutes: 360 };
+      expect(durationLabel(config, clinical)).toBe("3 days × 6h");
+
+      const onConfigChange = vi.fn();
+      syncCourseConfigToSectionConfigs(
+        clinical,
+        config,
+        dummySections,
+        { ...emptyConfigs, "sec-1": { ...emptyConfigs["sec-1"], gecSplitCourseIds: ["101"] } },
+        onConfigChange,
+      );
+
+      expect(onConfigChange).toHaveBeenCalledWith(
+        "sec-1",
+        expect.objectContaining({ gecSplitCourseIds: [], durationMinutesByCourseId: { "101": 360 } }),
+      );
+    });
   });
 });

@@ -1,10 +1,30 @@
 import { useMemo, useState, useEffect } from "react";
-import { AlertTriangle, Calendar, Clock, Info, Layers, MapPin, RefreshCw, User, X } from "lucide-react";
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import { AlertTriangle, Calendar, GanttChart, Info, Layers, List, MapPin, RefreshCw, User, X } from "lucide-react";
 import api from "../../lib/api";
 import Skeleton from "../../components/ui/Skeleton";
+import DataTable from "../../components/ui/DataTable";
+import SearchInput from "../../components/ui/SearchInput";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
-import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
+import MasterGantt from "../vpaa/calendar/MasterGantt";
+import {
+  buildGanttDays,
+  buildTimeWindow,
+  findOverlaps,
+  type CalendarSchedule,
+  type GroupBy,
+  type StandardHours,
+} from "../vpaa/calendar/ganttLayout";
+import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
 interface Section {
@@ -107,20 +127,6 @@ interface ScheduleConflictInfo {
   section: boolean;
 }
 
-interface ScheduleLaneLayout {
-  schedule: Schedule;
-  lane: number;
-  laneCount: number;
-}
-
-interface OverflowGroup {
-  day: Schedule["day"];
-  topSlot: number;
-  endSlot: number;
-  schedules: Schedule[];
-  hiddenCount: number;
-}
-
 const dayMapToIndex: Record<string, number> = {
   "Monday": 0, "Mon": 0,
   "Tuesday": 1, "Tue": 1,
@@ -142,12 +148,6 @@ const slotToTimeStr12h = (slotIndex: number): string => {
 };
 
 const DAYS: Schedule["day"][] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-/** Aliased to the shared geometry so cards keep matching the rows they sit on. */
-const SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
-
-const slotToTime = (slotIndex: number): string => {
-  return slotToTimeLabel(slotIndex);
-};
 
 const parseTimeToSlot = (time: string): number => {
   // slotToTimeLabel drops ":00" on the hour ("7 AM", not "7:00 AM"), so the
@@ -168,48 +168,6 @@ const getModeLabel = (mode: Schedule["mode"]) => {
   if (mode === "on-site") return "On-Site";
   if (mode === "online") return "Online";
   return "Field";
-};
-
-const normalizeDepartmentKey = (code: string, name: string) => {
-  const normalizedCode = code.trim().toUpperCase();
-  const value = name.toLowerCase();
-  if (value.includes("gee") || value.includes("general education elective")) return "GEE";
-  if (["IT", "CIT"].includes(normalizedCode) || value.includes("information technology")) return "IT";
-  if (["AS", "CAS"].includes(normalizedCode) || value.includes("arts and sciences")) return "AS";
-  if (["EDUC", "CED"].includes(normalizedCode) || value.includes("education")) return "EDUC";
-  if (["BA", "CBA"].includes(normalizedCode) || value.includes("business")) return "BA";
-  if (["HM", "CHM"].includes(normalizedCode) || value.includes("hospitality")) return "HM";
-  if (["CM", "MID"].includes(normalizedCode) || value.includes("midwifery")) return "MID";
-  if (["CRIM", "CCJ", "CCJPS"].includes(normalizedCode) || value.includes("criminal")) return "CRIM";
-  if (["LIS", "CLIS"].includes(normalizedCode) || value.includes("library")) return "LIS";
-  return "";
-};
-
-const getDepartmentCardStyles = (code: string, name: string, category: SubjectCategory) => {
-  if (category === "minor") {
-    return { container: "border-purple-400 border-l-purple-600 bg-purple-50", text: "text-purple-700" };
-  }
-
-  switch (normalizeDepartmentKey(code, name)) {
-    case "IT":
-      return { container: "border-blue-400 border-l-blue-700 bg-blue-50", text: "text-blue-800" };
-    case "AS":
-      return { container: "border-[#7C3AED]/40 border-l-[#7C3AED] bg-[#7C3AED]/10", text: "text-[#7C3AED]" };
-    case "EDUC":
-      return { container: "border-orange-400 border-l-orange-600 bg-orange-50", text: "text-orange-800" };
-    case "BA":
-      return { container: "border-yellow-400 border-l-yellow-600 bg-yellow-50", text: "text-yellow-800" };
-    case "HM":
-      return { container: "border-lime-400 border-l-lime-600 bg-lime-50", text: "text-lime-800" };
-    case "MID":
-      return { container: "border-green-400 border-l-green-600 bg-green-50", text: "text-green-800" };
-    case "CRIM":
-      return { container: "border-[#6b0f1a] border-l-[#4e0a10] bg-[#4e0a10]/10", text: "text-[#4e0a10]" };
-    case "LIS":
-      return { container: "border-pink-400 border-l-pink-600 bg-pink-50", text: "text-pink-800" };
-    default:
-      return { container: "border-purple-400 border-l-purple-600 bg-purple-50", text: "text-purple-700" };
-  }
 };
 
 const getGridModeBadgeClass = (mode: Schedule["mode"]) => {
@@ -289,63 +247,61 @@ const getConflictLabels = (info?: ScheduleConflictInfo) => {
   ].filter(Boolean);
 };
 
-const buildDayLayouts = (daySchedules: Schedule[]) => {
-  const sorted = [...daySchedules].sort((left, right) => parseTimeToSlot(left.startTime) - parseTimeToSlot(right.startTime));
-  const clusters: Schedule[][] = [];
+/** Day first, then start time: the order a week is read in. */
+const scheduleSortKey = (schedule: Schedule) => DAYS.indexOf(schedule.day) * 10_000 + parseTimeToSlot(schedule.startTime);
 
-  sorted.forEach((schedule) => {
-    const cluster = clusters.find((items) => items.some((item) => schedulesOverlap(item, schedule)));
-    if (cluster) {
-      cluster.push(schedule);
-    } else {
-      clusters.push([schedule]);
-    }
-  });
+type ViewMode = "table" | "grid";
 
-  const layouts = new Map<string, ScheduleLaneLayout>();
-  const overflowGroups: OverflowGroup[] = [];
-
-  clusters.forEach((cluster) => {
-    const lanes: Schedule[][] = [];
-    cluster.forEach((schedule) => {
-      let laneIndex = 0;
-      while (lanes[laneIndex]?.some((item) => schedulesOverlap(item, schedule))) {
-        laneIndex += 1;
-      }
-      lanes[laneIndex] = [...(lanes[laneIndex] ?? []), schedule];
-    });
-
-    const laneCount = lanes.length > 3 ? 4 : Math.max(1, lanes.length);
-    cluster.forEach((schedule) => {
-      const lane = lanes.findIndex((items) => items.some((item) => item.id === schedule.id));
-      if (lane < 3) {
-        layouts.set(schedule.id, { schedule, lane, laneCount });
-      }
-    });
-
-    if (lanes.length > 3) {
-      const hiddenSchedules = cluster.filter((schedule) => {
-        const lane = lanes.findIndex((items) => items.some((item) => item.id === schedule.id));
-        return lane >= 3;
-      });
-      const topSlot = Math.min(...cluster.map((schedule) => parseTimeToSlot(schedule.startTime)));
-      const endSlot = Math.max(...cluster.map((schedule) => parseTimeToSlot(schedule.endTime)));
-      overflowGroups.push({
-        day: cluster[0].day,
-        topSlot,
-        endSlot,
-        schedules: cluster,
-        hiddenCount: hiddenSchedules.length,
-      });
-    }
-  });
-
-  return { layouts, overflowGroups };
+/** "1:30 PM" -> "13:30", the shape the shared Gantt reads. */
+const to24h = (label: string): string => {
+  const match = label.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
+  if (!match) return "";
+  let hour = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === "PM") hour += 12;
+  return `${String(hour).padStart(2, "0")}:${String(Number(match[2] ?? 0)).padStart(2, "0")}`;
 };
+
+const toNumberOrNull = (value: string): number | null => (value ? Number(value) : null);
+
+/** Maps this page's rows onto the calendar shape so the VPAA Gantt renders them as-is. */
+const toCalendarSchedule = (schedule: Schedule): CalendarSchedule => {
+  const [firstName, ...rest] = (schedule.facultyName ?? "").split(" ");
+  return {
+    id: Number(schedule.id),
+    day: schedule.day,
+    start_time: to24h(schedule.startTime),
+    end_time: to24h(schedule.endTime),
+    meeting_type: schedule.meetingType ?? null,
+    mode: schedule.mode,
+    // The Gantt colours each bar from the department code/name (IT is blue),
+    // the same palette as the VPAA calendar. The id is not read for colour.
+    department: { id: 0, department_code: schedule.departmentCode, department_name: schedule.departmentName },
+    room_id: toNumberOrNull(schedule.roomId),
+    room: schedule.roomId ? { id: Number(schedule.roomId), room_code: schedule.roomName } : null,
+    faculty_id: toNumberOrNull(schedule.facultyId),
+    faculty: schedule.facultyId && schedule.facultyName
+      ? { id: Number(schedule.facultyId), first_name: firstName, last_name: rest.join(" ") }
+      : null,
+    section_id: toNumberOrNull(schedule.sectionId),
+    section: schedule.sectionId ? { id: Number(schedule.sectionId), section_name: schedule.sectionName } : null,
+    course: { course_code: schedule.subjectCode, course_name: schedule.subjectName },
+  };
+};
+
+/** The configured teaching day, as every other timetable in the system uses. */
+const currentStandardHours = (): StandardHours => ({
+  opening: gridOpeningMinutes(),
+  closing: gridOpeningMinutes() + slotCount() * slotMinutes(),
+  slotMinutes: slotMinutes(),
+});
 
 export default function DeanScheduleViewer() {
   const [selectedSectionId, setSelectedSectionId] = useState("All");
   const [selectedMode, setSelectedMode] = useState("All");
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
   const userDeptId = user?.department_id;
@@ -357,7 +313,6 @@ export default function DeanScheduleViewer() {
   const [isLoading, setIsLoading] = useState(!hasCachedData(deanSchedulesCacheKey));
   const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals']);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-  const [selectedOverflowGroup, setSelectedOverflowGroup] = useState<OverflowGroup | null>(null);
 
   useEffect(() => {
     if (liveRevision === 0 && hasCachedData(deanSchedulesCacheKey)) {
@@ -434,7 +389,7 @@ export default function DeanScheduleViewer() {
           sections: mappedSections,
           schedules: mappedSchedules,
         });
-      } catch (err) {
+      } catch {
         // Safe empty catch block
       } finally {
         setIsLoading(false);
@@ -452,56 +407,145 @@ export default function DeanScheduleViewer() {
     });
   }, [schedules, selectedMode, selectedSectionId]);
 
-  const conflictMap = useMemo(() => buildConflictMap(filteredSchedules), [filteredSchedules]);
+  // Built over the whole department, not the filtered view: a faculty or room
+  // clash with a class in another section is still a clash when that section
+  // is filtered out.
+  const conflictMap = useMemo(() => buildConflictMap(schedules), [schedules]);
 
-  /**
-   * Every timetable in the system shows the same 7:00 AM-8:30 PM window. This
-   * screen used to crop the grid to the extent of whatever was filtered in, so
-   * the same class sat at a different height depending on the filter and did
-   * not line up with the builder it was scheduled on.
-   */
-  const gridRange = useMemo(() => {
-    const latestEnd = filteredSchedules.reduce(
-      (max, schedule) => Math.max(max, parseTimeToSlot(schedule.endTime)),
-      0,
-    );
-    return { start: 0, end: Math.max(slotCount(), latestEnd) };
-  }, [filteredSchedules]);
+  const tableRows = useMemo(
+    () => [...filteredSchedules].sort((left, right) => scheduleSortKey(left) - scheduleSortKey(right)),
+    [filteredSchedules],
+  );
 
-  const timeSlots = useMemo(() => (
-    Array.from({ length: gridRange.end - gridRange.start }, (_, index) => slotToTime(gridRange.start + index))
-  ), [gridRange]);
+  const columns = useMemo<ColumnDef<Schedule>[]>(() => [
+    {
+      id: "course",
+      header: "Course",
+      accessorFn: (row) => `${row.subjectCode} ${row.subjectName}`,
+      cell: ({ row }) => {
+        const schedule = row.original;
+        const showMeetingType = schedule.subjectCategory === "major" && !!schedule.meetingType;
+        return (
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="font-black text-slate-800">{schedule.subjectCode}</span>
+              {showMeetingType && (
+                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${schedule.meetingType === "laboratory" ? "border-violet-200 bg-violet-50 text-violet-700" : "border-sky-200 bg-sky-50 text-sky-700"}`}>
+                  {schedule.meetingType === "laboratory" ? "Lab" : "Lec"}
+                </span>
+              )}
+            </div>
+            <p className="max-w-[260px] truncate text-[11px] font-medium text-slate-500" title={schedule.subjectName}>{schedule.subjectName}</p>
+          </div>
+        );
+      },
+    },
+    { id: "section", header: "Section", accessorFn: (row) => row.sectionName || "Unassigned" },
+    {
+      id: "schedule",
+      header: "Day & Time",
+      accessorFn: (row) => `${row.day} ${row.startTime} - ${row.endTime}`,
+      sortingFn: (left, right) => scheduleSortKey(left.original) - scheduleSortKey(right.original),
+      cell: ({ row }) => (
+        <div>
+          <p className="font-bold text-slate-800">{row.original.day}</p>
+          <p className="text-[11px] font-medium text-slate-500">{row.original.startTime} - {row.original.endTime}</p>
+        </div>
+      ),
+    },
+    { id: "room", header: "Room", accessorFn: (row) => row.roomName || "Unassigned" },
+    { id: "faculty", header: "Faculty", accessorFn: (row) => row.facultyName || "Unassigned" },
+    {
+      id: "mode",
+      header: "Mode",
+      accessorFn: (row) => getModeLabel(row.mode),
+      cell: ({ row }) => (
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getGridModeBadgeClass(row.original.mode)}`}>
+          {getModeLabel(row.original.mode)}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (row) => getConflictLabels(conflictMap.get(row.id)).join(", ") || "No conflict",
+      cell: ({ row }) => {
+        const labels = getConflictLabels(conflictMap.get(row.original.id));
+        return labels.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {labels.map((label) => (
+              <span key={label} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">{label}</span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-[11px] font-bold text-emerald-700">No conflict</span>
+        );
+      },
+    },
+  ], [conflictMap]);
 
-  const sectionSummaries = useMemo(() => (
-    sections.map((section) => {
-      const sectionSchedules = schedules.filter((schedule) => (
-        schedule.sectionId === section.id && (selectedMode === "All" || schedule.mode === selectedMode)
-      ));
-      const sectionConflictMap = buildConflictMap(sectionSchedules);
-      const conflictLabels = Array.from(new Set(sectionSchedules.flatMap((schedule) => getConflictLabels(sectionConflictMap.get(schedule.id)))));
-      return {
-        section,
-        schedules: sectionSchedules,
-        conflictLabels,
-      };
-    })
-  ), [sections, schedules, selectedMode]);
+  const table = useReactTable<Schedule>({
+    data: tableRows,
+    columns,
+    state: { globalFilter: searchTerm, sorting, pagination },
+    onGlobalFilterChange: setSearchTerm,
+    onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    autoResetPageIndex: false,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+  });
+
+  const resetPage = () => setPagination((current) => ({ ...current, pageIndex: 0 }));
+  const showGrid = viewMode === "grid";
+
+  // Gantt view: the filtered rows laid out as a weekly timeline.
+  const [ganttGroupBy, setGanttGroupBy] = useState<GroupBy>("none");
+  const [ganttZoom, setGanttZoom] = useState<ZoomLevel>("fit");
+  const [collapsedGanttDays, setCollapsedGanttDays] = useState<ReadonlySet<number>>(new Set());
+  const [ganttNow] = useState(() => new Date());
+  const scheduleById = useMemo(() => new Map(schedules.map((schedule) => [Number(schedule.id), schedule])), [schedules]);
+  // Department-wide, like conflictMap, so a clash with another section is still outlined.
+  const ganttOverlaps = useMemo(() => findOverlaps(schedules.map(toCalendarSchedule)), [schedules]);
+  const ganttSchedules = useMemo(() => filteredSchedules.map(toCalendarSchedule), [filteredSchedules]);
+  const ganttVisibleDays = useMemo(
+    () => (filteredSchedules.some((schedule) => schedule.day === "Sunday") ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5]),
+    [filteredSchedules],
+  );
+  const ganttStandardHours = useMemo(currentStandardHours, []);
+  const ganttDays = useMemo(
+    () => buildGanttDays(ganttSchedules, ganttGroupBy, ganttVisibleDays),
+    [ganttSchedules, ganttGroupBy, ganttVisibleDays],
+  );
+  const ganttTimeWindow = useMemo(() => buildTimeWindow(ganttStandardHours, ganttSchedules), [ganttStandardHours, ganttSchedules]);
 
   const handleResetFilters = () => {
     setSelectedSectionId("All");
     setSelectedMode("All");
+    setSearchTerm("");
+    setSorting([]);
+    setViewMode("table");
+    resetPage();
   };
-
 
 
   return (
     <div id="schedules-page">
       <div id="schedules-list" className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-row items-center justify-between gap-4">
-          <div className="flex flex-row items-center gap-3">
+        <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+            <SearchInput
+              value={searchTerm}
+              onChange={(event) => { setSearchTerm(event.target.value); resetPage(); }}
+              placeholder="Search course, section, room, faculty..."
+              containerClassName="relative w-full sm:w-72"
+              className="!py-2 !text-xs"
+            />
             <select
               value={selectedSectionId}
-              onChange={(event) => setSelectedSectionId(event.target.value)}
+              onChange={(event) => { setSelectedSectionId(event.target.value); resetPage(); }}
               className="h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-[#4e0a10] cursor-pointer"
             >
               <option value="All">All Sections</option>
@@ -511,7 +555,7 @@ export default function DeanScheduleViewer() {
             </select>
             <select
               value={selectedMode}
-              onChange={(event) => setSelectedMode(event.target.value)}
+              onChange={(event) => { setSelectedMode(event.target.value); resetPage(); }}
               className="h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-[#4e0a10] cursor-pointer"
             >
               <option value="All">All Modes</option>
@@ -520,210 +564,112 @@ export default function DeanScheduleViewer() {
               <option value="field">Field</option>
             </select>
           </div>
-          <button
-            type="button"
-            onClick={handleResetFilters}
-            className="flex items-center gap-1.5 px-4 h-9 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-semibold transition-all duration-150 shadow-sm"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Reset Filters
-          </button>
-        </div>
-
-        <div className="border-b border-slate-200 bg-[#C9952A]/10 px-4 py-3 text-sm font-semibold text-[#4e0a10]">
-          Simultaneous classes are not necessarily conflicts. Only Faculty Conflict, Room Conflict, or Section Conflict items are marked in red.
-        </div>
-
-        {selectedSectionId === "All" ? (
-          <div className="p-4 bg-slate-50/20">
-            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-sm font-black text-[#4e0a10]">Section Summary</h2>
-                  <p className="text-xs font-semibold text-slate-500">Select a section to open the detailed Weekly Grid.</p>
-                </div>
-                <span className="text-xs font-bold text-slate-400">{sectionSummaries.length} sections</span>
-              </div>
-              {isLoading ? (
-                <div className="p-4 space-y-2">
-                  {[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}
-                </div>
-              ) : sectionSummaries.length === 0 ? (
-                <div className="p-8 text-center text-sm text-slate-400 italic">No sections found for this department.</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {sectionSummaries.map((summary) => (
-                    <div key={summary.section.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_1.1fr_auto] gap-3 px-4 py-4 text-sm items-center">
-                      <p className="font-black text-slate-800">{summary.section.name}</p>
-                      <p className="font-semibold text-slate-600">{summary.schedules.length} class{summary.schedules.length === 1 ? "" : "es"}</p>
-                      <p className={summary.conflictLabels.length > 0 ? "font-bold text-red-600" : "font-bold text-emerald-700"}>
-                        {summary.conflictLabels.length > 0 ? summary.conflictLabels.join(", ") : "No conflicts"}
-                      </p>
-                      <button
-                        type="button"
-                        disabled={summary.schedules.length === 0}
-                        onClick={() => setSelectedSectionId(summary.section.id)}
-                        className="h-10 rounded-xl bg-[#4e0a10] px-4 text-sm font-bold text-[#E8D5C4] hover:bg-[#C9952A] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-                      >
-                        View timetable
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+          <div className="flex items-center gap-2">
+            <div className="inline-flex h-9 rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label="View">
+              {([
+                { value: "table", label: "Table", icon: List },
+                { value: "grid", label: "Gantt", icon: GanttChart },
+              ] as const).map(({ value, label, icon: Icon }) => {
+                const active = value === "table" ? !showGrid : showGrid;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setViewMode(value)}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors ${active ? "bg-[#4e0a10] text-[#E8D5C4]" : "text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                );
+              })}
             </div>
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="flex items-center gap-1.5 px-4 h-9 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-semibold transition-all duration-150 shadow-sm"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Reset
+            </button>
+          </div>
+        </div>
 
+        <div className="border-b border-slate-200 bg-[#C9952A]/10 px-4 py-2.5 text-xs font-semibold text-[#4e0a10]">
+          Simultaneous classes are not necessarily conflicts. Only Faculty, Room, or Section conflicts are marked in red.
+        </div>
+
+        {!showGrid ? (
+          <DataTable
+            table={table}
+            isLoading={isLoading}
+            variant="embedded"
+            totalLabel="classes"
+            ariaLabel="Department schedules"
+            emptyTitle="No schedules match the selected filters."
+            emptyDescription="Try another search, section, or class mode."
+            onRowClick={setSelectedSchedule}
+            rowClassName={(row) => (getConflictLabels(conflictMap.get(row.id)).length > 0 ? "!bg-red-50/60" : "")}
+          />
+        ) : isLoading ? (
+          <div className="p-4"><Skeleton className="h-[420px] w-full rounded-xl" /></div>
+        ) : filteredSchedules.length === 0 ? (
+          <div className="m-4 min-h-[320px] rounded-2xl border border-dashed border-slate-200 bg-white flex flex-col items-center justify-center text-center p-8">
+            <Calendar className="w-10 h-10 text-slate-300 mb-3" />
+            <h3 className="text-sm font-black text-slate-700">No schedules match the selected filters.</h3>
+            <p className="text-xs font-medium text-slate-400 mt-1">Try another section or class mode.</p>
           </div>
         ) : (
-        <div className="overflow-auto p-4 bg-slate-50/20 max-h-[calc(100vh-260px)]">
-          {filteredSchedules.length === 0 && !isLoading ? (
-            <div className="min-h-[320px] rounded-2xl border border-dashed border-slate-200 bg-white flex flex-col items-center justify-center text-center p-8">
-              <Calendar className="w-10 h-10 text-slate-300 mb-3" />
-              <h3 className="text-sm font-black text-slate-700">No schedules match the selected filters.</h3>
-              <p className="text-xs font-medium text-slate-400 mt-1">Try another section or class mode.</p>
+          <section aria-label="Gantt timeline" className="p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-black text-[#4e0a10]">Gantt timeline</h2>
+              <select
+                aria-label="Timeline rows"
+                value={ganttGroupBy}
+                onChange={(event) => setGanttGroupBy(event.target.value as GroupBy)}
+                className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+              >
+                <option value="none">Day only</option>
+                <option value="room">By room</option>
+                <option value="instructor">By instructor</option>
+                <option value="section">By section</option>
+              </select>
+              <select
+                aria-label="Timeline zoom"
+                value={ganttZoom}
+                onChange={(event) => setGanttZoom(event.target.value as ZoomLevel)}
+                className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+              >
+                <option value="fit">Fit</option>
+                <option value="normal">1×</option>
+                <option value="wide">2×</option>
+              </select>
+              <span className="ml-auto text-xs font-semibold text-slate-500">Select a class for details.</span>
             </div>
-          ) : (
-            <WeeklyTimetableGrid
-              days={DAYS}
-              slotCount={timeSlots.length}
-              startSlot={gridRange.start}
-              minWidth={1100}
-              getTimeLabel={(slot) => slotToTime(slot)}
-              getDayCount={(dayIndex) => filteredSchedules.filter((schedule) => schedule.day === DAYS[dayIndex]).length}
-            >
-                  {isLoading ? (
-                    [
-                      { id: 'sk-1', dayIndex: 0, startSlot: 2, height: 4 * SLOT_HEIGHT_PX, durationSlots: 4 },
-                      { id: 'sk-2', dayIndex: 1, startSlot: 8, height: 3 * SLOT_HEIGHT_PX, durationSlots: 3 },
-                      { id: 'sk-3', dayIndex: 2, startSlot: 4, height: 4 * SLOT_HEIGHT_PX, durationSlots: 4 },
-                      { id: 'sk-4', dayIndex: 4, startSlot: 12, height: 3 * SLOT_HEIGHT_PX, durationSlots: 3 }
-                    ].map((sk) => (
-                      <div
-                        key={sk.id}
-                        className="rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between"
-                        style={{ gridColumn: sk.dayIndex + 2, gridRow: `${sk.startSlot + 2} / span ${sk.durationSlots}`, height: `${sk.height}px` }}
-                      >
-                        <div className="flex flex-col h-full justify-between">
-                          <div className="min-w-0">
-                            <Skeleton className="h-3 w-16 mb-1.5" />
-                            <Skeleton className="h-2.5 w-10 mb-1" />
-                            <Skeleton className="h-2 w-12" />
-                          </div>
-                          <div className="flex items-center gap-1 mt-1">
-                            <Skeleton className="h-3.5 w-8 rounded-full" />
-                            <Skeleton className="h-3.5 w-8 rounded-full" />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    DAYS.map((day) => {
-                      const daySchedules = filteredSchedules.filter((schedule) => schedule.day === day);
-                      const { layouts, overflowGroups } = buildDayLayouts(daySchedules);
-                      return (
-                        <div key={`cards-${day}`} className="contents">
-                          {daySchedules.map((schedule) => {
-                            const layout = layouts.get(schedule.id);
-                            if (!layout) return null;
-                            const startSlot = parseTimeToSlot(schedule.startTime);
-                            const endSlot = parseTimeToSlot(schedule.endTime);
-                            const durationSlots = Math.max(1, endSlot - startSlot);
-                            const height = durationSlots * SLOT_HEIGHT_PX;
-                            const dayIndex = DAYS.indexOf(schedule.day);
-                            const conflicts = getConflictLabels(conflictMap.get(schedule.id));
-                            const laneWidth = 100 / layout.laneCount;
-                            const showFullDetails = height >= 96;
-                            const showMiddleDetails = height >= 72;
-                            const gridStyles = getDepartmentCardStyles(schedule.departmentCode, schedule.departmentName, schedule.subjectCategory);
-                            const modeBadgeClass = getGridModeBadgeClass(schedule.mode);
-                            const shouldShowMeetingType = schedule.subjectCategory === "major" && !!schedule.meetingType;
-                            const meetingTypeLabel = schedule.meetingType === "laboratory" ? "Lab" : "Lec";
-                            const meetingTypeBadgeClass = schedule.meetingType === "laboratory"
-                              ? "bg-violet-50 text-violet-700 border-violet-200"
-                              : "bg-sky-50 text-sky-700 border-sky-200";
-
-                            return (
-                              <button
-                                key={schedule.id}
-                                type="button"
-                                onClick={() => setSelectedSchedule(schedule)}
-                                title={`${schedule.subjectCode}: ${schedule.subjectName}\nSection: ${schedule.sectionName || "Unassigned"}\nInstructor: ${schedule.facultyName}\nRoom: ${schedule.roomName || "Unassigned"}\nTime: ${day}, ${schedule.startTime} – ${schedule.endTime}`}
-                                className={`rounded-xl border-2 border-l-4 p-2 box-border overflow-hidden shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-150 text-left ${conflicts.length > 0 ? "bg-red-50 text-red-800 border-red-300 border-l-red-600 ring-2 ring-red-200" : gridStyles.container}`}
-                                style={{
-                                  gridColumn: dayIndex + 2,
-                                  gridRow: `${startSlot - gridRange.start + 2} / span ${durationSlots}`,
-                                  height: `${height}px`,
-                                  width: `calc(${laneWidth}% - 4px)`,
-                                  marginLeft: `calc(${layout.lane * laneWidth}% + 2px)`,
-                                }}
-                              >
-                                <div className="flex flex-col h-full justify-between min-w-0">
-                                  <div className="min-w-0">
-                                    <div className="flex items-start justify-between gap-1">
-                                      <span className={`text-xs font-bold uppercase tracking-wide truncate ${conflicts.length > 0 ? "text-red-700" : gridStyles.text}`}>{schedule.subjectCode}</span>
-                                      <span className="flex shrink-0 items-center gap-1">
-                                        {shouldShowMeetingType && (
-                                          <span className={`text-[9px] rounded-full border px-1.5 py-0.5 font-bold ${conflicts.length > 0 ? "bg-red-100 text-red-700 border-red-200" : meetingTypeBadgeClass}`}>
-                                            {meetingTypeLabel}
-                                          </span>
-                                        )}
-                                        <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-bold ${conflicts.length > 0 ? "bg-red-100 text-red-700 border border-red-200" : modeBadgeClass}`}>
-                                          {getModeLabel(schedule.mode)}
-                                        </span>
-                                      </span>
-                                    </div>
-                                    <div className="text-[10px] font-semibold truncate mt-0.5">{schedule.sectionName}</div>
-                                    {showMiddleDetails && <div className="text-[10px] font-medium truncate mt-0.5 opacity-90">{schedule.subjectName}</div>}
-                                    {conflicts.length > 0 && <div className="text-[9px] font-black text-red-700 truncate mt-1">{conflicts.join(", ")}</div>}
-                                  </div>
-                                  <div className="space-y-0.5 text-[10px] opacity-80 border-t border-white/50 pt-1 mt-1">
-                                    <div className="flex items-center gap-1 truncate">
-                                      <MapPin className="w-3 h-3 shrink-0" />
-                                      <span className="truncate">{schedule.roomName || "Unassigned"}</span>
-                                    </div>
-                                    {showFullDetails && (
-                                      <div className="flex items-center gap-1 truncate">
-                                        <User className="w-3 h-3 shrink-0" />
-                                        <span className="truncate">{schedule.facultyName ?? "Unassigned"}</span>
-                                      </div>
-                                    )}
-                                    <div className="flex items-center gap-1 truncate">
-                                      <Clock className="w-3 h-3 shrink-0" />
-                                      <span className="truncate">{schedule.startTime} - {schedule.endTime}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                            );
-                          })}
-
-                          {overflowGroups.map((group) => {
-                            const dayIndex = DAYS.indexOf(group.day);
-                            return (
-                              <button
-                                key={`${group.day}-${group.topSlot}-${group.endSlot}`}
-                                type="button"
-                                onClick={() => setSelectedOverflowGroup(group)}
-                                className="rounded-lg border border-[#C9952A]/40 bg-[#C9952A]/10 px-2 text-center text-[10px] font-black text-[#4e0a10] shadow-sm hover:bg-[#C9952A]/20 transition-colors"
-                                style={{
-                                  gridColumn: dayIndex + 2,
-                                  gridRow: group.topSlot - gridRange.start + 2,
-                                  height: "22px",
-                                  width: "calc(25% - 4px)",
-                                  marginLeft: "calc(75% + 2px)",
-                                }}
-                              >
-                                View {group.hiddenCount} classes
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })
-                  )}
-            </WeeklyTimetableGrid>
-          )}
-        </div>
+            <MasterGantt
+              days={ganttDays}
+              timeWindow={ganttTimeWindow}
+              standardHours={ganttStandardHours}
+              groupBy={ganttGroupBy}
+              zoom={ganttZoom}
+              density="comfortable"
+              overlaps={ganttOverlaps}
+              collapsedDays={collapsedGanttDays}
+              onToggleDay={(day) => setCollapsedGanttDays((current) => {
+                const next = new Set(current);
+                if (next.has(day)) next.delete(day);
+                else next.add(day);
+                return next;
+              })}
+              onSelect={(calendarSchedule) => {
+                const schedule = scheduleById.get(calendarSchedule.id);
+                if (schedule) setSelectedSchedule(schedule);
+              }}
+              now={ganttNow}
+              className="h-[420px] min-h-[260px]"
+            />
+          </section>
         )}
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500">
           <span className="flex items-center gap-1.5">
@@ -736,52 +682,6 @@ export default function DeanScheduleViewer() {
           </span>
         </div>
       </div>
-
-      {selectedOverflowGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-[#F7F4F0] p-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wider text-[#C9952A]">{selectedOverflowGroup.day}</p>
-                <h3 className="text-lg font-black text-[#4e0a10]">{slotToTime(selectedOverflowGroup.topSlot)} - {slotToTime(selectedOverflowGroup.endSlot)}</h3>
-                <p className="mt-1 text-xs font-semibold text-slate-500">All simultaneous classes in this time block.</p>
-              </div>
-              <button type="button" onClick={() => setSelectedOverflowGroup(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto">
-              {selectedOverflowGroup.schedules.map((schedule) => {
-                const conflicts = getConflictLabels(conflictMap.get(schedule.id));
-                const showMeetingType = schedule.subjectCategory === "major" && !!schedule.meetingType;
-                return (
-                  <button key={schedule.id} type="button" onClick={() => { setSelectedSchedule(schedule); setSelectedOverflowGroup(null); }} className="grid w-full grid-cols-1 gap-2 px-4 py-3 text-left text-xs transition-colors hover:bg-slate-50 md:grid-cols-[1fr_0.7fr_1fr_1fr]">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-black text-slate-800">{schedule.subjectCode}</p>
-                        {showMeetingType && (
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-600">
-                            {schedule.meetingType === "laboratory" ? "Lab" : "Lec"}
-                          </span>
-                        )}
-                      </div>
-                      <p className="truncate text-slate-500">{schedule.subjectName}</p>
-                    </div>
-                    <p className="font-semibold text-slate-700">{schedule.sectionName}</p>
-                    <p className="truncate text-slate-600">{schedule.roomName || "Unassigned"}</p>
-                    <div className="flex flex-wrap gap-1">
-                      <span className="truncate text-slate-600">{schedule.facultyName ?? "Unassigned"}</span>
-                      {conflicts.map((label) => (
-                        <span key={label} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">{label}</span>
-                      ))}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {selectedSchedule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

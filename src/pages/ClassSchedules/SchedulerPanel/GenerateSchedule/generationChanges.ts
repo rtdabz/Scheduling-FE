@@ -16,6 +16,17 @@ export type GenerationChangeItem = {
   course_id: number;
   course_code: string;
   detail: string;
+  /** The retry adjustment behind a `preference_relaxed` item. */
+  adjustment_type?: string;
+  adjustment_value?: string | null;
+};
+
+/** What blocked the original configuration and made the generator retry. */
+export type GenerationDetectedIssue = {
+  type: string;
+  section_name: string;
+  course_code: string;
+  detected_cause: string;
 };
 
 /** One kind of difference between what was configured and what was generated. */
@@ -27,6 +38,10 @@ export type GenerationChange = {
   items: GenerationChangeItem[];
   status?: "active" | "resolved" | string;
   resolved?: boolean;
+  /** `preference_relaxed` only; absent on runs made before it was reported. */
+  detected_issue?: GenerationDetectedIssue | null;
+  /** `preference_relaxed` only: attempts that failed before the retry that worked. */
+  failed_attempts?: number;
 };
 
 /** Short labels for the badge a changed class carries in the summary table. */
@@ -65,6 +80,8 @@ export function resolveGenerationChanges(result: {
     course_id: adjustment.course_id,
     course_code: adjustment.course_code ?? `Course ${adjustment.course_id}`,
     detail: describeAdjustment(adjustment).replace(/^.*?: /, ""),
+    adjustment_type: adjustment.type,
+    adjustment_value: adjustment.value,
   });
   const isSplit = (adjustment: GenerationAdjustment) =>
     adjustment.type === "split_session_single_meeting_fallback";

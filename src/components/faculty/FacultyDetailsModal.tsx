@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BookOpen, Pencil, UserRound, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, History, Pencil, UserRound, X } from 'lucide-react';
 import FacultyAvailabilityPanel from './FacultyAvailabilityPanel';
+import TeachingHistoryModal from './TeachingHistoryModal';
 import InstructorTeachingLoadButton from '../InstructorTeachingLoadButton';
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, loadTierForUnits } from '../../lib/facultyLoad';
 
@@ -46,13 +47,17 @@ const BAR_CLASSES = {
  * secretary Faculty pages, which each carried an identical copy.
  */
 export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canEditAvailability, onNotify }: FacultyDetailsModalProps) {
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   useEffect(() => {
+    // While Teaching History is stacked on top, Escape closes only that.
+    if (isHistoryOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, isHistoryOpen]);
 
   const name = `${faculty.first_name} ${faculty.last_name}`;
   const basicLoad = faculty.required_units;
@@ -206,7 +211,14 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
           />
         </div>
 
-        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            <History size={14} /> Teaching History
+          </button>
           {onEditLoad && (
             <button
               type="button"
@@ -219,6 +231,9 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
           <InstructorTeachingLoadButton facultyId={faculty.id} />
         </footer>
       </div>
+      {isHistoryOpen && (
+        <TeachingHistoryModal facultyId={faculty.id} facultyName={name} onClose={() => setIsHistoryOpen(false)} />
+      )}
     </div>,
     document.body,
   );

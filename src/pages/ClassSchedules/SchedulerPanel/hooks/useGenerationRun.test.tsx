@@ -47,6 +47,9 @@ function Watcher() {
       <span data-testid="year">{run.meta?.yearLevel ?? "none"}</span>
       <span data-testid="rows">{run.result?.schedules?.length ?? 0}</span>
       <span data-testid="error">{run.errorMessage ?? ""}</span>
+      <span data-testid="provisional">
+        {run.failure ? (run.failure.provisional ? "provisional" : "final") : "none"}
+      </span>
     </>
   );
 }
@@ -145,6 +148,80 @@ describe("useGenerationRun", () => {
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("running"));
     expect(screen.getByTestId("year").textContent).toBe("3");
+  });
+
+  it("shows a provisional report while the run keeps searching", async () => {
+    localStorage.setItem("wicars.generation-run.2.1", "run-3");
+    get.mockImplementation((url: string) => {
+      if (url === "/schedule-recommendations/generation-runs/run-3") {
+        return Promise.resolve({
+          data: {
+            run_id: "run-3",
+            status: "running",
+            started_at: "2026-09-10T01:00:00Z",
+            result: {
+              error_code: "year_level_generation_failed",
+              provisional: true,
+              stage: "search",
+              message: "No timetable yet after 20 seconds.",
+              recommendations: [],
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: { run: null } });
+    });
+
+    render(
+      <GenerationRunProvider departmentId={2} semesterId={1}>
+        <Watcher />
+      </GenerationRunProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("provisional").textContent).toBe("provisional"));
+    // Still running: the search goes on behind the report.
+    expect(screen.getByTestId("status").textContent).toBe("running");
+  });
+
+  it("replaces a run still in progress without an idle moment, cancelling it first", async () => {
+    let queuedRuns = 0;
+    post.mockImplementation((url: string) =>
+      url === "/schedule-recommendations/year-level-preview/queue"
+        ? Promise.resolve({ data: { run_id: `run-${++queuedRuns}` } })
+        : Promise.resolve({ data: {} }),
+    );
+    get.mockImplementation((url: string) => {
+      if (url === "/schedule-recommendations/generation-runs/run-1") {
+        return Promise.resolve({ data: { run_id: "run-1", status: "running" } });
+      }
+      if (url === "/schedule-recommendations/generation-runs/run-2") {
+        return Promise.resolve({ data: { run_id: "run-2", status: "queued" } });
+      }
+      return Promise.resolve({ data: { run: null } });
+    });
+
+    render(
+      <GenerationRunProvider departmentId={2} semesterId={1}>
+        <Starter />
+        <Watcher />
+      </GenerationRunProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "start" }));
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("running"));
+
+    // A fix applied from a provisional report starts over the running search.
+    fireEvent.click(screen.getByRole("button", { name: "start" }));
+    // Queued at once: an idle moment showed the Review step instead of the loader.
+    expect(screen.getByTestId("status").textContent).toBe("queued");
+
+    // The old run is cancelled before the new one is queued behind it.
+    await waitFor(() => expect(post.mock.calls.map(([url]) => url)).toEqual([
+      "/schedule-recommendations/year-level-preview/queue",
+      "/schedule-recommendations/generation-runs/run-1/cancel",
+      "/schedule-recommendations/year-level-preview/queue",
+    ]));
+    await waitFor(() => expect(localStorage.getItem("wicars.generation-run.2.1")).toBe("run-2"));
   });
 
   it("reports a completed run that produced no timetable as a failure", async () => {

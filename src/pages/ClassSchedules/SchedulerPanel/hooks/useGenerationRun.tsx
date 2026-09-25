@@ -189,16 +189,27 @@ export function GenerationRunProvider({
       return;
     }
 
+    // A run still searching past the interim mark carries a provisional
+    // report; show it while the search goes on.
+    const interim = run.status === "running" ? parseYearLevelFailurePayload(run.result) : null;
     setSnapshot((current) => ({
       ...current,
       status: run.status === "running" ? "running" : "queued",
       serverStartedAt: run.started_at ?? null,
+      failure: interim?.provisional ? interim : current.failure,
     }));
   }, []);
 
+  /**
+   * Queue a run. Starting over one still in progress -- a fix applied from a
+   * provisional report -- replaces it: the new run shows as queued at once,
+   * with no idle moment in between, while the old one is cancelled on the
+   * server before the new one is queued, so it never waits behind it.
+   */
   const start = useCallback(
     async (payload: unknown, meta: GenerationRunMeta) => {
       const requestId = ++requestIdRef.current;
+      const replacedRunId = isActiveStatus(snapshot.status) ? snapshot.runId : null;
       setReviewed(false);
       setSnapshot({
         ...idleSnapshot,
@@ -208,6 +219,14 @@ export function GenerationRunProvider({
       });
 
       try {
+        if (replacedRunId) {
+          persistRunId(null);
+          // A run the server never cancelled still expires on its own limits.
+          await api
+            .post(`/schedule-recommendations/generation-runs/${replacedRunId}/cancel`)
+            .catch(() => undefined);
+          if (requestIdRef.current !== requestId) return;
+        }
         const queued = await api.post<{ run_id: string }>(
           "/schedule-recommendations/year-level-preview/queue",
           payload,
@@ -234,7 +253,7 @@ export function GenerationRunProvider({
         }));
       }
     },
-    [persistRunId],
+    [persistRunId, snapshot.runId, snapshot.status],
   );
 
   const clear = useCallback(() => {

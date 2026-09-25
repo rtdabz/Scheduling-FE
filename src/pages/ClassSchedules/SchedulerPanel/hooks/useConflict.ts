@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
-import { buildPreferredPattern, closingTimeLabel, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { coveredContinuously } from "../../../../lib/availabilityWindows";
 
@@ -704,6 +704,29 @@ export const useConflict = ({
         conflictType: "section",
         message: `Required Day: ${courseLabel} is configured to meet on ${FULL_DAY_NAMES[forcedDay]}.`,
       };
+    }
+
+    // A Consecutive Days run moves as a whole (the server shifts every day by
+    // the same number of days, to the new time), so the whole shifted run is
+    // judged -- against everything but itself.
+    if (schedule.splitGroupId && consecutiveDayCount(schedule.preferredPattern) !== null) {
+      const run = schedules.filter((item) => item.splitGroupId === schedule.splitGroupId);
+      const shift = dayIndex - schedule.dayIndex;
+      if (run.some((item) => item.dayIndex + shift < 0 || item.dayIndex + shift >= FULL_DAY_NAMES.length)) {
+        return {
+          conflictType: "section",
+          message: `${courseLabel}: moving the run there would push it past the end of the week.`,
+        };
+      }
+      const runIds = run.map((item) => item.id);
+      for (const item of run) {
+        const conflict = checkConflict(
+          courseId, item.sectionId, item.facultyId ?? null, item.roomId,
+          item.dayIndex + shift, startSlot, item.durationSlots, runIds, null
+        );
+        if (conflict) return { ...conflict, message: `${FULL_DAY_NAMES[item.dayIndex + shift]}: ${conflict.message}` };
+      }
+      return null;
     }
 
     // Every linked meeting, not just a same-time pair: split_group_day_separation

@@ -305,6 +305,115 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it.each(["final", "provisional"] as const)("goes straight on to generating when a fix from a %s report is applied", async (kind) => {
+    localStorage.setItem("wicars.year-level-wizard.v5.2.1", JSON.stringify({
+      step: 3,
+      yearLevel: 1,
+      activeSectionId: "10",
+      configs: {
+        "10": {
+          courseIds: ["20"],
+          locked: true,
+          splitCourseIds: [],
+          gecSplitCourseIds: [],
+          gecSplitPatternsByCourseId: {},
+          modesByCourseId: { "20": "automatic" },
+        },
+      },
+      setupDraft: { completed: true },
+    }));
+    const report = {
+      error_code: "year_level_generation_failed",
+      stage: "search",
+      message: "No year-level timetable satisfies all section constraints.",
+      bottleneck: {
+        type: "limited_rooms",
+        section_id: 10,
+        section_name: "BSIT 1A",
+        course_id: 20,
+        course_code: "IT 101",
+        detected_cause: "IT 101 ran out of free classroom time.",
+        iterations: 40,
+        search_limit_reached: false,
+      },
+      attempts: [],
+      recommendations: [{
+        id: "delivery-online-10-20",
+        title: "Move IT 101 online",
+        detected_cause: "IT 101 ran out of free classroom time.",
+        suggested_adjustment: "",
+        section_id: 10,
+        section_name: "BSIT 1A",
+        course_id: 20,
+        course_code: "IT 101",
+        impact: "medium",
+        adjustments: [{ type: "set_delivery_mode", section_id: 10, course_id: 20, value: "online", section_name: "BSIT 1A", course_code: "IT 101" }],
+      }],
+    };
+    get.mockImplementation((url: string) => {
+      if (url === "/scheduling-settings") {
+        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+      }
+      if (url === "/rooms") return Promise.resolve({ data: [] });
+      const curriculumResponse = curriculumEndpoints(url);
+      if (curriculumResponse) return curriculumResponse;
+      if (url === "/schedule-recommendations/generation-runs/run-1") {
+        // A provisional report arrives while its run is still searching.
+        return Promise.resolve({
+          data: kind === "final"
+            ? { run_id: "run-1", status: "failed", result: report }
+            : { run_id: "run-1", status: "running", result: { ...report, provisional: true } },
+        });
+      }
+      if (url === "/schedule-recommendations/generation-runs/run-2") {
+        return Promise.resolve({ data: { run_id: "run-2", status: "queued" } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    let queuedRuns = 0;
+    post.mockImplementation((url: string) =>
+      url === "/schedule-recommendations/year-level-preview/queue"
+        ? Promise.resolve({ data: { run_id: `run-${++queuedRuns}` } })
+        : url === "/schedule-recommendations/generation-runs/run-1/cancel"
+          ? Promise.resolve({ data: {} })
+          : Promise.reject(new Error(`Unexpected POST ${url}`)),
+    );
+
+    renderWorkflow(
+      <YearLevelGenerateScheduleWorkflow
+        onClose={vi.fn()}
+        sections={sections}
+        courses={courses}
+        activeSemester={activeSemester}
+        departmentId={2}
+        existingSchedules={[]}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply Online to IT 101 · BSIT 1A" }));
+
+    // The loader replaces the panel in the same update: never the Review
+    // step's plan, never the empty summary. A still-searching run used to be
+    // cancelled first, leaving the wizard idle on Review until it was.
+    expect(screen.getByText("Queued for the scheduler")).toBeTruthy();
+    expect(screen.queryByText("Course plan")).toBeNull();
+    expect(screen.queryByText(/class meetings generated/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Apply Online/ })).toBeNull();
+
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith(
+      "/schedule-recommendations/year-level-preview/queue",
+      expect.objectContaining({
+        section_configs: [expect.objectContaining({ delivery_modes_by_course_id: { 20: "online" } })],
+      }),
+    ));
+    expect(screen.getByText("Queued for the scheduler")).toBeTruthy();
+    // The search it replaced is stopped, not left running beside it.
+    expect(post.mock.calls.some(([url]) => url === "/schedule-recommendations/generation-runs/run-1/cancel"))
+      .toBe(kind === "provisional");
+  });
+
   it("serves the reference data from cache when the generator is reopened", async () => {
     const countGets = (url: string) =>
       get.mock.calls.filter((call) => call[0] === url).length;

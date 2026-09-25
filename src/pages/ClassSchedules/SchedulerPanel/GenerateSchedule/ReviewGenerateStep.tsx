@@ -6,6 +6,7 @@ import {
   Clock3,
   DoorOpen,
   Layers,
+  ListOrdered,
   Loader2,
   MapPin,
   ShieldCheck,
@@ -18,6 +19,11 @@ import { useGenerationRun } from "../hooks/useGenerationRun";
 import type { Course, Section, Semester } from "../types";
 import YearLevelStateNotice from "./YearLevelStateNotice";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
+import {
+  consecutiveRulesBySection,
+  consecutiveSummary,
+  type ConsecutiveDayRule,
+} from "./courseClassConfig";
 
 export type ReviewCourseRow = {
   course: Course;
@@ -119,7 +125,13 @@ function Panel({
   );
 }
 
-type PlanRow = ReviewCourseRow & { forcedDays: string[]; field: boolean };
+type PlanRow = ReviewCourseRow & {
+  forcedDays: string[];
+  field: boolean;
+  /** Consecutive Days, e.g. "3 days · Thu–Sat · 1A, 1B". */
+  consecutive: string | null;
+  consecutiveDays: number | null;
+};
 
 const planColumns: ColumnDef<PlanRow>[] = [
   {
@@ -141,7 +153,14 @@ const planColumns: ColumnDef<PlanRow>[] = [
   },
   {
     id: "meetings",
-    accessorFn: (row) => (row.hybrid ? "Lecture + lab, separate" : row.split ? "Two sessions a week" : "Single meeting"),
+    accessorFn: (row) =>
+      row.consecutiveDays
+        ? `${row.consecutiveDays} back-to-back days`
+        : row.hybrid
+          ? "Lecture + lab, separate"
+          : row.split
+            ? "Two sessions a week"
+            : "Single meeting",
     header: "Meetings",
   },
   {
@@ -166,6 +185,12 @@ const planColumns: ColumnDef<PlanRow>[] = [
           <Tag tone="bg-sky-100 text-sky-800">{row.integratedOnSite ? "Integrated" : "Hybrid"}</Tag>
         )}
         {row.split && <Tag tone="bg-amber-100 text-amber-900">Split</Tag>}
+        {row.consecutive && (
+          <Tag tone="bg-teal-100 text-teal-900">
+            <ListOrdered className="h-2.5 w-2.5" />
+            {row.consecutive}
+          </Tag>
+        )}
         {row.customDuration && (
           <Tag tone="bg-rose-100 text-rose-900">
             <Clock3 className="h-2.5 w-2.5" />
@@ -181,6 +206,7 @@ const planColumns: ColumnDef<PlanRow>[] = [
         {!row.field &&
           !row.hybrid &&
           !row.split &&
+          !row.consecutive &&
           !row.customDuration &&
           !row.preferredRoom &&
           row.forcedDays.length === 0 && (
@@ -338,6 +364,7 @@ export default function ReviewGenerateStep({
   courseRows,
   preferredDays = [],
   forcedDayRules,
+  consecutiveDayRules = [],
   fieldCourseCodes,
   activeRules,
   generating,
@@ -352,6 +379,8 @@ export default function ReviewGenerateStep({
   /** Step 1's Preferred Days; empty means any day. */
   preferredDays?: string[];
   forcedDayRules: Array<{ course_id: number; day: string }>;
+  /** Consecutive Days rules; each section follows its own, else the course-wide one. */
+  consecutiveDayRules?: ConsecutiveDayRule[];
   fieldCourseCodes: string[];
   activeRules: string[];
   generating: boolean;
@@ -370,16 +399,33 @@ export default function ReviewGenerateStep({
     ]);
   });
 
+  /** A course's run, and the sections it applies to when not all of them. */
+  const consecutiveFor = (courseId: string) => {
+    const bySection = consecutiveRulesBySection(courseId, consecutiveDayRules, sections);
+    const first = bySection.values().next().value as ConsecutiveDayRule | undefined;
+    if (!first) return { consecutive: null, consecutiveDays: null };
+    const scope =
+      bySection.size < sections.length
+        ? ` · ${sections.filter((section) => bySection.has(section.id)).map((section) => section.name).join(", ")}`
+        : "";
+    return {
+      consecutive: `${consecutiveSummary(first.day_count, first.preferred_start_day)}${scope}`,
+      consecutiveDays: first.day_count,
+    };
+  };
+
   /** One row per course, carrying every rule that course picked up. */
-  const planRows = courseRows.map((row) => ({
+  const planRows: PlanRow[] = courseRows.map((row) => ({
     ...row,
     forcedDays: forcedDaysByCourseId.get(String(row.course.id)) ?? [],
     field: fieldCodes.has(row.course.code),
+    ...consecutiveFor(String(row.course.id)),
   }));
   const ruledCourseCount = planRows.filter(
     (row) =>
       row.hybrid ||
       row.split ||
+      Boolean(row.consecutive) ||
       row.field ||
       Boolean(row.customDuration) ||
       Boolean(row.preferredRoom) ||

@@ -219,7 +219,9 @@ export default function TeachingLoad({
           isPartTime: faculty.employmentType === "part-time",
           designations: faculty.designations?.length
             ? faculty.designations
-            : faculty.administrativeRole ? [DESIGNATION_LABELS[faculty.administrativeRole]] : [],
+            : faculty.administrativeRole
+              ? [{ label: DESIGNATION_LABELS[faculty.administrativeRole], deloadUnits: faculty.deloadUnits ?? 0 }]
+              : [],
           instructorName: faculty.name.toUpperCase(),
           preparedBy: preparer?.name ?? "",
           verifiedBy: byRole("dean")?.name ?? "",

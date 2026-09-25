@@ -350,20 +350,34 @@ describe("drawSheet with more overload subjects than the form's six lines", () =
 describe("drawSheet designations", () => {
   it("prints the first designation on line 1 of section C and the rest on line 2", () => {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
-    const texts: string[] = [];
-    vi.spyOn(doc, "text").mockImplementation(((text: string) => { texts.push(String(text)); return doc; }) as typeof doc.text);
+    const { texts: coloured } = recordColours(doc);
     const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 21 } as Faculty;
     const load = classifyLoad(faculty, [meeting({ id: "1" })]);
 
     drawSheet(doc, {
       logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
       surname: "Cruz", givenName: "A", middleInitial: "B", isPartTime: false,
-      designations: ["Director · Networking Dev't", "Program Chairperson", "Coach"],
+      designations: [
+        { label: "Director · Networking Dev't", deloadUnits: 9 },
+        { label: "Program Chairperson", deloadUnits: 6 },
+        { label: "Coach", deloadUnits: 1.5 },
+      ],
       instructorName: "A B CRUZ", preparedBy: "", verifiedBy: "", vpaaName: "", presidentName: "", presidentTitle: "",
       load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
     });
 
+    const texts = coloured.map((entry) => entry.text);
+    const colourOf = (text: string) => coloured.find((entry) => entry.text === text)?.color;
     expect(texts).toContain("Director · Networking Dev't");
     expect(texts).toContain("Program Chairperson; Coach");
+    // Each line's deload, printed in the units column beside it headed "Deload".
+    expect(texts.filter((text) => text === "Deload")).toHaveLength(1);
+    expect(texts).toContain("9");
+    expect(texts).toContain("7.5");
+    // Only the figures are red; the heading and the designations stay black.
+    expect(colourOf("9")).toBe(CONFLICT_TEXT);
+    expect(colourOf("7.5")).toBe(CONFLICT_TEXT);
+    expect(colourOf("Deload")).not.toBe(CONFLICT_TEXT);
+    expect(colourOf("Director · Networking Dev't")).not.toBe(CONFLICT_TEXT);
   });
 });

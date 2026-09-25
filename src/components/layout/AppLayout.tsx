@@ -5,7 +5,7 @@ import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
 import SessionTimeoutGuard from './SessionTimeoutGuard'
 import ConnectionBanner from './ConnectionBanner'
-import Skeleton from '../ui/Skeleton'
+import RouteLoadingBar from '../ui/RouteLoadingBar'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
 import api from '../../lib/api'
@@ -146,19 +146,10 @@ export default function AppLayout() {
           <div className="print:hidden">
             <PageHeader navItems={navItems} homePath={homePath} />
           </div>
-          {/* Keyed by path: React Router runs navigations inside a transition,
-              so without a fresh boundary per route React keeps the previous page
-              on screen while the next route's lazy chunk downloads. */}
-          <Suspense key={location.pathname} fallback={
-            <div className="space-y-4" aria-busy="true" aria-label="Loading module">
-              <Skeleton className="h-8 w-64 rounded-lg" />
-              <Skeleton className="h-4 w-96 max-w-full rounded" />
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}
-              </div>
-              <Skeleton className="h-64 w-full rounded-2xl" />
-            </div>
-          }>
+          {/* Keyed by path so each route gets a fresh boundary. The router has
+              transitions turned off (App.tsx); the key keeps this correct even
+              if a navigation is ever run inside a transition again. */}
+          <Suspense key={location.pathname} fallback={<RouteLoadingBar />}>
             <Outlet />
           </Suspense>
         </main>

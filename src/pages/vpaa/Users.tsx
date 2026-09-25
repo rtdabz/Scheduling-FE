@@ -515,7 +515,7 @@ export default function VpaaUsers() {
           setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
-        toast.success('Success', `Account created. A setup link was emailed to ${createdUser.email}.`);
+        toast.success('Success', `Account @${createdUser.username} created. A setup link was emailed to ${createdUser.email}.`);
       }
 
       setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });

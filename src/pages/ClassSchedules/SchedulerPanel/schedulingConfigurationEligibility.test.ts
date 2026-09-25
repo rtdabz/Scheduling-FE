@@ -5,6 +5,7 @@ import {
   isConfiguredFieldCourse,
   isHybridSplitEligible,
   isHybridSchedulingEligible,
+  isOnlineSplitEligible,
 } from "./schedulingConfigurationEligibility";
 
 const fieldCapableCourse: Course = {
@@ -94,6 +95,18 @@ describe("scheduling configuration eligibility", () => {
       expect(isHybridSplitEligible(minorCourse)).toBe(true);
       expect(isHybridSplitEligible({ ...minorCourse, labHours: 1 })).toBe(false);
       expect(isHybridSplitEligible({ ...minorCourse, lectureHours: 0 })).toBe(false);
+    });
+
+    it("offers Online Split for any lecture split, never a laboratory or field course", () => {
+      expect(isOnlineSplitEligible(minorCourse)).toBe(true);
+      expect(isOnlineSplitEligible(lectureOnlyMajor)).toBe(true);
+      // Not tied to Hybrid Split's three units.
+      expect(isOnlineSplitEligible({ ...minorCourse, units: 2 })).toBe(true);
+      expect(isOnlineSplitEligible(labMajor)).toBe(false);
+      expect(isOnlineSplitEligible({ ...minorCourse, labHours: 1 })).toBe(false);
+      expect(isOnlineSplitEligible({ ...minorCourse, roomTypeRequired: "laboratory" })).toBe(false);
+      expect(isOnlineSplitEligible({ ...minorCourse, roomTypeRequired: "field" })).toBe(false);
+      expect(isOnlineSplitEligible(minorCourse, new Set(["PATHFIT 1"]))).toBe(false);
     });
   });
 });

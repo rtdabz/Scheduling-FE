@@ -6,6 +6,8 @@
  * modal's rendering — is what lets "Apply & Retry" be tested without a DOM.
  */
 
+import { orderDays } from "./generationTypes";
+
 export type AdjustmentType =
   | "set_pattern"
   | "clear_pattern"
@@ -14,6 +16,8 @@ export type AdjustmentType =
   | "enable_hybrid_split"
   | "disable_hybrid_split"
   | "disable_section_hybrid"
+  | "enable_friday_saturday_split"
+  | "add_preferred_day"
   | "set_delivery_mode"
   | "split_session_single_meeting_fallback";
 
@@ -79,6 +83,11 @@ export type YearLevelGenerationFailure = {
   bottleneck: GenerationBottleneck | null;
   attempts: GenerationAttempt[];
   recommendations: GenerationRecommendation[];
+  /**
+   * Published while the run is still searching: what it would recommend if it
+   * stopped now. A timetable found later replaces it.
+   */
+  provisional?: boolean;
 };
 
 export type AppliedStrategy = {
@@ -150,6 +159,7 @@ export function parseYearLevelFailurePayload(data: unknown): YearLevelGeneration
     bottleneck: (payload.bottleneck as GenerationBottleneck | null) ?? null,
     attempts: Array.isArray(payload.attempts) ? (payload.attempts as GenerationAttempt[]) : [],
     recommendations,
+    provisional: payload.provisional === true,
   };
 }
 
@@ -216,6 +226,7 @@ export const isApplicableRecommendation = (recommendation: GenerationRecommendat
  */
 export function recommendationTarget(recommendation: GenerationRecommendation): string {
   const first = recommendation.adjustments[0];
+  if (first && isYearLevelAdjustment(first)) return "the year level";
   const courseCode = recommendation.course_code || first?.course_code || "";
   const sectionName = recommendation.section_name || first?.section_name || "";
 
@@ -243,6 +254,10 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
       return `${course} in ${section}: Hybrid Split turned off, both meetings on-site`;
     case "disable_section_hybrid":
       return `${section}: lecture/lab hybrid splits turned off`;
+    case "enable_friday_saturday_split":
+      return "Year level: Friday + Saturday allowed as paired days";
+    case "add_preferred_day":
+      return `Year level: ${adjustment.value} added to the Preferred Days`;
     case "set_delivery_mode":
       return `${course} in ${section}: mode set to ${adjustment.value === "automatic" ? "Automatic" : adjustment.value}`;
     case "split_session_single_meeting_fallback":
@@ -250,6 +265,52 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
     default:
       return `${course} in ${section}: configuration updated`;
   }
+}
+
+/**
+ * Preferred Days and the Friday + Saturday pairing are one choice for the whole
+ * year level (Step 1 and Step 2's Default Settings), not a per-section config.
+ * The backend repeats them on every section, so they arrive once per section.
+ */
+const yearLevelAdjustmentTypes = new Set(["enable_friday_saturday_split", "add_preferred_day"]);
+
+export const isYearLevelAdjustment = (adjustment: GenerationAdjustment): boolean =>
+  yearLevelAdjustmentTypes.has(adjustment.type);
+
+/** The year-level settings a recommendation can change. */
+export type AdjustableYearLevelSettings = {
+  preferredDays: string[];
+  allowFridaySaturdaySplit: boolean;
+};
+
+/**
+ * Apply the year-level adjustments. Like applyAdjustments, `applied` holds only
+ * changes that landed -- one entry per setting, not one per section echo.
+ */
+export function applyYearLevelAdjustments(
+  settings: AdjustableYearLevelSettings,
+  adjustments: GenerationAdjustment[],
+): { settings: AdjustableYearLevelSettings; applied: GenerationAdjustment[] } {
+  let next = settings;
+  const applied: GenerationAdjustment[] = [];
+
+  for (const adjustment of adjustments) {
+    if (adjustment.type === "enable_friday_saturday_split" && !next.allowFridaySaturdaySplit) {
+      next = { ...next, allowFridaySaturdaySplit: true };
+      applied.push(adjustment);
+    } else if (
+      adjustment.type === "add_preferred_day"
+      && adjustment.value
+      // No Preferred Days means every day is already open.
+      && next.preferredDays.length > 0
+      && !next.preferredDays.includes(adjustment.value)
+    ) {
+      next = { ...next, preferredDays: orderDays([...next.preferredDays, adjustment.value]) };
+      applied.push(adjustment);
+    }
+  }
+
+  return { settings: next, applied };
 }
 
 /**
@@ -345,8 +406,16 @@ function applyOne<T extends AdjustableSectionConfig>(
     }
     case "set_delivery_mode": {
       const value = adjustment.value === null || adjustment.value === "automatic" ? "automatic" : adjustment.value;
-      if (config.modesByCourseId[courseKey] === value) return null;
-      return { ...config, modesByCourseId: { ...config.modesByCourseId, [courseKey]: value } };
+      // Online Split holds both meetings online, so a Hybrid Split's
+      // one-online, one-on-site marker cannot stay beside it.
+      const hybridIds = config.hybridSplitCourseIds ?? [];
+      const dropsHybrid = value === "online" && hybridIds.includes(courseKey);
+      if (config.modesByCourseId[courseKey] === value && !dropsHybrid) return null;
+      return {
+        ...config,
+        modesByCourseId: { ...config.modesByCourseId, [courseKey]: value },
+        ...(dropsHybrid ? { hybridSplitCourseIds: hybridIds.filter((id) => id !== courseKey) } : {}),
+      };
     }
     default:
       return null;

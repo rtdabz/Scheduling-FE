@@ -13,6 +13,7 @@ import {
   History,
   FileBarChart,
   DoorClosed,
+  Split,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -60,6 +61,7 @@ export const secretaryNav: NavSection[] = [
         children: [
           { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
           { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
+          { label: 'Program Rooms', path: '/secretary/program-rooms', icon: Split, id: 'sidebar-program-rooms', requiredCapability: 'room.assign_program' },
         ],
       },
     ]
