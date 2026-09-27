@@ -202,7 +202,7 @@ export const requiredRoomTypeForMeeting = (
 /**
  * Mirrors OperatingHoursRule::fieldEveningWindow: a field placement (field
  * delivery, or a course the department classifies as field) must end by the
- * VPAA's field end time (schedule_settings.field_end_time, default 5:00 PM).
+ * VPAA's field end time (institution_settings.field_end_time, default 5:00 PM).
  */
 export const checkFieldEveningWindow = (
   isFieldPlacement: boolean,

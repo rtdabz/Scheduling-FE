@@ -91,6 +91,9 @@ const toAvatarDataUrl = (file: File) => new Promise<string>((resolve, reject) =>
     const ctx = canvas.getContext('2d');
     URL.revokeObjectURL(url);
     if (!ctx) return reject(new Error('Canvas unavailable'));
+    // JPEG has no transparency; without a backdrop a transparent PNG turned black.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
     ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
     resolve(canvas.toDataURL('image/jpeg', 0.85));
   };
@@ -132,11 +135,12 @@ function TeachingLoad({ teaching }: { teaching: Teaching }) {
           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
             {teaching.semester ? `${teaching.semester.semester} Semester · A.Y. ${teaching.semester.academic_year}` : 'No active semester'}
           </p>
-          <p className="mt-1 text-2xl font-bold text-slate-800">{assigned}<span className="text-sm font-semibold text-slate-400"> / {basic} units</span></p>
+          {/* Measured against Basic Load plus Overload, not Basic Load alone. */}
+          <p className="mt-1 text-2xl font-bold text-slate-800">{assigned}<span className="text-sm font-semibold text-slate-400"> / {basic + overload} units</span></p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tierStyles[teaching.tier] ?? tierStyles.basic}`}>{teaching.tier_label}</span>
       </div>
-      <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${assigned} of ${basic} basic load units assigned`}>
+      <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${assigned} of ${basic + overload} units assigned`}>
         <span className="bg-emerald-500" style={{ width: pct(inBasic) }} />
         <span className="bg-amber-500" style={{ width: pct(inOverload) }} />
         <span className="bg-rose-500" style={{ width: pct(beyond) }} />
@@ -147,7 +151,7 @@ function TeachingLoad({ teaching }: { teaching: Teaching }) {
           ['Deload', teaching.deload_units],
           ['Basic load', basic],
           ['Overload', overload],
-          ['Pro bono', teaching.probono_units],
+          ['Ceiling', basic + overload],
         ].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 px-2.5 py-1.5">
           <dt className="text-slate-500">{label}</dt><dd className="font-bold text-slate-800">{value}</dd>
         </div>)}

@@ -88,6 +88,11 @@ export type YearLevelGenerationFailure = {
    * stopped now. A timetable found later replaces it.
    */
   provisional?: boolean;
+  /**
+   * The search stopped at its time or step limit: nothing was proven not to
+   * fit, so generating again with the same settings is worth trying first.
+   */
+  searchIncomplete?: boolean;
 };
 
 export type AppliedStrategy = {
@@ -160,6 +165,7 @@ export function parseYearLevelFailurePayload(data: unknown): YearLevelGeneration
     attempts: Array.isArray(payload.attempts) ? (payload.attempts as GenerationAttempt[]) : [],
     recommendations,
     provisional: payload.provisional === true,
+    searchIncomplete: payload.search_incomplete === true,
   };
 }
 

@@ -5,10 +5,14 @@ import {
   applyCourseDefaults,
   compatibleRoomOptions,
   consecutiveDayRuns,
+  consecutivePlacementFor,
   consecutiveRulesForCourse,
   consecutiveSummary,
   isBackToBack,
   runFrom,
+  runLabel,
+  runStartingOn,
+  tickedRun,
   durationLabel,
   EMPTY_COURSE_DEFAULTS,
   integratedHybridMinutes,
@@ -554,6 +558,23 @@ describe("courseClassConfig", () => {
       expect(consecutiveSummary(3, null)).toBe("3 consecutive days");
     });
 
+    it("names ticked days that are not back-to-back, and takes them as the one run", () => {
+      const mwf = ["Monday", "Wednesday", "Friday"];
+      expect(runLabel(mwf)).toBe("Monday, Wednesday, Friday");
+      expect(runLabel(["Thursday", "Friday", "Saturday"])).toBe("Thursday–Saturday");
+      expect(consecutiveSummary(3, "Monday", mwf)).toBe("3 days · Mon, Wed, Fri");
+
+      const placement = consecutivePlacementFor(
+        "101",
+        "1",
+        [{ course_id: 101, section_id: null, day_count: 3, preferred_start_day: "Monday", meeting_days: mwf }],
+        false,
+      )!;
+      expect(placement.runs).toEqual([mwf]);
+      expect(tickedRun(placement)).toEqual(mwf);
+      expect(runStartingOn(placement, 1)).toBeNull();
+    });
+
     it("reads a section's own rule as a Consecutive Days class for that section only", () => {
       // Saved rules name sections by their numeric id.
       const numericSections = dummySections.map((section, index) => ({ ...section, id: String(index + 1) }));
@@ -582,15 +603,27 @@ describe("courseClassConfig", () => {
       const numericSections = dummySections.map((section, index) => ({ ...section, id: String(index + 1) }));
 
       expect(consecutiveRulesForCourse("101", all, numericSections)).toEqual([
-        { course_id: 101, section_id: null, day_count: 3, preferred_start_day: null },
+        { course_id: 101, section_id: null, day_count: 3, preferred_start_day: null, meeting_days: null },
       ]);
       expect(
         consecutiveRulesForCourse(
           "101",
-          { ...all, sectionScope: "selected", selectedSectionIds: ["2"], preferredStartDay: "Thursday" },
+          {
+            ...all,
+            sectionScope: "selected",
+            selectedSectionIds: ["2"],
+            preferredStartDay: "Monday",
+            meetingDays: ["Monday", "Wednesday", "Friday"],
+          },
           numericSections,
         ),
-      ).toEqual([{ course_id: 101, section_id: 2, day_count: 3, preferred_start_day: "Thursday" }]);
+      ).toEqual([{
+        course_id: 101,
+        section_id: 2,
+        day_count: 3,
+        preferred_start_day: "Monday",
+        meeting_days: ["Monday", "Wednesday", "Friday"],
+      }]);
       expect(consecutiveRulesForCourse("101", { ...all, consecutiveDays: null }, numericSections)).toEqual([]);
       // Only a Regular class meets on back-to-back days.
       expect(consecutiveRulesForCourse("101", { ...all, configuration: "split" }, numericSections)).toEqual([]);

@@ -10,6 +10,7 @@ import MarkSectionsDoneModal from "./Modals/MarkSectionsDoneModal";
 import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
 import AutoAssignModal from "./Modals/AutoAssignModal";
+import ResolveConflictModal from "./Modals/ResolveConflictModal";
 import OverloadConfirmationModal from "../../../components/faculty/OverloadConfirmationModal";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { useEffect, useMemo, useState } from "react";
@@ -56,6 +57,17 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const [isSavingGenerated, setIsSavingGenerated] = useState(false);
   const [isClearInstructorConfirmOpen, setIsClearInstructorConfirmOpen] = useState(false);
   const [clearInstructorScope, setClearInstructorScope] = useState<"section" | "department">("section");
+  const [isConflictsOpen, setIsConflictsOpen] = useState(false);
+  // The inbox lists every rule here, so it offers every room and instructor;
+  // the server still refuses anything the Rule Engine rejects.
+  const conflictRoomOptions = useMemo(
+    () => scheduler.rooms.map((room) => ({ id: Number(room.id), label: room.name })),
+    [scheduler.rooms],
+  );
+  const conflictFacultyOptions = useMemo(
+    () => scheduler.faculties.map((faculty) => ({ id: Number(faculty.id), label: faculty.name })),
+    [scheduler.faculties],
+  );
 
   useEffect(() => {
     if (autoAssignOnOpen && scheduler.schedules.length > 0) {
@@ -117,6 +129,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       <TopBar
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
+        onOpenConflicts={scheduler.activeSemester ? () => setIsConflictsOpen(true) : undefined}
         onGenerateYearLevel={scheduler.canGenerateSchedule ? () => setIsGeneratorOpen(true) : undefined}
         onResetSchedules={scheduler.handleClearAll}
         canResetSchedules={scheduler.isEditable && scheduler.schedules.length > 0}
@@ -163,6 +176,25 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
             />
           </div>
         </div>
+      )}
+
+      {/* Mounted only while open so each visit starts from a fresh scan. */}
+      {isConflictsOpen && scheduler.activeSemester && (
+        <ResolveConflictModal
+          isOpen
+          onClose={() => setIsConflictsOpen(false)}
+          semesterId={Number(scheduler.activeSemester.id)}
+          departmentId={generatorDepartmentId === null ? null : Number(generatorDepartmentId)}
+          rooms={conflictRoomOptions}
+          faculties={conflictFacultyOptions}
+          canUpdateSchedule={scheduler.canUpdateSchedule}
+          canAssignInstructor={scheduler.canAssignInstructor}
+          initialTab={(scheduler.conflictCounts?.open ?? 0) > 0 ? "open" : "resolved"}
+          onResolved={() => {
+            void scheduler.refreshSchedules();
+            scheduler.refreshConflictCounts();
+          }}
+        />
       )}
 
       <DropModal {...scheduler} />

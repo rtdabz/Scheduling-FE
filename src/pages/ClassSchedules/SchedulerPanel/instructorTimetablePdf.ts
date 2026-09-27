@@ -1,7 +1,25 @@
 import tccLogo from "../../../assets/logo.jpg";
-import type { ScheduleItem, Semester } from "./types";
-import { fullSemesterLabel } from "../../../lib/semesterLabel";
+import { fullSemesterLabel, type LabelledSemester } from "../../../lib/semesterLabel";
 import { packLanes } from "../../vpaa/calendar/ganttLayout";
+
+/**
+ * The fields the timetable draws. Callers outside the scheduler (the VPAA
+ * schedule viewer, the instructor timetable modal) hold lighter rows than the
+ * scheduler's ScheduleItem, so the input asks only for what is used.
+ */
+export interface InstructorTimetableMeeting {
+  day: string;
+  startTime: string;
+  endTime: string;
+  mode?: string | null;
+  meetingType?: string | null;
+  roomName?: string | null;
+  sectionName?: string | null;
+  subjectCode?: string;
+  subjectName?: string;
+  courseCode?: string;
+  courseName?: string;
+}
 
 export interface InstructorTimetablePdfInput {
   title?: string;
@@ -9,8 +27,8 @@ export interface InstructorTimetablePdfInput {
   departmentCode?: string;
   departmentName?: string;
   departmentLogo?: string | null;
-  schedules: ScheduleItem[];
-  activeSemester?: Semester | null;
+  schedules: InstructorTimetableMeeting[];
+  activeSemester?: LabelledSemester | null;
 }
 
 const DAY_NAMES = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
@@ -170,7 +188,7 @@ const CARD_STYLES: Record<CardKind, { label: string; accent: Rgb; tint: Rgb }> =
   conflict: { label: "Conflict (overlapping)", accent: [220, 38, 38], tint: [254, 242, 242] },
 };
 
-const cardKindOf = (sch: ScheduleItem, isConflict: boolean): CardKind => {
+const cardKindOf = (sch: InstructorTimetableMeeting, isConflict: boolean): CardKind => {
   if (isConflict) return "conflict";
   if (sch.mode === "online") return "online";
   if (sch.mode === "field") return "field";

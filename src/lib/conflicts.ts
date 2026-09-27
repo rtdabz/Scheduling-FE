@@ -82,7 +82,90 @@ export interface ResolutionRequest {
   mode?: string;
   reason?: string;
   confirm_overload?: boolean;
+  /** A ranked recommendation applied as offered, or a change the user entered. */
+  source?: 'manual' | 'recommendation';
 }
+
+/**
+ * How one conflict ended, from `/conflicts/resolved`. Read back from the audit
+ * trail, so it is history: `reopened` means a fresh scan finds the same clash
+ * again and it is back on the open list.
+ */
+export interface ConflictResolution {
+  key: string;
+  conflict_id: string;
+  rule: ConflictRule | string;
+  /** Empty for entries recorded before the message was stored. */
+  message: string;
+  day: string | null;
+  overlap_start: string | null;
+  overlap_end: string | null;
+  method: 'recommended' | 'manual' | 'overridden';
+  source: 'conflict_inbox' | 'schedule_generator';
+  status: 'resolved' | 'overridden' | 'reopened';
+  resolved_at: string | null;
+  resolved_by: string | null;
+  reason: string | null;
+  affected_schedule_ids: number[];
+}
+
+/**
+ * One ranked fix from `/conflicts/{id}/recommendations`. The server has already
+ * checked it against the Rule Engine and left out anything the caller may not
+ * apply, so `payload` goes to `resolveConflict` as it is -- one click.
+ */
+export interface ConflictRecommendation {
+  rank: number;
+  action: ResolutionRequest['action'];
+  schedule_id: number;
+  summary: string;
+  score: number;
+  day?: string;
+  start_time?: string;
+  end_time?: string;
+  mode?: string;
+  room_id?: number | null;
+  room_code?: string;
+  faculty_id?: number;
+  faculty_name?: string;
+  projected_units?: number;
+  /** Assigning this instructor pushes them past their Basic Load. */
+  requires_overload_confirmation?: boolean;
+  payload: ResolutionRequest;
+}
+
+export const resolutionMethodLabel = (resolution: ConflictResolution): string => {
+  if (resolution.method === 'overridden') return 'Allowed to stand';
+  if (resolution.method === 'manual') return 'Manual change';
+
+  return resolution.source === 'schedule_generator' ? 'Recommendation (Generate)' : 'Recommended fix';
+};
+
+export const resolutionStatusLabel = (status: ConflictResolution['status']): string => {
+  switch (status) {
+    case 'overridden':
+      return 'Allowed';
+    case 'reopened':
+      return 'Reopened';
+    default:
+      return 'Resolved';
+  }
+};
+
+/**
+ * Classes a saved resolution changed and that stayed fixed, for the green flag
+ * on the timetable. Reopened entries are left out -- that clash is back -- and
+ * so are overrides, whose amber flag follows the live override mark instead.
+ */
+export const resolvedScheduleIds = (resolutions: ConflictResolution[]): Set<string> => {
+  const ids = new Set<string>();
+  resolutions.forEach((entry) => {
+    if (entry.status !== 'resolved') return;
+    entry.affected_schedule_ids.forEach((id) => ids.add(String(id)));
+  });
+
+  return ids;
+};
 
 /** Statuses whose timetable placement may still be edited. */
 const EDITABLE_STATUSES = ['draft', 'completed', 'revision'];
@@ -150,6 +233,40 @@ export const fetchConflicts = async (params: {
   });
 
   return response.data.conflicts ?? [];
+};
+
+/**
+ * Ranked fixes for one open conflict. A 404 means the conflict is already gone;
+ * the caller treats that like any other stale selection.
+ */
+export const fetchConflictRecommendations = async (
+  conflictId: string,
+  params: { limit?: number; signal?: AbortSignal } = {},
+): Promise<ConflictRecommendation[]> => {
+  const response = await api.get<{ options?: ConflictRecommendation[] }>(
+    `/conflicts/${encodeURIComponent(conflictId)}/recommendations`,
+    { signal: params.signal, params: { limit: params.limit } },
+  );
+
+  return response.data.options ?? [];
+};
+
+export const fetchResolvedConflicts = async (params: {
+  semesterId?: number | null;
+  departmentId?: number | null;
+  sectionId?: number | null;
+  signal?: AbortSignal;
+}): Promise<ConflictResolution[]> => {
+  const response = await api.get<{ resolutions?: ConflictResolution[] }>('/conflicts/resolved', {
+    signal: params.signal,
+    params: {
+      semester_id: params.semesterId ?? undefined,
+      department_id: params.departmentId ?? undefined,
+      section_id: params.sectionId ?? undefined,
+    },
+  });
+
+  return response.data.resolutions ?? [];
 };
 
 export const resolveConflict = async (

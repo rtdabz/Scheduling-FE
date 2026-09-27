@@ -36,6 +36,8 @@ import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
+import { basicLoadOf } from '../../lib/facultyLoad';
+import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
 
 interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; deload_units?:number; probono_units?:number|null; profile_picture?:string|null; department_id:number; status?:string }
@@ -54,8 +56,8 @@ interface Schedule {
 }
 interface Semester { id:number; academic_year?:string; semester?:string; is_active?:boolean }
 interface DeptUser { id:number; name?:string; role?:string; department_id?:number|null }
-interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeSemester:Semester|null; standardHours?:StandardHours }
-interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_semester?:Semester; time_grid?:TimeGridConfigInput }
+interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeSemester:Semester|null; standardHours?:StandardHours; schedulesTruncated?:boolean }
+interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_semester?:Semester; time_grid?:TimeGridConfigInput; schedules_truncated?:boolean }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
@@ -128,6 +130,7 @@ export default function DeanDashboardPage() {
 
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [schedulesTruncated, setSchedulesTruncated] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
@@ -164,7 +167,7 @@ export default function DeanDashboardPage() {
       setLoadError(null);
       try {
         const overview = await loadCachedData<Overview>(cacheKey, async () => {
-          const { data = {} } = await api.get<InitialData>('/initial-data');
+          const { data = {} } = await api.get<InitialData>('/initial-data', { params: { schedule_limit: 2000 } });
           return {
             faculties: Array.isArray(data.faculties) ? data.faculties : [],
             rooms: Array.isArray(data.rooms) ? data.rooms : [],
@@ -174,6 +177,7 @@ export default function DeanDashboardPage() {
             users: Array.isArray(data.users) ? data.users : [],
             activeSemester: data.active_semester || null,
             standardHours: buildStandardHours(data.time_grid?.opening_time, data.time_grid?.closing_time, data.time_grid?.slot_minutes),
+            schedulesTruncated: data.schedules_truncated === true,
           };
         }, reloadKey > 0);
 
@@ -186,6 +190,7 @@ export default function DeanDashboardPage() {
         setUsers(overview.users);
         setSemester(overview.activeSemester);
         setStandardHours(overview.standardHours ?? DEFAULT_STANDARD_HOURS);
+        setSchedulesTruncated(overview.schedulesTruncated === true);
       } catch {
         if (active) setLoadError('Could not load department scheduling data. Figures below may be out of date.');
       } finally {
@@ -339,7 +344,7 @@ export default function DeanDashboardPage() {
   // ── Faculty workload ──
   const loads = useMemo(() => deptFaculties.map(f => {
     const assigned = f.assigned_units || 0;
-    const max = Math.max(0, f.max_units - (f.deload_units || 0));
+    const max = basicLoadOf(f.max_units, f.deload_units);
     return { ...f, assigned, max };
   }), [deptFaculties]);
 
@@ -590,6 +595,10 @@ export default function DeanDashboardPage() {
       <span className="flex-1">{loadError || statusError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3" /> Retry</button>
     </div>}
+
+    {!loadError && schedulesTruncated && <TruncatedDataNotice>
+      The department has more class meetings than can be loaded at once, so the figures and timetable below may be missing classes.
+    </TruncatedDataNotice>}
 
     <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
       {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button

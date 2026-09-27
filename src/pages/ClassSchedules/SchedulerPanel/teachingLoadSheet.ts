@@ -382,17 +382,8 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
 
   // Rows 28-38 -- B. Overload / Part Time Load.
   drawText(doc, "B. Overload/Part Time Load", { from: "A", to: "C", row: 28 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  // Names the pro bono colour only; the red conflict text is deliberately unlabelled.
-  const hasProbono = ctx.overloadLines.some((line) => line.band === "probono");
-  if (hasProbono) {
-    drawText(doc, "Grey text is Pro Bono", { from: "H", to: "K", row: 28 }, {
-      size: SIZE.small,
-      style: "bold",
-      align: "right",
-      padding: 1.6,
-      color: PROBONO_TEXT,
-    });
-  }
+  // Pro bono subjects are still printed in grey, but the form carries no
+  // legend for it (nor for the red conflict text).
   drawTableHeader(doc, 29);
   drawTableBody(doc, 31, Math.max(OVERLOAD_LINE_COUNT, ctx.overloadLines.length), ctx.overloadLines);
   drawTotalsRow(doc, formRow(37), "TOTAL NUMBER OF UNITS / HRS (OVERLOAD)", ctx.load.overloadTotals, MEDIUM);

@@ -36,6 +36,7 @@ import FacultyLoadPanel, { type FacultyLoadRow } from '../../components/vpaa/Fac
 import AdministrativeActivityPanel, { type ActivityRow } from '../../components/vpaa/AdministrativeActivityPanel';
 import { Donut, DonutLegend, FilterSelect, Panel, type Slice } from '../../components/vpaa/DashboardPrimitives';
 import { grouped } from '../../lib/dashboardFormat';
+import { basicLoadOf } from '../../lib/facultyLoad';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
@@ -81,7 +82,7 @@ interface Schedule {
 }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null }
 interface Section { id:number; section_name:string; department_id:number }
-interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; probono_units?:number|null; department_id:number; status:string }
+interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; deload_units?:number|null; assigned_units?:number; probono_units?:number|null; department_id:number; status:string }
 interface Department { id:number; department_name:string; department_code:string; logo?:string|null }
 interface Subject { id:number; subject_code:string; subject_name:string }
 interface Semester { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
@@ -356,9 +357,13 @@ export default function VpaaDashboardPage() {
   );
 
   // ── Institutional readiness, by department ──
+  // Everything that was not ready, returned or approved used to count as
+  // "Still Drafting", including departments sitting with their Dean.
   const readiness = useMemo(() => {
     let readyForApproval = 0;
+    let withDean = 0;
     let returned = 0;
+    let partlyApproved = 0;
     let stillDrafting = 0;
     let fullyApproved = 0;
 
@@ -366,14 +371,18 @@ export default function VpaaDashboardPage() {
       if (dept.approvalStatus === 'Fully Approved') fullyApproved++;
       else if (dept.pendingVpaaCount > 0) readyForApproval++;
       else if (dept.returnedCount > 0) returned++;
+      else if (dept.pendingCount > dept.pendingVpaaCount) withDean++;
+      else if (dept.approvedCount > 0) partlyApproved++;
       else stillDrafting++;
     });
 
-    return { readyForApproval, returned, stillDrafting, fullyApproved };
+    return { readyForApproval, withDean, returned, partlyApproved, stillDrafting, fullyApproved };
   }, [departmentStats]);
 
   const readinessSlices: Slice[] = [
     { key: 'ready', label: 'Ready for Final Approval', value: readiness.readyForApproval, color: '#16a36a' },
+    { key: 'dean', label: 'Waiting on Dean', value: readiness.withDean, color: '#0ea5e9' },
+    { key: 'partial', label: 'Partly Approved', value: readiness.partlyApproved, color: '#14b8a6' },
     { key: 'drafting', label: 'Still Drafting', value: readiness.stillDrafting, color: '#3b82f6' },
     { key: 'returned', label: 'Returned for Revision', value: readiness.returned, color: '#f59e0b' },
     { key: 'approved', label: 'Fully Approved', value: readiness.fullyApproved, color: '#8b5cf6' },
@@ -386,9 +395,12 @@ export default function VpaaDashboardPage() {
     let overloaded = 0;
     let noAssignment = 0;
 
+    // Measured against Basic Load (max less deload), the same line the Dean and
+    // Secretary dashboards and the Faculty list's load level use. Reading
+    // max_units alone missed every designation's deload.
     faculties.forEach(f => {
       const assigned = f.assigned_units || 0;
-      const max = f.max_units ?? 21;
+      const max = basicLoadOf(f.max_units, f.deload_units);
       if (assigned <= 0) noAssignment++;
       else if (assigned > max) overloaded++;
       else if (assigned === max) completeLoad++;
@@ -414,7 +426,7 @@ export default function VpaaDashboardPage() {
     () => faculties
       .map(f => {
         const assigned = f.assigned_units || 0;
-        const max = f.max_units ?? 21;
+        const max = basicLoadOf(f.max_units, f.deload_units);
         return {
           id: f.id,
           name: `${f.first_name} ${f.last_name}`.trim(),
@@ -542,7 +554,7 @@ export default function VpaaDashboardPage() {
       tone: insights.coverage.classes_without_instructor > 0 ? 'warn' : 'good',
     },
     {
-      label: 'Faculty Over Max Load',
+      label: 'Faculty Over Basic Load',
       value: grouped(facultyBands.overloaded),
       detail: `${percent(facultyBands.overloaded, faculties.length)}% of faculty`,
       icon: Users,

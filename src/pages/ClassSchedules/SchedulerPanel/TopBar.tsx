@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, Printer, RotateCcw, Send, UserCheck, UserMinus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, Printer, RotateCcw, Send, ShieldAlert, UserCheck, UserMinus } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, SectionDoneCandidate, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -46,6 +46,9 @@ interface TopBarProps {
   canWithdrawSubmission: boolean;
   isWithdrawingSubmission: boolean;
   onPrint: () => void;
+  /** Opens the conflict inbox; left out, the button is not shown. */
+  onOpenConflicts?: () => void;
+  conflictCounts?: { open: number; resolved: number } | null;
   onGenerateYearLevel?: () => void;
   onResetSchedules?: () => void;
   canResetSchedules?: boolean;
@@ -316,6 +319,8 @@ export default function TopBar({
   canWithdrawSubmission,
   isWithdrawingSubmission,
   onPrint,
+  onOpenConflicts,
+  conflictCounts = null,
   onGenerateYearLevel,
   onResetSchedules,
   canResetSchedules = false,
@@ -679,6 +684,34 @@ export default function TopBar({
             </>
           )}</>}
           <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
+          {!isLoading && onOpenConflicts && conflictCounts !== null && (conflictCounts.open > 0 || conflictCounts.resolved > 0) && (
+            <button
+              id="schedule-builder-conflicts"
+              type="button"
+              onClick={onOpenConflicts}
+              title={conflictCounts.open > 0
+                ? "Classes on the saved timetable that clash, and how earlier ones were resolved"
+                : "Every conflict this semester has been resolved"}
+              className={`${toolButtonClass} ${
+                conflictCounts.open > 0
+                  ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+              }`}
+            >
+              {conflictCounts.open > 0 ? <ShieldAlert className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              <span>Conflicts</span>
+              {conflictCounts.open > 0 && (
+                <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-black leading-4 text-white">
+                  {conflictCounts.open} open
+                </span>
+              )}
+              {conflictCounts.resolved > 0 && (
+                <span className="rounded-full bg-emerald-600 px-1.5 text-[10px] font-black leading-4 text-white">
+                  {conflictCounts.resolved} resolved
+                </span>
+              )}
+            </button>
+          )}
           {isLoading ? <Skeleton className="h-9 w-20 rounded-lg" /> : (
             <button
               type="button"

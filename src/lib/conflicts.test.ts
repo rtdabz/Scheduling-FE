@@ -1,11 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const apiGet = vi.hoisted(() => vi.fn());
+vi.mock('./api', () => ({ default: { get: (...args: unknown[]) => apiGet(...args) } }));
+
 import {
   alreadyResolvedFrom,
   conflictRuleLabel,
   describeConflictSchedule,
+  fetchConflictRecommendations,
+  fetchResolvedConflicts,
   isReplottable,
   refusalDetails,
   resolutionActionLabel,
+  resolutionMethodLabel,
+  resolutionStatusLabel,
+  resolvedScheduleIds,
+  type ConflictResolution,
   type ConflictSchedule,
 } from './conflicts';
 
@@ -108,5 +118,88 @@ describe('labels', () => {
   it('names each action as the thing the user is choosing to do', () => {
     expect(resolutionActionLabel('reassign_instructor')).toBe('Reassign the instructor');
     expect(resolutionActionLabel('request_override')).toBe('Allow it to stand, with a reason');
+  });
+});
+
+describe('fetchConflictRecommendations', () => {
+  it('asks for the encoded conflict and returns its ranked options', async () => {
+    const option = {
+      rank: 1,
+      action: 'change_room',
+      schedule_id: 42,
+      summary: 'Move IT 301 to CL-202, same time.',
+      score: 100,
+      payload: { action: 'change_room', schedule_id: 42, room_id: 10, mode: 'on-site' },
+    };
+    apiGet.mockResolvedValueOnce({ data: { options: [option] } });
+
+    await expect(fetchConflictRecommendations('room_conflict:42:77', { limit: 3 })).resolves.toEqual([option]);
+    expect(apiGet).toHaveBeenCalledWith(
+      '/conflicts/room_conflict%3A42%3A77/recommendations',
+      { signal: undefined, params: { limit: 3 } },
+    );
+  });
+
+  it('treats a missing options list as no recommendations', async () => {
+    apiGet.mockResolvedValueOnce({ data: {} });
+
+    await expect(fetchConflictRecommendations('room_conflict:42:77')).resolves.toEqual([]);
+  });
+});
+
+const resolution = (overrides: Partial<ConflictResolution> = {}): ConflictResolution => ({
+  key: '9:room_conflict:42:77',
+  conflict_id: 'room_conflict:42:77',
+  rule: 'room_conflict',
+  message: 'IT 301 and IT 302 share the same room on Monday 08:00-09:00.',
+  day: 'Monday',
+  overlap_start: '08:00',
+  overlap_end: '09:00',
+  method: 'recommended',
+  source: 'conflict_inbox',
+  status: 'resolved',
+  resolved_at: '2026-09-27T08:00:00.000Z',
+  resolved_by: 'Secretary',
+  reason: null,
+  affected_schedule_ids: [77],
+  ...overrides,
+});
+
+describe('resolution labels', () => {
+  it('says how a conflict was resolved, and where a recommendation came from', () => {
+    expect(resolutionMethodLabel(resolution())).toBe('Recommended fix');
+    expect(resolutionMethodLabel(resolution({ source: 'schedule_generator' }))).toBe('Recommendation (Generate)');
+    expect(resolutionMethodLabel(resolution({ method: 'manual' }))).toBe('Manual change');
+    expect(resolutionMethodLabel(resolution({ method: 'overridden' }))).toBe('Allowed to stand');
+  });
+
+  it('never calls an allowed or returning clash resolved', () => {
+    expect(resolutionStatusLabel('resolved')).toBe('Resolved');
+    expect(resolutionStatusLabel('overridden')).toBe('Allowed');
+    expect(resolutionStatusLabel('reopened')).toBe('Reopened');
+  });
+});
+
+describe('fetchResolvedConflicts', () => {
+  it('asks for the scope and returns the resolutions', async () => {
+    apiGet.mockResolvedValueOnce({ data: { resolutions: [resolution()] } });
+
+    await expect(fetchResolvedConflicts({ semesterId: 1, departmentId: 2 })).resolves.toEqual([resolution()]);
+    expect(apiGet).toHaveBeenLastCalledWith('/conflicts/resolved', {
+      signal: undefined,
+      params: { semester_id: 1, department_id: 2, section_id: undefined },
+    });
+  });
+});
+
+describe('resolvedScheduleIds', () => {
+  it('flags the classes a resolution changed, but not reopened or allowed ones', () => {
+    const ids = resolvedScheduleIds([
+      resolution({ affected_schedule_ids: [77, 78] }),
+      resolution({ key: 'b', status: 'reopened', affected_schedule_ids: [90] }),
+      resolution({ key: 'c', method: 'overridden', status: 'overridden', affected_schedule_ids: [91, 92] }),
+    ]);
+
+    expect([...ids].sort()).toEqual(['77', '78']);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   BookMarked,
@@ -40,6 +40,7 @@ import type {
 } from "./courseClassConfig";
 import {
   applyCourseDefaults,
+  asRegularClass,
   consecutiveRulesForCourse,
   consecutiveSummary,
   isConsecutive,
@@ -274,14 +275,20 @@ export default function SetupCoursesStep({
   /**
    * The course's working configuration. Required Day is read from the
    * department rules every time, so a save elsewhere never shows stale here.
+   * It is the department's saved rule, so it outranks a Split or Integrated
+   * draft: the course is shown as the one meeting the Generator receives.
    */
-  const configFor = (course: Course): CourseClassConfig => {
-    const config = courseConfigs[course.id] ?? infer(course);
-    return {
-      ...config,
-      requiredDay: isConsecutive(config) ? null : requiredDays.get(course.id) ?? null,
-    };
-  };
+  const withRequiredDay = useCallback(
+    (course: Course, config: CourseClassConfig): CourseClassConfig => {
+      const requiredDay = isConsecutive(config) ? null : requiredDays.get(course.id) ?? null;
+      return requiredDay
+        ? { ...asRegularClass(config, course), requiredDay }
+        : { ...config, requiredDay: null };
+    },
+    [requiredDays],
+  );
+  const configFor = (course: Course): CourseClassConfig =>
+    withRequiredDay(course, courseConfigs[course.id] ?? infer(course));
 
   const excluded = useMemo(() => new Set(excludedCourseIds), [excludedCourseIds]);
   const customized = useMemo(() => new Set(customizedCourseIds), [customizedCourseIds]);
@@ -448,7 +455,7 @@ export default function SetupCoursesStep({
         delivery: nextDelivery,
         hybridType: nextHybridType,
         // Consecutive Days is a Regular class's option; a split drops it.
-        ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null }),
+        ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null, meetingDays: null }),
         sectionScope: "all",
         selectedSectionIds: sections.map((s) => s.id),
       }),
@@ -496,16 +503,16 @@ export default function SetupCoursesStep({
       const base =
         courseConfigs[course.id] ??
         inferInitialCourseClassConfig(course, configs, sections, fieldCourseCodes, null, consecutiveRules);
-      const config: CourseClassConfig = {
-        ...base,
-        requiredDay: isConsecutive(base) ? null : requiredDays.get(course.id) ?? null,
-      };
+      const config = withRequiredDay(course, base);
+      // A Required Day holds the course to one meeting on that day.
+      const oneMeeting = config.requiredDay !== null;
 
-      const canSplit = isBalancedSplitSchedulingEligible(course, splitSettings);
+      const canSplit = !oneMeeting && isBalancedSplitSchedulingEligible(course, splitSettings);
 
       // The same courses the server accepts as Integrated: a non-field
       // major with both lecture and laboratory units.
-      const canIntegrated = isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes);
+      const canIntegrated =
+        !oneMeeting && isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes);
 
       return {
         course,
@@ -527,9 +534,9 @@ export default function SetupCoursesStep({
     excluded,
     fieldCourseCodes,
     hybridEnabled,
-    requiredDays,
     sections,
     splitSettings,
+    withRequiredDay,
   ]);
 
   const includedCount = rows.filter((row) => row.included).length;
@@ -612,6 +619,11 @@ export default function SetupCoursesStep({
           role="checkbox"
           aria-checked={isPartial ? "mixed" : checked ? "true" : "false"}
           aria-label={`${label} for ${row.course.code}`}
+          title={
+            targetType !== "regular" && row.config.requiredDay
+              ? `The Required Day (${row.config.requiredDay}) holds this course to one meeting. Clear it in Configure first.`
+              : undefined
+          }
           disabled={actionsDisabled || !eligible}
           onClick={() => handleSelectConfiguration(row.course, targetType)}
           className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -728,6 +740,7 @@ export default function SetupCoursesStep({
                     {consecutiveSummary(
                       config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS,
                       config.preferredStartDay ?? null,
+                      config.meetingDays ?? null,
                     )}
                   </span>
                 )}

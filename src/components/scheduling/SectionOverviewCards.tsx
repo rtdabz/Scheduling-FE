@@ -5,7 +5,7 @@ import {
   type SectionOverview,
 } from '../../hooks/useScheduleOverview';
 
-const STRIP_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 
 interface Props {
   sections: SectionOverview[];
@@ -28,11 +28,13 @@ const stageStyles: Record<string, string> = {
  * anyone having to open the grid to find out.
  */
 function DayLoadStrip({ dayLoad }: { dayLoad: Record<string, number> }) {
-  const peak = Math.max(1, ...STRIP_DAYS.map((day) => dayLoad[day] ?? 0));
+  // Sunday classes are allowed, so Sunday shows whenever a section has one.
+  const days = WEEK_DAYS.filter((day) => day !== 'Sunday' || (dayLoad[day] ?? 0) > 0);
+  const peak = Math.max(1, ...days.map((day) => dayLoad[day] ?? 0));
 
   return (
     <div className="flex items-end gap-1" aria-hidden="true">
-      {STRIP_DAYS.map((day) => {
+      {days.map((day) => {
         const count = dayLoad[day] ?? 0;
         return (
           <div key={day} className="flex flex-1 flex-col items-center gap-1">
@@ -42,7 +44,8 @@ function DayLoadStrip({ dayLoad }: { dayLoad: Record<string, number> }) {
                 style={{ height: `${count === 0 ? 0 : Math.max(18, (count / peak) * 100)}%` }}
               />
             </div>
-            <span className="text-[9px] font-bold uppercase text-slate-400">{day.slice(0, 1)}</span>
+            {/* Two letters: one made Tuesday and Thursday both "T". */}
+            <span className="text-[9px] font-bold uppercase text-slate-400">{day.slice(0, 2)}</span>
           </div>
         );
       })}

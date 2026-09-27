@@ -36,6 +36,7 @@ import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
+import { logoDataUrl } from '../../lib/imageDataUrl';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import { programLabel, programMajorLabel } from '../../lib/programLabel';
 
@@ -223,45 +224,9 @@ export default function Departments() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const maxDim = 300;
-          if (width > height) {
-            if (width > maxDim) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            }
-          } else {
-            if (height > maxDim) {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            setLogo(dataUrl);
-          }
-        } catch (err) {
-          console.error('Error processing logo:', err);
-          toast.error('Error', 'Failed to process image');
-        }
-      };
-      img.onerror = () => {
-        toast.error('Error', 'Failed to load image file');
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+    logoDataUrl(file)
+      .then(setLogo)
+      .catch(() => toast.error('Error', 'Failed to process the logo. Try a JPEG, PNG or WEBP image.'));
   };
 
   const [selectedDeptForDetail, setSelectedDeptForDetail] = useState<Department | null>(null);
@@ -581,8 +546,8 @@ export default function Departments() {
         return nextDepartments;
       });
       toast.success('Archived', 'Department moved to the Archive');
-    } catch {
-      toast.error('Archive Failed', 'Could not archive the department.');
+    } catch (error) {
+      toast.error('Archive Failed', apiErrorMessage(error, 'Could not archive the department.'));
     }
   };
 

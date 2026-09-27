@@ -91,7 +91,8 @@ describe('NotificationBell', () => {
     render(<NotificationBell />);
     fireEvent.click(bell());
 
-    expect(screen.getByText('Loading notifications')).toBeTruthy();
+    // The loading state is a skeleton, announced by its accessible label.
+    expect(screen.getByLabelText('Loading notifications')).toBeTruthy();
   });
 
   it('marks an unread item read by its own id', async () => {

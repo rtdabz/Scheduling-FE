@@ -18,6 +18,8 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiError';
+import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
@@ -92,8 +94,7 @@ const mapApiSection = (s: ApiSection): Section => ({
 
 export default function SecretarySections() {
   const { toast } = useToast();
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = getStoredUser();
   const sectionsCacheKey = `page:sections:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
   const cachedSectionsData = getCachedData<SectionsPageData>(sectionsCacheKey);
   const [sections, setSections] = useState<Section[]>(cachedSectionsData?.sections ?? []);
@@ -186,8 +187,9 @@ export default function SecretarySections() {
           return nextSections;
         });
         toast.success('Deleted', 'Section deleted successfully');
-      } catch {
-        toast.error('Error', 'Failed to delete section');
+      } catch (error) {
+        // The server says why, e.g. the section still has classes scheduled.
+        toast.error('Delete Failed', apiErrorMessage(error, 'Failed to delete section.'));
       } finally {
         setIsDeleteModalOpen(false);
         setIdToDelete(null);

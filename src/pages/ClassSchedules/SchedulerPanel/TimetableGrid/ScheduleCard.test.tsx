@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import ScheduleCard from "./ScheduleCard";
 import type { ScheduleItem, Subject } from "../types";
 
@@ -140,5 +140,29 @@ describe("ScheduleCard selected-card tooltip", () => {
     expect(screen.getByText("Remove IT 101 from the timetable?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(onDelete).toHaveBeenCalledWith("lecture");
+  });
+});
+
+describe("ScheduleCard resolution flag", () => {
+  const card = schedule("lecture", "on-site");
+  const conflict = { conflictType: "faculty" as const, message: "Instructor double-booked" };
+  // Each case renders fresh; a flag left from the last one would pass or fail it.
+  afterEach(cleanup);
+
+  it("shows the green flag for a resolved class", () => {
+    render(<ScheduleCard {...commonProps} schedule={card} isResolved />);
+    expect(screen.getByLabelText("Conflict resolved")).toBeTruthy();
+  });
+
+  it("shows the amber flag, not the green one, for a clash allowed to stand", () => {
+    render(<ScheduleCard {...commonProps} schedule={card} isResolved isAllowed />);
+    expect(screen.getByLabelText("Instructor conflict allowed to stand")).toBeTruthy();
+    expect(screen.queryByLabelText("Conflict resolved")).toBeNull();
+  });
+
+  it("lets a live conflict hide both flags", () => {
+    render(<ScheduleCard {...commonProps} schedule={card} conflict={conflict} isResolved isAllowed />);
+    expect(screen.queryByLabelText("Conflict resolved")).toBeNull();
+    expect(screen.queryByLabelText("Instructor conflict allowed to stand")).toBeNull();
   });
 });

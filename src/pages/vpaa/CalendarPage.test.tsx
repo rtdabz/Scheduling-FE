@@ -266,13 +266,15 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     render(<VpaaCalendarPage />);
     await waitForChart();
 
+    // Ticks run in 90-minute steps from opening (7 AM, 8:30 AM, 10 AM, ...) and
+    // widen to multiples of 90 minutes when the track is too narrow for them.
     act(() => resize([{ contentRect: { width: 360 } } as ResizeObserverEntry], {} as ResizeObserver));
-    expect(screen.queryByText('7 AM')).toBeNull();
-    expect(screen.getByText('8 AM')).toBeTruthy();
+    expect(screen.getByText('7 AM')).toBeTruthy();
+    expect(screen.queryByText('8:30 AM')).toBeNull();
     fireEvent.click(block('IT 101'));
     expect(await screen.findByRole('dialog')).toBeTruthy();
 
     act(() => resize([{ contentRect: { width: 1400 } } as ResizeObserverEntry], {} as ResizeObserver));
-    expect(screen.getByText('7 AM')).toBeTruthy();
+    expect(screen.getByText('8:30 AM')).toBeTruthy();
   });
 });

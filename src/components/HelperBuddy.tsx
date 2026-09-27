@@ -149,7 +149,11 @@ const typeConfigs: Record<MessageType, { title: string; icon: React.ReactNode; b
 
 const ALLOWED_REMINDERS = [
   "There's a conflict. Here are some recommended approaches...",
-  "The submitted schedule has been approved/rejected by the Dean/VPAA.",
+  "The VPAA approved the submitted schedule.",
+  "The Dean approved the submitted schedule. It now waits for the VPAA.",
+  "The Dean returned the submitted schedule for revision.",
+  "The VPAA returned the submitted schedule for revision.",
+  "The submitted schedule was recalled for revision.",
   "You can edit a schedule by clicking its card"
 ];
 

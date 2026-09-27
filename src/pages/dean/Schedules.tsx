@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { AlertTriangle, Calendar, GanttChart, Info, Layers, List, MapPin, RefreshCw, User, X } from "lucide-react";
 import api from "../../lib/api";
+import { getStoredUser } from "../../lib/storedUser";
 import Skeleton from "../../components/ui/Skeleton";
 import DataTable from "../../components/ui/DataTable";
 import SearchInput from "../../components/ui/SearchInput";
@@ -25,6 +26,8 @@ import {
   type StandardHours,
 } from "../vpaa/calendar/ganttLayout";
 import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
+import LoadErrorBanner from "../../components/ui/LoadErrorBanner";
+import TruncatedDataNotice from "../../components/ui/TruncatedDataNotice";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
 interface Section {
@@ -119,6 +122,7 @@ interface RawSchedule {
 interface DeanSchedulesPageData {
   sections: Section[];
   schedules: Schedule[];
+  schedulesTruncated?: boolean;
 }
 
 interface ScheduleConflictInfo {
@@ -302,8 +306,8 @@ export default function DeanScheduleViewer() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? (JSON.parse(userJson) as StoredUser) : null;
+  // Read through the guarded accessor: a corrupt session entry used to throw here.
+  const user = getStoredUser() as StoredUser | null;
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name || "College of Information Technology";
   const deanSchedulesCacheKey = `page:dean-schedules:${userDeptId ?? 'all'}`;
@@ -311,23 +315,28 @@ export default function DeanScheduleViewer() {
   const [sections, setSections] = useState<Section[]>(cachedDeanSchedulesData?.sections ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedDeanSchedulesData?.schedules ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(deanSchedulesCacheKey));
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [schedulesTruncated, setSchedulesTruncated] = useState(cachedDeanSchedulesData?.schedulesTruncated ?? false);
+  const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals']);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
 
   useEffect(() => {
-    if (liveRevision === 0 && hasCachedData(deanSchedulesCacheKey)) {
+    if (liveRevision === 0 && reloadKey === 0 && hasCachedData(deanSchedulesCacheKey)) {
       setIsLoading(false);
       return;
     }
 
     const loadData = async () => {
+      setLoadError(null);
       try {
         if (liveRevision === 0) setIsLoading(true);
         const response = await api.get<{
           active_semester: Semester | null;
           sections: RawSection[];
           schedules: RawSchedule[];
-        }>('/initial-data');
+          schedules_truncated?: boolean;
+        }>('/initial-data', { params: { schedule_limit: 2000 } });
         const semester = response.data.active_semester;
 
         let rawSections = response.data.sections;
@@ -385,19 +394,24 @@ export default function DeanScheduleViewer() {
           };
         });
         setSchedules(mappedSchedules);
+        const truncated = response.data.schedules_truncated === true;
+        setSchedulesTruncated(truncated);
         setCachedData<DeanSchedulesPageData>(deanSchedulesCacheKey, {
           sections: mappedSections,
           schedules: mappedSchedules,
+          schedulesTruncated: truncated,
         });
       } catch {
-        // Safe empty catch block
+        // Left silent, a failed load showed an empty timetable as if the
+        // department had scheduled nothing.
+        setLoadError('The department schedule could not be loaded.');
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
-  }, [deanSchedulesCacheKey, userDeptId, userDeptName, liveRevision]);
+  }, [deanSchedulesCacheKey, userDeptId, userDeptName, liveRevision, reloadKey]);
 
   const filteredSchedules = useMemo(() => {
     return schedules.filter((schedule) => {
@@ -533,6 +547,14 @@ export default function DeanScheduleViewer() {
 
   return (
     <div id="schedules-page">
+      {loadError && (
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} className="mb-4" />
+      )}
+      {!loadError && schedulesTruncated && (
+        <TruncatedDataNotice className="mb-4">
+          The department has more class meetings than can be loaded at once, so this timetable may be missing classes.
+        </TruncatedDataNotice>
+      )}
       <div id="schedules-list" className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">

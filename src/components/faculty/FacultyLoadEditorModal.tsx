@@ -12,7 +12,6 @@ export interface FacultyLoadValues {
   max_units: number;
   deload_units: number;
   overload_units: number;
-  probono_units: number;
   assigned_units: number;
 }
 
@@ -23,33 +22,35 @@ interface FacultyLoadEditorModalProps {
   onError: (message: string) => void;
 }
 
-/** The four allowances the secretary owns, in the order they build on each other. */
+/**
+ * The load allowances, in the order they build on each other. Pro bono is not
+ * one of them: it is whatever passes Overload. Deload is shown but not edited:
+ * it is the sum of the instructor's designations, so it changes there.
+ */
 const FIELDS = [
   {
     key: 'max_units' as const,
     label: 'Basic Load (Max Units)',
     hint: 'The contracted teaching load before any adjustment.',
+    readOnly: false,
   },
   {
     key: 'deload_units' as const,
     label: 'Deload Units',
-    hint: 'Units subtracted for administrative or designated duties.',
+    hint: "Set by the instructor's designations.",
+    readOnly: true,
   },
   {
     key: 'overload_units' as const,
     label: 'Overload Units',
     hint: 'Paid units allowed above the basic load.',
-  },
-  {
-    key: 'probono_units' as const,
-    label: 'Pro Bono Units',
-    hint: 'Unpaid units the instructor volunteers to carry.',
+    readOnly: false,
   },
 ];
 
 /**
  * The secretary's write path into an instructor record. The API narrows a
- * secretary to these four columns, so the form offers exactly those and nothing
+ * secretary to these three columns, so the form offers exactly those and nothing
  * else: sending any other key comes back 403.
  */
 export default function FacultyLoadEditorModal({
@@ -62,7 +63,6 @@ export default function FacultyLoadEditorModal({
     max_units: faculty.max_units,
     deload_units: faculty.deload_units,
     overload_units: faculty.overload_units,
-    probono_units: faculty.probono_units,
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -73,7 +73,7 @@ export default function FacultyLoadEditorModal({
     const required = Math.max(0, values.max_units - values.deload_units);
     return {
       required,
-      ceiling: required + values.overload_units + values.probono_units,
+      ceiling: required + values.overload_units,
     };
   }, [values]);
 
@@ -93,7 +93,10 @@ export default function FacultyLoadEditorModal({
     setIsSaving(true);
     setFieldErrors({});
     try {
-      const res = await api.put(`/faculties/${faculty.id}`, values);
+      const res = await api.put(`/faculties/${faculty.id}`, {
+        max_units: values.max_units,
+        overload_units: values.overload_units,
+      });
       onSaved(res.data);
       onClose();
     } catch (err) {
@@ -141,19 +144,29 @@ export default function FacultyLoadEditorModal({
                 >
                   {field.label}
                 </label>
-                <NumberInput
-                  id={`load-${field.key}`}
-                  min={0}
-                  value={values[field.key]}
-                  onChange={e =>
-                    setValues(prev => ({ ...prev, [field.key]: Number(e.target.value) }))
-                  }
-                  className={`w-full px-4 py-2.5 border rounded-xl outline-none text-sm bg-white focus:ring-2 ${
-                    fieldErrors[field.key]
-                      ? 'border-red-400 focus:ring-red-400'
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
+                {field.readOnly ? (
+                  <input
+                    id={`load-${field.key}`}
+                    type="text"
+                    readOnly
+                    value={values[field.key]}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
+                  />
+                ) : (
+                  <NumberInput
+                    id={`load-${field.key}`}
+                    min={0}
+                    value={values[field.key]}
+                    onChange={e =>
+                      setValues(prev => ({ ...prev, [field.key]: Number(e.target.value) }))
+                    }
+                    className={`w-full px-4 py-2.5 border rounded-xl outline-none text-sm bg-white focus:ring-2 ${
+                      fieldErrors[field.key]
+                        ? 'border-red-400 focus:ring-red-400'
+                        : 'border-gray-200 focus:ring-[#C9952A]'
+                    }`}
+                  />
+                )}
                 <p className="mt-1 text-[10px] text-gray-400 font-semibold leading-snug">{field.hint}</p>
                 {fieldErrors[field.key] && (
                   <p className="mt-1 text-[11px] font-semibold text-red-500">{fieldErrors[field.key]}</p>

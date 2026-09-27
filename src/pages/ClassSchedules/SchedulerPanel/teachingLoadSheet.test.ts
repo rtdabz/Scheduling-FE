@@ -242,7 +242,7 @@ describe("drawSheet pro bono text", () => {
     // The basic subject keeps plain black text.
     expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe("0,0,0");
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
-    expect(texts.map((entry) => entry.text)).toContain("Grey text is Pro Bono");
+    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
     expect(texts.map((entry) => entry.text)).not.toContain("Light red text is Overload");
   });
 
@@ -278,7 +278,7 @@ describe("drawSheet instructor conflict text", () => {
     expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
     expect(texts.some((entry) => /override|conflict/i.test(entry.text))).toBe(false);
-    expect(texts.map((entry) => entry.text)).toContain("Grey text is Pro Bono");
+    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
   });
 });
 

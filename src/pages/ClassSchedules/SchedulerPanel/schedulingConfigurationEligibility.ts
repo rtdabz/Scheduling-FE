@@ -36,7 +36,7 @@ export type BalancedSplitSettings = {
   majorLectureEnabled: boolean;
 };
 
-export const balancedSplitSettingsOf = (settings: {
+export const balancedSplitSettingsOf = (_settings: {
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
 } | null | undefined): BalancedSplitSettings => ({

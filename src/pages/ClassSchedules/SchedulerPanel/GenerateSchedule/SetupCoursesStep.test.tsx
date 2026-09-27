@@ -425,6 +425,62 @@ describe("SetupCoursesStep", () => {
     expect(screen.getByText("2h")).toBeDefined();
   });
 
+  it("holds a course with a Required Day to one Regular meeting", () => {
+    const splitConfigs = {
+      s1: { ...mockConfigs.s1, gecSplitCourseIds: ["c1"] },
+      s2: { ...mockConfigs.s2, gecSplitCourseIds: ["c1"] },
+    };
+    const onConfigChange = vi.fn();
+    render(
+      <SetupCoursesStep
+        courses={[mockCourses[0]]}
+        sections={mockSections}
+        configs={splitConfigs}
+        onConfigChange={onConfigChange}
+        settings={{ forced_day_rules: [{ course_id: "c1" as unknown as number, day: "Saturday" }] }}
+        actionsDisabled={false}
+      />,
+    );
+    const split = screen.getByRole("checkbox", { name: "Split for IT 101" }) as HTMLButtonElement;
+    expect(split.getAttribute("aria-checked")).toBe("false");
+    expect(split.disabled).toBe(true);
+    expect(screen.getByRole("checkbox", { name: "Regular for IT 101" }).getAttribute("aria-checked")).toBe("true");
+
+    // Saving from Configure drops the stale Split marker.
+    fireEvent.click(screen.getByRole("button", { name: /configure/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+    expect(onConfigChange).toHaveBeenCalledWith("s1", expect.objectContaining({ gecSplitCourseIds: [] }));
+  });
+
+  it("saves a Split course given a Required Day in Configure as a Regular class", () => {
+    const onConfigChange = vi.fn();
+    const onRequiredDayChange = vi.fn();
+    render(
+      <SetupCoursesStep
+        courses={[mockCourses[0]]}
+        sections={mockSections}
+        configs={{
+          s1: { ...mockConfigs.s1, gecSplitCourseIds: ["c1"] },
+          s2: { ...mockConfigs.s2, gecSplitCourseIds: ["c1"] },
+        }}
+        onConfigChange={onConfigChange}
+        settings={{}}
+        onRequiredDayChange={onRequiredDayChange}
+        actionsDisabled={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /configure/i }));
+    fireEvent.change(screen.getByLabelText(/Required Day/i), { target: { value: "Saturday" } });
+    expect(screen.getByText(/becomes a Regular class/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+
+    expect(onRequiredDayChange).toHaveBeenCalledWith("c1", "Saturday");
+    for (const sectionId of ["s1", "s2"]) {
+      expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({ gecSplitCourseIds: [] }));
+    }
+  });
+
   it("refuses a duration longer than the course carries", () => {
     render(
       <SetupCoursesStep
@@ -558,15 +614,21 @@ describe("SetupCoursesStep", () => {
       const requiredDay = screen.getByLabelText(/Required Day/i) as HTMLSelectElement;
       expect(requiredDay.value).toBe("Monday");
 
-      fireEvent.click(screen.getByLabelText("Meet on back-to-back days"));
+      fireEvent.click(screen.getByLabelText("Meet on several days a week"));
       // The Required Day cannot be combined with a run.
       expect((screen.getByLabelText(/Required Day/i) as HTMLSelectElement).disabled).toBe(true);
+      fireEvent.click(screen.getByRole("checkbox", { name: "Monday" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Tuesday" }));
       fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
 
       // Saved with the Required Day cleared, in one change.
-      expect(onConsecutiveDaysChange).toHaveBeenCalledWith("101", savedRun(2), null);
+      expect(onConsecutiveDaysChange).toHaveBeenCalledWith(
+        "101",
+        [{ course_id: 101, section_id: null, day_count: 2, preferred_start_day: "Monday", meeting_days: ["Monday", "Tuesday"] }],
+        null,
+      );
       expect(onRequiredDayChange).not.toHaveBeenCalled();
-      expect(screen.getByText("2 consecutive days")).toBeDefined();
+      expect(screen.getByText("2 days · Mon–Tue")).toBeDefined();
       expect(screen.getByText("2 days × 8h")).toBeDefined();
     });
 
@@ -586,9 +648,11 @@ describe("SetupCoursesStep", () => {
       );
 
       fireEvent.click(screen.getByRole("button", { name: /configure/i }));
-      expect((screen.getByLabelText("Meet on back-to-back days") as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByLabelText("Meet on several days a week") as HTMLInputElement).checked).toBe(true);
       expect((screen.getByLabelText(/Duration in hours/i) as HTMLInputElement).value).toBe("8");
-      expect(screen.getByText(/8h straight on each of the 2 days/)).toBeDefined();
+      // No day-count chips: nothing is ticked for the user.
+      expect(screen.queryByRole("button", { name: "3 days" })).toBeNull();
+      expect(screen.getByText(/8h straight on each meeting day/)).toBeDefined();
 
       // Sunday classes are off, so the week ends on Saturday.
       expect(screen.queryByRole("checkbox", { name: "Sunday" })).toBeNull();
@@ -596,14 +660,20 @@ describe("SetupCoursesStep", () => {
         fireEvent.click(screen.getByRole("checkbox", { name: day }));
       }
       // The ticked days set the number of days.
-      expect(screen.getByRole("button", { name: "3 days" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByText(/8h straight on each of the 3 days/)).toBeDefined();
       expect(screen.getByText(/Every section meets Thursday–Saturday/)).toBeDefined();
       fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "6" } });
       fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
 
       expect(onConsecutiveDaysChange).toHaveBeenCalledWith(
         "101",
-        [{ course_id: 101, section_id: null, day_count: 3, preferred_start_day: "Thursday" }],
+        [{
+          course_id: 101,
+          section_id: null,
+          day_count: 3,
+          preferred_start_day: "Thursday",
+          meeting_days: ["Thursday", "Friday", "Saturday"],
+        }],
         null,
       );
       // The Custom Time Duration is each day's length.
@@ -614,7 +684,8 @@ describe("SetupCoursesStep", () => {
       expect(screen.getByText("3 days · Thu–Sat")).toBeDefined();
     });
 
-    it("refuses meeting days with a gap and grows a run from its first ticked day", () => {
+    it("takes days that are not back-to-back and needs at least two", () => {
+      const onConsecutiveDaysChange = vi.fn();
       render(
         <SetupCoursesStep
           courses={[clinical]}
@@ -622,26 +693,38 @@ describe("SetupCoursesStep", () => {
           configs={configs}
           onConfigChange={vi.fn()}
           settings={{ sunday_classes_enabled: false, consecutive_day_rules: savedRun(2) }}
+          onConsecutiveDaysChange={onConsecutiveDaysChange}
           actionsDisabled={false}
         />,
       );
       fireEvent.click(screen.getByRole("button", { name: /configure/i }));
       const apply = () => screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement;
 
-      fireEvent.click(screen.getByRole("checkbox", { name: "Thursday" }));
-      fireEvent.click(screen.getByRole("checkbox", { name: "Saturday" }));
-      expect(screen.getByRole("alert").textContent).toContain("Thursday, Saturday are not back-to-back");
+      // A saved rule with no days is not applied until days are ticked.
       expect(apply().disabled).toBe(true);
 
-      fireEvent.click(screen.getByRole("checkbox", { name: "Thursday" }));
-      expect(screen.getByRole("alert").textContent).toContain("Tick at least two back-to-back days");
+      fireEvent.click(screen.getByRole("checkbox", { name: "Monday" }));
+      expect(screen.getByRole("alert").textContent).toContain("Tick at least two days");
+      expect(apply().disabled).toBe(true);
 
-      // Saturday + 3 days would pass the end of the week, so the run ends there.
-      fireEvent.click(screen.getByRole("button", { name: "3 days" }));
-      for (const day of ["Thursday", "Friday", "Saturday"]) {
-        expect((screen.getByRole("checkbox", { name: day }) as HTMLInputElement).checked).toBe(true);
-      }
-      expect(apply().disabled).toBe(false);
+      fireEvent.click(screen.getByRole("checkbox", { name: "Wednesday" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Friday" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText(/Every section meets Monday, Wednesday, Friday/)).toBeDefined();
+      fireEvent.click(apply());
+
+      expect(onConsecutiveDaysChange).toHaveBeenCalledWith(
+        "101",
+        [{
+          course_id: 101,
+          section_id: null,
+          day_count: 3,
+          preferred_start_day: "Monday",
+          meeting_days: ["Monday", "Wednesday", "Friday"],
+        }],
+        null,
+      );
+      expect(screen.getByText("3 days · Mon, Wed, Fri")).toBeDefined();
     });
 
     it("drops the rule when the class goes back to one meeting a week", () => {
@@ -659,7 +742,7 @@ describe("SetupCoursesStep", () => {
       );
 
       fireEvent.click(screen.getByRole("button", { name: /configure/i }));
-      fireEvent.click(screen.getByLabelText("Meet on back-to-back days"));
+      fireEvent.click(screen.getByLabelText("Meet on several days a week"));
       fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
 
       expect(onConsecutiveDaysChange).toHaveBeenCalledWith("101", [], null);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Ban, ChevronDown, ChevronRight, Hourglass, Settings2 } from "lucide-react";
+import { AlertTriangle, Ban, ChevronDown, ChevronRight, Hourglass, RefreshCw, Settings2 } from "lucide-react";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import RecommendationList from "./RecommendationList";
 import {
@@ -16,6 +16,8 @@ interface Props {
   onCancel: () => void;
   /** Provisional report only: hide it and keep waiting on the search. */
   onKeepSearching?: () => void;
+  /** Generate again with the configuration unchanged. */
+  onRetry?: () => void;
 }
 
 const outcomeLabels: Record<string, string> = {
@@ -31,9 +33,12 @@ const outcomeLabels: Record<string, string> = {
  * folded away under Details. Every part used to be its own banner, and a
  * single failure could stack seven of them.
  */
-export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRetry, onReviewConstraints, onCancel, onKeepSearching }: Props) {
+export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRetry, onReviewConstraints, onCancel, onKeepSearching, onRetry }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const provisional = failure.provisional === true;
+  // Ran out of search time rather than proving nothing fits: the same
+  // settings may well work on another run, so that comes before any fix.
+  const timedOut = !provisional && failure.searchIncomplete === true;
   const bottleneck = failure.bottleneck;
   const reviewSectionId = bottleneck?.section_id ?? null;
   // The retry ladder's own first attempt is the configuration as entered.
@@ -56,7 +61,7 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-black text-slate-950">
-                {provisional ? "No timetable yet" : failureStageLabel(failure.stage)}
+                {provisional ? "No timetable yet" : timedOut ? "Search ran out of time" : failureStageLabel(failure.stage)}
               </h3>
               {provisional && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-800">
@@ -71,6 +76,8 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
             <p className="mt-1 text-xs font-semibold leading-snug text-slate-500">
               {provisional
                 ? "Based on the search so far. Applying a fix stops it and generates again."
+                : timedOut
+                ? "Nothing was saved. This does not mean your settings cannot fit. Generate again with the same settings first, and apply a fix below only if it keeps failing."
                 : `Nothing was saved.${fixesTried > 0 ? ` The generator already tried ${fixesTried} automatic fix${fixesTried === 1 ? "" : "es"}.` : ""} Apply a fix below to generate again.`}
             </p>
             {hasDetails && (
@@ -164,6 +171,16 @@ export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRe
         >
           <Settings2 className="h-4 w-4" /> Review Constraints
         </button>
+        {timedOut && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-sm font-black text-white transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className="h-4 w-4" /> Generate Again
+          </button>
+        )}
       </footer>
     </section>
   );

@@ -75,6 +75,10 @@ export default function ConfigurationStep({
   canManageSundayClasses = false,
   sundayClassCount = 0,
   onSundayClassesChange,
+  targetSectionIds = null,
+  scheduledSectionIds = new Set<string>(),
+  onTargetSectionIdsChange,
+  targetBlockedReason = null,
 }: {
   activeSemester: Semester | null;
   years: number[];
@@ -105,6 +109,13 @@ export default function ConfigurationStep({
   /** Classes already on Sunday, which stay when Sunday is turned off. */
   sundayClassCount?: number;
   onSundayClassesChange?: (enabled: boolean) => void | Promise<void>;
+  /** Sections to generate; null means the whole year level. */
+  targetSectionIds?: string[] | null;
+  /** Sections that already have classes this semester. */
+  scheduledSectionIds?: Set<string>;
+  onTargetSectionIdsChange?: (ids: string[] | null) => void;
+  /** Why the current target cannot be generated, shown under the picker. */
+  targetBlockedReason?: string | null;
 }) {
   const [savingSunday, setSavingSunday] = useState(false);
   const sundayClosed = sundayClassesEnabled === false;
@@ -194,6 +205,17 @@ export default function ConfigurationStep({
               </div>
             </dl>
           </div>
+
+          {onTargetSectionIdsChange && sections.length > 0 && (
+            <SectionTargetPicker
+              sections={sections}
+              targetSectionIds={targetSectionIds}
+              scheduledSectionIds={scheduledSectionIds}
+              onChange={onTargetSectionIdsChange}
+              disabled={yearChangeDisabled}
+              blockedReason={targetBlockedReason}
+            />
+          )}
 
           <div className="mt-4 border-t border-slate-100 pt-4">
             <YearLevelCurriculumSelector
@@ -353,6 +375,123 @@ export default function ConfigurationStep({
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Generate the whole year level, or only some of its sections -- a section
+ * added after the year level was scheduled is fitted around the classes the
+ * other sections already have, which stay as they are.
+ */
+function SectionTargetPicker({
+  sections,
+  targetSectionIds,
+  scheduledSectionIds,
+  onChange,
+  disabled,
+  blockedReason,
+}: {
+  sections: Section[];
+  targetSectionIds: string[] | null;
+  scheduledSectionIds: Set<string>;
+  onChange: (ids: string[] | null) => void;
+  disabled: boolean;
+  blockedReason: string | null;
+}) {
+  const perSection = targetSectionIds !== null;
+  const selected = new Set(targetSectionIds ?? []);
+  const unscheduledIds = sections
+    .map((section) => String(section.id))
+    .filter((id) => !scheduledSectionIds.has(id));
+  const toggle = (id: string) =>
+    onChange(
+      selected.has(id)
+        ? [...selected].filter((item) => item !== id)
+        : [...selected, id],
+    );
+  const modeButton = (active: boolean) =>
+    `rounded-md px-3 py-1.5 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${
+      active ? "bg-[#4e0a10] text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
+    }`;
+
+  return (
+    <div id="generator-section-target" className="mt-4 border-t border-slate-100 pt-4">
+      <span className={FIELD_LABEL}>Generate for</span>
+      <div
+        role="radiogroup"
+        aria-label="Generate for"
+        className="mt-1.5 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!perSection}
+          disabled={disabled}
+          onClick={() => onChange(null)}
+          className={modeButton(!perSection)}
+        >
+          Whole year level
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={perSection}
+          disabled={disabled}
+          // Start from the sections with no classes yet: the usual reason to
+          // pick sections is a newly added one.
+          onClick={() => onChange(unscheduledIds)}
+          className={modeButton(perSection)}
+        >
+          Selected sections
+        </button>
+      </div>
+
+      {perSection && (
+        <>
+          <p className="mt-2 text-[11px] font-semibold leading-snug text-slate-500">
+            Only the ticked sections are generated and replaced. The other sections keep
+            their classes, and the new timetable is fitted around them.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {sections.map((section) => {
+              const id = String(section.id);
+              const checked = selected.has(id);
+              const scheduled = scheduledSectionIds.has(id);
+              return (
+                <label
+                  key={id}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition ${
+                    checked
+                      ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => toggle(id)}
+                    className="h-3.5 w-3.5 accent-[#4e0a10]"
+                  />
+                  {section.name}
+                  <span
+                    className={`rounded-full px-1.5 py-px text-[10px] font-black ${
+                      scheduled
+                        ? "bg-slate-100 text-slate-500"
+                        : "bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
+                    {scheduled ? "Scheduled" : "New"}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {blockedReason && <Notice tone="warning">{blockedReason}</Notice>}
     </div>
   );
 }

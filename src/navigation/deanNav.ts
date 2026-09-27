@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   CalendarDays,
   GraduationCap,
-  UserPlus,
   DoorOpen,
   FileBarChart,
   Calendar,
@@ -39,15 +38,8 @@ export const deanNav: NavSection[] = [
           },
         ]
       },
-      {
-        label: 'Faculty',
-        icon: GraduationCap,
-        id: 'sidebar-faculty',
-        requiredCapability: 'schedule.view',
-        children: [
-          { label: 'Instructors', path: '/dean/faculty', icon: UserPlus, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
-        ],
-      },
+      // A direct link: as a group it held this one page and cost an extra click.
+      { label: 'Instructors', path: '/dean/faculty', icon: GraduationCap, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
       { label: 'Rooms', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
       { label: 'Curriculum', path: '/dean/curriculum', icon: BookOpen, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
     ]

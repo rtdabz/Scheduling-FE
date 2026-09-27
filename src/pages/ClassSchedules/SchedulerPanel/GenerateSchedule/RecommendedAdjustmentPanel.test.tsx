@@ -168,6 +168,23 @@ describe("RecommendedAdjustmentPanel", () => {
     expect(screen.getByRole("button", { name: /^Cancel$/ })).toBeTruthy();
   });
 
+  it("offers Generate Again first when the search only ran out of time", () => {
+    const onRetry = vi.fn();
+    renderPanel({ ...splitFailure, searchIncomplete: true }, { onRetry });
+
+    expect(screen.getByRole("heading", { name: "Search ran out of time" })).toBeTruthy();
+    expect(screen.getByText(/does not mean your settings cannot fit/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Generate Again/ }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no Generate Again when the search finished without a timetable", () => {
+    renderPanel(splitFailure, { onRetry: vi.fn() });
+
+    expect(screen.queryByRole("button", { name: /Generate Again/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: "No valid timetable found" })).toBeTruthy();
+  });
+
   it("lists advice it cannot apply as a manual change", () => {
     const onReviewConstraints = vi.fn();
     renderPanel(advisoryFailure, { onReviewConstraints });

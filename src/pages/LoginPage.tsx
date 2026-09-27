@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import campusBg from '../assets/campus-bg.webp';
 import loginPattern from '../assets/login-pattern.jpg';
@@ -40,6 +40,25 @@ export default function LoginPage() {
   const [isResetMode, setIsResetMode] = useState(false);
   const [isInviteMode, setIsInviteMode] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [resetMismatch, setResetMismatch] = useState(false);
+
+  // The forgot-password dialog closes on Escape like every other dialog.
+  useEffect(() => {
+    if (!showForgot) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowForgot(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [showForgot]);
+
+  const leaveResetMode = () => {
+    setIsResetMode(false);
+    setIsInviteMode(false);
+    setResetPassword('');
+    setResetConfirmation('');
+    setResetMismatch(false);
+  };
 
   const navigateAfterLogin = (user: LoginResponse['user']) => {
     const roleNames: Record<string, string> = { vpaa: 'VPAA', dean: 'Dean', secretary: 'Secretary', program_head: 'Program Head' };
@@ -138,12 +157,16 @@ export default function LoginPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUpdatingPassword) return;
+    // Caught here rather than by a round trip that only says "try again".
+    if (resetPassword !== resetConfirmation) {
+      setResetMismatch(true);
+      return;
+    }
     setIsUpdatingPassword(true);
     try {
       const { data } = await api.post<{ message: string }>('/reset-password', { token: resetToken, email: username, password: resetPassword, password_confirmation: resetConfirmation, invite: isInviteMode });
       toast.success(isInviteMode ? 'Account ready' : 'Password updated', data.message);
-      setIsResetMode(false);
-      setIsInviteMode(false);
+      leaveResetMode();
       // Drop the spent token from the address bar so a refresh cannot resubmit it.
       window.history.replaceState(null, '', window.location.pathname);
       setPassword('');
@@ -185,7 +208,8 @@ export default function LoginPage() {
         {/* Perspective Grid Background Overlay */}
         <img
           src={loginPattern}
-          alt="Grid Background"
+          alt=""
+          aria-hidden="true"
           className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-90"
         />
 
@@ -213,10 +237,20 @@ export default function LoginPage() {
 
           {isResetMode ? (
             <form onSubmit={handleResetPassword} className="space-y-5">
-              <input type="password" required minLength={10} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="New password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
-              <input type="password" required minLength={10} value={resetConfirmation} onChange={(e) => setResetConfirmation(e.target.value)} placeholder="Confirm new password" className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none" />
+              <div>
+                <label htmlFor="reset-password" className="mb-1.5 block text-xs font-semibold text-text">New password <span className="font-normal text-muted">(at least 10 characters)</span></label>
+                <input id="reset-password" type="password" autoComplete="new-password" required minLength={10} value={resetPassword} onChange={(e) => { setResetPassword(e.target.value); setResetMismatch(false); }} className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              </div>
+              <div>
+                <label htmlFor="reset-confirmation" className="mb-1.5 block text-xs font-semibold text-text">Confirm new password</label>
+                <input id="reset-confirmation" type="password" autoComplete="new-password" required minLength={10} value={resetConfirmation} onChange={(e) => { setResetConfirmation(e.target.value); setResetMismatch(false); }} aria-invalid={resetMismatch} aria-describedby={resetMismatch ? 'reset-mismatch' : undefined} className={`w-full h-12 px-4 bg-white/60 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 ${resetMismatch ? 'border-red-500' : 'border-gray-300 focus:border-primary'}`} />
+                {resetMismatch && <p id="reset-mismatch" className="mt-1 text-xs font-semibold text-red-600">The two passwords do not match.</p>}
+              </div>
               <button type="submit" disabled={isUpdatingPassword} className="w-full h-12 bg-primary text-white font-semibold rounded-xl disabled:opacity-50 disabled:pointer-events-none">
                 {isUpdatingPassword ? 'Saving...' : isInviteMode ? 'Set password' : 'Update password'}
+              </button>
+              <button type="button" onClick={leaveResetMode} className="w-full text-sm text-primary hover:underline">
+                Back to sign in
               </button>
             </form>
           ) : <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
@@ -232,7 +266,7 @@ export default function LoginPage() {
                 className="peer block w-full h-12 pl-11 pr-4 bg-white/60 border border-gray-300 rounded-xl text-sm text-text focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200 outline-none"
               />
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted peer-focus:text-primary transition-colors">
-                <Mail className="h-5 w-5" />
+                <User className="h-5 w-5" />
               </div>
               <label
                 htmlFor="username"
@@ -269,6 +303,8 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
                 className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-muted hover:text-text transition-colors"
               >
                 {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -339,7 +375,7 @@ export default function LoginPage() {
             <span>Authorized personnel only</span>
           </div>
         </div>
-        {showForgot && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={handleForgotPassword} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"><h4 className="text-xl font-bold text-text">Reset password</h4><p className="text-sm text-muted">Enter the email assigned by VPAA.</p><input type="email" required value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Institutional email" className="w-full h-12 px-4 border border-gray-300 rounded-xl" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowForgot(false)} className="px-4 py-2 text-sm">Cancel</button><button type="submit" disabled={isSendingResetLink} className="min-w-24 px-4 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50 disabled:pointer-events-none">{isSendingResetLink ? 'Sending...' : 'Send link'}</button></div></form></div>}
+        {showForgot && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(event) => { if (event.target === event.currentTarget) setShowForgot(false); }}><form role="dialog" aria-modal="true" aria-labelledby="forgot-password-title" onSubmit={handleForgotPassword} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"><h4 id="forgot-password-title" className="text-xl font-bold text-text">Reset password</h4><p className="text-sm text-muted">Enter the email assigned by VPAA.</p><input type="email" required autoFocus aria-label="Institutional email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Institutional email" className="w-full h-12 px-4 border border-gray-300 rounded-xl" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowForgot(false)} className="px-4 py-2 text-sm">Cancel</button><button type="submit" disabled={isSendingResetLink} className="min-w-24 px-4 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50 disabled:pointer-events-none">{isSendingResetLink ? 'Sending...' : 'Send link'}</button></div></form></div>}
       </div>
     </div>
   );

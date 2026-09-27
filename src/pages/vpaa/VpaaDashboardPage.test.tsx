@@ -157,6 +157,7 @@ beforeEach(() => {
 const renderPage = () => render(<MemoryRouter><VpaaDashboardPage /></MemoryRouter>);
 
 describe('VpaaDashboardPage', () => {
+  // Renders the full Gantt: about 3 s alone, past the 5 s default under a full parallel run.
   it('reuses the Gantt with configured hours and only published classes in the weekly view', async () => {
     renderPage();
     const chart = await screen.findByRole('region', { name: 'Master calendar timeline' });
@@ -177,7 +178,7 @@ describe('VpaaDashboardPage', () => {
     expect(within(chart).queryAllByRole('button', { name: /^IT 101 lecture/ })).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
     expect(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ })).toHaveLength(2);
-  });
+  }, 15_000);
 
   it('opens shared class details in fullscreen and leaves fullscreen open when the details close', async () => {
     renderPage();

@@ -409,7 +409,7 @@ export default function ReviewGenerateStep({
         ? ` · ${sections.filter((section) => bySection.has(section.id)).map((section) => section.name).join(", ")}`
         : "";
     return {
-      consecutive: `${consecutiveSummary(first.day_count, first.preferred_start_day)}${scope}`,
+      consecutive: `${consecutiveSummary(first.day_count, first.preferred_start_day, first.meeting_days ?? null)}${scope}`,
       consecutiveDays: first.day_count,
     };
   };

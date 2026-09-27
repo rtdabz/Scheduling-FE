@@ -313,7 +313,7 @@ describe("shared field room", () => {
 
 /**
  * Mirrors OperatingHoursRule::fieldEveningWindow. The cut-off is the VPAA's
- * field end time (schedule_settings.field_end_time), not a hardcoded 5:00 PM.
+ * field end time (institution_settings.field_end_time), not a hardcoded 5:00 PM.
  * Slot 0 is 7:00 AM on the default grid; slot 20 is 5:00 PM.
  */
 describe("checkFieldEveningWindow", () => {

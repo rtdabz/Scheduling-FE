@@ -61,12 +61,17 @@ export interface CourseClassConfig {
   requiredDay: string | null;
   /**
    * Consecutive Days, a Regular class only: the class meets on this many
-   * back-to-back days, for its full length each day (8 units, 8 hours every
-   * day). Unset or null is one meeting a week.
+   * days (the ticked ones, back-to-back or not), for its full length each
+   * day (8 units, 8 hours every day). Unset or null is one meeting a week.
    */
   consecutiveDays?: number | null;
   /** Consecutive Days: the day the run should start on; null lets the Generator choose. */
   preferredStartDay?: string | null;
+  /**
+   * Consecutive Days: the exact days ticked, in week order, back-to-back or
+   * not (Monday, Wednesday, Friday). Null on an older rule saved without them.
+   */
+  meetingDays?: string[] | null;
   /** A ranking preference, never a restriction. */
   preferredRoomId: string | null;
   sectionScope: SectionScope;
@@ -98,11 +103,31 @@ export const isIntegratedShape = (shape: DurationShape): boolean =>
 export const isDurationEditable = (shape: DurationShape): boolean =>
   shape === "single" || shape === "split";
 
-/** A Regular class set to meet on back-to-back days. */
+/** A Regular class set to meet on several days (Consecutive Days). */
 export const isConsecutive = (
   config: Pick<CourseClassConfig, "configuration" | "consecutiveDays">,
 ): boolean =>
   config.configuration === "regular" && (config.consecutiveDays ?? 0) >= MIN_CONSECUTIVE_DAYS;
+
+/**
+ * The course as a Regular class, which is all a Required Day allows: the
+ * generation payload drops a Split or Integrated marker for a course with a
+ * Required Day and places it as one meeting on that day. A Split keeps its
+ * weekly length; the Hybrid shapes' fixed lengths fall back to the course's.
+ */
+export function asRegularClass(config: CourseClassConfig, course: Course): CourseClassConfig {
+  if (config.configuration === "regular") return config;
+  return {
+    ...config,
+    configuration: "regular",
+    delivery: config.delivery === "hybrid" ? "onsite" : config.delivery,
+    hybridType: undefined,
+    durationMinutes:
+      durationShape(config) === "split" ? config.durationMinutes : defaultDurationMinutes(course),
+    lectureMinutes: undefined,
+    laboratoryMinutes: undefined,
+  };
+}
 
 /** A saved Consecutive Days rule, as `/scheduling-settings` returns it. */
 export interface ConsecutiveDayRule {
@@ -111,6 +136,8 @@ export interface ConsecutiveDayRule {
   section_id: number | null;
   day_count: number;
   preferred_start_day: string | null;
+  /** The exact days ticked, in week order; null on an older back-to-back rule. */
+  meeting_days?: string[] | null;
 }
 
 export const MIN_CONSECUTIVE_DAYS = 2;
@@ -141,9 +168,13 @@ export function consecutiveDayRuns(
   return runs;
 }
 
-/** "Thursday-Saturday", or "Monday-Tuesday" for two days. */
+/** "Thursday–Saturday" for back-to-back days, else "Monday, Wednesday, Friday". */
 export const runLabel = (run: string[]): string =>
-  run.length === 0 ? "" : `${run[0]}–${run[run.length - 1]}`;
+  run.length === 0
+    ? ""
+    : isBackToBack(run)
+      ? `${run[0]}–${run[run.length - 1]}`
+      : run.join(", ");
 
 /**
  * The course's Consecutive Days rules as the settings save expects them: one
@@ -159,6 +190,7 @@ export function consecutiveRulesForCourse(
     course_id: Number(courseId),
     day_count: config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS,
     preferred_start_day: config.preferredStartDay ?? null,
+    meeting_days: config.meetingDays ?? null,
   };
   if (config.sectionScope === "all") return [{ ...base, section_id: null }];
   const known = new Set(sections.map((section) => section.id));
@@ -170,7 +202,7 @@ export function consecutiveRulesForCourse(
 /** Two rule lists for one course say the same thing, in any order. */
 export function sameConsecutiveRules(left: ConsecutiveDayRule[], right: ConsecutiveDayRule[]): boolean {
   const key = (rule: ConsecutiveDayRule) =>
-    `${rule.section_id ?? "all"}:${rule.day_count}:${rule.preferred_start_day ?? ""}`;
+    `${rule.section_id ?? "all"}:${rule.day_count}:${rule.preferred_start_day ?? ""}:${(rule.meeting_days ?? []).join(",")}`;
   const a = left.map(key).sort();
   const b = right.map(key).sort();
   return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -226,10 +258,12 @@ export function consecutivePlacementFor(
 ): ConsecutivePlacement | null {
   const rule = consecutiveRuleForSection(courseId, sectionId, rules);
   if (!rule) return null;
+  // Ticked days are the one run; an older rule keeps its back-to-back runs.
+  const ticked = rule.meeting_days && rule.meeting_days.length >= MIN_CONSECUTIVE_DAYS ? rule.meeting_days : null;
   return {
-    dayCount: rule.day_count,
-    preferredStartDay: rule.preferred_start_day,
-    runs: consecutiveDayRuns(rule.day_count, sundayClassesEnabled),
+    dayCount: ticked ? ticked.length : rule.day_count,
+    preferredStartDay: ticked ? ticked[0] : rule.preferred_start_day,
+    runs: ticked ? [ticked] : consecutiveDayRuns(rule.day_count, sundayClassesEnabled),
   };
 }
 
@@ -282,8 +316,21 @@ export function isBackToBack(days: string[]): boolean {
   );
 }
 
-/** "3 days · Thu–Sat" when the days are chosen, else "3 consecutive days". */
-export function consecutiveSummary(dayCount: number, startDay: string | null): string {
+/**
+ * "3 days · Mon, Wed, Fri" or "3 days · Thu–Sat" when the days are chosen,
+ * else "3 consecutive days".
+ */
+export function consecutiveSummary(
+  dayCount: number,
+  startDay: string | null,
+  meetingDays: string[] | null = null,
+): string {
+  if (meetingDays && meetingDays.length >= MIN_CONSECUTIVE_DAYS) {
+    const short = meetingDays.map((day) => day.slice(0, 3));
+    return `${meetingDays.length} days · ${
+      isBackToBack(meetingDays) ? `${short[0]}–${short[short.length - 1]}` : short.join(", ")
+    }`;
+  }
   const start = startDay ? DAYS.indexOf(startDay) : -1;
   const end = start >= 0 ? DAYS[start + dayCount - 1] : undefined;
   return startDay && end
@@ -644,6 +691,7 @@ export function inferInitialCourseClassConfig(
       delivery: isOnline ? "online" : "onsite",
       consecutiveDays: rule.day_count,
       preferredStartDay: rule.preferred_start_day,
+      meetingDays: rule.meeting_days ?? null,
       // A run cannot also have a Required Day; the server refuses the pair.
       requiredDay: null,
     };

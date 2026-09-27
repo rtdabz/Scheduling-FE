@@ -8,7 +8,7 @@ import ConnectionBanner from './ConnectionBanner'
 import RouteLoadingBar from '../ui/RouteLoadingBar'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
-import api from '../../lib/api'
+import { fetchCurrentUser } from '../../lib/currentUser'
 import { startLiveUpdates } from '../../lib/liveUpdates'
 import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
@@ -30,12 +30,9 @@ export default function AppLayout() {
   }, [userId])
 
   useEffect(() => {
-    api.get<StoredUser>('/me')
-      .then(({ data }) => {
-        if (!data) return
-        const storage = localStorage.getItem('token') ? localStorage : sessionStorage
-        storage.setItem('user', JSON.stringify(data))
-        setUser(data)
+    fetchCurrentUser()
+      .then((data) => {
+        if (data) setUser(data)
       })
       .catch(() => {})
   }, [])
@@ -126,6 +123,7 @@ export default function AppLayout() {
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onOpen={() => setSidebarOpen(true)}
         navItems={navItems}
       />
 

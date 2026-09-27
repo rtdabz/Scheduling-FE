@@ -67,7 +67,7 @@ export interface InitialDataResponse {
   field_course_assignment_enabled?: boolean;
   field_course_codes?: string[];
   resource_slot_limits?: { online: number; field: number } | null;
-  /** Grid window from schedule_settings; the client used to hardcode it. */
+  /** Grid window from institution_settings; the client used to hardcode it. */
   time_grid?: TimeGridConfigInput | null;
 }
 

@@ -1,19 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Loader2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Loader2, RotateCcw, ShieldAlert, Sparkles } from "lucide-react";
 import Modal from "../../../../components/ui/Modal";
 import { useToast } from "../../../../context/ToastContext";
 import { apiErrorMessage } from "../../../../lib/apiError";
+import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
+import OverloadConfirmationModal from "../../../../components/faculty/OverloadConfirmationModal";
 import { FULL_DAY_NAMES } from "../../../../lib/timeGrid";
 import {
   alreadyResolvedFrom,
   conflictRuleLabel,
   describeConflictSchedule,
+  fetchConflictRecommendations,
   fetchConflicts,
+  fetchResolvedConflicts,
   isReplottable,
   overrideConflict,
   refusalDetails,
   resolutionActionLabel,
+  resolutionMethodLabel,
+  resolutionStatusLabel,
   resolveConflict,
+  type ConflictRecommendation,
+  type ConflictResolution,
   type ConflictRule,
   type ConflictSchedule,
   type ResolutionAction,
@@ -49,6 +57,8 @@ interface ResolveConflictModalProps {
    * listed.
    */
   rules?: ConflictRule[];
+  /** The tab shown first; the caller opens on Resolved when nothing is open. */
+  initialTab?: "open" | "resolved";
   /** Called after any successful write so the caller reloads. */
   onResolved: () => void;
 }
@@ -71,6 +81,22 @@ const fieldClass =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 focus:border-[#4e0a10] focus:outline-none";
 
 const hhmm = (time: string): string => time.slice(0, 5);
+
+/** Green for fixed, amber for allowed to stand, red for back on the open list. */
+const RESOLUTION_STATUS_CLASSES: Record<ConflictResolution["status"], string> = {
+  resolved: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  overridden: "border-amber-200 bg-amber-50 text-amber-800",
+  reopened: "border-red-200 bg-red-50 text-red-800",
+};
+
+const formatResolvedAt = (iso: string | null): string => {
+  if (!iso) return "";
+  const date = new Date(iso);
+
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+};
 
 /**
  * The Resolve dialog: what is clashing, which class to change, and how.
@@ -96,6 +122,7 @@ export default function ResolveConflictModal({
   canAssignInstructor,
   focusScheduleId = null,
   rules,
+  initialTab = "open",
   onResolved,
 }: ResolveConflictModalProps) {
   const { toast } = useToast();
@@ -109,6 +136,24 @@ export default function ResolveConflictModal({
   const [reason, setReason] = useState("");
   const [violations, setViolations] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // The server's pro bono question for a reassignment, asked before anything is
+  // written. Answering No sends nothing, so the conflict stays exactly as it was.
+  const [overloadPrompt, setOverloadPrompt] = useState<{
+    confirmation: OverloadConfirmation;
+    request: ResolutionRequest;
+  } | null>(null);
+  // Ranked fixes for the selected conflict, tagged with the conflict they were
+  // asked for so a late answer for an earlier selection is simply not shown.
+  // `options: null` while the request is in flight.
+  const [recommendations, setRecommendations] = useState<{
+    conflictId: string;
+    options: ConflictRecommendation[] | null;
+  } | null>(null);
+  const [applyingRank, setApplyingRank] = useState<number | null>(null);
+  const [tab, setTab] = useState<"open" | "resolved">(initialTab);
+  // null until the Resolved tab is first opened, and again after any write so
+  // the next visit reads the new entry rather than a stale list.
+  const [resolutions, setResolutions] = useState<ConflictResolution[] | null>(null);
 
   // Filtered where the list is read rather than where it is stored, so a write
   // that answers with the whole open set does not have to know about the filter.
@@ -135,6 +180,19 @@ export default function ResolveConflictModal({
    * happens once, on the list this dialog opened with, so a later write that
    * replaces the list cannot drag the user back to where they came in.
    */
+  const loadRecommendations = useCallback(async (conflictId: string) => {
+    setRecommendations({ conflictId, options: null });
+    let options: ConflictRecommendation[] = [];
+    try {
+      options = await fetchConflictRecommendations(conflictId);
+    } catch {
+      // A failed or stale (404) lookup leaves the manual fixes, which are
+      // always there; it is not worth an error toast on top of the conflict.
+    }
+    setRecommendations((current) =>
+      current?.conflictId === conflictId ? { conflictId, options } : current);
+  }, []);
+
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const scanned = await fetchConflicts({ semesterId, departmentId, signal });
@@ -153,12 +211,13 @@ export default function ResolveConflictModal({
         : match.schedules.find(isReplottable) ?? match.schedules[0];
       setSelectedId(match.id);
       setTargetId(editable.id);
+      void loadRecommendations(match.id);
     } catch (err) {
       if (signal?.aborted) return;
       setConflicts([]);
       toast.error("Conflicts", apiErrorMessage(err, "Could not load the conflict list."));
     }
-  }, [departmentId, focusScheduleId, rules, semesterId, toast]);
+  }, [departmentId, focusScheduleId, loadRecommendations, rules, semesterId, toast]);
 
   // The dialog is mounted only while it is open, so one scan on mount is the
   // whole of its loading: every later list comes back with a write's response.
@@ -169,6 +228,26 @@ export default function ResolveConflictModal({
     return () => controller.abort();
   }, [load]);
 
+  const loadResolutions = async () => {
+    try {
+      setResolutions(await fetchResolvedConflicts({ semesterId, departmentId }));
+    } catch (err) {
+      setResolutions([]);
+      toast.error("Conflicts", apiErrorMessage(err, "Could not load the resolved conflicts."));
+    }
+  };
+
+  const showTab = (next: "open" | "resolved") => {
+    setTab(next);
+    if (next === "resolved" && resolutions === null) void loadResolutions();
+  };
+
+  // Filtered like the open list, so Instructor Assignment sees only its rule.
+  const shownResolutions = useMemo(
+    () => (resolutions ?? []).filter((entry) => !rules || rules.includes(entry.rule as ConflictRule)),
+    [resolutions, rules],
+  );
+
   const pick = (conflict: ScheduleConflict) => {
     const editable = conflict.schedules.find(isReplottable) ?? conflict.schedules[0];
     setSelectedId(conflict.id);
@@ -177,6 +256,7 @@ export default function ResolveConflictModal({
     setForm(null);
     setReason("");
     setViolations([]);
+    void loadRecommendations(conflict.id);
   };
 
   const chooseAction = (next: ResolutionAction, schedule: ConflictSchedule) => {
@@ -207,6 +287,8 @@ export default function ResolveConflictModal({
     setForm(null);
     setReason("");
     setViolations([]);
+    setRecommendations(null);
+    setResolutions(null);
     onResolved();
     toast.success(
       "Conflicts",
@@ -223,6 +305,8 @@ export default function ResolveConflictModal({
       setSelectedId(null);
       setAction(null);
       setForm(null);
+      setRecommendations(null);
+      setResolutions(null);
       onResolved();
       toast.info("Conflicts", "That conflict is already resolved. The list has been refreshed.");
       return;
@@ -233,24 +317,51 @@ export default function ResolveConflictModal({
     toast.error("Conflicts", details[0] ?? apiErrorMessage(err, fallback));
   };
 
-  const submit = async () => {
-    if (!selected || !form) return;
+  /**
+   * One path for a manual fix and a recommended one: both are a resolve request,
+   * and both answer the pro bono question the same way.
+   */
+  const send = async (request: ResolutionRequest, confirmOverload = false) => {
+    if (!selected) return;
     setIsSubmitting(true);
     setViolations([]);
     try {
       settle(await resolveConflict(selected.id, {
-        ...form,
+        ...request,
         reason: reason.trim() || undefined,
-        // The dialog has already shown the clash being resolved; a second
-        // prompt about the instructor's load would be asking twice.
-        confirm_overload: form.action === "reassign_instructor" ? true : undefined,
+        // Only after the user has seen the pro bono question: resolving the
+        // clash is not consent to push the instructor past their Basic Load.
+        confirm_overload: confirmOverload || undefined,
       }));
+      setOverloadPrompt(null);
     } catch (err) {
+      const confirmation = overloadConfirmationFrom(err);
+      if (confirmation !== null) {
+        setOverloadPrompt({ confirmation, request });
+        return;
+      }
+      setOverloadPrompt(null);
       handleFailure(err, "That change was refused, so nothing was saved.");
     } finally {
       setIsSubmitting(false);
+      setApplyingRank(null);
     }
   };
+
+  const submit = () => {
+    if (form) void send(form);
+  };
+
+  const applyRecommendation = (option: ConflictRecommendation) => {
+    setApplyingRank(option.rank);
+    setAction(null);
+    setForm(null);
+    void send({ ...option.payload, source: "recommendation" });
+  };
+
+  const shownRecommendations = recommendations !== null && recommendations.conflictId === selectedId
+    ? recommendations.options
+    : null;
 
   const submitOverride = async () => {
     if (!selected || reason.trim().length < 3) return;
@@ -285,7 +396,7 @@ export default function ResolveConflictModal({
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
             Close
           </button>
-          {action === "request_override" ? (
+          {tab === "resolved" ? null : action === "request_override" ? (
             <button
               type="button"
               onClick={submitOverride}
@@ -309,6 +420,79 @@ export default function ResolveConflictModal({
         </>
       }
     >
+      <div className="flex gap-1 border-b border-slate-200 px-4 pt-3 sm:px-5" role="tablist">
+        {(["open", "resolved"] as const).map((name) => (
+          <button
+            key={name}
+            type="button"
+            role="tab"
+            aria-selected={tab === name}
+            onClick={() => showTab(name)}
+            className={`-mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${
+              tab === name
+                ? "border-[#4e0a10] text-[#4e0a10]"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {name === "open"
+              ? `Open${conflicts !== null ? ` (${open.length})` : ""}`
+              : `Resolved${resolutions !== null ? ` (${shownResolutions.length})` : ""}`}
+          </button>
+        ))}
+      </div>
+
+      {tab === "resolved" ? (
+        <section className="p-4 sm:p-5">
+          {resolutions === null ? (
+            <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading resolved conflicts…
+            </p>
+          ) : shownResolutions.length === 0 ? (
+            <p className="rounded-lg border border-slate-200 bg-white px-3 py-4 text-xs font-semibold text-slate-500">
+              No conflicts have been resolved this semester yet.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {shownResolutions.map((entry) => (
+                <li key={entry.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${RESOLUTION_STATUS_CLASSES[entry.status]}`}>
+                      {entry.status === "reopened"
+                        ? <RotateCcw className="h-3 w-3" />
+                        : entry.status === "overridden"
+                          ? <ShieldAlert className="h-3 w-3" />
+                          : <CheckCircle2 className="h-3 w-3" />}
+                      {resolutionStatusLabel(entry.status)}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                      {resolutionMethodLabel(entry)}
+                    </span>
+                    <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                      {conflictRuleLabel(entry.rule)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-slate-700">
+                    {entry.message || conflictRuleLabel(entry.rule)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {[formatResolvedAt(entry.resolved_at), entry.resolved_by ? `by ${entry.resolved_by}` : null]
+                      .filter(Boolean)
+                      .join(" ")}
+                  </p>
+                  {entry.reason && (
+                    <p className="mt-1 text-[11px] italic text-slate-600">“{entry.reason}”</p>
+                  )}
+                  {entry.status === "reopened" && (
+                    <p className="mt-1 text-[11px] font-semibold text-red-700">
+                      This clash is back on the timetable. Fix it from the Open tab.
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : (
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] sm:p-5">
         <section className="min-w-0">
           <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
@@ -355,13 +539,61 @@ export default function ResolveConflictModal({
         </section>
 
         <section className="min-w-0">
-          <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Suggested actions</h3>
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Fix this conflict</h3>
           {!selected || !target ? (
             <p className="mt-3 text-xs font-semibold text-slate-500">
               Choose a conflict to see what can be done about it.
             </p>
           ) : (
             <div className="mt-3 space-y-3">
+              <div className="space-y-1.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  <Sparkles className="h-3 w-3" /> Recommended fixes
+                </p>
+                {shownRecommendations === null ? (
+                  <p className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Finding conflict-free options…
+                  </p>
+                ) : shownRecommendations.length === 0 ? (
+                  <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-500">
+                    No automatic fix was found. Choose a change manually below.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {shownRecommendations.map((option) => (
+                      <li
+                        key={`${option.rank}-${option.action}-${option.schedule_id}`}
+                        className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2"
+                      >
+                        <span className="min-w-0 flex-1 text-[11px] font-semibold text-slate-700">
+                          {option.summary}
+                          {option.requires_overload_confirmation && (
+                            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                              Over Basic Load
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => applyRecommendation(option)}
+                          disabled={isSubmitting}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {applyingRank === option.rank && isSubmitting
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Check className="h-3 w-3" />}
+                          Apply
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <p className="border-t border-slate-200 pt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                Or choose a change manually
+              </p>
+
               <fieldset className="space-y-1.5">
                 <legend className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Class to change</legend>
                 {selected.schedules.map((schedule) => (
@@ -517,6 +749,16 @@ export default function ResolveConflictModal({
           )}
         </section>
       </div>
+      )}
+
+      {overloadPrompt && (
+        <OverloadConfirmationModal
+          confirmation={overloadPrompt.confirmation}
+          isSaving={isSubmitting}
+          onConfirm={() => void send(overloadPrompt.request, true)}
+          onCancel={() => !isSubmitting && setOverloadPrompt(null)}
+        />
+      )}
     </Modal>
   );
 }

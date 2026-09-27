@@ -70,6 +70,7 @@ import { isCustomDayPattern, relocatedPairPattern, requiredRoomTypeForMeeting, u
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
+import { fetchConflicts, fetchResolvedConflicts, resolvedScheduleIds } from "../../../../lib/conflicts";
 import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
 import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
@@ -93,7 +94,7 @@ const isNotFoundError = (err: unknown): boolean => {
     err !== null &&
     typeof err === "object" &&
     "response" in err &&
-    (err as any).response?.status === 404
+    (err as { response?: { status?: number } }).response?.status === 404
   );
 };
 
@@ -220,6 +221,8 @@ interface AtomicScheduleResponse {
 
 interface AcceptedRecommendationResponse {
   schedules: ApiScheduleRecord[];
+  /** The committed plan; its metadata names the conflicts the commit cleared. */
+  schedule_plan?: { metadata?: { resolved_conflicts?: { id: string; message: string }[] } };
 }
 
 interface FacultyAssignResponse extends Partial<ApiScheduleRecord> {
@@ -756,25 +759,25 @@ export const useScheduler = () => {
     // navigation and should not force the WICARS Buddy chat open.
     if (previousContext && previousContext.sectionId !== selectedSectionId) return;
 
-    if (currentStatus === "approved" || currentStatus === "approved_by_dean") {
+    // One message per outcome. They used to share a single "approved/rejected"
+    // text, and since the buddy shows each text once per session, a rejection
+    // that followed an approval was never shown at all.
+    const outcomeText: Record<string, string> = {
+      approved: "The VPAA approved the submitted schedule.",
+      approved_by_dean: "The Dean approved the submitted schedule. It now waits for the VPAA.",
+      rejected_by_dean: "The Dean returned the submitted schedule for revision.",
+      rejected: "The VPAA returned the submitted schedule for revision.",
+      revision: "The submitted schedule was recalled for revision.",
+    };
+    const text = outcomeText[currentStatus];
+    if (text) {
       window.dispatchEvent(
         new CustomEvent("show-helper-buddy", {
           detail: {
             id: crypto.randomUUID(),
-            type: "approved",
+            type: currentStatus === "approved" || currentStatus === "approved_by_dean" ? "approved" : "rejected",
             status: currentStatus,
-            text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
-          },
-        })
-      );
-    } else if (currentStatus === "rejected" || currentStatus === "rejected_by_dean" || currentStatus === "revision") {
-      window.dispatchEvent(
-        new CustomEvent("show-helper-buddy", {
-          detail: {
-            id: crypto.randomUUID(),
-            type: "rejected",
-            status: currentStatus,
-            text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
+            text,
           },
         })
       );
@@ -1544,9 +1547,41 @@ export const useScheduler = () => {
       return next.size === prev.size ? prev : next;
     });
   }, [conflictedMap]);
+  // Resolutions saved on the server -- from the conflict inbox or an accepted
+  // recommendation -- so the green flag survives a reload and shows for fixes
+  // made elsewhere. Re-read when the timetable changes, the only time a
+  // resolution can appear or be undone. The grid still lets a live conflict win.
+  const [savedResolvedIds, setSavedResolvedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // The Conflicts button's "N open · M resolved". Both come from the server's
+  // semester-wide scan, so they include clashes with other departments' rooms
+  // that the grid's own check cannot see. Null until the first read answers.
+  const [conflictCounts, setConflictCounts] = useState<{ open: number; resolved: number } | null>(null);
+  const [conflictCountsRevision, setConflictCountsRevision] = useState(0);
+  const refreshConflictCounts = useCallback(() => setConflictCountsRevision((revision) => revision + 1), []);
+  useEffect(() => {
+    if (!activeSemester) return;
+    const controller = new AbortController();
+    const semesterId = Number(activeSemester.id);
+    void Promise.all([
+      fetchConflicts({ semesterId, signal: controller.signal }),
+      fetchResolvedConflicts({ semesterId, signal: controller.signal }),
+    ])
+      .then(([openConflicts, entries]) => {
+        setSavedResolvedIds(resolvedScheduleIds(entries));
+        setConflictCounts({
+          open: openConflicts.length,
+          // Reopened entries are already counted as open.
+          resolved: entries.filter((entry) => entry.status !== "reopened").length,
+        });
+      })
+      // Only flags and a badge: a failed read leaves what is already shown.
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [activeSemester, schedules, conflictCountsRevision]);
   const allResolvedIds = useMemo<ReadonlySet<string>>(
-    () => new Set([...resolvedIds, ...placedResolvedIds]),
-    [resolvedIds, placedResolvedIds]
+    () => new Set([...resolvedIds, ...placedResolvedIds, ...savedResolvedIds]),
+    [resolvedIds, placedResolvedIds, savedResolvedIds]
   );
 
   const onScheduleRelocated =useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
@@ -1625,7 +1660,7 @@ export const useScheduler = () => {
         toast.error("Relocation Failed", "Could not save the new schedule slot.");
       }
     }
-  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules]);
+  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules, isSummerWeekendBlocked, toast, triggerConflictReminder]);
 
   const dragDrop = useDragDrop({
     schedules,
@@ -1943,6 +1978,7 @@ export const useScheduler = () => {
 
       let savedScheduleRecords: ApiScheduleRecord[];
       let deletedScheduleRecordIds: number[] = [];
+      let resolvedConflictCount = 0;
 
       // Acceptance creates/replaces every replaceable row for the course. That
       // is correct for a new placement, but too broad while rescheduling one
@@ -1957,6 +1993,7 @@ export const useScheduler = () => {
           `/schedule-recommendations/${selectedRecommendationId}/accept`
         );
         savedScheduleRecords = response.data.schedules;
+        resolvedConflictCount = response.data.schedule_plan?.metadata?.resolved_conflicts?.length ?? 0;
       } else {
         const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
           operations,
@@ -1991,6 +2028,15 @@ export const useScheduler = () => {
         } else {
           toast.success("Schedule Created", "Class schedule successfully plotted.");
         }
+      }
+
+      if (resolvedConflictCount > 0) {
+        // Counted by the server from a scan before and after the commit, so
+        // this names conflicts that are actually gone, not ones it hoped to fix.
+        toast.success(
+          "Conflicts Resolved",
+          `Resolved ${resolvedConflictCount} conflict${resolvedConflictCount === 1 ? "" : "s"} on the timetable.`,
+        );
       }
 
       if (modalWasConflicted) {
@@ -2193,10 +2239,17 @@ export const useScheduler = () => {
     }
 
     const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
+    // `revision` rows were recalled or returned from approval.
+    const recalledCount = new Set(
+      targetSchedules.filter((s) => s.status === "revision").map((s) => s.sectionId),
+    ).size;
     const confirmed = await confirm({
       title: "Reset Schedules",
       message: `Are you sure you want to reset the schedules of ${sectionLabel}? `
-        + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`,
+        + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`
+        + (recalledCount > 0
+          ? ` ${recalledCount} of these section${recalledCount === 1 ? " was" : "s were"} recalled or returned from approval; ${recalledCount === 1 ? "its" : "their"} previously submitted classes will be lost.`
+          : ""),
       eyebrow: "Irreversible Action",
       confirmLabel: "Yes, Reset Schedules",
       variant: "danger",
@@ -2439,12 +2492,17 @@ export const useScheduler = () => {
       return;
     }
 
+    // Only the rows marked Done reopen. Sending every row of the section let a
+    // stale screen pull already-submitted rows back out of the Dean's queue.
+    const completedRows = sectionSchedules.filter((s) => s.status === "completed");
+    if (completedRows.length === 0) return;
+
     try {
       setIsEditingSection(true);
-      const ids = sectionSchedules.map((s) => Number(s.id));
+      const ids = completedRows.map((s) => Number(s.id));
       await api.patch("/schedules/batch-status", { ids, status: "draft" });
 
-      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      const sectionScheduleIds = new Set(completedRows.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
           sectionScheduleIds.has(schedule.id)
@@ -2498,12 +2556,15 @@ export const useScheduler = () => {
 
   const handleResubmit = useCallback(async () => {
     if (!selectedSectionId || isResubmittingSection) return;
+    // Only the returned rows unlock; rows at any other stage stay where they are.
+    const returnedRows = sectionSchedules.filter((s) => s.status === "rejected" || s.status === "rejected_by_dean");
+    if (returnedRows.length === 0) return;
     try {
       setIsResubmittingSection(true);
-      const ids = sectionSchedules.map((s) => Number(s.id));
+      const ids = returnedRows.map((s) => Number(s.id));
       await api.patch("/schedules/batch-status", { ids, status: "revision" });
 
-      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      const sectionScheduleIds = new Set(returnedRows.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
           sectionScheduleIds.has(schedule.id)
@@ -3148,7 +3209,7 @@ export const useScheduler = () => {
         setConflictInfo(null);
       }
     }
-  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast]);
+  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast, isSummerWeekendBlocked]);
 
 
   const activeSemesterText = useMemo(() => {
@@ -3306,6 +3367,8 @@ export const useScheduler = () => {
     checkConflict,
     conflictedMap,
     resolvedIds: allResolvedIds,
+    conflictCounts,
+    refreshConflictCounts,
     modalWasConflicted,
     modalRun,
     checkFacultyConflict,

@@ -32,6 +32,7 @@ interface InitialTeachingLoadData {
   courses?: ApiCourseRecord[];
   subjects?: ApiSubjectRecord[];
   users: UserSummary[];
+  schedules_truncated?: boolean;
 }
 
 interface TeachingLoadData {
@@ -172,6 +173,16 @@ import LoadingSpinner from "./ui/LoadingSpinner";
 
 export default function InstructorTeachingLoadButton({ facultyId }: InstructorTeachingLoadButtonProps) {
   const { toast } = useToast();
+
+  // Printouts are official documents: ask for the largest page the API serves
+  // and say so when even that was cut short, rather than print a partial load.
+  const loadTeachingData = async () => {
+    const response = await api.get<InitialTeachingLoadData>("/initial-data", { params: { schedule_limit: 2000 } });
+    if (response.data.schedules_truncated) {
+      toast.warning("Incomplete Data", "This department has more class meetings than can be loaded at once, so the printout may be missing classes.");
+    }
+    return response.data;
+  };
   // Which button is working, so only that one shows a spinner; both stay disabled meanwhile.
   const [loadingAction, setLoadingAction] = useState<"schedule" | "load" | null>(null);
   const isLoading = loadingAction !== null;
@@ -183,8 +194,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     setLoadingAction("load");
 
     try {
-      const response = await api.get<InitialTeachingLoadData>("/initial-data");
-      setTeachingLoadData(mapInitialData(response.data));
+      setTeachingLoadData(mapInitialData(await loadTeachingData()));
       setIsPrinting(true);
     } catch {
       toast.error("Print Failed", "Teaching-load data could not be loaded.");
@@ -197,8 +207,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     if (isLoading) return;
     setLoadingAction("schedule");
     try {
-      const response = await api.get<InitialTeachingLoadData>("/initial-data");
-      const data = mapInitialData(response.data);
+      const data = mapInitialData(await loadTeachingData());
       const faculty = data.faculties.find((f) => Number(f.id) === Number(facultyId));
       if (!faculty) {
         toast.warning("Faculty Not Found", "Instructor information could not be located.");

@@ -280,6 +280,35 @@ export default function AutoAssignModal({
     return loads;
   }, [assignments, faculties]);
 
+  /**
+   * The list with each row's conflict worked out again from what is on it now.
+   * The flag stored at queue time only lands on the later of two clashing
+   * sections and goes stale when the other is removed; this marks both sides
+   * and clears once the clash is gone. Save uses it too, so the override flag
+   * matches what Review showed.
+   */
+  const checkedAssignments = useMemo(() => {
+    const scheduleById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
+    const schedulesOf = (assignment: QueuedAssignment) => assignment.scheduleIds
+      .map((scheduleId) => scheduleById.get(scheduleId))
+      .filter((schedule): schedule is ScheduleItem => !!schedule);
+    return assignments.map((assignment) => {
+      const own = schedulesOf(assignment);
+      let conflict: string | null = null;
+      for (const scheduleId of assignment.scheduleIds) {
+        conflict = checkFacultyConflict(assignment.facultyId, scheduleId);
+        if (conflict) break;
+      }
+      if (!conflict) {
+        const clash = assignments.find((other) => other.key !== assignment.key
+          && other.facultyId === assignment.facultyId
+          && schedulesOf(other).some((schedule) => own.some((mine) => overlaps(mine, schedule))));
+        if (clash) conflict = `Overlaps ${clash.courseCode} ${clash.sectionName} on the list`;
+      }
+      return { ...assignment, conflict };
+    });
+  }, [assignments, checkFacultyConflict, schedules]);
+
   useEffect(() => {
     if (!isOpen) return;
     setStep(1);
@@ -497,7 +526,7 @@ export default function AutoAssignModal({
     // Overrides travel in their own batch per instructor, so only the classes
     // marked as conflicts are allowed through one.
     const byFaculty = new Map<string, AssignmentBatch>();
-    assignments.forEach((assignment) => {
+    checkedAssignments.forEach((assignment) => {
       const overrideConflicts = Boolean(assignment.conflict);
       const batchKey = `${assignment.facultyId}:${overrideConflicts ? "override" : "plain"}`;
       const existing = byFaculty.get(batchKey);
@@ -556,14 +585,14 @@ export default function AutoAssignModal({
             </div>
           )}
 
-          {step === 2 && <ReviewAssignments assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} onRemove={removeAssignment} />}
+          {step === 2 && <ReviewAssignments assignments={checkedAssignments} faculties={faculties} facultyLoads={facultyLoads} onRemove={removeAssignment} />}
 
-          {step === 3 && <ConfirmAssignments assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} onEdit={() => setStep(2)} />}
+          {step === 3 && <ConfirmAssignments assignments={checkedAssignments}faculties={faculties} facultyLoads={facultyLoads} onEdit={() => setStep(2)} />}
         </main>
 
         <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
           {step === 3 ? (
-            <ConfirmValidationSummary assignments={assignments} faculties={faculties} facultyLoads={facultyLoads} />
+            <ConfirmValidationSummary assignments={checkedAssignments}faculties={faculties} facultyLoads={facultyLoads} />
           ) : step === 1 && assignments.length > 0 ? (
             <p className="flex min-w-0 flex-1 items-center gap-2 truncate text-xs font-bold text-[#4e0a10]">
               <ListChecks className="h-4 w-4 shrink-0" />
@@ -973,8 +1002,9 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
                     <span className="block truncate text-[11px] text-slate-500">{faculty?.departmentCode ?? faculty?.departmentName ?? "Instructor"} &middot; {plural(items.length, "section")}</span>
                   </span>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-[11px]">
-                  <span className="font-semibold tabular-nums text-slate-600">{load} / {display.bands.basicLoad} units</span>
+                <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                  <span className="mr-auto font-semibold tabular-nums text-slate-600">{load} / {display.bands.basicLoad} units</span>
+                  <ConflictCountBadge items={items} />
                   <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>
                 </div>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div>
@@ -1008,7 +1038,10 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
                 </div>
                 <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div>
               </div>
-              <span className={`inline-flex w-fit rounded-md border px-2 py-1 text-xs font-bold ${display.badgeClass}`}>{display.label}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ConflictCountBadge items={items} large />
+                <span className={`inline-flex w-fit rounded-md border px-2 py-1 text-xs font-bold ${display.badgeClass}`}>{display.label}</span>
+              </div>
             </div>
 
             <AssignmentItemsTable
@@ -1031,6 +1064,17 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
   );
 }
 
+/** How many of an instructor's queued sections clash; nothing when none do. */
+function ConflictCountBadge({ items, large = false }: { items: QueuedAssignment[]; large?: boolean }) {
+  const count = items.filter((item) => item.conflict).length;
+  if (count === 0) return null;
+  return (
+    <span className={`inline-flex w-fit items-center gap-1 border border-orange-200 bg-orange-50 font-bold text-orange-700 ${large ? "rounded-md px-2 py-1 text-xs" : "rounded px-1.5 py-0.5 text-[10px]"}`}>
+      <AlertTriangle className={large ? "h-3.5 w-3.5" : "h-3 w-3"} /> {plural(count, "conflict")}
+    </span>
+  );
+}
+
 /** One instructor's queued sections; shared by the Review and Confirm steps. */
 function AssignmentItemsTable({ items, onRemove, showTotal = false, className, scrollClassName }: { items: QueuedAssignment[]; onRemove?: (key: string) => void; showTotal?: boolean; className?: string; scrollClassName?: string }) {
   const columns = useMemo<ColumnDef<QueuedAssignment>[]>(() => [
@@ -1047,7 +1091,23 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
       ),
     },
     { id: "section", accessorKey: "sectionName", header: "Section", meta: { cellClassName: "align-top text-sm font-bold text-slate-800" } },
-    { id: "schedule", accessorKey: "schedule", header: "Schedule", enableSorting: false, meta: { cellClassName: "align-top font-medium leading-5 text-slate-600" } },
+    {
+      id: "schedule",
+      accessorKey: "schedule",
+      header: "Schedule",
+      enableSorting: false,
+      meta: { cellClassName: "align-top font-medium leading-5 text-slate-600" },
+      cell: ({ row }) => (
+        <>
+          {row.original.schedule}
+          {row.original.conflict && (
+            <span className="mt-1 flex w-fit items-center gap-1 rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[11px] font-semibold text-orange-700" title={row.original.conflict}>
+              <AlertTriangle className="h-3 w-3 shrink-0" /> {row.original.conflict}
+            </span>
+          )}
+        </>
+      ),
+    },
     { id: "mode", accessorKey: "mode", header: "Mode", meta: { cellClassName: "whitespace-nowrap align-top text-slate-600" } },
     {
       id: "units",
@@ -1159,7 +1219,10 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
                 </button>
                 <div className="text-right">
                   <p className="text-sm font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.bands.basicLoad} units</span></p>
-                  <span className={`mt-0.5 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>
+                  <span className="mt-0.5 inline-flex items-center gap-1">
+                    <ConflictCountBadge items={items} />
+                    <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>
+                  </span>
                 </div>
                 <TableActionButton label="Edit assignments" aria-label={`Edit assignments for ${name}`} variant="edit" onClick={onEdit}><Pencil size={15} /></TableActionButton>
                 <button type="button" onClick={() => toggleGroup(facultyId)} aria-hidden="true" tabIndex={-1} className="rounded-lg p-2 text-slate-500 hover:bg-slate-50"><ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "-rotate-180" : ""}`} /></button>

@@ -3,7 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
-import { hasStoredCapability } from '../../lib/storedUser';
+import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, Department, Program } from '../../types/curriculum';
@@ -17,8 +17,7 @@ interface CurriculumPageData {
 
 export function useCurriculum() {
   const { toast } = useToast();
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = getStoredUser();
   const userRole = user?.role?.toLowerCase() || 'user';
   const userDeptId = user?.department_id ?? null;
 

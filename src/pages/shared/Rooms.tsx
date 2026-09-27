@@ -25,6 +25,11 @@ import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
+import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
+import { getStoredUser } from '../../lib/storedUser';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 
 interface Department {
@@ -79,6 +84,7 @@ interface Schedule {
     id: number;
     course_code: string;
     course_name: string;
+    units?: number | string | null;
   } | null;
   faculty?: {
     id: number;
@@ -93,7 +99,12 @@ interface RoomsPageData {
   departments: Department[];
   schedules?: Schedule[];
   activeSemester?: unknown;
+  /** True when the server's meeting cap cut the list short. */
+  schedulesTruncated?: boolean;
 }
+
+/** The largest meeting list /initial-data serves in one response. */
+const SCHEDULE_LIMIT = 2000;
 
 const mapApiRoom = (r: ApiRoom): Room => ({
   id: r.id,
@@ -107,23 +118,35 @@ const mapApiRoom = (r: ApiRoom): Room => ({
   createdAt: r.created_at
 });
 
-export default function VpaaRooms() {
+/**
+ * The room list for every portal. The VPAA owns the room inventory, so only
+ * the VPAA sees add, edit and archive; the other roles browse their
+ * department's rooms, check today's use and print a room timetable. This used
+ * to be four near-identical copies, one per role, and fixes kept landing in
+ * only one of them.
+ */
+export default function Rooms() {
   const { toast } = useToast();
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = getStoredUser();
   const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
   const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
   const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
   const [activeSemester, setActiveSemester] = useState<unknown>(cachedRoomsData?.activeSemester ?? null);
+  const [schedulesTruncated, setSchedulesTruncated] = useState(cachedRoomsData?.schedulesTruncated ?? false);
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [printAfterOpen, setPrintAfterOpen] = useState(false);
 
-  const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+  const role = user?.role?.toLowerCase() ?? '';
+  const isVpaa = role === 'vpaa';
   const userDepartmentId = user?.department_id;
   const canManageRooms = isVpaa;
+  // The guided tour has only ever been offered to the secretary; keep it that
+  // way rather than auto-starting it for roles that never asked for it.
+  const showGuide = role === 'secretary';
 
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
@@ -165,7 +188,9 @@ export default function VpaaRooms() {
     const fetchData = async () => {
       try {
         const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
-          const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_semester?: unknown }>('/initial-data?include=rooms,departments,schedules');
+          const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_semester?: unknown; schedules_truncated?: boolean }>('/initial-data', {
+            params: { include: 'rooms,departments,schedules', schedule_limit: SCHEDULE_LIMIT },
+          });
           const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
           const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
           const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
@@ -176,12 +201,14 @@ export default function VpaaRooms() {
             departments: rawDepts,
             schedules: rawSchedules,
             activeSemester: activeSemester,
+            schedulesTruncated: initialDataRes.data?.schedules_truncated === true,
           };
         });
         setRooms(data.rooms);
         setDepartments(data.departments);
         setSchedules(data.schedules || []);
         setActiveSemester(data.activeSemester || null);
+        setSchedulesTruncated(data.schedulesTruncated === true);
       } catch {
         toast.error('Error', 'Failed to load rooms and schedules data.');
       } finally {
@@ -239,7 +266,7 @@ export default function VpaaRooms() {
         setRooms(prev => {
           const nextRooms = prev.map(r => r.id === editingId ? updatedRoom : r);
           invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
           return nextRooms;
         });
         toast.success('Success', 'Room updated successfully');
@@ -249,7 +276,7 @@ export default function VpaaRooms() {
         setRooms(prev => {
           const nextRooms = [createdRoom, ...prev];
           invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
           return nextRooms;
         });
         toast.success('Success', 'Room created successfully');
@@ -299,7 +326,7 @@ export default function VpaaRooms() {
         setRooms(prev => {
           const nextRooms = prev.filter(r => r.id !== idToDelete);
           invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester });
+          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
           return nextRooms;
         });
         toast.success('Archived', 'Room archived successfully');
@@ -436,10 +463,55 @@ export default function VpaaRooms() {
   }, [searchedRooms, selectedBuilding]);
 
 
+  const handlePrintRoom = (room: Room) => {
+    setSelectedRoomIdForDetail(room.id);
+    setPrintAfterOpen(true);
+    setIsDetailModalOpen(true);
+    document.body.classList.add('room-timetable-printing');
+  };
+
+  useEffect(() => {
+    if (!isDetailModalOpen || !printAfterOpen) return;
+    let attempts = 0;
+    let frameId = 0;
+    const printWhenReady = () => {
+      const grid = document.querySelector('.room-timetable-modal .timetable-grid-root');
+      if (grid || attempts >= 120) {
+        document.body.classList.add('room-timetable-printing');
+        window.print();
+        return;
+      }
+      attempts += 1;
+      frameId = window.requestAnimationFrame(printWhenReady);
+    };
+    frameId = window.requestAnimationFrame(printWhenReady);
+    const afterPrint = () => {
+      document.body.classList.remove('room-timetable-printing');
+      setPrintAfterOpen(false);
+      setIsDetailModalOpen(false);
+      setSelectedRoomIdForDetail(null);
+    };
+    window.addEventListener('afterprint', afterPrint);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('afterprint', afterPrint);
+      document.body.classList.remove('room-timetable-printing');
+    };
+  }, [isDetailModalOpen, printAfterOpen]);
+
+  // Adding and editing rooms is VPAA-only, so the secretary's tour stops at
+  // browsing. It used to walk on to the Add button, which a secretary never
+  // sees, and the tour aborted there.
+  const roomGuideSteps = useMemo(() => [
+    { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search by room or building. Use the type filter to narrow the list.', side: 'bottom' as const },
+    { element: '[data-tour="building-card"]', waitFor: '#rooms-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a building to see its rooms.', title: 'Check room details', description: 'Select a building to see its rooms, status and today’s classes. Great work — that is the whole flow.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'rooms', isReady: showGuide, steps: roomGuideSteps, mission: 'Browse Rooms' });
+
   return (
     <div id="rooms-page" className="space-y-6">
       {/* Search and Filters Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
+      <div id="rooms-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         {/* Search */}
         <SearchInput
           value={globalFilter}
@@ -505,6 +577,7 @@ export default function VpaaRooms() {
           {/* Add button inside filter bar */}
           {canManageRooms && (
             <button
+              id="rooms-add-button"
               onClick={() => {
                 setIsEditMode(false);
                 setEditingId(null);
@@ -518,7 +591,7 @@ export default function VpaaRooms() {
                 setBuildingError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-full hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
             >
               <Plus size={15} />
               <span>{selectedBuilding ? 'Add Room' : 'Add Building'}</span>
@@ -527,6 +600,14 @@ export default function VpaaRooms() {
         </div>
       </div>
 
+      {schedulesTruncated && (
+        <TruncatedDataNotice>
+          More than {SCHEDULE_LIMIT.toLocaleString()} class meetings are scheduled, so “Today’s Status” may miss some classes. Opening a room always loads its full week.
+        </TruncatedDataNotice>
+      )}
+
+      {showGuide && <WorkflowGuideButton guideId="rooms" />}
+      <div id="rooms-workspace">
       {isLoading ? (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -586,6 +667,7 @@ export default function VpaaRooms() {
                 return (
                   <div
                     key={building.name}
+                    data-tour="building-card"
                     onClick={() => setSelectedBuilding(building.name)}
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
                   >
@@ -625,7 +707,7 @@ export default function VpaaRooms() {
             </div>
           ) : (
             /* Buildings List View */
-            <BuildingsTable buildings={buildings} onSelect={(building) => setSelectedBuilding(building.name)} />
+            <BuildingsTable buildings={buildings} onSelect={(building) => setSelectedBuilding(building.name)} rowTourId="building-card" />
           )}
         </div>
       ) : (
@@ -759,10 +841,12 @@ export default function VpaaRooms() {
               }}
               onEdit={handleEditClick}
               onArchive={(room) => { void triggerDeleteConfirmation(room.id); }}
+              onPrint={handlePrintRoom}
             />
           )}
         </div>
       )}
+      </div>
 
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
@@ -782,7 +866,7 @@ export default function VpaaRooms() {
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
+            <form id="room-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
               {!selectedBuilding && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -946,7 +1030,16 @@ export default function VpaaRooms() {
         document.body
       )}
 
-      <ConfirmModal isOpen={isDeleteModalOpen} eyebrow="Archive Record" title="Archive Room" message="This room will be hidden from active lists and can be restored from the Archive." confirmLabel="Archive" variant="danger" onCancel={() => setIsDeleteModalOpen(false)} onConfirm={confirmDeleteRoom} />
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        eyebrow="Archive Record"
+        title="Archive Room"
+        message="This room will be hidden from active lists and can be restored from the Archive."
+        confirmLabel="Archive"
+        variant="danger"
+        onCancel={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteRoom}
+      />
 
       {/* Classroom Detail Modal */}
       <RoomDetailModal
@@ -956,8 +1049,40 @@ export default function VpaaRooms() {
           setSelectedRoomIdForDetail(null);
         }}
         roomId={selectedRoomIdForDetail}
+        initialViewMode="grid"
+        className="room-timetable-modal"
+        initialRoom={rooms.find(room => room.id === selectedRoomIdForDetail) ?? null}
+        initialSchedules={schedules}
+        initialSchedulesComplete={!schedulesTruncated}
       />
+      <style>{`body.room-timetable-printing > div[role="presentation"] { visibility: hidden; }
+      @page { size: landscape; margin: 0.35in; }
+      @media print {
+        body.room-timetable-printing #root { display: none !important; }
+        body.room-timetable-printing > div[role="presentation"] { display: flex !important; position: static !important; inset: auto !important; overflow: visible !important; padding: 0 !important; background: white !important; visibility: visible !important; }
+        body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal { display: flex !important; width: 100% !important; max-width: none !important; max-height: none !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
+        body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal > header { display: none !important; }
+        body.room-timetable-printing .room-detail-print-info,
+        body.room-timetable-printing .room-detail-print-toolbar { display: none !important; }
+        body.room-timetable-printing .room-print-title { display: block !important; }
+        body.room-timetable-printing > div[role="presentation"],
+        body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal,
+        body.room-timetable-printing section.room-timetable-modal > div,
+        body.room-timetable-printing section.room-timetable-modal > div > div,
+        body.room-timetable-printing section.room-timetable-modal > div > div > div { display: block !important; height: auto !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; background: white !important; }
+        body.room-timetable-printing .room-detail-print-grid { display: block !important; zoom: 0.88; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; }
+        body.room-timetable-printing .room-detail-print-grid > div:last-child { overflow: visible !important; padding: 0 !important; }
+        body.room-timetable-printing .timetable-grid-root { width: 100% !important; min-height: 0 !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.room-timetable-printing .timetable-grid-root,
+        body.room-timetable-printing .timetable-grid-root * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.room-timetable-printing .timetable-grid-root > div:last-child { border-left: 1px solid #cbd5e1 !important; border-bottom: 1px solid #cbd5e1 !important; }
+        body.room-timetable-printing .timetable-grid-root [style*="grid-column: 1"] { border-left: 1px solid #cbd5e1 !important; border-right: 1px solid #cbd5e1 !important; }
+        body.room-timetable-printing .timetable-grid-root { border: 1px solid #cbd5e1 !important; border-left: 1px solid #cbd5e1 !important; min-width: 0 !important; width: 100% !important; }
+        body.room-timetable-printing .timetable-grid-header { background: #4e0a10 !important; background-color: #4e0a10 !important; background-image: none !important; box-shadow: inset 0 0 0 1000px #4e0a10 !important; color: #ffffff !important; border-color: #c9952a !important; }
+        body.room-timetable-printing .timetable-grid-root > [style*="grid-column: 1"] { border-left: 1px solid #cbd5e1 !important; }
+      }
+      `}</style>
     </div>
   );
 };
-import LoadingSpinner from "../../components/ui/LoadingSpinner";
+

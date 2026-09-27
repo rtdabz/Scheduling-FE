@@ -39,6 +39,17 @@ describe('splitSubmission', () => {
     expect(slices).toEqual([expect.objectContaining({ key: '16:recalled', sectionIds: ['97', '99'] })]);
   });
 
+  it('keeps the recall of a submission the Dean or VPAA later returned', () => {
+    for (const status of ['rejected_by_dean', 'rejected_by_vpaa'] as const) {
+      const slices = splitSubmission(submission(status, [[97, 'withdrawn'], [99, 'included']]), () => []);
+
+      expect(slices).toEqual([
+        expect.objectContaining({ key: '16:recalled', sectionIds: ['97'], submission: expect.objectContaining({ status: 'partially_withdrawn' }) }),
+        expect.objectContaining({ key: '16:returned', sectionIds: ['99'], submission: expect.objectContaining({ status }) }),
+      ]);
+    }
+  });
+
   it('leaves an ordinary submission as a single entry', () => {
     const slices = splitSubmission(submission('approved', [[97, 'included'], [99, 'included']]), () => []);
 

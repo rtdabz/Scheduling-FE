@@ -11,14 +11,13 @@ import type {
   SectionScope,
 } from "./courseClassConfig";
 import {
+  asRegularClass,
   compatibleRoomOptions,
-  consecutiveDayRuns,
   DEFAULT_CONSECUTIVE_DAYS,
   defaultDurationMinutes,
   durationShape,
   formatHours,
   hybridLaboratoryMinutes,
-  isBackToBack,
   isConsecutive as isConsecutiveConfig,
   isIntegratedShape,
   maxDurationMinutes,
@@ -247,50 +246,37 @@ export default function ConfigureClassSidebar({
     initialConfig.component === "field" ? "lecture" : initialConfig.component,
   );
 
-  // Consecutive Days: a Regular class met on back-to-back days, for its full
-  // length every day. The days it meets are ticked directly (Thursday,
-  // Friday, Saturday) and tried first; with none ticked the Generator picks
-  // any run of the chosen number of days.
+  // Consecutive Days: a Regular class met on several days, for its full
+  // length every day. The user ticks the exact days it meets, back-to-back
+  // (Thursday, Friday, Saturday) or not (Monday, Wednesday, Friday); their
+  // number is the run's length. Nothing is ticked for them, and a class
+  // cannot be applied until at least two days are.
   const [runEnabled, setRunEnabled] = useState<boolean>(isConsecutiveConfig(initialConfig));
   const isConsecutive = shape === "single" && runEnabled;
   const week = teachingWeek(sundayClassesEnabled);
-  const [consecutiveDays, setConsecutiveDays] = useState<number>(
-    Math.min(initialConfig.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS, week.length),
-  );
   const [meetingDays, setMeetingDays] = useState<string[]>(() =>
-    initialConfig.preferredStartDay
-      ? runFrom(
-          initialConfig.preferredStartDay,
-          initialConfig.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS,
-          sundayClassesEnabled,
-        )
-      : [],
+    initialConfig.meetingDays && initialConfig.meetingDays.length > 0
+      ? week.filter((day) => initialConfig.meetingDays!.includes(day))
+      : initialConfig.preferredStartDay
+        ? runFrom(
+            initialConfig.preferredStartDay,
+            initialConfig.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS,
+            sundayClassesEnabled,
+          )
+        : [],
   );
   const daysChosen = meetingDays.length >= MIN_CONSECUTIVE_DAYS;
-  const dayCount = daysChosen ? meetingDays.length : consecutiveDays;
-  const runs = consecutiveDayRuns(consecutiveDays, sundayClassesEnabled);
-  const meetingDaysError = !isConsecutive || meetingDays.length === 0
-    ? null
-    : !daysChosen
-      ? "Tick at least two back-to-back days, or none to let the Generator choose."
-      : !isBackToBack(meetingDays)
-        ? `${meetingDays.join(", ")} are not back-to-back. Tick the days in between.`
-        : null;
+  const meetingDaysError = isConsecutive && meetingDays.length === 1
+    ? "Tick at least two days."
+    : null;
+  // No day ticked yet: not an error to show, but nothing to apply either.
+  const meetingDaysMissing = isConsecutive && meetingDays.length === 0;
 
   const toggleMeetingDay = (day: string) => {
     const ticked = meetingDays.includes(day)
       ? meetingDays.filter((item) => item !== day)
       : [...meetingDays, day];
-    const inWeekOrder = week.filter((item) => ticked.includes(item));
-    setMeetingDays(inWeekOrder);
-    if (inWeekOrder.length >= MIN_CONSECUTIVE_DAYS) setConsecutiveDays(inWeekOrder.length);
-  };
-
-  // A new length keeps the first ticked day, so Thursday + Friday becomes
-  // Thursday-Saturday at three days.
-  const chooseDayCount = (count: number) => {
-    setConsecutiveDays(count);
-    if (meetingDays.length > 0) setMeetingDays(runFrom(meetingDays[0], count, sundayClassesEnabled));
+    setMeetingDays(week.filter((item) => ticked.includes(item)));
   };
 
   // Custom Time Duration, entered in hours: the whole meeting (each day's,
@@ -340,6 +326,10 @@ export default function ConfigureClassSidebar({
           : null;
 
   const [requiredDay, setRequiredDay] = useState<string>(initialConfig.requiredDay ?? "");
+  // A Required Day holds the course to one meeting on that day (the payload
+  // drops its Split/Hybrid markers), so a Split or Integrated course saves as
+  // a Regular class. Say so where it is chosen.
+  const requiredDayCollapsesShape = requiredDay !== "" && shape !== "single";
   const compatibleRooms = useMemo(
     () => compatibleRoomOptions(course, initialConfig, isFieldCourse, roomOptions),
     [course, initialConfig, isFieldCourse, roomOptions],
@@ -377,8 +367,8 @@ export default function ConfigureClassSidebar({
   };
 
   const handleApply = () => {
-    if (durationError || componentError || meetingDaysError) return;
-    onSave({
+    if (durationError || componentError || meetingDaysError || meetingDaysMissing) return;
+    const config: CourseClassConfig = {
       ...initialConfig,
       component: meetsInField
         ? "field"
@@ -386,8 +376,9 @@ export default function ConfigureClassSidebar({
           ? "lecture"
           : component,
       durationMinutes: editableDuration ? durationMinutes : initialConfig.durationMinutes,
-      consecutiveDays: isConsecutive ? dayCount : null,
-      preferredStartDay: isConsecutive && daysChosen ? meetingDays[0] : null,
+      consecutiveDays: isConsecutive ? meetingDays.length : null,
+      preferredStartDay: isConsecutive ? meetingDays[0] : null,
+      meetingDays: isConsecutive ? meetingDays : null,
       // A blank session stays unset, so it follows the course's own length.
       ...(isIntegratedShape(shape)
         ? {
@@ -401,15 +392,13 @@ export default function ConfigureClassSidebar({
       sectionScope,
       selectedSectionIds:
         sectionScope === "all" ? sections.map((s) => s.id) : selectedSectionIds,
-    });
+    };
+    onSave(requiredDayCollapsesShape ? asRegularClass(config, course) : config);
   };
 
   const presets = (shape === "split" ? MEETING_PRESETS : SINGLE_PRESETS).filter(
     (preset) => preset * 60 * perMeeting <= maxMinutes,
   );
-  // With a Required Day the payload drops the course's Split/Hybrid markers,
-  // so it is generated as one meeting on that day. Say so where it is chosen.
-  const requiredDayCollapsesShape = requiredDay !== "" && shape !== "single";
   const roomLabel = (room: PreferredRoomOption) =>
     `${room.room_code}${room.building ? ` · ${room.building}` : ""}`;
 
@@ -449,7 +438,13 @@ export default function ConfigureClassSidebar({
           </button>
           <button
             type="button"
-            disabled={disabled || durationError !== null || componentError !== null || meetingDaysError !== null}
+            disabled={
+              disabled ||
+              durationError !== null ||
+              componentError !== null ||
+              meetingDaysError !== null ||
+              meetingDaysMissing
+            }
             onClick={() => close(handleApply)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-black text-white shadow-2xs transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -527,7 +522,7 @@ export default function ConfigureClassSidebar({
             </div>
             <Hint error={durationError}>
               {isConsecutive
-                ? `${formatHours(durationMinutes / 60)} straight on each of the ${dayCount} days, same time each day · max ${formatHours(maxMinutes / 60)} a day.`
+                ? `${formatHours(durationMinutes / 60)} straight on each ${daysChosen ? `of the ${meetingDays.length} days` : "meeting day"}, same time each day · max ${formatHours(maxMinutes / 60)} a day.`
                 : shape === "split"
                   ? `Two ${initialConfig.delivery === "online" ? "online " : ""}meetings of ${formatHours(durationMinutes / 120)} · max ${formatHours(maxMinutes / 60)} a week.`
                   : `Max ${formatHours(maxMinutes / 60)} a week.`}
@@ -588,7 +583,7 @@ export default function ConfigureClassSidebar({
         )}
       </ConfigSection>
 
-      {/* Consecutive Days: a Regular class repeated on back-to-back days */}
+      {/* Consecutive Days: a Regular class repeated on the ticked days */}
       {shape === "single" && (
         <ConfigSection label="Consecutive Days" labelId="configure-consecutive-days" optional>
           <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
@@ -599,33 +594,12 @@ export default function ConfigureClassSidebar({
               onChange={(e) => setRunEnabled(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-slate-300 accent-[#4e0a10]"
             />
-            Meet on back-to-back days
+            Meet on several days a week
           </label>
           {runEnabled && (
             <>
-              <div
-                role="group"
-                aria-labelledby="configure-consecutive-days"
-                className="mt-2 flex flex-wrap gap-1.5"
-              >
-                {Array.from(
-                  { length: week.length - MIN_CONSECUTIVE_DAYS + 1 },
-                  (_, index) => MIN_CONSECUTIVE_DAYS + index,
-                ).map((count) => (
-                  <Chip
-                    key={count}
-                    active={dayCount === count}
-                    disabled={disabled}
-                    onClick={() => chooseDayCount(count)}
-                  >
-                    {count} days
-                  </Chip>
-                ))}
-              </div>
-
-              <div className="mb-1 mt-2.5 flex items-center justify-between text-[11px] font-bold text-slate-600">
+              <div className="mb-1 mt-2.5 text-[11px] font-bold text-slate-600">
                 <span id="configure-meeting-days">Meeting days</span>
-                <OptionalTag />
               </div>
               <div
                 role="group"
@@ -659,7 +633,7 @@ export default function ConfigureClassSidebar({
               <Hint error={meetingDaysError}>
                 {daysChosen
                   ? `Every section meets ${runLabel(meetingDays)}; the Generator picks each section's time and room.`
-                  : `No days ticked: the Generator picks any ${consecutiveDays} back-to-back days (${runs.map(runLabel).join(" · ")}).`}
+                  : "Tick the days the class meets, e.g. Monday, Wednesday and Friday."}
               </Hint>
             </>
           )}
@@ -687,9 +661,9 @@ export default function ConfigureClassSidebar({
         </select>
         <Hint>
           {isConsecutive
-            ? "Not used with Consecutive Days; set a preferred starting day instead."
+            ? "Not used with Consecutive Days; the ticked meeting days apply instead."
             : requiredDayCollapsesShape
-              ? "Applies to every section, as one meeting on that day."
+              ? `Applies to every section, as one meeting on that day: ${course.code} becomes a Regular class.`
               : "Applies to every section."}
         </Hint>
       </ConfigSection>

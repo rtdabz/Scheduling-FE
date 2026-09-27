@@ -260,8 +260,6 @@ export default function Designations() {
         </div>
       ),
     } satisfies ColumnDef<Designation>] : []),
-  // openCreate is rebuilt each render but only reads setters, so it is safe to omit.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [canManage, openEdit]);
 
   const table = useDataTable({ data: visible, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
