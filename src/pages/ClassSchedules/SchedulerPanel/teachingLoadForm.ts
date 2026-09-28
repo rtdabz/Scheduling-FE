@@ -39,10 +39,13 @@ const ROW_POINTS = [
   24.5, 24.5, 24.5, 24.5, 24.5, 24.5, // 31-36 table B body
   14.25, // 37    total (overload)
   14.25, // 38    grand total
-  14.25, // 39    C. Other Designation/Functions
+  // Row 39 is 10pt taller than the Excel form, borrowed from the row 42 spacer
+  // and row 44, so section C clears the grand total and its headings read as
+  // column names.
+  24.25, // 39    C. Other Designation/Functions | Deload
   19.8, 19.2, // 40-41 designation lines 1 and 2
-  10.8, 3.75, // 42-43 spacer
-  21.6, // 44    Prepared / Verified by
+  4.8, 3.75, // 42-43 spacer
+  17.6, // 44    Prepared / Verified by
   14.25, // 45    signature lines
   17.4, // 46    signatory titles
   14.25, 14.25, // 47-48 date signed
@@ -189,7 +192,10 @@ interface TextStyle {
   padding?: number;
   /** Draw a separator between stacked lines. */
   separator?: "none" | "underline" | "cellRule";
-  /** Keep stacked values at the requested size, allowing the cell to grow. */
+  /**
+   * Keep the requested size instead of shrinking to fit: stacked values let the
+   * cell grow, a single value overruns into the blank cells beside it.
+   */
   fixedSize?: boolean;
 }
 
@@ -237,7 +243,7 @@ export const drawText = (
 
   // Step down rather than scale, so the result still looks like a typed form.
   let fitted = size;
-  while (fitted > 4 && doc.getTextWidth(text) > available) {
+  while (!style.fixedSize && fitted > 4 && doc.getTextWidth(text) > available) {
     fitted -= 0.25;
     doc.setFontSize(fitted);
   }
@@ -262,7 +268,8 @@ export const drawTextLines = (
 ): void => {
   const lines = values.map((value) => value.trim()).filter(Boolean);
   if (lines.length <= 1) {
-    drawText(doc, lines[0] ?? "", span, style);
+    // fixedSize is about a stack growing its cell; a single value still fits its width.
+    drawText(doc, lines[0] ?? "", span, { ...style, fixedSize: false });
     return;
   }
 

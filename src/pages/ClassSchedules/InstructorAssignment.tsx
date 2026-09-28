@@ -16,7 +16,7 @@ import api from "../../lib/api";
 import { yearLevelLabel } from "../../lib/semesterLabel";
 import { useToast } from "../../context/ToastContext";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt } from "../../lib/conflictOverride";
-import { fetchConflicts, type ConflictRule } from "../../lib/conflicts";
+import { fetchConflicts, fetchResolvedConflicts, type ConflictRule } from "../../lib/conflicts";
 import ResolveConflictModal from "./SchedulerPanel/Modals/ResolveConflictModal";
 
 /** Module scope so the prop identity is stable across renders. */
@@ -406,6 +406,9 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   // these: they appear when an assignment is overridden, when a class moves
   // after its instructor was set, or when another department delegates a class.
   const [facultyConflictCount, setFacultyConflictCount] = useState(0);
+  // Instructor clashes resolved or allowed this semester, for the badge's
+  // "M resolved" half. Reopened ones are already in the open count.
+  const [facultyResolvedCount, setFacultyResolvedCount] = useState(0);
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
   const [conflictsRevision, setConflictsRevision] = useState(0);
   const conflictFacultyOptions = useMemo(
@@ -515,6 +518,15 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         conflicts.filter((conflict) => conflict.rule === "faculty_conflict").length,
       ))
       // A failed scan must not blank the page; the count simply stays put.
+      .catch(() => undefined);
+    void fetchResolvedConflicts({
+      semesterId,
+      departmentId: selectedDepartmentId ?? currentDepartmentId,
+      signal: controller.signal,
+    })
+      .then((entries) => setFacultyResolvedCount(
+        entries.filter((entry) => entry.rule === "faculty_conflict" && entry.status !== "reopened").length,
+      ))
       .catch(() => undefined);
 
     return () => controller.abort();
@@ -1399,18 +1411,31 @@ const selectedSchedule = assignmentSchedules.find(
               {/* Only when there is one. A clash between two saved classes has
                   no assignment dialog to surface it, so this is the only place
                   it can be seen -- and the only screen whose actions fix it. */}
-              {facultyConflictCount > 0 && activeSemester && !assignmentLocked && (
+              {(facultyConflictCount > 0 || facultyResolvedCount > 0) && activeSemester && !assignmentLocked && (
                 <button
                   type="button"
                   onClick={() => setIsConflictsOpen(true)}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-100"
-                  title="An instructor is booked for two classes at the same time"
+                  className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors ${
+                    facultyConflictCount > 0
+                      ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  }`}
+                  title={facultyConflictCount > 0
+                    ? "An instructor is booked for two classes at the same time"
+                    : "Every instructor conflict this semester has been resolved"}
                 >
-                  <AlertTriangle className="h-4 w-4" />
+                  {facultyConflictCount > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
                   Instructor Conflicts
-                  <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-black leading-4 text-white">
-                    {facultyConflictCount}
-                  </span>
+                  {facultyConflictCount > 0 && (
+                    <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-black leading-4 text-white">
+                      {facultyConflictCount} open
+                    </span>
+                  )}
+                  {facultyResolvedCount > 0 && (
+                    <span className="rounded-full bg-emerald-600 px-1.5 text-[10px] font-black leading-4 text-white">
+                      {facultyResolvedCount} resolved
+                    </span>
+                  )}
                 </button>
               )}
             </div>
@@ -1574,6 +1599,7 @@ const selectedSchedule = assignmentSchedules.find(
           canUpdateSchedule={!assignmentLocked}
           canAssignInstructor={!assignmentLocked}
           rules={FACULTY_CONFLICT_ONLY}
+          initialTab={facultyConflictCount > 0 ? "open" : "resolved"}
           onResolved={() => setConflictsRevision((revision) => revision + 1)}
         />
       )}

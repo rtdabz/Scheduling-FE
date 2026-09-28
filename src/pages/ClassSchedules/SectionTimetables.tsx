@@ -11,6 +11,7 @@ import {
 } from "./SchedulerPanel/hooks/initialDataMapper";
 import type { ScheduleItem } from "./SchedulerPanel/types";
 import { yearLevelLabel } from "../../lib/semesterLabel";
+import TruncatedDataNotice from "../../components/ui/TruncatedDataNotice";
 
 type DeliveryModeFilter = "all" | ScheduleItem["mode"];
 
@@ -165,6 +166,12 @@ export default function SectionTimetables() {
           Refresh
         </button>
       </div>
+
+      {!error && data.schedulesTruncated && (
+        <TruncatedDataNotice className="mb-3">
+          The department has more class meetings than can be loaded at once, so some timetables below may be missing classes.
+        </TruncatedDataNotice>
+      )}
 
       {error ? (
         <div className="flex min-h-80 flex-col items-center justify-center border border-rose-200 bg-rose-50 px-6 text-center">

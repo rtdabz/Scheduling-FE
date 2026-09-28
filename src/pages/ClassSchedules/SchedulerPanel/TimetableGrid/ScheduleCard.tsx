@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, CheckCircle2, Flag, Move, Pencil, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Flag, Move, Pencil, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import {
   getGridCardStyles,
   getGridModeBadgeClass
@@ -14,6 +14,8 @@ interface ScheduleCardProps {
   conflict?: { conflictType: "room" | "faculty" | "section"; message: string } | null;
   /** Validation flagged this class earlier and no longer does. */
   isResolved?: boolean;
+  /** Its instructor clash was allowed to stand, on the record, and still is. */
+  isAllowed?: boolean;
   isEditable: boolean;
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
@@ -50,6 +52,7 @@ const ScheduleCard = memo(function ScheduleCard({
   subject,
   conflict,
   isResolved = false,
+  isAllowed = false,
   isEditable,
   isPhase2Active,
   currentStatus,
@@ -122,8 +125,19 @@ const ScheduleCard = memo(function ScheduleCard({
   const showActions = isMoving && isEditable && !isPhase2Active;
   const isConfirmingDelete = showActions && deleteConfirmScheduleId === schedule.id;
 
-  const showResolved = isResolved && !conflict;
-  const resolvedFlag = (
+  // One flag at most, strongest first: a live conflict (the red card) hides
+  // both, and an allowed clash is not the same as a fixed one.
+  const showAllowed = isAllowed && !conflict;
+  const showResolved = isResolved && !conflict && !showAllowed;
+  const resolvedFlag = showAllowed ? (
+    <span
+      className="inline-flex items-center rounded bg-amber-500 p-0.5 text-white"
+      title="Instructor conflict allowed to stand"
+      aria-label="Instructor conflict allowed to stand"
+    >
+      <ShieldCheck className="h-2.5 w-2.5 shrink-0" />
+    </span>
+  ) : (
     <span
       className="inline-flex items-center rounded bg-emerald-600 p-0.5 text-white"
       title="Conflict resolved"
@@ -190,7 +204,12 @@ const ScheduleCard = memo(function ScheduleCard({
         {showActions && (
           isConfirmingDelete ? (
             <div className="space-y-2 border-t border-slate-800 pt-2">
-              <p className="text-[11px] font-semibold text-slate-200">Remove {subject.code} from the timetable?</p>
+              <p className="text-[11px] font-semibold text-slate-200">
+                {/* A split class is removed as a whole group (see handleRemoveSchedule). */}
+                {schedule.splitGroupId || schedule.preferredPattern
+                  ? `Remove ${subject.code} and all its linked split meetings from the timetable?`
+                  : `Remove ${subject.code} from the timetable?`}
+              </p>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -273,7 +292,7 @@ const ScheduleCard = memo(function ScheduleCard({
               <span className="break-words whitespace-normal font-semibold leading-tight min-w-0">{roomDisplayName}</span>
             ) : null}
             <span className={`shrink-0 flex items-center gap-1 text-slate-400 font-semibold ${!roomDisplayName ? "ml-auto" : ""}`}>
-              {showResolved && resolvedFlag}
+              {(showResolved || showAllowed) && resolvedFlag}
               {schedule.startTime}
             </span>
           </div>
@@ -317,7 +336,7 @@ const ScheduleCard = memo(function ScheduleCard({
             )}
             <div className="flex items-center gap-1.5">
               <span>{schedule.startTime} – {schedule.endTime}</span>
-              {showResolved && resolvedFlag}
+              {(showResolved || showAllowed) && resolvedFlag}
             </div>
           </div>
         </div>

@@ -13,7 +13,11 @@ const findMatch = (items: NavItem[], pathname: string, parents: string[] = []): 
   let best: NavMatch | null = null;
   for (const item of items) {
     const labels = [...parents, item.label];
-    if (item.path && (pathname === item.path || pathname.startsWith(`${item.path}/`))) {
+    // The most specific path wins among siblings too: '/dean/schedules' also
+    // prefixes '/dean/schedules/approval', and being listed later used to let it
+    // replace the exact match, titling Schedule Approval as "Details".
+    if (item.path && (pathname === item.path || pathname.startsWith(`${item.path}/`))
+      && (!best || item.path.length > (best.path?.length ?? 0))) {
       best = { labels, path: item.path };
     }
     if (item.children) {

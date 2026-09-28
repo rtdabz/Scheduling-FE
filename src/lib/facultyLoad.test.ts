@@ -113,3 +113,13 @@ describe('loadLevelOf', () => {
     expect(loadLevelOf({ maxUnits: 21, deloadUnits: 0, overloadUnits: 0, probonoUnits: 0, assignedUnits: 22 })).toBe('probono');
   });
 });
+
+describe('pro bono is not an allowance', () => {
+  it('ignores a stored pro bono value: the ceiling is Basic Load plus Overload', () => {
+    const bands = loadBandsOf({ maxUnits: 21, deloadUnits: 3, overloadUnits: 15, probonoUnits: 5, assignedUnits: 36 });
+    expect(bands.ceiling).toBe(33);
+    expect(bands.probono).toBe(3);
+    expect(bands.filled).toEqual({ basic: 18, overload: 15, probono: 3 });
+    expect(loadBandsOf({ maxUnits: 21, deloadUnits: 3, overloadUnits: 15, probonoUnits: 5, assignedUnits: 20 }).probono).toBe(0);
+  });
+});

@@ -12,6 +12,7 @@ import {
   History,
   FileBarChart,
   DoorClosed,
+  Split,
 } from 'lucide-react'
 import type { NavSection } from './types'
 

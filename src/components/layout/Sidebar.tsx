@@ -7,6 +7,7 @@ import campusBg from '../../assets/campus-bg.webp';
 import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
+import { fetchCurrentUser } from '../../lib/currentUser';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
 import { prefetchPage } from '../../lib/pagePrefetch';
@@ -14,6 +15,8 @@ import { prefetchPage } from '../../lib/pagePrefetch';
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Widens the collapsed rail, e.g. when a menu group is clicked in it. */
+  onOpen?: () => void;
   navItems: NavSection[];
 }
 
@@ -61,7 +64,7 @@ const getStoredUser = (): StoredUser | null => {
   }
 };
 
-export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
+export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarProps) {
   const location = useLocation();
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
@@ -78,13 +81,9 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    api.get<StoredUser>('/me')
-      .then((res) => {
-        if (res.data) {
-          setCurrentUser(res.data);
-          const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
-          storage.setItem('user', JSON.stringify(res.data));
-        }
+    fetchCurrentUser<StoredUser>()
+      .then((data) => {
+        if (data) setCurrentUser(data);
       })
       .catch(() => {});
 
@@ -316,6 +315,14 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                             toast.warning('Access Restricted', 'Access restricted. Ask an administrator to grant access to this module.');
                             return;
                           }
+                          // The collapsed rail has no room for a group's pages, so a
+                          // click there used to toggle state nobody could see. Open
+                          // the sidebar with the group expanded instead.
+                          if (!isOpen) {
+                            onOpen?.();
+                            setExpandedItems((prev) => ({ ...prev, [item.label]: true }));
+                            return;
+                          }
                           toggleExpand(item.label);
                         }}
                         onPointerEnter={() => (item.children ?? []).forEach((child) => {
@@ -426,12 +433,12 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                 {child.isLocked && (
                                   <Lock size={12} className="ml-auto text-[#E8D5C4]/50 shrink-0" />
                                 )}
-                                {child.id === 'sidebar-schedule-approval' && pendingCount > 0 && !child.isLocked && (
+                                {child.id === 'sidebar-schedule-approval' && (pendingCount > 0 || isCountLoading) && !child.isLocked && (
                                   isCountLoading ? (
                                     <Skeleton className="ml-auto h-4 w-6 rounded-full bg-white/20" />
                                   ) : (
                                     <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
-                                      {pendingCount >= 9 ? '9+' : pendingCount}
+                                      {pendingCount > 9 ? '9+' : pendingCount}
                                     </span>
                                   )
                                 )}

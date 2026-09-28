@@ -343,6 +343,7 @@ export default function TimetableGrid({
                       subject={subject}
                       conflict={conflictedMap?.[schedule.id] ?? null}
                       isResolved={!conflictedMap?.[schedule.id] && !!resolvedIds?.has(schedule.id)}
+                      isAllowed={!conflictedMap?.[schedule.id] && !!schedule.facultyConflictOverride}
                       isEditable={isEditable}
                       isPhase2Active={isPhase2Active}
                       currentStatus={currentStatus}

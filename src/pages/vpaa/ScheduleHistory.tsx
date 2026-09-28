@@ -217,8 +217,9 @@ export default function ScheduleHistory() {
       setLoading(false);
     }
   }, [page]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
+    // load() raises its own loading flag before awaiting the request.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

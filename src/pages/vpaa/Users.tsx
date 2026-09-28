@@ -29,6 +29,8 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiError';
+import { photoDataUrl } from '../../lib/imageDataUrl';
 import { fetchDesignations, type Designation } from '../../lib/designations';
 import DesignationPicker from '../../components/faculty/DesignationPicker';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -52,7 +54,6 @@ interface User {
   department_logo?: string | null;
   status: 'Active' | 'Inactive';
   profile_picture?: string | null;
-  allowGoogleLogin: boolean;
   googleLinked: boolean;
   facultyProfileId?: number | null;
   createdAt: string;
@@ -112,7 +113,6 @@ interface ApiUser {
   department: ApiDepartment | null;
   profile_picture?: string | null;
   is_active: boolean;
-  allow_google_login: boolean;
   google_id?: string | null;
   faculty_profile?: { id: number; administrative_role?: string | null } | null;
   created_at: string;
@@ -152,7 +152,6 @@ const mapApiUser = (u: ApiUser): User => ({
   status: u.is_active ? 'Active' : 'Inactive',
   profile_picture: u.profile_picture || null,
   department_logo: u.department?.logo || null,
-  allowGoogleLogin: u.allow_google_login,
   googleLinked: Boolean(u.google_id),
   facultyProfileId: u.faculty_profile?.id ?? null,
   createdAt: u.created_at,
@@ -209,7 +208,6 @@ export default function VpaaUsers() {
     department_id: '',
     program_id: '',
     status: 'Active' as 'Active' | 'Inactive',
-    allow_google_login: false,
   });
 
   const [firstNameError, setFirstNameError] = useState('');
@@ -252,37 +250,9 @@ export default function VpaaUsers() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 300;
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          setProfilePicture(dataUrl);
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+    photoDataUrl(file)
+      .then(setProfilePicture)
+      .catch(() => toast.error('Error', 'Failed to process the photo. Try a JPEG, PNG or WEBP image.'));
   };
 
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
@@ -481,7 +451,6 @@ export default function VpaaUsers() {
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
           is_active: formData.status === 'Active',
-          allow_google_login: formData.allow_google_login,
           profile_picture: profilePicture,
         });
         const updatedUser = mapApiUser(res.data.data);
@@ -503,7 +472,6 @@ export default function VpaaUsers() {
           department_id: parseInt(formData.department_id),
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
           is_active: formData.status === 'Active',
-          allow_google_login: formData.allow_google_login,
           profile_picture: profilePicture,
           faculty_mode: facultyMode,
           faculty_id: facultyMode === 'link' ? parseInt(linkFacultyId) : null,
@@ -515,10 +483,10 @@ export default function VpaaUsers() {
           setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
-        toast.success('Success', `Account created. A setup link was emailed to ${createdUser.email}.`);
+        toast.success('Success', `Account @${createdUser.username} created. A setup link was emailed to ${createdUser.email}.`);
       }
 
-      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
       resetTeachingProfile();
       setIsModalOpen(false);
       setIsEditMode(false);
@@ -545,7 +513,6 @@ export default function VpaaUsers() {
       department_id: user.department_id ? user.department_id.toString() : '',
       program_id: user.program_id ? user.program_id.toString() : '',
       status: user.status,
-      allow_google_login: user.allowGoogleLogin,
     });
     setProfilePicture(user.profile_picture || null);
     setFirstNameError('');
@@ -579,8 +546,8 @@ export default function VpaaUsers() {
         return nextUsers;
       });
       toast.success('Archived', 'User archived successfully');
-    } catch {
-      toast.error('Error', 'Failed to archive user');
+    } catch (error) {
+      toast.error('Archive Failed', apiErrorMessage(error, 'Failed to archive user.'));
     }
   };
 
@@ -641,10 +608,24 @@ export default function VpaaUsers() {
   };
 
   const unlinkGoogle = async (user: User) => {
+    const confirmed = await confirm({
+      title: 'Unlink Google Account',
+      message: `${user.name} will have to sign in with Google again to relink it before Google login works for this account.`,
+      eyebrow: 'Account Access',
+      confirmLabel: 'Unlink',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
+
     try {
       const response = await api.delete<{ data: ApiUser }>(`/user/${user.id}/google-link`);
       const updated = mapApiUser(response.data.data);
-      setUsers((previous) => previous.map((item) => item.id === user.id ? updated : item));
+      setUsers((previous) => {
+        const nextUsers = previous.map((item) => item.id === user.id ? updated : item);
+        // Kept in step with the page cache, or a revisit showed the account as still linked.
+        setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
+        return nextUsers;
+      });
       setSelectedUserForDetail(updated);
       toast.success('Google unlinked', 'The user must link Google again before using Google login.');
     } catch (error) {
@@ -882,7 +863,7 @@ export default function VpaaUsers() {
               setIsEditMode(false);
               setEditingId(null);
               setIsDetailModalOpen(false);
-              setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active', allow_google_login: false });
+              setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
               setFirstNameError('');
               setLastNameError('');
               setMiddleInitialError('');
@@ -1291,11 +1272,11 @@ export default function VpaaUsers() {
                     )}
                   </div>
 
-                  <label className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 cursor-pointer">
-                    <input type="checkbox" checked={formData.allow_google_login} onChange={(e) => setFormData({ ...formData, allow_google_login: e.target.checked })} className="h-4 w-4 accent-[#5A1220] shrink-0" />
-                    <span className="text-sm font-bold text-gray-800">Allow Google login</span>
-                    <span className="text-[11px] text-gray-500 truncate">Links on first sign-in; must match the email above.</span>
-                  </label>
+                  {/* Google login is always on for every account (UserController
+                      sets it on create and update), so there is nothing to toggle. */}
+                  <p className="text-[11px] font-semibold text-gray-500">
+                    Google login is enabled for every account. It links on first sign-in and must match the email above.
+                  </p>
                 </div>
 
                 {/* Teaching profile (create only) */}
@@ -1469,7 +1450,7 @@ export default function VpaaUsers() {
 
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
                   <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Google login</p>
-                  <p className="text-xs font-bold text-gray-700">{selectedUserForDetail.googleLinked ? 'Linked' : selectedUserForDetail.allowGoogleLogin ? 'Approved, not linked' : 'Disabled'}</p>
+                  <p className="text-xs font-bold text-gray-700">{selectedUserForDetail.googleLinked ? 'Linked' : 'Allowed, not linked yet'}</p>
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">

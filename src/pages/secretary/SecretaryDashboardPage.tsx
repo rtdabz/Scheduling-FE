@@ -38,6 +38,7 @@ import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
 import { MILESTONE_TITLES, SUBMISSION_MILESTONES, submissionProgress } from '../../lib/submissionStage';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
+import { basicLoadOf } from '../../lib/facultyLoad';
 
 interface Schedule { id:number; semester_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; course?:{course_code:string;course_category?:string|null}|null; subject?:{subject_code:string;subject_category?:string|null}|null; faculty?:{first_name:string;last_name:string}|null; room?:{room_code:string;room_type?:string}|null; section?:{section_name:string}|null; department_id?:number|null }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null; department_id?:number|null }
@@ -128,6 +129,9 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         rooms: '/secretary/rooms',
         crossDepartment: '/secretary/cross-department-assignments',
       };
+  // Rooms are assigned to classes in Schedule Management; without schedule
+  // editing rights the Room List is the most useful place to send someone.
+  const roomAssignmentPath = canUpdateSchedules ? paths.schedules : paths.rooms;
   const cacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? departmentId ?? 'current'}`;
   const cached = getCachedData<Overview>(cacheKey);
 
@@ -225,7 +229,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const loads = useMemo(() => visibleFaculty
     .map(f => {
       const assigned = f.assigned_units || 0;
-      const max = Math.max(0, f.max_units - (f.deload_units || 0));
+      const max = basicLoadOf(f.max_units, f.deload_units);
       return { ...f, assigned, max, remaining: Math.max(0, max - assigned) };
     })
     .sort((a, b) => b.remaining - a.remaining), [visibleFaculty]);
@@ -356,7 +360,8 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
     ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
     ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Handshake, path:paths.crossDepartment } as QueueRow] : []),
-    { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:paths.rooms },
+    // Rooms are given to classes in Schedule Management; the Room List only browses rooms.
+    { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:roomAssignmentPath },
     ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
     ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
   ];
@@ -514,10 +519,10 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
       </div>}
 
       <div className="flex min-w-0 flex-col gap-4">
-      <Panel title="Room Assignment" action="View all" onAction={() => navigate(paths.rooms)}>
+      <Panel title="Room Assignment" action="View rooms" onAction={() => navigate(paths.rooms)}>
         <button
           type="button"
-          onClick={() => navigate(paths.rooms)}
+          onClick={() => navigate(roomAssignmentPath)}
           className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition hover:shadow-sm ${noRoom ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}
         >
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${noRoom ? TONES.alert : TONES.good}`}>{noRoom ? <AlertTriangle className="h-4 w-4"/> : <CheckCircle2 className="h-4 w-4"/>}</span>
@@ -553,7 +558,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         </div> : <p className="mt-2 py-3 text-center text-[11px] italic text-slate-400">No rooms available to this department.</p>}
 
         <div className="mt-3 flex items-baseline justify-between gap-2">
-          <button type="button" onClick={() => navigate(paths.rooms)} className="text-[11px] font-bold text-primary hover:underline">Go to Room Assignment <ArrowRight className="inline h-3 w-3"/></button>
+          <button type="button" onClick={() => navigate(paths.rooms)} className="text-[11px] font-bold text-primary hover:underline">Go to Room List <ArrowRight className="inline h-3 w-3"/></button>
           {roomUsage.length > 5 && <span className="text-[10px] text-slate-400">+{roomUsage.length - 5} more</span>}
         </div>
       </Panel>

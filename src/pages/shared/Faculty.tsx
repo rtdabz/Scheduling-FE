@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import NumberInput from '../../components/ui/NumberInput';
 import SegmentedLoadBar from '../../components/faculty/SegmentedLoadBar';
 import SearchInput from '../../components/ui/SearchInput';
@@ -21,7 +21,10 @@ import {
   UserRound,
 } from 'lucide-react';
 import api from '../../lib/api';
-import { hasStoredCapability } from '../../lib/storedUser';
+import { photoDataUrl } from '../../lib/imageDataUrl';
+import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage } from '../../lib/apiError';
@@ -81,8 +84,10 @@ interface Program {
 
 interface AssignedSubject {
   id: number;
-  subject_code: string;
-  subject_name: string;
+  course_code?: string;
+  course_name?: string;
+  subject_code?: string;
+  subject_name?: string;
 }
 
 interface AssignedClass {
@@ -123,10 +128,10 @@ interface ApiFacultyMember {
   id: number;
   first_name: string;
   last_name: string;
-  middle_name?: string | null;
+  middle_name: string | null;
   suffix?: string | null;
-  employment_type?: 'full-time' | 'part-time';
-  max_units?: number;
+  employment_type: 'full-time' | 'part-time';
+  max_units: number;
   overload_units?: number | null;
   deload_units?: number | null;
   probono_units?: number | null;
@@ -140,7 +145,7 @@ interface ApiFacultyMember {
   department?: Department | null;
   program_id?: number | null;
   program?: Program | null;
-  status?: 'active' | 'inactive';
+  status: 'active' | 'inactive';
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
   designations?: Designation[];
@@ -158,9 +163,9 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   id: f.id,
   first_name: f.first_name,
   last_name: f.last_name,
-  middle_name: f.middle_name || null,
+  middle_name: f.middle_name,
   suffix: f.suffix ?? null,
-  employment_type: f.employment_type || 'full-time',
+  employment_type: f.employment_type,
   max_units: f.max_units ?? 21,
   overload_units: f.overload_units || 0,
   deload_units: f.deload_units || 0,
@@ -173,8 +178,7 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   unit_ceiling:
     f.unit_ceiling ??
     Math.max(0, (f.max_units ?? 21) - (f.deload_units || 0)) +
-      (f.overload_units || 0) +
-      (f.probono_units || 0),
+      (f.overload_units || 0),
   department_id: f.department_id,
   department: f.department || null,
   program_id: f.program_id ?? null,
@@ -192,14 +196,24 @@ const getWorkloadStatus = (f: FacultyMember) => LOAD_LEVELS[loadLevelOf({
   maxUnits: f.max_units,
   deloadUnits: f.deload_units,
   overloadUnits: f.overload_units,
-  probonoUnits: f.probono_units,
 })];
 
-export default function ProgramHeadFaculty() {
+/**
+ * The instructor roster for every portal. The VPAA owns the roster (add, edit,
+ * archive); roles with instructor assignment edit load and availability; a
+ * program head sees only their own program. This used to be four copies, one
+ * per role, and fixes kept landing in only one of them.
+ */
+/** Lists arrive bare or wrapped in `{ data }`, depending on the endpoint. */
+type ListPayload<T> = T[] | { data?: T[] } | null | undefined;
+const listOf = <T,>(payload: ListPayload<T>): T[] => (Array.isArray(payload) ? payload : payload?.data ?? []);
+
+export default function Faculty() {
   const { toast, confirm } = useToast();
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
-  const facultyCacheKey = `page:faculty:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const user = getStoredUser();
+  const userRole = user?.role?.toLowerCase() ?? '';
+  const userProgramId = user?.program_id ?? null;
+  const facultyCacheKey = `page:faculty:${userRole || 'user'}:${user?.department_id ?? 'all'}:${userProgramId ?? 'all'}`;
   const cachedFacultyData = getCachedData<FacultyPageData>(facultyCacheKey);
   const [faculties, setFaculties] = useState<FacultyMember[]>(cachedFacultyData?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedFacultyData?.departments ?? []);
@@ -213,16 +227,24 @@ export default function ProgramHeadFaculty() {
   const [sortBy, setSortBy] = useState('name');
 
   // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
+  // The page is remembered together with the filters it was chosen under, so
+  // changing a filter or the sort starts again from page 1 without an effect
+  // resetting it after the fact.
+  const filterKey = [searchQuery, departmentFilter, employmentFilter, sortBy].join('|');
+  const [pageState, setPageState] = useState({ filterKey, page: 1 });
+  const currentPage = pageState.filterKey === filterKey ? pageState.page : 1;
+  const setCurrentPage = useCallback((next: number | ((page: number) => number)) => {
+    setPageState((prev) => {
+      const base = prev.filterKey === filterKey ? prev.page : 1;
+      return { filterKey, page: typeof next === 'function' ? next(base) : next };
+    });
+  }, [filterKey]);
   const [pageSize, setPageSize] = useState(6);
   /** The instructor just created, shown and highlighted wherever the sort puts it. */
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, departmentFilter, employmentFilter, sortBy]);
-
-  const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+  const isVpaa = userRole === 'vpaa';
+  const isProgramHead = userRole === 'program_head';
   const canManageFaculty = isVpaa;
   // The roster itself (identity, department, program, status) is the VPAA's.
   // The unit allowances and the weekly availability windows are instructor
@@ -250,9 +272,10 @@ export default function ProgramHeadFaculty() {
   const [suffix, setSuffix] = useState('');
   const [employmentType, setEmploymentType] = useState<'full-time' | 'part-time'>('full-time');
   const [maxUnits, setMaxUnits] = useState<number>(21);
+  // Which column the Load (Units) input writes to. Basic Load is the contract
+  // ceiling; Overload is the allowance granted on top of it.
   const [overloadUnits, setOverloadUnits] = useState<number>(0);
   const [deloadUnits, setDeloadUnits] = useState<number>(0);
-  const [probonoUnits, setProbonoUnits] = useState<number>(0);
   const [departmentId, setDepartmentId] = useState('');
   const [programId, setProgramId] = useState('');
   // The designation list is server data, never a hardcoded set -- the picker
@@ -289,37 +312,9 @@ export default function ProgramHeadFaculty() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 300;
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          setProfilePicture(dataUrl);
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+    photoDataUrl(file)
+      .then(setProfilePicture)
+      .catch(() => toast.error('Error', 'Failed to process the photo. Try a JPEG, PNG or WEBP image.'));
   };
 
   // Form error states
@@ -328,31 +323,18 @@ export default function ProgramHeadFaculty() {
   const [maxUnitsError, setMaxUnitsError] = useState('');
   const [departmentError, setDepartmentError] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useLiveRefresh(['faculty', 'users'], () => { void fetchData(true, true); });
-
   const fetchData = async (forceRefresh = false, silent = false) => {
     if (!silent) setIsLoading(forceRefresh || !hasCachedData(facultyCacheKey));
     try {
       const data = await loadCachedData<FacultyPageData>(facultyCacheKey, async () => {
         const [facultiesRes, deptsRes, programsRes] = await Promise.all([
-          api.get<ApiFacultyMember[]>('/faculties'),
-          api.get<Department[]>('/departments'),
-          api.get<Program[]>('/programs')
+          api.get<ListPayload<ApiFacultyMember>>('/faculties'),
+          api.get<ListPayload<Department>>('/departments'),
+          api.get<ListPayload<Program>>('/programs')
         ]);
-        const rawFaculties = Array.isArray(facultiesRes.data)
-          ? facultiesRes.data
-          : ((facultiesRes.data as any)?.data || []);
-        const rawDepts = Array.isArray(deptsRes.data)
-          ? deptsRes.data
-          : ((deptsRes.data as any)?.data || []);
-
-        const rawPrograms = Array.isArray(programsRes.data)
-          ? programsRes.data
-          : ((programsRes.data as any)?.data || []);
+        const rawFaculties = listOf(facultiesRes.data);
+        const rawDepts = listOf(deptsRes.data);
+        const rawPrograms = listOf(programsRes.data);
 
         return {
           faculties: rawFaculties.map(mapApiFaculty),
@@ -370,6 +352,16 @@ export default function ProgramHeadFaculty() {
     }
   };
 
+  // Declared after fetchData, which the React Compiler requires of anything an
+  // effect reads. fetchData raises its own loading flag before it awaits.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useLiveRefresh(['faculty', 'users'], () => { void fetchData(true, true); });
+
   const handleEditClick = (faculty: FacultyMember) => {
     setFirstName(faculty.first_name);
     setLastName(faculty.last_name);
@@ -379,7 +371,6 @@ export default function ProgramHeadFaculty() {
     setMaxUnits(faculty.max_units);
     setOverloadUnits(faculty.overload_units);
     setDeloadUnits(faculty.deload_units);
-    setProbonoUnits(faculty.probono_units);
     setDepartmentId(faculty.department_id ? faculty.department_id.toString() : '');
     setProgramId(faculty.program_id ? faculty.program_id.toString() : '');
     setDesignationIds((faculty.designations ?? []).map((d) => d.id.toString()));
@@ -512,10 +503,6 @@ export default function ProgramHeadFaculty() {
       middle_name: keptMiddleName(trimmedMiddle),
       suffix: suffix || null,
       employment_type: employmentType,
-      max_units: maxUnits,
-      overload_units: overloadUnits,
-      deload_units: deloadUnits,
-      probono_units: probonoUnits,
       department_id: Number(deptVal),
       program_id: programId ? Number(programId) : null,
       // Only sent when the account may change it. Submitting the field without
@@ -523,7 +510,12 @@ export default function ProgramHeadFaculty() {
       // every ordinary roster edit for roles that never touch designations.
       ...(canManageDesignations ? { designation_ids: designationIds.map(Number) } : {}),
       status,
-      profile_picture: profilePicture
+      profile_picture: profilePicture,
+      max_units: maxUnits,
+      overload_units: overloadUnits,
+      ...(!isVpaa ? {
+        deload_units: deloadUnits,
+      } : {}),
     };
 
     try {
@@ -572,6 +564,12 @@ export default function ProgramHeadFaculty() {
       list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id));
     }
 
+    // A program head owns one program roster. Keep this client-side guard in
+    // addition to the API scope so cached payloads cannot leak another program.
+    if (isProgramHead) {
+      list = list.filter(f => userProgramId !== null && Number(f.program_id) === Number(userProgramId));
+    }
+
     // 2. Filter by search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -592,7 +590,7 @@ export default function ProgramHeadFaculty() {
     }
 
     return list;
-  }, [faculties, searchQuery, departmentFilter, employmentFilter, isVpaa, user?.department_id]);
+  }, [faculties, searchQuery, departmentFilter, employmentFilter, isVpaa, isProgramHead, userProgramId, user?.department_id]);
 
   // Sort in-memory
   const sortedFaculties = useMemo(() => {
@@ -633,7 +631,7 @@ export default function ProgramHeadFaculty() {
       clearTimeout(jump);
       clearTimeout(fade);
     };
-  }, [highlightedId, sortedFaculties, pageSize]);
+  }, [highlightedId, sortedFaculties, pageSize, setCurrentPage]);
 
   const editingDesignations = faculties.find((f) => f.id === editingId)?.designations ?? [];
   const previewLoad = {
@@ -654,8 +652,18 @@ export default function ProgramHeadFaculty() {
   }, [sortedFaculties, activePage, pageSize]);
 
 
+  // The guided tour has only ever been offered to the secretary. Adding
+  // instructors is VPAA-only, so it stops at finding and opening one; it used
+  // to walk on to the Add button, which a secretary never sees, and aborted.
+  const showGuide = userRole === 'secretary';
+  const instructorGuideSteps = useMemo(() => [
+    { element: '#instructors-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Find an instructor', description: 'Search by name or filter by job type or workload.', side: 'bottom' as const },
+    { element: '[data-tour="view-details"]', waitFor: '#instructors-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Open an instructor to continue.', title: 'Check an instructor', description: 'Open an instructor to see their load, availability and classes. Great work — that is the whole flow.', side: 'top' as const },
+  ], []);
+  useWorkflowGuide({ id: 'instructors', isReady: showGuide, steps: instructorGuideSteps, mission: 'Find an Instructor' });
+
   return (
-    <div className="space-y-6 font-sans">
+    <div id="faculty-page" className="space-y-6 font-sans">
       {/* Search and Filters Bar */}
       <div id="instructors-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         {/* Search */}
@@ -744,6 +752,7 @@ export default function ProgramHeadFaculty() {
           {/* Add button inside filter bar */}
           {canManageFaculty && (
             <button
+              id="instructors-add-button"
               onClick={() => {
                 setIsEditMode(false);
                 setEditingId(null);
@@ -755,7 +764,6 @@ export default function ProgramHeadFaculty() {
                 setMaxUnits(21);
                 setOverloadUnits(0);
                 setDeloadUnits(0);
-                setProbonoUnits(0);
                 setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
                 setProgramId('');
                 setDesignationIds([]);
@@ -777,6 +785,8 @@ export default function ProgramHeadFaculty() {
         </div>
       </div>
 
+      {showGuide && <WorkflowGuideButton guideId="instructors" />}
+      <div id="instructors-workspace">
       {viewMode === 'grid' ? (
         /* Redesigned Card-based visual dashboard */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
@@ -807,7 +817,7 @@ export default function ProgramHeadFaculty() {
               const statusDetails = getWorkloadStatus(f);
               const name = formatFacultyListName(f);
               const required = f.max_units - f.deload_units;
-              const ceiling = Math.max(0, required) + f.overload_units + f.probono_units;
+              const ceiling = Math.max(0, required) + f.overload_units;
 
               const remaining = Math.max(0, required - f.assigned_units);
               const deptLogo = f.department?.logo || departments.find(d => d.id === f.department_id)?.logo || null;
@@ -869,7 +879,6 @@ export default function ProgramHeadFaculty() {
                         maxUnits={f.max_units}
                         deloadUnits={f.deload_units}
                         overloadUnits={f.overload_units}
-                        probonoUnits={f.probono_units}
                         showLegend
                       />
                     </div>
@@ -877,13 +886,19 @@ export default function ProgramHeadFaculty() {
                     {/* Card stats / details */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
                       <div className="col-span-2">
-                        <span className="text-gray-400 font-semibold block text-[10px] uppercase">Designation</span>
+                        <span className="text-gray-400 font-semibold block text-[10px] uppercase mb-1">Designation</span>
                         {(f.designations ?? []).length === 0 ? (
-                          <span className="font-bold text-gray-400">—</span>
+                          <span className="font-bold text-gray-400 text-xs">—</span>
                         ) : (
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                          <div className="mt-1 flex flex-col gap-2 min-w-0">
                             {(f.designations ?? []).map((d) => (
-                              <FacultyRoleBadge key={d.id} label={designationLabel(d)} tone="gold" hint={d.deload_units ? `-${d.deload_units}u` : null} />
+                              <FacultyRoleBadge
+                                key={d.id}
+                                label={designationLabel(d)}
+                                tone="gold"
+                                hint={d.deload_units ? `${d.deload_units} ${d.deload_units === 1 ? 'unit' : 'units'} deload` : null}
+                                stacked
+                              />
                             ))}
                           </div>
                         )}
@@ -914,7 +929,7 @@ export default function ProgramHeadFaculty() {
                             <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
                             {f.assigned_subjects.slice(0, 3).map(sub => (
                               <span key={sub.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
-                                {sub.subject_code}
+                                {sub.course_code || sub.subject_code}
                               </span>
                             ))}
                             {f.assigned_subjects.length > 3 && (
@@ -944,6 +959,7 @@ export default function ProgramHeadFaculty() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleViewDetails(f)}
+                        data-tour="view-details"
                         className="text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer"
                       >
                         View Details
@@ -990,8 +1006,11 @@ export default function ProgramHeadFaculty() {
           onView={(f) => { void handleViewDetails(f); }}
           onEdit={handleEditClick}
           onArchive={(f) => { void triggerDeleteConfirmation(f.id); }}
+          viewDetailsTourId="view-details"
         />
       )}
+      </div>
+
       {/* Pagination Section */}
       {totalItems > 0 && (
         <div className="px-6 py-4 border border-gray-100 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 bg-white shadow-sm mt-6">
@@ -1071,7 +1090,7 @@ export default function ProgramHeadFaculty() {
       {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
             <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
               <h2 className="text-lg font-bold text-white font-display">
                 {isEditMode ? 'Edit Instructor' : 'Add New Instructor'}
@@ -1081,24 +1100,23 @@ export default function ProgramHeadFaculty() {
                 onClick={() => setIsModalOpen(false)}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto font-sans">
+            <form id="instructor-form" onSubmit={handleSubmit} noValidate className="p-6 min-h-0 flex-1 overflow-y-auto font-sans">
               {/* Photo Upload Section */}
-              <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
-                <div className="relative group">
+              <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-200/80">
+                <div className="relative group shrink-0">
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
+                    className="w-16 h-16 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
                     title="Click to upload picture"
                   >
                     {profilePicture ? (
                       <img src={profilePicture} alt="Faculty Preview" className="w-full h-full object-cover" />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
-                        <Camera size={26} />
-                        <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Upload</span>
+                        <Camera size={20} />
                       </div>
                     )}
                   </div>
@@ -1124,84 +1142,88 @@ export default function ProgramHeadFaculty() {
                   onChange={handlePhotoUpload}
                   className="hidden"
                 />
-                <p className="text-[10px] font-semibold text-gray-500 font-sans">
-                  {profilePicture ? 'Click photo to change' : 'Click to upload profile photo'}
-                </p>
-              </div>
-
-              {/* Name in the order it is written on records: last, first, middle initial, suffix. */}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1fr_1fr_4.5rem_6.5rem]">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Last Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => {
-                      setLastName(capitalizeNameInput(e.target.value));
-                      setLastNameError('');
-                    }}
-                    placeholder="Doe"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                      }`}
-                  />
-                  {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{lastNameError}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    First Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => {
-                      setFirstName(capitalizeNameInput(e.target.value));
-                      setFirstNameError('');
-                    }}
-                    placeholder="John"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${firstNameError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                      }`}
-                  />
-                  {firstNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{firstNameError}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    M.I.
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={1}
-                    value={middleName.charAt(0)}
-                    onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
-                    placeholder="S"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white text-center uppercase font-sans"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Suffix
-                  </label>
-                  <select
-                    value={suffix}
-                    onChange={(e) => setSuffix(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                  >
-                    <option value="">None</option>
-                    {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-500 font-sans">Profile Photo</p>
+                  <p className="text-[11px] text-gray-500 font-sans">
+                    {profilePicture ? 'Click the photo to change it.' : 'Optional. Click the circle to upload.'}
+                  </p>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+                {/* Name in the order it is written on records: last, first, middle initial, suffix. */}
+                <div className="sm:col-span-2 grid grid-cols-2 gap-4 sm:grid-cols-[1fr_1fr_4.5rem_6.5rem]">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      Last Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => {
+                        setLastName(capitalizeNameInput(e.target.value));
+                        setLastNameError('');
+                      }}
+                      placeholder="Doe"
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError
+                          ? 'border-red-500 focus:ring-red-500'
+                          : 'border-gray-200 focus:ring-[#C9952A]'
+                        }`}
+                    />
+                    {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{lastNameError}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      First Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => {
+                        setFirstName(capitalizeNameInput(e.target.value));
+                        setFirstNameError('');
+                      }}
+                      placeholder="John"
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${firstNameError
+                          ? 'border-red-500 focus:ring-red-500'
+                          : 'border-gray-200 focus:ring-[#C9952A]'
+                        }`}
+                    />
+                    {firstNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{firstNameError}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      M.I.
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={1}
+                      value={middleName.charAt(0)}
+                      onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
+                      placeholder="S"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white text-center uppercase font-sans"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      Suffix
+                    </label>
+                    <select
+                      value={suffix}
+                      onChange={(e) => setSuffix(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                    >
+                      <option value="">None</option>
+                      {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                   Designations
                 </label>
                 <DesignationPicker
@@ -1212,9 +1234,8 @@ export default function ProgramHeadFaculty() {
                   disabled={!canManageDesignations}
                   maxUnits={maxUnits}
                 />
-              </div>
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     Employment Type <span className="text-red-500">*</span>
@@ -1231,7 +1252,7 @@ export default function ProgramHeadFaculty() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Max Units <span className="text-red-500">*</span>
+                    {employmentType === 'full-time' ? 'Full-Time' : 'Part-Time'} Basic Load (Units) <span className="text-red-500">*</span>
                   </label>
                   <NumberInput
                     value={maxUnits}
@@ -1246,162 +1267,153 @@ export default function ProgramHeadFaculty() {
                       }`}
                   />
                   {maxUnitsError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{maxUnitsError}</p>}
+                  <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">The units this instructor is expected to carry each semester.</p>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Deload Units
-                  </label>
-                  <NumberInput
-                    value={deloadUnits}
-                    onChange={(e) => setDeloadUnits(Number(e.target.value))}
-                    min="0"
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Overload Units
+                    Overload (Units)
                   </label>
                   <NumberInput
                     value={overloadUnits}
                     onChange={(e) => setOverloadUnits(Number(e.target.value))}
                     min="0"
+                    placeholder="0"
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
                   />
+                  <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">Optional. Units granted on top of the basic load.</p>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Pro Bono Units
-                  </label>
-                  <NumberInput
-                    value={probonoUnits}
-                    onChange={(e) => setProbonoUnits(Number(e.target.value))}
-                    min="0"
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+
+                {/* The load as it will be saved, band by band. */}
+                <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-3 text-xs font-bold text-gray-500 font-sans">
+                    <span className="uppercase tracking-wider">Load Preview</span>
+                    <span className="text-gray-700">{previewLoad.assignedUnits} / {Math.max(0, maxUnits - previewLoad.deloadUnits) + overloadUnits} units</span>
+                  </div>
+                  <SegmentedLoadBar
+                    className="mt-2"
+                    assignedUnits={previewLoad.assignedUnits}
+                    maxUnits={maxUnits}
+                    deloadUnits={previewLoad.deloadUnits}
+                    overloadUnits={overloadUnits}
+                    showLegend
                   />
                 </div>
-              </div>
+                {isVpaa ? (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      Assigned Department <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={departmentId}
+                      onChange={(e) => {
+                        setDepartmentId(e.target.value);
+                        setDepartmentError('');
+                        // A program only belongs to one department, so the previous
+                        // pick is never valid for the newly chosen one.
+                        setProgramId('');
+                      }}
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${departmentError
+                          ? 'border-red-500 focus:ring-red-500'
+                          : 'border-gray-200 focus:ring-[#C9952A]'
+                        }`}
+                    >
+                      <option value="">Select Department</option>
+                      {departments.map(dept => (
+                        <option key={dept.id} value={dept.id.toString()}>
+                          {dept.department_code} - {dept.department_name}
+                        </option>
+                      ))}
+                    </select>
+                    {departmentError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{departmentError}</p>}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      Department
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={
+                        departments.find(d => d.id === user?.department_id)
+                          ? `${departments.find(d => d.id === user?.department_id)?.department_code} - ${departments.find(d => d.id === user?.department_id)?.department_name}`
+                          : 'No Department Assigned'
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 text-sm outline-none cursor-not-allowed font-sans"
+                    />
+                  </div>
+                )}
 
-              {/* The load as it will be saved, band by band. */}
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                <div className="flex items-center justify-between gap-3 text-xs font-bold text-gray-500 font-sans">
-                  <span className="uppercase tracking-wider">Load Preview</span>
-                  <span className="text-gray-700">{previewLoad.assignedUnits} / {Math.max(0, maxUnits - previewLoad.deloadUnits) + overloadUnits + probonoUnits} units</span>
-                </div>
-                <SegmentedLoadBar
-                  className="mt-2"
-                  assignedUnits={previewLoad.assignedUnits}
-                  maxUnits={maxUnits}
-                  deloadUnits={previewLoad.deloadUnits}
-                  overloadUnits={overloadUnits}
-                  probonoUnits={probonoUnits}
-                  showLegend
-                />
-              </div>
+                {!isVpaa && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                        Deload Units
+                      </label>
+                      <NumberInput
+                        value={deloadUnits}
+                        onChange={(e) => setDeloadUnits(Number(e.target.value))}
+                        min="0"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                        Overload Units
+                      </label>
+                      <NumberInput
+                        value={overloadUnits}
+                        onChange={(e) => setOverloadUnits(Number(e.target.value))}
+                        min="0"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                      />
+                    </div>
+                  </>
+                )}
 
-              {isVpaa ? (
-                <div>
+                {/* VPAA has no unit fields, so Program pairs with Department on one row. */}
+                <div className={isVpaa ? '' : 'sm:col-span-2'}>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Assigned Department <span className="text-red-500">*</span>
+                    Program / Major
                   </label>
                   <select
-                    value={departmentId}
-                    onChange={(e) => {
-                      setDepartmentId(e.target.value);
-                      setDepartmentError('');
-                      // A program only belongs to one department, so the previous
-                      // pick is never valid for the newly chosen one.
-                      setProgramId('');
-                    }}
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${departmentError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                      }`}
+                    value={programId}
+                    onChange={(e) => setProgramId(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
                   >
-                    <option value="">Select Department</option>
-                    {departments.map(dept => (
-                      <option key={dept.id} value={dept.id.toString()}>
-                        {dept.department_code} - {dept.department_name}
+                    <option value="">Not program-specific</option>
+                    {formPrograms.map(program => (
+                      <option key={program.id} value={program.id.toString()}>
+                        {program.code} - {program.name}
                       </option>
                     ))}
                   </select>
-                  {departmentError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{departmentError}</p>}
+                  <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">
+                    Major subjects tied to a program can only be assigned to instructors of that program.
+                  </p>
                 </div>
-              ) : (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                    Department
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={
-                      departments.find(d => d.id === user?.department_id)
-                        ? `${departments.find(d => d.id === user?.department_id)?.department_code} - ${departments.find(d => d.id === user?.department_id)?.department_name}`
-                        : 'No Department Assigned'
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 text-sm outline-none cursor-not-allowed font-sans"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Program / Major
-                </label>
-                <select
-                  value={programId}
-                  onChange={(e) => setProgramId(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                >
-                  <option value="">Not program-specific</option>
-                  {formPrograms.map(program => (
-                    <option key={program.id} value={program.id.toString()}>
-                      {program.code} - {program.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1 font-sans">
-                  Major subjects tied to a program can only be assigned to instructors of that program.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
-                  Status <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-
-              {/* Form Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200/80 bg-gray-50/50 -mx-6 -mb-6 p-6 font-sans">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-all cursor-pointer font-sans"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 font-sans"
-                >
-                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
-                  <span>{isEditMode ? 'Save Changes' : 'Add Instructor'}</span>
-                </button>
               </div>
             </form>
+            {/* Form Buttons */}
+            <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200/80 bg-gray-50/50 px-6 py-4 font-sans">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-all cursor-pointer font-sans"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="instructor-form"
+                disabled={isSubmitting}
+                className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 font-sans"
+              >
+                {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
+                <span>{isEditMode ? 'Save Changes' : 'Add Instructor'}</span>
+              </button>
+            </div>
           </div>
         </div>,
         document.body

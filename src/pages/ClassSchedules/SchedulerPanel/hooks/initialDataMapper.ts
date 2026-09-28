@@ -1,4 +1,4 @@
-import { designationLabel } from "../../../../lib/designations";
+import { heldDesignation } from "../../../../lib/designations";
 import { DAYS, slotToTimeStr } from "../constants";
 import {
   configureTimeGrid,
@@ -67,7 +67,7 @@ export interface InitialDataResponse {
   field_course_assignment_enabled?: boolean;
   field_course_codes?: string[];
   resource_slot_limits?: { online: number; field: number } | null;
-  /** Grid window from schedule_settings; the client used to hardcode it. */
+  /** Grid window from institution_settings; the client used to hardcode it. */
   time_grid?: TimeGridConfigInput | null;
 }
 
@@ -302,7 +302,7 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   profilePicture: f.profile_picture ?? null,
   employmentType: f.employment_type,
   administrativeRole: normalizeAdministrativePost(f.administrative_role),
-  designations: (f.designations ?? []).map(designationLabel),
+  designations: (f.designations ?? []).map(heldDesignation),
   departmentId: f.department_id,
   departmentCode: f.department?.department_code,
   departmentName: f.department?.department_name,

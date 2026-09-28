@@ -67,12 +67,23 @@ export const splitSubmission = <T extends QueueSubmissionLike>(
     return [{ key: `${submission.id}:recalled`, submission, sectionIds: withdrawn.length > 0 ? withdrawn : allIds }];
   }
 
+  const withdrawn = ids('withdrawn');
+  const included = ids('included');
+
+  // A Dean or VPAA return after a partial recall marks the submission returned,
+  // but the recalled sections were never part of that return: they stay a
+  // recall entry, and the returned entry holds only the sections reviewed.
+  if ((submission.status === 'rejected_by_dean' || submission.status === 'rejected_by_vpaa') && withdrawn.length > 0) {
+    return [
+      { key: `${submission.id}:recalled`, submission: { ...submission, status: 'partially_withdrawn' }, sectionIds: withdrawn },
+      { key: `${submission.id}:returned`, submission, sectionIds: included },
+    ];
+  }
+
   if (submission.status !== 'partially_withdrawn') {
     return [{ key: String(submission.id), submission, sectionIds: allIds }];
   }
 
-  const withdrawn = ids('withdrawn');
-  const included = ids('included');
   const slices: QueueSlice<T>[] = [
     { key: `${submission.id}:recalled`, submission, sectionIds: withdrawn.length > 0 ? withdrawn : allIds },
   ];
@@ -81,4 +92,47 @@ export const splitSubmission = <T extends QueueSubmissionLike>(
     slices.push({ key: `${submission.id}:active`, submission: { ...submission, status: stage }, sectionIds: included });
   }
   return slices;
+};
+
+/** How a queue entry reads on the Dean and VPAA approval pages. */
+export type ApprovalDisplayStatus =
+  | 'submitted'
+  | 'approved_by_dean'
+  | 'conditionally_approved'
+  | 'rejected_by_dean'
+  | 'approved'
+  | 'rejected'
+  | 'revision';
+
+export const submissionDisplayStatus = (
+  submission: { status: QueueSubmissionStatus; approval_override?: boolean },
+): ApprovalDisplayStatus => {
+  switch (submission.status) {
+    case 'pending_dean': return 'submitted';
+    case 'pending_vpaa': return submission.approval_override ? 'conditionally_approved' : 'approved_by_dean';
+    case 'approved': return 'approved';
+    case 'rejected_by_dean': return 'rejected_by_dean';
+    case 'rejected_by_vpaa': return 'rejected';
+    default: return 'revision';
+  }
+};
+
+/**
+ * The meeting statuses that belong to a submission at a given stage — what the
+ * preview and the printout of that submission may contain. The two approval
+ * pages used to keep their own copies of this; the VPAA copy read a returned
+ * package as still "submitted", so its preview came up empty.
+ */
+export const scheduleStatusesForSubmission = (status: QueueSubmissionStatus): string[] => {
+  switch (status) {
+    case 'pending_dean': return ['submitted'];
+    case 'pending_vpaa': return ['approved_by_dean', 'conditionally_approved'];
+    case 'approved': return ['approved', 'faculty_assignment', 'reassignment', 'finalized'];
+    case 'withdrawn':
+    case 'partially_withdrawn':
+    case 'rejected_by_dean':
+    case 'rejected_by_vpaa':
+      return ['draft', 'completed', 'revision', 'rejected', 'rejected_by_dean', 'rejected_by_vpaa'];
+    default: return [];
+  }
 };

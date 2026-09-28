@@ -36,7 +36,7 @@ export type BalancedSplitSettings = {
   majorLectureEnabled: boolean;
 };
 
-export const balancedSplitSettingsOf = (settings: {
+export const balancedSplitSettingsOf = (_settings: {
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
 } | null | undefined): BalancedSplitSettings => ({
@@ -91,6 +91,24 @@ export const isHybridSplitEligible = (
   && Math.round(Number(course?.units ?? 0) * 60) === 2 * HYBRID_SPLIT_MEETING_MINUTES
   && Number(course?.lectureHours ?? 0) > 0
   && Number(course?.labHours ?? 0) === 0,
+);
+
+/**
+ * Online Split: both Split Session meetings online. Mirrors
+ * `SchedulingPolicy::allowsOnlineRoomFallback`: only a lecture meets online,
+ * never a laboratory or field course.
+ */
+export const isOnlineSplitEligible = (
+  course: Course | null | undefined,
+  fieldCourseCodes: ReadonlySet<string> = new Set(),
+): boolean => Boolean(
+  isBalancedSplitSchedulingEligible(course, {
+    minorEnabled: true,
+    majorLectureEnabled: true,
+  })
+  && !isConfiguredFieldCourse(course, fieldCourseCodes)
+  && Number(course?.labHours ?? 0) === 0
+  && course?.roomTypeRequired !== "laboratory",
 );
 
 export const isFieldSchedulingEligible = (course: Course | null | undefined): boolean => (

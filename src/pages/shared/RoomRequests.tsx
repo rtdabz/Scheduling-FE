@@ -1074,6 +1074,30 @@ function RequestPreviewModal({
     if (confirmed) await run(() => reviewRoomRequest(request.id, 'approve', remarks.trim()));
   };
 
+  // Rejecting and revoking are as final as approving, and used to act on the
+  // first click while approving asked first.
+  const reject = async () => {
+    const confirmed = await confirm({
+      title: 'Reject Room Request',
+      message: `${request.requesting_department?.code ?? 'The department'} will not be able to use ${roomCode} for these windows.`,
+      eyebrow: 'Room Request',
+      confirmLabel: 'Reject',
+      variant: 'danger',
+    });
+    if (confirmed) await run(() => reviewRoomRequest(request.id, 'reject', remarks.trim()));
+  };
+
+  const revoke = async () => {
+    const confirmed = await confirm({
+      title: 'Revoke Room Grant',
+      message: `${request.requesting_department?.code ?? 'The department'} will lose access to ${roomCode}. This is refused while it still has classes in the room.`,
+      eyebrow: 'Room Request',
+      confirmLabel: 'Revoke',
+      variant: 'danger',
+    });
+    if (confirmed) await run(() => reviewRoomRequest(request.id, 'revoke', remarks.trim()));
+  };
+
   const cancel = async () => {
     const confirmed = await confirm({
       title: isApproved ? 'Give Back Room' : 'Cancel Request',
@@ -1092,68 +1116,23 @@ function RequestPreviewModal({
     'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer';
 
   return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title="Room Request"
-      description={`${request.requesting_department?.code ?? 'Unknown'} requesting ${roomCode}`}
-      size="sm"
-      footer={
-        <div className="flex w-full flex-wrap justify-end gap-2">
-          {isOwn && (isPending || isApproved) && (
-            <button
-              type="button"
-              disabled={isBusy}
-              onClick={() => void cancel()}
-              className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}
-            >
-              <Trash2 size={15} />
-              {isApproved ? 'Give Back' : 'Cancel Request'}
-            </button>
-          )}
-          {canReview && isPending && (
-            <>
-              <button
-                type="button"
-                disabled={isBusy || remarks.trim() === ''}
-                onClick={() => void run(() => reviewRoomRequest(request.id, 'reject', remarks.trim()))}
-                className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}
-              >
-                <X size={15} />
-                Reject
-              </button>
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => void approve()}
-                className={`${actionClass} border-transparent bg-[#5A1220] text-white hover:bg-[#4e0a10]`}
-              >
-                <Check size={15} />
-                Approve
-              </button>
-            </>
-          )}
-          {canReview && isApproved && (
-            <button
-              type="button"
-              disabled={isBusy || remarks.trim() === ''}
-              onClick={() => void run(() => reviewRoomRequest(request.id, 'revoke', remarks.trim()))}
-              className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}
-            >
-              <Undo2 size={15} />
-              Revoke
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}
-          >
-            Close
-          </button>
-        </div>
-      }
-    >
+    <Modal isOpen onClose={onClose} title="Room Request" description={`${request.requesting_department?.code ?? 'Unknown'} requesting ${roomCode}`} size="sm" footer={
+      <div className="flex w-full flex-wrap justify-end gap-2">
+        {isOwn && (isPending || isApproved) && (
+          <button type="button" disabled={isBusy} onClick={() => void cancel()} className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}><Trash2 size={15} /> {isApproved ? 'Give Back' : 'Cancel Request'}</button>
+        )}
+        {canReview && isPending && (
+          <>
+            <button type="button" disabled={isBusy || remarks.trim() === ''} onClick={() => void reject()} className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}><X size={15} /> Reject</button>
+            <button type="button" disabled={isBusy} onClick={() => void approve()} className={`${actionClass} border-transparent bg-[#5A1220] text-white hover:bg-[#4e0a10]`}><Check size={15} /> Approve</button>
+          </>
+        )}
+        {canReview && isApproved && (
+          <button type="button" disabled={isBusy || remarks.trim() === ''} onClick={() => void revoke()} className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}><Undo2 size={15} /> Revoke</button>
+        )}
+        <button type="button" onClick={onClose} className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}>Close</button>
+      </div>
+    }>
       <div className="space-y-3 p-5 text-sm font-sans">
         <DetailLine label="Status" value={<StatusBadge status={request.status} />} />
         <DetailLine label="Room" value={request.room?.room_code ?? 'Room unavailable'} />

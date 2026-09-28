@@ -70,6 +70,7 @@ export const deanNav: NavSection[] = [
           },
         ]
       },
+
     ]
   },
   {

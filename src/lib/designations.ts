@@ -87,6 +87,14 @@ export const deleteDesignation = async (id: number): Promise<void> => {
 export const designationLabel = (designation: Pick<Designation, 'name' | 'label' | 'parent'>): string =>
   designation.label ?? (designation.parent ? `${designation.parent.name} · ${designation.name}` : designation.name);
 
+/** A held designation as the teaching load sheet prints it: its label and its deload. */
+export const heldDesignation = (
+  designation: Pick<Designation, 'name' | 'label' | 'parent'> & { deload_units?: number | null },
+): { label: string; deloadUnits: number } => ({
+  label: designationLabel(designation),
+  deloadUnits: Number(designation.deload_units) || 0,
+});
+
 /** A designation with sub-designations is only a heading and cannot be held. */
 export const isHeading = (designation: Designation, all: Designation[]): boolean =>
   (designation.children_count ?? 0) > 0 || all.some((other) => other.parent_id === designation.id);

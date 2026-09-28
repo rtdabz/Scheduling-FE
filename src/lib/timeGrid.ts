@@ -8,14 +8,14 @@
  * times on a 30-minute boundary they agree; for anything else they did not.
  *
  * The server treats opening and closing time as configurable
- * (`schedule_settings`, PATCH /timeslots/settings). The initial-data mapper
+ * (`institution_settings`, PATCH /timeslots/settings). The initial-data mapper
  * applies those values at runtime; these constants are the startup fallback.
  */
 
 /**
  * The grid window, configurable at runtime.
  *
- * `schedule_settings` stores opening time, closing time and slot interval, and
+ * `institution_settings` stores opening time, closing time and slot interval, and
  * `PATCH /timeslots/settings` changes them — but the client used to hardcode
  * 07:00–20:30 in about forty places, so widening the window silently
  * desynchronised the builder: a 06:00 class clamped onto the 07:00 row, and
@@ -29,7 +29,7 @@ const DEFAULT_GRID = {
   openingMinutes: 7 * 60,
   closingMinutes: 20 * 60 + 30,
   slotMinutes: 30,
-  /** schedule_settings.field_end_time; field classes must end by it. */
+  /** institution_settings.field_end_time; field classes must end by it. */
   fieldEndMinutes: 17 * 60,
 } as const;
 
@@ -233,6 +233,15 @@ export const parsePreferredPattern = (preferredPattern?: string | null): [number
   if (!customMatch) return null;
 
   return [Number(customMatch[1]), Number(customMatch[2])];
+};
+
+/**
+ * The N of a Consecutive Days meeting's `consecutive:N` pattern, or null. A
+ * run may start on any day, so it narrows no day the way a pair does.
+ */
+export const consecutiveDayCount = (preferredPattern?: string | null): number | null => {
+  const match = (preferredPattern ?? "").match(/^consecutive:([2-7])$/);
+  return match ? Number(match[1]) : null;
 };
 
 /** Serializes a custom two-day pattern back to its API form. */

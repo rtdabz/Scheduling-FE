@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DropModal from "./DropModal";
 import api from "../../../../lib/api";
 import type { DeliveryMode, DropContext, Room, ScheduleItem, Subject } from "../types";
+import { consecutiveDayRuns, type ConsecutivePlacement } from "../GenerateSchedule/courseClassConfig";
 
 vi.mock("../../../../lib/api", () => ({
   default: { post: vi.fn() },
@@ -47,6 +48,7 @@ function HybridModalHarness({
   splitEnabled = false,
   secondMeetingMode = "on-site",
   firstMeetingRoomId = "lecture-room",
+  run = null,
 }: {
   schedules?: ScheduleItem[];
   modalConflict?: string | null;
@@ -59,6 +61,8 @@ function HybridModalHarness({
   splitEnabled?: boolean;
   secondMeetingMode?: DeliveryMode;
   firstMeetingRoomId?: string;
+  /** The course's Consecutive Days rule for this section. */
+  run?: ConsecutivePlacement | null;
 }) {
   const [modalRoomId, setModalRoomId] = useState(firstMeetingRoomId);
   const [modalClassMode, setModalClassModeState] = useState<DeliveryMode>("on-site");
@@ -139,6 +143,7 @@ function HybridModalHarness({
       setSelectedRecommendationId={() => undefined}
       setDropContext={setDropContext}
       handleModalConfirm={(event) => event.preventDefault()}
+      modalRun={run}
       checkConflict={() => null}
     />
   );
@@ -567,6 +572,45 @@ describe("DropModal manual placement support", () => {
       });
     });
 
+    it("offers Online as the split's delivery and keeps the alternatives online", async () => {
+      render(splitHarness());
+
+      const delivery = screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement;
+      // One meeting online is a Hybrid Split.
+      expect(delivery.value).toBe("hybrid");
+
+      fireEvent.change(delivery, { target: { value: "online" } });
+
+      // Both meetings move online, and neither keeps a room.
+      await waitFor(() => expect(delivery.value).toBe("online"));
+      expect(screen.getAllByRole("button", { name: "Online", pressed: true })).toHaveLength(2);
+      expect(screen.queryByRole("combobox", { name: "First Meeting room" })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: "Second Meeting room" })).toBeNull();
+
+      // The course is online, so the alternatives are solved online: without
+      // it they came back face-to-face. It is no longer a Hybrid Split.
+      await waitFor(() => expect(previewCalls().at(-1)?.[1]).toMatchObject({
+        mode: "online",
+        split_gec_enabled: true,
+        selected_gec_course_ids: [1],
+        hybrid_split_course_ids: [],
+      }));
+    });
+
+    it("puts an Online Split back on site in a lecture room", async () => {
+      render(splitHarness());
+      const delivery = screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement;
+      fireEvent.change(delivery, { target: { value: "online" } });
+      await waitFor(() => expect(delivery.value).toBe("online"));
+
+      fireEvent.change(delivery, { target: { value: "onsite" } });
+
+      await waitFor(() => expect(delivery.value).toBe("onsite"));
+      expect((screen.getByRole("combobox", { name: "First Meeting room" }) as HTMLSelectElement).value).toBe("lecture-room");
+      expect((screen.getByRole("combobox", { name: "Second Meeting room" }) as HTMLSelectElement).value).toBe("lecture-room");
+      await waitFor(() => expect(previewCalls().at(-1)?.[1]).toMatchObject({ mode: "on-site", hybrid_split_course_ids: [] }));
+    });
+
     it("says so when no time suits both days", async () => {
       mockRecommendationApi([
         slot("Thursday", 3, "on-site", 10, 0),
@@ -679,5 +723,51 @@ describe("DropModal manual placement support", () => {
 
     expect(screen.getByText("This placement could not be saved")).toBeTruthy();
     expect(screen.getByText("Field courses must end by 5:00 PM.")).toBeTruthy();
+  });
+});
+
+describe("DropModal Consecutive Days", () => {
+  const RUN: ConsecutivePlacement = {
+    dayCount: 3,
+    preferredStartDay: "Thursday",
+    runs: consecutiveDayRuns(3, false),
+  };
+
+  beforeEach(() => {
+    vi.mocked(api.post).mockReset();
+    mockRecommendationApi();
+  });
+
+  afterEach(cleanup);
+
+  it("places the course as one run from a starting day, with no split options", () => {
+    // The harness opens on Thursday.
+    render(<HybridModalHarness run={RUN} lectureOnly />);
+
+    expect(screen.getByRole("heading", { name: "Each day of the run (3 days)" })).toBeDefined();
+    expect(screen.getByText(/Consecutive Days · 3 days · Thursday–Saturday/)).toBeDefined();
+    expect(screen.getAllByText("Thursday–Saturday").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Split Session")).toBeNull();
+
+    const startDay = screen.getByLabelText("Starting day") as HTMLSelectElement;
+    expect((within(startDay).getByRole("option", { name: "Friday (runs past the week)" }) as HTMLOptionElement).disabled).toBe(true);
+    // Its ticked days are Thursday-Saturday, so no other start is offered.
+    expect((within(startDay).getByRole("option", { name: "Monday (not the ticked days)" }) as HTMLOptionElement).disabled).toBe(true);
+    expect((within(startDay).getByRole("option", { name: "Thursday (Thursday–Saturday)" }) as HTMLOptionElement).disabled).toBe(false);
+  });
+
+  it("asks the slot list for whole runs", async () => {
+    render(<HybridModalHarness run={RUN} lectureOnly modalConflict="Friday: the room is taken" />);
+
+    const slotCalls = () => vi.mocked(api.post).mock.calls
+      .filter(([url]) => url === "/schedule-recommendations/available-slots");
+
+    await waitFor(() => expect(slotCalls().length).toBeGreaterThan(0));
+    // Only runs on the ticked days, Thursday-Saturday.
+    expect(slotCalls().at(-1)?.[1]).toMatchObject({
+      consecutive_days: 3,
+      meeting_type: null,
+      excluded_days: ["Monday", "Tuesday", "Wednesday", "Sunday"],
+    });
   });
 });

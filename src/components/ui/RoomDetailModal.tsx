@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import { getCachedData } from '../../lib/dataCache';
+import { getStoredUser } from '../../lib/storedUser';
 import RoomDetailContent from './RoomDetailContent';
 import Modal from './Modal';
 
@@ -58,9 +59,19 @@ interface RoomDetailModalProps {
   className?: string;
   initialRoom?: Room | null;
   initialSchedules?: Schedule[];
+  /**
+   * False when the page's own meeting list was cut short by the server's cap;
+   * the room's week is then fetched on its own instead of seeded from it.
+   */
+  initialSchedulesComplete?: boolean;
 }
 
-export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = [] }: RoomDetailModalProps) {
+/** One room's meetings in the active semester, uncapped by the campus-wide list. */
+const fetchRoomSchedules = (roomId: number) => api.get<Schedule[]>('/schedules', {
+  params: { room_id: roomId, semester_id: 'active', per_page: 1000 },
+});
+
+export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = [], initialSchedulesComplete = true }: RoomDetailModalProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -83,23 +94,22 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
     // including for rooms whose schedule list is empty.
     // The page owns and live-refreshes that payload, so refetching here only
     // swapped the cards a second time once the request came back.
-    if (initialRoom && initialRoom.id === roomId) {
+    if (initialRoom && initialRoom.id === roomId && initialSchedulesComplete) {
       setRoom(initialRoom);
       setSchedules(initialSchedules);
       setIsLoading(false);
       return;
     }
 
-    const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-    const user = userJson ? JSON.parse(userJson) : null;
+    const user = getStoredUser();
     const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
-    const cachedRoomsData = getCachedData<any>(roomsCacheKey);
+    const cachedRoomsData = getCachedData<{ rooms?: Room[]; schedules?: Schedule[] }>(roomsCacheKey);
 
     let cachedRoom: Room | undefined;
     let cachedSchedules: Schedule[] = [];
 
     if (cachedRoomsData) {
-      cachedRoom = cachedRoomsData.rooms.find((r: any) => r.id === roomId);
+      cachedRoom = cachedRoomsData.rooms?.find((r) => r.id === roomId);
       cachedSchedules = cachedRoomsData.schedules || [];
     }
 
@@ -110,12 +120,12 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
 
       const fetchRoomBackground = async () => {
         try {
-          const [roomRes, initialRes] = await Promise.all([
+          const [roomRes, schedulesRes] = await Promise.all([
             api.get<Room>(`/rooms/${roomId}`),
-            api.get<{ schedules: Schedule[] }>('/initial-data?include=schedules'),
+            fetchRoomSchedules(roomId),
           ]);
           setRoom(roomRes.data);
-          setSchedules(initialRes.data.schedules);
+          setSchedules(schedulesRes.data);
         } catch {
           // Ignore background fetch errors
         }
@@ -125,15 +135,17 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
     }
 
     const fetchRoom = async () => {
-      setIsLoading(!initialRoom || initialRoom.id !== roomId);
-      if (!initialRoom || initialRoom.id !== roomId) setRoom(null);
+      // Held in the loading state until the week arrives, so Print never
+      // captures a grid that is about to be replaced.
+      setIsLoading(true);
+      setRoom(initialRoom && initialRoom.id === roomId ? initialRoom : null);
       try {
-        const [roomRes, initialRes] = await Promise.all([
+        const [roomRes, schedulesRes] = await Promise.all([
           api.get<Room>(`/rooms/${roomId}`),
-          api.get<{ schedules: Schedule[] }>('/initial-data?include=schedules'),
+          fetchRoomSchedules(roomId),
         ]);
         setRoom(roomRes.data);
-        setSchedules(initialRes.data.schedules);
+        setSchedules(schedulesRes.data);
       } catch {
         onCloseRef.current();
       } finally {
@@ -141,7 +153,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
       }
     };
     fetchRoom();
-  }, [roomId, isOpen, initialRoom, initialSchedules]);
+  }, [roomId, isOpen, initialRoom, initialSchedules, initialSchedulesComplete]);
 
   if (!isOpen) return null;
 

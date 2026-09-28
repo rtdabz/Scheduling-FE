@@ -14,6 +14,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
+import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -87,8 +88,7 @@ const mapApiCourse = (s: ApiCourse): Course => ({
 
 export default function CourseManager() {
   const { toast } = useToast();
-  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const user = getStoredUser();
   const coursesCacheKey = `page:courses:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
   
   const [courses, setCourses] = useState<Course[]>(() => {

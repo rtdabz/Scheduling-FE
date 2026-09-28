@@ -30,7 +30,8 @@ export default function SegmentedLoadBar({
 }) {
   const bands = loadBandsOf(load);
   // Units past the ceiling still need room on the bar, or they would not show.
-  const scale = Math.max(bands.ceiling + bands.beyondCeiling, 1);
+  // Sized to everything drawn: the ceiling plus any pro bono spilling past it.
+  const scale = Math.max(bands.basic + bands.overload + bands.probono, 1);
   const pct = (units: number) => `${(units / scale) * 100}%`;
   const height = size === 'sm' ? 'h-1.5' : 'h-2.5';
 
@@ -72,7 +73,8 @@ export default function SegmentedLoadBar({
           {BANDS.map((band) => bands[band.key] > 0 && (
             <span key={band.key} className="inline-flex items-center gap-1">
               <span className={`h-2 w-2 rounded-full ${band.dot}`} />
-              {band.label} {band.key === 'probono' && bands.probonoGranted === 0
+              {/* Pro bono has no allowance to measure against, only a count. */}
+              {band.label} {band.key === 'probono'
                 ? bands.filled.probono
                 : `${bands.filled[band.key]}/${bands[band.key]}`}
             </span>

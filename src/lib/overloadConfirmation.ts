@@ -67,8 +67,8 @@ export const overloadConfirmationFrom = (err: unknown): OverloadConfirmation | n
       typeof data?.message === 'string' && data.message.trim()
         ? data.message.trim()
         : projections.length === 1
-          ? 'This instructor will have an overload. Do you want to proceed?'
-          : 'These instructors will have an overload. Do you want to proceed?',
+          ? 'This instructor will have a pro bono load. Do you want to proceed?'
+          : 'These instructors will have a pro bono load. Do you want to proceed?',
     instructors: projections,
   };
 };

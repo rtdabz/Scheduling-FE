@@ -14,6 +14,7 @@ import {
   type ClassifiedLoad,
   type LoadLine,
 } from "./teachingLoadRows";
+import type { HeldDesignation } from "./types";
 import {
   BLACK,
   baselineAt,
@@ -126,6 +127,8 @@ const PROBONO_TEXT = [107, 114, 128] as const;
  * Pro bono remains grey; conflict colour carries no printed label by design.
  */
 const CONFLICT_TEXT = [220, 38, 38] as const;
+/** Section C's deload figures print in red; their "Deload" heading stays black. */
+const DELOAD_TEXT = [220, 38, 38] as const;
 
 const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined => {
   if (line.band === "probono") return PROBONO_TEXT;
@@ -253,7 +256,7 @@ export interface SheetContext {
   middleInitial: string;
   isPartTime: boolean;
   /** Held designations, in order. The form has two lines; a third shares line 2. */
-  designations: string[];
+  designations: HeldDesignation[];
   instructorName: string;
   preparedBy: string;
   verifiedBy: string;
@@ -379,17 +382,8 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
 
   // Rows 28-38 -- B. Overload / Part Time Load.
   drawText(doc, "B. Overload/Part Time Load", { from: "A", to: "C", row: 28 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  // Names the pro bono colour only; the red conflict text is deliberately unlabelled.
-  const hasProbono = ctx.overloadLines.some((line) => line.band === "probono");
-  if (hasProbono) {
-    drawText(doc, "Grey text is Pro Bono", { from: "H", to: "K", row: 28 }, {
-      size: SIZE.small,
-      style: "bold",
-      align: "right",
-      padding: 1.6,
-      color: PROBONO_TEXT,
-    });
-  }
+  // Pro bono subjects are still printed in grey, but the form carries no
+  // legend for it (nor for the red conflict text).
   drawTableHeader(doc, 29);
   drawTableBody(doc, 31, Math.max(OVERLOAD_LINE_COUNT, ctx.overloadLines.length), ctx.overloadLines);
   drawTotalsRow(doc, formRow(37), "TOTAL NUMBER OF UNITS / HRS (OVERLOAD)", ctx.load.overloadTotals, MEDIUM);
@@ -397,15 +391,25 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
 
   // Rows 39-41 -- C. Other Designation/Functions. Line 1 carries the first
   // designation the instructor holds, line 2 the rest (an instructor holds at
-  // most three, so line 2 carries two at most).
-  drawText(doc, "C. Other Designation/Functions", { from: "A", to: "D", row: formRow(39) }, { size: SIZE.label, style: "bold", padding: 1.6 });
+  // most three, so line 2 carries two at most). Each line's deload sits in
+  // the units column, under the totals above it, headed "Deload" in the same
+  // style as the section's own heading.
+  const sectionHeading = { size: SIZE.label, style: "bold" as const, padding: 1.6 };
+  drawText(doc, "C. Other Designation/Functions", { from: "A", to: "D", row: formRow(39) }, sectionHeading);
+  // Wider than the units column at this size; the blank cells either side take the overrun.
+  drawText(doc, "Deload", { from: "J", row: formRow(39) }, { ...sectionHeading, align: "center", fixedSize: true });
   rule(doc, { from: "A", to: "K", row: formRow(40), edge: "top" }, MEDIUM);
   rule(doc, { from: "A", to: "K", row: formRow(40), edge: "bottom" }, THIN);
   rule(doc, { from: "A", to: "K", row: formRow(41), edge: "bottom" }, MEDIUM);
-  drawText(doc, "1", { from: "A", row: formRow(40) }, { size: SIZE.label, padding: 1.8 });
-  drawText(doc, "2", { from: "A", row: formRow(41) }, { size: SIZE.label, padding: 1.8 });
-  drawText(doc, ctx.designations[0] ?? "", { from: "B", to: "K", row: formRow(40) }, { size: SIZE.label, padding: 1.6 });
-  drawText(doc, ctx.designations.slice(1).join("; "), { from: "B", to: "K", row: formRow(41) }, { size: SIZE.label, padding: 1.6 });
+  const designationLines = [ctx.designations.slice(0, 1), ctx.designations.slice(1)];
+  designationLines.forEach((held, index) => {
+    const row = formRow(40 + index);
+    drawText(doc, String(index + 1), { from: "A", row }, { size: SIZE.label, padding: 1.8 });
+    if (held.length === 0) return;
+    drawText(doc, held.map((designation) => designation.label).join("; "), { from: "B", to: "I", row }, { size: SIZE.label, padding: 1.6 });
+    const deload = held.reduce((sum, designation) => sum + designation.deloadUnits, 0);
+    drawText(doc, formatQuantity(deload), { from: "J", row }, { size: SIZE.label, style: "bold", align: "center", color: DELOAD_TEXT });
+  });
 
   // Rows 44-52 -- the signature block. The form runs it as two open columns
   // with no divider between them, only the rules each signatory signs on.

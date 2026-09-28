@@ -14,7 +14,8 @@ export interface LoadAllowances {
   /** max_units - deload_units. */
   basicLoad: number;
   overloadUnits: number;
-  probonoUnits: number;
+  /** Ignored: pro bono is no longer granted, it is whatever passes Overload. */
+  probonoUnits?: number;
 }
 
 export const loadTierForUnits = (allowances: LoadAllowances, units: number): LoadTier => {
@@ -61,25 +62,25 @@ export interface LoadBands {
   maxUnits: number;
   deloadUnits: number;
   overloadUnits: number;
-  probonoUnits: number;
+  /** Ignored: pro bono is no longer granted, it is whatever passes Overload. */
+  probonoUnits?: number;
 }
 
-export const loadBandsOf = ({ assignedUnits, maxUnits, deloadUnits, overloadUnits, probonoUnits }: LoadBands) => {
+export const loadBandsOf = ({ assignedUnits, maxUnits, deloadUnits, overloadUnits }: LoadBands) => {
   const basic = basicLoadOf(maxUnits, deloadUnits);
   const overload = Math.max(0, overloadUnits);
   const assigned = Math.max(0, assignedUnits);
-  // Everything past Basic Load and Overload is pro bono, granted or not, so the
-  // pro bono band grows to hold it rather than spilling past a ceiling.
+  // Pro bono is not an allowance anyone grants: it is exactly the units past
+  // Basic Load and Overload, so the band is as large as what spills into it.
   const probonoFilled = Math.max(0, assigned - basic - overload);
-  const probono = Math.max(0, probonoUnits, probonoFilled);
-  const ceiling = basic + overload + probono;
+  const probono = probonoFilled;
+  /** Basic Load plus Overload, the most an instructor is expected to carry. */
+  const ceiling = basic + overload;
 
   return {
     basic,
     overload,
     probono,
-    /** Pro bono units actually granted, as opposed to the band's drawn size. */
-    probonoGranted: Math.max(0, probonoUnits),
     assigned,
     ceiling,
     filled: {
@@ -99,8 +100,7 @@ export const loadBandsOf = ({ assignedUnits, maxUnits, deloadUnits, overloadUnit
  * An instructor starts at the first band they were actually granted, so one
  * with no Basic Load and only overload is "Overload" from their first unit,
  * and moves up as their assigned units fill each band. Once Basic Load and
- * Overload are used up, the instructor is Pro Bono whether or not pro bono
- * units were granted.
+ * Overload are used up, the instructor is Pro Bono.
  */
 export type LoadLevel = 'regular' | 'overload' | 'probono';
 
@@ -111,7 +111,6 @@ export const loadLevelOf = (load: LoadBands): LoadLevel => {
   if (bands.overload > 0 && bands.assigned > bands.basic) return 'overload';
   if (bands.basic > 0) return 'regular';
   if (bands.overload > 0) return 'overload';
-  if (bands.probonoGranted > 0) return 'probono';
   return 'regular';
 };
 

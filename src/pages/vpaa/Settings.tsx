@@ -84,7 +84,7 @@ interface SettingsPageData {
 interface TimeslotSettings {
   opening_time: string;
   closing_time: string;
-  /** Latest end time for field classes (schedule_settings.field_end_time). */
+  /** Latest end time for field classes (institution_settings.field_end_time). */
   field_end_time?: string;
   slot_interval: number;
 }

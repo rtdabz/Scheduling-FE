@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Compass,
   HelpCircle,
   Loader2,
@@ -28,9 +29,13 @@ import type {
   Semester,
 } from "../types";
 import RecommendedAdjustmentPanel from "./RecommendedAdjustmentPanel";
+import GenerationGuide from "./GenerationGuide";
+import { GUIDE_CHAPTER_FOR_STEP } from "./generationGuideContent";
+import { APPLY_ALL_RECOMMENDATION_ID } from "./recommendationGroups";
 import { resolveGenerationChanges } from "./generationChanges";
 import {
   applyAdjustments,
+  applyYearLevelAdjustments,
   recommendationTarget,
   describeAdjustment,
   type GenerationRecommendation,
@@ -39,6 +44,7 @@ import type { DeliveryModeOption } from "./generationTypes";
 import {
   canGenerateYearLevel,
   getYearLevelScheduleState,
+  SECTIONS_GENERATION_BLOCKED_MESSAGE,
   YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE,
   type YearLevelScheduleState,
 } from "./yearLevelGenerationEligibility";
@@ -59,6 +65,7 @@ import type { LaboratoryDurationSettings } from "../courseSlotPlan";
 import {
   EMPTY_COURSE_DEFAULTS,
   formatHours,
+  type ConsecutiveDayRule,
   type CourseDefaults,
   type PreferredRoomOption,
 } from "./courseClassConfig";
@@ -100,6 +107,8 @@ type SectionConfig = {
 type SettingsResponse = LaboratoryDurationSettings & {
   /** Required Day, stored as the department's forced-day rules. */
   forced_day_rules?: ForcedDayRule[];
+  /** Consecutive Days, course-wide (section_id null) or per section. */
+  consecutive_day_rules?: ConsecutiveDayRule[];
   forced_day_courses?: ConstraintCourse[];
   field_course_assignment_enabled?: boolean;
   field_course_options?: ConstraintCourse[];
@@ -237,11 +246,15 @@ export default function YearLevelGenerateScheduleWorkflow({
   };
   const [yearLevel, setYearLevel] = useState<number>(1);
   const [activeSectionId, setActiveSectionId] = useState("");
+  // Per-section generation: null generates the whole year level; a list
+  // generates only those sections and leaves the others' classes in place.
+  const [targetSectionIds, setTargetSectionIds] = useState<string[] | null>(null);
   const [configs, setConfigs] = useState<Record<string, SectionConfig>>({});
   const [setupDraft, setSetupDraft] = useState<SetupDraft>(defaultSetupDraft);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   // Step 2's Default Settings sidebar, opened from the gear in the header.
   const [defaultsOpen, setDefaultsOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(false);
   // The wizard is a modal: it hosts its own mission so the Schedule
   // Builder tour underneath never narrates controls the dialog covers.
@@ -261,7 +274,13 @@ export default function YearLevelGenerateScheduleWorkflow({
     () => run.result?.schedules ?? [],
     [run.result],
   );
-  const failure = run.failure;
+  // "Keep searching" hides a provisional report for that run only; the final
+  // report, or a later run's provisional one, is shown again.
+  const [dismissedProvisionalRunId, setDismissedProvisionalRunId] = useState<string | null>(null);
+  const failure =
+    run.failure?.provisional && run.runId !== null && dismissedProvisionalRunId === run.runId
+      ? null
+      : run.failure;
   const generationChanges = useMemo(
     () => resolveGenerationChanges(run.result),
     [run.result],
@@ -315,6 +334,30 @@ export default function YearLevelGenerateScheduleWorkflow({
         (section) => Number(section.yearLevel) === yearLevel,
       ),
     [availableSections, yearLevel],
+  );
+  // The sections this run schedules and saves. A newly added section can be
+  // generated on its own around the classes its year level already has.
+  const targetSections = useMemo(
+    () =>
+      targetSectionIds === null
+        ? scopedSections
+        : scopedSections.filter((section) =>
+            targetSectionIds.includes(String(section.id)),
+          ),
+    [scopedSections, targetSectionIds],
+  );
+  const scheduledSectionIds = useMemo(
+    () =>
+      new Set(
+        existingSchedules
+          .filter(
+            (schedule) =>
+              !activeSemester ||
+              Number(schedule.semesterId) === Number(activeSemester.id),
+          )
+          .map((schedule) => String(schedule.sectionId)),
+      ),
+    [activeSemester, existingSchedules],
   );
   // The curriculum this year level follows. Every section of the year level
   // normally shares one; a mixed year level has no single answer, and the
@@ -430,11 +473,21 @@ export default function YearLevelGenerateScheduleWorkflow({
   const yearLevelGenerationAllowed = useMemo(
     () =>
       canGenerateYearLevel(
-        scopedSections,
+        targetSections,
         existingSchedules,
         activeSemester?.id ?? null,
       ),
-    [activeSemester?.id, existingSchedules, scopedSections],
+    [activeSemester?.id, existingSchedules, targetSections],
+  );
+  // The target sections' own state, for the regenerate confirmation.
+  const targetState = useMemo(
+    () =>
+      getYearLevelScheduleState(
+        targetSections,
+        existingSchedules,
+        activeSemester?.id ?? null,
+      ),
+    [activeSemester?.id, existingSchedules, targetSections],
   );
   // Every year level's state, so the picker can mark the ones already
   // scheduled or locked before the user switches to them.
@@ -454,7 +507,6 @@ export default function YearLevelGenerateScheduleWorkflow({
       ) as Record<number, YearLevelScheduleState>,
     [activeSemester?.id, availableSections, availableYears, existingSchedules],
   );
-  const yearState = yearStates[yearLevel] ?? null;
   const roomCodeById = useMemo(
     () =>
       // Not narrowed to the department: a plan may place a class in a room
@@ -480,6 +532,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     "Laboratory requirements",
     "Conflict prevention",
     ...(settings?.forced_day_rules?.length ? ["Required day rules"] : []),
+    ...(settings?.consecutive_day_rules?.length ? ["Consecutive days rules"] : []),
     ...(settings?.field_course_codes?.length ? ["Field course rules"] : []),
     ...(setupDraft.courseDefaults.allowFridaySaturdaySplit
       ? ["Friday + Saturday split pairs"]
@@ -523,6 +576,7 @@ export default function YearLevelGenerateScheduleWorkflow({
           step?: Step;
           yearLevel?: number;
           activeSectionId?: string;
+          targetSectionIds?: string[] | null;
           configs?: Record<string, SectionConfig>;
           setupDraft?: Partial<SetupDraft>;
         };
@@ -538,6 +592,11 @@ export default function YearLevelGenerateScheduleWorkflow({
               : 1,
           );
           setActiveSectionId(parsed.activeSectionId ?? "");
+          setTargetSectionIds(
+            Array.isArray(parsed.targetSectionIds)
+              ? stringList(parsed.targetSectionIds)
+              : null,
+          );
           setConfigs(parsed.configs ?? {});
           setSetupDraft({
             ...defaultSetupDraft,
@@ -564,6 +623,7 @@ export default function YearLevelGenerateScheduleWorkflow({
       setYearLevel(initialYear);
       setStep(1);
       setActiveSectionId("");
+      setTargetSectionIds(null);
       setConfigs({});
       setSetupDraft({ ...defaultSetupDraft, courseDefaults: savedDefaults });
     }
@@ -754,9 +814,9 @@ export default function YearLevelGenerateScheduleWorkflow({
     if (!draftRestoredRef.current) return;
     window.localStorage.setItem(
       storageKey,
-      JSON.stringify({ step, yearLevel, activeSectionId, configs, setupDraft }),
+      JSON.stringify({ step, yearLevel, activeSectionId, targetSectionIds, configs, setupDraft }),
     );
-  }, [activeSectionId, configs, setupDraft, step, storageKey, yearLevel]);
+  }, [activeSectionId, configs, setupDraft, step, storageKey, targetSectionIds, yearLevel]);
 
   useEffect(() => {
     if (!yearLevelGenerationAllowed && step !== 1) {
@@ -821,6 +881,53 @@ export default function YearLevelGenerateScheduleWorkflow({
   };
 
   /**
+   * Consecutive Days is the department's rule for the course, saved straight
+   * away like Required Day: Manual Scheduling places the run from it too.
+   * The course's Required Day travels in the same request, because the
+   * server refuses a course that has both.
+   */
+  const saveConsecutiveDays = async (
+    courseId: string,
+    courseRules: ConsecutiveDayRule[],
+    requiredDay: string | null,
+  ) => {
+    if (!settingsSectionId || !settings) return;
+    const consecutiveRules = [
+      ...(settings.consecutive_day_rules ?? []).filter(
+        (rule) => String(rule.course_id) !== courseId,
+      ),
+      ...courseRules,
+    ];
+    const forcedRules = [
+      ...(settings.forced_day_rules ?? []).filter(
+        (rule) => String(rule.course_id) !== courseId,
+      ),
+      ...(requiredDay ? [{ course_id: Number(courseId), day: requiredDay }] : []),
+    ];
+    try {
+      const response = await api.patch<SettingsResponse>(
+        "/scheduling-settings",
+        { consecutive_day_rules: consecutiveRules, forced_day_rules: forcedRules },
+        { params: { section_id: settingsSectionId } },
+      );
+      const next = {
+        ...settings,
+        ...response.data,
+        consecutive_day_rules: response.data?.consecutive_day_rules ?? consecutiveRules,
+        forced_day_rules: forcedRules,
+      };
+      setSettings(next);
+      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
+    } catch (error) {
+      toast.error(
+        "Save failed",
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+          ?? "Unable to update Consecutive Days.",
+      );
+    }
+  };
+
+  /**
    * A course is a field course only while a field room is its Preferred
    * Room. The department's field list is what the Generator and the Rule
    * Engine read, so the choice is saved straight away, like Required Day.
@@ -878,10 +985,16 @@ export default function YearLevelGenerateScheduleWorkflow({
     }
   };
 
-  const generate = async (configsOverride?: Record<string, SectionConfig>) => {
+  const generate = async (
+    configsOverride?: Record<string, SectionConfig>,
+    draftOverride?: SetupDraft,
+  ) => {
     if (!activeSemester || departmentId === null) return;
     if (!yearLevelGenerationAllowed) return;
     const activeConfigs = configsOverride ?? configs;
+    // An applied recommendation passes the draft it just set, which state has
+    // not caught up with yet.
+    const activeDraft = draftOverride ?? setupDraft;
     const configuredFieldCourseIds = includedCourses
       .filter((course) =>
         isConfiguredFieldCourse(
@@ -902,7 +1015,12 @@ export default function YearLevelGenerateScheduleWorkflow({
         semester_id: Number(activeSemester.id),
         department_id: departmentId,
         year_level: yearLevel,
-        section_configs: scopedSections.map((section) => {
+        // Only when some sections are picked; omitted, the server generates
+        // every section of the year level.
+        ...(targetSectionIds !== null
+          ? { section_ids: targetSections.map((section) => Number(section.id)) }
+          : {}),
+        section_configs: targetSections.map((section) => {
           const config = activeConfigs[section.id];
           return {
             section_id: Number(section.id),
@@ -985,19 +1103,19 @@ export default function YearLevelGenerateScheduleWorkflow({
             // Step 1's Preferred Days, the same for every section. No days
             // chosen means any day.
             allowed_days:
-              setupDraft.preferredDays.length > 0
-                ? setupDraft.preferredDays
+              activeDraft.preferredDays.length > 0
+                ? activeDraft.preferredDays
                 : null,
             // Step 2's Default Settings: Split courses may also meet Friday +
             // Saturday, after MW and TTh.
             allow_friday_saturday_split:
-              setupDraft.courseDefaults.allowFridaySaturdaySplit,
+              activeDraft.courseDefaults.allowFridaySaturdaySplit,
           };
         }),
       };
       await run.start(payload, {
         yearLevel,
-        sectionCount: scopedSections.length,
+        sectionCount: targetSections.length,
       });
     } catch (error: unknown) {
       // Preparing the request is the only failure that still belongs here.
@@ -1018,10 +1136,13 @@ export default function YearLevelGenerateScheduleWorkflow({
    * this is the last calm moment to notice the year level was already done.
    */
   const generateFromReview = async () => {
-    if (yearState?.kind === "scheduled") {
+    if (targetState.kind === "scheduled") {
       const confirmed = await confirm({
-        title: "Year Level Already Scheduled",
-        message: `${yearLabel(yearLevel)} already has classes in ${yearState.scheduledSectionCount} of ${yearState.sectionCount} section${yearState.sectionCount === 1 ? "" : "s"}. Generating again is only a preview, but saving the result replaces those draft classes.`,
+        title:
+          targetSectionIds === null
+            ? "Year Level Already Scheduled"
+            : "Sections Already Scheduled",
+        message: `${targetSectionIds === null ? yearLabel(yearLevel) : "The selected sections"} already ${targetSectionIds === null ? "has" : "have"} classes in ${targetState.scheduledSectionCount} of ${targetState.sectionCount} section${targetState.sectionCount === 1 ? "" : "s"}. Generating again is only a preview, but saving the result replaces those draft classes.`,
         eyebrow: "Regenerate Schedule",
         confirmLabel: "Generate Again",
         variant: "maroon",
@@ -1031,13 +1152,32 @@ export default function YearLevelGenerateScheduleWorkflow({
     await generate();
   };
 
-  const applyRecommendationAndRetry = (
+  // Saved so every year level -- and the next visit -- opens with the same
+  // Default Settings.
+  const saveCourseDefaults = (courseDefaults: CourseDefaults) => {
+    try {
+      window.localStorage.setItem(defaultsStorageKey, JSON.stringify(courseDefaults));
+    } catch {
+      // Storage unavailable: they still apply for this session.
+    }
+  };
+
+  const applyRecommendationAndRetry = async (
     recommendation: GenerationRecommendation,
   ) => {
-    const { configs: nextConfigs, applied } = applyAdjustments(
+    const { configs: nextConfigs, applied: appliedToSections } = applyAdjustments(
       configs,
       recommendation.adjustments,
     );
+    const { settings: yearLevelSettings, applied: appliedToYearLevel } =
+      applyYearLevelAdjustments(
+        {
+          preferredDays: setupDraft.preferredDays,
+          allowFridaySaturdaySplit: setupDraft.courseDefaults.allowFridaySaturdaySplit,
+        },
+        recommendation.adjustments,
+      );
+    const applied = [...appliedToSections, ...appliedToYearLevel];
     if (applied.length === 0) {
       toast.error(
         "Nothing to Apply",
@@ -1049,11 +1189,33 @@ export default function YearLevelGenerateScheduleWorkflow({
     // The wizard's own configuration changes, so Setup Courses and
     // Configuration show the new session, and the run below uses it.
     setConfigs(nextConfigs);
+    const nextDraft: SetupDraft = {
+      ...setupDraft,
+      preferredDays: yearLevelSettings.preferredDays,
+      courseDefaults: {
+        ...setupDraft.courseDefaults,
+        allowFridaySaturdaySplit: yearLevelSettings.allowFridaySaturdaySplit,
+      },
+    };
+    if (appliedToYearLevel.length > 0) {
+      setSetupDraft(nextDraft);
+      if (nextDraft.courseDefaults !== setupDraft.courseDefaults) {
+        saveCourseDefaults(nextDraft.courseDefaults);
+      }
+    }
     toast.success(
-      `Applied to ${recommendationTarget(recommendation)}`,
+      recommendation.id === APPLY_ALL_RECOMMENDATION_ID
+        ? `Applied ${recommendation.title}`
+        : `Applied to ${recommendationTarget(recommendation)}`,
       applied.map((adjustment) => describeAdjustment(adjustment)).join(" | "),
     );
-    void generate(nextConfigs);
+    // Straight on to generating again, not back to Review: the new run is
+    // queued in this same update, so the loading view replaces the panel
+    // directly. A provisional report's run is still searching; starting over
+    // it cancels it on the server first, without an idle moment in between.
+    setStepDirection("forward");
+    setStep(3);
+    void generate(nextConfigs, nextDraft);
   };
 
   const reviewConstraints = (sectionId: number | null) => {
@@ -1063,11 +1225,40 @@ export default function YearLevelGenerateScheduleWorkflow({
     ) {
       setActiveSectionId(String(sectionId));
     }
-    run.clear();
+    if (run.isActive) void run.cancel();
+    else run.clear();
     goToStep(2);
   };
 
   const apply = async () => {
+    // A `revision` row was recalled or returned from approval: it was
+    // submitted before. Saving deletes it for good, so say so while it can
+    // be stopped.
+    const generatedKeys = new Set(
+      preview.map((r) => `${r.section_id}:${r.course_id ?? r.subject_id}`),
+    );
+    const recalledSectionIds = new Set(
+      existingSchedules
+        .filter(
+          (schedule) =>
+            schedule.status === "revision" &&
+            generatedKeys.has(`${schedule.sectionId}:${schedule.courseId || schedule.subjectId}`) &&
+            (!activeSemester || Number(schedule.semesterId) === Number(activeSemester.id)),
+        )
+        .map((schedule) => String(schedule.sectionId)),
+    );
+    if (recalledSectionIds.size > 0) {
+      const count = recalledSectionIds.size;
+      const confirmed = await confirm({
+        title: "Replace Recalled Schedules",
+        message: `${count} section${count === 1 ? " was" : "s were"} recalled or returned from approval. Saving replaces ${count === 1 ? "its" : "their"} previously submitted or approved classes for the generated courses permanently. This cannot be undone.`,
+        eyebrow: "Irreversible Action",
+        confirmLabel: "Replace Schedules",
+        variant: "danger",
+      });
+      if (!confirmed) return;
+    }
+
     setApplying(true);
     onSavingChange?.(true);
     // The generator closes on the click rather than when the save resolves.
@@ -1079,13 +1270,20 @@ export default function YearLevelGenerateScheduleWorkflow({
     onClose();
     try {
       const replaceableStatuses = new Set(["draft", "completed", "revision"]);
+      // Only the generated sections are replaced; the rest keep their classes.
       const sectionIds = new Set(
-        scopedSections.map((section) => String(section.id)),
+        targetSections.map((section) => String(section.id)),
+      );
+      // ...and within them only the generated courses. A course left out of
+      // generation keeps its classes, as the server's replacement does.
+      const generatedCourseKeys = new Set(
+        preview.map((r) => `${r.section_id}:${r.course_id ?? r.subject_id}`),
       );
       const deleteIds = existingSchedules
         .filter(
           (schedule) =>
             sectionIds.has(String(schedule.sectionId)) &&
+            generatedCourseKeys.has(`${schedule.sectionId}:${schedule.courseId || schedule.subjectId}`) &&
             (!activeSemester ||
               Number(schedule.semesterId) === Number(activeSemester.id)) &&
             replaceableStatuses.has(schedule.status),
@@ -1125,7 +1323,7 @@ export default function YearLevelGenerateScheduleWorkflow({
       run.clear();
       toast.success(
         "Generation Complete",
-        "The year-level timetable was saved as draft schedules.",
+        "The timetable was saved as draft schedules.",
       );
       try {
         await onAccepted(response.data.schedules ?? preview);
@@ -1177,7 +1375,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   };
 
   const canContinue =
-    scopedSections.length > 0 &&
+    targetSections.length > 0 &&
     scopedCourses.length > 0 &&
     // Step 2 cannot move on with every course unchecked.
     (step !== 2 || includedCourses.length > 0) &&
@@ -1197,31 +1395,36 @@ export default function YearLevelGenerateScheduleWorkflow({
   const reviewCourseRows = includedCourses.map((course) => {
     // A Configure choice may target only some sections; the first one that
     // carries it is shown, as the Setup Courses table does.
-    const customMinutes = scopedSections
+    const customMinutes = targetSections
       .map((section) => configs[section.id]?.durationMinutesByCourseId?.[course.id])
       .find((minutes): minutes is number => typeof minutes === "number");
-    const preferredRoomId = scopedSections
+    const preferredRoomId = targetSections
       .map((section) => configs[section.id]?.preferredRoomsByCourseId?.[course.id])
       .find(Boolean);
-    const components = scopedSections
+    const components = targetSections
       .map((section) => configs[section.id]?.componentMinutesByCourseId?.[course.id])
       .find(Boolean);
     // Integrated On-site keeps the lecture face-to-face; Hybrid moves it online.
-    const integratedOnSite = scopedSections.some(
+    const integratedOnSite = targetSections.some(
       (section) => configs[section.id]?.modesByCourseId?.[course.id] === "on-site",
     );
+    // The payload drops a Required Day course's Split and Integrated markers,
+    // so it is shown as the one meeting it is generated as.
+    const oneMeeting = forcedDaysByCourseId.has(Number(course.id));
 
     return {
       course,
       hybrid:
-        scopedSections.length > 0 &&
-        scopedSections.every((section) =>
+        !oneMeeting &&
+        targetSections.length > 0 &&
+        targetSections.every((section) =>
           (configs[section.id]?.splitCourseIds ?? []).includes(course.id),
         ),
       integratedOnSite,
       split:
-        scopedSections.length > 0 &&
-        scopedSections.every((section) =>
+        !oneMeeting &&
+        targetSections.length > 0 &&
+        targetSections.every((section) =>
           (configs[section.id]?.gecSplitCourseIds ?? []).includes(course.id),
         ),
       customDuration: components
@@ -1233,8 +1436,16 @@ export default function YearLevelGenerateScheduleWorkflow({
     };
   });
 
-  const generationBlockedReason = !yearLevelGenerationAllowed
-    ? YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE
+  const targetBlockedReason =
+    targetSections.length === 0
+      ? "Pick at least one section to generate."
+      : !yearLevelGenerationAllowed
+        ? targetSectionIds === null
+          ? `${YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE} To add a new section, choose Selected sections.`
+          : SECTIONS_GENERATION_BLOCKED_MESSAGE
+        : null;
+  const generationBlockedReason = targetBlockedReason
+    ? targetBlockedReason
     : !curriculumReady
       ? "Assign a curriculum to every section of this year level before generating."
       : scopedCourses.length === 0
@@ -1261,8 +1472,8 @@ export default function YearLevelGenerateScheduleWorkflow({
           </h2>
           <p className="truncate text-xs font-semibold text-white/70">
             {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel)} &middot;{" "}
-            {scopedSections.length} section
-            {scopedSections.length === 1 ? "" : "s"}
+            {targetSections.length} section
+            {targetSections.length === 1 ? "" : "s"}
           </p>
         </div>
         {step === 2 && (
@@ -1281,6 +1492,15 @@ export default function YearLevelGenerateScheduleWorkflow({
           text={helpText[step]}
           tone="onMaroon"
         />
+        <button
+          type="button"
+          onClick={() => setGuideOpen(true)}
+          aria-label="Open the Generation Guide"
+          title="Generation Guide: what each setting means"
+          className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+        >
+          <BookOpen className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={() =>
@@ -1318,10 +1538,16 @@ export default function YearLevelGenerateScheduleWorkflow({
           {failure ? (
             <RecommendedAdjustmentPanel
               failure={failure}
-              busy={generating}
-              onApplyAndRetry={applyRecommendationAndRetry}
+              busy={generating && !failure.provisional}
+              onApplyAndRetry={(recommendation) => void applyRecommendationAndRetry(recommendation)}
               onReviewConstraints={reviewConstraints}
-              onCancel={() => run.clear()}
+              onCancel={() => (run.isActive ? void run.cancel() : run.clear())}
+              onKeepSearching={() => setDismissedProvisionalRunId(run.runId)}
+              onRetry={() => {
+                setStepDirection("forward");
+                setStep(3);
+                void generate();
+              }}
             />
           ) : (
             <div
@@ -1340,8 +1566,16 @@ export default function YearLevelGenerateScheduleWorkflow({
                   yearLevel={yearLevel}
                   onYearChange={(value) => {
                     setYearLevel(value);
+                    setTargetSectionIds(null);
                     run.clear();
                   }}
+                  targetSectionIds={targetSectionIds}
+                  scheduledSectionIds={scheduledSectionIds}
+                  onTargetSectionIdsChange={(ids) => {
+                    setTargetSectionIds(ids);
+                    run.clear();
+                  }}
+                  targetBlockedReason={targetBlockedReason}
                   departmentId={departmentId ?? null}
                   sections={scopedSections}
                   courses={scopedCourses}
@@ -1365,25 +1599,17 @@ export default function YearLevelGenerateScheduleWorkflow({
               {step === 2 && (
                 <SetupCoursesStep
                   courses={scopedCourses}
-                  sections={scopedSections}
+                  sections={targetSections}
                   configs={configs}
                   onConfigChange={updateConfig}
                   settings={settings}
                   onRequiredDayChange={saveRequiredDay}
+                  onConsecutiveDaysChange={saveConsecutiveDays}
                   onFieldCourseChange={saveFieldCourse}
                   defaults={setupDraft.courseDefaults}
                   onDefaultsChange={(courseDefaults) => {
                     setSetupDraft((current) => ({ ...current, courseDefaults }));
-                    // Saved so every year level -- and the next visit -- opens
-                    // with the same Default Settings.
-                    try {
-                      window.localStorage.setItem(
-                        defaultsStorageKey,
-                        JSON.stringify(courseDefaults),
-                      );
-                    } catch {
-                      // Storage unavailable: they still apply for this session.
-                    }
+                    saveCourseDefaults(courseDefaults);
                   }}
                   excludedCourseIds={setupDraft.excludedCourseIds}
                   onExcludedChange={(excludedCourseIds) =>
@@ -1406,22 +1632,23 @@ export default function YearLevelGenerateScheduleWorkflow({
                   curriculumName={
                     scopedSections[0]?.curriculumName ?? null
                   }
-                  sections={scopedSections}
+                  sections={targetSections}
                   courseRows={reviewCourseRows}
                   preferredDays={setupDraft.preferredDays}
                   forcedDayRules={settings?.forced_day_rules ?? []}
+                  consecutiveDayRules={settings?.consecutive_day_rules ?? []}
                   fieldCourseCodes={settings?.field_course_codes ?? []}
                   activeRules={activeRules}
                   generating={generating}
                   blockedReason={generationBlockedReason}
-                  yearState={yearState}
+                  yearState={targetState}
                 />
               )}
 
               {step === 4 && (
                 <ScheduleSummaryStep
                   preview={preview}
-                  sections={scopedSections}
+                  sections={targetSections}
                   courses={scopedCourses}
                   roomCodeById={roomCodeById}
                   changes={generationChanges}
@@ -1531,6 +1758,13 @@ export default function YearLevelGenerateScheduleWorkflow({
           )}
         </div>
       </footer>
+
+      {guideOpen && (
+        <GenerationGuide
+          initialChapterId={GUIDE_CHAPTER_FOR_STEP[step]}
+          onClose={() => setGuideOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1585,7 +1819,7 @@ const generatorGuideSteps: WorkflowGuideStep[] = [
     taskHint: "Click Apply to year level to continue.",
     title: "Apply it to every section",
     description:
-      "This writes the curriculum onto each section in scope. Skip it if the button is greyed out — that means it is already applied.",
+      "This writes the curriculum onto each section in scope. The button only appears when there is something to apply.",
     side: "bottom",
     align: "end",
   },

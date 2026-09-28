@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BookOpen, Pencil, UserRound, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, History, Pencil, UserRound, X } from 'lucide-react';
 import FacultyAvailabilityPanel from './FacultyAvailabilityPanel';
+import TeachingHistoryModal from './TeachingHistoryModal';
 import InstructorTeachingLoadButton from '../InstructorTeachingLoadButton';
-import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, loadTierForUnits } from '../../lib/facultyLoad';
+import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, loadBandsOf, loadTierForUnits } from '../../lib/facultyLoad';
+import SegmentedLoadBar from './SegmentedLoadBar';
 
 /** The fields this modal reads; every role's Faculty page record satisfies it. */
 export interface FacultyDetailsRecord {
@@ -33,43 +35,53 @@ interface FacultyDetailsModalProps {
   onNotify: (kind: 'success' | 'error', title: string, message: string) => void;
 }
 
-const BAR_CLASSES = {
-  basic: 'bg-emerald-500',
-  overload: 'bg-red-400',
-  probono: 'bg-slate-400',
-  beyond_ceiling: 'bg-rose-500',
-} as const;
-
 /**
  * Instructor details: load against Basic Load, what they teach this semester,
  * and their availability windows. Shared by the VPAA, dean, program head and
  * secretary Faculty pages, which each carried an identical copy.
  */
 export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canEditAvailability, onNotify }: FacultyDetailsModalProps) {
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   useEffect(() => {
+    // While Teaching History is stacked on top, Escape closes only that.
+    if (isHistoryOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, isHistoryOpen]);
 
   const name = `${faculty.first_name} ${faculty.last_name}`;
   const basicLoad = faculty.required_units;
   const assigned = faculty.assigned_units;
   const tier = basicLoad > 0
-    ? loadTierForUnits({ basicLoad, overloadUnits: faculty.overload_units, probonoUnits: faculty.probono_units }, assigned)
+    ? loadTierForUnits({ basicLoad, overloadUnits: faculty.overload_units }, assigned)
     : null;
-  const percent = basicLoad > 0 ? Math.min(100, (assigned / basicLoad) * 100) : 0;
   const remaining = basicLoad - assigned;
   const aboveCeiling = assigned > basicLoad + Math.max(0, faculty.overload_units);
+  // The whole load the instructor may carry: Basic Load plus the Overload
+  // allowance; anything past it is pro bono. Measuring against Basic Load alone read an approved
+  // overload as "36 / 18", double the load, beside a ceiling of 33.
+  const ceiling = faculty.unit_ceiling;
+  const bands = loadBandsOf({
+    assignedUnits: assigned,
+    maxUnits: faculty.max_units,
+    deloadUnits: faculty.deload_units,
+    overloadUnits: faculty.overload_units,
+  });
+  const breakdown = [
+    `${bands.filled.basic} Basic Load`,
+    bands.filled.overload > 0 ? `${bands.filled.overload} Overload` : '',
+    bands.filled.probono > 0 ? `${bands.filled.probono} Pro bono` : '',
+  ].filter(Boolean).join(' + ');
 
   const allowances: { label: string; value: number; hint?: string }[] = [
     { label: 'Max units', value: faculty.max_units },
     { label: 'Deload', value: faculty.deload_units, hint: 'subtracted' },
     { label: 'Basic load', value: basicLoad },
     { label: 'Overload', value: faculty.overload_units, hint: 'allowance' },
-    { label: 'Pro bono', value: faculty.probono_units, hint: 'allowance' },
     { label: 'Ceiling', value: faculty.unit_ceiling },
   ];
 
@@ -118,16 +130,21 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teaching load this semester</p>
                 <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">
                   {assigned}
-                  <span className="text-base font-semibold text-slate-400"> / {basicLoad} units</span>
+                  <span className="text-base font-semibold text-slate-400"> / {ceiling} units</span>
                 </p>
               </div>
               <span className={`rounded-md border px-2 py-1 text-xs font-bold ${tier ? LOAD_TIER_BADGE_CLASSES[tier] : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
                 {tier ? LOAD_TIER_LABELS[tier] : 'No load recorded'}
               </span>
             </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className={`h-full rounded-full transition-[width] duration-500 ${tier ? BAR_CLASSES[tier] : 'bg-slate-300'}`} style={{ width: `${percent}%` }} />
-            </div>
+            <SegmentedLoadBar
+              className="mt-3"
+              assignedUnits={assigned}
+              maxUnits={faculty.max_units}
+              deloadUnits={faculty.deload_units}
+              overloadUnits={faculty.overload_units}
+              showLegend
+            />
             <p className="mt-1.5 text-xs text-slate-500">
               {basicLoad <= 0
                 ? 'No Basic Load is configured for this instructor.'
@@ -135,10 +152,10 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
                   ? `${remaining} unit${remaining === 1 ? '' : 's'} left before Basic Load.`
                   : remaining === 0
                     ? 'Basic Load is exactly met.'
-                    : `${-remaining} unit${remaining === -1 ? '' : 's'} past Basic Load.`}
+                    : `${breakdown} units.`}
             </p>
 
-            <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
+            <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 sm:grid-cols-5">
               {allowances.map(({ label, value, hint }) => (
                 <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
                   <dt className="truncate text-[11px] font-semibold text-slate-500">{label}</dt>
@@ -206,7 +223,14 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
           />
         </div>
 
-        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            <History size={14} /> Teaching History
+          </button>
           {onEditLoad && (
             <button
               type="button"
@@ -219,6 +243,9 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
           <InstructorTeachingLoadButton facultyId={faculty.id} />
         </footer>
       </div>
+      {isHistoryOpen && (
+        <TeachingHistoryModal facultyId={faculty.id} facultyName={name} onClose={() => setIsHistoryOpen(false)} />
+      )}
     </div>,
     document.body,
   );

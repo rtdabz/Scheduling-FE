@@ -313,7 +313,7 @@ describe("shared field room", () => {
 
 /**
  * Mirrors OperatingHoursRule::fieldEveningWindow. The cut-off is the VPAA's
- * field end time (schedule_settings.field_end_time), not a hardcoded 5:00 PM.
+ * field end time (institution_settings.field_end_time), not a hardcoded 5:00 PM.
  * Slot 0 is 7:00 AM on the default grid; slot 20 is 5:00 PM.
  */
 describe("checkFieldEveningWindow", () => {
@@ -426,6 +426,30 @@ describe("checkMoveConflict", () => {
 
     it("refuses moving a meeting onto its partner's day", () => {
       expect(moveCheck([monday, wednesday])("1", 2, 6)?.message).toMatch(/must be on different days/);
+    });
+  });
+
+  describe("a Consecutive Days run", () => {
+    // Thursday, Friday and Saturday at one time in one room.
+    const run = [3, 4, 5].map((dayIndex, index) => meeting({
+      id: String(index + 1), splitGroupId: "run", preferredPattern: "consecutive:3", dayIndex, startSlot: 0,
+    }));
+
+    it("moves as a whole, so its own days never block a shift", () => {
+      // Thursday -> Wednesday shifts the run to Wednesday-Friday, onto days the run holds itself.
+      expect(moveCheck(run)("1", 2, 4)).toBeNull();
+    });
+
+    it("judges every shifted day against other classes", () => {
+      const blocksThursday = meeting({ id: "9", courseId: "7", subjectId: "7", sectionId: "11", dayIndex: 3, startSlot: 4 });
+
+      const conflict = moveCheck([...run, blocksThursday])("1", 2, 4);
+      expect(conflict?.conflictType).toBe("room");
+      expect(conflict?.message).toMatch(/^Thursday: /);
+    });
+
+    it("refuses a shift past the end of the week", () => {
+      expect(moveCheck(run)("1", 5, 0)?.message).toMatch(/past the end of the week/);
     });
   });
 

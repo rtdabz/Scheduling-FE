@@ -22,8 +22,9 @@ import { useSearchParams } from "react-router-dom";
 import api from "../../lib/api";
 import PrintSchedule from "../ClassSchedules/SchedulerPanel/PrintSchedule";
 import { buildInstructorTimetablePdf } from "../ClassSchedules/SchedulerPanel/instructorTimetablePdf";
-import type { UserSummary } from "../ClassSchedules/SchedulerPanel/types";
+import { mapInitialData, type InitialDataResponse, type SchedulerCacheData } from "../ClassSchedules/SchedulerPanel/hooks/initialDataMapper";
 import SearchInput from "../../components/ui/SearchInput";
+import LoadErrorBanner from "../../components/ui/LoadErrorBanner";
 import Skeleton from "../../components/ui/Skeleton";
 import DepartmentOverviewCards, { type OverviewFocus } from "../../components/scheduling/DepartmentOverviewCards";
 import SectionOverviewCards from "../../components/scheduling/SectionOverviewCards";
@@ -451,6 +452,8 @@ export default function VpaaScheduleViewer() {
   const [activeSemester, setActiveSemester] = useState<Semester | null>(cachedScheduleViewerData?.activeSemester ?? null);
   const [isLoading, setIsLoading] = useState<boolean>(!hasCachedData(scheduleViewerCacheKey));
   const [isScheduleListTruncated, setIsScheduleListTruncated] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   /**
    * Institution-wide counts come from a dedicated aggregate endpoint rather
@@ -510,22 +513,19 @@ export default function VpaaScheduleViewer() {
   
   // Detail State
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-  const [users, setUsers] = useState<UserSummary[]>([]);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-
-  useEffect(() => {
-    api.get<UserSummary[]>('/users').then((res) => {
-      if (Array.isArray(res.data)) {
-        setUsers(res.data);
-      }
-    }).catch(() => {});
-  }, []);
+  // The printed department schedule is built from the scheduler's own mapping
+  // of this payload, the same one the approval previews print from. The page's
+  // lighter rows lack year levels, units and department names, and the
+  // signatories used to come from `/users`, a route that does not exist.
+  const [printSource, setPrintSource] = useState<SchedulerCacheData | null>(null);
 
   const liveRevision = useLiveRevision(['schedules', 'sections', 'rooms', 'departments']);
 
   useEffect(() => {
     const loadData = async () => {
       const hasCache = hasCachedData(scheduleViewerCacheKey);
+      setLoadError(null);
       try {
         setIsLoading(!hasCache && liveRevision === 0);
         const response = await api.get<{
@@ -538,6 +538,7 @@ export default function VpaaScheduleViewer() {
         }>(`/initial-data?schedule_limit=${INITIAL_DATA_SCHEDULE_LIMIT}`);
         const semester = response.data.active_semester;
         setActiveSemester(semester);
+        setPrintSource(mapInitialData(response.data as unknown as InitialDataResponse, { isVpaa: true }));
 
         // Map departments
         const mappedDepts = response.data.departments.map((d) => ({
@@ -600,13 +601,18 @@ export default function VpaaScheduleViewer() {
         });
 
       } catch {
+        // Left silent, a failed load showed an empty timetable as if nothing
+        // had been scheduled.
+        setLoadError(hasCache
+          ? 'Schedules could not be refreshed. What is shown may be out of date.'
+          : 'Schedules could not be loaded.');
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
-  }, [scheduleViewerCacheKey, liveRevision]);
+  }, [scheduleViewerCacheKey, liveRevision, reloadKey]);
 
   /**
    * The bulk payload above is capped, so a section opened from the drill-down
@@ -1064,22 +1070,17 @@ export default function VpaaScheduleViewer() {
     return { start: 0, end: Math.max(slotCount(), latestEnd) };
   }, [filteredSchedules]);
 
-  const pdfSections = useMemo(() => {
-    let targetSections = sections;
-    if (selectedSectionId !== "All") {
-      targetSections = sections.filter((s) => s.id === selectedSectionId);
-    } else if (selectedDeptId !== "All") {
-      targetSections = sections.filter((s) => s.departmentId === selectedDeptId);
-    }
-    return targetSections.map((sec) => ({
-      id: String(sec.id),
-      name: sec.name || "Section",
-      yearLevel: 1 as const,
-      semester: (activeSemester?.semester || "1st") as any,
-      departmentId: Number(sec.departmentId || 0),
-      semesterId: Number(activeSemester?.id || 0),
-    }));
-  }, [sections, selectedSectionId, selectedDeptId, activeSemester]);
+  const pdfSections = useMemo(() => (printSource?.sections ?? []).filter((section) => (
+    selectedSectionId !== "All"
+      ? section.id === selectedSectionId
+      : selectedDeptId === "All" || String(section.departmentId) === selectedDeptId
+  )), [printSource, selectedSectionId, selectedDeptId]);
+
+  // The same meetings the filters show, as the scheduler maps them for print.
+  const printSchedules = useMemo(() => {
+    const visibleIds = new Set(filteredSchedules.map((schedule) => String(schedule.id)));
+    return (printSource?.schedules ?? []).filter((schedule) => visibleIds.has(String(schedule.id)));
+  }, [filteredSchedules, printSource]);
 
   const pdfSchedules = useMemo(() => {
     return filteredSchedules.map((sch) => ({
@@ -1088,7 +1089,7 @@ export default function VpaaScheduleViewer() {
       sectionName: sch.sectionName,
       subjectCode: sch.subjectCode,
       subjectName: sch.subjectName,
-      day: sch.day as any,
+      day: sch.day,
       startTime: sch.startTime,
       endTime: sch.endTime,
       facultyName: sch.facultyName,
@@ -1098,13 +1099,6 @@ export default function VpaaScheduleViewer() {
       status: "finalized",
     }));
   }, [filteredSchedules]);
-
-  const pdfDepartments = useMemo(() => {
-    return departments.map((dept) => ({
-      id: Number(dept.id),
-      logo: dept.logo || null,
-    }));
-  }, [departments]);
 
   const handlePrintTimetable = async () => {
     let printTitle = "MASTER CLASS TIMETABLE";
@@ -1181,7 +1175,10 @@ export default function VpaaScheduleViewer() {
   return (
     <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-md shadow-slate-100/50 overflow-hidden text-slate-800 font-sans relative">
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#4e0a10] via-[#C9952A] to-[#4e0a10]" />
-      
+      {loadError && (
+        <LoadErrorBanner message={loadError} onRetry={() => setReloadKey((key) => key + 1)} className="mx-5 mt-5" />
+      )}
+
       <div className="bg-slate-50/70 border-b border-slate-200 p-5 space-y-4 pt-6">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -1842,14 +1839,14 @@ export default function VpaaScheduleViewer() {
       )}
 
       <PrintSchedule
-        sections={pdfSections as any}
-        departments={pdfDepartments as any}
-        users={users}
+        sections={pdfSections}
+        departments={printSource?.departments ?? []}
+        users={printSource?.users ?? []}
         isPrintModalOpen={isPrintModalOpen}
         setIsPrintModalOpen={setIsPrintModalOpen}
-        allSchedules={pdfSchedules as any}
+        allSchedules={printSchedules}
         selectedSectionId={selectedSectionId !== "All" ? selectedSectionId : (pdfSections[0]?.id ?? "")}
-        activeSemester={activeSemester as any}
+        activeSemester={printSource?.activeSemester ?? null}
         printAllSections={selectedSectionId === "All"}
       />
     </div>

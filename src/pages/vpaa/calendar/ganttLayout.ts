@@ -109,7 +109,7 @@ export interface StandardHours {
   slotMinutes: number;
 }
 
-/** Server defaults (schedule_settings), used until GET /timeslots answers. */
+/** Server defaults (institution_settings), used until GET /timeslots answers. */
 export const DEFAULT_STANDARD_HOURS: StandardHours = { opening: 7 * 60, closing: 20 * 60 + 30, slotMinutes: 30 };
 
 /** Shared normalization for /timeslots and /initial-data time-grid settings. */

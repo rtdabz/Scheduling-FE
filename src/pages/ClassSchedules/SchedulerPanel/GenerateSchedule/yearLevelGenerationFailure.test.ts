@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyAdjustments,
+  applyYearLevelAdjustments,
   describeAdjustment,
   parseYearLevelFailure,
   type AdjustableSectionConfig,
@@ -130,6 +131,87 @@ describe("applyAdjustments", () => {
     expect(next["5"].splitCourseIds).toEqual([]);
     // Nothing left to turn off: not reported as applied, so Apply & Retry never claims a no-op.
     expect(applyAdjustments(next, [adjustment({ type: "disable_section_hybrid", course_id: 0, value: null })]).applied).toEqual([]);
+  });
+
+  it("turns a Split Session into one regular meeting, dropping its Hybrid Split", () => {
+    const configs = { "5": config({ hybridSplitCourseIds: ["11"] }) };
+    const { configs: next, applied } = applyAdjustments(configs, [
+      adjustment({ type: "disable_minor_split", value: null }),
+    ]);
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].gecSplitCourseIds).toEqual([]);
+    expect(next["5"].hybridSplitCourseIds).toEqual([]);
+    expect(applyAdjustments(next, [adjustment({ type: "disable_minor_split", value: null })]).applied).toEqual([]);
+  });
+
+  it("turns Hybrid Split on only for a Split Session course, clearing its mode pin", () => {
+    const { configs: next, applied } = applyAdjustments(
+      { "5": config({ modesByCourseId: { "11": "on-site" } }) },
+      [adjustment({ type: "enable_hybrid_split", value: null })],
+    );
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].hybridSplitCourseIds).toEqual(["11"]);
+    expect(next["5"].modesByCourseId["11"]).toBe("automatic");
+    // Course 31 is not a Split Session, so there is nothing to make hybrid.
+    expect(
+      applyAdjustments({ "5": config() }, [adjustment({ type: "enable_hybrid_split", course_id: 31, value: null })]).applied,
+    ).toEqual([]);
+  });
+
+  it("turns Hybrid Split off, back to an On-site Split Session", () => {
+    const { configs: next, applied } = applyAdjustments(
+      { "5": config({ hybridSplitCourseIds: ["11"] }) },
+      [adjustment({ type: "disable_hybrid_split", value: null })],
+    );
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].hybridSplitCourseIds).toEqual([]);
+    expect(next["5"].gecSplitCourseIds).toEqual(["11"]);
+    expect(next["5"].modesByCourseId["11"]).toBe("on-site");
+  });
+
+  it("makes a Split Session Online, dropping a Hybrid Split marker it cannot keep", () => {
+    const { configs: next, applied } = applyAdjustments(
+      { "5": config({ hybridSplitCourseIds: ["11"], modesByCourseId: { "11": "automatic" } }) },
+      [adjustment({ type: "set_delivery_mode", value: "online" })],
+    );
+
+    expect(applied).toHaveLength(1);
+    // Still a Split Session, now with both meetings online.
+    expect(next["5"].gecSplitCourseIds).toEqual(["11"]);
+    expect(next["5"].hybridSplitCourseIds).toEqual([]);
+    expect(next["5"].modesByCourseId["11"]).toBe("online");
+  });
+
+  it("applies year-level settings once, however many sections echo them", () => {
+    const perSection = (type: string, value: string | null) => [
+      adjustment({ type, section_id: 5, course_id: 0, value }),
+      adjustment({ type, section_id: 6, course_id: 0, value }),
+    ];
+    const { settings, applied } = applyYearLevelAdjustments(
+      { preferredDays: ["Monday", "Wednesday"], allowFridaySaturdaySplit: false },
+      [...perSection("add_preferred_day", "Tuesday"), ...perSection("enable_friday_saturday_split", null)],
+    );
+
+    expect(settings.preferredDays).toEqual(["Monday", "Tuesday", "Wednesday"]);
+    expect(settings.allowFridaySaturdaySplit).toBe(true);
+    expect(applied.map((item) => item.type)).toEqual(["add_preferred_day", "enable_friday_saturday_split"]);
+    // Section configs are not touched by year-level adjustments.
+    expect(applyAdjustments({ "5": config() }, perSection("add_preferred_day", "Tuesday")).applied).toEqual([]);
+  });
+
+  it("does not add a Preferred Day when every day is already open", () => {
+    const { applied } = applyYearLevelAdjustments(
+      { preferredDays: [], allowFridaySaturdaySplit: true },
+      [
+        adjustment({ type: "add_preferred_day", course_id: 0, value: "Tuesday" }),
+        adjustment({ type: "enable_friday_saturday_split", course_id: 0, value: null }),
+      ],
+    );
+
+    expect(applied).toEqual([]);
   });
 
   it("returns a forced delivery mode to automatic", () => {

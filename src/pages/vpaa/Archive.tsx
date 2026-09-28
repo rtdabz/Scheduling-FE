@@ -122,6 +122,8 @@ export default function Archive() {
       cell: ({ row }) => (
         <span className="text-xs text-gray-600 font-semibold whitespace-nowrap">
           {new Date(row.original.deleted_at).toLocaleString('en-US', {
+            // Pinned like every other date in the app; the browser's zone varied by device.
+            timeZone: 'Asia/Manila',
             month: 'short',
             day: 'numeric',
             year: 'numeric',

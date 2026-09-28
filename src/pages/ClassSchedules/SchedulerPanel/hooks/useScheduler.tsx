@@ -70,6 +70,7 @@ import { isCustomDayPattern, relocatedPairPattern, requiredRoomTypeForMeeting, u
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
+import { fetchConflicts, fetchResolvedConflicts, resolvedScheduleIds } from "../../../../lib/conflicts";
 import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
 import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
@@ -79,13 +80,21 @@ import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../..
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
 import { buildPreferredPattern, FULL_DAY_NAMES, isFixedSplitPattern, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 import { resolveManualOperationStatus } from "../manualScheduleOperation";
+import {
+  consecutivePattern,
+  consecutivePlacementFor,
+  runStartForDay,
+  runStartingOn,
+  type ConsecutiveDayRule,
+  type ConsecutivePlacement,
+} from "../GenerateSchedule/courseClassConfig";
 
 const isNotFoundError = (err: unknown): boolean => {
   return (
     err !== null &&
     typeof err === "object" &&
     "response" in err &&
-    (err as any).response?.status === 404
+    (err as { response?: { status?: number } }).response?.status === 404
   );
 };
 
@@ -123,6 +132,8 @@ export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
   forced_day_rules?: Array<{ course_id: number; day: string }>;
+  /** Consecutive Days: a course placed as one class on N back-to-back days. */
+  consecutive_day_rules?: ConsecutiveDayRule[];
   field_course_codes?: string[];
   sunday_classes_enabled?: boolean;
 }
@@ -210,6 +221,8 @@ interface AtomicScheduleResponse {
 
 interface AcceptedRecommendationResponse {
   schedules: ApiScheduleRecord[];
+  /** The committed plan; its metadata names the conflicts the commit cleared. */
+  schedule_plan?: { metadata?: { resolved_conflicts?: { id: string; message: string }[] } };
 }
 
 interface FacultyAssignResponse extends Partial<ApiScheduleRecord> {
@@ -746,25 +759,25 @@ export const useScheduler = () => {
     // navigation and should not force the WICARS Buddy chat open.
     if (previousContext && previousContext.sectionId !== selectedSectionId) return;
 
-    if (currentStatus === "approved" || currentStatus === "approved_by_dean") {
+    // One message per outcome. They used to share a single "approved/rejected"
+    // text, and since the buddy shows each text once per session, a rejection
+    // that followed an approval was never shown at all.
+    const outcomeText: Record<string, string> = {
+      approved: "The VPAA approved the submitted schedule.",
+      approved_by_dean: "The Dean approved the submitted schedule. It now waits for the VPAA.",
+      rejected_by_dean: "The Dean returned the submitted schedule for revision.",
+      rejected: "The VPAA returned the submitted schedule for revision.",
+      revision: "The submitted schedule was recalled for revision.",
+    };
+    const text = outcomeText[currentStatus];
+    if (text) {
       window.dispatchEvent(
         new CustomEvent("show-helper-buddy", {
           detail: {
             id: crypto.randomUUID(),
-            type: "approved",
+            type: currentStatus === "approved" || currentStatus === "approved_by_dean" ? "approved" : "rejected",
             status: currentStatus,
-            text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
-          },
-        })
-      );
-    } else if (currentStatus === "rejected" || currentStatus === "rejected_by_dean" || currentStatus === "revision") {
-      window.dispatchEvent(
-        new CustomEvent("show-helper-buddy", {
-          detail: {
-            id: crypto.randomUUID(),
-            type: "rejected",
-            status: currentStatus,
-            text: "The submitted schedule has been approved/rejected by the Dean/VPAA.",
+            text,
           },
         })
       );
@@ -1276,6 +1289,41 @@ export const useScheduler = () => {
         setModalSplitEnabled(false);
         setModalDay2Duration(0);
       }
+
+      // Consecutive Days: the course is placed as one run -- the first day,
+      // one time and one room -- whatever the drop or the saved rows suggest.
+      const run = subject
+        ? consecutivePlacementFor(
+            subject.id,
+            selectedSectionId,
+            manualSchedulingSettings?.consecutive_day_rules ?? [],
+            Boolean(manualSchedulingSettings?.sunday_classes_enabled),
+          )
+        : null;
+      if (run) {
+        const savedRun = dropContext.isRescheduling
+          ? schedules
+              .filter((s) => s.subjectId === subject?.id && s.sectionId === selectedSectionId)
+              .sort((left, right) => left.dayIndex - right.dayIndex)
+          : [];
+        setModalIsHybrid(false);
+        setModalSplitEnabled(false);
+        setModalPreferredPattern(null);
+        setModalForceDayEnabled(false);
+        setModalDay2Duration(0);
+        setModalDay2RoomId("");
+        if (savedRun.length > 0) {
+          setModalRoomId(savedRun[0].roomId || (savedRun[0].mode === "on-site" ? ROOM_TBA : savedRun[0].mode));
+          setModalClassMode(savedRun[0].mode ?? "on-site");
+          setModalDay1Index(savedRun[0].dayIndex);
+          setModalDay1StartSlot(savedRun[0].startSlot);
+          setModalDay1Duration(savedRun[0].durationSlots);
+        } else {
+          // A run is a Regular class repeated: every day meets for its full length.
+          setModalDay1Index(runStartForDay(run, dropContext.dayIndex));
+          setModalDay1Duration(singleSlots);
+        }
+      }
     } else {
       setModalRoomId("");
       setModalClassMode("on-site");
@@ -1391,6 +1439,18 @@ export const useScheduler = () => {
     }
   }, [modalDay1StartSlot, isDay2ModifiedByUser]);
 
+  /** The Consecutive Days run the course being placed follows here, if any. */
+  const modalRun = useMemo<ConsecutivePlacement | null>(() => (
+    dropContext
+      ? consecutivePlacementFor(
+          String(dropContext.subjectId),
+          selectedSectionId,
+          manualSchedulingSettings?.consecutive_day_rules ?? [],
+          Boolean(manualSchedulingSettings?.sunday_classes_enabled),
+        )
+      : null
+  ), [dropContext, selectedSectionId, manualSchedulingSettings]);
+
   /**
    * Conflict message for the placement currently described by the modal.
    *
@@ -1414,6 +1474,22 @@ export const useScheduler = () => {
     const singleSlots = getCourseSlotPlan(subject).singleBlockSlots || totalSlots;
     const courseId = dropContext.courseId ?? dropContext.subjectId ?? "";
     const patternDays = parsePreferredPattern(modalPreferredPattern);
+
+    // A run is judged on every one of its days, at one time in one room.
+    if (modalRun) {
+      const runDays = runStartingOn(modalRun, modalDay1Index);
+      if (!runDays) {
+        return `A ${modalRun.dayCount}-day run cannot start on ${FULL_DAY_NAMES[modalDay1Index]}: it would run past the end of the week.`;
+      }
+      for (const day of runDays) {
+        const conflict = checkConflict(
+          courseId, selectedSectionId, null, modalRoomId,
+          FULL_DAY_NAMES.findIndex((name) => name === day), modalDay1StartSlot, modalDay1Duration, excludeIds, null
+        );
+        if (conflict) return `${day}: ${conflict.message}`;
+      }
+      return null;
+    }
 
     if (!patternDays) {
       return checkConflict(
@@ -1449,6 +1525,7 @@ export const useScheduler = () => {
     modalDay1Duration,
     modalDay2StartSlot,
     modalDay2Duration,
+    modalRun,
     schedules,
     selectedSectionId,
     subjects,
@@ -1470,9 +1547,41 @@ export const useScheduler = () => {
       return next.size === prev.size ? prev : next;
     });
   }, [conflictedMap]);
+  // Resolutions saved on the server -- from the conflict inbox or an accepted
+  // recommendation -- so the green flag survives a reload and shows for fixes
+  // made elsewhere. Re-read when the timetable changes, the only time a
+  // resolution can appear or be undone. The grid still lets a live conflict win.
+  const [savedResolvedIds, setSavedResolvedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // The Conflicts button's "N open · M resolved". Both come from the server's
+  // semester-wide scan, so they include clashes with other departments' rooms
+  // that the grid's own check cannot see. Null until the first read answers.
+  const [conflictCounts, setConflictCounts] = useState<{ open: number; resolved: number } | null>(null);
+  const [conflictCountsRevision, setConflictCountsRevision] = useState(0);
+  const refreshConflictCounts = useCallback(() => setConflictCountsRevision((revision) => revision + 1), []);
+  useEffect(() => {
+    if (!activeSemester) return;
+    const controller = new AbortController();
+    const semesterId = Number(activeSemester.id);
+    void Promise.all([
+      fetchConflicts({ semesterId, signal: controller.signal }),
+      fetchResolvedConflicts({ semesterId, signal: controller.signal }),
+    ])
+      .then(([openConflicts, entries]) => {
+        setSavedResolvedIds(resolvedScheduleIds(entries));
+        setConflictCounts({
+          open: openConflicts.length,
+          // Reopened entries are already counted as open.
+          resolved: entries.filter((entry) => entry.status !== "reopened").length,
+        });
+      })
+      // Only flags and a badge: a failed read leaves what is already shown.
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [activeSemester, schedules, conflictCountsRevision]);
   const allResolvedIds = useMemo<ReadonlySet<string>>(
-    () => new Set([...resolvedIds, ...placedResolvedIds]),
-    [resolvedIds, placedResolvedIds]
+    () => new Set([...resolvedIds, ...placedResolvedIds, ...savedResolvedIds]),
+    [resolvedIds, placedResolvedIds, savedResolvedIds]
   );
 
   const onScheduleRelocated =useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
@@ -1551,7 +1660,7 @@ export const useScheduler = () => {
         toast.error("Relocation Failed", "Could not save the new schedule slot.");
       }
     }
-  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules]);
+  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules, isSummerWeekendBlocked, toast, triggerConflictReminder]);
 
   const dragDrop = useDragDrop({
     schedules,
@@ -1591,6 +1700,17 @@ export const useScheduler = () => {
     const d2 = modalPreferredPattern ? modalDay2Duration : 0;
     const patternDays = parsePreferredPattern(modalPreferredPattern);
 
+    // Consecutive Days: every day of the run, from the chosen starting day.
+    const runDays = modalRun ? runStartingOn(modalRun, modalDay1Index) : null;
+    if (modalRun && !runDays) {
+      setModalValidationError(`A ${modalRun.dayCount}-day run cannot start on ${FULL_DAY_NAMES[modalDay1Index]}: it would run past the end of the week.`);
+      return;
+    }
+    if (runDays && d1 <= 0) {
+      setModalValidationError("Each day of the run must have a duration greater than zero.");
+      return;
+    }
+
     if (patternDays && (d1 <= 0 || d2 <= 0)) {
       setModalValidationError("Each meeting must have a duration greater than zero.");
       return;
@@ -1616,9 +1736,16 @@ export const useScheduler = () => {
     let resolvedDay1StartSlot = -1;
     let resolvedDay2StartSlot = -1;
 
+    const runDayIndexes = (runDays ?? []).map((day) => FULL_DAY_NAMES.findIndex((name) => name === day));
+    const runConflicts = (startSlot: number): boolean => runDayIndexes.some((dayIndex) => Boolean(
+      checkConflict(subject.id, selectedSectionId, null, modalRoomId, dayIndex, startSlot, d1, excludeIds, null)
+    ));
+
     // Check if the current user-specified slots have no conflicts
     let currentHasConflict = false;
-    if (patternDays) {
+    if (runDays) {
+      currentHasConflict = runConflicts(modalDay1StartSlot);
+    } else if (patternDays) {
       const conflictDay1 = d1 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalRoomId, patternDays[0], modalDay1StartSlot, d1, excludeIds, modalPreferredPattern) : null;
       const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], day2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
       if (conflictDay1 || conflictDay2) currentHasConflict = true;
@@ -1633,7 +1760,15 @@ export const useScheduler = () => {
     } else {
       // Slot search resolution: look circularly for a slot where both segments fit
       const maxSlots = slotCount();
-      if (patternDays) {
+      if (runDays) {
+        // One start time free on every day of the run.
+        for (let offset = 0; offset < maxSlots; offset++) {
+          const startSlot = (modalDay1StartSlot + offset) % Math.max(1, maxSlots - d1 + 1);
+          if (startSlot + d1 > maxSlots || runConflicts(startSlot)) continue;
+          resolvedDay1StartSlot = startSlot;
+          break;
+        }
+      } else if (patternDays) {
         if (maxSlots - d1 + 1 <= 0 || maxSlots - d2 + 1 <= 0) {
           resolvedDay1StartSlot = -1;
           resolvedDay2StartSlot = -1;
@@ -1721,7 +1856,9 @@ export const useScheduler = () => {
     }
 
     const targetDays: TargetScheduleDay[] = [];
-    if (patternDays) {
+    if (runDays) {
+      for (const day of runDays) targetDays.push({ day, startSlot: resolvedDay1StartSlot, duration: d1 });
+    } else if (patternDays) {
       if (d1 > 0) targetDays.push({ day: FULL_DAY_NAMES[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
       if (d2 > 0) targetDays.push({ day: FULL_DAY_NAMES[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
     } else {
@@ -1770,13 +1907,12 @@ export const useScheduler = () => {
         return;
       }
 
+      const courseMeetings = schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId));
+      // A run's saved meetings are reused in week order, one per day.
       const existingRecords = dropContext.isRescheduling
-        ? sortSplitMeetingsForEdit(
-            schedules.filter((s) => String(s.subjectId) === String(subject.id) && String(s.sectionId) === String(selectedSectionId)),
-            subject,
-            modalIsHybrid,
-            manualSchedulingSettings,
-          )
+        ? runDays
+          ? [...courseMeetings].sort((left, right) => left.dayIndex - right.dayIndex)
+          : sortSplitMeetingsForEdit(courseMeetings, subject, modalIsHybrid, manualSchedulingSettings)
         : [];
 
       const sharedSplitGroupId = targetDays.length > 1
@@ -1787,7 +1923,8 @@ export const useScheduler = () => {
         const isSplit = targetDays.length > 1;
         const hasLab = Number(subject.labHours ?? 0) > 0;
         let meetingType: "lecture" | "laboratory" | null = null;
-        if (isSplit) {
+        // A run's days are one class, never a lecture or laboratory session.
+        if (isSplit && !runDays) {
           // Integrated Hybrid is laboratory + lecture. A Hybrid Split is a
           // lecture-only course met twice, so both of its meetings are lectures.
           if (modalIsHybrid && hasLab) {
@@ -1815,19 +1952,19 @@ export const useScheduler = () => {
           course_id: Number(subject.id),
           faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
           room_id: (() => {
-            const resolved = index === 0 ? resolvedRoom1Id : resolvedRoom2Id;
+            const resolved = index === 0 || runDays ? resolvedRoom1Id : resolvedRoom2Id;
             return resolved === null || resolved === "" ? null : Number(resolved);
           })(),
           department_id: section.departmentId,
           day: targetDay.day,
           start_time: slotToTime24h(targetDay.startSlot),
           end_time: slotToTime24h(targetDay.startSlot + targetDay.duration),
-          mode: index === 0 ? modalClassMode : modalDay2ClassMode,
+          mode: index === 0 || runDays ? modalClassMode : modalDay2ClassMode,
           // Integrated is hybrid only while its lecture is online; On-site keeps
           // both meetings face-to-face and so is an ordinary linked pair. Other
           // hybrid shapes (Hybrid Split) have no laboratory and keep the flag.
-          is_hybrid: modalIsHybrid && (!hasLab || modalDay2ClassMode === "online"),
-          preferred_pattern: modalPreferredPattern,
+          is_hybrid: !runDays && modalIsHybrid && (!hasLab || modalDay2ClassMode === "online"),
+          preferred_pattern: modalRun && runDays ? consecutivePattern(modalRun.dayCount) : modalPreferredPattern,
           split_group_id: sharedSplitGroupId,
           meeting_type: meetingType,
           meeting_index: index + 1,
@@ -1841,6 +1978,7 @@ export const useScheduler = () => {
 
       let savedScheduleRecords: ApiScheduleRecord[];
       let deletedScheduleRecordIds: number[] = [];
+      let resolvedConflictCount = 0;
 
       // Acceptance creates/replaces every replaceable row for the course. That
       // is correct for a new placement, but too broad while rescheduling one
@@ -1855,6 +1993,7 @@ export const useScheduler = () => {
           `/schedule-recommendations/${selectedRecommendationId}/accept`
         );
         savedScheduleRecords = response.data.schedules;
+        resolvedConflictCount = response.data.schedule_plan?.metadata?.resolved_conflicts?.length ?? 0;
       } else {
         const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
           operations,
@@ -1889,6 +2028,15 @@ export const useScheduler = () => {
         } else {
           toast.success("Schedule Created", "Class schedule successfully plotted.");
         }
+      }
+
+      if (resolvedConflictCount > 0) {
+        // Counted by the server from a scan before and after the commit, so
+        // this names conflicts that are actually gone, not ones it hoped to fix.
+        toast.success(
+          "Conflicts Resolved",
+          `Resolved ${resolvedConflictCount} conflict${resolvedConflictCount === 1 ? "" : "s"} on the timetable.`,
+        );
       }
 
       if (modalWasConflicted) {
@@ -1986,12 +2134,17 @@ export const useScheduler = () => {
         || duration === laboratoryComponentSlots(subject, manualSchedulingSettings);
     };
     const missingFirstRoom = modalClassMode === "on-site" && !modalRoomId;
-    const missingSecondRoom = modalPreferredPattern
+    const missingSecondRoom = !modalRun
+      && modalPreferredPattern
       && modalDay2Duration > 0
       && modalDay2ClassMode === "on-site"
       && !modalDay2RoomId;
-    const invalidTba = (modalRoomId === "tba" && !isLabMeeting(modalDay1Duration, true))
-      || (modalDay2RoomId === "tba" && !isLabMeeting(modalDay2Duration, false));
+    // A run has one room for every day; its length does not name a
+    // laboratory meeting, the course does.
+    const invalidTba = modalRun
+      ? modalRoomId === "tba" && Number(subject?.labHours ?? 0) <= 0
+      : (modalRoomId === "tba" && !isLabMeeting(modalDay1Duration, true))
+        || (modalDay2RoomId === "tba" && !isLabMeeting(modalDay2Duration, false));
     if (missingFirstRoom || missingSecondRoom || invalidTba) {
       setModalValidationError(invalidTba
         ? "Room TBA is allowed only for a laboratory meeting."
@@ -2086,10 +2239,17 @@ export const useScheduler = () => {
     }
 
     const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
+    // `revision` rows were recalled or returned from approval.
+    const recalledCount = new Set(
+      targetSchedules.filter((s) => s.status === "revision").map((s) => s.sectionId),
+    ).size;
     const confirmed = await confirm({
       title: "Reset Schedules",
       message: `Are you sure you want to reset the schedules of ${sectionLabel}? `
-        + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`,
+        + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`
+        + (recalledCount > 0
+          ? ` ${recalledCount} of these section${recalledCount === 1 ? " was" : "s were"} recalled or returned from approval; ${recalledCount === 1 ? "its" : "their"} previously submitted classes will be lost.`
+          : ""),
       eyebrow: "Irreversible Action",
       confirmLabel: "Yes, Reset Schedules",
       variant: "danger",
@@ -2332,12 +2492,17 @@ export const useScheduler = () => {
       return;
     }
 
+    // Only the rows marked Done reopen. Sending every row of the section let a
+    // stale screen pull already-submitted rows back out of the Dean's queue.
+    const completedRows = sectionSchedules.filter((s) => s.status === "completed");
+    if (completedRows.length === 0) return;
+
     try {
       setIsEditingSection(true);
-      const ids = sectionSchedules.map((s) => Number(s.id));
+      const ids = completedRows.map((s) => Number(s.id));
       await api.patch("/schedules/batch-status", { ids, status: "draft" });
 
-      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      const sectionScheduleIds = new Set(completedRows.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
           sectionScheduleIds.has(schedule.id)
@@ -2391,12 +2556,15 @@ export const useScheduler = () => {
 
   const handleResubmit = useCallback(async () => {
     if (!selectedSectionId || isResubmittingSection) return;
+    // Only the returned rows unlock; rows at any other stage stay where they are.
+    const returnedRows = sectionSchedules.filter((s) => s.status === "rejected" || s.status === "rejected_by_dean");
+    if (returnedRows.length === 0) return;
     try {
       setIsResubmittingSection(true);
-      const ids = sectionSchedules.map((s) => Number(s.id));
+      const ids = returnedRows.map((s) => Number(s.id));
       await api.patch("/schedules/batch-status", { ids, status: "revision" });
 
-      const sectionScheduleIds = new Set(sectionSchedules.map((schedule) => schedule.id));
+      const sectionScheduleIds = new Set(returnedRows.map((schedule) => schedule.id));
       setSchedules((previousSchedules) =>
         previousSchedules.map((schedule) =>
           sectionScheduleIds.has(schedule.id)
@@ -3041,7 +3209,7 @@ export const useScheduler = () => {
         setConflictInfo(null);
       }
     }
-  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast]);
+  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast, isSummerWeekendBlocked]);
 
 
   const activeSemesterText = useMemo(() => {
@@ -3199,7 +3367,10 @@ export const useScheduler = () => {
     checkConflict,
     conflictedMap,
     resolvedIds: allResolvedIds,
+    conflictCounts,
+    refreshConflictCounts,
     modalWasConflicted,
+    modalRun,
     checkFacultyConflict,
     canManageScheduleFaculty,
     getFacultyRestrictionMessage,

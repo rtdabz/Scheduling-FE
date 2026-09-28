@@ -1,6 +1,5 @@
 import tccLogo from "../../../assets/logo.jpg";
-import type { LabelledSemester } from "../../../lib/semesterLabel";
-import { fullSemesterLabel } from "../../../lib/semesterLabel";
+import { fullSemesterLabel, type LabelledSemester } from "../../../lib/semesterLabel";
 import { packLanes } from "../../vpaa/calendar/ganttLayout";
 import { registerSystemPdfFonts } from "./fonts/systemPdfFonts";
 import type { ScheduleItem } from "./types";
@@ -25,13 +24,32 @@ export interface InstructorTimetableScheduleItem {
   facultyName?: string | null;
 }
 
+/**
+ * The fields the timetable draws. Callers outside the scheduler (the VPAA
+ * schedule viewer, the instructor timetable modal) hold lighter rows than the
+ * scheduler's ScheduleItem, so the input asks only for what is used.
+ */
+export interface InstructorTimetableMeeting {
+  day: string;
+  startTime: string;
+  endTime: string;
+  mode?: string | null;
+  meetingType?: string | null;
+  roomName?: string | null;
+  sectionName?: string | null;
+  subjectCode?: string;
+  subjectName?: string;
+  courseCode?: string;
+  courseName?: string;
+}
+
 export interface InstructorTimetablePdfInput {
   title?: string;
   facultyName?: string;
   departmentCode?: string;
   departmentName?: string;
   departmentLogo?: string | null;
-  schedules: Array<InstructorTimetableScheduleItem | ScheduleItem | any>;
+  schedules: Array<InstructorTimetableMeeting | InstructorTimetableScheduleItem | ScheduleItem | any>;
   activeSemester?: LabelledSemester | null;
 }
 
@@ -223,7 +241,7 @@ const CARD_STYLES: Record<CardKind, { label: string; accent: Rgb; tint: Rgb }> =
   conflict: { label: "Conflict (overlapping)", accent: [220, 38, 38], tint: [254, 242, 242] },
 };
 
-const cardKindOf = (sch: InstructorTimetableScheduleItem | ScheduleItem | any, isConflict: boolean): CardKind => {
+const cardKindOf = (sch: InstructorTimetableMeeting | InstructorTimetableScheduleItem | ScheduleItem | any, isConflict: boolean): CardKind => {
   if (isConflict) return "conflict";
   if (sch.mode === "online") return "online";
   if (sch.mode === "field") return "field";

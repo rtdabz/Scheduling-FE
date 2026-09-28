@@ -17,11 +17,10 @@ const tierLabel = (projection: OverloadProjection): string =>
   projection.tier_label || LOAD_TIER_LABELS[projection.tier] || projection.tier;
 
 /**
- * The question the server asks before an assignment pushes an instructor past
- * their Basic Load.
+ * The question the server asks before an assignment pushes an instructor into
+ * pro bono (past their Basic Load and overload allowance).
  *
- * Assignment is not being refused — it continues into the overload allowance and
- * then pro bono — so the modal reports what the load becomes and lets the user
+ * Assignment is not being refused, so the modal reports what the load becomes and lets the user
  * decide. Answering No sends nothing at all, which is why the assignment behind it
  * is left exactly as it was.
  */
@@ -41,7 +40,7 @@ export default function OverloadConfirmationModal({
           <div>
             <h2 className="text-base font-bold text-[#1A1410]">{confirmation.message}</h2>
             <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
-              The assignment is allowed — it continues into the overload allowance, then pro bono.
+              The assignment is allowed — units past the Basic Load and overload allowance are pro bono.
             </p>
           </div>
         </div>

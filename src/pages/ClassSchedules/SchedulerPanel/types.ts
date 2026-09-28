@@ -141,6 +141,12 @@ export const normalizeAdministrativePost = (
   return ADMINISTRATIVE_POSTS.find((known) => known === post) ?? null;
 };
 
+/** A designation as the load sheet prints it: its label ("Director · Networking Dev't") and deload. */
+export interface HeldDesignation {
+  label: string;
+  deloadUnits: number;
+}
+
 export interface Faculty {
   id: string;
   name: string;
@@ -148,8 +154,8 @@ export interface Faculty {
   employmentType?: "full-time" | "part-time";
   /** The account role; printed on the load sheet only when no designation is held. */
   administrativeRole?: FacultyAdministrativePost | null;
-  /** Held designations as labels ("Director · Networking Dev't"), printed in section C of the load sheet. */
-  designations?: string[];
+  /** Held designations, printed in section C of the load sheet with their deload. */
+  designations?: HeldDesignation[];
   departmentId?: number;
   departmentCode?: string;
   departmentName?: string;
@@ -386,7 +392,13 @@ export interface ApiFacultyRecord {
   } | null;
   availabilities?: FacultyAvailability[];
   /** Up to three held designations, in their listed order. */
-  designations?: { id: number; name: string; label?: string; parent?: { id: number; name: string } | null }[];
+  designations?: {
+    id: number;
+    name: string;
+    label?: string;
+    parent?: { id: number; name: string } | null;
+    deload_units?: number | null;
+  }[];
 }
 
 export interface ApiRoomRecord {

@@ -8,8 +8,7 @@ import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "./scheduling/WeeklyTim
 import { slotToTimeLabel, timeToSlot } from "../lib/timeGrid";
 import Skeleton from "./ui/Skeleton";
 import { scheduleLocationLabel } from "../lib/scheduleLocation";
-import { buildInstructorTimetablePdf } from "../pages/ClassSchedules/SchedulerPanel/instructorTimetablePdf";
-import type { ScheduleItem } from "../pages/ClassSchedules/SchedulerPanel/types";
+import { buildInstructorTimetablePdf, type InstructorTimetableMeeting } from "../pages/ClassSchedules/SchedulerPanel/instructorTimetablePdf";
 
 interface ApiScheduleRecord {
   id: number;
@@ -24,6 +23,7 @@ interface ApiScheduleRecord {
   start_time: string;
   end_time: string;
   mode?: string;
+  meeting_type?: "lecture" | "laboratory" | null;
   is_hybrid?: boolean;
   status?: string;
   course?: {
@@ -71,6 +71,7 @@ interface TimetableSlotItem {
   sectionName: string;
   roomName: string;
   mode: string;
+  meetingType: "lecture" | "laboratory" | null;
   startTime: string;
   endTime: string;
 }
@@ -138,7 +139,12 @@ export default function InstructorTimetableModal({
       }
 
       try {
-        const res = await api.get<ApiScheduleRecord[]>("/schedules");
+        // Only this instructor's active-semester week. The unfiltered list is
+        // capped campus-wide and spans every semester, so classes went missing
+        // and past terms' classes appeared.
+        const res = await api.get<ApiScheduleRecord[]>("/schedules", {
+          params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
+        });
         const rawData = res.data ?? [];
 
         if (!isMounted) return;
@@ -172,6 +178,7 @@ export default function InstructorTimetableModal({
             sectionName,
             roomName,
             mode: s.mode ?? "on-site",
+            meetingType: s.meeting_type ?? null,
             startTime: s.start_time,
             endTime: s.end_time,
           };
@@ -200,28 +207,16 @@ export default function InstructorTimetableModal({
     if (!facultyName) return;
 
     try {
-      const pdfSchedules = schedules.map((s) => ({
-        id: String(s.id),
-        departmentId: "",
-        facultyId: String(facultyId),
-        facultyName,
-        subjectId: String(s.id),
+      const pdfSchedules: InstructorTimetableMeeting[] = schedules.map((s) => ({
         courseCode: s.courseCode,
-        subjectCode: s.courseCode,
         courseName: s.courseName,
-        subjectName: s.courseName,
-        courseTitle: s.courseName,
-        subjectTitle: s.courseName,
-        roomId: "",
         roomName: s.roomName,
         day: s.day,
         startTime: s.startTime,
         endTime: s.endTime,
-        sectionId: "",
         sectionName: s.sectionName,
         mode: s.mode,
-        meetingType: "lec",
-        status: "finalized",
+        meetingType: s.meetingType,
       }));
 
       const blob = await buildInstructorTimetablePdf({

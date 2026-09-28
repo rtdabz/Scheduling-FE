@@ -42,6 +42,9 @@ import { useToast } from '../../context/ToastContext';
 import { hasStoredCapability } from '../../lib/storedUser';
 import CurriculumReviewPage from './CurriculumReviewPage';
 
+/** Curricula per page in the grid view (three rows of three). */
+const GRID_PAGE_SIZE = 9;
+
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   deactivated: 'bg-slate-200 text-slate-700 border-slate-300',
@@ -99,10 +102,9 @@ function CurriculumManagePage() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-  // Grid view pagination & sorting
+  // Grid view pagination. It had page state but no controls, so every
+  // curriculum after the ninth was unreachable in the grid.
   const [gridPage, setGridPage] = useState(1);
-  const [gridPageSize, setGridPageSize] = useState(9);
-  const [sortBy, setSortBy] = useState('date');
 
   // Modal states
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -155,24 +157,19 @@ function CurriculumManagePage() {
     }
   }, [printingCurriculumId, programs, toast]);
 
-  const gridFilteredCurriculumList = useMemo(() => {
-    let result = [...curriculumList];
+  // Newest first, as the grid has always shown them.
+  const gridFilteredCurriculumList = useMemo(
+    () => [...curriculumList].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()),
+    [curriculumList],
+  );
 
-    result.sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'code') return a.code.localeCompare(b.code);
-      if (sortBy === 'courses') return b.courses_count - a.courses_count;
-      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-    });
-
-    return result;
-  }, [curriculumList, sortBy]);
-
-  const gridTotalPages = Math.ceil(gridFilteredCurriculumList.length / gridPageSize) || 1;
+  const gridTotalPages = Math.ceil(gridFilteredCurriculumList.length / GRID_PAGE_SIZE) || 1;
+  // A search or archive can shrink the list under the page being shown.
+  const currentGridPage = Math.min(gridPage, gridTotalPages);
   const gridPaginatedCurriculumList = useMemo(() => {
-    const start = (gridPage - 1) * gridPageSize;
-    return gridFilteredCurriculumList.slice(start, start + gridPageSize);
-  }, [gridFilteredCurriculumList, gridPage, gridPageSize]);
+    const start = (currentGridPage - 1) * GRID_PAGE_SIZE;
+    return gridFilteredCurriculumList.slice(start, start + GRID_PAGE_SIZE);
+  }, [gridFilteredCurriculumList, currentGridPage]);
 
   const columns = useMemo<ColumnDef<Curriculum>[]>(
     () => [
@@ -524,6 +521,17 @@ function CurriculumManagePage() {
                 onArchive={triggerArchiveConfirmation}
               />
             ))
+          )}
+          {gridTotalPages > 1 && (
+            <nav aria-label="Curriculum pages" className="col-span-full flex items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-white px-5 py-3 text-xs font-semibold text-gray-500 shadow-sm">
+              <span>
+                Page {currentGridPage} of {gridTotalPages} · {gridFilteredCurriculumList.length} curricula
+              </span>
+              <span className="flex gap-2">
+                <button type="button" onClick={() => setGridPage(currentGridPage - 1)} disabled={currentGridPage <= 1} className="rounded-lg border border-gray-200 px-3 py-1.5 font-bold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+                <button type="button" onClick={() => setGridPage(currentGridPage + 1)} disabled={currentGridPage >= gridTotalPages} className="rounded-lg border border-gray-200 px-3 py-1.5 font-bold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+              </span>
+            </nav>
           )}
         </div>
       )}

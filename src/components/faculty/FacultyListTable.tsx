@@ -145,7 +145,7 @@ export default function FacultyListTable<T extends FacultyListRow>({
       header: 'Workload Units',
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row: { original: f } }) => {
-        const ceiling = Math.max(0, f.max_units - f.deload_units) + f.overload_units + f.probono_units;
+        const ceiling = Math.max(0, f.max_units - f.deload_units) + f.overload_units;
         return (
           <div className="space-y-1 max-w-[140px]">
             <div className="flex items-center justify-between text-[11px] font-bold">

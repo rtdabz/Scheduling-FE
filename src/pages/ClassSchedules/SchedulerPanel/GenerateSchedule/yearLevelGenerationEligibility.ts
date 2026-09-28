@@ -3,6 +3,9 @@ import type { ScheduleItem, Section } from "../types";
 export const YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE =
   "Schedules for this year level have already been plotted. Generation is unavailable unless the entire year level is recalled.";
 
+export const SECTIONS_GENERATION_BLOCKED_MESSAGE =
+  "Schedules for the selected sections have already moved past plotting. Generation is unavailable unless those sections are recalled.";
+
 const PLOTTING_STATUSES = new Set<ScheduleItem["status"]>(["draft", "completed"]);
 
 export function canGenerateYearLevel(
