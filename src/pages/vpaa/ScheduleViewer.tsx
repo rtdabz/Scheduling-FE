@@ -1561,7 +1561,21 @@ export default function VpaaScheduleViewer() {
           </div>
 
           {isLoading ? (
-            <div className="space-y-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}</div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white divide-y divide-slate-100">
+              {[0, 1, 2, 3, 4].map((item) => (
+                <div key={item} className="flex items-center justify-between gap-4 p-4">
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-4 w-20 rounded" />
+                      <Skeleton className="h-3 w-40 rounded" />
+                    </div>
+                    <Skeleton className="h-3 w-64 max-w-full rounded" />
+                  </div>
+                  <Skeleton className="h-6 w-24 rounded-full shrink-0" />
+                  <Skeleton className="h-8 w-20 rounded-lg shrink-0" />
+                </div>
+              ))}
+            </div>
           ) : (
             <ClassSummaryTable
               classes={paginatedClasses}
@@ -1828,14 +1842,14 @@ export default function VpaaScheduleViewer() {
       )}
 
       <PrintSchedule
-        sections={pdfSections}
-        departments={pdfDepartments}
+        sections={pdfSections as any}
+        departments={pdfDepartments as any}
         users={users}
         isPrintModalOpen={isPrintModalOpen}
         setIsPrintModalOpen={setIsPrintModalOpen}
-        allSchedules={pdfSchedules}
+        allSchedules={pdfSchedules as any}
         selectedSectionId={selectedSectionId !== "All" ? selectedSectionId : (pdfSections[0]?.id ?? "")}
-        activeSemester={activeSemester}
+        activeSemester={activeSemester as any}
         printAllSections={selectedSectionId === "All"}
       />
     </div>

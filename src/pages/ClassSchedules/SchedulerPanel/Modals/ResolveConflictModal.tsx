@@ -14,6 +14,7 @@ import {
   refusalDetails,
   resolutionActionLabel,
   resolveConflict,
+  reviewConflict,
   type ConflictRule,
   type ConflictSchedule,
   type ResolutionAction,
@@ -153,6 +154,7 @@ export default function ResolveConflictModal({
         : match.schedules.find(isReplottable) ?? match.schedules[0];
       setSelectedId(match.id);
       setTargetId(editable.id);
+      void reviewConflict(match.id);
     } catch (err) {
       if (signal?.aborted) return;
       setConflicts([]);
@@ -173,6 +175,7 @@ export default function ResolveConflictModal({
     const editable = conflict.schedules.find(isReplottable) ?? conflict.schedules[0];
     setSelectedId(conflict.id);
     setTargetId(editable.id);
+    void reviewConflict(conflict.id);
     setAction(null);
     setForm(null);
     setReason("");

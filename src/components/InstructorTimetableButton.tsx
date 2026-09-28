@@ -6,6 +6,7 @@ interface InstructorTimetableButtonProps {
   facultyId: number;
   facultyName: string;
   departmentName?: string;
+  departmentLogo?: string | null;
   variant?: "primary" | "secondary" | "outline" | "link";
   className?: string;
   iconOnly?: boolean;
@@ -15,6 +16,7 @@ export default function InstructorTimetableButton({
   facultyId,
   facultyName,
   departmentName,
+  departmentLogo,
   variant = "outline",
   className = "",
   iconOnly = false,
@@ -52,6 +54,7 @@ export default function InstructorTimetableButton({
         facultyId={facultyId}
         facultyName={facultyName}
         departmentName={departmentName}
+        departmentLogo={departmentLogo}
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
       />

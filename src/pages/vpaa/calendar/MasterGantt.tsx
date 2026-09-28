@@ -93,14 +93,12 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     ? Math.max(1, timelineMinWidth, viewportWidth - labelWidth)
     : hours * ZOOM_PX_PER_HOUR[zoom];
   const pixelsPerHour = trackWidth / hours;
-  // Ticks are spaced in 90-minute units (7, 8:30, 10, ...) rather than whole hours,
-  // widening to multiples of 90 minutes only when the track is too narrow to fit them.
-  const tickStep = Math.max(1, Math.ceil(58 / (pixelsPerHour * 1.5))) * 90;
+  const tickStep = Math.max(1, Math.ceil(58 / pixelsPerHour)) * 60;
   const laneHeight = LANE_HEIGHT[density];
 
   const hourTicks = useMemo(() => {
     const ticks: number[] = [];
-    for (let minute = timeWindow.start; minute <= timeWindow.end; minute += tickStep) ticks.push(minute);
+    for (let minute = Math.ceil(timeWindow.start / tickStep) * tickStep; minute <= timeWindow.end; minute += tickStep) ticks.push(minute);
     return ticks;
   }, [timeWindow, tickStep]);
 

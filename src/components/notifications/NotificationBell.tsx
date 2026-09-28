@@ -93,6 +93,7 @@ export default function NotificationBell() {
           <div className="max-h-[22rem] overflow-y-auto">
             {isLoading && feedItems.length === 0 ? (
               <div className="space-y-2 p-3" aria-busy="true" aria-label="Loading notifications">
+                <span className="sr-only">Loading notifications</span>
                 {Array.from({ length: 4 }).map((_, index) => <div key={index} className="flex items-center gap-2"><Skeleton className="h-2 w-2 rounded-full" /><Skeleton className="h-3 flex-1" /></div>)}
               </div>
             ) : feedItems.length > 0 ? (

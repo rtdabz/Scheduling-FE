@@ -6,7 +6,6 @@ import {
   DoorOpen,
   BookOpen,
   Users,
-  UserPlus,
   GraduationCap,
   UserRoundCheck,
   Layers,
@@ -22,6 +21,24 @@ export const secretaryNav: NavSection[] = [
     items: [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       {
+        label: 'Department',
+        path: '/secretary/departments',
+        icon: Building2,
+        id: 'sidebar-departments',
+        requiredCapability: 'schedule.view',
+      },
+      { label: 'Facility', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
+      {
+        label: 'Instructors',
+        path: '/secretary/instructors',
+        icon: GraduationCap,
+        id: 'sidebar-faculty',
+        requiredCapability: 'schedule.view',
+      },
+      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },
+      { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
+      { label: 'Courses', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses', requiredCapability: 'schedule.view' },
+      {
         label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
@@ -29,39 +46,19 @@ export const secretaryNav: NavSection[] = [
         children: [
           { label: 'Schedule Management', path: '/secretary/schedule-builder', icon: CalendarRange, id: 'sidebar-schedule-builder', requiredCapability: 'schedule.create' },
           { label: 'Schedules', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-section-timetables', requiredCapability: 'schedule.view' },
+        ],
+      },
+      {
+        label: 'Cross-Department',
+        icon: UserRoundCheck,
+        id: 'sidebar-cross-department',
+        requiredCapability: 'schedule.assign_instructor_cross_department',
+        children: [
           { label: 'Course Assignment', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
           { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
         ],
       },
-      {
-        label: 'Courses',
-        icon: BookOpen,
-        id: 'sidebar-courses',
-        children: [
-          { label: 'Course List', path: '/secretary/courses', icon: BookOpen, id: 'sidebar-courses-list', requiredCapability: 'schedule.view' },
-          { label: 'Curriculum', path: '/secretary/curriculum', icon: Layers, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
-        ],
-      },
-      { label: 'Sections', path: '/secretary/sections', icon: Users, id: 'sidebar-sections', requiredCapability: 'schedule.view' },
-      {
-        label: 'Faculty Management',
-        icon: GraduationCap,
-        id: 'sidebar-faculty',
-        requiredCapability: 'schedule.view',
-        children: [
-          { label: 'Instructors', path: '/secretary/instructors', icon: UserPlus, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
-        ],
-      },
-      {
-        label: 'Rooms',
-        icon: DoorOpen,
-        id: 'sidebar-rooms',
-        requiredCapability: ['schedule.view', 'room.request'],
-        children: [
-          { label: 'Room List', path: '/secretary/rooms', icon: DoorOpen, id: 'sidebar-rooms-list', requiredCapability: 'schedule.view' },
-          { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
-        ],
-      },
+      { label: 'Room Requests', path: '/secretary/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.request' },
     ]
   },
   {
@@ -72,3 +69,5 @@ export const secretaryNav: NavSection[] = [
     ]
   }
 ]
+
+

@@ -1,7 +1,29 @@
 import tccLogo from "../../../assets/logo.jpg";
-import type { ScheduleItem, Semester } from "./types";
+import type { LabelledSemester } from "../../../lib/semesterLabel";
 import { fullSemesterLabel } from "../../../lib/semesterLabel";
 import { packLanes } from "../../vpaa/calendar/ganttLayout";
+import { registerSystemPdfFonts } from "./fonts/systemPdfFonts";
+import type { ScheduleItem } from "./types";
+
+export interface InstructorTimetableScheduleItem {
+  id?: string | number;
+  day?: string;
+  startTime?: string;
+  endTime?: string;
+  subjectCode?: string | null;
+  courseCode?: string | null;
+  subjectName?: string | null;
+  courseName?: string | null;
+  subjectTitle?: string | null;
+  courseTitle?: string | null;
+  sectionName?: string | null;
+  sectionId?: string | number | null;
+  mode?: string | null;
+  meetingType?: string | null;
+  roomName?: string | null;
+  status?: string | null;
+  facultyName?: string | null;
+}
 
 export interface InstructorTimetablePdfInput {
   title?: string;
@@ -9,8 +31,8 @@ export interface InstructorTimetablePdfInput {
   departmentCode?: string;
   departmentName?: string;
   departmentLogo?: string | null;
-  schedules: ScheduleItem[];
-  activeSemester?: Semester | null;
+  schedules: Array<InstructorTimetableScheduleItem | ScheduleItem | any>;
+  activeSemester?: LabelledSemester | null;
 }
 
 const DAY_NAMES = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
@@ -135,6 +157,38 @@ function createTransparentWatermarkDataUrl(img: HTMLImageElement, targetOpacity 
   }
 }
 
+/**
+ * Clips an image into a circle with an optional border for circular badge rendering.
+ */
+function createCircularImage(img: HTMLImageElement): string {
+  try {
+    const canvas = document.createElement("canvas");
+    const size = Math.max(img.naturalWidth || 120, img.naturalHeight || 120);
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    const w = img.naturalWidth || size;
+    const h = img.naturalHeight || size;
+    const ar = w / h;
+    const drawW = ar >= 1 ? size : size * ar;
+    const drawH = ar >= 1 ? size / ar : size;
+    ctx.drawImage(img, (size - drawW) / 2, (size - drawH) / 2, drawW, drawH);
+    ctx.restore();
+
+    return canvas.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
 type Rgb = [number, number, number];
 
 const MAROON: Rgb = [78, 10, 16];
@@ -150,14 +204,13 @@ const HAIRLINE: Rgb = [226, 232, 240];
 const FRAME: Rgb = [203, 213, 225];
 const WHITE: Rgb = [255, 255, 255];
 
-// Class card text sizes (pt). The sheet is handed out on paper, so nothing
-// on a card goes below 7.5 pt.
-const CARD_CODE_PT = 10.5;
-const CARD_PILL_PT = 7.5;
-const CARD_BODY_PT = 8.5;
-const CARD_FOOTER_PT = 8;
+// Class card text sizes (pt). Prominent, high-legibility sizing for paper timetable prints.
+const CARD_CODE_PT = 13;
+const CARD_PILL_PT = 8;
+const CARD_BODY_PT = 10;
+const CARD_FOOTER_PT = 8.5;
 /** Baseline-to-baseline step (mm) for the card's body and footer lines. */
-const CARD_LINE_H = 3.4;
+const CARD_LINE_H = 3.6;
 
 type CardKind = "lecture" | "laboratory" | "online" | "field" | "conflict";
 
@@ -170,7 +223,7 @@ const CARD_STYLES: Record<CardKind, { label: string; accent: Rgb; tint: Rgb }> =
   conflict: { label: "Conflict (overlapping)", accent: [220, 38, 38], tint: [254, 242, 242] },
 };
 
-const cardKindOf = (sch: ScheduleItem, isConflict: boolean): CardKind => {
+const cardKindOf = (sch: InstructorTimetableScheduleItem | ScheduleItem | any, isConflict: boolean): CardKind => {
   if (isConflict) return "conflict";
   if (sch.mode === "online") return "online";
   if (sch.mode === "field") return "field";
@@ -198,11 +251,26 @@ export async function buildInstructorTimetablePdf({
   ]);
 
   const doc = new JsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const { hasSans, hasDisplay } = registerSystemPdfFonts(doc);
+
   const fill = (c: Rgb) => doc.setFillColor(c[0], c[1], c[2]);
   const stroke = (c: Rgb) => doc.setDrawColor(c[0], c[1], c[2]);
   const ink = (c: Rgb) => doc.setTextColor(c[0], c[1], c[2]);
-  const font = (style: "bold" | "normal" | "italic", size: number) => {
-    doc.setFont("Helvetica", style);
+  const font = (
+    style: "bold" | "normal" | "italic",
+    size: number,
+    family: "sans" | "display" = "sans"
+  ) => {
+    const targetFamily = family === "display" && hasDisplay
+      ? "PlayfairDisplay"
+      : hasSans
+      ? "DMSans"
+      : "Helvetica";
+    try {
+      doc.setFont(targetFamily, style);
+    } catch {
+      doc.setFont("Helvetica", style);
+    }
     doc.setFontSize(size);
   };
   /** The part of `text` that fits `width` on one line, so nothing spills out of its box. */
@@ -242,29 +310,40 @@ export async function buildInstructorTimetablePdf({
   doc.rect(pageX, headerY + headerH, pageW, 0.9, "F");
 
   const logoTile = 20;
-  const drawLogoTile = (img: HTMLImageElement, x: number, format: string) => {
-    const tileY = headerY + (headerH - logoTile) / 2;
+  const drawLogoTile = async (img: HTMLImageElement, x: number, format: string) => {
+    const radius = logoTile / 2;
+    const centerX = x + radius;
+    const centerY = headerY + headerH / 2;
+
+    // Circular white badge with a gold border
     fill(WHITE);
-    doc.roundedRect(x, tileY, logoTile, logoTile, 2, 2, "F");
-    const max = logoTile - 3;
-    const ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+    doc.circle(centerX, centerY, radius, "F");
+    stroke(GOLD_LIGHT);
+    doc.setLineWidth(0.5);
+    doc.circle(centerX, centerY, radius, "D");
+
+    const circularDataUrl = createCircularImage(img);
+    const circularImg = circularDataUrl ? await loadImgSafe(circularDataUrl) : null;
+    const targetImg = circularImg || img;
+    const imgFormat = circularImg ? "PNG" : format;
+
+    const max = logoTile - 1.5;
+    const ar = (targetImg.naturalWidth || 1) / (targetImg.naturalHeight || 1);
     const w = ar >= 1 ? max : max * ar;
     const h = ar >= 1 ? max / ar : max;
-    doc.addImage(img, format, x + (logoTile - w) / 2, tileY + (logoTile - h) / 2, w, h);
+    doc.addImage(targetImg, imgFormat, centerX - w / 2, centerY - h / 2, w, h);
   };
 
+  // Department or college logo badge before the instructor name
+  const effectiveDeptLogoImg = deptLogoImg || tccLogoImg;
   let textX = pageX + 5;
-  if (tccLogoImg) {
-    drawLogoTile(tccLogoImg, pageX + 3, "JPEG");
+  if (effectiveDeptLogoImg) {
+    const format = (departmentLogo && departmentLogo.match(/image\/jpe?g|\.jpe?g(?:$|\?)/i)) ? "JPEG" : "PNG";
+    await drawLogoTile(effectiveDeptLogoImg, pageX + 3, format);
     textX = pageX + 3 + logoTile + 5;
   }
 
   let rightEdge = pageX + pageW - 3;
-  if (deptLogoImg) {
-    rightEdge -= logoTile;
-    drawLogoTile(deptLogoImg, rightEdge, departmentLogo?.match(/image\/jpe?g|\.jpe?g(?:$|\?)/i) ? "JPEG" : "PNG");
-    rightEdge -= 4;
-  }
 
   // Summary chips, laid out right to left.
   const chips: Array<{ label: string; value: string; alert?: boolean }> = [
@@ -300,7 +379,7 @@ export async function buildInstructorTimetablePdf({
   doc.text(eyebrow, textX, headerY + 7.5, { charSpace: 0.6 });
 
   let nameSize = 17;
-  font("bold", nameSize);
+  font("bold", nameSize, "display");
   while (doc.getTextWidth(heading) > textW && nameSize > 10) {
     nameSize -= 0.5;
     doc.setFontSize(nameSize);
@@ -356,23 +435,29 @@ export async function buildInstructorTimetablePdf({
     }
   });
 
-  // Faint watermark behind the timeline
+  // Watermark behind the timeline: clearly visible background emblem
   if (tccLogoImg) {
-    const wmSize = Math.min(90, rowsBottomY - rowsTopY - 6);
+    const wmSize = Math.min(105, rowsBottomY - rowsTopY - 4);
     const wmX = timelineX + (timelineW - wmSize) / 2;
     const wmY = rowsTopY + (rowsBottomY - rowsTopY - wmSize) / 2;
-    const pdf = doc as unknown as {
-      GState?: new (options: { opacity: number }) => unknown;
-      setGState?: (state: unknown) => void;
-    };
-    if (pdf.GState && pdf.setGState) {
-      pdf.setGState(new pdf.GState({ opacity: 0.06 }));
-      doc.addImage(tccLogoImg, "JPEG", wmX, wmY, wmSize, wmSize);
-      pdf.setGState(new pdf.GState({ opacity: 1 }));
+    const watermarkOpacity = 0.18;
+    const transparentWmUrl = createTransparentWatermarkDataUrl(tccLogoImg, watermarkOpacity);
+    const transparentWmImg = transparentWmUrl ? await loadImgSafe(transparentWmUrl) : null;
+
+    if (transparentWmImg) {
+      doc.addImage(transparentWmImg, "PNG", wmX, wmY, wmSize, wmSize);
     } else {
-      const transparentWmUrl = createTransparentWatermarkDataUrl(tccLogoImg, 0.06);
-      const transparentWmImg = transparentWmUrl ? await loadImgSafe(transparentWmUrl) : null;
-      if (transparentWmImg) doc.addImage(transparentWmImg, "PNG", wmX, wmY, wmSize, wmSize);
+      const pdf = doc as unknown as {
+        GState?: new (options: { opacity: number }) => unknown;
+        setGState?: (state: unknown) => void;
+      };
+      if (pdf.GState && pdf.setGState) {
+        pdf.setGState(new pdf.GState({ opacity: watermarkOpacity }));
+        doc.addImage(tccLogoImg, "JPEG", wmX, wmY, wmSize, wmSize);
+        pdf.setGState(new pdf.GState({ opacity: 1 }));
+      } else {
+        doc.addImage(tccLogoImg, "JPEG", wmX, wmY, wmSize, wmSize);
+      }
     }
   }
 
@@ -396,17 +481,17 @@ export async function buildInstructorTimetablePdf({
   // Gridlines: solid on block boundaries, dashed every 30 minutes inside a block
   for (let minutes = windowStart; minutes <= windowEnd; minutes += 30) {
     const isBoundary = (minutes - windowStart) % BLOCK === 0;
-    stroke(isBoundary ? HAIRLINE : [237, 241, 246]);
-    doc.setLineWidth(isBoundary ? 0.25 : 0.15);
-    if (!isBoundary) doc.setLineDashPattern([0.8, 0.8], 0);
+    stroke(isBoundary ? [175, 190, 205] : [205, 218, 230]);
+    doc.setLineWidth(isBoundary ? 0.35 : 0.22);
+    if (!isBoundary) doc.setLineDashPattern([1.2, 1.2], 0);
     doc.line(minuteX(minutes), isBoundary ? chartY : rowsTopY, minuteX(minutes), rowsBottomY);
     doc.setLineDashPattern([], 0);
   }
 
   // Day rows
   days.forEach((day) => {
-    stroke(HAIRLINE);
-    doc.setLineWidth(0.25);
+    stroke([175, 190, 205]);
+    doc.setLineWidth(0.35);
     doc.line(pageX, day.y + day.height, pageX + pageW, day.y + day.height);
 
     const centerY = day.y + day.height / 2;
@@ -428,8 +513,8 @@ export async function buildInstructorTimetablePdf({
     doc.text(`${count} ${count === 1 ? "class" : "classes"}`, pageX + labelW / 2, centerY + 4, { align: "center" });
   });
 
-  stroke(FRAME);
-  doc.setLineWidth(0.3);
+  stroke([145, 165, 185]);
+  doc.setLineWidth(0.45);
   doc.line(timelineX, chartY, timelineX, rowsBottomY);
   doc.roundedRect(pageX, chartY, pageW, rowsBottomY - chartY, 1.2, 1.2, "S");
 
@@ -451,22 +536,37 @@ export async function buildInstructorTimetablePdf({
 
       const padL = 3;
       const innerW = w - padL - 1.5;
-      const code = sch.subjectCode || sch.courseCode || "SUBJECT";
-      const section = sch.sectionName || "";
-      const courseTitle = sch.courseName || sch.subjectName || "";
+      const code = (
+        sch.courseCode ||
+        sch.subjectCode ||
+        sch.course?.course_code ||
+        sch.subject?.course_code ||
+        sch.subject?.subject_code ||
+        sch.course_code ||
+        sch.subject_code ||
+        "CLASS"
+      ).toString().trim();
+      const section = sch.sectionName || sch.section?.section_name || "";
+      const courseTitle = (
+        sch.courseName ||
+        sch.subjectName ||
+        sch.courseTitle ||
+        sch.subjectTitle ||
+        sch.course?.course_name ||
+        sch.subject?.course_name ||
+        sch.subject?.subject_name ||
+        sch.course_name ||
+        sch.subject_name ||
+        ""
+      ).toString().trim();
       const roomOrMode = sch.mode === "online" ? "Online" : sch.mode === "field" ? "Field" : (sch.roomName || "Room TBA");
       const timeRange = [formatTime12hShort(sch.startTime), formatTime12hShort(sch.endTime)].filter(Boolean).join(" - ");
 
-      // Sizes are chosen for a printed page read at arm's length, older readers included.
-      // Section pill beside the code when the card is wide enough, else its own line.
+      // Section pill beside the code when the card is wide enough
       font("bold", CARD_PILL_PT);
-      const pillW = section ? doc.getTextWidth(section) + 3.4 : 0;
-      font("bold", CARD_CODE_PT);
-      const pillBeside = Boolean(section) && innerW >= doc.getTextWidth(code) + pillW + 2;
+      const pillW = section ? doc.getTextWidth(section) + 3.6 : 0;
+      const pillBeside = Boolean(section) && innerW >= pillW + 18;
 
-      let lineY = y + 4.6;
-      ink(style.accent);
-      doc.text(fit(code, pillBeside ? innerW - pillW - 2 : innerW), x + padL, lineY);
       if (pillBeside) {
         const pillX = x + w - 1.5 - pillW;
         fill(style.accent);
@@ -483,31 +583,57 @@ export async function buildInstructorTimetablePdf({
       const hasFooter = h >= 13;
       const footerY = y + h - 1.8;
       const footerTop = footerY - (footerLines.length - 1) * CARD_LINE_H;
-      const textLimit = hasFooter ? footerTop - 4 : y + h - 0.8;
-      const bodyLines: Array<{ text: string; bold: boolean; color: Rgb }> = [
-        ...(section && !pillBeside ? [{ text: section, bold: true, color: style.accent }] : []),
-        ...(courseTitle ? [{ text: courseTitle, bold: false, color: BODY }] : []),
-      ];
-      for (const line of bodyLines) {
-        font(line.bold ? "bold" : "normal", CARD_BODY_PT);
-        ink(line.color);
-        // Long titles wrap onto the next line while there is room, instead of being cut off.
-        for (const wrapped of doc.splitTextToSize(line.text, Math.max(1, innerW)) as string[]) {
-          const nextLineY = lineY + CARD_LINE_H + 0.2;
-          if (nextLineY > textLimit) break;
-          lineY = nextLineY;
-          doc.text(wrapped, x + padL, lineY);
+      const middleBottom = hasFooter ? footerTop - 3.2 : y + h - 1;
+
+      // Course code and name on the left side
+      const centerX = x + w / 2;
+      const maxTextW = Math.max(1, pillBeside ? innerW - pillW - 2 : innerW);
+
+      // Calculate vertical centering for course code and title
+      const titleLines = courseTitle
+        ? (doc.splitTextToSize(courseTitle, maxTextW) as string[])
+        : [];
+      const sectionLines = (!pillBeside && section) ? [section] : [];
+      const totalBodyLines = 1 + sectionLines.length + Math.min(2, titleLines.length);
+      const textBlockH = totalBodyLines * CARD_LINE_H;
+      const middleTop = y + (pillBeside ? 1.5 : 0.8);
+      const middleH = Math.max(textBlockH, middleBottom - middleTop);
+
+      let lineY = middleTop + (middleH - textBlockH) / 2 + 3.2;
+
+      // Draw Section on the left if not placed in top pill
+      if (!pillBeside && section) {
+        font("bold", CARD_PILL_PT + 0.5);
+        ink(style.accent);
+        doc.text(section, x + padL, lineY);
+        lineY += CARD_LINE_H;
+      }
+
+      // Draw Course Code (prominent and large on the left side)
+      font("bold", CARD_CODE_PT);
+      ink(style.accent);
+      doc.text(fit(code, maxTextW), x + padL, lineY);
+
+      // Draw Course Title / Name (large and bold on the left side directly below code)
+      if (titleLines.length > 0) {
+        font("bold", CARD_BODY_PT);
+        ink(BODY);
+        for (let i = 0; i < Math.min(2, titleLines.length); i++) {
+          lineY += CARD_LINE_H + 0.3;
+          if (lineY > middleBottom) break;
+          doc.text(titleLines[i], x + padL, lineY);
         }
       }
 
+      // Building, room and time centered in the footer
       if (hasFooter) {
-        stroke(HAIRLINE);
+        stroke([210, 222, 234]);
         doc.setLineWidth(0.2);
-        doc.line(x + padL, footerTop - 3.4, x + w - 1.5, footerTop - 3.4);
+        doc.line(x + padL, footerTop - 2.8, x + w - 1.5, footerTop - 2.8);
         font("normal", CARD_FOOTER_PT);
         ink(MUTED);
         footerLines.forEach((text, index) => {
-          doc.text(fit(text, innerW), x + padL, footerTop + index * CARD_LINE_H);
+          doc.text(fit(text, innerW), centerX, footerTop + index * CARD_LINE_H, { align: "center" });
         });
       }
     });

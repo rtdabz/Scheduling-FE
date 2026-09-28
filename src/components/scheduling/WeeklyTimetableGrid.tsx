@@ -81,7 +81,7 @@ export default function WeeklyTimetableGrid({
 
   return (
     <div
-      className={`timetable-grid-root relative grid select-none overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`timetable-grid-root relative grid select-none font-sans overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
       style={{
         minHeight: `${headerHeight + slotCount * slotHeight}px`,
         minWidth,

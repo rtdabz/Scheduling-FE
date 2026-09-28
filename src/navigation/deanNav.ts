@@ -2,13 +2,14 @@ import {
   LayoutDashboard,
   CalendarDays,
   GraduationCap,
-  UserPlus,
   DoorOpen,
   FileBarChart,
   Calendar,
   ClipboardCheck,
   History,
-  BookOpen
+  BookOpen,
+  Building2,
+  Users
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -17,6 +18,36 @@ export const deanNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dean/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
+      {
+        label: 'Department',
+        path: '/dean/departments',
+        icon: Building2,
+        id: 'sidebar-departments',
+        requiredCapability: 'schedule.view',
+      },
+      { label: 'Facility', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
+      {
+        label: 'Instructors',
+        path: '/dean/faculty',
+        icon: GraduationCap,
+        id: 'sidebar-faculty',
+        requiredCapability: 'schedule.view',
+      },
+      {
+        label: 'Sections',
+        path: '/dean/sections',
+        icon: Users,
+        id: 'sidebar-sections',
+        requiredCapability: 'schedule.view',
+      },
+      { label: 'Curriculum', path: '/dean/curriculum', icon: BookOpen, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
+      {
+        label: 'Courses',
+        path: '/dean/courses',
+        icon: BookOpen,
+        id: 'sidebar-courses',
+        requiredCapability: 'schedule.view',
+      },
       {
         label: 'Schedules',
         icon: CalendarDays,
@@ -39,17 +70,6 @@ export const deanNav: NavSection[] = [
           },
         ]
       },
-      {
-        label: 'Faculty',
-        icon: GraduationCap,
-        id: 'sidebar-faculty',
-        requiredCapability: 'schedule.view',
-        children: [
-          { label: 'Instructors', path: '/dean/faculty', icon: UserPlus, id: 'sidebar-instructors', requiredCapability: 'schedule.view' },
-        ],
-      },
-      { label: 'Rooms', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
-      { label: 'Curriculum', path: '/dean/curriculum', icon: BookOpen, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
     ]
   },
   {
@@ -60,3 +80,4 @@ export const deanNav: NavSection[] = [
     ]
   }
 ]
+

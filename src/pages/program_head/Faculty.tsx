@@ -952,6 +952,7 @@ export default function ProgramHeadFaculty() {
                         facultyId={f.id}
                         facultyName={name}
                         departmentName={f.department ? `${f.department.department_code} - ${f.department.department_name}` : undefined}
+                        departmentLogo={f.department?.logo ?? null}
                       />
                     </div>
                     {canManageFaculty && (

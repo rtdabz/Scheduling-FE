@@ -202,3 +202,12 @@ export const refusalDetails = (err: unknown): string[] => {
       .map((message) => message.trim()),
   )];
 };
+
+/** Log that a user opened and reviewed conflict details. */
+export const reviewConflict = async (conflictId: string): Promise<void> => {
+  try {
+    await api.post(`/conflicts/${encodeURIComponent(conflictId)}/review`);
+  } catch {
+    // Non-blocking audit ping
+  }
+};

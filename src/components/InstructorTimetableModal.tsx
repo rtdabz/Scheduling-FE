@@ -53,6 +53,7 @@ interface InstructorTimetableModalProps {
   facultyId: number;
   facultyName: string;
   departmentName?: string;
+  departmentLogo?: string | null;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -112,6 +113,7 @@ export default function InstructorTimetableModal({
   facultyId,
   facultyName,
   departmentName,
+  departmentLogo,
   isOpen,
   onClose,
 }: InstructorTimetableModalProps) {
@@ -198,13 +200,17 @@ export default function InstructorTimetableModal({
     if (!facultyName) return;
 
     try {
-      const pdfSchedules: ScheduleItem[] = schedules.map((s) => ({
+      const pdfSchedules = schedules.map((s) => ({
         id: String(s.id),
         departmentId: "",
         facultyId: String(facultyId),
         facultyName,
         subjectId: String(s.id),
+        courseCode: s.courseCode,
         subjectCode: s.courseCode,
+        courseName: s.courseName,
+        subjectName: s.courseName,
+        courseTitle: s.courseName,
         subjectTitle: s.courseName,
         roomId: "",
         roomName: s.roomName,
@@ -222,6 +228,7 @@ export default function InstructorTimetableModal({
         title: `INSTRUCTOR: ${facultyName.toUpperCase()}`,
         facultyName,
         departmentName: departmentName || "",
+        departmentLogo: departmentLogo ?? null,
         schedules: pdfSchedules,
       });
 
@@ -330,7 +337,7 @@ export default function InstructorTimetableModal({
                             <MapPin className="w-3 h-3 text-[#4e0a10] shrink-0" />
                             {schedule.roomName}
                           </span>
-                          <span className="font-mono opacity-80 shrink-0">
+                          <span className="font-bold opacity-80 shrink-0">
                             {slotToTimeStr12h(schedule.startSlot)}
                           </span>
                         </div>

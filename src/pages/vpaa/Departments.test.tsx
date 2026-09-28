@@ -12,7 +12,29 @@ vi.mock('../../context/ToastContext', () => ({
 import Departments from './Departments';
 import { clearDataCache } from '../../lib/dataCache';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  sessionStorage.clear();
+});
+
+describe('Dean role department scoping', () => {
+  it('filters departments to only show the assigned department when logged in as a Dean', async () => {
+    sessionStorage.setItem('user', JSON.stringify({
+      id: 10,
+      name: 'Dean Smith',
+      role: 'dean',
+      department_id: 2,
+      department: { id: 2, department_name: 'College of Information Technology', department_code: 'CIT' }
+    }));
+
+    render(<Departments />);
+
+    expect(await screen.findByText('College of Information Technology')).toBeTruthy();
+    expect(screen.queryByText('College of Education')).toBeNull();
+    expect(screen.queryByText('Add Department')).toBeNull();
+  });
+});
+
 
 const LOGO = 'data:image/jpeg;base64,AAAA';
 
@@ -158,3 +180,5 @@ describe('Departments management derives the code that other pages still show', 
     expect(patch.mock.calls[0][1]).not.toHaveProperty('department_code');
   });
 });
+
+

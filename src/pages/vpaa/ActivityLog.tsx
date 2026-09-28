@@ -27,45 +27,99 @@ type Department = { id: number; department_code: string; department_name: string
 type Semester = { id: number; academic_year: string; semester: string };
 
 const categories = [
-  ['schedule_workflow', 'Schedule Workflow'],
+  ['account_access', 'Account & Access'],
+  ['institutional_setup', 'Institutional Setup'],
+  ['academic_setup', 'Academic Setup'],
   ['scheduling', 'Scheduling'],
-  ['faculty_assignment', 'Faculty Assignment'],
-  ['user_management', 'User Management'],
-  ['authentication', 'Authentication'],
+  ['approval', 'Approval'],
+  ['instructor_assignment', 'Instructor Assignment'],
+  ['room_request', 'Room Request'],
+  ['reports', 'Reports'],
 ] as const;
 
 const EVENT_DETAILS: Record<string, { label: string; description: string; category: string }> = {
-  // 1. Schedule Workflow (schedule_workflow)
-  schedule_submitted: { label: 'Schedule Submitted', description: 'Schedule submitted for review and approval', category: 'schedule_workflow' },
-  schedule_approved_by_dean: { label: 'Dean Approved Schedule', description: 'Department schedule approved by the Dean', category: 'schedule_workflow' },
-  schedule_returned_by_dean: { label: 'Dean Returned Schedule', description: 'Schedule returned by Dean for revisions', category: 'schedule_workflow' },
-  schedule_approved_by_vpaa: { label: 'VPAA Approved Schedule', description: 'Final schedule approved and published by VPAA', category: 'schedule_workflow' },
-  schedule_returned_by_vpaa: { label: 'VPAA Returned Schedule', description: 'Schedule returned by VPAA for revisions', category: 'schedule_workflow' },
-  schedule_unlocked: { label: 'Schedule Unlocked', description: 'Schedule submission unlocked for editing', category: 'schedule_workflow' },
+  // 1. Account & Access
+  login_succeeded: { label: 'Login', description: 'User successfully logged in', category: 'account_access' },
+  logout: { label: 'Logout', description: 'User logged out', category: 'account_access' },
+  login_failed: { label: 'Failed Login', description: 'Failed login attempt', category: 'account_access' },
+  password_reset: { label: 'Password Reset', description: 'User password reset executed', category: 'account_access' },
+  user_created: { label: 'User Created', description: 'New user account created', category: 'account_access' },
+  user_updated: { label: 'User Updated', description: 'User profile, role, or permissions updated', category: 'account_access' },
+  user_deactivated: { label: 'User Deactivated', description: 'User account deactivated or suspended', category: 'account_access' },
+  user_deleted: { label: 'User Deleted', description: 'User account deleted', category: 'account_access' },
 
-  // 2. Scheduling (scheduling)
+  // 2. Institutional Setup
+  department_created: { label: 'Department Created', description: 'New academic department registered', category: 'institutional_setup' },
+  department_updated: { label: 'Department Updated', description: 'Department details updated', category: 'institutional_setup' },
+  program_created: { label: 'Program Created', description: 'Program added to department', category: 'institutional_setup' },
+  program_updated: { label: 'Program Updated', description: 'Program details updated', category: 'institutional_setup' },
+  room_created: { label: 'Room Created', description: 'Facility room registered', category: 'institutional_setup' },
+  room_updated: { label: 'Room Updated', description: 'Facility room details updated', category: 'institutional_setup' },
+  instructor_created: { label: 'Instructor Created', description: 'Instructor profile created', category: 'institutional_setup' },
+  instructor_updated: { label: 'Instructor Updated', description: 'Instructor profile updated', category: 'institutional_setup' },
+  designation_updated: { label: 'Designation Updated', description: 'Faculty administrative designation updated', category: 'institutional_setup' },
+
+  // 3. Academic Setup
+  curriculum_created: { label: 'Curriculum Created', description: 'Curriculum structure registered', category: 'academic_setup' },
+  curriculum_updated: { label: 'Curriculum Updated', description: 'Curriculum details updated', category: 'academic_setup' },
+  course_created: { label: 'Course Created', description: 'Course added to curriculum', category: 'academic_setup' },
+  course_updated: { label: 'Course Updated', description: 'Course details updated', category: 'academic_setup' },
+  section_created: { label: 'Section Created', description: 'Class section created', category: 'academic_setup' },
+  section_updated: { label: 'Section Updated', description: 'Class section updated', category: 'academic_setup' },
+  semester_updated: { label: 'Semester Updated', description: 'Academic semester settings updated', category: 'academic_setup' },
+  settings_updated: { label: 'Settings Updated', description: 'System schedule settings updated', category: 'academic_setup' },
+
+  // 4. Scheduling
+  schedule_created: { label: 'Schedule Created', description: 'Schedule or timetable slot created', category: 'scheduling' },
+  schedule_updated: { label: 'Schedule Updated', description: 'Schedule or timetable slot updated', category: 'scheduling' },
+  schedule_deleted: { label: 'Schedule Deleted', description: 'Schedule or timetable slot removed', category: 'scheduling' },
+  schedule_batch_deleted: { label: 'Schedule Deleted', description: 'Batch schedules removed', category: 'scheduling' },
+  schedule_batch_status_updated: { label: 'Schedule Status Updated', description: 'Batch schedule status updated', category: 'scheduling' },
+  schedule_plan_committed: { label: 'Schedule Plan Committed', description: 'Generated schedule plan committed', category: 'scheduling' },
   conflict_detected: { label: 'Conflict Detected', description: 'Schedule conflict or overlap identified', category: 'scheduling' },
-  recommendation_applied: { label: 'AI Recommendation Applied', description: 'AI recommendation accepted for room/time assignment', category: 'scheduling' },
-  recommendation_rejected: { label: 'AI Recommendation Overridden', description: 'Manual override selected over AI recommendation', category: 'scheduling' },
-  schedule_auto_generated: { label: 'Batch Schedule Generated', description: 'Automated batch schedule generation executed', category: 'scheduling' },
+  conflict_reviewed: { label: 'Conflict Reviewed', description: 'Conflict details inspected and reviewed', category: 'scheduling' },
+  conflict_resolved: { label: 'Conflict Resolved', description: 'Schedule conflict resolved successfully', category: 'scheduling' },
+  recommendation_generated: { label: 'Recommendation Generated', description: 'AI schedule recommendation generated', category: 'scheduling' },
+  schedule_auto_generated: { label: 'Recommendation Generated', description: 'Batch AI schedule recommendation generated', category: 'scheduling' },
+  conflict_recommendation_viewed: { label: 'Conflict Recommendation Viewed', description: 'Conflict AI recommendation viewed', category: 'scheduling' },
+  recommendation_reviewed: { label: 'Conflict Recommendation Viewed', description: 'AI recommendation solution viewed and reviewed', category: 'scheduling' },
+  recommendation_accepted: { label: 'Recommendation Accepted', description: 'AI recommendation accepted and applied', category: 'scheduling' },
+  recommendation_applied: { label: 'Recommendation Accepted', description: 'AI recommendation accepted and applied', category: 'scheduling' },
+  recommendation_rejected: { label: 'Recommendation Rejected', description: 'AI recommendation rejected or overridden', category: 'scheduling' },
+  schedule_override: { label: 'Schedule Override', description: 'Schedule constraint or limit overridden', category: 'scheduling' },
+  max_units_overridden: { label: 'Schedule Override', description: 'Teaching load maximum units overridden', category: 'scheduling' },
+  conflict_overridden: { label: 'Conflict Overridden', description: 'Schedule conflict approved to stand as an exception', category: 'scheduling' },
 
-  // 3. Faculty Assignment (faculty_assignment)
-  instructor_assigned: { label: 'Instructor Assigned', description: 'Instructor assigned to course section', category: 'faculty_assignment' },
-  cross_department_assigned: { label: 'Cross-Dept Assignment', description: 'Instructor assigned across department lines', category: 'faculty_assignment' },
-  designation_updated: { label: 'Designation Deload Updated', description: 'Faculty administrative designation or deload updated', category: 'faculty_assignment' },
-  max_units_overridden: { label: 'Max Load Overridden', description: 'Teaching load maximum units overridden', category: 'faculty_assignment' },
+  // 5. Approval
+  schedule_submitted: { label: 'Schedule Submitted', description: 'Department schedule submitted for review and approval', category: 'approval' },
+  schedule_reviewed: { label: 'Schedule Reviewed', description: 'Department schedule reviewed by authority', category: 'approval' },
+  schedule_returned: { label: 'Schedule Returned', description: 'Schedule returned for revisions', category: 'approval' },
+  schedule_returned_by_dean: { label: 'Schedule Returned', description: 'Schedule returned by Dean for revisions', category: 'approval' },
+  schedule_returned_by_vpaa: { label: 'Schedule Returned', description: 'Schedule returned by VPAA for revisions', category: 'approval' },
+  schedule_approved: { label: 'Schedule Approved', description: 'Schedule approved', category: 'approval' },
+  schedule_approved_by_dean: { label: 'Schedule Approved', description: 'Department schedule approved by the Dean', category: 'approval' },
+  schedule_approved_by_vpaa: { label: 'Schedule Approved', description: 'Final schedule approved and published by VPAA', category: 'approval' },
+  schedule_rejected: { label: 'Schedule Rejected', description: 'Schedule rejected with feedback', category: 'approval' },
+  schedule_unlocked: { label: 'Schedule Unlocked', description: 'Schedule submission unlocked for editing', category: 'approval' },
+  schedule_withdrawn: { label: 'Schedule Withdrawn', description: 'Schedule submission withdrawn by department', category: 'approval' },
 
-  // 4. User Management (user_management)
-  user_created: { label: 'User Created', description: 'New user account created', category: 'user_management' },
-  user_updated: { label: 'User Updated', description: 'User profile, role, or permissions updated', category: 'user_management' },
-  user_deactivated: { label: 'User Deactivated', description: 'User account deactivated or suspended', category: 'user_management' },
-  department_created: { label: 'Department Created', description: 'New academic department registered', category: 'user_management' },
+  // 6. Instructor Assignment
+  instructor_assigned: { label: 'Instructor Assigned', description: 'Instructor assigned to course section', category: 'instructor_assignment' },
+  instructor_reassigned: { label: 'Instructor Reassigned', description: 'Instructor reassigned to another section', category: 'instructor_assignment' },
+  cross_department_assigned: { label: 'Cross-Dept Assignment', description: 'Instructor assigned across department lines', category: 'instructor_assignment' },
+  instructor_assignment_released: { label: 'Assignment Released', description: 'Instructor assignments released during withdrawal', category: 'instructor_assignment' },
+  pro_bono_overridden: { label: 'Pro Bono Override', description: 'Pro bono teaching load limit overridden', category: 'instructor_assignment' },
 
-  // 5. Authentication (authentication)
-  login_succeeded: { label: 'Login Succeeded', description: 'User successfully logged in', category: 'authentication' },
-  login_failed: { label: 'Login Failed', description: 'Failed login attempt', category: 'authentication' },
-  password_reset: { label: 'Password Reset', description: 'User password reset executed', category: 'authentication' },
-  logout: { label: 'Logout', description: 'User logged out', category: 'authentication' },
+  // 7. Room Request
+  room_requested: { label: 'Room Requested', description: 'Special room usage requested', category: 'room_request' },
+  room_request_approved: { label: 'Room Request Approved', description: 'Room usage request approved', category: 'room_request' },
+  room_request_rejected: { label: 'Room Request Rejected', description: 'Room usage request rejected', category: 'room_request' },
+
+  // 8. Reports
+  schedule_report_generated: { label: 'Schedule Report Generated', description: 'Official department schedule report generated', category: 'reports' },
+  conflict_report_generated: { label: 'Conflict Report Generated', description: 'Conflict analysis report generated', category: 'reports' },
+  report_downloaded: { label: 'Report Downloaded', description: 'Official report printed or downloaded', category: 'reports' },
+  report_printed: { label: 'Report Printed', description: 'Official report printed', category: 'reports' },
 };
 
 const formatLabel = (value: string) =>
@@ -128,8 +182,20 @@ export default function ActivityLog() {
 
   const availableEvents = useMemo(() => {
     const all = Object.entries(EVENT_DETAILS);
-    if (!filters.category) return all;
-    return all.filter(([, info]) => info.category === filters.category);
+    const filtered = filters.category
+      ? all.filter(([key, info]) => info.category === filters.category || (filters.category === 'schedule_management' && key === 'schedule_submitted'))
+      : all;
+
+    const seenLabels = new Set<string>();
+    return filtered
+      .filter(([, info]) => {
+        if (seenLabels.has(info.label)) {
+          return false;
+        }
+        seenLabels.add(info.label);
+        return true;
+      })
+      .sort(([, a], [, b]) => a.label.localeCompare(b.label));
   }, [filters.category]);
 
   const columns = useMemo<ColumnDef<ActivityEntry>[]>(() => [
@@ -223,23 +289,11 @@ export default function ActivityLog() {
             <select
               aria-label="Category"
               value={filters.category}
-              onChange={event => setFilters(current => ({ ...current, category: event.target.value, event: '' }))}
+              onChange={event => setFilters(current => ({ ...current, category: event.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
             >
               <option value="">All categories</option>
               {categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[150px] max-w-[200px] flex-1">
-            <select
-              aria-label="Event"
-              value={filters.event}
-              onChange={event => setFilters(current => ({ ...current, event: event.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
-            >
-              <option value="">All event types</option>
-              {availableEvents.map(([key, info]) => <option key={key} value={key}>{info.label}</option>)}
             </select>
           </div>
 

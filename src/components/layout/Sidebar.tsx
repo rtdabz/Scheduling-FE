@@ -96,6 +96,53 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
   }, []);
 
   const approvalsRevision = useLiveRevision(['approvals']);
+  const roomsRevision = useLiveRevision(['rooms']);
+  const [pendingRoomCount, setPendingRoomCount] = useState(0);
+
+  useEffect(() => {
+    if (role !== 'vpaa' && role !== 'secretary' && role !== 'program_head') {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadPendingRoomRequests = async () => {
+      try {
+        const response = await api.get<Array<{
+          id: number;
+          status: string;
+          room?: { department_id?: number | null } | null;
+          owner_department?: { id?: number | null } | null;
+        }>>('/room-requests', {
+          params: { status: 'pending' },
+          signal: controller.signal,
+        });
+        const reqs = Array.isArray(response.data) ? response.data : [];
+        if (role === 'vpaa') {
+          setPendingRoomCount(reqs.length);
+        } else if (user?.department_id) {
+          const deptId = user.department_id;
+          const incoming = reqs.filter(
+            (r) => (r.owner_department?.id ?? r.room?.department_id) === deptId,
+          );
+          setPendingRoomCount(incoming.length);
+        } else {
+          setPendingRoomCount(0);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setPendingRoomCount(0);
+        }
+      }
+    };
+
+    const timeoutId = window.setTimeout(loadPendingRoomRequests, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [role, user?.department_id, roomsRevision]);
 
   useEffect(() => {
     if (role !== 'dean' && role !== 'vpaa') {
@@ -130,6 +177,18 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
       controller.abort();
     };
   }, [role, approvalsRevision]);
+
+  const getChildNotificationCount = (child: NavItem): number => {
+    if (child.isLocked) return 0;
+    if (child.id === 'sidebar-schedule-approval') return pendingCount;
+    if (child.id === 'sidebar-room-requests') return pendingRoomCount;
+    return 0;
+  };
+
+  const getItemNotificationCount = (item: NavItem): number => {
+    if (!item.children || item.isLocked) return 0;
+    return item.children.reduce((sum, child) => sum + getChildNotificationCount(child), 0);
+  };
 
   const toggleExpand = (label: string) => {
     setExpandedItems((prev) => ({
@@ -244,6 +303,10 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                   const expanded = isExpanded(item);
                   const hasActiveChild = isChildActive(item);
                   const currentChildPath = activeChildPath(item);
+                  const notifCount = getItemNotificationCount(item);
+                  const hasChildBadge = (item.children ?? []).some((c) => Boolean(c.badge) && !c.isLocked);
+                  const showNotif = notifCount > 0 || hasChildBadge;
+
                   return (
                     <div key={item.label} className="flex flex-col gap-1">
                       <button
@@ -270,7 +333,15 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                         title={item.isLocked ? `Locked: Requires permission` : item.label}
                       >
                         <div className="flex items-center gap-3">
-                          {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
+                          <div className="relative flex items-center justify-center">
+                            {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
+                            {!isOpen && showNotif && (
+                              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
+                              </span>
+                            )}
+                          </div>
                           {isOpen && (
                             <span className="whitespace-nowrap text-sm font-medium">
                               {item.label}
@@ -278,7 +349,26 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                           )}
                         </div>
                         {isOpen && (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-2">
+                            {showNotif && (
+                              notifCount > 0 ? (
+                                <span
+                                  className="flex items-center gap-1 rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-black text-[#4e0a10] shadow-[0_0_8px_rgba(201,149,42,0.4)]"
+                                  title={`${notifCount} pending notification${notifCount === 1 ? '' : 's'}`}
+                                >
+                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#4e0a10]" />
+                                  {notifCount >= 9 ? '9+' : notifCount}
+                                </span>
+                              ) : (
+                                <span
+                                  className="relative flex h-2 w-2"
+                                  title="New activity"
+                                >
+                                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
+                                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#C9952A] shadow-[0_0_6px_#C9952A]" />
+                                </span>
+                              )
+                            )}
                             {item.isLocked && <Lock size={12} className="text-[#E8D5C4]/50 shrink-0" />}
                             <ChevronDown
                               size={16}
@@ -344,6 +434,11 @@ export default function Sidebar({ isOpen, onClose, navItems }: SidebarProps) {
                                       {pendingCount >= 9 ? '9+' : pendingCount}
                                     </span>
                                   )
+                                )}
+                                {child.id === 'sidebar-room-requests' && pendingRoomCount > 0 && !child.isLocked && (
+                                  <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
+                                    {pendingRoomCount >= 9 ? '9+' : pendingRoomCount}
+                                  </span>
                                 )}
                               </NavLink>
                             );

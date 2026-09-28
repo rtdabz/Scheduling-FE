@@ -487,7 +487,7 @@ export default function DeanDashboardPage() {
   const openApproval = () => navigate('/dean/schedules/approval');
 
   const tiles: Tile[] = [
-    { label: 'Department Sections', value: sectionTotal, detail: 'All sections', icon: Users, path: '/dean/schedules', tone: 'brand' },
+    { label: 'Department Sections', value: sectionTotal, detail: 'All sections', icon: Users, path: '/dean/sections', tone: 'brand' },
     { label: 'Faculty Members', value: deptFaculties.length, detail: 'Active faculty', icon: GraduationCap, path: '/dean/faculty', tone: 'good' },
     { label: 'Curriculum Courses', value: deptSubjects.length, detail: 'Offered', icon: BookOpen, path: '/dean/curriculum', tone: 'accent' },
     { label: 'Rooms Managed', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/rooms', tone: 'warn' },

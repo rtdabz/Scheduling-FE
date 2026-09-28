@@ -36,12 +36,12 @@ describe('DashboardSkeleton', () => {
     expect(dashboard.container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
   });
 
-  it('gives the dean metric row one double-width tile', () => {
-    // MetricCard grew a className prop so the composite completion tile can span
-    // two columns; the other five tiles must stay single-width.
+  it('gives the dean metric row two double-width tiles', () => {
+    // MetricCard grew a className prop so the composite completion and pending approval tiles
+    // can span two columns; the other four tiles stay single-width.
     const { container } = render(<DashboardSkeleton variant="dean" />);
     expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(6);
-    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(1);
+    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(2);
   });
 
   it('gives the vpaa two metric rows: decision KPIs then the inventory strip', () => {

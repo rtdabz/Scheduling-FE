@@ -23,6 +23,7 @@ import {
   Eye,
   GraduationCap,
   UserRound,
+  Building2,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -178,10 +179,32 @@ function DepartmentLogo({
 
 export default function Departments() {
   const { toast, confirm } = useToast();
+  const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+  const userRole = user?.role?.toLowerCase() ?? '';
+  const isVpaa = userRole === 'vpaa';
+  const isScopedRole = userRole === 'dean' || userRole === 'secretary' || userRole === 'program_head';
+  const canManageDepartments = isVpaa || !isScopedRole;
+  const userDeptId = user?.department_id ?? user?.department?.id ?? null;
+  const userDeptCode = user?.department?.department_code ?? null;
+  const userDeptName = user?.department?.department_name ?? null;
+
   const departmentsCacheKey = 'page:departments:v2';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
+
+  const displayedDepartments = useMemo(() => {
+    if (!isScopedRole) return departments;
+    return departments.filter(d => {
+      if (userDeptId !== null && Number(d.id) === Number(userDeptId)) return true;
+      if (userDeptCode && d.code?.toUpperCase() === userDeptCode.toUpperCase()) return true;
+      if (userDeptName && d.name?.toUpperCase().trim() === userDeptName.toUpperCase().trim()) return true;
+      return false;
+    });
+  }, [departments, isScopedRole, userDeptId, userDeptCode, userDeptName]);
+
+
   
   // Faculty List state for department detail view
   const [faculties, setFaculties] = useState<ApiFacultyMember[]>([]);
@@ -673,56 +696,60 @@ export default function Departments() {
                 View Details
               </span>
             </div>
-            <div className="relative group/tooltip">
-              <TableActionButton
-                label="Add Program"
-                variant="success"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openAddProgram(row.original);
-                }}
-              >
-                <span className="relative inline-flex items-center justify-center">
-                  <LibraryBig size={17} />
-                  <Plus size={9} strokeWidth={3} className="absolute -right-1.5 -bottom-1.5 rounded-full bg-green-50" />
-                </span>
-              </TableActionButton>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                Add Program
-              </span>
-            </div>
-            {/* Edit Button */}
-            <div className="relative group/tooltip">
-              <TableActionButton
-                label="Edit"
-                variant="edit"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditClick(row.original);
-                }}
-              >
-                <Pencil size={17} />
-              </TableActionButton>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                Edit
-              </span>
-            </div>
-            {/* Delete Button */}
-            <div className="relative group/tooltip">
-              <TableActionButton
-                label="Archive"
-                variant="danger"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void triggerDeleteConfirmation(row.original.id);
-                }}
-              >
-                <Trash2 size={17} />
-              </TableActionButton>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
-                Archive
-              </span>
-            </div>
+            {canManageDepartments && (
+              <>
+                <div className="relative group/tooltip">
+                  <TableActionButton
+                    label="Add Program"
+                    variant="success"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openAddProgram(row.original);
+                    }}
+                  >
+                    <span className="relative inline-flex items-center justify-center">
+                      <LibraryBig size={17} />
+                      <Plus size={9} strokeWidth={3} className="absolute -right-1.5 -bottom-1.5 rounded-full bg-green-50" />
+                    </span>
+                  </TableActionButton>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                    Add Program
+                  </span>
+                </div>
+                {/* Edit Button */}
+                <div className="relative group/tooltip">
+                  <TableActionButton
+                    label="Edit"
+                    variant="edit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditClick(row.original);
+                    }}
+                  >
+                    <Pencil size={17} />
+                  </TableActionButton>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                    Edit
+                  </span>
+                </div>
+                {/* Delete Button */}
+                <div className="relative group/tooltip">
+                  <TableActionButton
+                    label="Archive"
+                    variant="danger"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void triggerDeleteConfirmation(row.original.id);
+                    }}
+                  >
+                    <Trash2 size={17} />
+                  </TableActionButton>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                    Archive
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         )
       }
@@ -732,7 +759,7 @@ export default function Departments() {
 
   // TanStack Table Instance
   const table = useReactTable<Department>({
-    data: departments,
+    data: displayedDepartments,
     columns,
     state: {
       globalFilter,
@@ -753,6 +780,7 @@ export default function Departments() {
     <div id="departments-page">
       {/* Search and Actions Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
+
         {/* Search */}
         <SearchInput
           value={globalFilter}
@@ -790,22 +818,24 @@ export default function Departments() {
             </button>
           </div>
 
-          <button 
-            onClick={() => {
-              setIsEditMode(false);
-              setEditingId(null);
-              setName('');
-              setEditingName('');
-              setLogo(null);
-              setSchedulingProfile('standard');
-              setNameError('');
-              setIsModalOpen(true);
-            }}
-            className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-          >
-            <Plus size={15} />
-            <span>Add Department</span>
-          </button>
+          {canManageDepartments && (
+            <button 
+              onClick={() => {
+                setIsEditMode(false);
+                setEditingId(null);
+                setName('');
+                setEditingName('');
+                setLogo(null);
+                setSchedulingProfile('standard');
+                setNameError('');
+                setIsModalOpen(true);
+              }}
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+            >
+              <Plus size={15} />
+              <span>Add Department</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -845,41 +875,43 @@ export default function Departments() {
                     <div>
                       <div className="flex justify-between items-start mb-3">
                         <DepartmentLogo name={dept.name} logo={dept.logo} className="w-11 h-11" iconSize={20} />
-                        <div className="flex items-center gap-1.5">
-                          <TableActionButton
-                            label="Add Program"
-                            variant="success"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAddProgram(dept);
-                            }}
-                          >
-                            <span className="relative inline-flex items-center justify-center">
-                              <LibraryBig size={15} />
-                              <Plus size={8} strokeWidth={3} className="absolute -right-1.5 -bottom-1.5 rounded-full bg-green-50" />
-                            </span>
-                          </TableActionButton>
-                          <TableActionButton
-                            label="Edit Department"
-                            variant="edit"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditClick(dept);
-                            }}
-                          >
-                            <Pencil size={15} />
-                          </TableActionButton>
-                          <TableActionButton
-                            label="Archive Department"
-                            variant="danger"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void triggerDeleteConfirmation(dept.id);
-                            }}
-                          >
-                            <Trash2 size={15} />
-                          </TableActionButton>
-                        </div>
+                        {canManageDepartments && (
+                          <div className="flex items-center gap-1.5">
+                            <TableActionButton
+                              label="Add Program"
+                              variant="success"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openAddProgram(dept);
+                              }}
+                            >
+                              <span className="relative inline-flex items-center justify-center">
+                                <LibraryBig size={15} />
+                                <Plus size={8} strokeWidth={3} className="absolute -right-1.5 -bottom-1.5 rounded-full bg-green-50" />
+                              </span>
+                            </TableActionButton>
+                            <TableActionButton
+                              label="Edit Department"
+                              variant="edit"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditClick(dept);
+                              }}
+                            >
+                              <Pencil size={15} />
+                            </TableActionButton>
+                            <TableActionButton
+                              label="Archive Department"
+                              variant="danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void triggerDeleteConfirmation(dept.id);
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </TableActionButton>
+                          </div>
+                        )}
                       </div>
 
                       <h3 className="text-base font-bold text-gray-900 leading-snug whitespace-nowrap truncate" title={dept.name}>
@@ -1315,16 +1347,18 @@ export default function Departments() {
                       Programs offered by this department. Each major is its own program, so one code can appear more than once.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
-                    className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${showProgramForm
-                      ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                      : 'bg-[#4e0a10] text-white shadow-sm hover:bg-[#C9952A]'}`}
-                  >
-                    {showProgramForm ? <X size={14} /> : <Plus size={14} />}
-                    {showProgramForm ? 'Cancel' : 'Add program'}
-                  </button>
+                  {canManageDepartments && (
+                    <button
+                      type="button"
+                      onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
+                      className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${showProgramForm
+                        ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        : 'bg-[#4e0a10] text-white shadow-sm hover:bg-[#C9952A]'}`}
+                    >
+                      {showProgramForm ? <X size={14} /> : <Plus size={14} />}
+                      {showProgramForm ? 'Cancel' : 'Add program'}
+                    </button>
+                  )}
                 </div>
 
                 {showProgramForm && (
@@ -1423,15 +1457,17 @@ export default function Departments() {
                             {programMajorLabel(program)}
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => openProgramEditForm(program)}
-                          aria-label={`Edit ${program.code}`}
-                          title="Edit program"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
-                        >
-                          <Pencil size={14} />
-                        </button>
+                        {canManageDepartments && (
+                          <button
+                            type="button"
+                            onClick={() => openProgramEditForm(program)}
+                            aria-label={`Edit ${program.code}`}
+                            title="Edit program"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   )) : (
@@ -1453,16 +1489,18 @@ export default function Departments() {
               >
                 Close
               </button>
-              <button
-                onClick={() => {
-                  setIsDetailModalOpen(false);
-                  handleEditClick(selectedDeptForDetail);
-                }}
-                className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-              >
-                <Pencil size={14} />
-                <span>Edit Department</span>
-              </button>
+              {canManageDepartments && (
+                <button
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    handleEditClick(selectedDeptForDetail);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Pencil size={14} />
+                  <span>Edit Department</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

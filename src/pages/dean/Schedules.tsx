@@ -545,8 +545,15 @@ export default function DeanScheduleViewer() {
                 <span className="text-xs font-bold text-slate-400">{sectionSummaries.length} sections</span>
               </div>
               {isLoading ? (
-                <div className="p-4 space-y-2">
-                  {[0, 1, 2].map((item) => <Skeleton key={item} className="h-14 w-full rounded-xl" />)}
+                <div className="divide-y divide-slate-100">
+                  {[0, 1, 2, 3].map((item) => (
+                    <div key={item} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_1.1fr_auto] gap-3 px-4 py-4 items-center">
+                      <Skeleton className="h-4 w-28 rounded" />
+                      <Skeleton className="h-4 w-20 rounded" />
+                      <Skeleton className="h-4 w-24 rounded" />
+                      <Skeleton className="h-10 w-28 rounded-xl" />
+                    </div>
+                  ))}
                 </div>
               ) : sectionSummaries.length === 0 ? (
                 <div className="p-8 text-center text-sm text-slate-400 italic">No sections found for this department.</div>
