@@ -36,6 +36,7 @@ interface Department {
   id: number;
   department_name: string;
   department_code: string;
+  logo?: string | null;
 }
 
 interface Room {
@@ -664,14 +665,25 @@ export default function Rooms() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buildings.map((building) => {
                 const percent = Math.round((building.availableCount / building.totalCount) * 100);
+                const bldgLogo = (userDepartmentId ? departments.find((d) => d.id === userDepartmentId)?.logo : null) || null;
                 return (
                   <div
                     key={building.name}
                     data-tour="building-card"
                     onClick={() => setSelectedBuilding(building.name)}
-                    className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
+                    className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    <div className="flex items-center justify-between">
+                    {/* Centered Background Department Watermark Logo */}
+                    {bldgLogo && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                        <img
+                          src={bldgLogo}
+                          alt="Department Watermark"
+                          className="w-44 h-44 object-contain opacity-[0.09]"
+                        />
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between relative z-10">
                       <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
                         <Building2 size={24} />
                       </div>
@@ -680,7 +692,7 @@ export default function Rooms() {
                       </span>
                     </div>
 
-                    <div>
+                    <div className="relative z-10">
                       <h3 className="text-base font-bold text-gray-800 font-sans leading-tight">
                         {building.name}
                       </h3>
@@ -689,7 +701,7 @@ export default function Rooms() {
                       </p>
                     </div>
 
-                    <div className="space-y-1.5 pt-2">
+                    <div className="space-y-1.5 pt-2 relative z-10">
                       <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase tracking-wider">
                         <span>Availability</span>
                         <span>{percent}%</span>
@@ -745,6 +757,7 @@ export default function Rooms() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {roomsInSelectedBuilding.map((room) => {
                 const liveStatus = getRoomStatusToday(room.id);
+                const deptLogo = room.department?.logo || (room.department_id ? departments.find((d) => d.id === room.department_id)?.logo : null) || (userDepartmentId ? departments.find((d) => d.id === userDepartmentId)?.logo : null) || null;
                 
                 let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
                 if (room.room_type === 'laboratory') {
@@ -762,9 +775,19 @@ export default function Rooms() {
                       setSelectedRoomIdForDetail(room.id);
                       setIsDetailModalOpen(true);
                     }}
-                    className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
+                    className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    <div className="flex items-start justify-between">
+                    {/* Centered Background Department Watermark Logo */}
+                    {deptLogo && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                        <img
+                          src={deptLogo}
+                          alt="Department Watermark"
+                          className="w-44 h-44 object-contain opacity-[0.09]"
+                        />
+                      </div>
+                    )}
+                    <div className="flex items-start justify-between relative z-10">
                       <div className="space-y-1">
                         <span className="text-sm font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg uppercase border border-[#C9952A]/20">
                           {room.room_code}
@@ -782,7 +805,7 @@ export default function Rooms() {
                     </div>
 
                     {/* Today's Schedule Overview */}
-                    <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-3.5 flex items-center gap-3">
+                    <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-3.5 flex items-center gap-3 relative z-10">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 font-semibold mb-1">
                           <Clock size={12} />
@@ -808,7 +831,7 @@ export default function Rooms() {
 
                     {/* Actions Corner (Only if canManageRooms) */}
                     {canManageRooms && (
-                      <div className="flex justify-end gap-2 border-t border-gray-100 pt-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 relative z-10" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => handleEditClick(room)}
                           className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"

@@ -427,10 +427,20 @@ export default function RoomRequests() {
         return (
           <article
             key={department.id}
-            className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
+            className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
             onClick={() => openDepartment(department)}
           >
-            <div className="flex items-center justify-between">
+            {/* Centered Background Department Watermark Logo */}
+            {department.logo && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                <img
+                  src={department.logo}
+                  alt="Department Watermark"
+                  className="w-44 h-44 object-contain opacity-[0.09]"
+                />
+              </div>
+            )}
+            <div className="flex items-center justify-between relative z-10">
               <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
                 <Building2 size={24} />
               </div>
@@ -438,11 +448,11 @@ export default function RoomRequests() {
                 {assignedRooms.length} {assignedRooms.length === 1 ? 'room' : 'rooms'}
               </span>
             </div>
-            <div>
+            <div className="relative z-10">
               <h3 className="text-base font-bold text-gray-800 font-sans leading-tight">{department.department_code}</h3>
               <p className="text-xs text-gray-400 mt-1 font-semibold">{department.department_name}</p>
             </div>
-            <div className="border-t border-gray-100 pt-3" onClick={(e) => e.stopPropagation()}>
+            <div className="border-t border-gray-100 pt-3 relative z-10" onClick={(e) => e.stopPropagation()}>
               <RequestsButton count={pendingCount} onClick={() => openRequests(department)} />
             </div>
           </article>
@@ -499,42 +509,56 @@ export default function RoomRequests() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {departmentRooms.map((room) => (
-            <div
-              key={room.id}
-              onClick={() => setSelectedRoom(room)}
-              className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative font-sans ${GRID_CARD_HOVER}`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <span className="text-sm font-mono font-bold bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg uppercase border border-[#C9952A]/20">
-                    {room.room_code}
-                  </span>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider pt-1.5 font-semibold">
-                    {room.department?.department_code ? `${room.department.department_code} Department` : 'General / All'}
-                  </p>
-                </div>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${ROOM_TYPE_STYLES[room.room_type]}`}>
-                  {formatRoomType(room.room_type)}
-                </span>
-              </div>
-              <p className="text-sm font-semibold text-gray-500">{room.building || 'Building unassigned'}</p>
-              <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
-                <span className={`font-bold text-xs ${room.status === 'available' ? 'text-emerald-600' : 'text-gray-500'}`}>
-                  {room.status === 'available' ? 'Available' : 'Not available'}
-                </span>
-                {canRequest && isLendable(room, departmentId) && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setRequestRoom(room); }}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-3 py-1.5 text-[10px] font-extrabold text-white transition hover:bg-[#4e0a10] cursor-pointer"
-                  >
-                    <Send size={12} /> Request
-                  </button>
+          {departmentRooms.map((room) => {
+            const deptLogo = room.department?.logo || (room.department_id ? departments.find((d) => d.id === room.department_id)?.logo : null) || selectedDepartment?.logo || null;
+
+            return (
+              <div
+                key={room.id}
+                onClick={() => setSelectedRoom(room)}
+                className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
+              >
+                {/* Centered Background Department Watermark Logo */}
+                {deptLogo && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                    <img
+                      src={deptLogo}
+                      alt="Department Watermark"
+                      className="w-44 h-44 object-contain opacity-[0.09]"
+                    />
+                  </div>
                 )}
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="space-y-1">
+                    <span className="text-sm font-mono font-bold bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg uppercase border border-[#C9952A]/20">
+                      {room.room_code}
+                    </span>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider pt-1.5 font-semibold">
+                      {room.department?.department_code ? `${room.department.department_code} Department` : 'General / All'}
+                    </p>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${ROOM_TYPE_STYLES[room.room_type]}`}>
+                    {formatRoomType(room.room_type)}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-gray-500 relative z-10">{room.building || 'Building unassigned'}</p>
+                <div className="border-t border-gray-100 pt-3 flex items-center justify-between relative z-10">
+                  <span className={`font-bold text-xs ${room.status === 'available' ? 'text-emerald-600' : 'text-gray-500'}`}>
+                    {room.status === 'available' ? 'Available' : 'Not available'}
+                  </span>
+                  {canRequest && isLendable(room, departmentId) && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setRequestRoom(room); }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-3 py-1.5 text-[10px] font-extrabold text-white transition hover:bg-[#4e0a10] cursor-pointer"
+                    >
+                      <Send size={12} /> Request
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -416,7 +416,6 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                                 }}
                                 title={child.isLocked ? `Locked: Requires permission` : child.badge ? `${child.label} (${child.badge})` : child.label}
                               >
-                                {child.icon && <child.icon size={16} className="flex-shrink-0" aria-hidden="true" />}
                                 {child.badge ? (
                                   <span className="flex min-w-0 flex-col leading-tight">
                                     <span className="whitespace-nowrap text-xs font-medium">{child.label}</span>
