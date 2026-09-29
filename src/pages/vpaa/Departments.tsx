@@ -10,7 +10,6 @@ import TableActionButton from '../../components/ui/TableActionButton';
 import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
-  Trash2,
   X,
   Loader2,
   LayoutGrid,
@@ -24,6 +23,7 @@ import {
   GraduationCap,
   UserRound,
   Building2,
+  Archive,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -551,6 +551,36 @@ export default function Departments() {
     setIsModalOpen(true);
   };
 
+  const archiveProgram = async (program: Program) => {
+    if (!selectedDeptForDetail) return;
+    const confirmed = await confirm({
+      title: 'Archive Program',
+      message: `${program.code} will be hidden from active lists and can be restored from the Archive. A program with users, faculty, or courses cannot be archived.`,
+      eyebrow: 'Archive Record',
+      confirmLabel: 'Confirm Archive',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/programs/${program.id}`);
+      const nextPrograms = selectedDeptForDetail.programs.filter((entry) => entry.id !== program.id);
+      setDepartments((previousDepartments) => {
+        const nextDepartments = previousDepartments.map((department) =>
+          department.id === selectedDeptForDetail.id ? { ...department, programs: nextPrograms } : department
+        );
+        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+        return nextDepartments;
+      });
+      setSelectedDeptForDetail({ ...selectedDeptForDetail, programs: nextPrograms });
+      if (editingProgramId === program.id) closeProgramForm();
+      toast.success('Archived', 'Program moved to the Archive');
+    } catch (error) {
+      // The server says why, e.g. users, faculty or courses still belong to it.
+      toast.error('Archive Failed', apiErrorMessage(error, 'Could not archive the program.'));
+    }
+  };
+
   const triggerDeleteConfirmation = async (id: number) => {
     const confirmed = await confirm({
       title: 'Archive Department',
@@ -701,13 +731,13 @@ export default function Departments() {
                 <div className="relative group/tooltip">
                   <TableActionButton
                     label="Archive"
-                    variant="danger"
+                    variant="archive"
                     onClick={(e) => {
                       e.stopPropagation();
                       void triggerDeleteConfirmation(row.original.id);
                     }}
                   >
-                    <Trash2 size={17} />
+                    <Archive size={17} />
                   </TableActionButton>
                   <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                     Archive
@@ -867,13 +897,13 @@ export default function Departments() {
                             </TableActionButton>
                             <TableActionButton
                               label="Archive Department"
-                              variant="danger"
+                              variant="archive"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 void triggerDeleteConfirmation(dept.id);
                               }}
                             >
-                              <Trash2 size={15} />
+                              <Archive size={15} />
                             </TableActionButton>
                           </div>
                         )}
@@ -1431,6 +1461,17 @@ export default function Departments() {
                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
                           >
                             <Pencil size={14} />
+                          </button>
+                        )}
+                        {canManageDepartments && (
+                          <button
+                            type="button"
+                            onClick={() => void archiveProgram(program)}
+                            aria-label={`Archive ${program.code}`}
+                            title="Archive program"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-stone-400 hover:text-stone-700"
+                          >
+                            <Archive size={14} />
                           </button>
                         )}
                       </div>

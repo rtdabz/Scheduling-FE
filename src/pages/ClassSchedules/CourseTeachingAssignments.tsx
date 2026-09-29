@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { BookOpen, Building2, Check, Info, Save, Search, Trash2, TriangleAlert } from 'lucide-react';
+import { BookOpen, Building2, Check, Info, Save, Search, TriangleAlert, X } from 'lucide-react';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -476,11 +476,11 @@ export default function CourseTeachingAssignments() {
             <TableActionButton
               label={instructorClassesOf(row.original) > 0 ? instructorLockMessage(row.original) : 'Remove assignment'}
               aria-label={`Remove ${row.original.course_code} assignment`}
-              variant="danger"
+              variant="remove"
               onClick={() => void removeAssignment(row.original)}
               disabled={removingId !== null || saving || instructorClassesOf(row.original) > 0}
             >
-              {removingId === row.original.id ? <LoadingSpinner className="h-4 w-4" /> : <Trash2 size={15} />}
+              {removingId === row.original.id ? <LoadingSpinner className="h-4 w-4" /> : <X size={15} />}
             </TableActionButton>
           )}
         </div>

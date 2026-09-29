@@ -168,7 +168,6 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
   }),
 });
 
-import { buildInstructorTimetablePdf } from "../pages/ClassSchedules/SchedulerPanel/instructorTimetablePdf";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 export default function InstructorTeachingLoadButton({ facultyId }: InstructorTeachingLoadButtonProps) {
@@ -184,7 +183,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     return response.data;
   };
   // Which button is working, so only that one shows a spinner; both stay disabled meanwhile.
-  const [loadingAction, setLoadingAction] = useState<"schedule" | "load" | null>(null);
+  const [loadingAction, setLoadingAction] = useState<"load" | null>(null);
   const isLoading = loadingAction !== null;
   const [isPrinting, setIsPrinting] = useState(false);
   const [teachingLoadData, setTeachingLoadData] = useState<TeachingLoadData | null>(null);
@@ -203,48 +202,8 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     }
   };
 
-  const handlePrintGrid = async () => {
-    if (isLoading) return;
-    setLoadingAction("schedule");
-    try {
-      const data = mapInitialData(await loadTeachingData());
-      const faculty = data.faculties.find((f) => Number(f.id) === Number(facultyId));
-      if (!faculty) {
-        toast.warning("Faculty Not Found", "Instructor information could not be located.");
-        return;
-      }
-      const facultySchedules = data.schedules.filter((s) => Number(s.facultyId) === Number(facultyId));
-      const dept = data.departments.find((d) => Number(d.id) === Number(faculty.departmentId));
-      const blob = await buildInstructorTimetablePdf({
-        title: `INSTRUCTOR: ${faculty.name.toUpperCase()}`,
-        facultyName: faculty.name,
-        departmentCode: dept?.department_code ?? faculty.departmentCode ?? "",
-        departmentName: dept?.department_name ?? faculty.departmentName ?? "",
-        departmentLogo: dept?.logo ?? null,
-        schedules: facultySchedules,
-        activeSemester: data.activeSemester,
-      });
-      window.open(URL.createObjectURL(blob), "_blank");
-    } catch {
-      toast.error("Print Failed", "Instructor timetable could not be generated.");
-    } finally {
-      setLoadingAction(null);
-    }
-  };
-
   return (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => void handlePrintGrid()}
-        disabled={isLoading}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
-        title="Print Instructor Schedule"
-      >
-        {loadingAction === "schedule" ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
-        Print Schedule
-      </button>
-
       <button
         type="button"
         onClick={() => void handlePrintLoad()}

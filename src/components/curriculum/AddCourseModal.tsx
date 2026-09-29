@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, BookOpen, AlertCircle, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
+import { X, Plus, BookOpen, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import TableActionButton from '../ui/TableActionButton';
 import { formatCourseName } from '../../lib/formatters';
@@ -338,8 +338,8 @@ export default function AddCourseModal({
                             <RefreshCw size={15} />
                           </TableActionButton>
                         ) : (
-                          <TableActionButton label="Remove" aria-label={`Remove course ${n}`} variant="danger" onClick={() => handleRemoveRow(row.rowId)} disabled={rows.length <= 1}>
-                            <Trash2 size={15} />
+                          <TableActionButton label="Remove" aria-label={`Remove course ${n}`} variant="remove" onClick={() => handleRemoveRow(row.rowId)} disabled={rows.length <= 1}>
+                            <X size={15} />
                           </TableActionButton>
                         )}
                       </div>

@@ -23,6 +23,7 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import TimeslotOverridesPanel, { type TimeslotOverride } from '../../components/vpaa/TimeslotOverridesPanel';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { operatingHoursError, timeInputMinutes, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
 import {
@@ -91,6 +92,7 @@ interface TimeslotSettings {
 
 interface TimeslotResponse {
   settings: TimeslotSettings;
+  overrides?: TimeslotOverride[];
 }
 
 const operatingHoursDraftOf = (settings: TimeslotSettings) => ({
@@ -173,6 +175,7 @@ export default function Settings() {
   const [operatingHours, setOperatingHours] = useState<TimeslotSettings | null>(null);
   const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '', field_end_time: '' });
   const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
+  const [timeslotOverrides, setTimeslotOverrides] = useState<TimeslotOverride[]>([]);
   const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
   // State-driven disabled props update after a render. These synchronous
   // guards also reject a second click that arrives in the same event loop.
@@ -252,6 +255,7 @@ export default function Settings() {
         if (!active) return;
         setOperatingHours(data.settings);
         setOperatingHoursDraft(operatingHoursDraftOf(data.settings));
+        setTimeslotOverrides(data.overrides ?? []);
       })
       .catch((error) => toast.error('Error', apiMessage(error, 'Failed to load operating hours.')))
       .finally(() => {
@@ -800,6 +804,20 @@ export default function Settings() {
             {isSavingOperatingHours ? 'Saving' : 'Save operating hours'}
           </button>
         </div>
+      </SectionCard>
+
+      <SectionCard
+        id="timeslot-overrides"
+        icon={Clock3}
+        title="Custom Start Times"
+        description="Offer your own class start times instead of the generated ones."
+        aside={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{timeslotOverrides.filter(override => override.is_active).length} active</span>}
+      >
+        {isLoadingOperatingHours ? (
+          <div className="flex justify-center p-6"><LoadingSpinner className="h-5 w-5" /></div>
+        ) : (
+          <TimeslotOverridesPanel overrides={timeslotOverrides} onChange={setTimeslotOverrides} />
+        )}
       </SectionCard>
 
       <SectionCard

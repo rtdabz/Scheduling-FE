@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import NumberInput from '../../components/ui/NumberInput';
-import { AlertTriangle, ArrowRight, Award, ChevronRight, CornerDownRight, Eye, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Award, ChevronRight, CornerDownRight, Eye, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Users, X, Archive } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -288,8 +288,8 @@ export default function Designations() {
           <TableActionButton label={`Edit ${row.original.name}`} variant="edit" onClick={() => openEdit(row.original)}>
             <Pencil size={15} />
           </TableActionButton>
-          <TableActionButton label={`Archive ${row.original.name}`} variant="danger" onClick={() => setPendingDelete(row.original)}>
-            <Trash2 size={15} />
+          <TableActionButton label={`Archive ${row.original.name}`} variant="archive" onClick={() => setPendingDelete(row.original)}>
+            <Archive size={15} />
           </TableActionButton>
         </div>
         );
@@ -622,8 +622,8 @@ export default function Designations() {
                             <TableActionButton label={`Edit ${d.name}`} variant="edit" onClick={() => openEdit(d)}>
                               <Pencil size={14} />
                             </TableActionButton>
-                            <TableActionButton label={`Archive ${d.name}`} variant="danger" onClick={() => setPendingDelete(d)}>
-                              <Trash2 size={14} />
+                            <TableActionButton label={`Archive ${d.name}`} variant="archive" onClick={() => setPendingDelete(d)}>
+                              <Archive size={14} />
                             </TableActionButton>
                           </div>
                         )}

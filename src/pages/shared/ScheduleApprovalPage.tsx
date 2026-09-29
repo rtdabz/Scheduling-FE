@@ -16,6 +16,7 @@ import LoadErrorBanner from '../../components/ui/LoadErrorBanner';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
 import PreApprovalCheck from '../../components/scheduling/PreApprovalCheck';
+import RevisionChangesPanel from '../../components/scheduling/RevisionChangesPanel';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { publishLiveTopics } from '../../lib/liveUpdates';
@@ -28,7 +29,14 @@ import {
   type QueueSubmissionStatus,
 } from '../../lib/approvalQueue';
 import { useToast } from '../../context/ToastContext';
-import { mapInitialData, type InitialDataResponse, type SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
+import {
+  isRevisionStatus,
+  REVISION_STATUS_BADGE,
+  REVISION_STATUS_LABELS,
+  type RevisionStatus,
+} from '../../lib/submissionStatus';
+import { mapApiScheduleToItem, mapInitialData, type InitialDataResponse, type SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
+import type { ApiScheduleRecord, ScheduleItem } from '../ClassSchedules/SchedulerPanel/types';
 import type { SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
 
 /**
@@ -64,6 +72,8 @@ interface ScheduleApproval {
   /** Every delivery mode among the package's classes. */
   modes: Mode[];
   requestType: RequestType;
+  /** Whether this version changed its sections from the recalled or rejected one before it. */
+  revisionStatus: RevisionStatus;
   workflowSectionIds: string[];
   sectionCount: number;
 }
@@ -105,6 +115,7 @@ interface RawScheduleSubmission {
   /** What was sent, recorded at submit; null on submissions from before it was kept. */
   section_count?: number | null;
   subject_count?: number | null;
+  revision_status?: string;
   sections: Array<RawSection & { pivot?: { state?: 'included' | 'withdrawn' } }>;
   submitter?: { name?: string } | null;
 }
@@ -116,6 +127,26 @@ interface ApprovalPayload {
   schedules: RawSchedule[];
   schedule_submissions: RawScheduleSubmission[];
   schedules_truncated?: boolean;
+}
+
+/**
+ * Recalled and returned versions are shown as they were sent. Their meetings
+ * are the department's working copy, which may since have been edited, reset
+ * or resubmitted as a new version.
+ */
+const CLOSED_SUBMISSION_STATUSES = new Set<QueueSubmissionStatus>([
+  'withdrawn',
+  'partially_withdrawn',
+  'rejected_by_dean',
+  'rejected_by_vpaa',
+]);
+
+interface SubmissionSnapshotResponse {
+  data: {
+    /** False for submissions from before snapshots were linked. */
+    available: boolean;
+    schedules: ApiScheduleRecord[];
+  };
 }
 
 /** The largest page /initial-data serves; anything past it is reported, not hidden. */
@@ -232,6 +263,9 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   // null until it answers. Tagged with the entry so another package's answer
   // is never read as this one's.
   const [viewCheck, setViewCheck] = useState<{ entryKey: string; open: number } | null>(null);
+  // The frozen meetings of a recalled or returned version being viewed; null
+  // schedules means none were kept, so the live working copy is shown.
+  const [viewSnapshot, setViewSnapshot] = useState<{ submissionId: number; schedules: ScheduleItem[] | null } | null>(null);
   const [tbaApproval, setTbaApproval] = useState<ScheduleApproval | null>(null);
   const [tbaReason, setTbaReason] = useState('');
   const [tbaError, setTbaError] = useState('');
@@ -315,6 +349,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               submissionStatus: submission.status,
               modes: Array.from(new Set(packageSchedules.map((schedule) => schedule.mode))),
               requestType: requestTypeOf(submission.status),
+              revisionStatus: isRevisionStatus(submission.revision_status) ? submission.revision_status : 'initial',
               workflowSectionIds: sectionIds,
             };
           });
@@ -382,9 +417,34 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     && entry.workflowSectionIds.includes(String(schedule.section_id))
   ), []);
 
+  useEffect(() => {
+    if (!viewEntry || !CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus)) return undefined;
+    let active = true;
+    const { submissionId } = viewEntry;
+    api.get<SubmissionSnapshotResponse>(`/schedule-submissions/${submissionId}/snapshot`)
+      .then(({ data }) => {
+        if (!active) return;
+        setViewSnapshot({
+          submissionId,
+          schedules: data.data.available ? data.data.schedules.map(mapApiScheduleToItem) : null,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        toast.error('Submitted Version Unavailable', apiErrorMessage(error, 'Showing the current working copy instead.'));
+        setViewSnapshot({ submissionId, schedules: null });
+      });
+    return () => { active = false; };
+  }, [toast, viewEntry]);
+
+  const viewIsClosed = viewEntry !== null && CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus);
+  const viewSnapshotLoaded = viewSnapshot !== null && viewSnapshot.submissionId === viewEntry?.submissionId;
+  const viewSnapshotLoading = viewIsClosed && !viewSnapshotLoaded;
+  const viewSnapshotSchedules = viewIsClosed && viewSnapshotLoaded ? viewSnapshot.schedules : null;
+
   /** What the preview and its printout show: the package's meetings at its own stage. */
   const printInput = useMemo<SchedulePdfInput | null>(() => {
-    if (!viewEntry || !printSource) return null;
+    if (!viewEntry || !printSource || viewSnapshotLoading) return null;
     const allowed = new Set(scheduleStatusesForSubmission(viewEntry.submissionStatus));
     const scheduleIds = new Set(rawSchedules
       .filter((schedule) => inPackage(viewEntry, schedule) && allowed.has(schedule.status))
@@ -395,13 +455,15 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       .sort((left, right) => left.name.localeCompare(right.name));
     return {
       sections,
-      allSchedules: printSource.schedules.filter((schedule) => scheduleIds.has(String(schedule.id))),
+      allSchedules: viewSnapshotSchedules
+        ? viewSnapshotSchedules.filter((schedule) => sectionIds.has(schedule.sectionId))
+        : printSource.schedules.filter((schedule) => scheduleIds.has(String(schedule.id))),
       selectedSectionId: sections[0]?.id ?? '',
       departments: printSource.departments,
       users: printSource.users,
       activeSemester: printSource.activeSemester,
     };
-  }, [inPackage, printSource, rawSchedules, viewEntry]);
+  }, [inPackage, printSource, rawSchedules, viewEntry, viewSnapshotLoading, viewSnapshotSchedules]);
 
   /** The package's classes at its own stage, for the pre-approval check. */
   const viewScheduleIds = useMemo(() => {
@@ -585,6 +647,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       },
     },
     {
+      accessorKey: 'revisionStatus',
+      header: 'Revision',
+      cell: (info) => {
+        const revision = info.getValue() as RevisionStatus;
+        return (
+          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset uppercase tracking-wider ${REVISION_STATUS_BADGE[revision]}`}>
+            {REVISION_STATUS_LABELS[revision]}
+          </span>
+        );
+      },
+    },
+    {
       id: 'actions',
       header: () => <div className="text-right">Actions</div>,
       enableSorting: false,
@@ -703,17 +777,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
           ariaLabel="Schedule submissions"
           emptyTitle={loadError ? 'The queue could not be loaded.' : 'No schedules found.'}
           emptyDescription={loadError ? 'Use Retry above to load it again.' : 'Adjust your filters and try again.'}
-          cellClassName={(columnId) => (['sections', 'subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
+          cellClassName={(columnId) => (['sections', 'subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'revisionStatus', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
         />
       </div>
 
       {viewEntry && (
         <ScheduleApprovalPreviewModal
           open
-          title={`${viewEntry.department} Department Schedule`}
+          title={`${viewEntry.department} Department Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
           status={previewStatusOf(viewEntry.status, viewPending)}
           statusLabel={STATUS_LABELS[viewEntry.status]}
           printInput={printInput}
+          isLoading={viewSnapshotLoading}
           canAct={viewPending}
           checks={viewPending ? (
             <PreApprovalCheck
@@ -722,6 +797,8 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               scheduleIds={viewScheduleIds}
               onOpenConflicts={reportViewConflicts}
             />
+          ) : viewIsClosed ? (
+            <RevisionChangesPanel submissionId={viewEntry.submissionId} />
           ) : undefined}
           approveBlockedReason={viewOpenConflicts > 0
             ? `This schedule has ${viewOpenConflicts} open conflict${viewOpenConflicts === 1 ? '' : 's'}. Return it for revision.`

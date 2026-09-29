@@ -223,10 +223,10 @@ const FRAME: Rgb = [203, 213, 225];
 const WHITE: Rgb = [255, 255, 255];
 
 // Class card text sizes (pt). Prominent, high-legibility sizing for paper timetable prints.
-const CARD_CODE_PT = 13;
-const CARD_PILL_PT = 8;
-const CARD_BODY_PT = 10;
-const CARD_FOOTER_PT = 8.5;
+const CARD_CODE_PT = 10;
+const CARD_PILL_PT = 7;
+const CARD_BODY_PT = 7.5;
+const CARD_FOOTER_PT = 7;
 /** Baseline-to-baseline step (mm) for the card's body and footer lines. */
 const CARD_LINE_H = 3.6;
 
@@ -607,24 +607,31 @@ export async function buildInstructorTimetablePdf({
       const centerX = x + w / 2;
       const maxTextW = Math.max(1, pillBeside ? innerW - pillW - 2 : innerW);
 
-      // Calculate vertical centering for course code and title
-      const titleLines = courseTitle
-        ? (doc.splitTextToSize(courseTitle, maxTextW) as string[])
-        : [];
-      const sectionLines = (!pillBeside && section) ? [section] : [];
-      const totalBodyLines = 1 + sectionLines.length + Math.min(2, titleLines.length);
-      const textBlockH = totalBodyLines * CARD_LINE_H;
+      // Wrap the title at the size it is drawn in, and fit as many lines as the
+      // card's height allows; the last line is ellipsized if the title is longer.
+      const CODE_LINE_H = 4.2;
+      const TITLE_LINE_H = 3.1;
       const middleTop = y + (pillBeside ? 1.5 : 0.8);
+      const sectionH = !pillBeside && section ? CARD_LINE_H : 0;
+      font("bold", CARD_BODY_PT);
+      const wrapped = courseTitle ? (doc.splitTextToSize(courseTitle, maxTextW) as string[]) : [];
+      const roomForTitle = Math.max(TITLE_LINE_H, middleBottom - middleTop - CODE_LINE_H - sectionH);
+      const maxTitleLines = Math.max(1, Math.min(4, Math.floor(roomForTitle / TITLE_LINE_H)));
+      const titleLines = wrapped.slice(0, maxTitleLines);
+      if (wrapped.length > maxTitleLines) {
+        titleLines[maxTitleLines - 1] = `${fit(wrapped.slice(maxTitleLines - 1).join(" "), maxTextW - 3).trimEnd()}...`;
+      }
+      const textBlockH = sectionH + CODE_LINE_H + titleLines.length * TITLE_LINE_H;
       const middleH = Math.max(textBlockH, middleBottom - middleTop);
 
-      let lineY = middleTop + (middleH - textBlockH) / 2 + 3.2;
+      let lineY = middleTop + (middleH - textBlockH) / 2 + 3;
 
       // Draw Section on the left if not placed in top pill
       if (!pillBeside && section) {
         font("bold", CARD_PILL_PT + 0.5);
         ink(style.accent);
         doc.text(section, x + padL, lineY);
-        lineY += CARD_LINE_H;
+        lineY += sectionH;
       }
 
       // Draw Course Code (prominent and large on the left side)
@@ -636,11 +643,10 @@ export async function buildInstructorTimetablePdf({
       if (titleLines.length > 0) {
         font("bold", CARD_BODY_PT);
         ink(BODY);
-        for (let i = 0; i < Math.min(2, titleLines.length); i++) {
-          lineY += CARD_LINE_H + 0.3;
-          if (lineY > middleBottom) break;
-          doc.text(titleLines[i], x + padL, lineY);
-        }
+        titleLines.forEach((line, i) => {
+          lineY += i === 0 ? CODE_LINE_H : TITLE_LINE_H;
+          doc.text(line, x + padL, lineY);
+        });
       }
 
       // Building, room and time centered in the footer

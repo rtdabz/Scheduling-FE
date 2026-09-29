@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { BookOpen, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import { BookOpen, Pencil, AlertTriangle, X } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import TableActionButton from '../ui/TableActionButton';
@@ -124,8 +124,8 @@ export default function CourseTable({
                 <Pencil size={15} />
               </TableActionButton>
             )}
-            <TableActionButton label="Remove course" variant="danger" onClick={() => onInitiateRemove(course.id)}>
-              <Trash2 size={15} />
+            <TableActionButton label="Remove course" variant="remove" onClick={() => onInitiateRemove(course.id)}>
+              <X size={15} />
             </TableActionButton>
           </div>
         );

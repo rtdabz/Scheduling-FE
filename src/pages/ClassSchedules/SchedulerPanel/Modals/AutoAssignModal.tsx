@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, Trash2, UserCheck, UserRound, Users, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
@@ -880,11 +880,11 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, o
             <TableActionButton
               label={blocked ?? "Remove instructor"}
               aria-label={`Remove instructor from ${row.original.courseCode} ${row.original.sectionName}`}
-              variant="danger"
+              variant="remove"
               disabled={Boolean(blocked) || busy}
               onClick={(event) => { event.stopPropagation(); onRemove(row.original); }}
             >
-              <Trash2 size={15} />
+              <X size={15} />
             </TableActionButton>
           </div>
         );
@@ -1124,8 +1124,8 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
       meta: { align: "right" as const, cellClassName: "align-top" },
       cell: ({ row }: { row: { original: QueuedAssignment } }) => (
         <div className="flex justify-end">
-          <TableActionButton label="Remove from list" aria-label={`Remove ${row.original.courseCode} ${row.original.sectionName}`} variant="danger" onClick={() => onRemove(row.original.key)}>
-            <Trash2 size={15} />
+          <TableActionButton label="Remove from list" aria-label={`Remove ${row.original.courseCode} ${row.original.sectionName}`} variant="remove" onClick={() => onRemove(row.original.key)}>
+            <X size={15} />
           </TableActionButton>
         </div>
       ),

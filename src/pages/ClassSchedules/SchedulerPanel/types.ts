@@ -1,4 +1,5 @@
 import { getCourseSlotPlan } from "./courseSlotPlan";
+import type { RevisionStatus, SubmissionStatus } from "../../../lib/submissionStatus";
 
 export type CourseCategory = "major" | "minor";
 export type SubjectCategory = CourseCategory; // Legacy alias
@@ -115,6 +116,10 @@ export interface Section {
   curriculumName?: string | null;
   semesterId: number;
   status: "active" | "inactive";
+  /** Where the section's latest submitted version stands; Draft if never submitted. */
+  submissionStatus?: SubmissionStatus;
+  /** Whether the working copy differs from the last recalled or rejected version. */
+  revisionStatus?: RevisionStatus;
 }
 
 export interface FacultyAvailability {
@@ -360,6 +365,8 @@ export interface ApiSectionRecord {
   semester_id: number;
   status?: "active" | "inactive";
   academic_semester?: ApiSemesterRecord | null;
+  submission_status?: string;
+  revision_status?: string;
 }
 
 export interface ApiFacultyRecord {

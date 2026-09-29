@@ -78,6 +78,8 @@ const buildActionText = (notification: SystemNotification): string => {
     : 'the schedule';
 
   switch (notification.type) {
+    case 'incoming_cross_department_courses':
+      return notification.message;
     case 'incoming_cross_department_course':
       return `${notification.message} Open Incoming Cross-Department Courses to assign instructors and schedule it.`;
     case 'schedule_submitted':

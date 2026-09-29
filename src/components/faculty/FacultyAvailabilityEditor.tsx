@@ -1,7 +1,7 @@
 import LoadingSpinner from "../ui/LoadingSpinner";
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Plus, X } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { FULL_DAY_NAMES, formatTime12h } from '../../lib/timeGrid';
@@ -219,7 +219,7 @@ export default function FacultyAvailabilityEditor({
                           aria-label={`Remove ${day.label} window`}
                           className="ml-auto text-gray-400 hover:text-red-500 p-1 transition-colors cursor-pointer"
                         >
-                          <Trash2 size={15} />
+                          <X size={15} />
                         </button>
                       </div>
                       {rowErrors[row.key] && (

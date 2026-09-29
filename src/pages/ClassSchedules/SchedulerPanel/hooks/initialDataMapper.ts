@@ -1,4 +1,5 @@
 import { heldDesignation } from "../../../../lib/designations";
+import { isRevisionStatus, isSubmissionStatus } from "../../../../lib/submissionStatus";
 import { DAYS, slotToTimeStr } from "../constants";
 import {
   configureTimeGrid,
@@ -349,7 +350,9 @@ export const mapApiSections = (
       curriculumId: s.curriculum_id == null ? null : Number(s.curriculum_id),
       curriculumName: s.curriculum?.name ?? null,
       semesterId: Number(s.semester_id),
-      status: s.status ?? "active"
+      status: s.status ?? "active",
+      submissionStatus: isSubmissionStatus(s.submission_status) ? s.submission_status : "draft",
+      revisionStatus: isRevisionStatus(s.revision_status) ? s.revision_status : "initial",
     }));
 
 export const mapInitialData = (

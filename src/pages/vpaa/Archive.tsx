@@ -14,6 +14,7 @@ interface ArchivedRecord {
   id: number;
   type: string;
   label: string;
+  context: string | null;
   deleted_at: string;
 }
 
@@ -23,6 +24,7 @@ const typeLabels: Record<string, string> = {
   programs: 'Programs',
   rooms: 'Rooms',
   faculties: 'Faculty',
+  designations: 'Designations',
   courses: 'Courses',
   semesters: 'Semesters',
   schedules: 'Schedules',
@@ -30,9 +32,20 @@ const typeLabels: Record<string, string> = {
   'timeslot-overrides': 'Timeslot overrides',
 };
 
+const restoreNotes: Record<string, string> = {
+  users: 'The account can sign in again (it returns inactive if another account now holds the role).',
+  schedules: 'The class returns to the live timetable and is refused if it now clashes with another class.',
+  'schedule-splits': 'The meeting returns to the live timetable.',
+  faculties: 'The instructor becomes available for assignment again.',
+  rooms: 'The room becomes available for scheduling again.',
+  courses: 'The course becomes available to curricula and sections again.',
+  semesters: 'The semester returns to the semester list; it is not activated.',
+};
+
 export default function Archive() {
   const { toast, confirm } = useToast();
   const [records, setRecords] = useState<ArchivedRecord[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
   const [type, setType] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -43,8 +56,9 @@ export default function Archive() {
     setLoading(true);
     setError('');
     try {
-      const response = await api.get<{ data: ArchivedRecord[] }>('/archives');
+      const response = await api.get<{ data: ArchivedRecord[]; counts: Record<string, number> }>('/archives');
       setRecords(response.data.data);
+      setCounts(response.data.counts);
     } catch (requestError) {
       setError(apiErrorMessage(requestError, 'Unable to load archived records.'));
     } finally {
@@ -57,16 +71,14 @@ export default function Archive() {
     return () => window.clearTimeout(timer);
   }, [loadArchive]);
 
-  const availableTypes = useMemo(
-    () => Array.from(new Set(records.map((record) => record.type))).sort(),
-    [records],
-  );
+  // Every type is always offered; an empty one shows a zero instead of vanishing.
+  const availableTypes = Object.keys(typeLabels);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
     return records.filter((record) => {
       const matchesType = type === 'all' || record.type === type;
-      const matchesSearch = query === '' || record.label.toLowerCase().includes(query);
+      const matchesSearch = query === '' || `${record.label} ${record.context ?? ''}`.toLowerCase().includes(query);
       return matchesType && matchesSearch;
     });
   }, [records, search, type]);
@@ -74,7 +86,7 @@ export default function Archive() {
   const restore = async (record: ArchivedRecord) => {
     const confirmed = await confirm({
       title: 'Restore Record',
-      message: `${record.label} will be returned to the active lists and become usable again across the system.`,
+      message: `${record.label} will be returned to the active lists. ${restoreNotes[record.type] ?? 'It becomes usable again across the system.'}`,
       eyebrow: 'Confirmation Required',
       confirmLabel: 'Confirm Restore',
       variant: 'maroon',
@@ -84,10 +96,16 @@ export default function Archive() {
     const key = `${record.type}:${record.id}`;
     setRestoringKey(key);
     try {
-      await api.post(`/archives/${record.type}/${record.id}/restore`);
+      const response = await api.post<{ message?: string }>(`/archives/${record.type}/${record.id}/restore`);
       setRecords((current) => current.filter((item) => `${item.type}:${item.id}` !== key));
+      setCounts((current) => ({ ...current, [record.type]: Math.max(0, (current[record.type] ?? 1) - 1) }));
       clearDataCache();
-      toast.success('Restored', `${record.label} is active again.`);
+      // The server says when the record came back switched off; don't claim it is active.
+      if (response.data.message?.includes('inactive')) {
+        toast.warning('Restored as inactive', response.data.message);
+      } else {
+        toast.success('Restored', `${record.label} is active again.`);
+      }
     } catch (requestError) {
       toast.error('Restore failed', apiErrorMessage(requestError, 'The record could not be restored.'));
     } finally {
@@ -102,6 +120,12 @@ export default function Archive() {
       accessorKey: 'label',
       header: 'Record',
       meta: { cellClassName: 'text-sm font-semibold text-gray-900' },
+      cell: ({ row }) => (
+        <div>
+          <p>{row.original.label}</p>
+          {row.original.context && <p className="text-xs font-medium text-gray-500">{row.original.context}</p>}
+        </div>
+      ),
     },
     {
       id: 'type',
@@ -187,7 +211,7 @@ export default function Archive() {
           >
             <option value="all">All record types</option>
             {availableTypes.map((recordType) => (
-              <option key={recordType} value={recordType}>{typeLabels[recordType] ?? recordType}</option>
+              <option key={recordType} value={recordType}>{typeLabels[recordType] ?? recordType} ({counts[recordType] ?? 0})</option>
             ))}
           </select>
         </div>

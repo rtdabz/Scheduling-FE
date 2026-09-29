@@ -214,7 +214,7 @@ export default function RoomRequests() {
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentRecord | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
   const [requestRoom, setRequestRoom] = useState<RoomRecord | null>(null);
-  const [requestDepartment, setRequestDepartment] = useState<DepartmentRecord | null>(null);
+  const [showRequests, setShowRequests] = useState(false);
   const [previewRequest, setPreviewRequest] = useState<RoomRequest | null>(null);
 
   const loadData = useCallback(async (silent = false) => {
@@ -263,14 +263,10 @@ export default function RoomRequests() {
   const replaceRequest = (updated: RoomRequest) =>
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
 
-  const pendingByDepartment = useMemo(() => {
-    const counts = new Map<number, number>();
-    requests.filter((request) => request.status === 'pending').forEach((request) => {
-      const ownerId = getOwnerId(request);
-      if (ownerId !== null) counts.set(ownerId, (counts.get(ownerId) ?? 0) + 1);
-    });
-    return counts;
-  }, [requests]);
+  const pendingFromOthers = useMemo(
+    () => requests.filter((request) => request.status === 'pending' && request.requesting_department?.id !== departmentId).length,
+    [departmentId, requests],
+  );
 
   const sortedDepartments = useMemo(() => {
     let result = [...departments].sort((a, b) => a.department_name.localeCompare(b.department_name));
@@ -305,13 +301,7 @@ export default function RoomRequests() {
   const openDepartment = (department: DepartmentRecord) => {
     setSelectedDepartment(department);
     setSelectedRoom(null);
-    setRequestDepartment(null);
     setViewMode('list');
-  };
-
-  const openRequests = (department: DepartmentRecord) => {
-    setRequestDepartment(department);
-    setPreviewRequest(null);
   };
 
   const handleSubmitted = (request: RoomRequest, message: string) => {
@@ -350,19 +340,24 @@ export default function RoomRequests() {
       meta: { cellClassName: 'whitespace-nowrap text-gray-600' },
     },
     {
-      id: 'requests',
-      accessorFn: (department) => pendingByDepartment.get(department.id) ?? 0,
-      header: 'Pending Requests',
-      size: 140,
+      id: 'actions',
+      header: 'Actions',
+      size: 100,
+      enableSorting: false,
       meta: { align: 'right', stopRowClick: true, cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
-        <RequestsButton
-          count={pendingByDepartment.get(row.original.id) ?? 0}
-          onClick={() => openRequests(row.original)}
-        />
+        <TableActionButton
+          label={`View ${row.original.department_code} rooms`}
+          variant="view"
+          onClick={() => openDepartment(row.original)}
+          className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
+        >
+          <Eye size={15} />
+          View
+        </TableActionButton>
       ),
     },
-  ], [pendingByDepartment, rooms]);
+  ], [rooms]);
 
   const departmentTable = useDataTable({
     data: sortedDepartments,
@@ -424,7 +419,6 @@ export default function RoomRequests() {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {sortedDepartments.map((department) => {
         const assignedRooms = rooms.filter((room) => room.department_id === department.id);
-        const pendingCount = pendingByDepartment.get(department.id) ?? 0;
         return (
           <article
             key={department.id}
@@ -453,9 +447,6 @@ export default function RoomRequests() {
               <h3 className="text-base font-bold text-gray-800 font-sans leading-tight">{department.department_code}</h3>
               <p className="text-xs text-gray-400 mt-1 font-semibold">{department.department_name}</p>
             </div>
-            <div className="border-t border-gray-100 pt-3 relative z-10" onClick={(e) => e.stopPropagation()}>
-              <RequestsButton count={pendingCount} onClick={() => openRequests(department)} />
-            </div>
           </article>
         );
       })}
@@ -482,10 +473,6 @@ export default function RoomRequests() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <RequestsButton
-            count={selectedDepartment ? pendingByDepartment.get(selectedDepartment.id) ?? 0 : 0}
-            onClick={() => selectedDepartment && openRequests(selectedDepartment)}
-          />
           <span className="text-xs font-bold uppercase tracking-wider bg-[#4e0a10]/5 text-[#4e0a10] border border-[#4e0a10]/15 px-3 py-1 rounded-full w-max font-sans">
             {departmentRooms.length} {departmentRooms.length === 1 ? 'Room' : 'Rooms'} Total
           </span>
@@ -573,6 +560,7 @@ export default function RoomRequests() {
         placeholder={selectedDepartment ? 'Search rooms...' : 'Search departments...'}
       />
       <div className="flex flex-wrap items-center gap-3">
+        <RequestsButton count={pendingFromOthers} onClick={() => setShowRequests(true)} />
         {selectedDepartment && (
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
@@ -734,11 +722,10 @@ export default function RoomRequests() {
       )}
 
       {/* Modals */}
-      {requestDepartment && (
+      {showRequests && (
         <RequestsModal
-          department={requestDepartment}
           requests={requests}
-          onClose={() => setRequestDepartment(null)}
+          onClose={() => setShowRequests(false)}
           onPreview={setPreviewRequest}
         />
       )}
@@ -949,12 +936,10 @@ function RequestRoomModal({
 }
 
 function RequestsModal({
-  department,
   requests,
   onClose,
   onPreview,
 }: {
-  department: DepartmentRecord;
   requests: RoomRequest[];
   onClose: () => void;
   onPreview: (request: RoomRequest) => void;
@@ -962,7 +947,7 @@ function RequestsModal({
   const rows = useMemo<RequestRow[]>(
     () =>
       requests
-        .filter((request) => (request.status === 'pending' || request.status === 'approved') && getOwnerId(request) === department.id)
+        .filter((request) => request.status === 'pending' || request.status === 'approved')
         .flatMap((request) =>
           request.windows.map((window, index) => ({
             id: `${request.id}-${index}`,
@@ -972,7 +957,7 @@ function RequestsModal({
             request,
           })),
         ),
-    [department.id, requests],
+    [requests],
   );
 
   const columns = useMemo<ColumnDef<RequestRow>[]>(
@@ -987,6 +972,12 @@ function RequestsModal({
         id: 'requester',
         accessorFn: (row) => row.request.requesting_department?.code ?? '',
         header: 'Requested By',
+        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
+      },
+      {
+        id: 'owner',
+        accessorFn: (row) => row.request.owner_department?.code ?? '',
+        header: 'Room Owner',
         cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
       },
       {
@@ -1017,8 +1008,10 @@ function RequestsModal({
             label={`View request for ${row.original.room}`}
             variant="view"
             onClick={() => onPreview(row.original.request)}
+            className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
           >
             <Eye size={15} />
+            View
           </TableActionButton>
         ),
       },
@@ -1032,8 +1025,8 @@ function RequestsModal({
     <Modal
       isOpen
       onClose={onClose}
-      title={`${department.department_code} Requests`}
-      description="Pending and approved room requests for this department's assigned rooms."
+      title="Room Requests"
+      description="Pending and approved room requests sent to or from your department."
       size="lg"
     >
       <div className="p-5 font-sans">
@@ -1041,9 +1034,9 @@ function RequestsModal({
           table={table}
           showPagination={false}
           totalLabel="requests"
-          ariaLabel={`${department.department_code} room requests`}
+          ariaLabel="Room requests"
           emptyTitle="No active requests"
-          emptyDescription="New requests for this department will appear here."
+          emptyDescription="New room requests will appear here."
           density="compact"
         />
       </div>

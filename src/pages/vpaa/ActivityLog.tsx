@@ -12,6 +12,7 @@ type ActivityEntry = {
   source: 'authentication' | 'scheduling';
   category: string;
   event: string;
+  status: string;
   occurred_at: string;
   actor: Actor | null;
   department_id: number | null;
@@ -33,93 +34,90 @@ const categories = [
   ['scheduling', 'Scheduling'],
   ['approval', 'Approval'],
   ['instructor_assignment', 'Instructor Assignment'],
-  ['room_request', 'Room Request'],
   ['reports', 'Reports'],
 ] as const;
 
-const EVENT_DETAILS: Record<string, { label: string; description: string; category: string }> = {
-  // 1. Account & Access
-  login_succeeded: { label: 'Login', description: 'User successfully logged in', category: 'account_access' },
-  logout: { label: 'Logout', description: 'User logged out', category: 'account_access' },
-  login_failed: { label: 'Failed Login', description: 'Failed login attempt', category: 'account_access' },
-  password_reset: { label: 'Password Reset', description: 'User password reset executed', category: 'account_access' },
-  user_created: { label: 'User Created', description: 'New user account created', category: 'account_access' },
-  user_updated: { label: 'User Updated', description: 'User profile, role, or permissions updated', category: 'account_access' },
-  user_deactivated: { label: 'User Deactivated', description: 'User account deactivated or suspended', category: 'account_access' },
-  user_deleted: { label: 'User Deleted', description: 'User account deleted', category: 'account_access' },
+const STATUSES: Record<string, { label: string; className: string }> = {
+  completed: { label: 'Completed', className: 'bg-slate-100 text-slate-700' },
+  approved: { label: 'Approved', className: 'bg-emerald-50 text-emerald-700' },
+  returned: { label: 'Returned', className: 'bg-amber-50 text-amber-700' },
+  rejected: { label: 'Rejected', className: 'bg-red-50 text-red-700' },
+  failed: { label: 'Failed', className: 'bg-red-50 text-red-700' },
+};
 
-  // 2. Institutional Setup
-  department_created: { label: 'Department Created', description: 'New academic department registered', category: 'institutional_setup' },
-  department_updated: { label: 'Department Updated', description: 'Department details updated', category: 'institutional_setup' },
-  program_created: { label: 'Program Created', description: 'Program added to department', category: 'institutional_setup' },
-  program_updated: { label: 'Program Updated', description: 'Program details updated', category: 'institutional_setup' },
-  room_created: { label: 'Room Created', description: 'Facility room registered', category: 'institutional_setup' },
-  room_updated: { label: 'Room Updated', description: 'Facility room details updated', category: 'institutional_setup' },
-  instructor_created: { label: 'Instructor Created', description: 'Instructor profile created', category: 'institutional_setup' },
-  instructor_updated: { label: 'Instructor Updated', description: 'Instructor profile updated', category: 'institutional_setup' },
-  designation_updated: { label: 'Designation Updated', description: 'Faculty administrative designation updated', category: 'institutional_setup' },
+function StatusBadge({ status }: { status: string }) {
+  const info = STATUSES[status] ?? STATUSES.completed;
+  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${info.className}`}>{info.label}</span>;
+}
 
-  // 3. Academic Setup
-  curriculum_created: { label: 'Curriculum Created', description: 'Curriculum structure registered', category: 'academic_setup' },
-  curriculum_updated: { label: 'Curriculum Updated', description: 'Curriculum details updated', category: 'academic_setup' },
-  course_created: { label: 'Course Created', description: 'Course added to curriculum', category: 'academic_setup' },
-  course_updated: { label: 'Course Updated', description: 'Course details updated', category: 'academic_setup' },
-  section_created: { label: 'Section Created', description: 'Class section created', category: 'academic_setup' },
-  section_updated: { label: 'Section Updated', description: 'Class section updated', category: 'academic_setup' },
-  semester_updated: { label: 'Semester Updated', description: 'Academic semester settings updated', category: 'academic_setup' },
-  settings_updated: { label: 'Settings Updated', description: 'System schedule settings updated', category: 'academic_setup' },
+const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
+  // Account & Access
+  login_succeeded: { label: 'Login', category: 'account_access' },
+  logout: { label: 'Logout', category: 'account_access' },
+  password_reset: { label: 'Password Reset', category: 'account_access' },
+  user_created: { label: 'User Created', category: 'account_access' },
+  user_updated: { label: 'User Updated', category: 'account_access' },
+  user_archived: { label: 'User Archived', category: 'account_access' },
+  profile_updated: { label: 'Profile Updated', category: 'account_access' },
+  invitation_sent: { label: 'Invitation Sent', category: 'account_access' },
+  invitation_accepted: { label: 'Invitation Accepted', category: 'account_access' },
+  google_linked: { label: 'Google Account Linked', category: 'account_access' },
+  google_unlinked: { label: 'Google Account Unlinked', category: 'account_access' },
 
-  // 4. Scheduling
-  schedule_created: { label: 'Schedule Created', description: 'Schedule or timetable slot created', category: 'scheduling' },
-  schedule_updated: { label: 'Schedule Updated', description: 'Schedule or timetable slot updated', category: 'scheduling' },
-  schedule_deleted: { label: 'Schedule Deleted', description: 'Schedule or timetable slot removed', category: 'scheduling' },
-  schedule_batch_deleted: { label: 'Schedule Deleted', description: 'Batch schedules removed', category: 'scheduling' },
-  schedule_batch_status_updated: { label: 'Schedule Status Updated', description: 'Batch schedule status updated', category: 'scheduling' },
-  schedule_plan_committed: { label: 'Schedule Plan Committed', description: 'Generated schedule plan committed', category: 'scheduling' },
-  conflict_detected: { label: 'Conflict Detected', description: 'Schedule conflict or overlap identified', category: 'scheduling' },
-  conflict_reviewed: { label: 'Conflict Reviewed', description: 'Conflict details inspected and reviewed', category: 'scheduling' },
-  conflict_resolved: { label: 'Conflict Resolved', description: 'Schedule conflict resolved successfully', category: 'scheduling' },
-  recommendation_generated: { label: 'Recommendation Generated', description: 'AI schedule recommendation generated', category: 'scheduling' },
-  schedule_auto_generated: { label: 'Recommendation Generated', description: 'Batch AI schedule recommendation generated', category: 'scheduling' },
-  conflict_recommendation_viewed: { label: 'Conflict Recommendation Viewed', description: 'Conflict AI recommendation viewed', category: 'scheduling' },
-  recommendation_reviewed: { label: 'Conflict Recommendation Viewed', description: 'AI recommendation solution viewed and reviewed', category: 'scheduling' },
-  recommendation_accepted: { label: 'Recommendation Accepted', description: 'AI recommendation accepted and applied', category: 'scheduling' },
-  recommendation_applied: { label: 'Recommendation Accepted', description: 'AI recommendation accepted and applied', category: 'scheduling' },
-  recommendation_rejected: { label: 'Recommendation Rejected', description: 'AI recommendation rejected or overridden', category: 'scheduling' },
-  schedule_override: { label: 'Schedule Override', description: 'Schedule constraint or limit overridden', category: 'scheduling' },
-  max_units_overridden: { label: 'Schedule Override', description: 'Teaching load maximum units overridden', category: 'scheduling' },
-  conflict_overridden: { label: 'Conflict Overridden', description: 'Schedule conflict approved to stand as an exception', category: 'scheduling' },
+  // Institutional Setup (not yet logged by the backend)
+  department_created: { label: 'Department Created', category: 'institutional_setup' },
+  department_updated: { label: 'Department Updated', category: 'institutional_setup' },
+  program_created: { label: 'Program Created', category: 'institutional_setup' },
+  program_updated: { label: 'Program Updated', category: 'institutional_setup' },
+  room_created: { label: 'Room Created', category: 'institutional_setup' },
+  room_updated: { label: 'Room Updated', category: 'institutional_setup' },
+  instructor_created: { label: 'Instructor Created', category: 'institutional_setup' },
+  instructor_updated: { label: 'Instructor Updated', category: 'institutional_setup' },
 
-  // 5. Approval
-  schedule_submitted: { label: 'Schedule Submitted', description: 'Department schedule submitted for review and approval', category: 'approval' },
-  schedule_reviewed: { label: 'Schedule Reviewed', description: 'Department schedule reviewed by authority', category: 'approval' },
-  schedule_returned: { label: 'Schedule Returned', description: 'Schedule returned for revisions', category: 'approval' },
-  schedule_returned_by_dean: { label: 'Schedule Returned', description: 'Schedule returned by Dean for revisions', category: 'approval' },
-  schedule_returned_by_vpaa: { label: 'Schedule Returned', description: 'Schedule returned by VPAA for revisions', category: 'approval' },
-  schedule_approved: { label: 'Schedule Approved', description: 'Schedule approved', category: 'approval' },
-  schedule_approved_by_dean: { label: 'Schedule Approved', description: 'Department schedule approved by the Dean', category: 'approval' },
-  schedule_approved_by_vpaa: { label: 'Schedule Approved', description: 'Final schedule approved and published by VPAA', category: 'approval' },
-  schedule_rejected: { label: 'Schedule Rejected', description: 'Schedule rejected with feedback', category: 'approval' },
-  schedule_unlocked: { label: 'Schedule Unlocked', description: 'Schedule submission unlocked for editing', category: 'approval' },
-  schedule_withdrawn: { label: 'Schedule Withdrawn', description: 'Schedule submission withdrawn by department', category: 'approval' },
+  // Academic Setup
+  curriculum_created: { label: 'Curriculum Created', category: 'academic_setup' },
+  curriculum_updated: { label: 'Curriculum Updated', category: 'academic_setup' },
+  course_created: { label: 'Course Created', category: 'academic_setup' },
+  course_updated: { label: 'Course Updated', category: 'academic_setup' },
+  section_created: { label: 'Section Created', category: 'academic_setup' },
+  section_updated: { label: 'Section Updated', category: 'academic_setup' },
+  semester_activated: { label: 'Semester Activated', category: 'academic_setup' },
+  schedule_semester_archived: { label: 'Semester Archived', category: 'academic_setup' },
 
-  // 6. Instructor Assignment
-  instructor_assigned: { label: 'Instructor Assigned', description: 'Instructor assigned to course section', category: 'instructor_assignment' },
-  instructor_reassigned: { label: 'Instructor Reassigned', description: 'Instructor reassigned to another section', category: 'instructor_assignment' },
-  cross_department_assigned: { label: 'Cross-Dept Assignment', description: 'Instructor assigned across department lines', category: 'instructor_assignment' },
-  instructor_assignment_released: { label: 'Assignment Released', description: 'Instructor assignments released during withdrawal', category: 'instructor_assignment' },
-  pro_bono_overridden: { label: 'Pro Bono Override', description: 'Pro bono teaching load limit overridden', category: 'instructor_assignment' },
+  // Scheduling
+  schedule_created: { label: 'Schedule Created', category: 'scheduling' },
+  schedule_updated: { label: 'Schedule Updated', category: 'scheduling' },
+  schedule_deleted: { label: 'Schedule Deleted', category: 'scheduling' },
+  schedule_batch_deleted: { label: 'Schedule Deleted', category: 'scheduling' },
+  record_restored: { label: 'Record Restored', category: 'scheduling' },
+  schedule_batch_status_updated: { label: 'Schedule Status Updated', category: 'scheduling' },
+  schedule_plan_committed: { label: 'Schedule Plan Committed', category: 'scheduling' },
+  schedule_conflicts_cleared: { label: 'Conflicts Cleared', category: 'scheduling' },
+  conflict_reviewed: { label: 'Conflict Reviewed', category: 'scheduling' },
+  conflict_resolved: { label: 'Conflict Resolved', category: 'scheduling' },
+  conflict_overridden: { label: 'Conflict Overridden', category: 'scheduling' },
+  recommendation_selected: { label: 'Recommendation Selected', category: 'scheduling' },
+  recommendation_accepted: { label: 'Recommendation Accepted', category: 'scheduling' },
+  recommendation_rejected: { label: 'Recommendation Rejected', category: 'scheduling' },
 
-  // 7. Room Request
-  room_requested: { label: 'Room Requested', description: 'Special room usage requested', category: 'room_request' },
-  room_request_approved: { label: 'Room Request Approved', description: 'Room usage request approved', category: 'room_request' },
-  room_request_rejected: { label: 'Room Request Rejected', description: 'Room usage request rejected', category: 'room_request' },
+  // Approval
+  schedule_submitted: { label: 'Schedule Submitted', category: 'approval' },
+  schedule_returned: { label: 'Schedule Returned', category: 'approval' },
+  schedule_returned_by_dean: { label: 'Schedule Returned', category: 'approval' },
+  schedule_returned_by_vpaa: { label: 'Schedule Returned', category: 'approval' },
+  schedule_approved: { label: 'Schedule Approved', category: 'approval' },
+  schedule_approved_by_dean: { label: 'Schedule Approved', category: 'approval' },
+  schedule_approved_by_vpaa: { label: 'Schedule Approved', category: 'approval' },
+  schedule_withdrawn: { label: 'Schedule Withdrawn', category: 'approval' },
 
-  // 8. Reports
-  schedule_report_generated: { label: 'Schedule Report Generated', description: 'Official department schedule report generated', category: 'reports' },
-  conflict_report_generated: { label: 'Conflict Report Generated', description: 'Conflict analysis report generated', category: 'reports' },
-  report_downloaded: { label: 'Report Downloaded', description: 'Official report printed or downloaded', category: 'reports' },
-  report_printed: { label: 'Report Printed', description: 'Official report printed', category: 'reports' },
+  // Instructor Assignment
+  instructor_assigned: { label: 'Instructor Assigned', category: 'instructor_assignment' },
+  instructor_assignment_released: { label: 'Assignment Released', category: 'instructor_assignment' },
+
+  // Reports
+  schedule_report_generated: { label: 'Schedule Report Generated', category: 'reports' },
+  conflict_report_generated: { label: 'Conflict Report Generated', category: 'reports' },
+  report_downloaded: { label: 'Report Downloaded', category: 'reports' },
 };
 
 const formatLabel = (value: string) =>
@@ -139,7 +137,7 @@ export default function ActivityLog() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<ActivityResponse['meta']>({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
-  const [filters, setFilters] = useState({ search: '', category: '', event: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' });
   const [applied, setApplied] = useState(filters);
 
   useEffect(() => {
@@ -183,7 +181,7 @@ export default function ActivityLog() {
   const availableEvents = useMemo(() => {
     const all = Object.entries(EVENT_DETAILS);
     const filtered = filters.category
-      ? all.filter(([key, info]) => info.category === filters.category || (filters.category === 'schedule_management' && key === 'schedule_submitted'))
+      ? all.filter(([, info]) => info.category === filters.category)
       : all;
 
     const seenLabels = new Set<string>();
@@ -203,16 +201,7 @@ export default function ActivityLog() {
     {
       id: 'event',
       header: 'Event',
-      cell: ({ row }) => {
-        const detail = EVENT_DETAILS[row.original.event];
-        const categoryLabel = categories.find(c => c[0] === row.original.category)?.[1] || formatLabel(row.original.category);
-        return (
-          <div>
-            <p className="text-sm font-semibold text-gray-900">{detail?.label || formatLabel(row.original.event)}</p>
-            <p className="text-xs text-gray-500 whitespace-nowrap">{detail?.description || categoryLabel}</p>
-          </div>
-        );
-      },
+      cell: ({ row }) => <p className="text-sm font-semibold text-gray-900">{formatLabel(row.original.event)}</p>,
     },
     {
       id: 'category',
@@ -232,13 +221,8 @@ export default function ActivityLog() {
         </div>
       ),
     },
-    {
-      id: 'department',
-      header: 'Department',
-      meta: { cellClassName: 'font-medium text-gray-600' },
-      cell: ({ row }) => (row.original.department_id ? departmentMap.get(row.original.department_id)?.department_code : null) || 'Institution-wide',
-    },
-  ], [departmentMap]);
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.original.status} /> },
+  ], []);
 
   const table = useDataTable({ data: entries, columns, pageSize: false, enableSorting: false, getRowId: (entry) => entry.id });
 
@@ -249,7 +233,7 @@ export default function ActivityLog() {
   };
 
   const clearFilters = () => {
-    const empty = { search: '', category: '', event: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' };
+    const empty = { search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' };
     setFilters(empty);
     setApplied(empty);
     setPage(1);
@@ -289,7 +273,7 @@ export default function ActivityLog() {
             <select
               aria-label="Category"
               value={filters.category}
-              onChange={event => setFilters(current => ({ ...current, category: event.target.value }))}
+              onChange={event => setFilters(current => ({ ...current, category: event.target.value, event: '' }))}
               className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
             >
               <option value="">All categories</option>
@@ -297,7 +281,19 @@ export default function ActivityLog() {
             </select>
           </div>
 
-          <div className="flex flex-col gap-0.5 min-w-[150px] max-w-[220px] flex-1">
+          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
+            <select
+              aria-label="Event"
+              value={filters.event}
+              onChange={event => setFilters(current => ({ ...current, event: event.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
+            >
+              <option value="">All events</option>
+              {availableEvents.map(([value, info]) => <option key={value} value={value}>{info.label}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
             <select
               aria-label="Department"
               value={filters.department_id}
@@ -309,7 +305,7 @@ export default function ActivityLog() {
             </select>
           </div>
 
-          <div className="flex flex-col gap-0.5 min-w-[150px] max-w-[200px] flex-1">
+          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
             <select
               aria-label="Actor"
               value={filters.actor_id}
@@ -321,15 +317,27 @@ export default function ActivityLog() {
             </select>
           </div>
 
-          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[190px] flex-1">
+          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
             <select
-              aria-label="Semester"
+              aria-label="Academic term"
               value={filters.semester_id}
               onChange={event => setFilters(current => ({ ...current, semester_id: event.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
             >
-              <option value="">All semesters</option>
+              <option value="">All academic terms</option>
               {semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.academic_year} · {semester.semester}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
+            <select
+              aria-label="Status"
+              value={filters.status}
+              onChange={event => setFilters(current => ({ ...current, status: event.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
+            >
+              <option value="">All statuses</option>
+              {Object.entries(STATUSES).map(([value, info]) => <option key={value} value={value}>{info.label}</option>)}
             </select>
           </div>
 
@@ -439,9 +447,7 @@ export default function ActivityLog() {
                 <h2 id="activity-title" className="mt-1.5 text-xl font-bold text-gray-900">
                   {EVENT_DETAILS[selected.event]?.label || formatLabel(selected.event)}
                 </h2>
-                <p className="mt-1 text-xs font-medium text-gray-600">
-                  {EVENT_DETAILS[selected.event]?.description || ''}
-                </p>
+                <div className="mt-1.5"><StatusBadge status={selected.status} /></div>
                 <p className="mt-1 text-xs text-gray-400">{formatDate(selected.occurred_at)}</p>
               </div>
               <button onClick={() => setSelected(null)} aria-label="Close details" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
@@ -461,7 +467,7 @@ export default function ActivityLog() {
                   <dd className="mt-1 text-gray-900 font-semibold">{selected.department_id ? departmentMap.get(selected.department_id)?.department_name || `#${selected.department_id}` : 'Institution-wide'}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-bold uppercase text-gray-500">Semester</dt>
+                  <dt className="text-xs font-bold uppercase text-gray-500">Academic term</dt>
                   <dd className="mt-1 text-gray-900 font-semibold">{selected.semester_id ? `${semesterMap.get(selected.semester_id)?.academic_year || ''} ${semesterMap.get(selected.semester_id)?.semester || `#${selected.semester_id}`}` : 'Not applicable'}</dd>
                 </div>
                 <div>
@@ -473,10 +479,10 @@ export default function ActivityLog() {
                   <dd className="mt-1 font-mono text-xs text-gray-700">{selected.id}</dd>
                 </div>
               </dl>
-              <div>
-                <h3 className="text-xs font-bold uppercase text-gray-500">Event metadata</h3>
+              <details>
+                <summary className="cursor-pointer text-xs font-bold uppercase text-gray-500">Technical details</summary>
                 <pre className="mt-2 overflow-x-auto rounded-xl bg-gray-950 p-4 text-xs text-gray-100">{JSON.stringify(selected.metadata, null, 2)}</pre>
-              </div>
+              </details>
             </div>
           </div>
         </div>

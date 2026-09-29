@@ -7,7 +7,6 @@ import Skeleton from '../../components/ui/Skeleton';
 import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
-  Trash2,
   X,
   Loader2,
   Camera,
@@ -17,6 +16,7 @@ import {
   LayoutGrid,
   List,
   Power,
+  Archive,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -791,13 +791,13 @@ export default function VpaaUsers() {
             <div className="relative group/tooltip">
               <TableActionButton
                 label="Archive"
-                variant="danger"
+                variant="archive"
                 onClick={(event) => {
                   event.stopPropagation();
                   void triggerDeleteConfirmation(row.original.id);
                 }}
               >
-                <Trash2 size={17} />
+                <Archive size={17} />
               </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Archive
@@ -1014,10 +1014,10 @@ export default function VpaaUsers() {
                           e.stopPropagation();
                           void triggerDeleteConfirmation(u.id);
                         }}
-                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        className="p-1.5 text-stone-600 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
                         title="Archive User"
                       >
-                        <Trash2 size={16} />
+                        <Archive size={16} />
                       </button>
                     </div>
                   </div>

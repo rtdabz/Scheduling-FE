@@ -2,9 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
 import SearchInput from '../../components/ui/SearchInput';
-import {
-  Filter,
-} from 'lucide-react';
+import { Filter } from 'lucide-react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -98,6 +96,7 @@ export default function CourseManager() {
   const [isLoading, setIsLoading] = useState(() => {
     return !hasCachedData(coursesCacheKey);
   });
+
 
   // Table States
   const [globalFilter, setGlobalFilter] = useState('');
@@ -239,6 +238,7 @@ export default function CourseManager() {
           }
         }
       ];
+
       return cols;
     },
     []

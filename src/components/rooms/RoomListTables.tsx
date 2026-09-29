@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Building2, Pencil, Printer, Trash2 } from 'lucide-react';
+import { Building2, Pencil, Printer, Archive } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import TableActionButton from '../ui/TableActionButton';
@@ -200,8 +200,8 @@ export function RoomsTable<T extends RoomListRow>({
               <TableActionButton label="Edit Room" variant="edit" onClick={() => onEdit(row.original)}>
                 <Pencil size={15} />
               </TableActionButton>
-              <TableActionButton label="Archive Room" variant="danger" onClick={() => onArchive(row.original)}>
-                <Trash2 size={15} />
+              <TableActionButton label="Archive Room" variant="archive" onClick={() => onArchive(row.original)}>
+                <Archive size={15} />
               </TableActionButton>
             </>
           )}

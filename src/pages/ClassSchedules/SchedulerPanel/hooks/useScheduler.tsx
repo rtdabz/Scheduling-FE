@@ -2242,16 +2242,18 @@ export const useScheduler = () => {
     }
 
     const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
-    // `revision` rows were recalled or returned from approval.
+    // Recalled (`revision`) or returned (`rejected*`) rows.
     const recalledCount = new Set(
-      targetSchedules.filter((s) => s.status === "revision").map((s) => s.sectionId),
+      targetSchedules
+        .filter((s) => ["revision", "rejected", "rejected_by_dean", "rejected_by_vpaa"].includes(s.status))
+        .map((s) => s.sectionId),
     ).size;
     const confirmed = await confirm({
       title: "Reset Schedules",
       message: `Are you sure you want to reset the schedules of ${sectionLabel}? `
         + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`
         + (recalledCount > 0
-          ? ` ${recalledCount} of these section${recalledCount === 1 ? " was" : "s were"} recalled or returned from approval; ${recalledCount === 1 ? "its" : "their"} previously submitted classes will be lost.`
+          ? ` ${recalledCount} of these section${recalledCount === 1 ? " was" : "s were"} recalled or returned from approval; only the working copy is cleared — the submitted version stays in the approval history.`
           : ""),
       eyebrow: "Irreversible Action",
       confirmLabel: "Yes, Reset Schedules",

@@ -1231,9 +1231,9 @@ export default function YearLevelGenerateScheduleWorkflow({
   };
 
   const apply = async () => {
-    // A `revision` row was recalled or returned from approval: it was
-    // submitted before. Saving deletes it for good, so say so while it can
-    // be stopped.
+    // A `revision` row was recalled or returned from approval. Saving replaces
+    // this working copy; the version that was submitted is kept on its
+    // submission, so the confirmation says what is and is not lost.
     const generatedKeys = new Set(
       preview.map((r) => `${r.section_id}:${r.course_id ?? r.subject_id}`),
     );
@@ -1251,8 +1251,8 @@ export default function YearLevelGenerateScheduleWorkflow({
       const count = recalledSectionIds.size;
       const confirmed = await confirm({
         title: "Replace Recalled Schedules",
-        message: `${count} section${count === 1 ? " was" : "s were"} recalled or returned from approval. Saving replaces ${count === 1 ? "its" : "their"} previously submitted or approved classes for the generated courses permanently. This cannot be undone.`,
-        eyebrow: "Irreversible Action",
+        message: `${count} section${count === 1 ? " was" : "s were"} recalled or returned from approval. Saving replaces the working copy of the generated courses; the submitted version stays in the approval history.`,
+        eyebrow: "Replace Working Copy",
         confirmLabel: "Replace Schedules",
         variant: "danger",
       });

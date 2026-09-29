@@ -1,7 +1,7 @@
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Layers, Plus, Trash2 } from 'lucide-react';
+import { X, Layers, Plus } from 'lucide-react';
 import { fullSemesterLabel } from '../../lib/semesterLabel';
 import TableActionButton from '../../components/ui/TableActionButton';
 import { useToast } from '../../context/ToastContext';
@@ -449,11 +449,11 @@ export default function SectionModal({
                           <TableActionButton
                             label="Remove"
                             aria-label={`Remove section ${index + 1}`}
-                            variant="danger"
+                            variant="remove"
                             onClick={() => removeBatchRow(row.id)}
                             disabled={sectionCount <= 1}
                           >
-                            <Trash2 size={15} />
+                            <X size={15} />
                           </TableActionButton>
                         </div>
                       </li>

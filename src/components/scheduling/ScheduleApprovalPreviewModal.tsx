@@ -12,6 +12,8 @@ interface Props {
   statusLabel: string;
   /** Exactly what Print receives, already narrowed to the submission under review. */
   printInput: SchedulePdfInput | null;
+  /** The meetings to show are still being fetched. */
+  isLoading?: boolean;
   canAct: boolean;
   /** Shown between the title and the document: the pre-approval check. */
   checks?: ReactNode;
@@ -33,7 +35,7 @@ type PdfState = { url: string | null; failed: boolean };
  * same document that will be printed and signed.
  */
 export default function ScheduleApprovalPreviewModal({
-  open, title, status, statusLabel, printInput, canAct, checks, approveBlockedReason = null, onApprove, onReject, onClose,
+  open, title, status, statusLabel, printInput, isLoading = false, canAct, checks, approveBlockedReason = null, onApprove, onReject, onClose,
 }: Props) {
   const [pdf, setPdf] = useState<PdfState>({ url: null, failed: false });
 
@@ -60,7 +62,7 @@ export default function ScheduleApprovalPreviewModal({
 
   if (!open) return null;
   const badge = status === 'approved' ? 'bg-green-50 text-green-700 border-green-200' : status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200';
-  const isEmpty = !printInput || printInput.allSchedules.length === 0;
+  const isEmpty = !isLoading && (!printInput || printInput.allSchedules.length === 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">

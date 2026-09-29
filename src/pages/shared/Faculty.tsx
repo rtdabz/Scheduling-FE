@@ -10,7 +10,6 @@ import Skeleton from '../../components/ui/Skeleton';
 import FacultyListTable from '../../components/faculty/FacultyListTable';
 import {
   Pencil,
-  Trash2,
   X,
   Plus,
   ArrowUpDown,
@@ -19,6 +18,7 @@ import {
   List,
   Camera,
   UserRound,
+  Archive,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { photoDataUrl } from '../../lib/imageDataUrl';
@@ -896,7 +896,6 @@ export default function Faculty() {
                                 key={d.id}
                                 label={designationLabel(d)}
                                 tone="gold"
-                                hint={d.deload_units ? `${d.deload_units} ${d.deload_units === 1 ? 'unit' : 'units'} deload` : null}
                                 stacked
                               />
                             ))}
@@ -982,10 +981,10 @@ export default function Faculty() {
                         </button>
                         <button
                           onClick={() => { void triggerDeleteConfirmation(f.id); }}
-                          className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-700 transition-colors hover:bg-red-100"
+                          className="rounded-lg border border-stone-300 bg-stone-100 p-1.5 text-stone-700 transition-colors hover:bg-stone-200"
                           title="Archive Instructor"
                         >
-                          <Trash2 size={15} />
+                          <Archive size={15} />
                         </button>
                       </div>
                     )}

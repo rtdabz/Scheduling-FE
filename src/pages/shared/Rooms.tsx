@@ -10,7 +10,6 @@ import ConfirmModal from '../../components/ui/ConfirmModal';
 import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
-  Trash2,
   X,
   Building2,
   ArrowLeft,
@@ -19,6 +18,7 @@ import {
   List,
   Filter,
   Plus,
+  Archive,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -841,9 +841,9 @@ export default function Rooms() {
                         </button>
                         <button
                           onClick={() => triggerDeleteConfirmation(room.id)}
-                          className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+                          className="flex items-center gap-1 rounded-xl border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-200"
                         >
-                          <Trash2 size={13} />
+                          <Archive size={13} />
                           <span>Archive</span>
                         </button>
                       </div>

@@ -7,6 +7,12 @@ import Skeleton from "../../../components/ui/Skeleton";
 import SearchField from "./components/SearchField";
 import GenerateScheduleButton from "./GenerateSchedule/GenerateScheduleButton";
 import WorkflowGuideButton from "../../../components/help/WorkflowGuideButton";
+import {
+  REVISION_STATUS_BADGE,
+  REVISION_STATUS_LABELS,
+  SUBMISSION_STATUS_BADGE,
+  SUBMISSION_STATUS_LABELS,
+} from "../../../lib/submissionStatus";
 
 interface GroupedYear {
   yearLevel: number;
@@ -72,32 +78,21 @@ interface TopBarProps {
   sectionSchedules: ScheduleItem[];
 }
 
-// Tinted rather than solid: the badge labels state, and solid fills competed
+// Tinted rather than solid: the badges label state, and solid fills competed
 // with the section's primary action for attention.
-const statusBadgeConfigs: Record<string, { cls: string; label: string }> = {
-  draft: { cls: "bg-slate-100 text-slate-600 ring-slate-200", label: "Draft" },
-  completed: { cls: "bg-[#4e0a10]/[0.07] text-[#4e0a10] ring-[#4e0a10]/15", label: "Done" },
-  submitted: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Pending Dean Approval" },
-  approved_by_dean: { cls: "bg-blue-50 text-blue-700 ring-blue-200", label: "Pending VPAA Approval" },
-  conditionally_approved: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Conditionally Approved" },
-  rejected_by_dean: { cls: "bg-red-50 text-red-700 ring-red-200", label: "Rejected by Dean" },
-  approved: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Approved" },
-  faculty_assignment: { cls: "bg-violet-50 text-violet-700 ring-violet-200", label: "Instructor Assignment" },
-  reassignment: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Reassignment" },
-  finalized: { cls: "bg-emerald-100 text-emerald-800 ring-emerald-200", label: "Finalized" },
-  rejected: { cls: "bg-red-50 text-red-700 ring-red-200", label: "Rejected" },
-  revision: { cls: "bg-orange-50 text-orange-700 ring-orange-200", label: "Under Revision" }
-};
-
-function StatusBadge({ status }: { status: ScheduleItem["status"] }) {
-  const cfg = statusBadgeConfigs[status] || {
-    cls: "bg-red-50 text-red-700 ring-red-200",
-    label: "Unknown"
-  };
+function SubmissionBadges({ section }: { section: Section | undefined }) {
+  const submission = section?.submissionStatus ?? "draft";
+  const revision = section?.revisionStatus ?? "initial";
+  const badge = "rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset";
   return (
-    <span className={`${cfg.cls} rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset`}>
-      {cfg.label}
-    </span>
+    <>
+      <span className={`${SUBMISSION_STATUS_BADGE[submission]} ${badge}`} title="Submission status">
+        {SUBMISSION_STATUS_LABELS[submission]}
+      </span>
+      <span className={`${REVISION_STATUS_BADGE[revision]} ${badge}`} title="Revision status">
+        {REVISION_STATUS_LABELS[revision]}
+      </span>
+    </>
   );
 }
 
@@ -748,7 +743,7 @@ export default function TopBar({
               <>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#4e0a10]">Next step</span>
-                  <StatusBadge status={currentStatus} />
+                  <SubmissionBadges section={selectedSection} />
                 </div>
                 <p className="mt-1 text-sm font-bold text-slate-800">{nextStep.title}</p>
                 <p className="mt-0.5 text-xs text-slate-500">{nextStep.description}</p>

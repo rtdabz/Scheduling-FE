@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Eye, Pencil, Trash2, UserRound } from 'lucide-react';
+import { Eye, Pencil, UserRound, Archive } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import TableActionButton from '../ui/TableActionButton';
@@ -107,7 +107,6 @@ export default function FacultyListTable<T extends FacultyListRow>({
                 key={d.id}
                 label={designationLabel(d)}
                 tone="gold"
-                hint={d.deload_units ? `${d.deload_units} ${d.deload_units === 1 ? 'unit' : 'units'} deload` : null}
                 stacked
               />
             ))}
@@ -212,8 +211,8 @@ export default function FacultyListTable<T extends FacultyListRow>({
                   <span className={tooltipClass}>Edit</span>
                 </div>
                 <div className="relative group/tooltip">
-                  <TableActionButton label="Archive" variant="danger" onClick={() => onArchive(f)}>
-                    <Trash2 size={17} />
+                  <TableActionButton label="Archive" variant="archive" onClick={() => onArchive(f)}>
+                    <Archive size={17} />
                   </TableActionButton>
                   <span className={tooltipClass}>Archive</span>
                 </div>

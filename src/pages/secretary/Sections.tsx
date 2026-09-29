@@ -336,7 +336,7 @@ export default function SecretarySections() {
               <div className="relative group/tooltip">
                 <TableActionButton
                   label="Delete"
-                  variant="danger"
+                  variant="delete"
                   onClick={() => triggerDeleteConfirmation(row.original.id)}
                 >
                   <Trash2 size={17} />

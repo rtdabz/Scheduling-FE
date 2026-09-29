@@ -396,8 +396,9 @@ export function useCurriculumDetail(id: string | undefined) {
         await curriculumService.detachCourse(id, courseId);
         invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Course Removed', `${courseCode} removed from curriculum.`);
-      } catch {
-        toast.error('Error', 'Failed to remove course.');
+      } catch (error) {
+        // The server says why, e.g. a section still has the course scheduled.
+        toast.error('Error', apiErrorMessage(error, 'Failed to remove course.'));
         fetchCurriculum(true);
       } finally {
         setIsRemoving(false);
