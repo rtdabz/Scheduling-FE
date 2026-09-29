@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, } from 'lucide-react';
-import type { Curriculum, CurriculumStatus, Department, Program } from '../../types/curriculum';
+import type { Curriculum, Program } from '../../types/curriculum';
 import { programLabel } from '../../lib/programLabel';
+import { getStoredUserDepartmentId, getStoredUserRole } from '../../lib/storedUser';
 
 interface CurriculumFormModalProps {
   isOpen: boolean;
@@ -10,7 +11,6 @@ interface CurriculumFormModalProps {
   curriculum: Curriculum | null;
   onClose: () => void;
   onSubmit: (data: Partial<Curriculum>) => Promise<void>;
-  departments: Department[];
   programs: Program[];
 }
 
@@ -20,39 +20,41 @@ export default function CurriculumFormModal({
   curriculum,
   onClose,
   onSubmit,
-  departments,
   programs,
 }: CurriculumFormModalProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
-  const [effectiveSchoolYear, setEffectiveSchoolYear] = useState('');
-  const [status, setStatus] = useState<CurriculumStatus>('deactivated');
-  const [description, setDescription] = useState('');
+  const [startYear, setStartYear] = useState('');
+  const [endYear, setEndYear] = useState('');
   const [programId, setProgramId] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState('');
   const [codeError, setCodeError] = useState('');
   const [effectiveYearError, setEffectiveYearError] = useState('');
-  const departmentPrograms = programs.filter((program) => String(program.department_id) === departmentId);
+  // The curriculum belongs to the department that authors it; the server sets
+  // it from the signed-in account, so only that department's programs apply.
+  const departmentId = isEditMode && curriculum?.department_id
+    ? curriculum.department_id
+    : getStoredUserDepartmentId();
+  const departmentPrograms = programs.filter((program) => program.department_id === departmentId);
+  // A program head's curriculum is always their own program's; the server
+  // enforces it, so there is nothing to choose.
+  const canChooseProgram = getStoredUserRole() !== 'program_head';
 
   useEffect(() => {
     if (isOpen) {
       if (isEditMode && curriculum) {
         setName(curriculum.name);
         setCode(curriculum.code);
-        setEffectiveSchoolYear(curriculum.effective_school_year);
-        setStatus(curriculum.status);
-        setDescription(curriculum.description || '');
-        setDepartmentId(curriculum.department_id ? String(curriculum.department_id) : '');
+        const [start = '', end = ''] = curriculum.effective_school_year.split('-');
+        setStartYear(start.trim());
+        setEndYear(end.trim());
         setProgramId(curriculum.program_id ? String(curriculum.program_id) : '');
       } else {
         setName('');
         setCode('');
-        setEffectiveSchoolYear('');
-        setStatus('deactivated');
-        setDescription('');
-        setDepartmentId('');
+        setStartYear('');
+        setEndYear('');
         setProgramId('');
       }
       setNameError('');
@@ -79,8 +81,11 @@ export default function CurriculumFormModal({
       setCodeError('');
     }
 
-    if (!effectiveSchoolYear.trim()) {
-      setEffectiveYearError('Effective school year is required');
+    if (!/^\d{4}$/.test(startYear) || !/^\d{4}$/.test(endYear)) {
+      setEffectiveYearError('Enter both years, e.g. 2025 and 2026');
+      hasError = true;
+    } else if (Number(endYear) !== Number(startYear) + 1) {
+      setEffectiveYearError('The second year must follow the first');
       hasError = true;
     } else {
       setEffectiveYearError('');
@@ -93,11 +98,8 @@ export default function CurriculumFormModal({
       await onSubmit({
         name: name.trim(),
         code: code.trim().toUpperCase(),
-        effective_school_year: effectiveSchoolYear.trim(),
-        status,
-        department_id: departmentId ? Number(departmentId) : null,
+        effective_school_year: `${startYear}-${endYear}`,
         program_id: programId ? Number(programId) : null,
-        description: description.trim() || null,
       });
     } finally {
       setIsSubmitting(false);
@@ -158,62 +160,49 @@ export default function CurriculumFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Effective School Year <span className="text-red-500">*</span>
-              </label>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+              Effective School Year <span className="text-red-500">*</span>
+            </label>
+            <div className="flex items-center gap-2">
               <input
+                id="curriculum-start-year-input"
                 type="text"
-                value={effectiveSchoolYear}
-                onChange={(e) => { setEffectiveSchoolYear(e.target.value); setEffectiveYearError(''); }}
-                placeholder="e.g. 2024-2025"
+                inputMode="numeric"
+                maxLength={4}
+                aria-label="Start year"
+                value={startYear}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  setStartYear(value);
+                  // A school year spans consecutive years, so the second follows the first.
+                  if (value.length === 4) setEndYear(String(Number(value) + 1));
+                  setEffectiveYearError('');
+                }}
+                placeholder="2025"
                 className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
                   effectiveYearError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
                 }`}
               />
-              {effectiveYearError && <p className="text-xs text-red-500 mt-1 font-semibold">{effectiveYearError}</p>}
+              <span className="text-gray-400 font-semibold">&ndash;</span>
+              <input
+                id="curriculum-end-year-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                aria-label="End year"
+                value={endYear}
+                onChange={(e) => { setEndYear(e.target.value.replace(/\D/g, '')); setEffectiveYearError(''); }}
+                placeholder="2026"
+                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                  effectiveYearError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                }`}
+              />
             </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as CurriculumStatus)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-              >
-                <option value="active">Active</option>
-                <option value="deactivated">Deactivated</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
+            {effectiveYearError && <p className="text-xs text-red-500 mt-1 font-semibold">{effectiveYearError}</p>}
           </div>
 
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-              Department <span className="text-gray-400 normal-case">(optional for institution-wide curriculum)</span>
-            </label>
-            <select
-              id="curriculum-department-select"
-              value={departmentId}
-              onChange={(e) => {
-                setDepartmentId(e.target.value);
-                setProgramId('');
-              }}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-            >
-              <option value="">Institution-wide curriculum</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.department_code} - {department.department_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {departmentPrograms.length > 0 && (
+          {canChooseProgram && departmentPrograms.length > 0 && (
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                 Program / Major <span className="text-gray-400 normal-case">(optional)</span>
@@ -233,19 +222,6 @@ export default function CurriculumFormModal({
               </select>
             </div>
           )}
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
-              rows={3}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white resize-none"
-            />
-          </div>
 
           <div id="curriculum-form-actions" className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
             <button

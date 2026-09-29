@@ -59,16 +59,38 @@ describe('DesignationPicker', () => {
     expect(screen.getByRole('checkbox', { name: /Networking Dev't/ })).toBeTruthy();
   });
 
-  it('stops at three designations', () => {
+  it('allows more than three designations', () => {
     const onChange = vi.fn();
     render(<DesignationPicker designations={all} value={['2', '3', '4']} onChange={onChange} />);
     openPicker();
 
     const fourth = screen.getByRole('checkbox', { name: /Coach/ }) as HTMLInputElement;
-    expect(fourth.disabled).toBe(true);
+    expect(fourth.disabled).toBe(false);
     fireEvent.click(fourth);
-    expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/limit reached/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onChange).toHaveBeenLastCalledWith(['2', '3', '4', '5']);
+    expect(screen.queryByText(/limit reached/)).toBeNull();
+  });
+
+  it('disables every designation that would deload more than the Basic Load left', () => {
+    const free = designation({ id: 6, name: 'Glee Club', deload_units: 0 });
+    // 9 of a 12-unit maximum leaves 3 units.
+    render(<DesignationPicker designations={[...all, free]} value={['2']} onChange={vi.fn()} maxUnits={12} />);
+    openPicker();
+
+    const box = (name: RegExp) => screen.getByRole('checkbox', { name }) as HTMLInputElement;
+    expect(box(/Research/).disabled).toBe(true); // 6 > 3
+    expect(box(/Program Chairperson/).disabled).toBe(false); // 3 fits exactly
+    expect(box(/Coach/).disabled).toBe(false); // 2 fits
+    expect(box(/Glee Club/).disabled).toBe(false); // no deload
+
+    fireEvent.click(box(/Program Chairperson/));
+    expect(box(/Coach/).disabled).toBe(true);
+    expect(screen.getAllByText(/Basic Load used up/).length).toBeGreaterThan(0);
+
+    // Freeing some load opens the list again.
+    fireEvent.click(box(/Networking/));
+    expect(box(/Research/).disabled).toBe(false);
   });
 
   it('leaves the selection untouched when the checklist is cancelled', () => {

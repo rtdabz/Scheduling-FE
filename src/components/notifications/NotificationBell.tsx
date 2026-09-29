@@ -61,7 +61,7 @@ export default function NotificationBell() {
         <Bell className="h-[18px] w-[18px]" />
         {unreadCount > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex min-w-[16px] items-center justify-center rounded-full bg-[#b3261e] px-1 text-[9px] font-bold leading-4 text-white ring-2 ring-[#F7F4F0]">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>

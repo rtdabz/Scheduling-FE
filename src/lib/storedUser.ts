@@ -96,6 +96,25 @@ export const hasStoredCapability = (capability: string | string[]): boolean => {
   return usable.some((name) => permissions.includes(name));
 };
 
+export const NO_PROGRAM_LOCK_MESSAGE =
+  'Your department has no program yet, so this module is unavailable. Ask the VPAA to add a program to your department.';
+export const NOT_GRANTED_LOCK_MESSAGE = 'Your role does not include access to this module.';
+
+/**
+ * Why a capability-gated module is locked. Access is decided by role alone, so
+ * an account that holds the capability is only ever locked because its
+ * department has no program yet -- the same distinction CapabilityMiddleware
+ * draws server-side.
+ */
+export const lockedModuleMessage = (capability?: string | string[]): string => {
+  if (!capability) return NOT_GRANTED_LOCK_MESSAGE;
+  const permissions = getStoredUser()?.permissions ?? [];
+  const requested = Array.isArray(capability) ? capability : [capability];
+  return requested.some((name) => permissions.includes(name))
+    ? NO_PROGRAM_LOCK_MESSAGE
+    : NOT_GRANTED_LOCK_MESSAGE;
+};
+
 /** Numeric department id of the stored user, or null when unknown. */
 export const getStoredUserDepartmentId = (): number | null => {
   const departmentId = getStoredUser()?.department_id;

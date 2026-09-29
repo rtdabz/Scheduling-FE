@@ -26,8 +26,7 @@ export type ResolutionAction =
   | 'change_room'
   | 'change_delivery_mode'
   | 'reassign_instructor'
-  | 'request_override'
-  | 'apply_recommendation';
+  | 'request_override';
 
 export interface ConflictSchedule {
   id: number;
@@ -72,7 +71,7 @@ export interface ResolutionOutcome {
 }
 
 export interface ResolutionRequest {
-  action: Exclude<ResolutionAction, 'request_override' | 'apply_recommendation'>;
+  action: Exclude<ResolutionAction, 'request_override'>;
   schedule_id: number;
   day?: string;
   start_time?: string;
@@ -101,7 +100,7 @@ export interface ConflictResolution {
   overlap_start: string | null;
   overlap_end: string | null;
   method: 'recommended' | 'manual' | 'overridden';
-  source: 'conflict_inbox' | 'schedule_generator';
+  source: 'conflict_inbox' | 'schedule_generator' | 'schedule_builder';
   status: 'resolved' | 'overridden' | 'reopened';
   resolved_at: string | null;
   resolved_by: string | null;
@@ -119,6 +118,8 @@ export interface ConflictRecommendation {
   action: ResolutionRequest['action'];
   schedule_id: number;
   summary: string;
+  /** Why it ranks where it does: "Same day and time", "Keeps its room", … */
+  reasons?: string[];
   score: number;
   day?: string;
   start_time?: string;
@@ -136,7 +137,9 @@ export interface ConflictRecommendation {
 
 export const resolutionMethodLabel = (resolution: ConflictResolution): string => {
   if (resolution.method === 'overridden') return 'Allowed to stand';
-  if (resolution.method === 'manual') return 'Manual change';
+  if (resolution.method === 'manual') {
+    return resolution.source === 'schedule_builder' ? 'Moved in Schedule Builder' : 'Manual change';
+  }
 
   return resolution.source === 'schedule_generator' ? 'Recommendation (Generate)' : 'Recommended fix';
 };
@@ -153,18 +156,98 @@ export const resolutionStatusLabel = (status: ConflictResolution['status']): str
 };
 
 /**
- * Classes a saved resolution changed and that stayed fixed, for the green flag
- * on the timetable. Reopened entries are left out -- that clash is back -- and
- * so are overrides, whose amber flag follows the live override mark instead.
+ * Classes whose saved conflict stayed fixed, for the green flag on the
+ * timetable: both sides of the clash (named in its id, `rule:low:high`) and
+ * any class the fix changed. Both, because both left the conflict -- the page
+ * flags both the moment it happens, and a reload has to show the same.
+ * Reopened entries are left out -- that clash is back -- and so are overrides,
+ * whose amber flag follows the live override mark instead. Ids of classes a
+ * plan replaced simply match nothing on the grid.
  */
 export const resolvedScheduleIds = (resolutions: ConflictResolution[]): Set<string> => {
   const ids = new Set<string>();
   resolutions.forEach((entry) => {
     if (entry.status !== 'resolved') return;
+    entry.conflict_id.split(':').slice(1).forEach((id) => {
+      if (/^\d+$/.test(id)) ids.add(id);
+    });
     entry.affected_schedule_ids.forEach((id) => ids.add(String(id)));
   });
 
   return ids;
+};
+
+/**
+ * A saved class that no longer satisfies a rule on its own, from
+ * `/conflicts/rule-issues`: its room was taken out of service, its instructor
+ * deactivated, operating hours narrowed, and so on. Derived on every read.
+ */
+export interface RuleIssue {
+  id: string;
+  rule: string;
+  message: string;
+  schedule: ConflictSchedule;
+}
+
+/** A short heading for the rules a saved class most often drifts out of. */
+export const ruleIssueLabel = (rule: string): string => {
+  switch (rule) {
+    case 'room_availability':
+      return 'Room not available';
+    case 'room_type_match':
+      return 'Wrong room type';
+    case 'faculty_active':
+      return 'Instructor inactive';
+    case 'part_time_faculty_availability':
+      return 'Outside instructor availability';
+    case 'operating_hours':
+    case 'field_evening_window':
+      return 'Outside operating hours';
+    case 'sunday_classes':
+      return 'Sunday classes not allowed';
+    case 'forced_course_day':
+    case 'preferred_pattern':
+      return 'Required day not met';
+    case 'class_duration':
+      return 'Class length changed';
+    case 'delivery_mode':
+      return 'Delivery mode not allowed';
+    default:
+      return 'Rule no longer met';
+  }
+};
+
+/** Which kinds of saved conflict a class is in, for a per-row badge. */
+export interface ConflictFlags {
+  faculty: boolean;
+  room: boolean;
+  section: boolean;
+  online: boolean;
+}
+
+/**
+ * Per-class flags from the server's conflict scan, keyed by schedule id.
+ *
+ * Read-only screens badge rows from this instead of re-deriving clashes in
+ * the browser: the server already leaves out instructor clashes allowed to
+ * stand, catches clashes with other departments' classes, and knows which
+ * rooms are shared -- a local check got all three wrong.
+ */
+export const conflictFlagsBySchedule = (conflicts: ScheduleConflict[]): Map<string, ConflictFlags> => {
+  const flags = new Map<string, ConflictFlags>();
+  conflicts.forEach((conflict) => {
+    conflict.schedules.forEach((schedule) => {
+      const key = String(schedule.id);
+      const entry = flags.get(key) ?? { faculty: false, room: false, section: false, online: false };
+      if (conflict.rule === 'faculty_conflict') entry.faculty = true;
+      if (conflict.rule === 'room_conflict') entry.room = true;
+      if (conflict.rule === 'section_conflict') entry.section = true;
+      if (conflict.rule === 'subject_section_time_conflict') entry.online = true;
+      flags.set(key, entry);
+    });
+  });
+
+  return flags;
 };
 
 /** Statuses whose timetable placement may still be edited. */
@@ -201,8 +284,6 @@ export const resolutionActionLabel = (action: ResolutionAction | string): string
       return 'Reassign the instructor';
     case 'request_override':
       return 'Allow it to stand, with a reason';
-    case 'apply_recommendation':
-      return 'Generate a recommendation';
     default:
       return action;
   }
@@ -267,6 +348,24 @@ export const fetchResolvedConflicts = async (params: {
   });
 
   return response.data.resolutions ?? [];
+};
+
+export const fetchRuleIssues = async (params: {
+  semesterId?: number | null;
+  departmentId?: number | null;
+  sectionId?: number | null;
+  signal?: AbortSignal;
+}): Promise<RuleIssue[]> => {
+  const response = await api.get<{ issues?: RuleIssue[] }>('/conflicts/rule-issues', {
+    signal: params.signal,
+    params: {
+      semester_id: params.semesterId ?? undefined,
+      department_id: params.departmentId ?? undefined,
+      section_id: params.sectionId ?? undefined,
+    },
+  });
+
+  return response.data.issues ?? [];
 };
 
 export const resolveConflict = async (

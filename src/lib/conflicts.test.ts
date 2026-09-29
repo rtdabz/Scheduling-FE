@@ -6,15 +6,18 @@ vi.mock('./api', () => ({ default: { get: (...args: unknown[]) => apiGet(...args
 import {
   alreadyResolvedFrom,
   conflictRuleLabel,
+  conflictFlagsBySchedule,
   describeConflictSchedule,
   fetchConflictRecommendations,
   fetchResolvedConflicts,
+  fetchRuleIssues,
   isReplottable,
   refusalDetails,
   resolutionActionLabel,
   resolutionMethodLabel,
   resolutionStatusLabel,
   resolvedScheduleIds,
+  ruleIssueLabel,
   type ConflictResolution,
   type ConflictSchedule,
 } from './conflicts';
@@ -193,13 +196,64 @@ describe('fetchResolvedConflicts', () => {
 });
 
 describe('resolvedScheduleIds', () => {
-  it('flags the classes a resolution changed, but not reopened or allowed ones', () => {
+  it('flags both sides of a resolved clash and the classes the fix changed, but not reopened or allowed ones', () => {
     const ids = resolvedScheduleIds([
       resolution({ affected_schedule_ids: [77, 78] }),
       resolution({ key: 'b', status: 'reopened', affected_schedule_ids: [90] }),
       resolution({ key: 'c', method: 'overridden', status: 'overridden', affected_schedule_ids: [91, 92] }),
     ]);
 
-    expect([...ids].sort()).toEqual(['77', '78']);
+    // room_conflict:42:77 names both sides; 78 was moved along with 77.
+    expect([...ids].sort()).toEqual(['42', '77', '78']);
+  });
+});
+
+describe('rule issues', () => {
+  it('asks for the scope and returns the issues', async () => {
+    const issue = {
+      id: 'rule_issue:room_availability:42',
+      rule: 'room_availability',
+      message: 'Room CL-201 is not available for scheduling.',
+      schedule: schedule(),
+    };
+    apiGet.mockResolvedValueOnce({ data: { issues: [issue] } });
+
+    await expect(fetchRuleIssues({ semesterId: 1 })).resolves.toEqual([issue]);
+    expect(apiGet).toHaveBeenLastCalledWith('/conflicts/rule-issues', {
+      signal: undefined,
+      params: { semester_id: 1, department_id: undefined, section_id: undefined },
+    });
+  });
+
+  it('names the common drifts and falls back for the rest', () => {
+    expect(ruleIssueLabel('room_availability')).toBe('Room not available');
+    expect(ruleIssueLabel('faculty_active')).toBe('Instructor inactive');
+    expect(ruleIssueLabel('subject_active')).toBe('Rule no longer met');
+  });
+});
+
+describe('conflictFlagsBySchedule', () => {
+  it('marks both classes of each conflict with its kind', () => {
+    const conflict = (id: string, rule: string, ids: [number, number]) => ({
+      id,
+      rule,
+      semester_id: 1,
+      day: 'Monday',
+      overlap_start: '08:00',
+      overlap_end: '09:00',
+      message: '',
+      resolution_options: [],
+      schedules: [schedule({ id: ids[0] }), schedule({ id: ids[1] })] as [ConflictSchedule, ConflictSchedule],
+    });
+
+    const flags = conflictFlagsBySchedule([
+      conflict('room_conflict:1:2', 'room_conflict', [1, 2]),
+      conflict('faculty_conflict:2:3', 'faculty_conflict', [2, 3]),
+    ] as never);
+
+    expect(flags.get('1')).toEqual({ faculty: false, room: true, section: false, online: false });
+    expect(flags.get('2')).toEqual({ faculty: true, room: true, section: false, online: false });
+    expect(flags.get('3')).toEqual({ faculty: true, room: false, section: false, online: false });
+    expect(flags.has('4')).toBe(false);
   });
 });

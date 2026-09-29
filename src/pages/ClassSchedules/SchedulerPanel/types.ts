@@ -391,7 +391,7 @@ export interface ApiFacultyRecord {
     department_name?: string;
   } | null;
   availabilities?: FacultyAvailability[];
-  /** Up to three held designations, in their listed order. */
+  /** Held designations, in their listed order. */
   designations?: {
     id: number;
     name: string;

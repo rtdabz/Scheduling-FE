@@ -5,6 +5,7 @@ import Sidebar from './Sidebar'
 import SystemHeader from './SystemHeader'
 import SessionTimeoutGuard from './SessionTimeoutGuard'
 import ConnectionBanner from './ConnectionBanner'
+import DepartmentSetupBanner from './DepartmentSetupBanner'
 import RouteLoadingBar from '../ui/RouteLoadingBar'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
@@ -139,6 +140,7 @@ export default function AppLayout() {
         <div className="print:hidden">
           <SystemHeader activeSemester={activeSemester} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
           <ConnectionBanner />
+          <DepartmentSetupBanner user={user} />
         </div>
         <main className="min-h-0 flex-1 overflow-y-auto p-4 print:block print:w-full print:overflow-visible print:p-0 print:m-0">
           <div className="print:hidden">

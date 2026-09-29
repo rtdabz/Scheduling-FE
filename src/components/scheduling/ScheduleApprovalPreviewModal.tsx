@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { X, Check } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { buildSchedulePdf, type SchedulePdfInput } from '../../pages/ClassSchedules/SchedulerPanel/schedulePdf';
@@ -13,6 +13,10 @@ interface Props {
   /** Exactly what Print receives, already narrowed to the submission under review. */
   printInput: SchedulePdfInput | null;
   canAct: boolean;
+  /** Shown between the title and the document: the pre-approval check. */
+  checks?: ReactNode;
+  /** Set while approval cannot go ahead; Approve is held and says why. */
+  approveBlockedReason?: string | null;
   onApprove: () => void;
   onReject: () => void;
   onClose: () => void;
@@ -29,7 +33,7 @@ type PdfState = { url: string | null; failed: boolean };
  * same document that will be printed and signed.
  */
 export default function ScheduleApprovalPreviewModal({
-  open, title, status, statusLabel, printInput, canAct, onApprove, onReject, onClose,
+  open, title, status, statusLabel, printInput, canAct, checks, approveBlockedReason = null, onApprove, onReject, onClose,
 }: Props) {
   const [pdf, setPdf] = useState<PdfState>({ url: null, failed: false });
 
@@ -65,6 +69,7 @@ export default function ScheduleApprovalPreviewModal({
           <div className="flex items-center gap-3"><h2 className="font-serif text-lg font-bold text-[#1A1410]">{title}</h2><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${badge}`}>{statusLabel}</span></div>
           <button type="button" onClick={onClose} aria-label="Close preview" className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"><X size={20} /></button>
         </div>
+        {checks && <div className="border-b border-gray-300 bg-white">{checks}</div>}
         <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-100">
           {isEmpty ? (
             <p className="text-sm italic text-gray-500">This department has no schedule entries.</p>
@@ -76,7 +81,7 @@ export default function ScheduleApprovalPreviewModal({
             <div className="flex items-center gap-2 text-sm text-gray-500"><LoadingSpinner size={16} className="animate-spin" /> Preparing schedule document…</div>
           )}
         </div>
-        <div className="flex items-center justify-between border-t border-gray-300 bg-white px-5 py-3"><div className="flex gap-2">{canAct && <><button type="button" onClick={onApprove} className="inline-flex items-center gap-1 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-bold text-white hover:bg-[#C9952A]"><Check size={14} /> Approve</button><button type="button" onClick={onReject} className="rounded-lg border border-red-500 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50">Reject</button></>}</div><button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50">Close</button></div>
+        <div className="flex items-center justify-between border-t border-gray-300 bg-white px-5 py-3"><div className="flex gap-2">{canAct && <><button type="button" onClick={onApprove} disabled={approveBlockedReason !== null} title={approveBlockedReason ?? undefined} className="inline-flex items-center gap-1 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-bold text-white hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:bg-slate-300"><Check size={14} /> Approve</button><button type="button" onClick={onReject} className="rounded-lg border border-red-500 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50">Reject</button></>}</div><button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50">Close</button></div>
       </div>
     </div>
   );

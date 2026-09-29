@@ -19,7 +19,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
-import { getStoredUser } from '../../lib/storedUser';
+import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
@@ -104,9 +104,9 @@ export default function SecretarySections() {
   const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isSecretary = user?.role?.toLowerCase() === 'secretary';
-  const isProgramHead = user?.role?.toLowerCase() === 'program_head';
-  const canManageSections = isVpaa || isSecretary || isProgramHead;
+  // Section writes sit behind schedule.create, which a department without a
+  // program cannot exercise; gating on the role showed buttons the API refused.
+  const canManageSections = hasStoredCapability('schedule.create');
 
   const activeSemester = useMemo(() => semesters.find((t) => t.is_active) ?? semesters[0], [semesters]);
 

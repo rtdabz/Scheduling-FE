@@ -8,6 +8,7 @@ import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { fetchCurrentUser } from '../../lib/currentUser';
+import { lockedModuleMessage } from '../../lib/storedUser';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
 import { prefetchPage } from '../../lib/pagePrefetch';
@@ -312,7 +313,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                         type="button"
                         onClick={() => {
                           if (item.isLocked) {
-                            toast.warning('Access Restricted', 'Access restricted. Ask an administrator to grant access to this module.');
+                            toast.warning('Access Restricted', lockedModuleMessage(item.requiredCapability));
                             return;
                           }
                           // The collapsed rail has no room for a group's pages, so a
@@ -407,7 +408,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                                 onClick={(e) => {
                                   if (child.isLocked) {
                                     e.preventDefault();
-                                    toast.warning('Access Restricted', `${child.label} is currently locked for your account. Please coordinate with the VPAA.`);
+                                    toast.warning('Access Restricted', lockedModuleMessage(child.requiredCapability));
                                     return;
                                   }
                                   if (window.innerWidth < 768) {
@@ -472,7 +473,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                     onClick={(e) => {
                       if (item.isLocked) {
                         e.preventDefault();
-                        toast.warning('Access Restricted', 'Access restricted. Ask an administrator to grant access to this module.');
+                        toast.warning('Access Restricted', lockedModuleMessage(item.requiredCapability));
                         return;
                       }
                       if (window.innerWidth < 768) {

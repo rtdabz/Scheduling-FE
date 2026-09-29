@@ -1652,6 +1652,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   courses={scopedCourses}
                   roomCodeById={roomCodeById}
                   changes={generationChanges}
+                  completedAfterProvisional={run.completedAfterProvisional}
                   recommendations={generationRecommendations}
                   onApplyRecommendation={applyRecommendationAndRetry}
                   applying={generating || applying}

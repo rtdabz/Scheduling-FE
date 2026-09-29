@@ -119,3 +119,6 @@ export const LOAD_LEVELS: Record<LoadLevel, { label: string; color: string; dot:
   overload: { label: 'Overload', color: 'text-red-600 bg-red-50 border-red-200', dot: 'bg-red-400' },
   probono: { label: 'Pro Bono', color: 'text-slate-600 bg-slate-100 border-slate-200', dot: 'bg-slate-400' },
 };
+
+/** Shown in place of the load level for an inactive instructor (e.g. a deactivated account). */
+export const UNAVAILABLE_STATUS = { label: 'Unavailable', color: 'text-gray-500 bg-gray-100 border-gray-200', dot: 'bg-gray-400' };

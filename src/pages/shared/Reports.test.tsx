@@ -10,7 +10,6 @@ vi.mock('../ClassSchedules/SchedulerPanel/PrintSchedule', () => ({ default: () =
 vi.mock('../ClassSchedules/SchedulerPanel/TeachingLoad', () => ({ default: () => <div>Teaching load PDF opened</div> }));
 
 const overview: ReportsOverview = {
-  active_semester: null,
   departments: [{
     id: 1, code: 'CIT', name: 'College of Information Technology', can_print_department: true,
     complete_section_count: 2, instructor_count: 3,

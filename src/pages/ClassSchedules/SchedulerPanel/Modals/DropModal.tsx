@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Building2, CalendarPlus, CheckCircle2, ChevronDown, Clock, Info, Lightbulb, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, MapPin, Sparkles, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
 import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
 import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, isFixedSplitPattern, parsePreferredPattern, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
-import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, ScheduleStatus, Semester } from "../types";
+import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, Semester } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, SLOTS_PER_HOUR, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { evaluatePlacementQuality, type PlannedMeeting } from "../placementQuality";
 import {
   isFieldSchedulingEligible,
@@ -16,71 +16,26 @@ import {
   balancedSplitSettingsOf,
   isBalancedSplitSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
-import { describeWindow } from "../../../../lib/roomRequests";
 import { runLabel, runStartingOn, tickedRun, type ConsecutivePlacement } from "../GenerateSchedule/courseClassConfig";
-
-interface DropRecommendationRow {
-  semester_id: number;
-  section_id: number;
-  course_id: number;
-  faculty_id: number | null;
-  room_id: number | null;
-  department_id: number;
-  day: string;
-  start_time: string;
-  end_time: string;
-  mode: DeliveryMode;
-  is_hybrid: boolean;
-  preferred_pattern: string | null;
-  status: ScheduleStatus;
-}
-
-interface DropRecommendation {
-  /** Lets select save exactly this previewed plan instead of solving again. */
-  plan_id?: string;
-  rank: number;
-  score: number;
-  schedules: DropRecommendationRow[];
-}
+import PlacementAlternatives from "./PlacementAlternatives";
+import MeetingCard from "./MeetingCard";
+import {
+  ALL_ROOMS,
+  ROOM_TBA,
+  type ClassMode,
+  slotRoomKey,
+  type AvailableSlot,
+  type AvailableSlotRoom,
+  type ConfigurationConfirmation,
+  type ConfigurationConfirmationError,
+  type ConfigurationConfirmationPrompt,
+  type DropRecommendation,
+  type DropRecommendationRow,
+} from "./placementAlternativesModel";
 
 interface DropRecommendationResponse {
   recommendations: DropRecommendation[];
 }
-
-/** One placement the Rule Engine accepts, from /available-slots. */
-interface AvailableSlot {
-  day: string;
-  day_index: number;
-  start_slot: number;
-  end_slot: number;
-  start_time: string;
-  end_time: string;
-  mode: DeliveryMode;
-  room_id: number | null;
-  room_code: string;
-  room_type: string;
-}
-
-interface AvailableSlotRoom {
-  room_id: number | null;
-  room_code: string;
-  room_type: string;
-  mode: DeliveryMode;
-  slot_count: number;
-}
-
-/**
- * Identity for the room filter. Online carries no room id, so the mode stands
- * in for one — keying on `room_id` alone folded Online into the "all" bucket.
- */
-/** Two meetings at one start time: a Split Session or a Hybrid Split. */
-const isSameTimePairRecommendation = (recommendation: DropRecommendation): boolean =>
-  recommendation.schedules.length === 2
-  && recommendation.schedules[0].start_time === recommendation.schedules[1].start_time
-  && recommendation.schedules[0].day !== recommendation.schedules[1].day;
-
-const slotRoomKey = (entry: { mode: DeliveryMode; room_id: number | null }): string =>
-  entry.room_id == null ? entry.mode : String(entry.room_id);
 
 interface AvailableSlotsResponse {
   slots: AvailableSlot[];
@@ -89,40 +44,12 @@ interface AvailableSlotsResponse {
   truncated: boolean;
 }
 
-/** "All rooms" in the room filter, which is not a room id. */
-const ALL_ROOMS = "__all__";
-
-/** Short delivery names, for the "F2F | Online" shape of a split. */
-const DELIVERY_SHORT_LABEL: Record<DeliveryMode, string> = {
-  "on-site": "F2F",
-  online: "Online",
-  field: "Field",
-};
-
 interface SelectedRecommendationResponse {
   recommendation: {
     id: number;
     recommended_schedules: DropRecommendationRow[];
   };
 }
-
-interface ConfigurationConfirmation {
-  schema_version: 1;
-  configuration_fingerprint: string;
-  confirmed_warning_rule_ids: string[];
-}
-
-interface ConfigurationConfirmationError {
-  error_code?: string;
-  message?: string;
-  configuration_confirmation?: {
-    schema_version?: number;
-    configuration_fingerprint?: string;
-    required_warning_rule_ids?: string[];
-  };
-}
-
-type ConfigurationConfirmationPrompt = NonNullable<ConfigurationConfirmationError["configuration_confirmation"]>;
 
 const recommendationRoomId = (row: DropRecommendationRow): string => {
   if (row.mode === "online") return "online";
@@ -226,256 +153,8 @@ const getDayIndex = (day: string): number => {
   return DAYS.findIndex((item) => item.toLowerCase() === day.toLowerCase());
 };
 
-const getRecommendationRoomLabel = (row: DropRecommendationRow, rooms: Room[]): string => {
-  const room = rooms.find((item) => Number(item.id) === row.room_id);
-  if (room) return room.name;
-  if (row.mode === "online") return "Online";
-  if (row.mode === "field") return "Field";
-  if (row.room_id == null) return "Room TBA";
-  return "Recommended room";
-};
-
-const ROOM_TBA = "tba";
-
-type ClassMode = "on-site" | "online" | "field";
-
 /** Split Session's delivery, the same three Generate Schedule offers. */
 type SplitDelivery = "onsite" | "hybrid" | "online";
-
-const CLASS_MODE_OPTIONS: { value: ClassMode; label: string; Icon: typeof Building2 }[] = [
-  { value: "on-site", label: "On-Site", Icon: Building2 },
-  { value: "online", label: "Online", Icon: Monitor },
-  { value: "field", label: "Field", Icon: TreePine },
-];
-
-const fieldLabelClass = "mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500";
-const selectClass = "h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-800 outline-none transition-colors hover:border-slate-300 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
-
-interface MeetingCardProps {
-  title: string;
-  mode: ClassMode;
-  isModeDisabled: (mode: ClassMode) => boolean;
-  modeTitle: (mode: ClassMode) => string | undefined;
-  onModeSelect: (mode: ClassMode) => void;
-  roomId: string;
-  onRoomChange: (roomId: string) => void;
-  hasRoomError: boolean;
-  allowsRoomTba: boolean;
-  roomOptions: Room[];
-  dayAriaLabel: string;
-  dayValue: number;
-  dayDisabled: boolean;
-  dayOptions: { value: number; label: string; disabled?: boolean }[];
-  onDayChange: (dayIndex: number) => void;
-  startSlot: number;
-  startDisabled?: boolean;
-  startOptionCount: number;
-  onStartChange: (slot: number) => void;
-  durationSlots: number;
-  /**
-   * Set only where the length is the user's to choose -- Integrated's lecture
-   * and laboratory, as in Setup Courses. Every other shape takes its length
-   * from the course, so the card shows it and does not offer it.
-   */
-  onDurationChange?: (slots: number) => void;
-  /** The longest this meeting may run: the week's ceiling less its partner, and the day's end. */
-  maxDurationSlots?: number;
-  endLabelSuffix?: string;
-}
-
-/**
- * One meeting's delivery, room, day and time.
- *
- * The first and second meeting used to be two ~190-line copies of the same
- * markup that had already drifted (label spacing, cursor styles). They differ
- * only in the values and rules passed in here.
- */
-function MeetingCard({
-  title,
-  mode,
-  isModeDisabled,
-  modeTitle,
-  onModeSelect,
-  roomId,
-  onRoomChange,
-  hasRoomError,
-  allowsRoomTba,
-  roomOptions,
-  dayAriaLabel,
-  dayValue,
-  dayDisabled,
-  dayOptions,
-  onDayChange,
-  startSlot,
-  startDisabled = false,
-  startOptionCount,
-  onStartChange,
-  durationSlots,
-  onDurationChange,
-  maxDurationSlots,
-  endLabelSuffix,
-}: MeetingCardProps) {
-  return (
-    <div className="relative space-y-4 rounded-xl border border-slate-200 bg-white p-4">
-      <h4 className="flex items-center gap-2 pr-20 text-sm font-black text-slate-900">
-        {title}
-      </h4>
-      <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
-        <Clock className="h-3 w-3" />
-        {slotsToHours(durationSlots)} hrs
-      </span>
-
-      <div>
-        <span className={fieldLabelClass}>Class mode</span>
-        <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-          {CLASS_MODE_OPTIONS.map(({ value, label, Icon }) => {
-            const isSelected = mode === value;
-            const disabled = isModeDisabled(value);
-            return (
-              <button
-                key={value}
-                type="button"
-                disabled={disabled}
-                aria-pressed={isSelected}
-                title={modeTitle(value)}
-                onClick={() => { if (!disabled) onModeSelect(value); }}
-                className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-colors ${
-                  isSelected
-                    ? "cursor-default bg-[#4e0a10] text-white shadow-sm"
-                    : disabled
-                      ? "cursor-not-allowed text-slate-300"
-                      : "text-slate-600 hover:bg-white hover:text-slate-900"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <span className={fieldLabelClass}>Room</span>
-          <div className="relative">
-            <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            {mode === "on-site" ? (
-              <>
-                <select
-                  aria-label={`${title} room`}
-                  value={roomId}
-                  onChange={(event) => onRoomChange(event.target.value)}
-                  className={`${selectClass} pl-9 pr-8 ${hasRoomError ? "border-red-300 ring-2 ring-red-100" : ""}`}
-                >
-                  <option value="">Select a room...</option>
-                  {allowsRoomTba && <option value={ROOM_TBA}>Room TBA (assign later)</option>}
-                  {roomOptions.map((room) => {
-                    const isUnavailable = room.status === "not available";
-                    return (
-                      <option key={room.id} value={room.id} disabled={isUnavailable}>
-                        {room.name}
-                        {room.grantWindows ? ` — Granted: ${room.grantWindows.map(describeWindow).join(", ")}` : ""}
-                        {isUnavailable ? " — (Not Available)" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </>
-            ) : (
-              <input
-                type="text"
-                readOnly
-                value={mode === "online" ? "Online" : "Field"}
-                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-semibold text-slate-500 outline-none"
-              />
-            )}
-          </div>
-        </div>
-
-        <div>
-          <span className={fieldLabelClass}>Meeting day</span>
-          <div className="relative">
-            <select
-              aria-label={dayAriaLabel}
-              value={dayValue}
-              disabled={dayDisabled}
-              onChange={(event) => onDayChange(Number(event.target.value))}
-              className={`${selectClass} pl-3 pr-8`}
-            >
-              {dayOptions.map((option) => (
-                <option key={option.value} value={option.value} disabled={option.disabled}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          </div>
-        </div>
-
-        <div>
-          <span className={fieldLabelClass}>Start time</span>
-          <div className="relative">
-            <Clock className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <select
-              aria-label={`${title} start time`}
-              value={startSlot}
-              disabled={startDisabled}
-              title={startDisabled ? "Both meetings share the first meeting's time." : undefined}
-              onChange={(event) => onStartChange(Number(event.target.value))}
-              className={`${selectClass} pl-9 pr-8`}
-            >
-              {Array.from({ length: Math.max(1, startOptionCount) }, (_, slot) => (
-                <option key={slot} value={slot}>{slotToTimeStr(slot)}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          </div>
-        </div>
-
-        {onDurationChange && (
-          <div>
-            <span className={fieldLabelClass}>Duration</span>
-            <div className="relative">
-              <Clock className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <select
-                aria-label={`${title} duration`}
-                value={durationSlots}
-                onChange={(event) => onDurationChange(Number(event.target.value))}
-                className={`${selectClass} pl-9 pr-8`}
-              >
-                {Array.from(
-                  { length: Math.max(1, maxDurationSlots ?? durationSlots, durationSlots) },
-                  (_, index) => index + 1,
-                ).map((slots) => (
-                  <option key={slots} value={slots}>
-                    {slotsToHours(slots)} hr{slots === SLOTS_PER_HOUR ? "" : "s"}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
-          </div>
-        )}
-
-        <div>
-          <span className={fieldLabelClass}>End time{endLabelSuffix ? ` ${endLabelSuffix}` : ""}</span>
-          <div className="relative">
-            <Clock className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              readOnly
-              aria-disabled="true"
-              value={slotToTimeStr(startSlot + durationSlots)}
-              className="h-10 w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-semibold text-slate-500 outline-none"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function DropModal({
   rooms,
@@ -1567,7 +1246,7 @@ export default function DropModal({
       */}
       <div className={`flex max-h-[94vh] w-full max-w-[96vw] flex-col gap-3 xl:flex-row xl:items-stretch ${
         shouldShowRecommendations
-          ? "2xl:max-w-[1700px]"
+          ? "2xl:max-w-[1540px]"
           : isTwoMeetingPattern ? "2xl:max-w-[1400px]" : "2xl:max-w-6xl"
       }`}>
       <div
@@ -1941,376 +1620,39 @@ export default function DropModal({
       </div>
 
       {shouldShowRecommendations && (
-        <aside
-          aria-label="Suggested alternatives"
-          className="flex max-h-80 min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl xl:max-h-[94vh] xl:w-[600px]"
-        >
-          {/*
-            The room filter lives in the header rather than above the list it
-            filters: the list runs to dozens of slots, so a control inside the
-            scroll area is out of sight exactly when it is needed.
-          */}
-          <div className="shrink-0 border-b border-slate-200 bg-gradient-to-b from-[#fff8e8] to-white px-4 pb-3 pt-4">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#c9952a]/15 text-[#7a4c08]">
-                <Lightbulb className="h-4.5 w-4.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-black leading-tight text-slate-900">Suggested alternatives</p>
-                <p className="mt-0.5 text-xs leading-snug text-slate-500">
-                  The generator's best picks, then every placement the Rule Engine accepts.
-                </p>
-              </div>
-            </div>
-
-            {/*
-              A split pair's rooms come from its two meetings, so filtering the
-              list by room would not mean anything for it.
-            */}
-            {splitPairStarts === null && (isSlotsLoading || availableSlots.length > 0) && (
-              <div className="mt-3">
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <select
-                    aria-label="Filter placements by room"
-                    value={roomFilter}
-                    onChange={(event) => setRoomFilter(event.target.value)}
-                    className="h-9 w-full appearance-none rounded-lg border border-slate-300 bg-white pl-8 pr-8 text-xs font-bold text-slate-800 shadow-sm focus:border-[#4e0a10] focus:outline-none focus:ring-2 focus:ring-[#4e0a10]/10"
-                  >
-                    <option value={ALL_ROOMS}>All rooms ({availableSlots.length})</option>
-                    {availableSlotRooms.map((room) => (
-                      <option key={slotRoomKey(room)} value={slotRoomKey(room)}>
-                        {room.room_code} ({room.slot_count})
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                </div>
-
-                {availableSlotRooms.length > 1 && (
-                  <ul className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => setRoomFilter(ALL_ROOMS)}
-                        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                          roomFilter === ALL_ROOMS
-                            ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                        }`}
-                      >
-                        All
-                        <span className={`rounded-full px-1 ${roomFilter === ALL_ROOMS ? "bg-white/20" : "bg-slate-100 text-slate-700"}`}>
-                          {availableSlots.length}
-                        </span>
-                      </button>
-                    </li>
-                    {availableSlotRooms.map((room) => {
-                      const value = slotRoomKey(room);
-                      const isActive = roomFilter === value;
-
-                      return (
-                        <li key={`badge-${value}`}>
-                          <button
-                            type="button"
-                            onClick={() => setRoomFilter(value)}
-                            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                              isActive
-                                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                            }`}
-                          >
-                            {room.room_code}
-                            <span className={`rounded-full px-1 ${isActive ? "bg-white/20" : "bg-slate-100 text-slate-700"}`}>
-                              {room.slot_count}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/*
-            Two panes that scroll on their own: the ranked picks are three tall
-            cards, so a single scroller pushed the full list below the fold and
-            the user had to scroll past the picks to reach the week.
-          */}
-          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-2 xl:divide-x xl:divide-slate-200">
-          <div className="min-h-0 overflow-y-auto p-3">
-            {isRecommendationLoading || loadedRecommendationSeed !== recommendationPayload?.seed ? (
-              <div className="space-y-2" aria-busy="true">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={`recommendation-skeleton-${index}`} className="animate-pulse rounded-xl border border-slate-200 p-3">
-                    <div className="h-3 w-20 rounded bg-slate-200" />
-                    <div className="mt-3 h-10 w-full rounded-lg bg-slate-100" />
-                    <div className="mt-3 h-9 w-full rounded-lg bg-slate-200" />
-                  </div>
-                ))}
-              </div>
-            ) : recommendationError ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <p className="text-sm leading-5 text-amber-900">{recommendationError}</p>
-                </div>
-                {confirmationPrompt?.configuration_fingerprint && (
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg bg-[#7a4c08] px-3 text-xs font-bold text-white transition-colors hover:bg-[#633d06] disabled:opacity-60"
-                    onClick={() => setConfirmedConfiguration({
-                      schema_version: 1,
-                      configuration_fingerprint: confirmationPrompt.configuration_fingerprint as string,
-                      confirmed_warning_rule_ids: confirmationPrompt.required_warning_rule_ids ?? [],
-                    })}
-                    disabled={isRecommendationLoading}
-                  >
-                    Confirm and continue
-                  </button>
-                )}
-              </div>
-            ) : recommendations.length === 0 && visibleSlots.length === 0 && !isSlotsLoading ? (
-              <div className="flex flex-col items-center px-4 py-8 text-center">
-                <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
-                  <Sparkles className="h-5 w-5 text-slate-400" />
-                </span>
-                <p className="text-sm font-bold text-slate-700">No alternatives found</p>
-                <p className="mt-0.5 text-xs text-slate-500">Try another class mode or scheduling option.</p>
-              </div>
-            ) : recommendations.length === 0 ? null : (
-              <>
-              <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Generator picks</p>
-              <ol className="space-y-2" aria-label="Generator picks">
-                {recommendations.map((recommendation, index) => {
-                  const isApplied = appliedRecommendationRank === recommendation.rank;
-                  const offForcedDay = !isApplied && missesForcedDay(recommendation);
-
-                  return (
-                    <li
-                      key={`${recommendation.rank}-${index}`}
-                      className={`rounded-xl border p-3 transition-colors ${
-                        isApplied ? "border-emerald-300 bg-emerald-50/40 ring-1 ring-emerald-200" : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="flex items-center gap-2 text-sm font-black text-slate-900">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4e0a10] text-[11px] text-white">{index + 1}</span>
-                          Option {index + 1}
-                        </p>
-                        {isApplied ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Applied
-                          </span>
-                        ) : index === 0 ? (
-                          <span className="rounded-full bg-[#c9952a]/15 px-2 py-0.5 text-[10px] font-bold text-[#7a4c08]">Best match</span>
-                        ) : null}
-                      </div>
-
-                      {/*
-                        A split that keeps one start time reads as one line:
-                        the time, the two days, and the two deliveries. Listed
-                        as separate rows it was not obvious that the pair was
-                        still a split, or which half was online.
-                      */}
-                      {isSameTimePairRecommendation(recommendation) ? (
-                        <div className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-14 shrink-0 text-center text-[10px] font-black uppercase text-[#4e0a10]">
-                              {recommendation.schedules.map((row) => row.day.slice(0, 1)).join("")}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">
-                              {slotToTimeStr(timeToSlot(recommendation.schedules[0].start_time))} – {slotToTimeStr(timeToSlot(recommendation.schedules[0].end_time))}
-                            </span>
-                            <span className="shrink-0 text-[11px] font-bold text-[#7a4c08]">
-                              {recommendation.schedules.map((row) => DELIVERY_SHORT_LABEL[row.mode]).join(" | ")}
-                            </span>
-                          </div>
-                          <p className="mt-1 flex items-center gap-1 truncate pl-16 text-[11px] text-slate-500">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            {recommendation.schedules
-                              .map((row) => getRecommendationRoomLabel(row, rooms))
-                              .join(" · ")}
-                          </p>
-                        </div>
-                      ) : (
-                      <ul className="mt-2 space-y-1">
-                        {recommendation.schedules.map((row, rowIndex) => (
-                          <li
-                            key={`${row.day}-${row.start_time}-${rowIndex}`}
-                            className="flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5"
-                          >
-                            <span className="w-8 shrink-0 text-center text-[10px] font-black uppercase text-[#4e0a10]">
-                              {row.day.slice(0, 3)}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">
-                              {slotToTimeStr(timeToSlot(row.start_time))} – {slotToTimeStr(timeToSlot(row.end_time))}
-                            </span>
-                            <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
-                              <MapPin className="h-3 w-3 shrink-0" />
-                              {getRecommendationRoomLabel(row, rooms)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      )}
-
-                      <div className="mt-2 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => void applyRecommendation(recommendation)}
-                          disabled={isApplyingRecommendation || isApplied || offForcedDay}
-                          className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-bold transition-colors ${
-                            isApplied
-                              ? "cursor-default bg-emerald-100 text-emerald-800"
-                              : offForcedDay
-                                ? "cursor-not-allowed bg-slate-100 text-slate-500"
-                                : "bg-[#4e0a10] text-white hover:bg-[#3a0809] disabled:opacity-60"
-                          }`}
-                        >
-                          {isApplied
-                            ? <><CheckCircle2 className="h-3.5 w-3.5" /> Selected</>
-                            : offForcedDay
-                              ? `Not on ${forcedDayName} (Force Day)`
-                              : "Use this option"}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-              </>
-            )}
-          </div>
-
-          {/*
-            Every placement the Rule Engine accepts, not just the handful the
-            solver ranked. The counts come from the same pass that built the
-            list, so a room's badge and its slots can never disagree.
-          */}
-          <div className="min-h-0 overflow-y-auto border-t border-slate-200 p-3 xl:border-t-0">
-            {!recommendationError && (isSlotsLoading || availableSlots.length > 0) && (
-              <section aria-label="All valid placements">
-                {/*
-                  An Integrated pair's halves have different lengths and
-                  different legal deliveries, so the list answers for one of
-                  them at a time and says which.
-                */}
-                {isTwoMeetingPattern && splitPairStarts === null && modalDay2Duration > 0 && (
-                  <div className="mb-2 flex gap-1 rounded-lg bg-slate-100 p-0.5">
-                    {([["first", firstMeetingTitle], ["second", secondMeetingTitle]] as const).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => { setSlotMeeting(value); setRoomFilter(ALL_ROOMS); }}
-                        className={`h-7 flex-1 rounded-md text-[11px] font-bold transition-colors ${
-                          slotMeeting === value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="sticky top-0 z-20 -mt-1 mb-2 flex items-baseline justify-between gap-2 bg-white/95 pb-1.5 pt-1 backdrop-blur">
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-                    {splitPairStarts === null ? "All valid placements" : "Valid split times"}
-                  </p>
-                  <span className="text-[11px] font-bold text-slate-400">
-                    {isSlotsLoading
-                      ? "Checking…"
-                      : `${(splitPairStarts ?? visibleSlots).length} slot${(splitPairStarts ?? visibleSlots).length === 1 ? "" : "s"}`}
-                  </span>
-                </div>
-
-                {areSlotsTruncated && (
-                  <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-snug text-amber-900">
-                    Showing the first {availableSlots.length}. Pick a room above to narrow the list.
-                  </p>
-                )}
-
-                {splitPairStarts !== null ? (
-                  <>
-                    <p className="mb-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] leading-snug text-slate-600">
-                      Both meetings share one start time, so these are the times free on
-                      {" "}<b>{DAYS[modalDay1Index]}</b> and <b>{DAYS[modalDay2Index]}</b> for the
-                      rooms and deliveries you picked. The split is kept.
-                    </p>
-                    {splitPairStarts.length === 0 ? (
-                      <p className="rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-500">
-                        No time is free on both days for this pair. Change a room or a delivery above.
-                      </p>
-                    ) : (
-                      <ul className="space-y-1">
-                        {splitPairStarts.map(({ startSlot, endSlot }) => (
-                          <li key={`pair-${startSlot}`}>
-                            <button
-                              type="button"
-                              onClick={() => applySplitPairStart(startSlot)}
-                              disabled={isApplyingRecommendation}
-                              className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left transition-colors hover:border-[#4e0a10] hover:bg-[#4e0a10]/5 disabled:cursor-not-allowed disabled:bg-slate-50"
-                            >
-                              <span className="min-w-0 flex-1 text-xs font-bold text-slate-800">
-                                {slotToTimeStr(startSlot)} – {slotToTimeStr(endSlot)}
-                              </span>
-                              <span className="shrink-0 text-[11px] font-bold text-[#7a4c08]">
-                                {DELIVERY_SHORT_LABEL[modalClassMode]} | {DELIVERY_SHORT_LABEL[modalDay2ClassMode]}
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                ) : slotsByDay.map(([day, daySlots]) => (
-                  <div key={day} className="mt-3">
-                    {/* top-7 clears the section header, which sticks above it. */}
-                    <p className="sticky top-7 z-10 -mx-1 bg-white/95 px-1 py-1 text-[11px] font-black uppercase tracking-wider text-[#4e0a10] backdrop-blur">
-                      {day} <span className="text-slate-400">({daySlots.length})</span>
-                    </p>
-                    <ul className="mt-1 space-y-1">
-                      {daySlots.map((slot) => (
-                        <li key={`${slot.day}-${slot.start_slot}-${slotRoomKey(slot)}`}>
-                          <button
-                            type="button"
-                            onClick={() => applyAvailableSlot(slot)}
-                            disabled={isApplyingRecommendation || (forcedDayName !== null && slot.day !== forcedDayName)}
-                            className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left transition-colors hover:border-[#4e0a10] hover:bg-[#4e0a10]/5 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
-                          >
-                            <span className="min-w-0 flex-1 text-xs font-bold text-slate-800">
-                              {slotToTimeStr(slot.start_slot)} – {slotToTimeStr(slot.end_slot)}
-                            </span>
-                            <span className={`flex shrink-0 items-center gap-1 text-[11px] ${
-                              slot.mode === "on-site" ? "text-slate-500" : "font-bold text-[#7a4c08]"
-                            }`}>
-                              {slot.mode === "online"
-                                ? <Monitor className="h-3 w-3" />
-                                : slot.mode === "field"
-                                  ? <TreePine className="h-3 w-3" />
-                                  : <MapPin className="h-3 w-3" />}
-                              {slot.room_code}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-
-                {!isSlotsLoading && visibleSlots.length === 0 && availableSlots.length > 0 && (
-                  <p className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-500">
-                    That room has no free slot for this meeting. Choose another room above.
-                  </p>
-                )}
-              </section>
-            )}
-          </div>
-          </div>
-        </aside>
+        <PlacementAlternatives
+          rooms={rooms}
+          recommendations={recommendations}
+          arePicksLoading={isRecommendationLoading || loadedRecommendationSeed !== recommendationPayload?.seed}
+          recommendationError={recommendationError}
+          confirmationPrompt={confirmationPrompt}
+          onConfirmConfiguration={setConfirmedConfiguration}
+          appliedRecommendationRank={appliedRecommendationRank}
+          isApplyingRecommendation={isApplyingRecommendation}
+          missesForcedDay={missesForcedDay}
+          forcedDayName={forcedDayName}
+          onApplyRecommendation={(recommendation) => void applyRecommendation(recommendation)}
+          availableSlots={availableSlots}
+          availableSlotRooms={availableSlotRooms}
+          visibleSlots={visibleSlots}
+          slotsByDay={slotsByDay}
+          isSlotsLoading={isSlotsLoading}
+          areSlotsTruncated={areSlotsTruncated}
+          roomFilter={roomFilter}
+          onRoomFilterChange={setRoomFilter}
+          onApplySlot={applyAvailableSlot}
+          splitPairStarts={splitPairStarts}
+          onApplySplitPairStart={applySplitPairStart}
+          firstDayIndex={modalDay1Index}
+          secondDayIndex={modalDay2Index}
+          firstMode={modalClassMode}
+          secondMode={modalDay2ClassMode}
+          showsMeetingSwitch={isTwoMeetingPattern && modalDay2Duration > 0}
+          slotMeeting={slotMeeting}
+          onSlotMeetingChange={(meeting) => { setSlotMeeting(meeting); setRoomFilter(ALL_ROOMS); }}
+          firstMeetingTitle={firstMeetingTitle}
+          secondMeetingTitle={secondMeetingTitle}
+        />
       )}
       </div>
     </div>

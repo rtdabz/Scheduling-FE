@@ -344,8 +344,7 @@ function CurriculumManagePage() {
     { element: '#curriculum-create-button', action: 'click' as const, taskHint: 'Click Create Curriculum to open the form.', title: 'Start a curriculum', description: 'New curricula begin from this page. Open the form to see every field.', side: 'bottom' as const },
     { element: '#curriculum-name-input', action: 'input' as const, taskHint: 'Type a curriculum name to continue.', title: 'Name the curriculum', description: 'Use the official program name and curriculum year.', side: 'bottom' as const },
     { element: '#curriculum-code-input', action: 'input' as const, taskHint: 'Type a curriculum code to continue.', title: 'Give it a code', description: 'The code appears on lists, cards, and printouts.', side: 'bottom' as const },
-    { element: '#curriculum-department-select', action: 'select' as const, taskHint: 'Choose a department to continue.', title: 'Select a department', description: 'The department scopes who can manage this curriculum.', side: 'bottom' as const },
-    { element: '#curriculum-program-select', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose the program you want to manage.', title: 'Select a program', description: 'Programs appear after a department with programs is chosen.', side: 'bottom' as const },
+    { element: '#curriculum-program-select', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose the program you want to manage.', title: 'Select a program', description: 'Pick the program this curriculum is for, if your department has several.', side: 'bottom' as const },
     { element: '#curriculum-form', action: 'submit' as const, taskHint: 'Click Create Curriculum to save it.', title: 'Save the curriculum', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps, mission: 'Create a Curriculum' });
@@ -543,7 +542,6 @@ function CurriculumManagePage() {
         isEditMode={isEditMode}
         curriculum={editingCurriculum}
         onClose={() => setIsFormModalOpen(false)}
-        departments={departments}
         programs={programs}
         onSubmit={async (data) => {
           const saved = await handleCreateOrUpdate(data, editingCurriculum);

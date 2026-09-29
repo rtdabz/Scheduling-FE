@@ -26,7 +26,6 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import PrintSchedule from '../ClassSchedules/SchedulerPanel/PrintSchedule';
 import TeachingLoad from '../ClassSchedules/SchedulerPanel/TeachingLoad';
 import type { SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
-import { fullSemesterLabel } from '../../lib/semesterLabel';
 import { getDeptBadgeStyles } from '../../lib/departmentTheme';
 import api from '../../lib/api';
 import {
@@ -177,12 +176,12 @@ export default function Reports() {
       } else {
         csvLines.push(['Faculty Name', 'Employment Type', 'Max Units', 'Assigned Units', 'Status'].join(','));
         data.faculties.forEach((f) => {
-          const name = `${f.first_name || ''} ${f.last_name || ''}`.trim();
+          // Report data arrives already mapped to the camelCase Faculty shape.
           csvLines.push([
-            `"${name}"`,
-            `"${f.employment_type || 'full-time'}"`,
-            `"${f.max_units || 0}"`,
-            `"${f.assigned_units || 0}"`,
+            `"${f.name || ''}"`,
+            `"${f.employmentType || 'full-time'}"`,
+            `"${f.maxUnits || 0}"`,
+            `"${f.assignedUnits || 0}"`,
             `"${f.status || 'Active'}"`,
           ].join(','));
         });
@@ -238,11 +237,7 @@ export default function Reports() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-600">
           <CalendarDays size={16} className="shrink-0 text-[#4e0a10]" />
-          {isLoading && !overview ? (
-            <Skeleton className="h-4 w-48" />
-          ) : (
-            <span>{overview?.active_semester ? fullSemesterLabel(overview.active_semester) : loadError ? 'Semester unavailable' : 'No active semester'}</span>
-          )}
+          <span>All semesters</span>
         </div>
         <button
           type="button"

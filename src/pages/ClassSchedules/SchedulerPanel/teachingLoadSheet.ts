@@ -255,7 +255,7 @@ export interface SheetContext {
   givenName: string;
   middleInitial: string;
   isPartTime: boolean;
-  /** Held designations, in order. The form has two lines; a third shares line 2. */
+  /** Held designations, in order. The form has two lines; the rest share line 2. */
   designations: HeldDesignation[];
   instructorName: string;
   preparedBy: string;
@@ -390,8 +390,7 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
   drawTotalsRow(doc, formRow(38), "GRAND TOTAL NUMBER OF UNITS/HRS", ctx.load.grandTotals, THIN);
 
   // Rows 39-41 -- C. Other Designation/Functions. Line 1 carries the first
-  // designation the instructor holds, line 2 the rest (an instructor holds at
-  // most three, so line 2 carries two at most). Each line's deload sits in
+  // designation the instructor holds, line 2 the rest, shrunk to fit. Each line's deload sits in
   // the units column, under the totals above it, headed "Deload" in the same
   // style as the section's own heading.
   const sectionHeading = { size: SIZE.label, style: "bold" as const, padding: 1.6 };

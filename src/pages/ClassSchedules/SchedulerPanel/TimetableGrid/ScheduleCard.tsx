@@ -139,11 +139,12 @@ const ScheduleCard = memo(function ScheduleCard({
     </span>
   ) : (
     <span
-      className="inline-flex items-center rounded bg-emerald-600 p-0.5 text-white"
+      className={`inline-flex items-center gap-0.5 rounded bg-emerald-600 px-1 py-0.5 ${isWideView ? "text-[11px]" : "text-[10px]"} font-semibold leading-none text-white`}
       title="Conflict resolved"
       aria-label="Conflict resolved"
     >
-      <Flag className="h-2.5 w-2.5 shrink-0 fill-white" />
+      <Flag className={`${isWideView ? "h-3 w-3" : "h-2.5 w-2.5"} shrink-0 fill-white`} />
+      Resolved
     </span>
   );
 
@@ -273,21 +274,21 @@ const ScheduleCard = memo(function ScheduleCard({
       {isCompact ? (
         <div className="flex flex-col justify-between h-full min-w-0">
           <div className="flex items-start justify-between gap-1 min-w-0">
-            <span className={`text-[10px] font-black uppercase tracking-tight break-words whitespace-normal min-w-0 flex-1 leading-tight ${gridStyles.text}`} title={subject.code}>
+            <span className={`text-[11px] font-black uppercase tracking-tight break-words whitespace-normal min-w-0 flex-1 leading-tight ${gridStyles.text}`} title={subject.code}>
               {subject.code}
             </span>
             <div className="flex flex-wrap items-start justify-end gap-0.5 shrink-0 max-w-[58%]">
               <span
-                className={`text-[7px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}
+                className={`text-[8px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}
               >
                 {displayModeLabel}
               </span>
-              <span className={`text-[7.5px] px-1 rounded font-bold ${gridStyles.badgeText}`}>
+              <span className={`text-[8.5px] px-1 rounded font-bold ${gridStyles.badgeText}`}>
                 {subject.units}u
               </span>
             </div>
           </div>
-          <div className="flex items-start justify-between text-[8.5px] text-slate-500 mt-0.5 gap-1">
+          <div className="flex items-start justify-between text-[9.5px] text-slate-500 mt-0.5 gap-1">
             {roomDisplayName ? (
               <span className="break-words whitespace-normal font-semibold leading-tight min-w-0">{roomDisplayName}</span>
             ) : null}
@@ -302,15 +303,15 @@ const ScheduleCard = memo(function ScheduleCard({
           <div className={`flex items-start justify-between min-w-0 ${isWideView ? "gap-1.5" : "gap-1"}`}>
             <span
               className={`min-w-0 flex-1 truncate whitespace-nowrap font-black uppercase tracking-tight ${
-                isWideView ? "text-[12px]" : "text-[11px] leading-tight"
+                isWideView ? "text-[14px]" : "text-[12px] leading-tight"
               } ${gridStyles.text}`}
               title={subject.code}
             >
               {subject.code}
             </span>
             <span
-              className={`shrink-0 whitespace-nowrap rounded py-0.5 text-[8px] font-bold ${
-                isWideView ? "" : "text-right leading-tight"
+              className={`shrink-0 whitespace-nowrap rounded py-0.5 font-bold ${
+                isWideView ? "text-[10px]" : "text-[9px] text-right leading-tight"
               } px-1 ${modeBadgeClass}`}
             >
               {displayModeLabel}
@@ -319,16 +320,16 @@ const ScheduleCard = memo(function ScheduleCard({
 
           <div className="mt-0.5 flex min-w-0 items-start justify-between gap-1">
             {roomDisplayName ? (
-              <div className={`min-w-0 break-words text-[10px] font-semibold text-slate-600 ${isWideView ? "" : "leading-tight"}`}>
+              <div className={`min-w-0 break-words font-semibold text-slate-600 ${isWideView ? "text-[12px]" : "text-[11px] leading-tight"}`}>
                 {roomDisplayName}
               </div>
             ) : <span />}
-            <span className={`shrink-0 rounded px-1 py-0.5 text-[8.5px] font-bold leading-none ${gridStyles.badgeText}`}>
+            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[10.5px]" : "text-[9.5px]"} ${gridStyles.badgeText}`}>
               {subject.units}u
             </span>
           </div>
 
-          <div className={`text-[9.5px] text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "leading-none" : "whitespace-normal leading-tight"}`}>
+          <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[10.5px] whitespace-normal leading-tight"}`}>
             {hasFaculty && schedule.facultyName && (
               <div className="truncate font-bold text-emerald-800" title={schedule.facultyName}>
                 {schedule.facultyName}

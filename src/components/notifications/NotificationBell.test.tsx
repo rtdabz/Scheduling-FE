@@ -47,10 +47,14 @@ describe('NotificationBell', () => {
 
   it('caps the badge so a large backlog cannot stretch the trigger', () => {
     hookState = { feedItems: [], unreadCount: 41, isLoading: false };
-    render(<NotificationBell />);
+    const { unmount } = render(<NotificationBell />);
+    expect(screen.getByText('41')).toBeTruthy();
+    unmount();
 
-    expect(screen.getByText('9+')).toBeTruthy();
-    expect(screen.queryByText('41')).toBeNull();
+    hookState = { feedItems: [], unreadCount: 140, isLoading: false };
+    render(<NotificationBell />);
+    expect(screen.getByText('99+')).toBeTruthy();
+    expect(screen.queryByText('140')).toBeNull();
   });
 
   it('shows no badge when everything has been read', () => {

@@ -190,6 +190,11 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
           canUpdateSchedule={scheduler.canUpdateSchedule}
           canAssignInstructor={scheduler.canAssignInstructor}
           initialTab={(scheduler.conflictCounts?.open ?? 0) > 0 ? "open" : "resolved"}
+          onOpenInBuilder={scheduler.canUpdateSchedule ? (scheduleId) => {
+            // The placement dialog takes over; closing the inbox keeps one
+            // modal on screen, and its next open re-reads the issues.
+            if (scheduler.openScheduleInBuilder(String(scheduleId))) setIsConflictsOpen(false);
+          } : undefined}
           onResolved={() => {
             void scheduler.refreshSchedules();
             scheduler.refreshConflictCounts();

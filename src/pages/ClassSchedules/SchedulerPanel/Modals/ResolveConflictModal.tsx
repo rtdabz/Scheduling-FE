@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, Loader2, RotateCcw, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ClipboardX, Loader2, Pencil, RotateCcw, ShieldAlert, Sparkles } from "lucide-react";
 import Modal from "../../../../components/ui/Modal";
 import { useToast } from "../../../../context/ToastContext";
 import { apiErrorMessage } from "../../../../lib/apiError";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import OverloadConfirmationModal from "../../../../components/faculty/OverloadConfirmationModal";
+import RecommendedOptionList from "../components/RecommendedOptionList";
 import { FULL_DAY_NAMES } from "../../../../lib/timeGrid";
 import {
   alreadyResolvedFrom,
@@ -13,15 +14,19 @@ import {
   fetchConflictRecommendations,
   fetchConflicts,
   fetchResolvedConflicts,
+  fetchRuleIssues,
   isReplottable,
   overrideConflict,
   refusalDetails,
   resolutionActionLabel,
   resolutionMethodLabel,
   resolutionStatusLabel,
+  ruleIssueLabel,
   resolveConflict,
+  reviewConflict,
   type ConflictRecommendation,
   type ConflictResolution,
+  type RuleIssue,
   type ConflictRule,
   type ConflictSchedule,
   type ResolutionAction,
@@ -59,6 +64,12 @@ interface ResolveConflictModalProps {
   rules?: ConflictRule[];
   /** The tab shown first; the caller opens on Resolved when nothing is open. */
   initialTab?: "open" | "resolved";
+  /**
+   * Opens a class in the Schedule Builder's placement dialog, where its
+   * alternatives are offered. Given, the Rule issues tab is shown and each
+   * editable issue gets a fix button; left out, the tab is not offered.
+   */
+  onOpenInBuilder?: (scheduleId: number) => void;
   /** Called after any successful write so the caller reloads. */
   onResolved: () => void;
 }
@@ -107,9 +118,8 @@ const formatResolvedAt = (iso: string | null): string => {
  * comes back. A refusal is shown with every violation the server named, and the
  * timetable is untouched -- the whole resolution rolled back.
  *
- * Recommendation-based resolution is not duplicated here either. When the
- * server offers `apply_recommendation` the dialog says so and sends the user to
- * the generator, which keeps the existing preview -> accept plan contract.
+ * Recommended fixes are resolve requests too: each option carries the exact
+ * body to send, so Apply and the manual forms share one path.
  */
 export default function ResolveConflictModal({
   isOpen,
@@ -123,6 +133,7 @@ export default function ResolveConflictModal({
   focusScheduleId = null,
   rules,
   initialTab = "open",
+  onOpenInBuilder,
   onResolved,
 }: ResolveConflictModalProps) {
   const { toast } = useToast();
@@ -150,7 +161,10 @@ export default function ResolveConflictModal({
     options: ConflictRecommendation[] | null;
   } | null>(null);
   const [applyingRank, setApplyingRank] = useState<number | null>(null);
-  const [tab, setTab] = useState<"open" | "resolved">(initialTab);
+  const [tab, setTab] = useState<"open" | "resolved" | "issues">(initialTab);
+  // null until the Rule issues tab is first opened: it re-runs every rule on
+  // every class, so it is read when asked for rather than with the list.
+  const [ruleIssues, setRuleIssues] = useState<RuleIssue[] | null>(null);
   // null until the Resolved tab is first opened, and again after any write so
   // the next visit reads the new entry rather than a stale list.
   const [resolutions, setResolutions] = useState<ConflictResolution[] | null>(null);
@@ -237,10 +251,24 @@ export default function ResolveConflictModal({
     }
   };
 
-  const showTab = (next: "open" | "resolved") => {
+  const loadRuleIssues = async () => {
+    try {
+      setRuleIssues(await fetchRuleIssues({ semesterId, departmentId }));
+    } catch (err) {
+      setRuleIssues([]);
+      toast.error("Conflicts", apiErrorMessage(err, "Could not check the timetable's rules."));
+    }
+  };
+
+  const showTab = (next: "open" | "resolved" | "issues") => {
     setTab(next);
     if (next === "resolved" && resolutions === null) void loadResolutions();
+    if (next === "issues" && ruleIssues === null) void loadRuleIssues();
   };
+
+  const tabs = onOpenInBuilder
+    ? (["open", "resolved", "issues"] as const)
+    : (["open", "resolved"] as const);
 
   // Filtered like the open list, so Instructor Assignment sees only its rule.
   const shownResolutions = useMemo(
@@ -397,7 +425,7 @@ export default function ResolveConflictModal({
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
             Close
           </button>
-          {tab === "resolved" ? null : action === "request_override" ? (
+          {tab !== "open" ? null : action === "request_override" ? (
             <button
               type="button"
               onClick={submitOverride}
@@ -422,7 +450,7 @@ export default function ResolveConflictModal({
       }
     >
       <div className="flex gap-1 border-b border-slate-200 px-4 pt-3 sm:px-5" role="tablist">
-        {(["open", "resolved"] as const).map((name) => (
+        {tabs.map((name) => (
           <button
             key={name}
             type="button"
@@ -437,12 +465,58 @@ export default function ResolveConflictModal({
           >
             {name === "open"
               ? `Open${conflicts !== null ? ` (${open.length})` : ""}`
-              : `Resolved${resolutions !== null ? ` (${shownResolutions.length})` : ""}`}
+              : name === "resolved"
+                ? `Resolved${resolutions !== null ? ` (${shownResolutions.length})` : ""}`
+                : `Rule issues${ruleIssues !== null ? ` (${ruleIssues.length})` : ""}`}
           </button>
         ))}
       </div>
 
-      {tab === "resolved" ? (
+      {tab === "issues" ? (
+        <section className="p-4 sm:p-5">
+          <p className="mb-3 text-[11px] font-semibold text-slate-500">
+            Saved classes that passed every rule when they were placed but no longer do, because the data a rule
+            reads has changed since: a room taken out of service, an instructor's availability, operating hours.
+          </p>
+          {ruleIssues === null ? (
+            <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking every class against the current rules…
+            </p>
+          ) : ruleIssues.length === 0 ? (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-xs font-semibold text-emerald-800">
+              Every saved class still meets the scheduling rules.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {ruleIssues.map((issue) => (
+                <li key={issue.id} className="flex items-start gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2.5">
+                  <ClipboardX className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-amber-800">{ruleIssueLabel(issue.rule)}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-700">{issue.message}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{describeConflictSchedule(issue.schedule)}</p>
+                    {!isReplottable(issue.schedule) && (
+                      <p className="mt-0.5 text-[10px] font-bold uppercase text-slate-400">
+                        Locked at {issue.schedule.status.replace(/_/g, " ")} — recall it to move the class
+                      </p>
+                    )}
+                  </div>
+                  {onOpenInBuilder && isReplottable(issue.schedule) && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenInBuilder(issue.schedule.id)}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#4e0a10] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#3a0809]"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Fix in Schedule Builder
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : tab === "resolved" ? (
         <section className="p-4 sm:p-5">
           {resolutions === null ? (
             <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
@@ -560,34 +634,31 @@ export default function ResolveConflictModal({
                     No automatic fix was found. Choose a change manually below.
                   </p>
                 ) : (
-                  <ul className="space-y-1.5">
-                    {shownRecommendations.map((option) => (
-                      <li
-                        key={`${option.rank}-${option.action}-${option.schedule_id}`}
-                        className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2"
-                      >
-                        <span className="min-w-0 flex-1 text-[11px] font-semibold text-slate-700">
-                          {option.summary}
-                          {option.requires_overload_confirmation && (
-                            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-                              Over Basic Load
-                            </span>
+                  <RecommendedOptionList
+                    label="Recommended fixes"
+                    isBusy={isSubmitting}
+                    busyKey={applyingRank === null ? null : String(applyingRank)}
+                    items={shownRecommendations.map((option) => ({
+                      key: String(option.rank),
+                      body: (
+                        <>
+                          <p className="text-xs font-semibold text-slate-700">{option.summary}</p>
+                          {option.reasons && option.reasons.length > 0 && (
+                            <p className="mt-0.5 text-[10px] font-medium text-slate-500">{option.reasons.join(" · ")}</p>
                           )}
+                        </>
+                      ),
+                      tag: option.requires_overload_confirmation ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                          Over Basic Load
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => applyRecommendation(option)}
-                          disabled={isSubmitting}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {applyingRank === option.rank && isSubmitting
-                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                            : <Check className="h-3 w-3" />}
-                          Apply
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                      ) : null,
+                    }))}
+                    onApply={(key) => {
+                      const option = shownRecommendations.find((candidate) => String(candidate.rank) === key);
+                      if (option) applyRecommendation(option);
+                    }}
+                  />
                 )}
               </div>
 
@@ -632,8 +703,7 @@ export default function ResolveConflictModal({
                     key={option}
                     type="button"
                     disabled={
-                      option === "apply_recommendation"
-                      || (APPLIABLE.includes(option) && !allowed(option))
+                      (APPLIABLE.includes(option) && !allowed(option))
                       || (option === "request_override" && !canAssignInstructor)
                     }
                     onClick={() => {
@@ -645,9 +715,6 @@ export default function ResolveConflictModal({
                       }
                       if (APPLIABLE.includes(option)) chooseAction(option, target);
                     }}
-                    title={option === "apply_recommendation"
-                      ? "Close this dialog and use Generate — a recommendation is previewed and accepted there."
-                      : undefined}
                     className={`rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                       action === option
                         ? "border-[#4e0a10] bg-[#4e0a10] text-white"

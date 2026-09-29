@@ -68,6 +68,7 @@ interface LinkableFaculty {
   middle_name: string | null;
   last_name: string;
   employment_type: string | null;
+  max_units: number | null;
   program_id: number | null;
   status: string | null;
 }
@@ -330,6 +331,12 @@ export default function VpaaUsers() {
       (f) => f.first_name.trim().toLowerCase() === first && f.last_name.trim().toLowerCase() === last,
     ) ?? null;
   }, [linkableFaculty, formData.first_name, formData.last_name]);
+
+  // The Basic Load the designations deload from: a new profile starts at the
+  // default 21 units, a linked instructor keeps their own maximum.
+  const designationMaxUnits = facultyMode === 'link'
+    ? linkableFaculty.find((f) => String(f.id) === linkFacultyId)?.max_units ?? undefined
+    : 21;
 
   // Suggest linking when the person already appears on the roster, so the
   // default path does not create a second instructor for them.
@@ -1362,7 +1369,7 @@ export default function VpaaUsers() {
                     {facultyMode !== 'none' && designations.length > 0 && (
                       <div>
                         <label className={FORM_LABEL}>Designations</label>
-                        <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} />
+                        <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} maxUnits={designationMaxUnits} />
                         <p className="text-[11px] text-gray-500 mt-0.5">
                           {facultyMode === 'link' && designationIds.length === 0
                             ? 'Leave empty to keep the instructor\'s current designations.'

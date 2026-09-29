@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import api from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiError';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
@@ -289,6 +290,7 @@ export function useCurriculumDetail(id: string | undefined) {
                 lec_units: courseData.lecture_hours,
                 lab_units: courseData.lab_hours,
                 total_units: courseData.units,
+                department_id: courseData.department_id ?? null,
               });
             }
           } else {
@@ -451,6 +453,7 @@ export function useCurriculumDetail(id: string | undefined) {
                     lec_units: existingCourse.lecture_hours,
                     lab_units: existingCourse.lab_hours,
                     total_units: existingCourse.units,
+                    department_id: existingCourse.department_id ?? null,
                   }
                 : course
             );
@@ -477,8 +480,8 @@ export function useCurriculumDetail(id: string | undefined) {
           await curriculumService.attachCourse(id, existingCourse.id, currentSemester.year_level, currentSemester.semester, courseId);
           invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
           toast.success('Course Updated', `${normalizedCode} linked successfully.`);
-        } catch {
-          toast.error('Error', 'Failed to update course.');
+        } catch (error) {
+          toast.error('Error', apiErrorMessage(error, 'Failed to update course.'));
           fetchCurriculum(true);
         }
 
@@ -550,8 +553,8 @@ export function useCurriculumDetail(id: string | undefined) {
         });
         invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Course Updated', `${courseCode} updated successfully.`);
-      } catch {
-        toast.error('Error', 'Failed to update course.');
+      } catch (error) {
+        toast.error('Error', apiErrorMessage(error, 'Failed to update course.'));
         fetchCurriculum(true);
       }
     },

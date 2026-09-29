@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BadgeCheck, ChevronRight, X } from 'lucide-react';
 import {
-  MAX_DESIGNATIONS_PER_INSTRUCTOR,
   describeDeload,
   designationLabel,
   groupDesignations,
@@ -22,13 +21,19 @@ interface DesignationPickerProps {
   value: string[];
   onChange: (ids: string[]) => void;
   disabled?: boolean;
-  /** When given, the Basic Load the selection leaves is shown underneath. */
+  /**
+   * When given, the Basic Load the selection leaves is shown underneath, and
+   * no further deloading designation can be added once it reaches zero.
+   */
   maxUnits?: number;
   disabledHint?: string;
 }
 
 /**
- * Picks up to three designations for an instructor.
+ * Picks the designations an instructor holds. There is no fixed count, but the
+ * deloads may not add up to more than the instructor's maximum: a designation
+ * that would take the Basic Load below zero is disabled (the server refuses
+ * the same).
  *
  * The form shows only the current selection; clicking it opens a checklist
  * modal that edits a draft, so Cancel leaves the form untouched. Sub-designations
@@ -63,7 +68,6 @@ export default function DesignationPicker({
 
   const selected = selectedFrom(value);
   const deload = totalDeload(value, options);
-  const draftFull = draft.length >= MAX_DESIGNATIONS_PER_INSTRUCTOR;
   const draftDeload = totalDeload(draft, options);
 
   const openPicker = () => {
@@ -72,12 +76,14 @@ export default function DesignationPicker({
     setOpen(true);
   };
 
+  // Only the Basic Load still left can be deloaded. A designation without a
+  // deload takes nothing from it, so it always stays open.
+  const blocked = (id: string) => maxUnits !== undefined
+    && draftDeload + (options.find((designation) => String(designation.id) === id)?.deload_units ?? 0) > maxUnits;
+
   const toggleDraft = (id: string) => {
-    if (draft.includes(id)) {
-      setDraft(draft.filter((selectedId) => selectedId !== id));
-    } else if (!draftFull) {
-      setDraft([...draft, id]);
-    }
+    if (draft.includes(id)) setDraft(draft.filter((selectedId) => selectedId !== id));
+    else if (!blocked(id)) setDraft([...draft, id]);
   };
 
   const apply = () => {
@@ -97,10 +103,12 @@ export default function DesignationPicker({
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [open]);
 
-  const summary = (deloadUnits: number, full: boolean) => [
-    `Up to ${MAX_DESIGNATIONS_PER_INSTRUCTOR} designations${full ? ' (limit reached)' : ''}.`,
-    maxUnits !== undefined ? describeDeload(maxUnits, deloadUnits) : deloadUnits > 0 ? `Deloads ${deloadUnits} units in total.` : '',
-  ].filter(Boolean).join(' ');
+  const summary = (deloadUnits: number) => {
+    if (maxUnits === undefined) return deloadUnits > 0 ? `Deloads ${deloadUnits} units in total.` : '';
+    const load = describeDeload(maxUnits, deloadUnits);
+    if (deloadUnits > maxUnits) return `${load}. The deload is more than the ${maxUnits}-unit maximum; remove a designation.`;
+    return deloadUnits === maxUnits ? `${load} (Basic Load used up).` : load;
+  };
 
   return (
     <div>
@@ -151,7 +159,7 @@ export default function DesignationPicker({
       </div>
 
       <p className="mt-1 text-[10px] font-semibold text-gray-500">
-        {disabled ? disabledHint : summary(deload, value.length >= MAX_DESIGNATIONS_PER_INSTRUCTOR)}
+        {disabled ? disabledHint : summary(deload)}
       </p>
 
       {open && createPortal(
@@ -177,7 +185,7 @@ export default function DesignationPicker({
               <div className="flex-1">
                 <h2 id="designation-picker-title" className="text-base font-bold text-white">Select Designations</h2>
                 <p className="mt-0.5 text-[11px] font-semibold text-amber-100/75">
-                  {draft.length} of {MAX_DESIGNATIONS_PER_INSTRUCTOR} selected
+                  {draft.length} selected
                 </p>
               </div>
               <button
@@ -203,7 +211,7 @@ export default function DesignationPicker({
                   {group.options.map((designation) => {
                     const id = String(designation.id);
                     const checked = draft.includes(id);
-                    const unavailable = !checked && draftFull;
+                    const unavailable = !checked && blocked(id);
                     return (
                       <label
                         key={designation.id}
@@ -227,7 +235,7 @@ export default function DesignationPicker({
             </div>
 
             <div className="shrink-0 border-t border-gray-200 bg-white/60 p-4">
-              <p className="mb-3 text-[11px] font-semibold text-gray-500">{summary(draftDeload, draftFull)}</p>
+              <p className="mb-3 text-[11px] font-semibold text-gray-500">{summary(draftDeload)}</p>
               <div className="flex justify-end gap-2">
                 <button
                   type="button"

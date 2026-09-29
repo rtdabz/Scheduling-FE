@@ -9,6 +9,8 @@ export interface CourseOption {
   units: number;
   lecture_hours: number;
   lab_hours: number;
+  /** Owning department: every course belongs to exactly one. */
+  department_id?: number | null;
 }
 
 interface AddCourseFormProps {

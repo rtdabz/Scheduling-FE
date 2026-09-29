@@ -28,6 +28,7 @@ import {
 import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import LoadErrorBanner from "../../components/ui/LoadErrorBanner";
 import TruncatedDataNotice from "../../components/ui/TruncatedDataNotice";
+import { conflictFlagsBySchedule, fetchConflicts, type ConflictFlags, type ScheduleConflict } from "../../lib/conflicts";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
 interface Section {
@@ -125,12 +126,6 @@ interface DeanSchedulesPageData {
   schedulesTruncated?: boolean;
 }
 
-interface ScheduleConflictInfo {
-  faculty: boolean;
-  room: boolean;
-  section: boolean;
-}
-
 const dayMapToIndex: Record<string, number> = {
   "Monday": 0, "Mon": 0,
   "Tuesday": 1, "Tue": 1,
@@ -187,67 +182,13 @@ const getGridModeBadgeClass = (mode: Schedule["mode"]) => {
   }
 };
 
-const isAssignedFaculty = (schedule: Schedule) => (
-  !!schedule.facultyName?.trim() && schedule.facultyName.trim().toLowerCase() !== "unassigned"
-);
-
-const isAssignedRoom = (schedule: Schedule) => (
-  !!schedule.roomName.trim() && schedule.roomName.trim().toLowerCase() !== "unassigned"
-);
-
-const schedulesOverlap = (left: Schedule, right: Schedule) => {
-  if (left.day !== right.day) return false;
-  const leftStart = parseTimeToSlot(left.startTime);
-  const leftEnd = parseTimeToSlot(left.endTime);
-  const rightStart = parseTimeToSlot(right.startTime);
-  const rightEnd = parseTimeToSlot(right.endTime);
-  return Math.max(leftStart, rightStart) < Math.min(leftEnd, rightEnd);
-};
-
-const buildConflictMap = (items: Schedule[]) => {
-  const map = new Map<string, ScheduleConflictInfo>();
-  items.forEach((item) => map.set(item.id, { faculty: false, room: false, section: false }));
-
-  for (let index = 0; index < items.length; index += 1) {
-    for (let compareIndex = index + 1; compareIndex < items.length; compareIndex += 1) {
-      const left = items[index];
-      const right = items[compareIndex];
-      if (!schedulesOverlap(left, right)) continue;
-
-      const leftInfo = map.get(left.id);
-      const rightInfo = map.get(right.id);
-      if (!leftInfo || !rightInfo) continue;
-
-      if (left.sectionId && left.sectionId === right.sectionId) {
-        leftInfo.section = true;
-        rightInfo.section = true;
-      }
-      if (isAssignedFaculty(left) && left.facultyId && left.facultyId === right.facultyId) {
-        leftInfo.faculty = true;
-        rightInfo.faculty = true;
-      }
-      if (
-        isAssignedRoom(left)
-        && left.roomId
-        && left.roomId === right.roomId
-        && left.roomName !== "Online"
-        && left.roomName !== "Field"
-      ) {
-        leftInfo.room = true;
-        rightInfo.room = true;
-      }
-    }
-  }
-
-  return map;
-};
-
-const getConflictLabels = (info?: ScheduleConflictInfo) => {
+const getConflictLabels = (info?: ConflictFlags) => {
   if (!info) return [];
   return [
     info.faculty ? "Faculty Conflict" : "",
     info.room ? "Room Conflict" : "",
     info.section ? "Section Conflict" : "",
+    info.online ? "Online Class Conflict" : "",
   ].filter(Boolean);
 };
 
@@ -320,6 +261,9 @@ export default function DeanScheduleViewer() {
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals']);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  // The server's scan, not a local one: it knows which instructor clashes were
+  // allowed to stand and sees clashes with other departments' classes.
+  const [serverConflicts, setServerConflicts] = useState<ScheduleConflict[]>([]);
 
   useEffect(() => {
     if (liveRevision === 0 && reloadKey === 0 && hasCachedData(deanSchedulesCacheKey)) {
@@ -421,10 +365,19 @@ export default function DeanScheduleViewer() {
     });
   }, [schedules, selectedMode, selectedSectionId]);
 
-  // Built over the whole department, not the filtered view: a faculty or room
-  // clash with a class in another section is still a clash when that section
-  // is filtered out.
-  const conflictMap = useMemo(() => buildConflictMap(schedules), [schedules]);
+  // Re-read whenever the timetable does. Over the whole department, not the
+  // filtered view: a clash with a class in another section is still a clash
+  // when that section is filtered out.
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchConflicts({ departmentId: userDeptId ? Number(userDeptId) : null, signal: controller.signal })
+      .then(setServerConflicts)
+      // A badge, not the page: a failed scan leaves the last one shown.
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [schedules, userDeptId]);
+  const conflictMap = useMemo(() => conflictFlagsBySchedule(serverConflicts), [serverConflicts]);
 
   const tableRows = useMemo(
     () => [...filteredSchedules].sort((left, right) => scheduleSortKey(left) - scheduleSortKey(right)),

@@ -72,10 +72,12 @@ const parseFacultyName = (name: string) => {
 };
 
 const semesterLabel = (semester?: string): string => {
+  // Reports print across semesters, so the blank stays blank.
+  if (!semester) return "";
   if (semester === "1st") return "1ST";
   if (semester === "2nd") return "2ND";
   if (semester === "3rd") return "3RD";
-  return (semester || "SUMMER").toUpperCase();
+  return semester.toUpperCase();
 };
 
 /** Absolute URL for a bundled asset, so jsPDF can read it through the DOM. */

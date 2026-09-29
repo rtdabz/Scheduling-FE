@@ -217,6 +217,8 @@ const deriveSectionProgressStatus = (items: ScheduleItem[]): ScheduleItem["statu
 interface AtomicScheduleResponse {
   schedules: ApiScheduleRecord[];
   deleted_schedule_ids: number[];
+  /** Saved conflicts this edit cleared, counted by the server around the write. */
+  resolved_conflicts?: { id: string; message: string }[];
 }
 
 interface AcceptedRecommendationResponse {
@@ -2001,6 +2003,7 @@ export const useScheduler = () => {
         });
         savedScheduleRecords = response.data.schedules ?? [];
         deletedScheduleRecordIds = response.data.deleted_schedule_ids ?? [];
+        resolvedConflictCount = response.data.resolved_conflicts?.length ?? 0;
       }
 
       placementSaved = true;
@@ -3106,6 +3109,28 @@ export const useScheduler = () => {
     setMovingScheduleId(null);
   }, [movingScheduleId, schedules]);
 
+  /**
+   * Opens a saved class in the placement dialog from outside the grid (the
+   * conflict inbox's Rule issues), on its own section, exactly as Edit on a
+   * selected card does.
+   */
+  const openScheduleInBuilder = useCallback((scheduleId: string): boolean => {
+    const sched = schedules.find((s) => s.id === scheduleId);
+    if (!sched) return false;
+    const courseIdToUse = sched.courseId ?? sched.subjectId;
+    if (sched.sectionId) handleSectionSelect(String(sched.sectionId));
+    setDropContext({
+      courseId: courseIdToUse,
+      subjectId: courseIdToUse,
+      dayIndex: sched.dayIndex,
+      startSlot: sched.startSlot,
+      isRescheduling: true,
+      scheduleId: sched.id
+    });
+
+    return true;
+  }, [schedules, handleSectionSelect]);
+
   const handleScheduleCardClick = useCallback((scheduleId: string) => {
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
@@ -3297,6 +3322,7 @@ export const useScheduler = () => {
     selectedRecommendationId,
     setSelectedRecommendationId,
     handleEditMovingSchedule,
+    openScheduleInBuilder,
     facultyAssignmentPopup,
     facultyActionSlotId,
     isClearingSectionInstructors,

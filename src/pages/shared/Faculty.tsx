@@ -2,7 +2,7 @@ import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react'
 import NumberInput from '../../components/ui/NumberInput';
 import SegmentedLoadBar from '../../components/faculty/SegmentedLoadBar';
 import SearchInput from '../../components/ui/SearchInput';
-import { LOAD_LEVELS, loadLevelOf } from '../../lib/facultyLoad';
+import { LOAD_LEVELS, UNAVAILABLE_STATUS, loadLevelOf } from '../../lib/facultyLoad';
 import { NAME_SUFFIXES, capitalizeNameInput, formatFacultyListName } from '../../lib/formatters';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../context/ToastContext';
@@ -191,7 +191,7 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
 });
 
 /** Regular -> Overload -> Pro Bono, levelling up as the load bands fill. See loadLevelOf. */
-const getWorkloadStatus = (f: FacultyMember) => LOAD_LEVELS[loadLevelOf({
+const getWorkloadStatus = (f: FacultyMember) => f.status === 'inactive' ? UNAVAILABLE_STATUS : LOAD_LEVELS[loadLevelOf({
   assignedUnits: f.assigned_units,
   maxUnits: f.max_units,
   deloadUnits: f.deload_units,

@@ -66,6 +66,11 @@ type GenerationRunSnapshot = {
   result: GenerationResult | null;
   failure: YearLevelGenerationFailure | null;
   errorMessage: string | null;
+  /**
+   * The run completed after a provisional report was already on screen, so
+   * the fixes it suggested no longer apply and the summary says so.
+   */
+  completedAfterProvisional: boolean;
 };
 
 const POLL_INTERVAL_MS = 1500;
@@ -93,6 +98,7 @@ const idleSnapshot: GenerationRunSnapshot = {
   result: null,
   failure: null,
   errorMessage: null,
+  completedAfterProvisional: false,
 };
 
 const isActiveStatus = (status: GenerationRunStatus) =>
@@ -172,6 +178,7 @@ export function GenerationRunProvider({
         result,
         failure: null,
         errorMessage: null,
+        completedAfterProvisional: current.failure?.provisional === true,
       }));
       return;
     }

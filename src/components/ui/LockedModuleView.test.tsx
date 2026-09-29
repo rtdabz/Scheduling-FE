@@ -14,6 +14,8 @@ vi.mock('react-router-dom', async () => {
 
 vi.mock('../../lib/storedUser', () => ({
   getStoredUser: () => ({ role: 'dean' }),
+  lockedModuleMessage: (capability?: string) =>
+    capability ? 'Your department has no program yet' : 'Your role does not include access to this module.',
 }));
 
 afterEach(cleanup);
@@ -35,7 +37,7 @@ describe('LockedModuleView', () => {
 
     expect(screen.getByText('Schedule Approvals is Locked')).toBeTruthy();
     expect(screen.getByText('Access Restricted')).toBeTruthy();
-    expect(screen.getByText(/Access restricted\. Ask an administrator to grant access to this module\./i)).toBeTruthy();
+    expect(screen.getByText(/Your department has no program yet/i)).toBeTruthy();
     expect(screen.getByText(/Required: schedule\.approve_dean/)).toBeTruthy();
   });
 

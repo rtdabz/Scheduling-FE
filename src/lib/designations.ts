@@ -39,9 +39,6 @@ export interface DesignationInput {
   sort_order: number;
 }
 
-/** The server refuses a fourth; the pickers stop at the same number. */
-export const MAX_DESIGNATIONS_PER_INSTRUCTOR = 3;
-
 export const emptyDesignation = (): DesignationInput => ({
   parent_id: null,
   name: '',
@@ -81,6 +78,24 @@ export const updateDesignation = async (
 
 export const deleteDesignation = async (id: number): Promise<void> => {
   await api.delete(`/designations/${id}`);
+};
+
+/** An instructor holding a designation, as the holders list returns it. */
+export interface DesignationHolder {
+  id: number;
+  first_name: string;
+  last_name: string;
+  middle_name: string | null;
+  suffix: string | null;
+  employment_type: 'full-time' | 'part-time';
+  deload_units: number;
+  status: string | null;
+  department: { id: number; department_name: string; department_code: string | null } | null;
+}
+
+export const fetchDesignationHolders = async (id: number): Promise<DesignationHolder[]> => {
+  const { data } = await api.get<DesignationHolder[]>(`/designations/${id}/holders`);
+  return Array.isArray(data) ? data : [];
 };
 
 /** How a designation is shown and printed: "Director · Networking Dev't". */

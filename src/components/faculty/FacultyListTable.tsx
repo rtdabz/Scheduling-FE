@@ -7,7 +7,7 @@ import TableActionButton from '../ui/TableActionButton';
 import SegmentedLoadBar from './SegmentedLoadBar';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from './FacultyRoleBadge';
 import InstructorTimetableButton from '../InstructorTimetableButton';
-import { LOAD_LEVELS, loadLevelOf } from '../../lib/facultyLoad';
+import { LOAD_LEVELS, UNAVAILABLE_STATUS, loadLevelOf } from '../../lib/facultyLoad';
 import { formatFacultyListName } from '../../lib/formatters';
 import { designationLabel, type Designation } from '../../lib/designations';
 
@@ -24,10 +24,11 @@ export interface FacultyListRow {
   deload_units: number;
   probono_units: number;
   assigned_units: number;
-  department: { department_code?: string | null; department_name?: string | null } | null;
+  department: { department_code?: string | null; department_name?: string | null; logo?: string | null } | null;
   profile_picture?: string | null;
   administrative_role?: FacultyAdministrativeRole | null;
   designations?: Designation[];
+  status?: 'active' | 'inactive' | null;
 }
 
 interface FacultyListTableProps<T extends FacultyListRow> {
@@ -44,7 +45,7 @@ interface FacultyListTableProps<T extends FacultyListRow> {
   viewDetailsTourId?: string;
 }
 
-const workloadStatus = (f: FacultyListRow) => LOAD_LEVELS[loadLevelOf({
+const workloadStatus = (f: FacultyListRow) => f.status === 'inactive' ? UNAVAILABLE_STATUS : LOAD_LEVELS[loadLevelOf({
   assignedUnits: f.assigned_units,
   maxUnits: f.max_units,
   deloadUnits: f.deload_units,

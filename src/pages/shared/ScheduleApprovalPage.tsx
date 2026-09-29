@@ -15,9 +15,10 @@ import ConfirmModal from '../../components/ui/ConfirmModal';
 import LoadErrorBanner from '../../components/ui/LoadErrorBanner';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
+import PreApprovalCheck from '../../components/scheduling/PreApprovalCheck';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
-import { invalidateCacheGroups } from '../../lib/cacheGroups';
+import { publishLiveTopics } from '../../lib/liveUpdates';
 import { getStoredUser } from '../../lib/storedUser';
 import {
   scheduleStatusesForSubmission,
@@ -227,6 +228,10 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
   const [viewEntry, setViewEntry] = useState<ScheduleApproval | null>(null);
+  // Open conflicts the pre-approval check found in the package being viewed;
+  // null until it answers. Tagged with the entry so another package's answer
+  // is never read as this one's.
+  const [viewCheck, setViewCheck] = useState<{ entryKey: string; open: number } | null>(null);
   const [tbaApproval, setTbaApproval] = useState<ScheduleApproval | null>(null);
   const [tbaReason, setTbaReason] = useState('');
   const [tbaError, setTbaError] = useState('');
@@ -398,15 +403,31 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     };
   }, [inPackage, printSource, rawSchedules, viewEntry]);
 
+  /** The package's classes at its own stage, for the pre-approval check. */
+  const viewScheduleIds = useMemo(() => {
+    if (!viewEntry) return [];
+    const allowed = new Set(scheduleStatusesForSubmission(viewEntry.submissionStatus));
+    return rawSchedules
+      .filter((schedule) => inPackage(viewEntry, schedule) && allowed.has(schedule.status))
+      .map((schedule) => String(schedule.id));
+  }, [inPackage, rawSchedules, viewEntry]);
+
+  const viewEntryKey = viewEntry?.entryKey ?? null;
+  const reportViewConflicts = useCallback((open: number) => {
+    if (viewEntryKey !== null) setViewCheck({ entryKey: viewEntryKey, open });
+  }, [viewEntryKey]);
+  const viewOpenConflicts = viewCheck !== null && viewCheck.entryKey === viewEntryKey ? viewCheck.open : 0;
+
   const markEntry = (entry: ScheduleApproval, status: ApprovalDisplayStatus, submissionStatus: QueueSubmissionStatus) => {
     const now = new Date().toISOString();
     setEntries((prev) => prev.map((item) => (item.entryKey === entry.entryKey
       ? { ...item, status, submissionStatus, deanReviewedAt: stage === 'dean' ? now : item.deanReviewedAt }
       : item)));
-    invalidateCacheGroups('schedules', 'approvals', 'dashboards');
-    // The meetings' new statuses are the server's to decide; read them back
-    // instead of guessing, so the preview keeps matching the printout.
-    refresh();
+    // The server leaves this tab out of its own live broadcast, so announce
+    // the change here: the sidebar's pending badge refetches, and so does this
+    // queue -- the meetings' new statuses are the server's to decide, read
+    // back instead of guessed, so the preview keeps matching the printout.
+    publishLiveTopics(['approvals']);
   };
 
   const submitApproval = async (entry: ScheduleApproval, overrideReason: string | null) => {
@@ -423,6 +444,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       toast.success('Approved', `${entry.department} schedule has been approved.`);
       return true;
     } catch (error) {
+      // The server decides Room TBA, not this page. When the queue was read
+      // before a room went TBA, the plain approval is refused; ask for the
+      // reason here instead of ending on an error the Dean cannot act on.
+      const code = (error as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
+      if (stage === 'dean' && overrideReason === null && code === 'room_tba_override_required') {
+        setTbaReason('');
+        setTbaError('');
+        setTbaApproval(entry);
+        toast.info('Room TBA', 'This schedule now has Room TBA classes. Give a reason to approve it conditionally.');
+        refresh();
+        return false;
+      }
       toast.error('Approval Failed', apiErrorMessage(error, 'Failed to approve schedule.'));
       return false;
     }
@@ -682,6 +715,17 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
           statusLabel={STATUS_LABELS[viewEntry.status]}
           printInput={printInput}
           canAct={viewPending}
+          checks={viewPending ? (
+            <PreApprovalCheck
+              departmentId={viewEntry.id}
+              sectionIds={viewEntry.workflowSectionIds}
+              scheduleIds={viewScheduleIds}
+              onOpenConflicts={reportViewConflicts}
+            />
+          ) : undefined}
+          approveBlockedReason={viewOpenConflicts > 0
+            ? `This schedule has ${viewOpenConflicts} open conflict${viewOpenConflicts === 1 ? '' : 's'}. Return it for revision.`
+            : null}
           onApprove={() => { void handleApprove(viewEntry); setViewEntry(null); }}
           onReject={() => { openReject(viewEntry); setViewEntry(null); }}
           onClose={() => setViewEntry(null)}

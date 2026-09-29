@@ -1,6 +1,6 @@
 import { Lock, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { getStoredUser } from '../../lib/storedUser';
+import { getStoredUser, lockedModuleMessage } from '../../lib/storedUser';
 
 interface LockedModuleViewProps {
   moduleName?: string;
@@ -44,17 +44,13 @@ export default function LockedModuleView({ moduleName = 'This Module', requiredC
           {moduleName} is Locked
         </h2>
 
-        <p className="text-sm text-gray-600 leading-relaxed mb-4 max-w-sm">
-          Access restricted. Ask an administrator to grant access to this module.
+        <p className="text-sm text-gray-600 leading-relaxed mb-6 max-w-sm">
+          {lockedModuleMessage(requiredCapability)}
           {capabilities && (
             <span className="block mt-2 font-mono text-xs text-gray-500 bg-gray-100 py-1 px-2.5 rounded-lg border border-gray-200/80 inline-block">
               Required: {capabilities}
             </span>
           )}
-        </p>
-
-        <p className="text-xs text-gray-400 mb-6">
-          To request access, please coordinate with the Vice President for Academic Affairs (VPAA) office.
         </p>
 
         <button

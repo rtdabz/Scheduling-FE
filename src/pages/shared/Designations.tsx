@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import NumberInput from '../../components/ui/NumberInput';
-import { AlertTriangle, ArrowRight, Award, CornerDownRight, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Award, ChevronRight, CornerDownRight, Eye, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Trash2, Users, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -17,9 +17,11 @@ import {
   deleteDesignation,
   designationLabel,
   emptyDesignation,
+  fetchDesignationHolders,
   fetchDesignations,
   updateDesignation,
   type Designation,
+  type DesignationHolder,
   type DesignationInput,
 } from '../../lib/designations';
 
@@ -27,9 +29,6 @@ const MANAGE_CAPABILITY = 'faculty.manage_designations';
 
 /** The common full-time maximum, used only to illustrate a deload's effect. */
 const REFERENCE_MAX_UNITS = 21;
-
-const initialsOf = (name: string) =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || '?';
 
 const unitsLabel = (units: number) => `${units} ${units === 1 ? 'unit' : 'units'}`;
 
@@ -47,6 +46,8 @@ export default function Designations() {
   const [isLoading, setIsLoading] = useState(true);
   const [designationSearch, setDesignationSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  // Headings whose sub-designations are shown in the list view; collapsed by default.
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
 
   const [editing, setEditing] = useState<Designation | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -56,6 +57,8 @@ export default function Designations() {
 
   const [pendingDelete, setPendingDelete] = useState<Designation | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const [viewingHolders, setViewingHolders] = useState<Designation | null>(null);
 
   const canManage = hasStoredCapability(MANAGE_CAPABILITY);
 
@@ -93,6 +96,23 @@ export default function Designations() {
     return ordered.filter((d) => matches.has(d.id) || designations.some((child) => child.parent_id === d.id && matches.has(child.id)));
   }, [designations, designationSearch]);
 
+  // The list view folds sub-designations under their heading. A search opens
+  // every heading so a matching sub-designation is never hidden.
+  const isSearching = designationSearch.trim() !== '';
+  const listRows = useMemo(
+    () => (isSearching ? visible : visible.filter((d) => d.parent_id === null || expanded.has(d.parent_id) || !visible.some((p) => p.id === d.parent_id))),
+    [visible, expanded, isSearching],
+  );
+
+  const toggleExpanded = useCallback((id: number) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   /** Top-level designations another may be placed under. */
   const parentOptions = useMemo(
     () => designations.filter((d) => d.parent_id === null && d.id !== editing?.id),
@@ -103,6 +123,8 @@ export default function Designations() {
   const openCreate = (parent: Designation | null = null) => {
     setEditing(null);
     setForm({ ...emptyDesignation(), parent_id: parent?.id ?? null });
+    // Open the heading so the new sub-designation shows once saved.
+    if (parent) setExpanded((current) => new Set(current).add(parent.id));
     setFieldErrors({});
     setIsFormOpen(true);
   };
@@ -135,12 +157,6 @@ export default function Designations() {
         return (
           <div className={`flex min-w-[14rem] items-center gap-3 ${isSub ? 'pl-8' : ''}`}>
             {isSub && <CornerDownRight size={16} aria-hidden="true" className="-ml-6 shrink-0 text-gray-300" />}
-            <span
-              aria-hidden="true"
-              className={`flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5A1220] to-[#8a2434] font-black tracking-wide text-white shadow-sm ${isSub ? 'h-8 w-8 text-[10px] opacity-80' : 'h-10 w-10 text-xs'}`}
-            >
-              {initialsOf(designation.name)}
-            </span>
             <div className="min-w-0 flex-1">
               {/* Line 1: Designation Name (single line, no wrapping) */}
               <div className="flex items-center gap-2 text-sm font-bold text-gray-900 whitespace-nowrap">
@@ -244,8 +260,26 @@ export default function Designations() {
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       meta: { align: 'right' as const },
-      cell: ({ row }: { row: { original: Designation } }) => (
+      cell: ({ row }: { row: { original: Designation } }) => {
+        const isHeadingRow = (row.original.children_count ?? 0) > 0;
+        const isOpen = isSearching || expanded.has(row.original.id);
+        return (
         <div className="flex items-center justify-end gap-2">
+          {isHeadingRow ? (
+            <TableActionButton
+              label={`${isOpen ? 'Hide' : 'Show'} sub-designations under ${row.original.name}`}
+              variant="neutral"
+              aria-expanded={isOpen}
+              disabled={isSearching}
+              onClick={() => toggleExpanded(row.original.id)}
+            >
+              <ChevronRight size={15} className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+            </TableActionButton>
+          ) : (
+            <TableActionButton label={`View instructors holding ${row.original.name}`} variant="view" onClick={() => setViewingHolders(row.original)}>
+              <Eye size={15} />
+            </TableActionButton>
+          )}
           {row.original.parent_id === null && (row.original.faculties_count ?? 0) === 0 && (
             <TableActionButton label={`Add a sub-designation under ${row.original.name}`} variant="view" onClick={() => openCreate(row.original)}>
               <Plus size={15} />
@@ -258,11 +292,31 @@ export default function Designations() {
             <Trash2 size={15} />
           </TableActionButton>
         </div>
-      ),
+        );
+      },
     } satisfies ColumnDef<Designation>] : []),
-  ], [canManage, openEdit]);
+  ], [canManage, openEdit, expanded, isSearching, toggleExpanded]);
 
-  const table = useDataTable({ data: visible, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
+  const table = useDataTable({ data: listRows, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
+
+  // Folds a saved designation into the list in place, so a save does not
+  // re-fetch and flash the whole table. A heading's sub-designation count is
+  // adjusted when a row joins or leaves it.
+  const applySaved = (saved: Designation, previousParentId: number | null) => {
+    setDesignations((current) => {
+      const exists = current.some((d) => d.id === saved.id);
+      const next = (exists ? current.map((d) => (d.id === saved.id ? { ...d, ...saved } : d)) : [...current, saved]).map((d) => {
+        let delta = 0;
+        if (previousParentId !== saved.parent_id) {
+          if (d.id === previousParentId) delta -= 1;
+          if (d.id === saved.parent_id) delta += 1;
+        }
+        return delta === 0 ? d : { ...d, children_count: Math.max(0, (d.children_count ?? 0) + delta) };
+      });
+      // Same order the server lists them in: sort order, then name.
+      return next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    });
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) {
@@ -274,11 +328,12 @@ export default function Designations() {
     setFieldErrors({});
     try {
       if (editing) {
-        const { holdersUpdated } = await updateDesignation(editing.id, {
+        const { designation: saved, holdersUpdated } = await updateDesignation(editing.id, {
           name: form.name,
           deload_units: form.deload_units,
           parent_id: form.parent_id,
         });
+        applySaved(saved, editing.parent_id);
         // The deload is copied onto each holder, so a changed figure moves real
         // teaching loads. Saying how many keeps that from being a silent edit.
         toast.success(
@@ -288,11 +343,10 @@ export default function Designations() {
             : `${form.name} saved.`,
         );
       } else {
-        await createDesignation(form);
+        applySaved(await createDesignation(form), null);
         toast.success('Designation created', `${form.name} can now be assigned to instructors.`);
       }
       setIsFormOpen(false);
-      await load();
     } catch (error) {
       const response = (error as { response?: { status?: number; data?: { errors?: Record<string, string[]>; message?: string } } }).response;
       if (response?.status === 422 && response.data?.errors) {
@@ -333,7 +387,6 @@ export default function Designations() {
   const totalHolders = designations.reduce((sum, d) => sum + (d.faculties_count ?? 0), 0);
   const activeCount = designations.filter((d) => d.status !== 'inactive').length;
   const unitsReleased = designations.reduce((sum, d) => sum + d.deload_units * (d.faculties_count ?? 0), 0);
-  const isSearching = designationSearch.trim() !== '';
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -497,14 +550,6 @@ export default function Designations() {
                       <div className="space-y-2 pt-0.5">
                         <div className="flex items-start justify-between gap-2.5">
                           <div className="flex items-center gap-3 min-w-0">
-                            <span
-                              aria-hidden="true"
-                              className={`flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#5A1220] to-[#8a2434] font-black tracking-wide text-white shadow-xs ${
-                                isSub ? 'h-9 w-9 text-[10px] opacity-85' : 'h-10 w-10 text-xs'
-                              }`}
-                            >
-                              {initialsOf(d.name)}
-                            </span>
                             <div className="min-w-0 flex-1">
                               {/* Line 1: Designation on Line 1 (single line, no wrapping) */}
                               <h3
@@ -564,6 +609,11 @@ export default function Designations() {
 
                         {canManage && (
                           <div className="flex items-center gap-1">
+                            {subCount === 0 && (
+                              <TableActionButton label={`View instructors holding ${d.name}`} variant="view" onClick={() => setViewingHolders(d)}>
+                                <Eye size={14} />
+                              </TableActionButton>
+                            )}
                             {d.parent_id === null && (d.faculties_count ?? 0) === 0 && (
                               <TableActionButton label={`Add sub-designation under ${d.name}`} variant="view" onClick={() => openCreate(d)}>
                                 <Plus size={14} />
@@ -661,9 +711,6 @@ export default function Designations() {
           {/* Designation Details preview showing Designation on Line 1 and Units directly below */}
           {(editing || form.name.trim()) && (
             <div className="rounded-xl border border-gray-200/90 bg-gray-50/70 p-3 flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#5A1220] to-[#8a2434] text-xs font-black text-white shadow-xs">
-                {initialsOf(form.name.trim() || editing?.name || '')}
-              </span>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-gray-900 whitespace-nowrap truncate" title={form.name.trim() || editing?.name}>
                   {form.name.trim() || editing?.name || 'New Designation'}
@@ -749,7 +796,86 @@ export default function Designations() {
         onConfirm={handleDelete}
         onCancel={() => setPendingDelete(null)}
       />
+
+      <DesignationHoldersModal designation={viewingHolders} onClose={() => setViewingHolders(null)} />
     </div>
+  );
+}
+
+const holderName = (h: DesignationHolder): string =>
+  [`${h.last_name},`, h.first_name, h.middle_name ? `${h.middle_name[0]}.` : '', h.suffix ?? ''].filter(Boolean).join(' ');
+
+const holderColumns: ColumnDef<DesignationHolder>[] = [
+  {
+    id: 'name',
+    accessorFn: holderName,
+    header: 'Instructor',
+    cell: ({ getValue }) => <span className="font-bold text-gray-900">{getValue<string>()}</span>,
+  },
+  {
+    id: 'department',
+    accessorFn: (h) => h.department?.department_code ?? h.department?.department_name ?? '',
+    header: 'Department',
+    cell: ({ row }) => (
+      <span className="text-xs font-semibold text-gray-600" title={row.original.department?.department_name}>
+        {row.original.department?.department_code ?? row.original.department?.department_name ?? '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'employment_type',
+    accessorKey: 'employment_type',
+    header: 'Type',
+    cell: ({ getValue }) => (
+      <span className="text-xs font-semibold capitalize text-gray-600">{getValue<string>()?.replace('-', ' ')}</span>
+    ),
+  },
+  {
+    id: 'deload',
+    accessorKey: 'deload_units',
+    header: 'Total deload',
+    cell: ({ getValue }) => <span className="text-xs font-black text-[#8a6412]">{unitsLabel(getValue<number>())}</span>,
+  },
+];
+
+/** Read-only table of the instructors currently holding one designation. */
+function DesignationHoldersModal({ designation, onClose }: { designation: Designation | null; onClose: () => void }) {
+  const { toast } = useToast();
+  const [holders, setHolders] = useState<DesignationHolder[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const table = useDataTable({ data: holders, columns: holderColumns, pageSize: 10, getRowId: (h) => String(h.id) });
+
+  useEffect(() => {
+    if (!designation) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsLoading(true);
+    setHolders([]);
+    fetchDesignationHolders(designation.id)
+      .then((rows) => { if (!cancelled) setHolders(rows); })
+      .catch(() => { if (!cancelled) toast.error('Could not load instructors', 'Please try again.'); })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => { cancelled = true; };
+  }, [designation, toast]);
+
+  return (
+    <Modal
+      isOpen={designation !== null}
+      onClose={onClose}
+      title={designation ? `Instructors holding ${designationLabel(designation)}` : ''}
+      description="Total deload is the sum across every designation the instructor holds."
+      size="lg"
+    >
+      <DataTable
+        table={table}
+        variant="embedded"
+        isLoading={isLoading}
+        loadingRows={3}
+        totalLabel="instructors"
+        ariaLabel="Designation holders"
+        emptyTitle="No instructors hold this designation yet."
+      />
+    </Modal>
   );
 }
 

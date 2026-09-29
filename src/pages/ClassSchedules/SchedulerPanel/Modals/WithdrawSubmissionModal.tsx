@@ -75,7 +75,7 @@ export default function WithdrawSubmissionModal({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4 animate-in fade-in duration-200">
-      <div className="flex w-full max-w-2xl flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" style={{ borderRadius: 10 }}>
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" style={{ borderRadius: 10 }}>
         <div className="flex items-start gap-4 px-5 pb-4 pt-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center border bg-amber-50 text-amber-600 border-amber-100" style={{ borderRadius: 8 }}>
             <RotateCcw size={20} />
@@ -99,7 +99,7 @@ export default function WithdrawSubmissionModal({
           </button>
         </div>
 
-        <div className="px-5 pb-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             Select only the sections that need changes. All other sections remain unchanged.

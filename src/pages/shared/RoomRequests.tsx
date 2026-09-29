@@ -62,6 +62,7 @@ interface DepartmentRecord {
   department_name: string;
   department_code: string;
   rooms_count?: number;
+  logo?: string | null;
 }
 
 interface RoomRecord {

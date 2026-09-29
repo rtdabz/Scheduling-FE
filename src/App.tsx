@@ -139,8 +139,11 @@ const CapabilityRoute = ({
         if (active) setHasAccess(hasRequestedCapability(data, capability));
       })
       .catch(() => {
-        // Fail closed when the current server-side permission state cannot be verified.
-        if (active) setHasAccess(false);
+        // A failed refresh (offline, server down) says nothing about access, so
+        // keep the stored session's answer; locking here showed "Access
+        // Restricted" to accounts that hold the capability. Only fail closed
+        // when there is no stored session to go on. The API still enforces it.
+        if (active) setHasAccess((current) => current ?? false);
       });
 
     return () => {

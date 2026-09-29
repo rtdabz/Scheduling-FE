@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Filter, X } from "lucide-react";
+import { CheckCircle2, Filter, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
 import { buildSummaryClasses, type SummaryMeeting } from "./summaryRows";
@@ -31,6 +31,7 @@ export default function ScheduleSummaryStep({
   courses,
   roomCodeById,
   changes,
+  completedAfterProvisional = false,
   recommendations = [],
   onApplyRecommendation,
   applying = false,
@@ -41,6 +42,8 @@ export default function ScheduleSummaryStep({
   roomCodeById: Map<string, string>;
   /** `null` when the run predates change reports and its changes are unknown. */
   changes: GenerationChange[] | null;
+  /** Fixes were suggested mid-search, then the search found this timetable anyway. */
+  completedAfterProvisional?: boolean;
   recommendations?: GenerationRecommendation[];
   /** Writes the recommendation into the generator's configuration and regenerates. */
   onApplyRecommendation?: (recommendation: GenerationRecommendation) => void;
@@ -51,6 +54,7 @@ export default function ScheduleSummaryStep({
   const [courseFilter, setCourseFilter] = useState(ALL);
   const [modeFilter, setModeFilter] = useState(ALL);
   const [changedOnly, setChangedOnly] = useState(false);
+  const [provisionalNoteDismissed, setProvisionalNoteDismissed] = useState(false);
 
   const badgesByClass = useMemo(() => changeBadgesByClass(changes ?? []), [changes]);
 
@@ -151,6 +155,27 @@ export default function ScheduleSummaryStep({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {completedAfterProvisional && !provisionalNoteDismissed && (
+        <div
+          role="status"
+          className="flex shrink-0 items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold leading-snug text-emerald-900"
+        >
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <p className="min-w-0 flex-1">
+            <span className="font-black">Search finished: a timetable was found.</span> The fixes suggested while it
+            was still searching no longer apply and were not used.
+          </p>
+          <button
+            type="button"
+            onClick={() => setProvisionalNoteDismissed(true)}
+            aria-label="Dismiss note"
+            className="rounded p-0.5 text-emerald-700 transition hover:bg-emerald-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       <GenerationChangesPanel
         summary={
           <>

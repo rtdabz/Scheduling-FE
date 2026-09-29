@@ -87,6 +87,8 @@ export interface CurriculumCourse {
   total_units: number;
   /** Program (major) that owns this course; only instructors of it may teach it. */
   program_id?: number | null;
+  /** Owning department: every course belongs to exactly one. */
+  department_id?: number | null;
 }
 
 export interface CurriculumSemester {
