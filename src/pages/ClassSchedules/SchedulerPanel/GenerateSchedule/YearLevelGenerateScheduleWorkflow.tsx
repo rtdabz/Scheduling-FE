@@ -29,6 +29,15 @@ import type {
   Semester,
 } from "../types";
 import RecommendedAdjustmentPanel from "./RecommendedAdjustmentPanel";
+import DraftIssuesPanel from "./DraftIssuesPanel";
+import {
+  applyDraftOptions,
+  draftReviewErrorMessage,
+  fetchDraftReview,
+  stillUnplaced,
+  type DraftIssue,
+  type DraftOption,
+} from "./draftReview";
 import GenerationGuide from "./GenerationGuide";
 import { GUIDE_CHAPTER_FOR_STEP } from "./generationGuideContent";
 import { APPLY_ALL_RECOMMENDATION_ID } from "./recommendationGroups";
@@ -54,7 +63,7 @@ import {
   isConfiguredFieldCourse,
   isHybridSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
-import { useGenerationRun } from "../hooks/useGenerationRun";
+import { useGenerationRun, type GenerationResult } from "../hooks/useGenerationRun";
 import {
   getCachedData,
   hasCachedData,
@@ -270,17 +279,42 @@ export default function YearLevelGenerateScheduleWorkflow({
   // leaves the queued work — and its result — intact.
   const run = useGenerationRun();
   const generating = run.isActive;
+  // The generated timetable as edited in review. Tied to the result it was
+  // made from, so a new run starts from its own timetable.
+  const [draft, setDraft] = useState<{
+    result: GenerationResult;
+    rows: ApiScheduleRecord[];
+  } | null>(null);
   const preview = useMemo(
-    () => run.result?.schedules ?? [],
+    () =>
+      draft !== null && draft.result === run.result
+        ? draft.rows
+        : (run.result?.schedules ?? []),
+    [draft, run.result],
+  );
+  const unplacedCourses = useMemo(
+    () => run.result?.unplaced_courses ?? [],
     [run.result],
   );
-  // "Keep searching" hides a provisional report for that run only; the final
-  // report, or a later run's provisional one, is shown again.
-  const [dismissedProvisionalRunId, setDismissedProvisionalRunId] = useState<string | null>(null);
-  const failure =
-    run.failure?.provisional && run.runId !== null && dismissedProvisionalRunId === run.runId
-      ? null
-      : run.failure;
+  // Only a draft the generator could not complete needs reviewing; a complete
+  // timetable is conflict-free by construction.
+  const needsReview = run.result?.status === "partial";
+  // The review of exactly these rows: a stale one never describes the draft.
+  const [review, setReview] = useState<{
+    rows: ApiScheduleRecord[];
+    issues: DraftIssue[] | null;
+    error: string | null;
+  } | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const currentReview = review !== null && review.rows === preview ? review : null;
+  const draftIssues: DraftIssue[] | null = needsReview
+    ? (currentReview?.issues ?? null)
+    : [];
+  // A provisional mid-search report names one bottleneck course, and fixing
+  // it meant regenerating for the next one. The search now ends in a draft of
+  // the whole year level with every affected course to review together, so
+  // the wizard keeps showing progress until then.
+  const failure = run.failure?.provisional ? null : run.failure;
   const generationChanges = useMemo(
     () => resolveGenerationChanges(run.result),
     [run.result],
@@ -550,9 +584,12 @@ export default function YearLevelGenerateScheduleWorkflow({
   const runYearLevel = run.status !== "idle" ? (run.meta?.yearLevel ?? null) : null;
   const runYearLevelRef = useRef(runYearLevel);
   runYearLevelRef.current = runYearLevel;
-  // The draft is only written back once it has been restored; persisting the
-  // initial state first overwrote the saved year level with year 1.
-  const draftRestoredRef = useRef(false);
+  // The draft is only written back once the restored values have rendered.
+  // A ref set inside the restore let the write in that same effect pass save
+  // the still-initial state (year 1, whole year level, step 1); StrictMode's
+  // second effect pass then restored that, so a per-section run reopened as a
+  // whole-year one -- and its save cleared every other section.
+  const [restoredDraftKey, setRestoredDraftKey] = useState<string | null>(null);
 
   useEffect(() => {
     const years = availableYearsKey === "" ? [] : availableYearsKey.split(",").map(Number);
@@ -627,7 +664,7 @@ export default function YearLevelGenerateScheduleWorkflow({
       setConfigs({});
       setSetupDraft({ ...defaultSetupDraft, courseDefaults: savedDefaults });
     }
-    draftRestoredRef.current = true;
+    setRestoredDraftKey(storageKey);
   }, [availableYearsKey, defaultsStorageKey, storageKey]);
 
   // The header, sections and summary describe the run's year level, not
@@ -811,12 +848,12 @@ export default function YearLevelGenerateScheduleWorkflow({
   }, [roomsCacheKey]);
 
   useEffect(() => {
-    if (!draftRestoredRef.current) return;
+    if (restoredDraftKey !== storageKey) return;
     window.localStorage.setItem(
       storageKey,
       JSON.stringify({ step, yearLevel, activeSectionId, targetSectionIds, configs, setupDraft }),
     );
-  }, [activeSectionId, configs, setupDraft, step, storageKey, targetSectionIds, yearLevel]);
+  }, [activeSectionId, configs, restoredDraftKey, setupDraft, step, storageKey, targetSectionIds, yearLevel]);
 
   useEffect(() => {
     if (!yearLevelGenerationAllowed && step !== 1) {
@@ -1230,7 +1267,105 @@ export default function YearLevelGenerateScheduleWorkflow({
     goToStep(2);
   };
 
+  /** Re-checks the whole draft; the result is stored against these rows. */
+  const draftReviewRequest = (rows: ApiScheduleRecord[]) => ({
+    semesterId: Number(activeSemester?.id),
+    departmentId: Number(departmentId),
+    sectionIds: targetSections.map((section) => Number(section.id)),
+    rows,
+    unplaced: unplacedCourses,
+    preferredDays:
+      setupDraft.preferredDays.length > 0 ? setupDraft.preferredDays : null,
+  });
+  const reviewDraftRows = async (
+    rows: ApiScheduleRecord[],
+  ): Promise<DraftIssue[] | null> => {
+    try {
+      const issues = await fetchDraftReview(draftReviewRequest(rows));
+      setReview({ rows, issues, error: null });
+      return issues;
+    } catch (error: unknown) {
+      setReview({ rows, issues: null, error: draftReviewErrorMessage(error) });
+      return null;
+    }
+  };
+
+  // A draft the generator could not complete is reviewed as soon as its
+  // result is shown. Later reviews follow each applied fix.
+  const firstReviewDue =
+    step === 4 &&
+    needsReview &&
+    draft?.result !== run.result &&
+    review?.rows !== preview &&
+    activeSemester !== null &&
+    departmentId !== null;
+  useEffect(() => {
+    if (!firstReviewDue) return;
+    let current = true;
+    const rows = preview;
+    fetchDraftReview(draftReviewRequest(rows)).then(
+      (issues) => {
+        if (current) setReview({ rows, issues, error: null });
+      },
+      (error: unknown) => {
+        if (current) setReview({ rows, issues: null, error: draftReviewErrorMessage(error) });
+      },
+    );
+    return () => {
+      current = false;
+    };
+    // The request is rebuilt every render; the rows decide when to run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstReviewDue, preview]);
+
+  const applyDraftFixes = async (options: DraftOption[]) => {
+    if (!run.result || options.length === 0) return;
+    const rows = applyDraftOptions(preview, options);
+    setDraft({ result: run.result, rows });
+    setReviewing(true);
+    const issues = await reviewDraftRows(rows);
+    setReviewing(false);
+    if (issues === null) return;
+
+    const applied = `Applied ${options.length} fix${options.length === 1 ? "" : "es"}.`;
+    if (issues.length === 0) {
+      toast.success("Conflicts Resolved", `${applied} Every course is placed and no conflicts remain.`);
+    } else {
+      toast.info(
+        "Timetable Checked",
+        `${applied} ${issues.length} course${issues.length === 1 ? " still needs" : "s still need"} attention.`,
+      );
+    }
+  };
+
+  const remainingUnplaced = stillUnplaced(unplacedCourses, preview);
+  const conflictCount = (draftIssues ?? []).filter((issue) => issue.kind === "conflict").length;
+  const saveBlockedReason = !needsReview
+    ? null
+    : draftIssues === null
+      ? currentReview?.error
+        ? "The timetable could not be checked. Check again before saving."
+        : "Checking the timetable..."
+      : conflictCount > 0
+        ? `Resolve ${conflictCount} conflicting course${conflictCount === 1 ? "" : "s"} before saving.`
+        : null;
+
   const apply = async () => {
+    if (remainingUnplaced.length > 0) {
+      const count = remainingUnplaced.length;
+      const confirmed = await confirm({
+        title: `Save Without ${count} Course${count === 1 ? "" : "s"}`,
+        message: `${count} course${count === 1 ? " is" : "s are"} not placed (${remainingUnplaced
+          .slice(0, 4)
+          .map((course) => `${course.section_name} ${course.course_code}`)
+          .join(", ")}${count > 4 ? ", ..." : ""}). ${count === 1 ? "It stays" : "They stay"} unscheduled, and any classes ${count === 1 ? "it" : "they"} already had in these sections are replaced. Place ${count === 1 ? "it" : "them"} later in the Schedule Builder.`,
+        eyebrow: "Incomplete Timetable",
+        confirmLabel: "Save Anyway",
+        variant: "maroon",
+      });
+      if (!confirmed) return;
+    }
+
     // A `revision` row was recalled or returned from approval. Saving replaces
     // this working copy; the version that was submitted is kept on its
     // submission, so the confirmation says what is and is not lost.
@@ -1271,14 +1406,27 @@ export default function YearLevelGenerateScheduleWorkflow({
     try {
       const replaceableStatuses = new Set(["draft", "completed", "revision"]);
       // Only the generated sections are replaced; the rest keep their classes.
+      // Taken from the timetable itself -- every section the run covered holds
+      // rows or unplaced courses -- never from the picker alone: the server
+      // clears a replaced section that receives no rows, so a picker that had
+      // fallen back to the whole year level wiped every other section.
+      const coveredSectionIds = new Set([
+        ...preview.map((r) => String(r.section_id)),
+        ...remainingUnplaced.map((course) => String(course.section_id)),
+      ]);
       const sectionIds = new Set(
-        targetSections.map((section) => String(section.id)),
+        targetSections
+          .map((section) => String(section.id))
+          .filter((id) => coveredSectionIds.has(id)),
       );
       // ...and within them only the generated courses. A course left out of
-      // generation keeps its classes, as the server's replacement does.
-      const generatedCourseKeys = new Set(
-        preview.map((r) => `${r.section_id}:${r.course_id ?? r.subject_id}`),
-      );
+      // generation keeps its classes, as the server's replacement does. A
+      // course the generator could not place was generated too: the draft was
+      // built and reviewed without its old classes, so they go with it.
+      const generatedCourseKeys = new Set([
+        ...preview.map((r) => `${r.section_id}:${r.course_id ?? r.subject_id}`),
+        ...remainingUnplaced.map((course) => `${course.section_id}:${course.course_id}`),
+      ]);
       const deleteIds = existingSchedules
         .filter(
           (schedule) =>
@@ -1538,11 +1686,10 @@ export default function YearLevelGenerateScheduleWorkflow({
           {failure ? (
             <RecommendedAdjustmentPanel
               failure={failure}
-              busy={generating && !failure.provisional}
+              busy={generating}
               onApplyAndRetry={(recommendation) => void applyRecommendationAndRetry(recommendation)}
               onReviewConstraints={reviewConstraints}
               onCancel={() => (run.isActive ? void run.cancel() : run.clear())}
-              onKeepSearching={() => setDismissedProvisionalRunId(run.runId)}
               onRetry={() => {
                 setStepDirection("forward");
                 setStep(3);
@@ -1652,10 +1799,28 @@ export default function YearLevelGenerateScheduleWorkflow({
                   courses={scopedCourses}
                   roomCodeById={roomCodeById}
                   changes={generationChanges}
-                  completedAfterProvisional={run.completedAfterProvisional}
                   recommendations={generationRecommendations}
                   onApplyRecommendation={applyRecommendationAndRetry}
                   applying={generating || applying}
+                  unplacedCount={needsReview ? remainingUnplaced.length : 0}
+                  attentionKeys={
+                    new Set((draftIssues ?? []).map((issue) => issue.key))
+                  }
+                  attention={
+                    needsReview ? (
+                      <DraftIssuesPanel
+                        issues={draftIssues}
+                        reviewing={reviewing}
+                        message={run.result?.message ?? null}
+                        error={currentReview?.error ?? null}
+                        onApply={(options) => void applyDraftFixes(options)}
+                        onRetry={() => {
+                          setReviewing(true);
+                          void reviewDraftRows(preview).finally(() => setReviewing(false));
+                        }}
+                      />
+                    ) : null
+                  }
                 />
               )}
             </div>
@@ -1666,7 +1831,8 @@ export default function YearLevelGenerateScheduleWorkflow({
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
         <p
           className={`min-w-0 flex-1 truncate text-xs font-semibold ${
-            !generating && step === 3 && generationBlockedReason
+            !generating &&
+            ((step === 3 && generationBlockedReason) || (step === 4 && saveBlockedReason))
               ? "text-rose-700"
               : "text-slate-500"
           }`}
@@ -1675,7 +1841,9 @@ export default function YearLevelGenerateScheduleWorkflow({
             ? "Cancel stops this run: the worker halts at its next checkpoint and returns you to the summary. Nothing is saved."
             : step === 3 && generationBlockedReason
               ? generationBlockedReason
-              : helpText[step]}
+              : step === 4 && saveBlockedReason
+                ? saveBlockedReason
+                : helpText[step]}
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {generating ? (
@@ -1742,7 +1910,8 @@ export default function YearLevelGenerateScheduleWorkflow({
                 id="generator-save"
                 type="button"
                 onClick={apply}
-                disabled={applying || generating || preview.length === 0}
+                disabled={applying || generating || preview.length === 0 || saveBlockedReason !== null}
+                title={saveBlockedReason ?? undefined}
                 className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {applying ? (

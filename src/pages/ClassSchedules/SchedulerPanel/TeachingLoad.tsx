@@ -48,6 +48,10 @@ const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   vpaa: "Vice President for Academic Affairs",
 };
 
+/** "CBA" / "secretary demo" -> "Cba" / "Secretary Demo": first letter of each word only. */
+const capitalizeWords = (text: string) =>
+  text.toLowerCase().replace(/(^|\s)(\S)/g, (_, gap: string, letter: string) => gap + letter.toUpperCase());
+
 const parseFacultyName = (name: string) => {
   const parts = name.trim().split(/\s+/);
   let surname = "";
@@ -215,8 +219,8 @@ export default function TeachingLoad({
           collegeName,
           semester: semesterLabel(activeSemester?.semester),
           academicYear: activeSemester?.academic_year || "",
-          surname: surname.toUpperCase(),
-          givenName,
+          surname: capitalizeWords(surname),
+          givenName: capitalizeWords(givenName),
           middleInitial: mi,
           isPartTime: faculty.employmentType === "part-time",
           designations: faculty.designations?.length
@@ -224,7 +228,7 @@ export default function TeachingLoad({
             : faculty.administrativeRole
               ? [{ label: DESIGNATION_LABELS[faculty.administrativeRole], deloadUnits: faculty.deloadUnits ?? 0 }]
               : [],
-          instructorName: faculty.name.toUpperCase(),
+          instructorName: capitalizeWords(faculty.name),
           preparedBy: preparer?.name ?? "",
           verifiedBy: byRole("dean")?.name ?? "",
           // Left blank rather than defaulting to a past VPAA: a stale name on

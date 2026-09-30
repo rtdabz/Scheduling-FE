@@ -56,7 +56,9 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
   const name = `${faculty.first_name} ${faculty.last_name}`;
   const basicLoad = faculty.required_units;
   const assigned = faculty.assigned_units;
-  const tier = basicLoad > 0
+  // Same gate as the server: an overload-only instructor (Basic Load 0) still
+  // moves Overload -> Pro-bono.
+  const tier = basicLoad + Math.max(0, faculty.overload_units) > 0
     ? loadTierForUnits({ basicLoad, overloadUnits: faculty.overload_units }, assigned)
     : null;
   const remaining = basicLoad - assigned;

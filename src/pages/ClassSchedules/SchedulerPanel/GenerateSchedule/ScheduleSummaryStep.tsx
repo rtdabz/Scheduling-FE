@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CheckCircle2, Filter, X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { Filter, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
 import { buildSummaryClasses, type SummaryMeeting } from "./summaryRows";
@@ -31,10 +31,12 @@ export default function ScheduleSummaryStep({
   courses,
   roomCodeById,
   changes,
-  completedAfterProvisional = false,
   recommendations = [],
   onApplyRecommendation,
   applying = false,
+  unplacedCount = 0,
+  attention = null,
+  attentionKeys,
 }: {
   preview: ApiScheduleRecord[];
   sections: Section[];
@@ -42,24 +44,31 @@ export default function ScheduleSummaryStep({
   roomCodeById: Map<string, string>;
   /** `null` when the run predates change reports and its changes are unknown. */
   changes: GenerationChange[] | null;
-  /** Fixes were suggested mid-search, then the search found this timetable anyway. */
-  completedAfterProvisional?: boolean;
   recommendations?: GenerationRecommendation[];
   /** Writes the recommendation into the generator's configuration and regenerates. */
   onApplyRecommendation?: (recommendation: GenerationRecommendation) => void;
   applying?: boolean;
+  /** Courses the generator could not place and the draft still lacks. */
+  unplacedCount?: number;
+  /** The review of courses that still need a fix, shown above the table. */
+  attention?: ReactNode;
+  /** `section_id:course_id` of classes the review reports, badged in the table. */
+  attentionKeys?: Set<string>;
 }) {
   const [sectionFilter, setSectionFilter] = useState(ALL);
   const [dayFilter, setDayFilter] = useState(ALL);
   const [courseFilter, setCourseFilter] = useState(ALL);
   const [modeFilter, setModeFilter] = useState(ALL);
   const [changedOnly, setChangedOnly] = useState(false);
-  const [provisionalNoteDismissed, setProvisionalNoteDismissed] = useState(false);
 
-  const badgesByClass = useMemo(() => changeBadgesByClass(changes ?? []), [changes]);
+  const badgesByClass = useMemo(
+    () => changeBadgesByClass(changes ?? []),
+    [changes],
+  );
 
   const sectionNameById = useMemo(
-    () => new Map(sections.map((section) => [String(section.id), section.name])),
+    () =>
+      new Map(sections.map((section) => [String(section.id), section.name])),
     [sections],
   );
   const courseById = useMemo(
@@ -107,12 +116,36 @@ export default function ScheduleSummaryStep({
   const filtered = useMemo(
     () =>
       classes
-        .filter((item) => sectionFilter === ALL || item.sectionId === sectionFilter)
-        .filter((item) => courseFilter === ALL || item.courseId === courseFilter)
-        .filter((item) => dayFilter === ALL || item.parts.some((part) => part.days.includes(dayFilter)))
-        .filter((item) => modeFilter === ALL || item.modes.some((mode) => mode === modeFilter))
-        .filter((item) => !changedOnly || badgesByClass.has(classKey(item.sectionId, item.courseId))),
-    [badgesByClass, changedOnly, classes, courseFilter, dayFilter, modeFilter, sectionFilter],
+        .filter(
+          (item) => sectionFilter === ALL || item.sectionId === sectionFilter,
+        )
+        .filter(
+          (item) => courseFilter === ALL || item.courseId === courseFilter,
+        )
+        .filter(
+          (item) =>
+            dayFilter === ALL ||
+            item.parts.some((part) => part.days.includes(dayFilter)),
+        )
+        .filter(
+          (item) =>
+            modeFilter === ALL ||
+            item.modes.some((mode) => mode === modeFilter),
+        )
+        .filter(
+          (item) =>
+            !changedOnly ||
+            badgesByClass.has(classKey(item.sectionId, item.courseId)),
+        ),
+    [
+      badgesByClass,
+      changedOnly,
+      classes,
+      courseFilter,
+      dayFilter,
+      modeFilter,
+      sectionFilter,
+    ],
   );
 
   const usedCourses = useMemo(
@@ -155,40 +188,28 @@ export default function ScheduleSummaryStep({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      {completedAfterProvisional && !provisionalNoteDismissed && (
-        <div
-          role="status"
-          className="flex shrink-0 items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold leading-snug text-emerald-900"
-        >
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-          <p className="min-w-0 flex-1">
-            <span className="font-black">Search finished: a timetable was found.</span> The fixes suggested while it
-            was still searching no longer apply and were not used.
-          </p>
-          <button
-            type="button"
-            onClick={() => setProvisionalNoteDismissed(true)}
-            aria-label="Dismiss note"
-            className="rounded p-0.5 text-emerald-700 transition hover:bg-emerald-100"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
       <GenerationChangesPanel
         summary={
           <>
             {rows.length} class meetings generated for {classes.length} class
             {classes.length === 1 ? "" : "es"} across {sections.length} section
             {sections.length === 1 ? "" : "s"}
+            {unplacedCount > 0 && (
+              <>
+                {" "}
+                &middot; {unplacedCount} course{unplacedCount === 1 ? "" : "s"}{" "}
+                not placed yet
+              </>
+            )}
           </>
         }
         changes={changes}
         onFocusClass={focusClass}
       />
 
-      {recommendations.length > 0 && (
+      {/* A draft under review is fixed course by course beside the table;
+          settings changes that regenerate belong to a complete timetable only. */}
+      {recommendations.length > 0 && !attention && (
         <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <RecommendationList
             recommendations={recommendations}
@@ -199,85 +220,114 @@ export default function ScheduleSummaryStep({
         </section>
       )}
 
-      <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-        <div className="flex flex-wrap items-end gap-2">
-          <span className="flex items-center gap-1.5 pb-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
-            <Filter className="h-3.5 w-3.5" /> Filters
-          </span>
-          <FilterSelect
-            label="Section"
-            value={sectionFilter}
-            onChange={setSectionFilter}
-            options={sections.map((section) => [
-              String(section.id),
-              section.name,
-            ])}
-            allLabel="All sections"
-          />
-          <FilterSelect
-            label="Day"
-            value={dayFilter}
-            onChange={setDayFilter}
-            options={usedDays.map((day) => [day, day])}
-            allLabel="All days"
-          />
-          <FilterSelect
-            label="Course"
-            value={courseFilter}
-            onChange={setCourseFilter}
-            options={usedCourses}
-            allLabel="All courses"
-          />
-          <FilterSelect
-            label="Mode"
-            value={modeFilter}
-            onChange={setModeFilter}
-            options={usedModes.map((mode) => [mode, mode])}
-            allLabel="All modes"
-          />
-          {badgesByClass.size > 0 && (
-            <label className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-              <input
-                type="checkbox"
-                checked={changedOnly}
-                onChange={(event) => setChangedOnly(event.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300"
+      {/* The courses to fix sit beside the table on a wide screen, each
+          scrolling on its own, so neither squeezes the other; stacked on a
+          narrow one, the table keeps a readable height and the step scrolls. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+        <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
+          <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+            <div className="flex flex-wrap items-end gap-2">
+              <span className="flex items-center gap-1.5 pb-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <Filter className="h-3.5 w-3.5" /> Filters
+              </span>
+              <FilterSelect
+                label="Section"
+                value={sectionFilter}
+                onChange={setSectionFilter}
+                options={sections.map((section) => [
+                  String(section.id),
+                  section.name,
+                ])}
+                allLabel="All sections"
               />
-              Changed only
-            </label>
-          )}
-          {filtersActive && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="mb-0.5 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
-            >
-              <X className="h-3 w-3" /> Clear
-            </button>
-          )}
-          <span className="mb-1 ml-auto text-[11px] font-bold text-slate-500">
-            Showing {filtered.length} of {classes.length} classes
-          </span>
-        </div>
-      </section>
+              <FilterSelect
+                label="Day"
+                value={dayFilter}
+                onChange={setDayFilter}
+                options={usedDays.map((day) => [day, day])}
+                allLabel="All days"
+              />
+              <FilterSelect
+                label="Course"
+                value={courseFilter}
+                onChange={setCourseFilter}
+                options={usedCourses}
+                allLabel="All courses"
+              />
+              <FilterSelect
+                label="Mode"
+                value={modeFilter}
+                onChange={setModeFilter}
+                options={usedModes.map((mode) => [mode, mode])}
+                allLabel="All modes"
+              />
+              {badgesByClass.size > 0 && (
+                <label className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={changedOnly}
+                    onChange={(event) => setChangedOnly(event.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300"
+                  />
+                  Changed only
+                </label>
+              )}
+              {filtersActive && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="mb-0.5 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  <X className="h-3 w-3" /> Clear
+                </button>
+              )}
+              <span className="mb-1 ml-auto text-[11px] font-bold text-slate-500">
+                Showing {filtered.length} of {classes.length} classes
+              </span>
+            </div>
+          </section>
 
-      <ClassSummaryTable
-        classes={filtered}
-        renderCourseExtras={(item) =>
-          badgesByClass.get(classKey(item.sectionId, item.courseId))?.map((change) => (
-            <span
-              key={change.kind}
-              className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black uppercase ${
-                change.severity === "critical"
-                  ? "bg-rose-100 text-rose-700"
-                  : "bg-amber-100 text-amber-800"
-              }`}
-            >
-              {changeBadgeLabel(change)}
-            </span>
-          ))
-        }
-      />
+          <ClassSummaryTable
+            classes={filtered}
+            isRowFlagged={(item) =>
+              attentionKeys?.has(
+                `${Number(item.sectionId)}:${Number(item.courseId)}`,
+              ) ?? false
+            }
+            renderCourseExtras={(item) => [
+              attentionKeys?.has(
+                `${Number(item.sectionId)}:${Number(item.courseId)}`,
+              ) ? (
+                <span
+                  key="attention"
+                  className="mr-1 mt-1 inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-rose-700"
+                >
+                  Needs fix
+                </span>
+              ) : null,
+              ...(badgesByClass
+                .get(classKey(item.sectionId, item.courseId))
+                ?.map((change) => (
+                  <span
+                    key={change.kind}
+                    className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                      change.severity === "critical"
+                        ? "bg-rose-100 text-rose-700"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {changeBadgeLabel(change)}
+                  </span>
+                )) ?? []),
+            ]}
+          />
+        </div>
+        {attention && (
+          <aside className="flex max-h-[70vh] min-h-0 flex-col empty:hidden lg:max-h-none lg:w-[26rem] lg:shrink-0 xl:w-[30rem]">
+            {attention}
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

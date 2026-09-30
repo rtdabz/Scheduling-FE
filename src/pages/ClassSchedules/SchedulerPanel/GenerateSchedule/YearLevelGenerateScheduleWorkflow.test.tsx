@@ -1,8 +1,20 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactElement } from "react";
+import { StrictMode, type ReactElement } from "react";
 
-const { get, post, confirm } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirm: vi.fn() }));
+const { get, post, confirm } = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  confirm: vi.fn(),
+}));
 
 vi.mock("../../../../lib/api", () => ({
   default: {
@@ -45,35 +57,39 @@ const activeSemester: Semester = {
   is_active: true,
 };
 
-const sections: Section[] = [{
-  id: "10",
-  name: "BSIT 1A",
-  yearLevel: 1,
-  semester: "1st",
-  departmentId: 2,
-  // The wizard will not advance past the year-level step until the cohort's
-  // curriculum is settled — the course list every later step is configured
-  // against is only well defined relative to one.
-  curriculumId: 7,
-  curriculumName: "BSIT 2026",
-  semesterId: 1,
-  status: "active",
-}];
+const sections: Section[] = [
+  {
+    id: "10",
+    name: "BSIT 1A",
+    yearLevel: 1,
+    semester: "1st",
+    departmentId: 2,
+    // The wizard will not advance past the year-level step until the cohort's
+    // curriculum is settled — the course list every later step is configured
+    // against is only well defined relative to one.
+    curriculumId: 7,
+    curriculumName: "BSIT 2026",
+    semesterId: 1,
+    status: "active",
+  },
+];
 
-const courses: Course[] = [{
-  id: "20",
-  code: "IT 101",
-  name: "Introduction to Computing",
-  units: 3,
-  lectureHours: 3,
-  labHours: 0,
-  category: "major",
-  semester: "1st",
-  departmentId: 2,
-  yearLevel: 1,
-  roomTypeRequired: "lecture",
-  status: "active",
-}];
+const courses: Course[] = [
+  {
+    id: "20",
+    code: "IT 101",
+    name: "Introduction to Computing",
+    units: 3,
+    lectureHours: 3,
+    labHours: 0,
+    category: "major",
+    semester: "1st",
+    departmentId: 2,
+    yearLevel: 1,
+    roomTypeRequired: "lecture",
+    status: "active",
+  },
+];
 
 /**
  * The wizard asks the API which curricula the department runs, and re-reads its
@@ -83,41 +99,45 @@ const courses: Course[] = [{
 const curriculumEndpoints = (url: string) => {
   if (url === "/curriculum") {
     return Promise.resolve({
-      data: [{
-        id: 7,
-        name: "BSIT 2026",
-        code: "BSIT-2026",
-        department_id: 2,
-        program_id: null,
-        effective_school_year: "2026-2027",
-        status: "active",
-        description: null,
-        courses_count: 1,
-        active_sections_count: 1,
-        lifecycle: "only",
-        lifecycle_label: "Active",
-        created_at: "",
-        updated_at: "",
-      }],
+      data: [
+        {
+          id: 7,
+          name: "BSIT 2026",
+          code: "BSIT-2026",
+          department_id: 2,
+          program_id: null,
+          effective_school_year: "2026-2027",
+          status: "active",
+          description: null,
+          courses_count: 1,
+          active_sections_count: 1,
+          lifecycle: "only",
+          lifecycle_label: "Active",
+          created_at: "",
+          updated_at: "",
+        },
+      ],
     });
   }
 
   if (url === "/courses") {
     return Promise.resolve({
-      data: [{
-        id: 20,
-        course_code: "IT 101",
-        course_name: "Introduction to Computing",
-        units: 3,
-        lecture_hours: 3,
-        lab_hours: 0,
-        course_category: "major",
-        semester: "1st",
-        department_id: 2,
-        year_level: "1",
-        room_type_required: "lecture",
-        status: "active",
-      }],
+      data: [
+        {
+          id: 20,
+          course_code: "IT 101",
+          course_name: "Introduction to Computing",
+          units: 3,
+          lecture_hours: 3,
+          lab_hours: 0,
+          course_category: "major",
+          semester: "1st",
+          department_id: 2,
+          year_level: "1",
+          room_type_required: "lecture",
+          status: "active",
+        },
+      ],
     });
   }
 
@@ -135,7 +155,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     post.mockReset();
     get.mockImplementation((url: string) => {
       if (url === "/scheduling-settings") {
-        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+        return Promise.resolve({
+          data: { forced_day_rules: [], field_course_codes: [] },
+        });
       }
       if (url === "/rooms") return Promise.resolve({ data: [] });
       const curriculumResponse = curriculumEndpoints(url);
@@ -145,13 +167,16 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
   });
 
   it("marks an already scheduled year level and asks before generating it again", async () => {
-    localStorage.setItem("wicars.year-level-wizard.v5.2.1", JSON.stringify({
-      step: 3,
-      yearLevel: 1,
-      activeSectionId: "10",
-      configs: {},
-      setupDraft: { completed: true },
-    }));
+    localStorage.setItem(
+      "wicars.year-level-wizard.v5.2.1",
+      JSON.stringify({
+        step: 3,
+        yearLevel: 1,
+        activeSectionId: "10",
+        configs: {},
+        setupDraft: { completed: true },
+      }),
+    );
     confirm.mockResolvedValue(false);
     const draft = {
       id: "900",
@@ -213,33 +238,43 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       mode: "on-site" as const,
       status: "draft" as const,
     };
-    localStorage.setItem("wicars.year-level-wizard.v5.2.1", JSON.stringify({
-      step: 3,
-      yearLevel: 1,
-      activeSectionId: "10",
-      configs: {
-        "10": {
-          courseIds: ["20"],
-          locked: true,
-          splitCourseIds: [],
-          gecSplitCourseIds: [],
-          gecSplitPatternsByCourseId: { "20": "MW" },
-          modesByCourseId: { "20": "automatic" },
+    localStorage.setItem(
+      "wicars.year-level-wizard.v5.2.1",
+      JSON.stringify({
+        step: 3,
+        yearLevel: 1,
+        activeSectionId: "10",
+        configs: {
+          "10": {
+            courseIds: ["20"],
+            locked: true,
+            splitCourseIds: [],
+            gecSplitCourseIds: [],
+            gecSplitPatternsByCourseId: { "20": "MW" },
+            modesByCourseId: { "20": "automatic" },
+          },
         },
-      },
-      setupDraft: {
-        completed: true,
-      },
-    }));
+        setupDraft: {
+          completed: true,
+        },
+      }),
+    );
     get.mockImplementation((url: string) => {
       if (url === "/scheduling-settings") {
-        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+        return Promise.resolve({
+          data: { forced_day_rules: [], field_course_codes: [] },
+        });
       }
       if (url === "/rooms") return Promise.resolve({ data: [] });
       const curriculumResponse = curriculumEndpoints(url);
       if (curriculumResponse) return curriculumResponse;
       if (url === "/schedule-recommendations/generation-runs/run-1") {
-        return Promise.resolve({ data: { status: "completed", result: { schedules: [generatedSchedule] } } });
+        return Promise.resolve({
+          data: {
+            status: "completed",
+            result: { schedules: [generatedSchedule] },
+          },
+        });
       }
       return Promise.resolve({ data: {} });
     });
@@ -253,9 +288,12 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       return Promise.reject(new Error(`Unexpected POST ${url}`));
     });
     let finishRefresh: (() => void) | undefined;
-    const onAccepted = vi.fn(() => new Promise<void>((resolve) => {
-      finishRefresh = resolve;
-    }));
+    const onAccepted = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve;
+        }),
+    );
     const onClose = vi.fn();
     const onSavingChange = vi.fn();
 
@@ -281,16 +319,22 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         section_configs: [expect.objectContaining({ course_ids: [20] })],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save & View Timetable" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save & View Timetable" }),
+    );
 
-    await waitFor(() => expect(post).toHaveBeenCalledWith(
-      "/schedules/batch",
-      expect.objectContaining({
-        operations: [expect.objectContaining({ section_id: 10, course_id: 20 })],
-        replace_section_ids: [10],
-        replace_semester_id: 1,
-      }),
-    ));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/schedules/batch",
+        expect.objectContaining({
+          operations: [
+            expect.objectContaining({ section_id: 10, course_id: 20 }),
+          ],
+          replace_section_ids: [10],
+          replace_semester_id: 1,
+        }),
+      ),
+    );
     expect(onAccepted).toHaveBeenCalledWith([generatedSchedule]);
     // The wizard leaves on the click, so the timetable refresh behind it is
     // the only overlay the user sees.
@@ -305,114 +349,173 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it.each(["final", "provisional"] as const)("goes straight on to generating when a fix from a %s report is applied", async (kind) => {
-    localStorage.setItem("wicars.year-level-wizard.v5.2.1", JSON.stringify({
-      step: 3,
-      yearLevel: 1,
-      activeSectionId: "10",
-      configs: {
-        "10": {
-          courseIds: ["20"],
-          locked: true,
-          splitCourseIds: [],
-          gecSplitCourseIds: [],
-          gecSplitPatternsByCourseId: {},
-          modesByCourseId: { "20": "automatic" },
+  it.each(["final", "provisional"] as const)(
+    "on a %s report, only a final one offers fixes, which go straight on to generating",
+    async (kind) => {
+      localStorage.setItem(
+        "wicars.year-level-wizard.v5.2.1",
+        JSON.stringify({
+          step: 3,
+          yearLevel: 1,
+          activeSectionId: "10",
+          configs: {
+            "10": {
+              courseIds: ["20"],
+              locked: true,
+              splitCourseIds: [],
+              gecSplitCourseIds: [],
+              gecSplitPatternsByCourseId: {},
+              modesByCourseId: { "20": "automatic" },
+            },
+          },
+          setupDraft: { completed: true },
+        }),
+      );
+      const report = {
+        error_code: "year_level_generation_failed",
+        stage: "search",
+        message: "No year-level timetable satisfies all section constraints.",
+        bottleneck: {
+          type: "limited_rooms",
+          section_id: 10,
+          section_name: "BSIT 1A",
+          course_id: 20,
+          course_code: "IT 101",
+          detected_cause: "IT 101 ran out of free classroom time.",
+          iterations: 40,
+          search_limit_reached: false,
         },
-      },
-      setupDraft: { completed: true },
-    }));
-    const report = {
-      error_code: "year_level_generation_failed",
-      stage: "search",
-      message: "No year-level timetable satisfies all section constraints.",
-      bottleneck: {
-        type: "limited_rooms",
-        section_id: 10,
-        section_name: "BSIT 1A",
-        course_id: 20,
-        course_code: "IT 101",
-        detected_cause: "IT 101 ran out of free classroom time.",
-        iterations: 40,
-        search_limit_reached: false,
-      },
-      attempts: [],
-      recommendations: [{
-        id: "delivery-online-10-20",
-        title: "Move IT 101 online",
-        detected_cause: "IT 101 ran out of free classroom time.",
-        suggested_adjustment: "",
-        section_id: 10,
-        section_name: "BSIT 1A",
-        course_id: 20,
-        course_code: "IT 101",
-        impact: "medium",
-        adjustments: [{ type: "set_delivery_mode", section_id: 10, course_id: 20, value: "online", section_name: "BSIT 1A", course_code: "IT 101" }],
-      }],
-    };
-    get.mockImplementation((url: string) => {
-      if (url === "/scheduling-settings") {
-        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
-      }
-      if (url === "/rooms") return Promise.resolve({ data: [] });
-      const curriculumResponse = curriculumEndpoints(url);
-      if (curriculumResponse) return curriculumResponse;
-      if (url === "/schedule-recommendations/generation-runs/run-1") {
-        // A provisional report arrives while its run is still searching.
-        return Promise.resolve({
-          data: kind === "final"
-            ? { run_id: "run-1", status: "failed", result: report }
-            : { run_id: "run-1", status: "running", result: { ...report, provisional: true } },
+        attempts: [],
+        recommendations: [
+          {
+            id: "delivery-online-10-20",
+            title: "Move IT 101 online",
+            detected_cause: "IT 101 ran out of free classroom time.",
+            suggested_adjustment: "",
+            section_id: 10,
+            section_name: "BSIT 1A",
+            course_id: 20,
+            course_code: "IT 101",
+            impact: "medium",
+            adjustments: [
+              {
+                type: "set_delivery_mode",
+                section_id: 10,
+                course_id: 20,
+                value: "online",
+                section_name: "BSIT 1A",
+                course_code: "IT 101",
+              },
+            ],
+          },
+        ],
+      };
+      get.mockImplementation((url: string) => {
+        if (url === "/scheduling-settings") {
+          return Promise.resolve({
+            data: { forced_day_rules: [], field_course_codes: [] },
+          });
+        }
+        if (url === "/rooms") return Promise.resolve({ data: [] });
+        const curriculumResponse = curriculumEndpoints(url);
+        if (curriculumResponse) return curriculumResponse;
+        if (url === "/schedule-recommendations/generation-runs/run-1") {
+          // A provisional report arrives while its run is still searching.
+          return Promise.resolve({
+            data:
+              kind === "final"
+                ? { run_id: "run-1", status: "failed", result: report }
+                : {
+                    run_id: "run-1",
+                    status: "running",
+                    result: { ...report, provisional: true },
+                  },
+          });
+        }
+        if (url === "/schedule-recommendations/generation-runs/run-2") {
+          return Promise.resolve({
+            data: { run_id: "run-2", status: "queued" },
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      let queuedRuns = 0;
+      post.mockImplementation((url: string) =>
+        url === "/schedule-recommendations/year-level-preview/queue"
+          ? Promise.resolve({ data: { run_id: `run-${++queuedRuns}` } })
+          : url === "/schedule-recommendations/generation-runs/run-1/cancel"
+            ? Promise.resolve({ data: {} })
+            : Promise.reject(new Error(`Unexpected POST ${url}`)),
+      );
+
+      renderWorkflow(
+        <YearLevelGenerateScheduleWorkflow
+          onClose={vi.fn()}
+          sections={sections}
+          courses={courses}
+          activeSemester={activeSemester}
+          departmentId={2}
+          existingSchedules={[]}
+          onAccepted={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: /^Generate$/ }),
+      );
+      if (kind === "provisional") {
+        // A mid-search report names one course; the wizard keeps showing
+        // progress until the run ends in a timetable or a whole-draft review.
+        await waitFor(() =>
+          expect(get).toHaveBeenCalledWith(
+            "/schedule-recommendations/generation-runs/run-1",
+          ),
+        );
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
         });
+        expect(
+          screen.queryByRole("button", { name: /Apply Online/ }),
+        ).toBeNull();
+        expect(screen.queryByText("No timetable yet")).toBeNull();
+        return;
       }
-      if (url === "/schedule-recommendations/generation-runs/run-2") {
-        return Promise.resolve({ data: { run_id: "run-2", status: "queued" } });
-      }
-      return Promise.resolve({ data: {} });
-    });
-    let queuedRuns = 0;
-    post.mockImplementation((url: string) =>
-      url === "/schedule-recommendations/year-level-preview/queue"
-        ? Promise.resolve({ data: { run_id: `run-${++queuedRuns}` } })
-        : url === "/schedule-recommendations/generation-runs/run-1/cancel"
-          ? Promise.resolve({ data: {} })
-          : Promise.reject(new Error(`Unexpected POST ${url}`)),
-    );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Apply Online to IT 101 · BSIT 1A",
+        }),
+      );
 
-    renderWorkflow(
-      <YearLevelGenerateScheduleWorkflow
-        onClose={vi.fn()}
-        sections={sections}
-        courses={courses}
-        activeSemester={activeSemester}
-        departmentId={2}
-        existingSchedules={[]}
-        onAccepted={vi.fn()}
-      />,
-    );
+      // The loader replaces the panel in the same update: never the Review
+      // step's plan, never the empty summary. A still-searching run used to be
+      // cancelled first, leaving the wizard idle on Review until it was.
+      expect(screen.getByText("Queued for the scheduler")).toBeTruthy();
+      expect(screen.queryByText("Course plan")).toBeNull();
+      expect(screen.queryByText(/class meetings generated/)).toBeNull();
+      expect(screen.queryByRole("button", { name: /Apply Online/ })).toBeNull();
 
-    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Apply Online to IT 101 · BSIT 1A" }));
-
-    // The loader replaces the panel in the same update: never the Review
-    // step's plan, never the empty summary. A still-searching run used to be
-    // cancelled first, leaving the wizard idle on Review until it was.
-    expect(screen.getByText("Queued for the scheduler")).toBeTruthy();
-    expect(screen.queryByText("Course plan")).toBeNull();
-    expect(screen.queryByText(/class meetings generated/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /Apply Online/ })).toBeNull();
-
-    await waitFor(() => expect(post).toHaveBeenLastCalledWith(
-      "/schedule-recommendations/year-level-preview/queue",
-      expect.objectContaining({
-        section_configs: [expect.objectContaining({ delivery_modes_by_course_id: { 20: "online" } })],
-      }),
-    ));
-    expect(screen.getByText("Queued for the scheduler")).toBeTruthy();
-    // The search it replaced is stopped, not left running beside it.
-    expect(post.mock.calls.some(([url]) => url === "/schedule-recommendations/generation-runs/run-1/cancel"))
-      .toBe(kind === "provisional");
-  });
+      await waitFor(() =>
+        expect(post).toHaveBeenLastCalledWith(
+          "/schedule-recommendations/year-level-preview/queue",
+          expect.objectContaining({
+            section_configs: [
+              expect.objectContaining({
+                delivery_modes_by_course_id: { 20: "online" },
+              }),
+            ],
+          }),
+        ),
+      );
+      expect(screen.getByText("Queued for the scheduler")).toBeTruthy();
+      // A finished run has nothing left to stop.
+      expect(
+        post.mock.calls.some(
+          ([url]) =>
+            url === "/schedule-recommendations/generation-runs/run-1/cancel",
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("serves the reference data from cache when the generator is reopened", async () => {
     const countGets = (url: string) =>
@@ -461,7 +564,11 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
             field_course_assignment_enabled: true,
             field_course_codes: ["PATH FIT 1"],
             field_course_options: [
-              { id: 21, code: "PATH FIT 1", name: "Movement Competency Training" },
+              {
+                id: 21,
+                code: "PATH FIT 1",
+                name: "Movement Competency Training",
+              },
             ],
           },
         });
@@ -565,16 +672,32 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         return Promise.resolve({
           data: [
             {
-              id: 20, course_code: "IT 101", course_name: "Introduction to Computing",
-              units: 3, lecture_hours: 3, lab_hours: 0, course_category: "major",
-              semester: "1st", department_id: 2, year_level: "1",
-              room_type_required: "lecture", status: "active",
+              id: 20,
+              course_code: "IT 101",
+              course_name: "Introduction to Computing",
+              units: 3,
+              lecture_hours: 3,
+              lab_hours: 0,
+              course_category: "major",
+              semester: "1st",
+              department_id: 2,
+              year_level: "1",
+              room_type_required: "lecture",
+              status: "active",
             },
             {
-              id: 21, course_code: "PATH FIT 1", course_name: "Movement Competency Training",
-              units: 2, lecture_hours: 2, lab_hours: 0, course_category: "minor",
-              semester: "1st", department_id: 2, year_level: "1",
-              room_type_required: "field", status: "active",
+              id: 21,
+              course_code: "PATH FIT 1",
+              course_name: "Movement Competency Training",
+              units: 2,
+              lecture_hours: 2,
+              lab_hours: 0,
+              course_category: "minor",
+              semester: "1st",
+              department_id: 2,
+              year_level: "1",
+              room_type_required: "field",
+              status: "active",
             },
           ],
         });
@@ -603,22 +726,34 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     const continueButton = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueButton as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueButton);
 
     // A field course used to be re-added to every run whatever was chosen.
     fireEvent.click(
-      await screen.findByRole("checkbox", { name: "Include PATH FIT 1 in generation" }),
+      await screen.findByRole("checkbox", {
+        name: "Include PATH FIT 1 in generation",
+      }),
     );
     // Default Settings open from the gear in the header, in the right sidebar.
     fireEvent.click(screen.getByRole("button", { name: "Default Settings" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Allow Friday and Saturday as Paired Days" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Allow Friday and Saturday as Paired Days",
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /Apply Defaults/ }));
-    expect(screen.queryByRole("region", { name: "Default Settings" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Default Settings" }),
+    ).toBeNull();
     // Saved per department, apart from the draft an accepted year level wipes,
     // so the next year level opens with the same defaults.
     expect(
-      JSON.parse(localStorage.getItem("wicars.generator-course-defaults.v1.2") ?? "{}"),
+      JSON.parse(
+        localStorage.getItem("wicars.generator-course-defaults.v1.2") ?? "{}",
+      ),
     ).toMatchObject({ allowFridaySaturdaySplit: true });
     fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
     fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
@@ -648,7 +783,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     const mockReads = (activeRun: Record<string, unknown> | null = null) =>
       get.mockImplementation((url: string) => {
         if (url === "/scheduling-settings") {
-          return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+          return Promise.resolve({
+            data: { forced_day_rules: [], field_course_codes: [] },
+          });
         }
         if (url === "/schedule-recommendations/active-generation-run") {
           return Promise.resolve({ data: { run: activeRun } });
@@ -670,9 +807,12 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       />
     );
     const withProvider = (ui: ReactElement) => (
-      <GenerationRunProvider departmentId={2} semesterId={1}>{ui}</GenerationRunProvider>
+      <GenerationRunProvider departmentId={2} semesterId={1}>
+        {ui}
+      </GenerationRunProvider>
     );
-    const yearPicker = () => screen.getByRole("combobox", { name: "Year level" }) as HTMLSelectElement;
+    const yearPicker = () =>
+      screen.getByRole("combobox", { name: "Year level" }) as HTMLSelectElement;
 
     it("when the sections list is refreshed after a save", async () => {
       mockReads();
@@ -683,30 +823,104 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       // Saving a year level deletes the draft, then refreshes the list: the
       // same years in a new array. That used to send the wizard to year 1.
       localStorage.removeItem(draftKey);
-      rerender(withProvider(workflow(twoYears.map((section) => ({ ...section })))));
+      rerender(
+        withProvider(workflow(twoYears.map((section) => ({ ...section })))),
+      );
 
       await waitFor(() => expect(yearPicker().value).toBe("3"));
     });
 
     it("when it opens before the sections have loaded", async () => {
       mockReads();
-      localStorage.setItem(draftKey, JSON.stringify({ step: 1, yearLevel: 3, configs: {}, setupDraft: {} }));
+      localStorage.setItem(
+        draftKey,
+        JSON.stringify({ step: 1, yearLevel: 3, configs: {}, setupDraft: {} }),
+      );
       const { rerender } = render(withProvider(workflow([])));
 
       rerender(withProvider(workflow(twoYears)));
 
       await waitFor(() => expect(yearPicker().value).toBe("3"));
-      expect(JSON.parse(localStorage.getItem(draftKey) ?? "{}").yearLevel).toBe(3);
+      expect(JSON.parse(localStorage.getItem(draftKey) ?? "{}").yearLevel).toBe(
+        3,
+      );
+    });
+
+    it("keeps a per-section run's sections when the wizard is closed and reopened", async () => {
+      mockReads();
+      const twoSections: Section[] = [
+        sections[0],
+        { ...sections[0], id: "11", name: "BSIT 1B" },
+      ];
+      const existing = [
+        {
+          id: "900",
+          sectionId: "10",
+          courseId: "20",
+          semesterId: "1",
+          status: "draft",
+          day: "Monday",
+          startTime: "08:00",
+          endTime: "09:30",
+        },
+      ] as unknown as ScheduleItem[];
+      // StrictMode, as the app runs in development: effects run twice on
+      // mount, which is when the restored draft used to be overwritten.
+      const opened = (open: boolean) => (
+        <StrictMode>
+          {withProvider(
+            open ? (
+              <YearLevelGenerateScheduleWorkflow
+                onClose={vi.fn()}
+                sections={twoSections}
+                courses={courses}
+                activeSemester={activeSemester}
+                departmentId={2}
+                existingSchedules={existing}
+                onAccepted={vi.fn()}
+              />
+            ) : (
+              <></>
+            ),
+          )}
+        </StrictMode>
+      );
+      const selectedMode = () =>
+        screen.getByRole("radio", { name: "Selected sections" });
+
+      const { rerender } = render(opened(true));
+      fireEvent.click(
+        await screen.findByRole("radio", { name: "Selected sections" }),
+      );
+      expect(selectedMode().getAttribute("aria-checked")).toBe("true");
+
+      rerender(opened(false));
+      rerender(opened(true));
+
+      await waitFor(() =>
+        expect(selectedMode().getAttribute("aria-checked")).toBe("true"),
+      );
+      expect(
+        JSON.parse(localStorage.getItem(draftKey) ?? "{}").targetSectionIds,
+      ).toEqual(["11"]);
     });
 
     it("while a run for another year level is in progress", async () => {
-      mockReads({ run_id: "run-9", status: "running", year_level: 3, created_at: new Date().toISOString() });
+      mockReads({
+        run_id: "run-9",
+        status: "running",
+        year_level: 3,
+        created_at: new Date().toISOString(),
+      });
       render(withProvider(workflow(twoYears)));
 
       // The wizard's header names the run's year, not the first year level.
       const header = (year: string) => (_: string, element: Element | null) =>
-        element?.tagName === "P" && (element.textContent ?? "").includes(`BSIT ${year} year`);
-      expect((await screen.findAllByText(header("3rd"))).length).toBeGreaterThan(0);
+        element?.tagName === "P" &&
+        (element.textContent ?? "").includes(`BSIT ${year} year`);
+      expect(
+        (await screen.findAllByText(header("3rd"))).length,
+      ).toBeGreaterThan(0);
       expect(screen.queryAllByText(header("1st"))).toHaveLength(0);
     });
   });
@@ -719,7 +933,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
     get.mockImplementation((url: string) => {
       if (url === "/scheduling-settings") {
-        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+        return Promise.resolve({
+          data: { forced_day_rules: [], field_course_codes: [] },
+        });
       }
       if (url === "/rooms") return Promise.resolve({ data: [] });
       if (url === "/curriculum") return curriculumEndpoints(url);
@@ -727,10 +943,18 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         return Promise.resolve({
           data: [
             {
-              id: 20, course_code: "IT 101", course_name: "Introduction to Computing",
-              units: 3, lecture_hours: 3, lab_hours: 0, course_category: "major",
-              semester: "1st", department_id: 2, year_level: "1",
-              room_type_required: "lecture", status: "active",
+              id: 20,
+              course_code: "IT 101",
+              course_name: "Introduction to Computing",
+              units: 3,
+              lecture_hours: 3,
+              lab_hours: 0,
+              course_category: "major",
+              semester: "1st",
+              department_id: 2,
+              year_level: "1",
+              room_type_required: "lecture",
+              status: "active",
             },
           ],
         });
@@ -759,9 +983,13 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     const continueButton = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueButton as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueButton);
-    await screen.findByRole("checkbox", { name: "Include IT 101 in generation" });
+    await screen.findByRole("checkbox", {
+      name: "Include IT 101 in generation",
+    });
     fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
     fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
 
@@ -785,7 +1013,12 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
             forced_day_rules: [],
             field_course_codes: [],
             preferred_room_options: [
-              { id: 7, room_code: "LEC 7", room_type: "lecture", building: "Main" },
+              {
+                id: 7,
+                room_code: "LEC 7",
+                room_type: "lecture",
+                building: "Main",
+              },
             ],
           },
         });
@@ -818,16 +1051,26 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     const continueToSetup = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueToSetup as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueToSetup as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueToSetup);
 
     fireEvent.click(await screen.findByRole("button", { name: /^Configure$/ }));
-    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText(/Preferred Room/i), { target: { value: "7" } });
-    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+    fireEvent.change(screen.getByLabelText(/Duration in hours/i), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByLabelText(/Preferred Room/i), {
+      target: { value: "7" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Apply Configuration/i }),
+    );
 
     const continueToReview = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueToReview as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueToReview as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueToReview);
     fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
 
@@ -862,8 +1105,15 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     // One stepper, at the top, with the four named steps.
-    const stepper = screen.getByRole("navigation", { name: "Schedule generator steps" });
-    for (const title of ["Configuration", "Setup Courses", "Review & Generate", "Schedule Summary"]) {
+    const stepper = screen.getByRole("navigation", {
+      name: "Schedule generator steps",
+    });
+    for (const title of [
+      "Configuration",
+      "Setup Courses",
+      "Review & Generate",
+      "Schedule Summary",
+    ]) {
       expect(stepper.textContent).toContain(title);
     }
     expect(screen.queryByText("Choose Year")).toBeNull();
@@ -876,20 +1126,35 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(screen.queryByText("Field Courses")).toBeNull();
     // The step area scrolls: the modal sizes itself to its content, so when
     // the content is taller than the viewport this is what gives.
-    expect(container.querySelector("main")?.className).toContain("overflow-y-auto");
+    expect(container.querySelector("main")?.className).toContain(
+      "overflow-y-auto",
+    );
 
     const continueButton = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueButton as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueButton);
 
     // Step 2 is one row per course, with redesigned class configuration columns.
-    await waitFor(() => expect(screen.getByRole("columnheader", { name: "Course" })).toBeTruthy());
-    for (const heading of ["Regular", "Split", "Integrated", "Delivery Mode", "Duration", "Configure"]) {
+    await waitFor(() =>
+      expect(screen.getByRole("columnheader", { name: "Course" })).toBeTruthy(),
+    );
+    for (const heading of [
+      "Regular",
+      "Split",
+      "Integrated",
+      "Delivery Mode",
+      "Duration",
+      "Configure",
+    ]) {
       expect(screen.getByRole("columnheader", { name: heading })).toBeTruthy();
     }
     expect(screen.getByRole("button", { name: /Configure/ })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close schedule generator" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close schedule generator" }),
+    );
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -951,14 +1216,20 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
 
     // Split eligibility is configured directly in Step 2.
     const toStep2 = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((toStep2 as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((toStep2 as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(toStep2);
 
     // Turn Split on for GEC 1 in the table, then open Configure to exclude BSIT 1B.
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Split for GEC 1" }));
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Split for GEC 1" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /Configure/ }));
 
-    const sidebar = await screen.findByRole("region", { name: /Configure GEC 1/i });
+    const sidebar = await screen.findByRole("region", {
+      name: /Configure GEC 1/i,
+    });
 
     // Switch to Selected Sections scope
     fireEvent.click(within(sidebar).getByLabelText(/Selected Sections Only/i));
@@ -968,7 +1239,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       name: /BSIT 1B/i,
     });
     fireEvent.click(bsit1bCheckbox);
-    fireEvent.click(within(sidebar).getByRole("button", { name: /Apply Configuration/i }));
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: /Apply Configuration/i }),
+    );
 
     // The table now shows the partial override badge.
     await waitFor(() => expect(screen.getByText("1/2 sections")).toBeTruthy());
@@ -978,7 +1251,8 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
 
     await waitFor(() => expect(post).toHaveBeenCalled());
     const payload = post.mock.calls.find(
-      (call) => call[0] === "/schedule-recommendations/year-level-preview/queue",
+      (call) =>
+        call[0] === "/schedule-recommendations/year-level-preview/queue",
     )?.[1] as { section_configs: Array<Record<string, unknown>> };
     const bySection = new Map(
       payload.section_configs.map((config) => [config.section_id, config]),
@@ -1030,7 +1304,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     }
 
     expect(
-      await screen.findByText(/limited to the Preferred Days \(Monday, Tuesday, Wednesday\)/),
+      await screen.findByText(
+        /limited to the Preferred Days \(Monday, Tuesday, Wednesday\)/,
+      ),
     ).toBeTruthy();
 
     fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
@@ -1064,7 +1340,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     const continueButton = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueButton as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueButton);
 
     await waitFor(() =>
@@ -1116,9 +1394,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       expect(post).toHaveBeenCalledWith(
         "/schedule-recommendations/year-level-preview/queue",
         expect.objectContaining({
-          section_configs: [
-            expect.objectContaining({ allowed_days: null }),
-          ],
+          section_configs: [expect.objectContaining({ allowed_days: null })],
         }),
       ),
     );
@@ -1166,7 +1442,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     const continueButton = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() => expect((continueButton as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((continueButton as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(continueButton);
 
     // Wait for this warning by its text rather than for the first alert.
@@ -1176,5 +1454,4 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(warning.textContent).toContain("assigned to Monday");
     expect(warning.textContent).toContain("should be reviewed");
   });
-
 });

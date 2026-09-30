@@ -113,8 +113,10 @@ const ScheduleCard = memo(function ScheduleCard({
   const isCompact = !isWideView && schedule.durationSlots <= 2; // 1 hour (38px)
   const isMedium = !isWideView && schedule.durationSlots === 3; // 1.5 hours (57px)
 
+  const isShortWide = isWideView && schedule.durationSlots <= 3;
+
   const paddingClasses = isWideView
-    ? `p-2.5 px-3 ${isAwaitingFaculty ? "pb-8" : ""}`
+    ? `${isShortWide ? "p-1.5 px-3" : "p-2.5 px-3"} ${isAwaitingFaculty ? "pb-8" : ""}`
     : isCompact
     ? `p-1 px-1.5 ${isAwaitingFaculty ? "pr-7" : ""}`
     : isMedium
@@ -329,6 +331,20 @@ const ScheduleCard = memo(function ScheduleCard({
             </span>
           </div>
 
+          {isShortWide ? (
+            // 1.5h cards are too short to stack instructor and time: share a row.
+            <div className="mt-auto flex min-w-0 items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium leading-none text-slate-500">
+              {hasFaculty && schedule.facultyName ? (
+                <span className="min-w-0 flex-1 truncate font-bold text-emerald-800" title={schedule.facultyName}>
+                  {schedule.facultyName}
+                </span>
+              ) : <span />}
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                {schedule.startTime} – {schedule.endTime}
+                {(showResolved || showAllowed) && resolvedFlag}
+              </span>
+            </div>
+          ) : (
           <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[10.5px] whitespace-normal leading-tight"}`}>
             {hasFaculty && schedule.facultyName && (
               <div className="truncate font-bold text-emerald-800" title={schedule.facultyName}>
@@ -340,6 +356,7 @@ const ScheduleCard = memo(function ScheduleCard({
               {(showResolved || showAllowed) && resolvedFlag}
             </div>
           </div>
+          )}
         </div>
       )}
 

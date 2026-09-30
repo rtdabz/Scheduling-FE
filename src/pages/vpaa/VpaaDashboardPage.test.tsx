@@ -223,7 +223,7 @@ describe('VpaaDashboardPage', () => {
   it('renders every section of the executive overview', async () => {
     renderPage();
 
-    await waitFor(() => expect(screen.getByText('Institutional Overview')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
 
     [
       'Requires Attention',
@@ -234,12 +234,6 @@ describe('VpaaDashboardPage', () => {
       'Institutional Readiness',
       'Recent Administrative Activity',
     ].forEach(title => expect(screen.getByText(title)).toBeTruthy());
-  });
-
-  it('names the active semester and when the figures were taken', async () => {
-    renderPage();
-    await waitFor(() => expect(screen.getByText(/2nd Semester, AY 2026-2027/)).toBeTruthy());
-    expect(screen.getByText('Figures as of')).toBeTruthy();
   });
 
   it('counts a dean override as awaiting the VPAA rather than as a draft', async () => {
@@ -340,17 +334,17 @@ describe('VpaaDashboardPage', () => {
 
     await waitFor(() => expect(get).toHaveBeenCalledWith('/vpaa/dashboard-insights'));
     expect(container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
-    expect(screen.queryByText('Institutional Overview')).toBeNull();
+    expect(screen.queryByText('Requires Attention')).toBeNull();
 
     releaseInsights({ data: insights });
 
-    await waitFor(() => expect(screen.getByText('Institutional Overview')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
     expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
   });
 
   it('serves a revisit from cache instead of refetching the aggregates', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByText('Institutional Overview')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
 
     const callsAfterFirstMount = get.mock.calls.length;
     cleanup();
@@ -358,7 +352,7 @@ describe('VpaaDashboardPage', () => {
 
     // Every panel is seeded from cache, so the revisit paints whole rather than
     // leaving the two aggregate panels to arrive behind the others.
-    await waitFor(() => expect(screen.getByText('Institutional Overview')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
     expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
     expect(get.mock.calls.length).toBe(callsAfterFirstMount);
   });

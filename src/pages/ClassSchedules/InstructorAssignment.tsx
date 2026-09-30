@@ -35,6 +35,16 @@ import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid
 import { gridOpeningMinutes, slotCount, slotMinutes } from "../../lib/timeGrid";
 import WorkflowGuideButton from "../../components/help/WorkflowGuideButton";
 import { useWorkflowGuide } from "../../hooks/useWorkflowGuide";
+import MasterGantt from "../vpaa/calendar/MasterGantt";
+import {
+  buildGanttDays,
+  buildTimeWindow,
+  dayIndexOf,
+  findOverlaps,
+  type CalendarSchedule,
+  type StandardHours,
+} from "../vpaa/calendar/ganttLayout";
+import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import FacultyModal from "./SchedulerPanel/Modals/FacultyModal";
 import AssignmentWorklist from "./AssignmentWorklist";
 import type { WorklistClass } from "./AssignmentWorklist";
@@ -419,6 +429,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     [faculties],
   );
   const [viewMode, setViewMode] = useState<AssignmentView>(storedViewMode);
+  const [ganttZoom, setGanttZoom] = useState<ZoomLevel>("fit");
+  const [collapsedGanttDays, setCollapsedGanttDays] = useState<ReadonlySet<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "assigned">("all");
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
@@ -641,46 +653,49 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     && schedule.status !== "finalized"
     && !schedule.faculty_assignment_done
   ));
-  const scheduleLayouts = useMemo(() => {
-    const layouts: Array<{
-      schedule: AssignmentSchedule;
-      dayIndex: number;
-      startSlot: number;
-      durationSlots: number;
-      lane: number;
-      laneCount: number;
-    }> = [];
-
-    DAYS.forEach((day, dayIndex) => {
-      const daySchedules = visibleSchedules
-        .filter((schedule) => schedule.day === day)
-        .sort((left, right) => timeToMinutes(left.start_time) - timeToMinutes(right.start_time));
-      const laneEndTimes: number[] = [];
-      const dayLayouts = daySchedules.map((schedule) => {
-        const startMinutes = timeToMinutes(schedule.start_time);
-        const endMinutes = timeToMinutes(schedule.end_time);
-        let lane = laneEndTimes.findIndex((endTime) => endTime <= startMinutes);
-        if (lane === -1) {
-          lane = laneEndTimes.length;
-          laneEndTimes.push(endMinutes);
-        } else {
-          laneEndTimes[lane] = endMinutes;
-        }
-
-        return {
-          schedule,
-          dayIndex,
-          startSlot: Math.max(0, Math.floor((startMinutes - gridOpeningMinutes()) / slotMinutes())),
-          durationSlots: Math.max(1, Math.ceil((endMinutes - startMinutes) / slotMinutes())),
-          lane,
-        };
-      });
-      const laneCount = Math.max(1, laneEndTimes.length);
-      layouts.push(...dayLayouts.map((layout) => ({ ...layout, laneCount })));
-    });
-
-    return layouts;
-  }, [visibleSchedules]);
+  // Grid view reuses the shared Gantt the dean and VPAA calendars draw with.
+  const ganttSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map((schedule) => ({
+    id: schedule.id,
+    day: schedule.day,
+    start_time: schedule.start_time,
+    end_time: schedule.end_time,
+    meeting_type: schedule.meeting_type ?? "lecture",
+    mode: schedule.mode ?? "on-site",
+    course_id: schedule.course_id ?? schedule.subject_id ?? null,
+    department_id: schedule.department_id,
+    department: schedule.department,
+    room_id: schedule.room_id ?? null,
+    room: schedule.room?.room_code
+      ? { id: schedule.room_id ?? 0, room_code: schedule.room.room_code, building: schedule.room.building ?? null }
+      : null,
+    faculty_id: schedule.faculty_id,
+    faculty: schedule.faculty && schedule.faculty_id !== null
+      ? { id: schedule.faculty_id, first_name: schedule.faculty.first_name ?? "", last_name: schedule.faculty.last_name ?? "" }
+      : null,
+    section_id: schedule.section_id ?? null,
+    section: { id: schedule.section_id ?? 0, section_name: schedule.section?.section_name ?? "Unspecified section", department_id: schedule.department_id },
+    course: {
+      course_code: schedule.subject.course_code ?? schedule.subject.subject_code,
+      course_name: schedule.subject.course_name ?? schedule.subject.subject_name,
+      units: schedule.subject.units ?? undefined,
+    },
+  })), [visibleSchedules]);
+  const ganttDays = useMemo(() => {
+    const dayIndexes = ganttSchedules.some((schedule) => dayIndexOf(schedule.day) === 6)
+      ? [0, 1, 2, 3, 4, 5, 6]
+      : [0, 1, 2, 3, 4, 5];
+    return buildGanttDays(ganttSchedules, "none", dayIndexes);
+  }, [ganttSchedules]);
+  const ganttStandardHours = useMemo<StandardHours>(() => {
+    const opening = gridOpeningMinutes();
+    return { opening, closing: opening + slotCount() * slotMinutes(), slotMinutes: slotMinutes() };
+  }, []);
+  const ganttTimeWindow = useMemo(
+    () => buildTimeWindow(ganttStandardHours, ganttSchedules),
+    [ganttStandardHours, ganttSchedules],
+  );
+  const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules), [ganttSchedules]);
+  const ganttNow = useMemo(() => new Date(), []);
 const selectedSchedule = assignmentSchedules.find(
     (schedule) => String(schedule.id) === facultyAssignmentPopup?.scheduleId,
   ) ?? null;
@@ -1475,52 +1490,44 @@ const selectedSchedule = assignmentSchedules.find(
               />
             </div>
           ) : (
-          <div id="instructor-assignment-timetable" className="overflow-x-auto p-3">
-            <div className={timetableFrameClass(scrollableTimetable)}>
-              <WeeklyTimetableGrid
-                days={DAYS}
-                slotCount={slotCount()}
-                minWidth={1120}
-                getDayCount={(dayIndex) => visibleSchedules.filter(
-                  (schedule) => schedule.day === DAYS[dayIndex],
-                ).length}
+          <div id="instructor-assignment-timetable" className="p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Timeline zoom"
+                value={ganttZoom}
+                onChange={(event) => setGanttZoom(event.target.value as ZoomLevel)}
+                className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
               >
-                {scheduleLayouts.map(({ schedule, dayIndex, startSlot, durationSlots, lane, laneCount }) => {
-                  const facultyName = getFacultyName(schedule);
-                  const isFinalized = schedule.status === "finalized" || (assignmentLocked ?? Boolean(schedule.faculty_assignment_done));
-                  return (
-                    <button
-                      key={schedule.id}
-                      type="button"
-                      onClick={() => openAssignment(schedule)}
-                      disabled={assignmentLocked || isFinalized}
-                      aria-label={`${schedule.subject.subject_code}, ${schedule.section?.section_name}, ${formatTime(schedule.start_time)} to ${formatTime(schedule.end_time)}, ${facultyName || "needs instructor"}`}
-                      className={`z-10 m-0.5 flex min-w-0 flex-col justify-between overflow-hidden rounded-xl border-2 border-l-4 px-2 py-1.5 text-left shadow-sm transition-all hover:shadow-md ${
-                        facultyName
-                          ? "border-emerald-200 border-l-emerald-600 bg-emerald-50 text-emerald-950 hover:bg-emerald-100"
-                          : "border-amber-200 border-l-[#C9952A] bg-amber-50 text-amber-950 hover:bg-amber-100"
-                      } ${assignmentLocked || isFinalized ? "cursor-not-allowed opacity-75" : "cursor-pointer"}`}
-                      style={{
-                        gridColumn: dayIndex + 2,
-                        gridRow: `${startSlot + 2} / span ${durationSlots}`,
-                        height: `${durationSlots * 24 - 4}px`,
-                        width: `calc(${100 / laneCount}% - 4px)`,
-                        transform: `translateX(${lane * 100}%)`,
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="truncate text-[10px] font-black">{schedule.subject.subject_code} · {schedule.section?.section_name}</span>
-                        {facultyName && <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-700" />}
-                      </div>
-                      <div className="mt-0.5 truncate text-[9px] font-semibold opacity-75">
-                        {formatTime(schedule.start_time)}–{formatTime(schedule.end_time)} · {getRoomName(schedule)}
-                      </div>
-                      <div className="mt-0.5 truncate text-[9px] font-bold">{facultyName || "Assign instructor"}</div>
-                    </button>
-                  );
-                })}
-              </WeeklyTimetableGrid>
+                <option value="fit">Fit</option>
+                <option value="normal">1×</option>
+                <option value="wide">2×</option>
+              </select>
+              <span className="ml-auto text-xs font-semibold text-slate-500">
+                {assignmentLocked ? "Assignments are locked." : "Select a class to assign its instructor."}
+              </span>
             </div>
+            <MasterGantt
+              days={ganttDays}
+              timeWindow={ganttTimeWindow}
+              standardHours={ganttStandardHours}
+              groupBy="none"
+              zoom={ganttZoom}
+              density="compact"
+              overlaps={ganttOverlaps}
+              collapsedDays={collapsedGanttDays}
+              onToggleDay={(day) => setCollapsedGanttDays((current) => {
+                const next = new Set(current);
+                if (next.has(day)) next.delete(day);
+                else next.add(day);
+                return next;
+              })}
+              onSelect={(calendarSchedule) => {
+                const schedule = visibleSchedules.find((item) => item.id === calendarSchedule.id);
+                if (schedule) openAssignment(schedule);
+              }}
+              now={ganttNow}
+              className={scrollableTimetable ? "max-h-[calc(100vh-16rem)]" : undefined}
+            />
           </div>
           )}
           {footerActions && (

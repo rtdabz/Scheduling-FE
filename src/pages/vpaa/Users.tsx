@@ -165,7 +165,6 @@ const formInput = (hasError = false) =>
   `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm bg-white transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
     hasError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
   }`;
-const FORM_READONLY = 'w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed outline-none text-sm';
 const FieldError = ({ message }: { message: string }) =>
   message ? <p className="text-[11px] text-red-500 mt-0.5 font-semibold">{message}</p> : null;
 
@@ -448,7 +447,7 @@ export default function VpaaUsers() {
       const apiRole = API_ROLE_MAP[formData.role] || formData.role.toLowerCase();
 
       if (isEditMode && editingId !== null) {
-        const res = await api.put<{ data: ApiUser }>(`/user/${editingId}`, {
+        const res = await api.put<{ message: string; data: ApiUser }>(`/user/${editingId}`, {
           first_name: formData.first_name.trim(),
           middle_initial: formData.middle_initial.trim() || null,
           last_name: formData.last_name.trim(),
@@ -466,7 +465,7 @@ export default function VpaaUsers() {
           setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
           return nextUsers;
         });
-        toast.success('Success', 'User account updated successfully');
+        toast.success('Success', res.data.message || 'User account updated successfully');
       } else {
         const res = await api.post<{ data: ApiUser }>('/user', {
           first_name: formData.first_name.trim(),
@@ -599,6 +598,7 @@ export default function VpaaUsers() {
   };
 
   const [isSendingSetupLink, setIsSendingSetupLink] = useState(false);
+  const editingUser = isEditMode && editingId !== null ? users.find(u => u.id === editingId) : undefined;
 
   const sendSetupLink = async (user: User) => {
     if (isSendingSetupLink) return;
@@ -1175,23 +1175,6 @@ export default function VpaaUsers() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={FORM_LABEL}>Username</label>
-                      <input
-                        type="text"
-                        value={formData.username}
-                        readOnly
-                        placeholder={isEditMode ? '' : 'Auto-generated'}
-                        className={`${FORM_READONLY} font-mono`}
-                      />
-                    </div>
-                    <div>
-                      <label className={FORM_LABEL}>Password</label>
-                      <input type="text" value={isEditMode ? 'Set by the user' : 'Setup link emailed'} readOnly className={FORM_READONLY} />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
                       <label className={FORM_LABEL}>Role</label>
                       <select
                         value={formData.role}
@@ -1382,6 +1365,19 @@ export default function VpaaUsers() {
               </div>
 
               <div className="flex justify-end gap-3 px-5 py-3.5 border-t border-gray-200/80 bg-gray-50/50 shrink-0">
+                {isEditMode && editingUser && (
+                  <button
+                    type="button"
+                    disabled={isSendingSetupLink || editingUser.status !== 'Active' || formData.email.trim().toLowerCase() !== editingUser.email.toLowerCase()}
+                    onClick={() => sendSetupLink(editingUser)}
+                    title={formData.email.trim().toLowerCase() !== editingUser.email.toLowerCase()
+                      ? 'Save the new email first; saving sends the setup link to it'
+                      : `Email a one-time setup link to ${editingUser.email}`}
+                    className="mr-auto flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Mail size={14} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}

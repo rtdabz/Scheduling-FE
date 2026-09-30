@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -82,7 +82,9 @@ const overlaps = (left: ScheduleItem, right: ScheduleItem): boolean =>
   && left.startSlot < right.startSlot + right.durationSlots
   && right.startSlot < left.startSlot + left.durationSlots;
 
-const groupsOverlap = (left: SectionGroup, right: SectionGroup): boolean =>
+const QUEUED_ISSUE = "Queued for assignment";
+
+const groupsOverlap =(left: SectionGroup, right: SectionGroup): boolean =>
   left.schedules.some((leftSchedule) => right.schedules.some((rightSchedule) => overlaps(leftSchedule, rightSchedule)));
 
 /**
@@ -100,6 +102,8 @@ const loadBandsOf = (faculty?: Faculty): LoadAllowances => ({
 
 interface LoadDisplay {
   bands: LoadAllowances;
+  /** Basic Load plus Overload: the instructor's full load, shown as the "/ N". */
+  ceiling: number;
   tier: LoadTier | null;
   label: string;
   badgeClass: string;
@@ -114,12 +118,16 @@ interface LoadDisplay {
  */
 const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay => {
   const bands = loadBandsOf(faculty);
+  const ceiling = bands.basicLoad + Math.max(0, bands.overloadUnits);
 
-  // No Basic Load recorded means there is no band to report, and it is the same
+  // No allowance at all means there is no band to report, and it is the same
   // condition under which the server's confirmation leaves the instructor alone.
-  if (bands.basicLoad <= 0) {
+  // An overload-only instructor (Basic Load 0) still has bands: Overload, then
+  // Pro-bono once it is used up.
+  if (ceiling <= 0) {
     return {
       bands,
+      ceiling,
       tier: null,
       label: "No load recorded",
       badgeClass: "border-slate-200 bg-slate-100 text-slate-600",
@@ -132,10 +140,12 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
 
   return {
     bands,
+    ceiling,
     tier,
-    label: LOAD_TIER_LABELS[tier],
+    // The "/ N" is Basic Load plus Overload, so the in-range badge reads "Total Load".
+    label: tier === "basic" ? "Total Load" : LOAD_TIER_LABELS[tier],
     badgeClass: LOAD_TIER_BADGE_CLASSES[tier],
-    percentage: Math.min(100, (units / bands.basicLoad) * 100),
+    percentage: Math.min(100, (units / ceiling) * 100),
     barClass: tier === "basic" ? "bg-emerald-500" : tier === "beyond_ceiling" ? "bg-rose-500" : "bg-amber-500",
   };
 };
@@ -309,8 +319,18 @@ export default function AutoAssignModal({
     });
   }, [assignments, checkFacultyConflict, schedules]);
 
+  // Reset once per opening (and department), not on every data refresh: removing an
+  // instructor reloads `groups`, which used to snap the picker back to the first course.
+  const initializedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      initializedForRef.current = null;
+      return;
+    }
+    const initKey = String(departmentId);
+    if (initializedForRef.current === initKey) return;
+    // Wait for data so the first course can be chosen; don't lock in an empty state.
+    if (groups.length > 0) initializedForRef.current = initKey;
     setStep(1);
     setAssignments([]);
     setFacultyId(faculties.find((faculty) => departmentId !== null && Number(faculty.departmentId) === Number(departmentId))?.id ?? faculties[0]?.id ?? "");
@@ -336,7 +356,11 @@ export default function AutoAssignModal({
       const assignedDepartment = assignedFaculty?.departmentName ?? assignedFaculty?.departmentCode ?? "assigned department";
       return `Assigned Instructor: ${assignedName} from ${assignedDepartment}`;
     }
-    if (queuedKeys.has(group.key)) return "Queued for assignment";
+    if (queuedKeys.has(group.key)) {
+      const queued = assignments.find((assignment) => assignment.key === group.key);
+      const queuedName = faculties.find((faculty) => faculty.id === queued?.facultyId)?.name;
+      return queuedName ? `Queued to ${queuedName}` : QUEUED_ISSUE;
+    }
     const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
     if (!pendingSchedules.every(canManageScheduleFaculty)) return "Assigned teaching department only";
 
@@ -571,7 +595,7 @@ export default function AutoAssignModal({
                       <span className="font-bold text-slate-900">{selectedFaculty.name}</span>
                       <EmploymentBadge type={selectedFaculty.employmentType} className="ml-2" />
                       <span className="mx-1.5 text-slate-300">|</span>
-                      <span className="font-semibold tabular-nums">{currentLoad}{selectedUnits > 0 && <span className="text-[#4e0a10]"> + {selectedUnits}</span>} / {projectedLoad.bands.basicLoad} units</span>
+                      <span className="font-semibold tabular-nums">{currentLoad}{selectedUnits > 0 && <span className="text-[#4e0a10]"> + {selectedUnits}</span>} / {projectedLoad.ceiling} units</span>
                       <span className={`ml-2 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${projectedLoad.badgeClass}`}>{projectedLoad.label}</span>
                     </div>
                   ) : (
@@ -691,7 +715,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
               </span>
             </span>
             <span className="block min-w-0">
-              <span className="flex justify-between gap-2 text-[11px] text-slate-500"><span>Load</span><span className="whitespace-nowrap font-bold tabular-nums text-slate-800">{load} / {display.bands.basicLoad}</span></span>
+              <span className="flex justify-between gap-2 text-[11px] text-slate-500"><span>Load</span><span className="whitespace-nowrap font-bold tabular-nums text-slate-800">{load} / {display.ceiling}</span></span>
               <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></span>
               {display.tier !== "basic" && <span className={`mt-1.5 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>}
             </span>
@@ -791,7 +815,8 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, o
       size: 48,
       enableSorting: false,
       cell: ({ row }) => {
-        const alreadyAssigned = !!row.original.assignedFacultyId;
+        // Taken already, or queued for an instructor: checked in grey, not pickable.
+        const alreadyAssigned = !!row.original.assignedFacultyId || !!getIssue(row.original)?.startsWith("Queued");
         const selected = alreadyAssigned || selectedKeys.includes(row.original.key);
         return (
           <span className={`flex h-5 w-5 items-center justify-center rounded border ${
@@ -1003,7 +1028,7 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
                   </span>
                 </div>
                 <div className="mt-2 flex items-center gap-1.5 text-[11px]">
-                  <span className="mr-auto font-semibold tabular-nums text-slate-600">{load} / {display.bands.basicLoad} units</span>
+                  <span className="mr-auto font-semibold tabular-nums text-slate-600">{load} / {display.ceiling} units</span>
                   <ConflictCountBadge items={items} />
                   <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>
                 </div>
@@ -1034,7 +1059,7 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
               <div>
                 <div className="flex items-baseline justify-between text-xs">
                   <span className="font-semibold text-slate-500">Load after saving</span>
-                  <span className="font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.bands.basicLoad}</span></span>
+                  <span className="font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.ceiling}</span></span>
                 </div>
                 <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></div>
               </div>
@@ -1218,7 +1243,7 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
                   </span>
                 </button>
                 <div className="text-right">
-                  <p className="text-sm font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.bands.basicLoad} units</span></p>
+                  <p className="text-sm font-black tabular-nums text-slate-900">{load} <span className="font-medium text-slate-500">/ {display.ceiling} units</span></p>
                   <span className="mt-0.5 inline-flex items-center gap-1">
                     <ConflictCountBadge items={items} />
                     <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>

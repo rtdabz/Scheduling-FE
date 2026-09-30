@@ -30,7 +30,6 @@ import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarD
 import { isVpaaApproved } from '../../lib/scheduleStatus';
 import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
-import ExecutiveHeader from '../../components/vpaa/ExecutiveHeader';
 import BuildingUtilizationPanel from '../../components/vpaa/BuildingUtilizationPanel';
 import FacultyLoadPanel, { type FacultyLoadRow } from '../../components/vpaa/FacultyLoadPanel';
 import AdministrativeActivityPanel, { type ActivityRow } from '../../components/vpaa/AdministrativeActivityPanel';
@@ -176,7 +175,6 @@ export default function VpaaDashboardPage() {
   // True while any refresh is in flight, cached or not. `insightsLoading` only
   // reports "nothing to paint yet", so the header's spinner needs its own flag
   // to still turn during a manual refresh over warm cache.
-  const [insightsRefreshing, setInsightsRefreshing] = useState(true);
 
   // ── Timetable controls ──
   const [filterDept, setFilterDept] = useState('all');
@@ -251,7 +249,6 @@ export default function VpaaDashboardPage() {
 
     const load = async () => {
       setInsightsLoading(liveRevision === 0 && !hasCachedData(insightsCacheKey));
-      setInsightsRefreshing(true);
       try {
         const data = await loadCachedData<VpaaInsights>(insightsCacheKey, async () => {
           const response = await api.get<VpaaInsights>('/vpaa/dashboard-insights');
@@ -264,7 +261,6 @@ export default function VpaaDashboardPage() {
       } finally {
         if (active) {
           setInsightsLoading(false);
-          setInsightsRefreshing(false);
         }
       }
     };
@@ -683,15 +679,6 @@ export default function VpaaDashboardPage() {
       <span className="flex-1">{loadError}</span>
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3.5 w-3.5" /> Retry</button>
     </div>}
-
-    <ExecutiveHeader
-      semester={activeSemester}
-      generatedAt={insights.generated_at || null}
-      now={now}
-      refreshing={insightsRefreshing}
-      onRefresh={retry}
-      onPrint={() => window.print()}
-    />
 
     <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
       {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
