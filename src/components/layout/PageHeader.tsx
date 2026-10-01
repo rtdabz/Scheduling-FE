@@ -33,7 +33,10 @@ const humanizePath = (pathname: string): string[] => pathname
   .filter(Boolean)
   .filter((segment) => !['vpaa', 'dean', 'secretary', 'program_head'].includes(segment.toLowerCase()))
   .filter((segment) => !/^\d+$/.test(segment))
-  .map((segment) => segment.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()));
+  .map((segment) => {
+    if (segment.toLowerCase() === 'faculty') return 'Instructors';
+    return segment.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  });
 
 export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
   const { pathname } = useLocation();

@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
 import { slotCount } from '../../lib/timeGrid';
 import Skeleton from './Skeleton';
@@ -437,9 +437,8 @@ function DeanSkeleton() {
 function VpaaSkeleton() {
   return (
     <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
-      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}
-        <MetricCard className="xl:col-span-2" />
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => <MetricCard key={i} />)}
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">

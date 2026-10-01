@@ -338,7 +338,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     { label:'Total Sections', value:visibleSections.length, detail:'Department scope', icon:Users, path:paths.sections, tone:'brand' },
     ...(canViewSchedules ? [{ label:'Scheduled Sections', value:scheduledSections, detail:`${sectionCoverage}% of ${visibleSections.length} sections`, icon:ShieldCheck, path:paths.schedules, tone:remaining === 0 && visibleSections.length > 0 ? 'good' : 'brand' } as Tile] : []),
     ...(canUpdateSchedules ? [{ label:'Remaining Sections', value:remaining, detail:'Still to schedule', icon:FileClock, path:paths.schedules, tone:remaining ? 'warn' : 'good' } as Tile] : []),
-    { label:'Total Faculty', value:visibleFaculty.length, detail:'Active faculty', icon:GraduationCap, path:paths.instructors, tone:'brand' },
+    { label:'Total Instructors', value:visibleFaculty.length, detail:'Active instructors', icon:GraduationCap, path:paths.instructors, tone:'brand' },
     { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:paths.courses, tone:'brand' },
     { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:paths.rooms, tone:'info' },
     ...(canAssignInstructors ? [{ label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.schedules, tone:noInstructor ? 'alert' : 'good' } as Tile] : []),

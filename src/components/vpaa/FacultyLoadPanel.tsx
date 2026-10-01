@@ -35,14 +35,14 @@ export default function FacultyLoadPanel({
 }) {
   return (
     <Panel
-      title="Faculty Load Overview"
-      subtitle="Teaching load spread across all active faculty."
-      action="View faculty loads"
+      title="Instructor Load Overview"
+      subtitle="Teaching load spread across all active instructors."
+      action="View instructor loads"
       onAction={onOpen}
       className={`flex flex-col ${className}`}
     >
       <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
-        <Donut slices={slices} headline={grouped(total)} caption="Total Faculty" />
+        <Donut slices={slices} headline={grouped(total)} caption="Total Instructors" />
         <DonutLegend slices={slices} total={total} />
       </div>
 
@@ -75,7 +75,7 @@ export default function FacultyLoadPanel({
         onClick={onOpen}
         className="mt-auto self-start pt-3 text-xs font-bold text-primary hover:underline"
       >
-        View Faculty Loads <ArrowRight className="inline h-3.5 w-3.5" />
+        View Instructor Loads <ArrowRight className="inline h-3.5 w-3.5" />
       </button>
     </Panel>
   );

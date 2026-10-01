@@ -174,7 +174,7 @@ export default function Reports() {
           ].join(','));
         });
       } else {
-        csvLines.push(['Faculty Name', 'Employment Type', 'Max Units', 'Assigned Units', 'Status'].join(','));
+        csvLines.push(['Instructor Name', 'Employment Type', 'Max Units', 'Assigned Units', 'Status'].join(','));
         data.faculties.forEach((f) => {
           // Report data arrives already mapped to the camelCase Faculty shape.
           csvLines.push([

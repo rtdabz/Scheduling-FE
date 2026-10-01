@@ -381,7 +381,7 @@ const ScheduleCard = memo(function ScheduleCard({
       {isAwaitingFaculty && isCompact && (
         <div
           className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-lg border border-orange-600/20 bg-orange-500 text-white shadow-sm transition-colors group-hover:bg-orange-600"
-          title="Assign faculty"
+          title="Assign instructor"
         >
           <UserPlus className="h-3 w-3 shrink-0" />
         </div>

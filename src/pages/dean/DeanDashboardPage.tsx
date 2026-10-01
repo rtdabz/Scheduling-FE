@@ -493,7 +493,7 @@ export default function DeanDashboardPage() {
 
   const tiles: Tile[] = [
     { label: 'Department Sections', value: sectionTotal, detail: 'All sections', icon: Users, path: '/dean/sections', tone: 'brand' },
-    { label: 'Faculty Members', value: deptFaculties.length, detail: 'Active faculty', icon: GraduationCap, path: '/dean/faculty', tone: 'good' },
+    { label: 'Instructors', value: deptFaculties.length, detail: 'Active instructors', icon: GraduationCap, path: '/dean/faculty', tone: 'good' },
     { label: 'Curriculum Courses', value: deptSubjects.length, detail: 'Offered', icon: BookOpen, path: '/dean/curriculum', tone: 'accent' },
     { label: 'Rooms Managed', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/rooms', tone: 'warn' },
   ];
@@ -781,20 +781,20 @@ export default function DeanDashboardPage() {
 
       <div className="flex min-w-0 flex-col gap-4">
         <Panel
-          title="Faculty Workload"
-          subtitle="Teaching load overview for all active faculty."
-          action="Faculty workload by %"
+          title="Instructor Workload"
+          subtitle="Teaching load overview for all active instructors."
+          action="Instructor workload by %"
           onAction={() => navigate('/dean/faculty')}
           className="flex flex-col"
         >
         <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
-          <Donut slices={workloadSlices} headline={deptFaculties.length} caption="Total Faculty" />
+          <Donut slices={workloadSlices} headline={deptFaculties.length} caption="Total Instructors" />
           <DonutLegend slices={workloadSlices} total={deptFaculties.length} />
         </div>
 
         <div className="mt-auto border-t border-slate-100 pt-3">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Faculty Workload by %</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Instructor Workload by %</span>
             <span className="text-[9px] text-slate-400">Assigned / Max units</span>
           </div>
           <InstructorWorkloadChart instructors={workload} />

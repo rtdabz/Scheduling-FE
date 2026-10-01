@@ -214,7 +214,7 @@ export default function App() {
             <Route path="/schedules/approval" element={<CapabilityRoute capability="schedule.approve_vpaa" moduleName="Schedule Approval"><ScheduleApprovalPage stage="vpaa" /></CapabilityRoute>} />
             <Route path="/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
             <Route path="/vpaa/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
-            <Route path="/faculty" element={<RoleRoute role="vpaa" moduleName="Faculty"><Faculty /></RoleRoute>} />
+            <Route path="/faculty" element={<RoleRoute role="vpaa" moduleName="Instructors"><Faculty /></RoleRoute>} />
             <Route path="/designations" element={<RoleRoute role="vpaa" moduleName="Designations"><Designations /></RoleRoute>} />
             <Route path="/rooms" element={<RoleRoute role="vpaa" moduleName="Rooms"><Rooms /></RoleRoute>} />
 
@@ -236,7 +236,7 @@ export default function App() {
             <Route path="/dean/departments" element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />
             <Route path="/dean/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/dean/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
-            <Route path="/dean/faculty" element={<CapabilityRoute capability="schedule.view" moduleName="Faculty"><Faculty /></CapabilityRoute>} />
+            <Route path="/dean/faculty" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
             <Route path="/dean/rooms" element={<CapabilityRoute capability="schedule.view" moduleName="Rooms"><Rooms /></CapabilityRoute>} />
 
             <Route path="/dean/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
@@ -278,7 +278,7 @@ export default function App() {
             <Route path="/program_head/schedule-builder" element={<CapabilityRoute capability="schedule.create" moduleName="Schedule Builder"><ProgramHeadScheduleBuilder /></CapabilityRoute>} />
             <Route path="/program_head/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><ProgramHeadSchedules /></CapabilityRoute>} />
             <Route path="/program_head/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><ProgramHeadSectionTimetables /></CapabilityRoute>} />
-            <Route path="/program_head/faculty" element={<CapabilityRoute capability="schedule.view" moduleName="Faculty"><Faculty /></CapabilityRoute>} />
+            <Route path="/program_head/faculty" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
             <Route path="/program_head/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
             <Route path="/program_head/rooms" element={<CapabilityRoute capability="schedule.view" moduleName="Rooms"><Rooms /></CapabilityRoute>} />
             <Route path="/program_head/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />

@@ -649,7 +649,7 @@ export default function Departments() {
       },
       {
         accessorKey: 'facultyCount',
-        header: () => <div className="text-center">Faculty Count</div>,
+        header: () => <div className="text-center">Instructor Count</div>,
         cell: info => <div className="text-center text-sm font-semibold text-gray-700">{info.getValue() as number}</div>
       },
       {
@@ -921,7 +921,7 @@ export default function Departments() {
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-1.5" title="Instructors">
                           <UsersIcon size={14} className="text-gray-400" />
-                          <span>{dept.facultyCount} Faculty</span>
+                          <span>{dept.facultyCount} Instructors</span>
                         </div>
                         <div className="flex items-center gap-1.5" title="Sections">
                           <Layers size={14} className="text-gray-400" />
@@ -1221,7 +1221,7 @@ export default function Departments() {
                       <div>
                         <div className="flex items-center gap-2">
                           <GraduationCap size={18} className="text-[#4e0a10]" />
-                          <h3 className="text-sm font-bold text-gray-900 font-sans">Faculty Directory</h3>
+                          <h3 className="text-sm font-bold text-gray-900 font-sans">Instructor Directory</h3>
                         </div>
                         <p className="mt-0.5 text-xs text-gray-500 font-sans">
                           Instructors assigned to this department, grouped by employment status.
@@ -1256,16 +1256,16 @@ export default function Departments() {
 
                     {isLoadingFaculties ? (
                       <div className="py-6 text-center text-xs text-gray-400 animate-pulse">
-                        Loading faculty members...
+                        Loading instructors...
                       </div>
                     ) : (activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).length === 0 ? (
                       <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
                         <UserRound className="mx-auto mb-2 text-gray-300" size={24} />
                         <p className="text-xs font-bold text-gray-600">
-                          No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} faculty assigned.
+                          No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors assigned.
                         </p>
                         <p className="mt-0.5 text-[11px] text-gray-400">
-                          Instructors can be assigned to this department in the Faculty section.
+                          Instructors can be assigned to this department in the Instructor Management section.
                         </p>
                       </div>
                     ) : (

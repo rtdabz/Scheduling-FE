@@ -115,7 +115,7 @@ export default function FacultyPanel({
               </div>
               <ul className="text-[11px] text-slate-500 space-y-1.5 pl-5 list-disc leading-tight">
                 <li>Conflict-free instructors are highlighted automatically.</li>
-                <li>Faculty with schedule overlaps will display conflict warnings.</li>
+                <li>Instructors with schedule overlaps will display conflict warnings.</li>
                 <li>Click any assigned card on the grid to change or remove the instructor.</li>
               </ul>
             </div>

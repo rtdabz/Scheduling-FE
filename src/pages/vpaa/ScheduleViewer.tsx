@@ -329,7 +329,7 @@ const buildConflictMap = (items: Schedule[]) => {
 const getConflictLabels = (info?: ScheduleConflictInfo) => {
   if (!info) return [];
   return [
-    info.faculty ? "Faculty Conflict" : "",
+    info.faculty ? "Instructor Conflict" : "",
     info.room ? "Room Conflict" : "",
     info.section ? "Section Conflict" : "",
   ].filter(Boolean);
@@ -1047,7 +1047,7 @@ export default function VpaaScheduleViewer() {
   const activeFilterChips = [
     selectedDeptId !== "All" ? departments.find((dept) => dept.id === selectedDeptId)?.code ?? "Department" : "",
     selectedSectionId !== "All" ? sections.find((section) => section.id === selectedSectionId)?.name ?? "Section" : "",
-    selectedFacultyId !== "All" ? faculties.find((faculty) => faculty.id === selectedFacultyId)?.name ?? "Faculty" : "",
+    selectedFacultyId !== "All" ? faculties.find((faculty) => faculty.id === selectedFacultyId)?.name ?? "Instructor" : "",
     selectedRoomId !== "All" ? rooms.find((room) => room.id === selectedRoomId)?.name ?? "Room" : "",
     selectedMode !== "All" ? getModeLabel(selectedMode as Schedule["mode"]) : "",
     selectedDay !== "All" ? selectedDay : "",
@@ -1373,7 +1373,7 @@ export default function VpaaScheduleViewer() {
               onChange={(event) => { setSelectedFacultyId(event.target.value); if (event.target.value !== "All") setViewMode("grid"); }} 
               className="h-10 px-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-sm font-semibold outline-none focus:border-[#C9952A] cursor-pointer"
             >
-              <option value="All">All Faculty</option>
+              <option value="All">All Instructors</option>
               {filteredFaculty.map((faculty) => <option key={faculty.id} value={faculty.id}>{faculty.name}</option>)}
             </select>
             
@@ -1412,7 +1412,7 @@ export default function VpaaScheduleViewer() {
             >
               <option value="All">All Assignments</option>
               <option value="Complete">Complete</option>
-              <option value="Missing Faculty">Missing Faculty</option>
+              <option value="Missing Faculty">Missing Instructor</option>
               <option value="Missing Room">Missing Room</option>
               <option value="Missing Assignment">Missing Assignment</option>
             </select>
@@ -1637,7 +1637,7 @@ export default function VpaaScheduleViewer() {
           <div className="rounded-xl border border-[#C9952A]/25 bg-[#C9952A]/5 px-4 py-3 text-xs font-semibold text-[#4e0a10] flex items-start gap-2.5 shadow-sm">
             <Info className="w-4 h-4 text-[#C9952A] shrink-0 mt-0.5" />
             <p>
-              Simultaneous classes are not necessarily conflicts. Only <strong className="text-red-700 font-extrabold">Faculty Conflict</strong>, <strong className="text-red-700 font-extrabold">Room Conflict</strong>, or <strong className="text-red-700 font-extrabold">Section Conflict</strong> items are marked in red.
+              Simultaneous classes are not necessarily conflicts. Only <strong className="text-red-700 font-extrabold">Instructor Conflict</strong>, <strong className="text-red-700 font-extrabold">Room Conflict</strong>, or <strong className="text-red-700 font-extrabold">Section Conflict</strong> items are marked in red.
             </p>
           </div>
 
@@ -1645,7 +1645,7 @@ export default function VpaaScheduleViewer() {
             <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-400">
               <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
               <h4 className="font-extrabold text-slate-700 text-sm">No Grid Scope Active</h4>
-              <p className="text-xs font-medium text-slate-400 mt-1 max-w-xs mx-auto">Select a department section, faculty member, or room from the filters before opening the Weekly Grid.</p>
+              <p className="text-xs font-medium text-slate-400 mt-1 max-w-xs mx-auto">Select a department section, instructor, or room from the filters before opening the Weekly Grid.</p>
             </div>
           ) : filteredSchedules.length === 0 && focus ? (
             focusEmptyState("meetings in the loaded timetable")
@@ -1784,7 +1784,7 @@ export default function VpaaScheduleViewer() {
                 {[
                   { icon: Building2, label: "Department", value: `${selectedSchedule.departmentCode} - ${selectedSchedule.departmentName}` },
                   { icon: Layers, label: "Section", value: selectedSchedule.sectionName || "Unassigned Section" },
-                  { icon: User, label: "Faculty", value: selectedSchedule.facultyName },
+                  { icon: User, label: "Instructor", value: selectedSchedule.facultyName },
                   { icon: MapPin, label: "Room", value: selectedSchedule.roomName || "Unassigned Room" },
                   { icon: Calendar, label: "Schedule", value: `${selectedSchedule.day}, ${selectedSchedule.startTime} - ${selectedSchedule.endTime}` },
                   { icon: BookOpen, label: "Class Mode", value: getModeLabel(selectedSchedule.mode) }

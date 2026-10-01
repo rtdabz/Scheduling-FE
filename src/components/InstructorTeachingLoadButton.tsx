@@ -201,7 +201,6 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
       setLoadingAction(null);
     }
   };
-
   return (
     <div className="flex items-center gap-2">
       <button

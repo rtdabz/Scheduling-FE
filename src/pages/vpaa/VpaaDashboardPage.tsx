@@ -18,7 +18,6 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
-  UserX,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -91,12 +90,14 @@ interface DashboardData {
   departments:Department[]; subjects:Subject[]; activeSemester:Semester|null;
   submissions:OverviewSubmission[]; scheduleLimitReached:boolean;
   standardHours:StandardHours;
+  activeCurriculaCount:number;
 }
 interface InitialDataResponse {
   schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[];
   departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester;
   schedule_submissions?:OverviewSubmission[];
   time_grid?:TimeGridConfigInput;
+  active_curricula_count?:number;
 }
 
 interface Tile { label:string; value:string; detail:string; icon:LucideIcon; path:string; tone:'brand'|'info'|'good'|'warn'|'alert'|'accent' }
@@ -126,7 +127,7 @@ const SEVERITY_STYLES = {
   fresh: 'bg-slate-100 text-slate-600',
 } as const;
 
-const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'departments', 'users', 'settings'] as const;
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'departments', 'users', 'settings', 'curriculum'] as const;
 
 export default function VpaaDashboardPage() {
   const navigate = useNavigate();
@@ -149,6 +150,7 @@ export default function VpaaDashboardPage() {
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cached?.departments ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
+  const [activeCurriculaCount, setActiveCurriculaCount] = useState<number>(cached?.activeCurriculaCount ?? 0);
   const [activeSemester, setActiveSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [submissions, setSubmissions] = useState<OverviewSubmission[]>(cached?.submissions ?? []);
   const [previewTruncated, setPreviewTruncated] = useState(cached?.scheduleLimitReached ?? false);
@@ -219,6 +221,7 @@ export default function VpaaDashboardPage() {
             // the ceiling exactly is the only signal that rows were dropped.
             scheduleLimitReached: rows.length >= SCHEDULE_PREVIEW_LIMIT,
             standardHours: buildStandardHours(d.time_grid?.opening_time, d.time_grid?.closing_time, d.time_grid?.slot_minutes),
+            activeCurriculaCount: typeof d.active_curricula_count === 'number' ? d.active_curricula_count : 0,
           };
         }, reloadKey > 0);
 
@@ -229,6 +232,7 @@ export default function VpaaDashboardPage() {
         setFaculties(data.faculties);
         setDepartments(data.departments);
         setSubjects(data.subjects);
+        setActiveCurriculaCount(data.activeCurriculaCount ?? 0);
         setActiveSemester(data.activeSemester);
         setSubmissions(data.submissions ?? []);
         setPreviewTruncated(Boolean(data.scheduleLimitReached));
@@ -542,22 +546,6 @@ export default function VpaaDashboardPage() {
       tone: totals.pendingVpaa > 0 ? 'alert' : 'good',
     },
     {
-      label: 'Classes Without an Instructor',
-      value: grouped(insights.coverage.classes_without_instructor),
-      detail: `Across ${grouped(insights.coverage.departments_with_gaps)} department${insights.coverage.departments_with_gaps === 1 ? '' : 's'}`,
-      icon: UserX,
-      path: '/faculty',
-      tone: insights.coverage.classes_without_instructor > 0 ? 'warn' : 'good',
-    },
-    {
-      label: 'Faculty Over Basic Load',
-      value: grouped(facultyBands.overloaded),
-      detail: `${percent(facultyBands.overloaded, faculties.length)}% of faculty`,
-      icon: Users,
-      path: '/faculty',
-      tone: facultyBands.overloaded > 0 ? 'warn' : 'good',
-    },
-    {
       label: 'Average Room Load',
       value: `${insights.utilization.average_utilization}%`,
       detail: `${grouped(insights.utilization.idle_room_count)} room${insights.utilization.idle_room_count === 1 ? '' : 's'} unused`,
@@ -569,8 +557,8 @@ export default function VpaaDashboardPage() {
 
   const inventory: Tile[] = [
     { label: 'Departments', value: grouped(departments.length), detail: 'Academic units', icon: Landmark, path: '/departments', tone: 'brand' },
-    { label: 'Faculty', value: grouped(faculties.length), detail: 'Active faculty', icon: Users, path: '/faculty', tone: 'accent' },
-    { label: 'Courses Offered', value: grouped(subjects.length), detail: 'This semester', icon: BookOpen, path: '/curriculum', tone: 'good' },
+    { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/faculty', tone: 'accent' },
+    { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'good' },
     { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/rooms', tone: 'warn' },
     { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules', tone: 'info' },
   ];
@@ -680,13 +668,13 @@ export default function VpaaDashboardPage() {
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3.5 w-3.5" /> Retry</button>
     </div>}
 
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
+    <section id="dashboard-metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
       {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
 
       <button
         type="button"
         onClick={() => navigate('/schedules')}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
       >
         <div className="relative h-12 w-12 shrink-0 self-start">
           <ResponsiveContainer width="100%" height="100%">

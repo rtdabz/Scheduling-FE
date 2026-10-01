@@ -117,7 +117,7 @@ export default function ClassSummaryTable({
     ...(showFaculty ? [{
       id: "faculty",
       accessorFn: (item: SummaryClass) => item.parts[0]?.faculty || "Unassigned",
-      header: "Faculty",
+      header: "Instructor",
       meta: { cellClassName: "align-top text-slate-700" },
       cell: ({ row }: { row: { original: SummaryClass } }) => partLines(row.original, (part) => part.faculty || "Unassigned").map((faculty, index) => (
         <span key={index} className={`block whitespace-nowrap leading-5 ${faculty === "Unassigned" ? "italic text-amber-700" : ""}`}>

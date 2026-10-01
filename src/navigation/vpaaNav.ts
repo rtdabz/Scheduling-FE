@@ -26,12 +26,16 @@ export const vpaaNav: NavSection[] = [
       { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
       {
         label: 'Facility Management',
+        path: '/rooms',
         icon: DoorOpen,
         id: 'sidebar-rooms',
-        children: [
-          { label: 'Facility List', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms-list' },
-          { label: 'Room Requests', path: '/room-requests', icon: DoorClosed, id: 'sidebar-room-requests', requiredCapability: 'room.view_all_requests' },
-        ],
+      },
+      {
+        label: 'Room Requests',
+        path: '/room-requests',
+        icon: DoorClosed,
+        id: 'sidebar-room-requests',
+        requiredCapability: 'room.view_all_requests',
       },
       {
         label: 'Instructor Management',

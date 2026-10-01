@@ -174,7 +174,7 @@ export default function ScheduleScopeSummary({ scopeLabel, level, stats, isLoadi
 
         <IssueCard
           icon={UserX}
-          title="Missing faculty"
+          title="Missing instructor"
           count={stats.unassignedFaculty}
           detail={`of ${plural(stats.meetings, 'meeting')} have no instructor`}
           clearLabel="Every meeting has an instructor"

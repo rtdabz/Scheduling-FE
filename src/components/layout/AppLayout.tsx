@@ -115,7 +115,7 @@ export default function AppLayout() {
 
       {/* Mobile overlay */}
       <div
-        className={`fixed inset-0 z-30 bg-black/50 transition-opacity duration-150 md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 z-30 bg-black/50 transition-opacity duration-300 ease-in-out md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />
@@ -129,8 +129,8 @@ export default function AppLayout() {
       />
 
       <div className={`
-        flex-shrink-0 transition-[width] duration-150 ease-out print:hidden
-        ${sidebarOpen ? 'w-0 md:w-64' : 'w-0 md:w-16'}
+        flex-shrink-0 transition-[width] duration-300 ease-in-out print:hidden
+        ${sidebarOpen ? 'w-0 md:w-72' : 'w-0 md:w-16'}
       `} />
 
       {/* Main content */}

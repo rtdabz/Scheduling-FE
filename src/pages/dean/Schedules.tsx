@@ -185,7 +185,7 @@ const getGridModeBadgeClass = (mode: Schedule["mode"]) => {
 const getConflictLabels = (info?: ConflictFlags) => {
   if (!info) return [];
   return [
-    info.faculty ? "Faculty Conflict" : "",
+    info.faculty ? "Instructor Conflict" : "",
     info.room ? "Room Conflict" : "",
     info.section ? "Section Conflict" : "",
     info.online ? "Online Class Conflict" : "",
@@ -421,7 +421,7 @@ export default function DeanScheduleViewer() {
       ),
     },
     { id: "room", header: "Room", accessorFn: (row) => row.roomName || "Unassigned" },
-    { id: "faculty", header: "Faculty", accessorFn: (row) => row.facultyName || "Unassigned" },
+    { id: "faculty", header: "Instructor", accessorFn: (row) => row.facultyName || "Unassigned" },
     {
       id: "mode",
       header: "Mode",
@@ -514,7 +514,7 @@ export default function DeanScheduleViewer() {
             <SearchInput
               value={searchTerm}
               onChange={(event) => { setSearchTerm(event.target.value); resetPage(); }}
-              placeholder="Search course, section, room, faculty..."
+              placeholder="Search course, section, room, instructor..."
               containerClassName="relative w-full sm:w-72"
               className="!py-2 !text-xs"
             />
@@ -572,7 +572,7 @@ export default function DeanScheduleViewer() {
         </div>
 
         <div className="border-b border-slate-200 bg-[#C9952A]/10 px-4 py-2.5 text-xs font-semibold text-[#4e0a10]">
-          Simultaneous classes are not necessarily conflicts. Only Faculty, Room, or Section conflicts are marked in red.
+          Simultaneous classes are not necessarily conflicts. Only Instructor, Room, or Section conflicts are marked in red.
         </div>
 
         {!showGrid ? (
@@ -685,7 +685,7 @@ export default function DeanScheduleViewer() {
               {[
                 { icon: Layers, label: "Section", value: selectedSchedule.sectionName },
                 { icon: MapPin, label: "Room", value: selectedSchedule.roomName || "Unassigned" },
-                { icon: User, label: "Faculty", value: selectedSchedule.facultyName ?? "Unassigned" },
+                { icon: User, label: "Instructor", value: selectedSchedule.facultyName ?? "Unassigned" },
                 { icon: Calendar, label: "Schedule", value: `${selectedSchedule.day}, ${selectedSchedule.startTime} - ${selectedSchedule.endTime}` },
                 { icon: Info, label: "Mode", value: getModeLabel(selectedSchedule.mode) },
               ].map(({ icon: Icon, label, value }) => (

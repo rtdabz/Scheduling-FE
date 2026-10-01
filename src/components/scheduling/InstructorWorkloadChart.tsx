@@ -78,7 +78,7 @@ function InstructorAxisTick({ x = 0, y = 0, index = 0, rows = [] }: { x?: number
  */
 export default function InstructorWorkloadChart({ instructors }: { instructors: InstructorWorkload[] }) {
   if (!instructors.length) {
-    return <p className="mt-3 py-3 text-center text-[11px] italic text-slate-400">No faculty available to this department.</p>;
+    return <p className="mt-3 py-3 text-center text-[11px] italic text-slate-400">No instructors available to this department.</p>;
   }
 
   const rows = instructors.map(toDatum);

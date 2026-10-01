@@ -2834,7 +2834,7 @@ export const useScheduler = () => {
       return;
     }
     const fac = faculties.find((f) => f.id === facultyId);
-    toast.success("Faculty Assigned", `Successfully assigned ${fac?.name ?? "instructor"}.`);
+    toast.success("Instructor Assigned", `Successfully assigned ${fac?.name ?? "instructor"}.`);
   };
 
   const facultyFailureTitle = (facultyId: string | null) =>

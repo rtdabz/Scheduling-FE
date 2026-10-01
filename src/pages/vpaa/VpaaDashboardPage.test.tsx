@@ -94,6 +94,7 @@ const initialData = {
     { id: 3, room_code: 'ONLINE', room_type: 'online' },
   ],
   courses: [{ id: 1, subject_code: 'IT 101', subject_name: 'Intro to IT' }],
+  active_curricula_count: 5,
 };
 
 const insights = {
@@ -230,7 +231,7 @@ describe('VpaaDashboardPage', () => {
       'Workflow · Department Scheduling Progress',
       'Room Utilisation by Building',
       'Master timetable',
-      'Faculty Load Overview',
+      'Instructor Load Overview',
       'Institutional Readiness',
       'Recent Administrative Activity',
     ].forEach(title => expect(screen.getByText(title)).toBeTruthy());
@@ -287,6 +288,15 @@ describe('VpaaDashboardPage', () => {
     const roomCard = screen.getByText('Across campus').closest('button');
     expect(roomCard).toBeTruthy();
     expect(within(roomCard!).getByText('2')).toBeTruthy();
+  });
+
+  it('reports active curriculum count in the inventory strip', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Active curriculum')).toBeTruthy());
+    const card = screen.getByText('Active curriculum').closest('button');
+    expect(card).toBeTruthy();
+    expect(within(card!).getByText('Curriculum')).toBeTruthy();
+    expect(within(card!).getByText('5')).toBeTruthy();
   });
 
   it('asks the API for the full schedule window rather than the default cap', async () => {

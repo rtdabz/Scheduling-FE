@@ -1112,7 +1112,7 @@ export default function Faculty() {
                     title="Click to upload picture"
                   >
                     {profilePicture ? (
-                      <img src={profilePicture} alt="Faculty Preview" className="w-full h-full object-cover" />
+                      <img src={profilePicture} alt="Instructor Preview" className="w-full h-full object-cover" />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
                         <Camera size={20} />
