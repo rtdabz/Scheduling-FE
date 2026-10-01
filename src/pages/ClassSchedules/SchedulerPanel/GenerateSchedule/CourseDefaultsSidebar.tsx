@@ -36,6 +36,7 @@ export default function CourseDefaultsSidebar({
   summarize,
   customizedCount,
   onResetCustomized,
+  laboratoryEnabled = true,
   disabled,
   onClose,
   onApply,
@@ -46,6 +47,8 @@ export default function CourseDefaultsSidebar({
   /** Courses with their own Configure settings, which defaults skip. */
   customizedCount: number;
   onResetCustomized: () => void;
+  /** A Standard department has no laboratories, so no laboratory duration. */
+  laboratoryEnabled?: boolean;
   disabled: boolean;
   onClose: () => void;
   onApply: (next: CourseDefaults) => void;
@@ -101,16 +104,18 @@ export default function CourseDefaultsSidebar({
         disabled={disabled}
         onChange={setLectureHours}
       />
-      <DurationField
-        id="default-laboratory-duration"
-        label="Laboratory Duration"
-        hint="Laboratory courses and each Integrated laboratory."
-        Icon={FlaskConical}
-        hours={laboratoryHours}
-        error={laboratoryError}
-        disabled={disabled}
-        onChange={setLaboratoryHours}
-      />
+      {laboratoryEnabled && (
+        <DurationField
+          id="default-laboratory-duration"
+          label="Laboratory Duration"
+          hint="Laboratory courses and each Integrated laboratory."
+          Icon={FlaskConical}
+          hours={laboratoryHours}
+          error={laboratoryError}
+          disabled={disabled}
+          onChange={setLaboratoryHours}
+        />
+      )}
 
       <div>
         <p className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-700">

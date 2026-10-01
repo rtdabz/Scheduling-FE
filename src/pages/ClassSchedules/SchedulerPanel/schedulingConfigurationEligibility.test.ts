@@ -6,6 +6,7 @@ import {
   isHybridSplitEligible,
   isHybridSchedulingEligible,
   isOnlineSplitEligible,
+  savedMeetingPairShape,
 } from "./schedulingConfigurationEligibility";
 
 const fieldCapableCourse: Course = {
@@ -82,13 +83,10 @@ describe("scheduling configuration eligibility", () => {
       ).toBe(true);
     });
 
-    it("never offers a split for a major carrying laboratory units", () => {
-      expect(
-        isBalancedSplitSchedulingEligible(labMajor, {
-          minorEnabled: true,
-          majorLectureEnabled: true,
-        }),
-      ).toBe(false);
+    it("offers a split for a major carrying laboratory units, laboratory-only included", () => {
+      const settings = { minorEnabled: true, majorLectureEnabled: true };
+      expect(isBalancedSplitSchedulingEligible(labMajor, settings)).toBe(true);
+      expect(isBalancedSplitSchedulingEligible({ ...labMajor, lectureHours: 0, labHours: 3, units: 3 }, settings)).toBe(true);
     });
 
     it("only offers Hybrid Split for three-unit lecture-only courses", () => {
@@ -107,6 +105,32 @@ describe("scheduling configuration eligibility", () => {
       expect(isOnlineSplitEligible({ ...minorCourse, roomTypeRequired: "laboratory" })).toBe(false);
       expect(isOnlineSplitEligible({ ...minorCourse, roomTypeRequired: "field" })).toBe(false);
       expect(isOnlineSplitEligible(minorCourse, new Set(["PATHFIT 1"]))).toBe(false);
+    });
+  });
+
+  describe("savedMeetingPairShape", () => {
+    const lectureOnly = { lectureHours: 3, labHours: 0 };
+    const lectureAndLab = { lectureHours: 2, labHours: 1 };
+
+    it("reads a generated split (days:x-y, hybrid or not) as Split Session", () => {
+      expect(savedMeetingPairShape(lectureOnly, 2, true, "days:1-3")).toEqual({ isIntegrated: false, isSplit: true });
+      expect(savedMeetingPairShape(lectureOnly, 2, false, "days:0-2")).toEqual({ isIntegrated: false, isSplit: true });
+      expect(savedMeetingPairShape(lectureOnly, 2, false, "TTh")).toEqual({ isIntegrated: false, isSplit: true });
+    });
+
+    it("reads a lecture-plus-laboratory pair as Integrated unless it uses a named split pattern", () => {
+      expect(savedMeetingPairShape(lectureAndLab, 2, true, "days:1-3")).toEqual({ isIntegrated: true, isSplit: false });
+      expect(savedMeetingPairShape(lectureAndLab, 2, false, "days:1-4")).toEqual({ isIntegrated: true, isSplit: false });
+      expect(savedMeetingPairShape(lectureAndLab, 2, false, "MW")).toEqual({ isIntegrated: false, isSplit: true });
+    });
+
+    it("reads a lecture-plus-laboratory pair without a lecture and a laboratory meeting as a Split", () => {
+      expect(savedMeetingPairShape(lectureAndLab, 2, false, "days:1-3", [null, null])).toEqual({ isIntegrated: false, isSplit: true });
+      expect(savedMeetingPairShape(lectureAndLab, 2, false, "days:1-3", ["laboratory", "lecture"])).toEqual({ isIntegrated: true, isSplit: false });
+    });
+
+    it("leaves a single meeting as neither", () => {
+      expect(savedMeetingPairShape(lectureOnly, 1, false, null)).toEqual({ isIntegrated: false, isSplit: false });
     });
   });
 });

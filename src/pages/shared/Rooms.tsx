@@ -129,7 +129,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
 export default function Rooms() {
   const { toast } = useToast();
   const user = getStoredUser();
-  const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}:${user?.program_id ?? 'all'}`;
   const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
   const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
@@ -149,11 +149,42 @@ export default function Rooms() {
   // way rather than auto-starting it for roles that never asked for it.
   const showGuide = role === 'secretary';
 
+  // A program head sees only the rooms the secretary gave their program: its
+  // own, the shared ones nobody owns, and field/online rooms. Rooms homed to
+  // another program stay hidden. null = not loaded (or not a program head).
+  const isProgramHead = role === 'program_head';
+  const userProgramId = user?.program_id ?? null;
+  const [hiddenRoomIds, setHiddenRoomIds] = useState<Set<number> | null>(null);
+
+  useEffect(() => {
+    if (!isProgramHead) return;
+    let cancelled = false;
+    api.get<{ data?: { rooms?: { id: number; home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }[] } }>('/program-rooms')
+      .then((res) => {
+        if (cancelled) return;
+        const hidden = new Set<number>();
+        for (const room of res.data?.data?.rooms ?? []) {
+          const mine = room.home_program_id === null
+            || Number(room.home_program_id) === Number(userProgramId)
+            || Object.values(room.days ?? {}).some((d) => d.program_id !== null && Number(d.program_id) === Number(userProgramId));
+          if (!mine) hidden.add(Number(room.id));
+        }
+        setHiddenRoomIds(hidden);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Error', 'Failed to load the rooms assigned to your program.');
+      });
+    return () => { cancelled = true; };
+  }, [isProgramHead, userProgramId, toast]);
+
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
     if (!userDepartmentId) return [];
-    return rooms.filter(r => r.department_id !== null && Number(r.department_id) === Number(userDepartmentId));
-  }, [rooms, isVpaa, userDepartmentId]);
+    if (isProgramHead && hiddenRoomIds === null) return [];
+    return rooms.filter(r => r.department_id !== null
+      && Number(r.department_id) === Number(userDepartmentId)
+      && !(isProgramHead && hiddenRoomIds?.has(Number(r.id))));
+  }, [rooms, isVpaa, userDepartmentId, isProgramHead, hiddenRoomIds]);
 
   // Card view and schedule details states
   const [globalFilter, setGlobalFilter] = useState('');

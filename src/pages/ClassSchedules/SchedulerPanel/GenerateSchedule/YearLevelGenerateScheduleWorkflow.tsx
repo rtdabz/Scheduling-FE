@@ -150,6 +150,8 @@ interface Props {
   activeSemester: Semester | null;
   departmentId: number | null;
   departmentLogoUrl?: string | null;
+  /** Laboratory-enabled department: Default Settings offer a laboratory duration. */
+  laboratoryEnabled?: boolean;
   existingSchedules: ScheduleItem[];
   onAccepted: (schedules?: ApiScheduleRecord[]) => void | Promise<void>;
   /**
@@ -216,7 +218,8 @@ const formatSemester = (semester: Semester | null) =>
   semester
     ? `${semester.academic_year} - ${semester.semester.toUpperCase()} Semester`
     : "No active semester selected";
-const yearLabel = (yearLevel: number) => {
+/** "BAS 2nd year": prefixed with the programs of the sections in the run. */
+const yearLabel = (yearLevel: number, sections: Section[]) => {
   const ordinal =
     yearLevel === 1
       ? "1st"
@@ -225,7 +228,10 @@ const yearLabel = (yearLevel: number) => {
         : yearLevel === 3
           ? "3rd"
           : "4th";
-  return `BSIT ${ordinal} year`;
+  const programs = [
+    ...new Set(sections.map((section) => section.programCode).filter(Boolean)),
+  ].join(" / ");
+  return programs ? `${programs} ${ordinal} year` : `${ordinal[0].toUpperCase()}${ordinal.slice(1)} year`;
 };
 const normalizeGecPattern = (value: string | undefined): GecSplitPattern =>
   value === "MW" || value === "TTh" ? value : "auto";
@@ -237,6 +243,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   activeSemester,
   departmentId,
   departmentLogoUrl,
+  laboratoryEnabled = true,
   existingSchedules,
   onAccepted,
   onSectionsChanged,
@@ -1179,7 +1186,7 @@ export default function YearLevelGenerateScheduleWorkflow({
           targetSectionIds === null
             ? "Year Level Already Scheduled"
             : "Sections Already Scheduled",
-        message: `${targetSectionIds === null ? yearLabel(yearLevel) : "The selected sections"} already ${targetSectionIds === null ? "has" : "have"} classes in ${targetState.scheduledSectionCount} of ${targetState.sectionCount} section${targetState.sectionCount === 1 ? "" : "s"}. Generating again is only a preview, but saving the result replaces those draft classes.`,
+        message: `${targetSectionIds === null ? yearLabel(yearLevel, scopedSections) : "The selected sections"} already ${targetSectionIds === null ? "has" : "have"} classes in ${targetState.scheduledSectionCount} of ${targetState.sectionCount} section${targetState.sectionCount === 1 ? "" : "s"}. Generating again is only a preview, but saving the result replaces those draft classes.`,
         eyebrow: "Regenerate Schedule",
         confirmLabel: "Generate Again",
         variant: "maroon",
@@ -1619,7 +1626,7 @@ export default function YearLevelGenerateScheduleWorkflow({
             Generate Schedule
           </h2>
           <p className="truncate text-xs font-semibold text-white/70">
-            {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel)} &middot;{" "}
+            {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel, scopedSections)} &middot;{" "}
             {targetSections.length} section
             {targetSections.length === 1 ? "" : "s"}
           </p>
@@ -1767,6 +1774,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                     setSetupDraft((current) => ({ ...current, customizedCourseIds }))
                   }
                   defaultsOpen={defaultsOpen}
+                  laboratoryEnabled={laboratoryEnabled}
                   onDefaultsClose={() => setDefaultsOpen(false)}
                   actionsDisabled={generating || loadingSettings}
                 />

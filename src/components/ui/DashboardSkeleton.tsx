@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+﻿import type { ReactNode } from 'react';
 import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
 import { slotCount } from '../../lib/timeGrid';
 import Skeleton from './Skeleton';
@@ -338,7 +338,7 @@ function TableSkeleton({ columns, rows = 5, footer = false }: { columns: number;
   );
 }
 
-/** Donut plus its legend rows — the Dean's readiness, workload and utilization panels. */
+/** Donut plus its legend rows â€” the Dean's readiness, workload and utilization panels. */
 function DonutSkeleton({ legendRows = 4 }: { legendRows?: number }) {
   return (
     <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
@@ -386,8 +386,8 @@ function DeanSkeleton() {
       </div>
 
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0">
-          <PanelFrame>
+        <div className="flex min-w-0 flex-col">
+          <PanelFrame className="flex flex-1 flex-col">
             <div className="flex flex-wrap items-center gap-2">
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-7 w-24 rounded-md" />)}
               <Skeleton className="ml-auto h-7 w-40 rounded-md" />
@@ -396,8 +396,8 @@ function DeanSkeleton() {
             <div className="mt-3 grid grid-cols-3 gap-2">
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}
             </div>
-            <div className="mt-3">
-              <TimetableSkeleton />
+            <div className="mt-3 min-h-0 flex-1">
+              <TimetableSkeleton fill />
             </div>
           </PanelFrame>
         </div>
@@ -429,57 +429,14 @@ function DeanSkeleton() {
 }
 
 /**
- * The campus peak-hour grid: a day column plus one cell per teaching hour.
- *
- * Six days and fourteen hours are the shape the server sends under the default
- * 07:00-20:30 operating window, so the block reserves the height the real table
- * takes rather than a generic bar.
- */
-function HeatmapSkeleton({ days = 6, hours = 14 }: { days?: number; hours?: number }) {
-  const template = `4rem repeat(${hours}, minmax(0,1fr))`;
-  return (
-    <PanelFrame>
-      <div className="space-y-1">
-        <div className="grid gap-1" style={{ gridTemplateColumns: template }}>
-          <Skeleton className="h-2 w-8 rounded" />
-          {Array.from({ length: hours }).map((_, i) => <Skeleton key={i} className="h-2 w-full rounded" />)}
-        </div>
-        {Array.from({ length: days }).map((_, row) => (
-          <div key={row} className="grid gap-1" style={{ gridTemplateColumns: template }}>
-            <Skeleton className="h-2.5 w-8 self-center rounded" />
-            {Array.from({ length: hours }).map((_, col) => <Skeleton key={col} className="h-7 w-full rounded" />)}
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-2.5">
-        <Skeleton className="h-2.5 w-12 rounded" />
-        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-3 w-3 rounded-sm" />)}
-        <Skeleton className="h-2.5 w-10 rounded" />
-        <Skeleton className="ml-auto h-2.5 w-44 rounded" />
-      </div>
-    </PanelFrame>
-  );
-}
-
-/**
  * Mirrors the VPAA dashboard's row order so the page does not reflow when the
- * real content arrives: header bar, decision KPIs, inventory strip, the
+ * real content arrives: decision KPIs, inventory strip, the
  * full-width approval queue, the workflow/utilisation row, then the timetable beside
  * its three side panels.
  */
 function VpaaSkeleton() {
   return (
     <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
-      <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
-        <div className="min-w-0 flex-1 space-y-1">
-          <Skeleton className="h-3.5 w-44 rounded" />
-          <Skeleton className="h-2.5 w-56 rounded" />
-        </div>
-        <Skeleton className="h-7 w-24 rounded-md" />
-        <Skeleton className="h-7 w-28 rounded-md" />
-      </div>
-
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}
         <MetricCard className="xl:col-span-2" />
@@ -513,7 +470,7 @@ function VpaaSkeleton() {
       </div>
 
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col">
           <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 pb-2.5">
               <Skeleton className="h-4 w-32 rounded" />
@@ -521,7 +478,7 @@ function VpaaSkeleton() {
               <Skeleton className="ml-auto h-7 w-40 rounded-md" />
               <Skeleton className="h-7 w-7 rounded-md" />
             </header>
-            <div className="mt-3"><TimetableSkeleton /></div>
+            <div className="mt-3 min-h-0 flex-1"><TimetableSkeleton fill /></div>
           </section>
         </div>
         <div className="flex min-w-0 flex-col gap-4">
@@ -557,16 +514,19 @@ function PanelRows({ rows }: { rows: number }) {
   );
 }
 
-function TimetableSkeleton() {
+/** `fill` stretches the rows to the height of a flex parent so the card ends level with its neighbour. */
+function TimetableSkeleton({ fill = false }: { fill?: boolean }) {
+  const column = fill ? 'flex h-full flex-col' : '';
+  const row = fill ? 'min-h-11 flex-1' : 'h-11';
   return (
-    <div className="grid grid-cols-[64px_1fr] overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div>
-        <Skeleton className="h-9 w-full rounded-none" />
-        {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-11 w-full rounded-none border-t border-white" />)}
+    <div className={`grid grid-cols-[64px_1fr] overflow-hidden rounded-xl border border-slate-200 bg-white ${fill ? 'h-full' : ''}`}>
+      <div className={column}>
+        <Skeleton className="h-9 w-full shrink-0 rounded-none" />
+        {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className={`${row} w-full rounded-none border-t border-white`} />)}
       </div>
-      <div>
-        <Skeleton className="h-9 w-full rounded-none" />
-        {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-11 w-full rounded-none border-t border-white" />)}
+      <div className={column}>
+        <Skeleton className="h-9 w-full shrink-0 rounded-none" />
+        {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className={`${row} w-full rounded-none border-t border-white`} />)}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import TableActionButton from "../../components/ui/TableActionButton";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -6,7 +7,7 @@ import {
   CalendarDays,
   CalendarRange,
   CheckCircle2,
-  ChevronRight,
+  Eye,
   LayoutList,
   Search,
   UserMinus,
@@ -25,6 +26,7 @@ import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../lib/cacheGroups";
+import { publishLiveTopics } from "../../lib/liveUpdates";
 import { apiErrorMessage } from "../../lib/apiError";
 import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
 import { coveredContinuously } from "../../lib/availabilityWindows";
@@ -411,6 +413,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [activeSemester, setActiveSemester] = useState<ApiSemester | null>(cachedAssignmentData?.active_semester ?? null);
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
+  const autoOpenedRef = useRef(false);
   const [selectedSection, setSelectedSection] = useState("all");
   // An instructor double-booked between two saved classes. Placement never sees
   // these: they appear when an assignment is overridden, when a class moves
@@ -595,16 +598,20 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
    * between the user and the timetable, so it opens itself.
    */
   useEffect(() => {
-    if (selectedDepartmentId !== null || isLoading || assignmentLocked) return;
+    // Auto-open only once, otherwise Back (which clears the selection) would
+    // immediately re-open the deep-linked department.
+    if (autoOpenedRef.current || selectedDepartmentId !== null || isLoading) return;
     const requested = Number(new URLSearchParams(window.location.search).get("department"));
     const deepLinked = offeringDepartments.find(
       (item) => Number(item.department.id) === requested,
     );
     if (deepLinked) {
+      autoOpenedRef.current = true;
       setSelectedDepartmentId(Number(deepLinked.department.id));
       return;
     }
     if (offeringDepartments.length === 1) {
+      autoOpenedRef.current = true;
       setSelectedDepartmentId(Number(offeringDepartments[0].department.id));
     }
   }, [assignmentLocked, isLoading, offeringDepartments, selectedDepartmentId]);
@@ -802,7 +809,6 @@ const selectedSchedule = assignmentSchedules.find(
     }
   };
   const openDepartment = (departmentId: number) => {
-    if (assignmentLocked) return;
     setSelectedDepartmentId(departmentId);
     setSelectedSection("all");
   };
@@ -967,6 +973,9 @@ const selectedSchedule = assignmentSchedules.find(
   // cleared here until those caches expired.
   const invalidateAssignmentDependents = () => {
     invalidateCacheGroups("faculty", "schedules", "dashboards");
+    // Tells mounted views, such as the sidebar's pending-instructor badge, to
+    // refetch now instead of waiting for the server's broadcast.
+    publishLiveTopics(["schedules"]);
   };
 
   const requestClearSection = () => {
@@ -1151,24 +1160,12 @@ const selectedSchedule = assignmentSchedules.find(
             <Skeleton className="h-4 w-24" />
           </div>
 
-          <div className="grid auto-rows-[minmax(8rem,auto)] gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.25fr_1fr_0.85fr]">
-            {Array.from({ length: 7 }, (_, index) => (
-              <div
-                key={index}
-                className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${
-                  index === 1 || index === 4 ? "xl:row-span-2" : ""
-                } ${index === 5 ? "xl:col-span-2" : ""}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <Skeleton className="h-11 w-11 rounded-xl" />
-                  <Skeleton className="h-5 w-5 rounded-md" />
-                </div>
-                <Skeleton className="mt-4 h-6 w-16" />
-                <Skeleton className="mt-2 h-3 w-40" />
-                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-3 w-16" />
-                </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div key={index} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
+                <Skeleton className="h-9 w-9 rounded-lg" />
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="ml-auto h-4 w-24" />
               </div>
             ))}
           </div>
@@ -1277,39 +1274,65 @@ const selectedSchedule = assignmentSchedules.find(
               ) : <><h3 className="text-sm font-black text-[#4e0a10]">No incoming courses or approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">Assigned courses will appear here after a schedule is created and approved.</p></>}
             </div>
           ) : (
-            <div className="grid auto-rows-[minmax(8rem,auto)] gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.25fr_1fr_0.85fr]">
-              {offeringDepartments.map(({ department, schedules: items }) => {
-                const pending = items.filter((schedule) => !schedule.faculty_id).length;
-                const assigned = items.length - pending;
-                return (
-                  <button
-                    key={department.id}
-                    type="button"
-                    data-tour="department-card"
-                    onClick={() => openDepartment(department.id)}
-                    className={`group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#C9952A]/60 hover:shadow-md ${
-                      items.length >= 4 ? "xl:row-span-2" : ""
-                    } ${items.length >= 7 ? "xl:col-span-2" : ""}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-[#4e0a10] text-[#E8D5C4]">
-                        {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-5 w-5" />}
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-[#C9952A]" />
-                    </div>
-                    <div className="mt-4">
-                      <div className="text-lg font-black text-[#4e0a10]">{department.department_code}</div>
-                      <div className="mt-0.5 text-xs font-semibold text-slate-500">{department.department_name}</div>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-bold">
-                      <span className="text-slate-500">{items.length} offered-subject schedules</span>
-                      <span className={pending ? "text-amber-700" : "text-emerald-700"}>
-                        {pending ? `${pending} pending` : `${assigned} assigned`}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <table className="w-full min-w-[34rem] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50/70 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Department</th>
+                    <th className="px-4 py-3 text-right">Schedules</th>
+                    <th className="px-4 py-3 text-right">Pending</th>
+                    <th className="px-4 py-3 text-right">Assigned</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {offeringDepartments.map(({ department, schedules: items }) => {
+                    const pending = items.filter((schedule) => !schedule.faculty_id).length;
+                    const assigned = items.length - pending;
+                    return (
+                      <tr
+                        key={department.id}
+                        data-tour="department-card"
+                        tabIndex={0}
+                        onClick={() => openDepartment(department.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openDepartment(department.id);
+                          }
+                        }}
+                        className="group cursor-pointer transition-colors hover:bg-[#C9952A]/5 focus:bg-[#C9952A]/5 focus:outline-none"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#4e0a10] text-[#E8D5C4]">
+                              {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
+                            </div>
+                            <div>
+                              <div className="font-black text-[#4e0a10]">{department.department_code}</div>
+                              <div className="text-xs font-semibold text-slate-500">{department.department_name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-slate-600">{items.length}</td>
+                        <td className={`px-4 py-3 text-right font-bold ${pending ? "text-amber-700" : "text-slate-400"}`}>{pending}</td>
+                        <td className={`px-4 py-3 text-right font-bold ${assigned ? "text-emerald-700" : "text-slate-400"}`}>{assigned}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end">
+                          <TableActionButton
+                            label={`View ${department.department_code} timetable`}
+                            variant="view"
+                            onClick={(event) => { event.stopPropagation(); openDepartment(department.id); }}
+                          >
+                            <Eye size={17} />
+                          </TableActionButton>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -1322,8 +1345,7 @@ const selectedSchedule = assignmentSchedules.find(
               {offeringDepartments.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => !assignmentLocked && setSelectedDepartmentId(null)}
-                  disabled={Boolean(assignmentLocked)}
+                  onClick={() => setSelectedDepartmentId(null)}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:border-[#C9952A] hover:text-[#4e0a10]"
                   aria-label="Back to departments"
                 >
@@ -1339,9 +1361,8 @@ const selectedSchedule = assignmentSchedules.find(
                       <select
                         id="assignment-department-switcher"
                         value={String(selectedDepartment.id)}
-                        disabled={Boolean(assignmentLocked)}
                         onChange={(event) => openDepartment(Number(event.target.value))}
-                        className="-ml-1 rounded-lg border border-transparent bg-transparent py-0.5 pl-1 pr-6 text-base font-black text-[#4e0a10] outline-none transition-colors hover:border-slate-200 focus:border-[#C9952A] disabled:cursor-not-allowed"
+                        className="-ml-1 rounded-lg border border-transparent bg-transparent py-0.5 pl-1 pr-6 text-base font-black text-[#4e0a10] outline-none transition-colors hover:border-slate-200 focus:border-[#C9952A]"
                       >
                         {offeringDepartments.map(({ department }) => (
                           <option key={department.id} value={department.id}>
@@ -1513,6 +1534,7 @@ const selectedSchedule = assignmentSchedules.find(
               groupBy="none"
               zoom={ganttZoom}
               density="compact"
+              highlightAssigned
               overlaps={ganttOverlaps}
               collapsedDays={collapsedGanttDays}
               onToggleDay={(day) => setCollapsedGanttDays((current) => {

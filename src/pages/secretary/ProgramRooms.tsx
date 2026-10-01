@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle, CheckCircle2, ChevronRight, DoorOpen, House, Lock, RotateCcw, Save, Split, Users, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ChevronRight, DoorOpen, House, Lock, RotateCcw, Save, Split, Users, type LucideIcon } from 'lucide-react';
 import DataTable from '../../components/ui/DataTable';
 import Skeleton from '../../components/ui/Skeleton';
 import { useDataTable } from '../../components/ui/useDataTable';
@@ -116,6 +116,7 @@ export default function ProgramRooms() {
     [rooms, homes],
   );
   const isDirty = data !== null && (policy !== data.room_sharing_policy || changedRooms.length > 0);
+  const activePolicy = POLICIES.find((option) => option.value === policy);
 
   const programCode = useCallback(
     (programId: number | null) => programs.find((program) => program.id === programId)?.code ?? SHARED_LABEL,
@@ -243,9 +244,22 @@ export default function ProgramRooms() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-40 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-6" aria-busy="true">
+        <section className="rounded-xl border border-gray-100 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-10 w-10 shrink-0 rounded-lg" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-72 max-w-full" />
+            </div>
+          </div>
+          <Skeleton className="mt-5 h-12 w-full max-w-md rounded-xl" />
+          <Skeleton className="mt-3 h-4 w-80 max-w-full" />
+        </section>
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-72 max-w-full" />
+          <DataTable table={table} totalLabel="rooms" ariaLabel="Program rooms" isLoading />
+        </div>
       </div>
     );
   }
@@ -281,7 +295,7 @@ export default function ProgramRooms() {
             </div>
           )}
         </div>
-        <div role="radiogroup" aria-label="Room sharing" className="mt-5 grid gap-3 md:grid-cols-3">
+        <div role="radiogroup" aria-label="Room sharing" className="mt-5 inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
           {POLICIES.map((option) => {
             const selected = policy === option.value;
             const Icon = option.icon;
@@ -293,30 +307,31 @@ export default function ProgramRooms() {
                 aria-checked={selected}
                 disabled={!canManage}
                 onClick={() => setPolicy(option.value)}
-                className={`relative flex flex-col rounded-xl border p-4 text-left transition-colors ${
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-extrabold transition-colors ${
                   selected
-                    ? 'border-[#5A1220] bg-[#5A1220]/[0.04] ring-1 ring-[#5A1220]'
-                    : 'border-gray-200 bg-white enabled:hover:border-[#5A1220]/40 enabled:hover:bg-gray-50'
+                    ? 'bg-[#5A1220] text-white shadow-sm'
+                    : 'text-gray-600 enabled:hover:bg-white enabled:hover:text-[#4e0a10]'
                 } disabled:cursor-default`}
               >
-                {selected && <CheckCircle2 size={18} className="absolute right-3 top-3 text-[#5A1220]" />}
-                <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${selected ? 'bg-[#5A1220] text-white' : 'bg-[#4e0a10]/5 text-[#4e0a10]'}`}>
-                  <Icon size={17} />
-                </span>
-                <span className="mt-3 text-sm font-extrabold text-[#4e0a10]">{option.title}</span>
-                <span className="mt-1 flex-1 text-xs font-semibold leading-relaxed text-gray-500">{option.description}</span>
-                <span className="mt-3 flex flex-wrap items-center gap-1 border-t border-gray-100 pt-3">
-                  {option.order.map((step, index) => (
-                    <span key={step} className="flex items-center gap-1">
-                      {index > 0 && <ChevronRight size={12} className="text-gray-300" />}
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${selected ? 'bg-[#5A1220]/10 text-[#5A1220]' : 'bg-gray-100 text-gray-500'}`}>{step}</span>
-                    </span>
-                  ))}
-                </span>
+                <Icon size={15} />
+                {option.title}
               </button>
             );
           })}
         </div>
+        {activePolicy && (
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-semibold leading-relaxed text-gray-500">{activePolicy.description}</p>
+            <span className="flex shrink-0 flex-wrap items-center gap-1">
+              {activePolicy.order.map((step, index) => (
+                <span key={step} className="flex items-center gap-1">
+                  {index > 0 && <ChevronRight size={12} className="text-gray-300" />}
+                  <span className="rounded-full bg-[#5A1220]/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[#5A1220]">{step}</span>
+                </span>
+              ))}
+            </span>
+          </div>
+        )}
         {warnings.length > 0 && (
           <ul className="mt-4 space-y-2">
             {warnings.map((warning) => (

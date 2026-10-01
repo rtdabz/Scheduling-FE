@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Building2, Pencil, Printer, Archive } from 'lucide-react';
+import { Building2, Eye, Pencil, Printer, Archive } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import TableActionButton from '../ui/TableActionButton';
@@ -29,9 +29,6 @@ export interface RoomTodayStatus {
   status: string;
   text: string;
 }
-
-const percentAvailable = (building: BuildingListRow) =>
-  building.totalCount > 0 ? Math.round((building.availableCount / building.totalCount) * 100) : 0;
 
 const roomTypeBadge: Record<RoomListRow['room_type'], string> = {
   lecture: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -76,20 +73,19 @@ export function BuildingsTable<T extends BuildingListRow>({
       meta: { cellClassName: 'whitespace-nowrap text-red-600' },
     },
     {
-      id: 'availability',
-      accessorFn: percentAvailable,
-      header: 'Availability',
-      meta: { cellClassName: 'whitespace-nowrap' },
-      cell: ({ getValue }) => (
-        <div className="flex items-center gap-3 max-w-xs">
-          <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-[#4e0a10] rounded-full" style={{ width: `${getValue<number>()}%` }} />
-          </div>
-          <span className="text-xs font-bold text-gray-500">{getValue<number>()}%</span>
+      id: 'actions',
+      header: 'Actions',
+      enableSorting: false,
+      meta: { align: 'right', cellClassName: 'whitespace-nowrap', stopRowClick: true },
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <TableActionButton label="View Rooms" variant="view" onClick={() => onSelect(row.original)}>
+            <Eye size={17} />
+          </TableActionButton>
         </div>
       ),
     },
-  ], []);
+  ], [onSelect]);
 
   const table = useDataTable<T>({ data: buildings, columns, pageSize: 10, getRowId: (building) => building.name });
 
@@ -164,6 +160,14 @@ export function RoomsTable<T extends RoomListRow>({
       enableSorting: false,
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => {
+        if (row.original.status === 'not available') {
+          return (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              Unavailable
+            </span>
+          );
+        }
         const live = getRoomStatusToday(row.original.id);
         if (live.status === 'occupied') {
           return (
@@ -221,7 +225,7 @@ export function RoomsTable<T extends RoomListRow>({
       emptyTitle="No rooms found."
       emptyDescription="Try a different search or room type."
       onRowClick={onOpen}
-      rowClassName={() => 'group'}
+      rowClassName={(room: T) => (room.status === 'not available' ? 'group bg-red-50/40' : 'group')}
     />
   );
 }

@@ -54,6 +54,8 @@ interface MasterGanttProps {
   lockHorizontalScroll?: boolean;
   /** Time held for someone other than the classes drawn, e.g. a room lent to another department. */
   reservations?: readonly GanttReservation[];
+  /** Tint classes that already have an instructor green, overriding the department colour. */
+  highlightAssigned?: boolean;
 }
 
 export interface GanttReservation {
@@ -69,8 +71,13 @@ interface HoverState {
   rect: DOMRect;
 }
 
+const ASSIGNED_TONE = {
+  block: 'bg-emerald-50 border-emerald-300 text-emerald-950 hover:bg-emerald-100',
+  accent: 'bg-emerald-600',
+};
+
 const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function MasterGantt(
-  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false, reservations },
+  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false, reservations, highlightAssigned = false },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -180,7 +187,9 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
 
   const renderBlock = (block: GanttBlock) => {
     const { schedule } = block;
-    const tone = departmentTone(schedule.department?.department_code, schedule.department?.department_name);
+    const departmentColour = departmentTone(schedule.department?.department_code, schedule.department?.department_name);
+    const hasInstructor = Boolean(instructorNameOf(schedule));
+    const tone = highlightAssigned && hasInstructor ? ASSIGNED_TONE : departmentColour;
     const isLab = sessionTypeOf(schedule) === 'laboratory';
     const overlapEntries = overlaps.get(schedule.id);
     const code = courseCodeOf(schedule);

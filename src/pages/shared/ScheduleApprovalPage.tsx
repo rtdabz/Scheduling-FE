@@ -17,8 +17,10 @@ import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
 import PreApprovalCheck from '../../components/scheduling/PreApprovalCheck';
 import RevisionChangesPanel from '../../components/scheduling/RevisionChangesPanel';
+import RevisionDiffPanel from '../../components/scheduling/RevisionDiffPanel';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
+import { programLabel } from '../../lib/programLabel';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { getStoredUser } from '../../lib/storedUser';
 import {
@@ -61,6 +63,8 @@ interface ScheduleApproval {
   /** A partially recalled submission yields two entries sharing one id. */
   entryKey: string;
   department: string;
+  /** The program(s) whose sections this entry holds, e.g. "BAS — Bachelor of Arts in Sociology". */
+  program: string;
   section: string;
   subjectsScheduled: number;
   submittedBy: string;
@@ -88,6 +92,8 @@ interface RawSection {
   section_name: string;
   department_id: number | string;
   semester_id: number | string;
+  program_id?: number | string | null;
+  program?: { id: number | string; code?: string | null; name?: string | null; major?: string | null } | null;
 }
 
 interface RawSchedule {
@@ -210,6 +216,28 @@ const formatSectionSummary = (sections: RawSection[], sectionIds: string[]): str
   if (visible.length === 0) return `${selected.size} section${selected.size !== 1 ? 's' : ''}`;
   return visible.map((section) => section.section_name).join(', ');
 };
+
+/**
+ * Submissions are made per program but recorded per department, so the
+ * program is read from the sections that were sent. One program prints in
+ * full; a secretary's multi-program submission lists the codes.
+ */
+const formatProgramSummary = (sections: RawSection[], sectionIds: string[]): string => {
+  const selected = new Set(sectionIds);
+  const programs = new Map<string, NonNullable<RawSection['program']>>();
+  sections
+    .filter((section) => selected.has(String(section.id)) && section.program)
+    .forEach((section) => programs.set(String(section.program!.id), section.program!));
+  const list = Array.from(programs.values());
+  if (list.length === 0) return 'No program';
+  if (list.length === 1) return programLabel(list[0]);
+  return list.map((program) => program.code?.trim() || programLabel(program)).sort().join(', ');
+};
+
+/** How an entry is named in titles and messages: "Arts and Sciences (BAS — Bachelor of Arts in Sociology)". */
+const entryLabel = (entry: Pick<ScheduleApproval, 'department' | 'program'>): string => (
+  entry.program === 'No program' ? entry.department : `${entry.department} (${entry.program})`
+);
 
 const parseApiDate = (value: string): Date => {
   const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
@@ -339,6 +367,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
                 ?? departmentNames.get(departmentId)
                 ?? departmentSchedules[0]?.department?.department_name
                 ?? '',
+              program: formatProgramSummary(submission.sections, sectionIds),
               section: formatSectionSummary(sectionsByDepartment.get(departmentId) ?? [], sectionIds),
               subjectsScheduled: wholeSubmission ? submission.subject_count ?? liveSubjects : liveSubjects,
               sectionCount: wholeSubmission ? submission.section_count ?? sectionIds.length : sectionIds.length,
@@ -503,7 +532,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       } else {
         markEntry(entry, 'approved', 'approved');
       }
-      toast.success('Approved', `${entry.department} schedule has been approved.`);
+      toast.success('Approved', `${entryLabel(entry)} schedule has been approved.`);
       return true;
     } catch (error) {
       // The server decides Room TBA, not this page. When the queue was read
@@ -537,7 +566,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     }
     await confirm({
       title: 'Approve Schedule',
-      message: `Are you sure you want to approve the complete department schedule for ${entry.department}?`,
+      message: `Are you sure you want to approve the complete schedule for ${entryLabel(entry)}?`,
       eyebrow: 'Approval Required',
       confirmLabel: 'Confirm Approve',
       variant: 'maroon',
@@ -581,7 +610,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       });
       if (stage === 'dean') markEntry(rejectEntry, 'rejected_by_dean', 'rejected_by_dean');
       else markEntry(rejectEntry, 'rejected', 'rejected_by_vpaa');
-      toast.success('Returned for Revision', `${rejectEntry.department} schedule has been returned for revision.`);
+      toast.success('Returned for Revision', `${entryLabel(rejectEntry)} schedule has been returned for revision.`);
       setRejectEntry(null);
       setRejectReason('');
     } catch (error) {
@@ -597,6 +626,11 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       accessorKey: 'department',
       header: 'Department',
       cell: (info) => <span className="font-bold text-gray-800">{info.getValue() as string}</span>,
+    },
+    {
+      accessorKey: 'program',
+      header: 'Program',
+      cell: (info) => <span className="font-medium text-gray-700">{info.getValue() as string}</span>,
     },
     {
       // A count, not the names: a department submits dozens of sections and
@@ -651,10 +685,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       header: 'Revision',
       cell: (info) => {
         const revision = info.getValue() as RevisionStatus;
-        return (
-          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset uppercase tracking-wider ${REVISION_STATUS_BADGE[revision]}`}>
+        const badgeClass = `px-2.5 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset uppercase tracking-wider ${REVISION_STATUS_BADGE[revision]}`;
+        return revision === 'modified' ? (
+          <button
+            type="button"
+            title="See what changed from the previous version"
+            onClick={() => setViewEntry(info.row.original)}
+            className={`${badgeClass} cursor-pointer underline decoration-dotted underline-offset-2 hover:brightness-95`}
+          >
             {REVISION_STATUS_LABELS[revision]}
-          </span>
+          </button>
+        ) : (
+          <span className={badgeClass}>{REVISION_STATUS_LABELS[revision]}</span>
         );
       },
     },
@@ -784,21 +826,26 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       {viewEntry && (
         <ScheduleApprovalPreviewModal
           open
-          title={`${viewEntry.department} Department Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
+          title={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
           status={previewStatusOf(viewEntry.status, viewPending)}
           statusLabel={STATUS_LABELS[viewEntry.status]}
           printInput={printInput}
           isLoading={viewSnapshotLoading}
           canAct={viewPending}
           checks={viewPending ? (
-            <PreApprovalCheck
-              departmentId={viewEntry.id}
-              sectionIds={viewEntry.workflowSectionIds}
-              scheduleIds={viewScheduleIds}
-              onOpenConflicts={reportViewConflicts}
-            />
+            <>
+              {viewEntry.revisionStatus === 'modified' && <RevisionDiffPanel submissionId={viewEntry.submissionId} />}
+              <PreApprovalCheck
+                departmentId={viewEntry.id}
+                sectionIds={viewEntry.workflowSectionIds}
+                scheduleIds={viewScheduleIds}
+                onOpenConflicts={reportViewConflicts}
+              />
+            </>
           ) : viewIsClosed ? (
             <RevisionChangesPanel submissionId={viewEntry.submissionId} />
+          ) : viewEntry.revisionStatus === 'modified' ? (
+            <RevisionDiffPanel submissionId={viewEntry.submissionId} />
           ) : undefined}
           approveBlockedReason={viewOpenConflicts > 0
             ? `This schedule has ${viewOpenConflicts} open conflict${viewOpenConflicts === 1 ? '' : 's'}. Return it for revision.`
@@ -852,7 +899,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
             </div>
             <div className="p-6 space-y-4">
               <p className="text-xs text-gray-500 leading-relaxed">
-                Please provide a reason for returning the complete department schedule for <strong>{rejectEntry.department}</strong>.
+                Please provide a reason for returning the schedule for <strong>{entryLabel(rejectEntry)}</strong>.
               </p>
               <div>
                 <label htmlFor="reject-reason" className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">

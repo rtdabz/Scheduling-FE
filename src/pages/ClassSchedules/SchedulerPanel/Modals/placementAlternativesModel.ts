@@ -18,6 +18,8 @@ export interface DropRecommendationRow {
   mode: DeliveryMode;
   is_hybrid: boolean;
   preferred_pattern: string | null;
+  /** Present on saved rows; recommendations may leave it out. */
+  meeting_type?: string | null;
   status: ScheduleStatus;
 }
 

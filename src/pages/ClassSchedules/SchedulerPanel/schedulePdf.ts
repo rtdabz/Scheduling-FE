@@ -5,6 +5,7 @@ import municipalLogo from "../../../assets/municipal-logo.png";
 import type { ApiDepartmentRecord, ScheduleItem, Section, Semester, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 import { formatTime12h } from "../../../lib/timeGrid";
+import { programName } from "../../../lib/programLabel";
 import {
   buildPrintSemesterTitle,
   getFullDayName,
@@ -54,10 +55,11 @@ const MIN_SECTION_START_SPACE = 28;
 const buildSignatories = (
   settings: InstitutionSettings,
   preparedByName: string,
+  preparedByRole: string,
   reviewedByName: string,
   recommendedByName: string,
 ) => [
-  { label: "Prepared by:", name: preparedByName, role: "Program Head" },
+  { label: "Prepared by:", name: preparedByName, role: preparedByRole },
   { label: "Reviewed by:", name: reviewedByName, role: "Dean" },
   { label: "Recommended by:", name: recommendedByName, role: "Vice-President for Academic Affairs" },
   { label: "Approved by:", name: settings.president_name, role: settings.president_title },
@@ -91,7 +93,53 @@ export async function buildSchedulePdf({
   const departmentId = activeSection?.departmentId?.toString();
   const byRole = (role: string) =>
     users.find((user) => user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
-  const preparer = byRole("program_head") ?? byRole("secretary");
+
+  // Determine target sections belonging to the same department as the active section
+  const activeSemesterSections = activeSemester
+    ? sections.filter((section) => Number(section.semesterId) === Number(activeSemester.id))
+    : sections;
+  const unfilteredSections = printAllSections
+    ? activeSemesterSections
+    : activeSection
+    ? activeSemesterSections.filter((section) => section.departmentId === activeSection.departmentId)
+    : activeSemesterSections;
+
+  // Grouped by program first: a department schedules (and submits) each of
+  // its programs separately, so the print has to say which program a section
+  // belongs to.
+  const programSortKey = (section: Section) => (section.programCode ?? section.programName ?? "").toUpperCase();
+  const targetSections = [...unfilteredSections].sort((a, b) => {
+    const programOrder = programSortKey(a).localeCompare(programSortKey(b));
+    if (programOrder !== 0) {
+      return programOrder;
+    }
+    const yearA = Number(a.yearLevel) || 0;
+    const yearB = Number(b.yearLevel) || 0;
+    if (yearA !== yearB) {
+      return yearA - yearB;
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  const programTitleOf = (section: Section): string | null => {
+    if (section.programId == null) return null;
+    return programName(
+      { name: section.programName, major: section.programMajor },
+      section.programCode ?? "",
+    ).toUpperCase() || null;
+  };
+  const printedProgramIds = Array.from(new Set(targetSections.map((section) => section.programId ?? null)));
+  // One program on the page: it goes in the title block, and its own Program
+  // Head prepares it. Several (a secretary's multi-program print): each group
+  // gets its own program bar, and the secretary prepares the whole.
+  const singleProgramId = printedProgramIds.length === 1 ? printedProgramIds[0] : null;
+  const singleProgramTitle = singleProgramId !== null && targetSections[0] ? programTitleOf(targetSections[0]) : null;
+  const programHead = singleProgramId !== null
+    ? users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(singleProgramId))
+    : undefined;
+  // A program without a Program Head is the secretary's to schedule.
+  const preparer = programHead ?? byRole("secretary");
+  const preparerRole = preparer?.role?.toLowerCase() === "secretary" ? "Department Secretary" : "Program Head";
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {
     const name = printAllSections ? "ALL DEPARTMENTS" : (activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY");
@@ -112,6 +160,7 @@ export async function buildSchedulePdf({
   const signatories = buildSignatories(
     settings,
     preparer?.name?.trim().toUpperCase() ?? "",
+    preparerRole,
     byRole("dean")?.name?.trim().toUpperCase() ?? "",
     users.find((user) => user.role?.toLowerCase() === "vpaa")?.name?.trim().toUpperCase() ?? "",
   );
@@ -253,41 +302,52 @@ export async function buildSchedulePdf({
   doc.text(departmentTitle, 148.5, currentY + 5, { align: "center" });
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.4);
+  currentY += 7;
+
+  // Program Bar: the program this schedule was prepared and submitted for.
+  if (singleProgramTitle) {
+    doc.setFillColor(255, 255, 255);
+    doc.rect(15, currentY, 267, 6);
+    setFont("bold", "sans");
+    doc.setFontSize(10);
+    doc.setTextColor(123, 12, 23);
+    doc.text(singleProgramTitle, 148.5, currentY + 4.5, { align: "center" });
+    currentY += 6;
+  }
 
   // AY Bar
   doc.setFillColor(255, 255, 255);
-  doc.rect(15, currentY + 7, 267, 6);
+  doc.rect(15, currentY, 267, 6);
   setFont("bold", "sans");
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
-  doc.text(buildPrintSemesterTitle(activeSemester), 148.5, currentY + 11.5, { align: "center" });
+  doc.text(buildPrintSemesterTitle(activeSemester), 148.5, currentY + 4.5, { align: "center" });
 
-  currentY += 13;
+  currentY += 6;
 
-  // Determine target sections belonging to the same department as the active section
-  const activeSemesterSections = activeSemester
-    ? sections.filter((section) => Number(section.semesterId) === Number(activeSemester.id))
-    : sections;
-  const unfilteredSections = printAllSections
-    ? activeSemesterSections
-    : activeSection
-    ? activeSemesterSections.filter((section) => section.departmentId === activeSection.departmentId)
-    : activeSemesterSections;
-
-  const targetSections = [...unfilteredSections].sort((a, b) => {
-    const yearA = Number(a.yearLevel) || 0;
-    const yearB = Number(b.yearLevel) || 0;
-    if (yearA !== yearB) {
-      return yearA - yearB;
-    }
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-  });
-
+  let previousProgramId: number | null | undefined;
   targetSections.forEach((section) => {
+    const sectionProgramId = section.programId ?? null;
+    const startsProgramGroup = printedProgramIds.length > 1 && sectionProgramId !== previousProgramId;
+    previousProgramId = sectionProgramId;
+
     // Keep a section title with at least its table header and first rows.
-    if (currentY + MIN_SECTION_START_SPACE > CONTENT_BOTTOM_Y) {
+    if (currentY + MIN_SECTION_START_SPACE + (startsProgramGroup ? 6 : 0) > CONTENT_BOTTOM_Y) {
       doc.addPage();
       currentY = PAGE_TOP_Y;
+    }
+
+    // Draw Program Bar when a multi-program print moves to the next program.
+    if (startsProgramGroup) {
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.4);
+      doc.setFillColor(123, 12, 23);
+      doc.rect(15, currentY, 267, 6, "FD");
+      setFont("bold", "sans");
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(programTitleOf(section) ?? "NO PROGRAM", 148.5, currentY + 4.5, { align: "center" });
+      currentY += 6;
     }
 
     // Draw Section Bar

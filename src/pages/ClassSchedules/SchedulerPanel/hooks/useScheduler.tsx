@@ -75,10 +75,12 @@ import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "..
 import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
 import { roomGrantFits } from "../../../../lib/roomRequests";
+import { roomTypeSatisfies } from "../../../../lib/labRoomPolicy";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
-import { buildPreferredPattern, FULL_DAY_NAMES, isFixedSplitPattern, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
+import { buildPreferredPattern, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
+import { isHybridSplitEligible, savedMeetingPairShape } from "../schedulingConfigurationEligibility";
 import { resolveManualOperationStatus } from "../manualScheduleOperation";
 import {
   consecutivePattern,
@@ -293,8 +295,8 @@ export const useScheduler = () => {
   const canWithdrawSubmission = hasStoredCapability('schedule.withdraw');
   const canAssignInstructor = hasStoredCapability('schedule.assign_instructor');
   // v17: schedules are fetched up to SCHEDULER_SCHEDULE_LIMIT; a v16 cache
-  // holds the old 500-row slice.
-  const schedulerCacheKey = `scheduler:v17:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
+  // holds the old 500-row slice. v18: sections carry their program code.
+  const schedulerCacheKey = `scheduler:v18:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -304,6 +306,15 @@ export const useScheduler = () => {
   const [activeSemester, setActiveSemester] = useState<Semester | null>(canUseInitialCache ? cachedSchedulerData.activeSemester : null);
   const [departments, setDepartments] = useState<Department[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
   const [schedulingReady, setSchedulingReady] = useState(canUseInitialCache ? cachedSchedulerData.schedulingReady !== false : true);
+  const [canEditProgramIds, setCanEditProgramIds] = useState<number[] | null>(canUseInitialCache ? cachedSchedulerData.canEditProgramIds ?? null : null);
+  // Each program's timetable belongs to its owner (its Program Head, or the
+  // Secretary when it has none); everyone else sees it read-only. Unknown
+  // ownership (an older cached payload) leaves the server to decide.
+  const ownsProgram = useCallback(
+    (programId: number | null | undefined) => canEditProgramIds === null
+      || (programId != null && canEditProgramIds.includes(Number(programId))),
+    [canEditProgramIds],
+  );
   // Assume a Dean until the payload says otherwise, so a cold cache never
   // blocks submitting on its own. The backend enforces it regardless.
   const [hasDean, setHasDean] = useState(canUseInitialCache ? cachedSchedulerData.hasDean !== false : true);
@@ -366,6 +377,7 @@ export const useScheduler = () => {
       setActiveSemester(cachedData.activeSemester);
       setDepartments(cachedData.departments);
       setSchedulingReady(cachedData.schedulingReady !== false);
+      setCanEditProgramIds(cachedData.canEditProgramIds ?? null);
       setHasDean(cachedData.hasDean !== false);
       setUsers(cachedData.users);
       setSections(cachedData.sections);
@@ -400,6 +412,7 @@ export const useScheduler = () => {
         setActiveSemester(data.activeSemester);
         setDepartments(data.departments);
         setSchedulingReady(data.schedulingReady);
+        setCanEditProgramIds(data.canEditProgramIds ?? null);
         setHasDean(data.hasDean);
         setUsers(data.users);
         setSections(data.sections);
@@ -799,7 +812,8 @@ export const useScheduler = () => {
   }, []);
 
   const isPhase2Active = ["approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus);
-  const isEditable = canUpdateSchedule && (currentStatus === "draft" || currentStatus === "revision");
+  const ownsSelectedProgram = ownsProgram(sections.find((section) => section.id === selectedSectionId)?.programId);
+  const isEditable = canUpdateSchedule && ownsSelectedProgram && (currentStatus === "draft" || currentStatus === "revision");
   const isPhase1Completed = ["completed", "approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
   const facultyAssignmentDone = sectionSchedules.length > 0 && sectionSchedules.every((schedule) => schedule.facultyAssignmentDone);
@@ -848,12 +862,19 @@ export const useScheduler = () => {
         isMinor ||
         s.departmentId === null ||
         Number(s.departmentId) === Number(selectedSection.departmentId);
+      // A major belongs to one program; another program's majors are not
+      // this section's courses even inside the same department.
+      const matchesProgram =
+        isMinor ||
+        s.programId == null ||
+        selectedSection.programId == null ||
+        Number(s.programId) === Number(selectedSection.programId);
       const matchesYear = Number(s.yearLevel) === Number(selectedSection.yearLevel);
       const matchesSem =
         !selectedSemester ||
         !s.semester ||
         normalizeSemester(s.semester) === selectedSemester;
-      return matchesDept && matchesYear && matchesSem;
+      return matchesDept && matchesProgram && matchesYear && matchesSem;
     });
   }, [subjects, selectedSection, normalizeSemester]);
 
@@ -870,8 +891,10 @@ export const useScheduler = () => {
 
   const totalSubjects = useMemo(() => {
     if (!selectedSection) return semesterSubjects.length;
-    return semesterSubjects.filter((s) => s.yearLevel === selectedSection.yearLevel).length;
-  }, [semesterSubjects, selectedSection]);
+    // Same department/year/semester match the section's course list uses, so
+    // courses from other departments never inflate "N left".
+    return sectionCourses.length;
+  }, [semesterSubjects, selectedSection, sectionCourses]);
 
   const totalScheduled = useMemo(
     () => new Set(sectionSchedules.map((s) => s.subjectId)).size,
@@ -902,8 +925,10 @@ export const useScheduler = () => {
       subjectCountByYear.set(subject.yearLevel, (subjectCountByYear.get(subject.yearLevel) ?? 0) + 1);
     });
 
+    // Submission and recall cover the programs this account owns; the
+    // others are submitted by their own owner.
     return sections
-      .filter((section) => Number(section.departmentId) === Number(selectedDepartmentId))
+      .filter((section) => Number(section.departmentId) === Number(selectedDepartmentId) && ownsProgram(section.programId))
       .sort((a, b) => a.yearLevel - b.yearLevel || a.name.localeCompare(b.name))
       .map((section) => {
         const sectionScheduleItems = schedulesBySection.get(section.id) ?? [];
@@ -930,7 +955,7 @@ export const useScheduler = () => {
             && sectionScheduleItems.every((schedule) => Boolean(schedule.facultyAssignmentDone))
         };
       });
-  }, [schedules, sections, selectedDepartmentId, selectedSectionId, semesterSubjects]);
+  }, [schedules, sections, selectedDepartmentId, selectedSectionId, semesterSubjects, ownsProgram]);
 
   // Sections still open for plotting, with everything the bulk "mark done"
   // checklist needs so the user does not have to visit each section in turn.
@@ -1183,18 +1208,21 @@ export const useScheduler = () => {
           const existing = schedules.filter(
             (s) => s.subjectId === targetSched.subjectId && s.sectionId === selectedSectionId
           );
-          // Integrated On-site is saved without is_hybrid, so the reopened
-          // dialog recognises it by its shape: a lecture-plus-laboratory course
-          // met twice on a day pair that is not a Split Session.
-          const isBalancedSplitPattern = isFixedSplitPattern(targetSched.preferredPattern);
-          const hasLectureAndLab = Number(subject?.lectureHours ?? 0) > 0 && Number(subject?.labHours ?? 0) > 0;
-          const isIntegrated = Boolean(targetSched.isHybrid)
-            || (existing.length >= 2 && hasLectureAndLab && !isBalancedSplitPattern);
+          // Read the meetings the way Generate Schedule writes them: a split it
+          // made is saved as `days:x-y` (a Hybrid Split also as hybrid), and
+          // Integrated On-site without is_hybrid.
+          const { isIntegrated, isSplit } = savedMeetingPairShape(
+            subject,
+            existing.length,
+            Boolean(targetSched.isHybrid),
+            targetSched.preferredPattern,
+            existing.map((meeting) => meeting.meetingType),
+          );
           setModalIsHybrid(isIntegrated);
           const sorted = sortSplitMeetingsForEdit(existing, subject, isIntegrated, manualSchedulingSettings);
 
           if (sorted.length >= 2) {
-            setModalSplitEnabled(!isIntegrated && isBalancedSplitPattern);
+            setModalSplitEnabled(isSplit);
             // Preserve each stored meeting exactly. Editing must not silently
             // convert a saved on-site lecture to Online just because it is the
             // lecture component of a split course.
@@ -1202,7 +1230,12 @@ export const useScheduler = () => {
             setModalClassMode(sorted[0].mode ?? "on-site");
             setModalDay1Index(sorted[0].dayIndex);
             setModalDay2Index(sorted[1].dayIndex);
-            setModalPreferredPattern(buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex));
+            // A split's day pair is shown under its named pattern (TTh), which
+            // the Split pattern select offers.
+            setModalPreferredPattern(
+              (isSplit ? fixedSplitPatternForDays(sorted[0].dayIndex, sorted[1].dayIndex) : null)
+                ?? buildPreferredPattern(sorted[0].dayIndex, sorted[1].dayIndex)
+            );
             setModalDay1StartSlot(sorted[0].startSlot);
             setModalDay1Duration(sorted[0].durationSlots);
             setModalDay2StartSlot(sorted[1].startSlot);
@@ -1240,7 +1273,7 @@ export const useScheduler = () => {
           const requiredRoomType = requiredRoomTypeForMeeting(subject);
           const matchingTypeRooms = rooms.filter(r =>
             (r.status === "available" || !r.status) &&
-            (!requiredRoomType || r.roomType === requiredRoomType)
+            (!requiredRoomType || roomTypeSatisfies(requiredRoomType, r.roomType))
           );
           const availableRooms = rooms.filter(r =>
             (r.status === "available" || !r.status) &&
@@ -1360,7 +1393,7 @@ export const useScheduler = () => {
     const isUsable = (room: Room) => room.status === "available" || !room.status;
     const requiredRoomType = requiredRoomTypeForMeeting(subject ?? undefined);
     const matchingTypeRooms = rooms.filter(
-      (room) => isUsable(room) && !room.grantWindows && (!requiredRoomType || room.roomType === requiredRoomType)
+      (room) => isUsable(room) && !room.grantWindows && (!requiredRoomType || roomTypeSatisfies(requiredRoomType, room.roomType))
     );
     if (matchingTypeRooms.length > 0) return matchingTypeRooms[0].id;
 
@@ -1932,27 +1965,27 @@ export const useScheduler = () => {
           if (modalIsHybrid && hasLab) {
             meetingType = index === 0 ? "laboratory" : "lecture";
           } else if (hasLab) {
-            const duration = targetDay.duration;
-            const labSlots = laboratoryComponentSlots(subject, manualSchedulingSettings);
-            const lecSlots = getCourseSlotPlan(subject).lectureSlots;
-            if (duration === labSlots) {
-              meetingType = "laboratory";
-            } else if (duration === lecSlots) {
-              meetingType = "lecture";
-            } else {
-              meetingType = index === 0 ? "laboratory" : "lecture";
-            }
+            // A Split Session of a course with laboratory units is the class
+            // halved: both meetings take the laboratory's room rule (the
+            // Default LAB Room Requirement), as the generator places them.
+            meetingType = "laboratory";
           } else {
             meetingType = "lecture";
           }
         }
 
         return {
-          ...(existingRecords[index]?.id ? { id: Number(existingRecords[index].id) } : {}),
+          // An existing meeting keeps its instructor on the server, which fills
+          // any field left out from the saved row. Sending the one on screen
+          // erased it whenever the view hides it: another department's
+          // instructor stays hidden until that department marks its
+          // assignments done, and a recall resets that.
+          ...(existingRecords[index]?.id
+            ? { id: Number(existingRecords[index].id) }
+            : { faculty_id: null }),
           semester_id: activeSemester.id,
           section_id: Number(selectedSectionId),
           course_id: Number(subject.id),
-          faculty_id: existingRecords[index]?.facultyId ? Number(existingRecords[index].facultyId) : null,
           room_id: (() => {
             const resolved = index === 0 || runDays ? resolvedRoom1Id : resolvedRoom2Id;
             return resolved === null || resolved === "" ? null : Number(resolved);
@@ -1965,7 +1998,13 @@ export const useScheduler = () => {
           // Integrated is hybrid only while its lecture is online; On-site keeps
           // both meetings face-to-face and so is an ordinary linked pair. Other
           // hybrid shapes (Hybrid Split) have no laboratory and keep the flag.
-          is_hybrid: !runDays && modalIsHybrid && (!hasLab || modalDay2ClassMode === "online"),
+          // A Split Session with one meeting online is a Hybrid Split, saved
+          // hybrid as Generate Schedule saves it.
+          is_hybrid: !runDays && (
+            (modalIsHybrid && (!hasLab || modalDay2ClassMode === "online"))
+            || (modalSplitEnabled && isHybridSplitEligible(subject)
+              && (modalClassMode === "online") !== (modalDay2ClassMode === "online"))
+          ),
           preferred_pattern: modalRun && runDays ? consecutivePattern(modalRun.dayCount) : modalPreferredPattern,
           split_group_id: sharedSplitGroupId,
           meeting_type: meetingType,
@@ -3367,6 +3406,9 @@ export const useScheduler = () => {
     currentStatus,
     isPhase2Active,
     isEditable,
+    ownsSelectedProgram,
+    ownsProgram,
+    canEditProgramIds,
     isPhase1Completed,
     isPhase2Completed,
     facultyAssignmentDone,

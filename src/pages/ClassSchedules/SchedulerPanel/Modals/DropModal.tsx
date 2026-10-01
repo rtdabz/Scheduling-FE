@@ -3,7 +3,8 @@ import { AlertTriangle, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, MapP
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
 import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
-import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, isFixedSplitPattern, parsePreferredPattern, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
+import { FIXED_SPLIT_PATTERNS, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
+import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, Semester } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
@@ -15,6 +16,7 @@ import {
   isOnlineSplitEligible,
   balancedSplitSettingsOf,
   isBalancedSplitSchedulingEligible,
+  savedMeetingPairShape,
 } from "../schedulingConfigurationEligibility";
 import { runLabel, runStartingOn, tickedRun, type ConsecutivePlacement } from "../GenerateSchedule/courseClassConfig";
 import PlacementAlternatives from "./PlacementAlternatives";
@@ -625,7 +627,7 @@ export default function DropModal({
 
     setModalClassMode("on-site");
     setModalRoomId(
-      rooms.find((room) => room.roomType === "laboratory" && room.status === "available")?.id
+      rooms.find((room) => isLabMeetingRoomType(room.roomType) && room.status === "available")?.id
         ?? ROOM_TBA
     );
   }, [
@@ -780,9 +782,11 @@ export default function DropModal({
     // A mixed split needs both room types on offer, one per meeting.
     const hasLectureAndLabComponents =
       Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
-    if (modalIsHybrid && hasLectureAndLabComponents) return r.roomType === "laboratory";
+    if (modalIsHybrid && hasLectureAndLabComponents) return isLabMeetingRoomType(r.roomType);
 
     const requiredRoomType = modalClassMode === "field" ? "field" : requiredRoomTypeForMeeting(dropSubject);
+    // A laboratory meeting takes the rooms the Default LAB Room Requirement allows.
+    if (requiredRoomType === "laboratory") return isLabMeetingRoomType(r.roomType);
 
     return !requiredRoomType || r.roomType === requiredRoomType;
   });
@@ -924,20 +928,27 @@ export default function DropModal({
       return;
     }
 
-    // Integrated On-site comes back as two linked meetings without the hybrid
-    // flag, so the shape decides whether this is Integrated, not is_hybrid.
-    const isBalancedSplitPattern = isFixedSplitPattern(rows[0]?.preferred_pattern);
-    const isIntegratedRows = rows.length > 1 && Boolean(hasBoth) && !isBalancedSplitPattern;
+    // The shape decides the option, as when a saved course is reopened: a
+    // generated split comes back as `days:x-y` (a Hybrid Split also hybrid),
+    // and Integrated On-site without the hybrid flag.
+    const { isIntegrated: isIntegratedRows, isSplit: isSplitRows } = savedMeetingPairShape(
+      dropSubject,
+      rows.length,
+      rows.some((row) => row.is_hybrid),
+      rows[0]?.preferred_pattern,
+      // Only rows that report their meeting types can tell a Split from Integrated.
+      rows.every((row) => row.meeting_type !== undefined) ? rows.map((row) => row.meeting_type) : undefined,
+    );
     const laboratorySlots = laboratoryComponentSlots(dropSubject, manualSchedulingSettings);
     // The first card is the laboratory, which is the meeting of that length.
     const integratedRank = (row: DropRecommendationRow): number =>
       timeToSlot(row.end_time) - timeToSlot(row.start_time) === laboratorySlots ? 0 : 1;
     const sortedRows = [...rows].sort((left, right) => (
-      (left.is_hybrid || right.is_hybrid
-        ? Number(left.mode === "online") - Number(right.mode === "online")
-        : isIntegratedRows
-          ? integratedRank(left) - integratedRank(right)
-          : 0)
+      (isIntegratedRows
+        ? (left.is_hybrid || right.is_hybrid
+          ? Number(left.mode === "online") - Number(right.mode === "online")
+          : integratedRank(left) - integratedRank(right))
+        : 0)
       || getDayIndex(left.day) - getDayIndex(right.day)
       || timeToSlot(left.start_time) - timeToSlot(right.start_time)
     ));
@@ -950,13 +961,17 @@ export default function DropModal({
 
     setModalRoomId(recommendationRoomId(firstRow));
     setModalClassMode(firstRow.mode);
-    setModalIsHybrid(firstRow.is_hybrid || isIntegratedRows);
-    setModalSplitEnabled(!firstRow.is_hybrid && !isIntegratedRows && isBalancedSplitPattern);
+    setModalIsHybrid(isIntegratedRows);
+    setModalSplitEnabled(isSplitRows);
 
     if (sortedRows.length > 1) {
       const secondRow = sortedRows[1];
       const secondDayIndex = getDayIndex(secondRow.day);
-      setModalPreferredPattern(firstRow.preferred_pattern ?? `days:${firstDayIndex}-${secondDayIndex}`);
+      setModalPreferredPattern(
+        (isSplitRows ? fixedSplitPatternForDays(firstDayIndex, secondDayIndex) : null)
+          ?? firstRow.preferred_pattern
+          ?? `days:${firstDayIndex}-${secondDayIndex}`
+      );
       setModalDay1Index(firstDayIndex);
       setModalDay2Index(secondDayIndex);
       setModalDay1StartSlot(firstStartSlot);
@@ -1050,7 +1065,7 @@ export default function DropModal({
       setModalDay1Duration(laboratorySlots);
       setModalDay2Duration(lectureSlots);
       setModalClassMode("on-site");
-      setModalRoomId(rooms.find((room) => room.roomType === "laboratory" && room.status === "available")?.id ?? ROOM_TBA);
+      setModalRoomId(rooms.find((room) => isLabMeetingRoomType(room.roomType) && room.status === "available")?.id ?? ROOM_TBA);
       setModalDay2ClassMode("online");
       setModalDay2RoomId("online");
       // Keep Integrated active after configuring both required component

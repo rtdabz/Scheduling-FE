@@ -21,7 +21,7 @@ export function useCurriculum() {
   const userRole = user?.role?.toLowerCase() || 'user';
   const userDeptId = user?.department_id ?? null;
 
-  const curriculumCacheKey = `page:curriculum:${userRole}:${userDeptId ?? 'all'}`;
+  const curriculumCacheKey = `page:curriculum:${userRole}:${userDeptId ?? 'all'}:${user?.program_id ?? 'all'}`;
   const cachedData = getCachedData<CurriculumPageData>(curriculumCacheKey);
 
   const [curriculumList, setCurriculumList] = useState<Curriculum[]>(cachedData?.curriculumList ?? []);

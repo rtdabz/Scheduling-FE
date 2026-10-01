@@ -1,3 +1,4 @@
+import { isFixedSplitPattern } from "../../../lib/timeGrid";
 import type { Course } from "./types";
 
 const normalizeCourseCode = (value: string): string =>
@@ -48,10 +49,10 @@ export const balancedSplitSettingsOf = (_settings: {
 });
 
 /**
- * Mirrors SchedulingPolicy::balancedSplitEligible on the server. A major is only
- * splittable while it is pure lecture — a major with lab units belongs to the
- * Lecture + Laboratory override, and offering both would let the user build a
- * configuration the generator refuses.
+ * Mirrors SchedulingPolicy::balancedSplitEligible on the server. Every minor is
+ * splittable, and so is a major with lecture or laboratory units — a
+ * laboratory-only (0 LEC + LAB) major included. A major with both components
+ * may be Split or Integrated; Setup Courses keeps one shape per course.
  */
 export const isBalancedSplitSchedulingEligible = (
   course: Course | null | undefined,
@@ -60,10 +61,7 @@ export const isBalancedSplitSchedulingEligible = (
   if (!course) return false;
 
   if (course.category === "major") {
-    return Boolean(
-      Number(course.lectureHours ?? 0) > 0
-      && Number(course.labHours ?? 0) === 0,
-    );
+    return Number(course.lectureHours ?? 0) > 0 || Number(course.labHours ?? 0) > 0;
   }
 
   return settings.minorEnabled || settings.majorLectureEnabled;
@@ -111,6 +109,36 @@ export const isOnlineSplitEligible = (
   && course?.roomTypeRequired !== "laboratory",
 );
 
-export const isFieldSchedulingEligible = (course: Course | null | undefined): boolean => (
+/**
+ * Which two-meeting option a course's saved (or recommended) meetings are, read
+ * the way Generate Schedule writes them.
+ *
+ * Integrated belongs to a course with both a lecture and a laboratory; it is
+ * saved hybrid when its lecture is online and as a plain linked pair when both
+ * meet on site. Every other pair is a Split Session. The generator saves a
+ * split as `days:x-y` rather than `MW`/`TTh`, and a Hybrid Split carries
+ * `is_hybrid`, so neither the named pattern nor the flag alone identifies one.
+ */
+export const savedMeetingPairShape = (
+  course: Pick<Course, "lectureHours" | "labHours"> | null | undefined,
+  meetingCount: number,
+  isHybrid: boolean,
+  preferredPattern?: string | null,
+  meetingTypes?: ReadonlyArray<string | null | undefined>,
+): { isIntegrated: boolean; isSplit: boolean } => {
+  const hasLectureAndLab = Number(course?.lectureHours ?? 0) > 0 && Number(course?.labHours ?? 0) > 0;
+  // Integrated is one lecture and one laboratory meeting. A Split Session of
+  // the same course (allowed since it has laboratory units) is the class
+  // halved, so its meetings never carry that pair.
+  const hasComponentPair = meetingTypes === undefined
+    || (meetingTypes.includes("lecture") && meetingTypes.includes("laboratory"));
+  const isIntegrated = hasLectureAndLab
+    && hasComponentPair
+    && (isHybrid || (meetingCount >= 2 && !isFixedSplitPattern(preferredPattern)));
+
+  return { isIntegrated, isSplit: meetingCount >= 2 && !isIntegrated };
+};
+
+export const isFieldSchedulingEligible =(course: Course | null | undefined): boolean => (
   Boolean(course) && Number(course?.labHours ?? 0) <= 0
 );

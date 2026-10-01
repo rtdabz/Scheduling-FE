@@ -10,6 +10,7 @@ import {
   type LaboratoryDurationSettings,
 } from "../courseSlotPlan";
 import { DAYS } from "../constants";
+import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
 
 export type ClassConfiguration = "regular" | "split" | "integrated";
@@ -588,12 +589,12 @@ export function compatibleRoomOptions(
   const fieldRooms = options.filter((room) => room.room_type === "field");
   if (course.roomTypeRequired === "field") return fieldRooms;
 
-  // A laboratory course meets in a laboratory: as one block, or as the
-  // on-site half of an Integrated Hybrid.
+  // A laboratory course meets in the rooms the Default LAB Room Requirement
+  // allows: as one block, or as the on-site half of an Integrated Hybrid.
   const needsLaboratory =
     Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
   if (needsLaboratory) {
-    return options.filter((room) => room.room_type === "laboratory");
+    return options.filter((room) => isLabMeetingRoomType(room.room_type));
   }
   const classrooms = options.filter(
     (room) => room.room_type === "lecture" || laboratoryServesLecture(course, room),

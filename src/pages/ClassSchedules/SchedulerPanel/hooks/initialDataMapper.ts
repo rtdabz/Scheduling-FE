@@ -8,6 +8,7 @@ import {
   timeToSlot as timeStrToSlot,
 } from "../../../../lib/timeGrid";
 import type { TimeGridConfigInput } from "../../../../lib/timeGrid";
+import { configureLabRoomType } from "../../../../lib/labRoomPolicy";
 import type {
   ApiCourseRecord,
   ApiDepartmentRecord,
@@ -40,6 +41,12 @@ export interface SchedulerCacheData {
   fieldCourseAssignmentEnabled: boolean;
   fieldCourseCodes: string[];
   schedulingReady: boolean;
+  /**
+   * Programs this account owns: its own as Program Head, or every program
+   * without an active Program Head as Secretary. Null when the payload
+   * predates the field; the server still enforces ownership.
+   */
+  canEditProgramIds?: number[] | null;
   /** False when no active Dean is assigned; submitting is refused server-side. */
   hasDean: boolean;
   /**
@@ -63,6 +70,8 @@ export interface InitialDataResponse {
   schedules_truncated?: boolean;
   departments: ApiDepartmentRecord[];
   scheduling_ready?: boolean;
+  /** Programs whose timetable this account may change; the rest are read-only. */
+  can_edit_program_ids?: number[];
   has_dean?: boolean;
   users: UserSummary[];
   field_course_assignment_enabled?: boolean;
@@ -70,6 +79,8 @@ export interface InitialDataResponse {
   resource_slot_limits?: { online: number; field: number } | null;
   /** Grid window from institution_settings; the client used to hardcode it. */
   time_grid?: TimeGridConfigInput | null;
+  /** Default LAB Room Requirement: laboratory, lecture (classroom) or either. */
+  lab_room_type?: string | null;
 }
 
 /** Re-exported so existing importers keep working; canonical in lib/timeGrid. */
@@ -347,6 +358,9 @@ export const mapApiSections = (
       semester: s.semester,
       departmentId: s.department_id,
       programId: s.program_id == null ? null : Number(s.program_id),
+      programCode: s.program?.code ?? null,
+      programName: s.program?.name ?? null,
+      programMajor: s.program?.major ?? null,
       curriculumId: s.curriculum_id == null ? null : Number(s.curriculum_id),
       curriculumName: s.curriculum?.name ?? null,
       semesterId: Number(s.semester_id),
@@ -361,6 +375,7 @@ export const mapInitialData = (
 ): SchedulerCacheData => {
   // Applied before anything is mapped: every slot conversion below reads it.
   configureTimeGrid(initialData.time_grid);
+  configureLabRoomType(initialData.lab_room_type);
 
   let apiRooms = initialData.rooms;
   if (!options.isVpaa && options.userDepartmentId) {
@@ -408,6 +423,7 @@ export const mapInitialData = (
     fieldCourseAssignmentEnabled: !!initialData.field_course_assignment_enabled,
     fieldCourseCodes: initialData.field_course_codes ?? [],
     schedulingReady: initialData.scheduling_ready !== false,
+    canEditProgramIds: initialData.can_edit_program_ids?.map(Number) ?? null,
     hasDean: initialData.has_dean !== false,
     schedulesTruncated: initialData.schedules_truncated === true,
   };

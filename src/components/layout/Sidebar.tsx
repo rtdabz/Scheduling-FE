@@ -8,7 +8,8 @@ import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { fetchCurrentUser } from '../../lib/currentUser';
-import { lockedModuleMessage } from '../../lib/storedUser';
+import { hasStoredCapability, lockedModuleMessage } from '../../lib/storedUser';
+import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
 import { prefetchPage } from '../../lib/pagePrefetch';
@@ -94,6 +95,14 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
       })
       .catch(() => {});
   }, []);
+
+  // Delegated classes from other colleges that still need an instructor. The
+  // count drops as they are assigned, so the badge disappears at zero.
+  const canAssignCrossDepartment = (role === 'secretary' || role === 'program_head')
+    && hasStoredCapability('schedule.assign_instructor_cross_department');
+  const { crossDepartmentPending } = useDepartmentScheduleStatus(
+    canAssignCrossDepartment ? user?.department_id : null,
+  );
 
   const approvalsRevision = useLiveRevision(['approvals']);
   const roomsRevision = useLiveRevision(['rooms']);
@@ -182,6 +191,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
     if (child.isLocked) return 0;
     if (child.id === 'sidebar-schedule-approval') return pendingCount;
     if (child.id === 'sidebar-room-requests') return pendingRoomCount;
+    if (child.id === 'sidebar-cross-department-assignments') return crossDepartmentPending;
     return 0;
   };
 
@@ -441,6 +451,11 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                                       {pendingCount > 9 ? '9+' : pendingCount}
                                     </span>
                                   )
+                                )}
+                                {child.id === 'sidebar-cross-department-assignments' && crossDepartmentPending > 0 && !child.isLocked && (
+                                  <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
+                                    {crossDepartmentPending > 9 ? '9+' : crossDepartmentPending}
+                                  </span>
                                 )}
                                 {child.id === 'sidebar-room-requests' && pendingRoomCount > 0 && !child.isLocked && (
                                   <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">

@@ -69,6 +69,12 @@ const initialData = {
   courses: [{ id: 1, subject_code: 'IT 101', subject_name: 'Intro to IT', department_id: 6 }],
   schedules: [schedule(1, 1), schedule(2, 2), schedule(3, 3, { room_id: 2, room: { id: 2, room_code: 'R 202', room_type: 'laboratory', building: 'Main' } })],
   users: [{ id: 9, name: 'Maria Santos', role: 'secretary', department_id: 6 }],
+  // The Program Head submitted BSIT, not the department secretary.
+  schedule_submissions: [{
+    id: 1, semester_id: 1, submitted_at: '2026-08-12T02:24:00Z',
+    sections: [{ id: 1, pivot: { state: 'included' } }],
+    submitter: { name: 'Juan Dela Cruz' },
+  }],
 };
 
 const scheduleStatus = {
@@ -121,9 +127,10 @@ describe('DeanDashboardPage', () => {
     expect(screen.getAllByText('ACT Schedule').length).toBe(2);
   });
 
-  it('names the department schedule coordinator as the submitter', async () => {
+  it('names the user who actually submitted each package', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getAllByText('Maria Santos').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Juan Dela Cruz').length).toBe(1));
+    expect(screen.queryByText('Maria Santos')).toBeNull();
   });
 
   it('counts one pending approval and reports readiness by stage', async () => {

@@ -338,6 +338,14 @@ const ScheduleCard = memo(function ScheduleCard({
                 <span className="min-w-0 flex-1 truncate font-bold text-emerald-800" title={schedule.facultyName}>
                   {schedule.facultyName}
                 </span>
+              ) : isAwaitingFaculty ? (
+                <span
+                  className="inline-flex w-fit items-center gap-1 rounded-md border border-orange-600/20 bg-orange-500 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm transition-colors group-hover:bg-orange-600"
+                  title="Assign faculty"
+                >
+                  <UserPlus className="h-3 w-3 shrink-0" />
+                  Faculty
+                </span>
               ) : <span />}
               <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
                 {schedule.startTime} – {schedule.endTime}
@@ -346,11 +354,21 @@ const ScheduleCard = memo(function ScheduleCard({
             </div>
           ) : (
           <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[10.5px] whitespace-normal leading-tight"}`}>
-            {hasFaculty && schedule.facultyName && (
+            {hasFaculty && schedule.facultyName ? (
               <div className="truncate font-bold text-emerald-800" title={schedule.facultyName}>
                 {schedule.facultyName}
               </div>
-            )}
+            ) : isAwaitingFaculty ? (
+              <div className="mb-0.5 flex">
+                <span
+                  className="inline-flex w-fit items-center gap-1 rounded-md border border-orange-600/20 bg-orange-500 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm transition-colors group-hover:bg-orange-600"
+                  title="Assign faculty"
+                >
+                  <UserPlus className="h-3 w-3 shrink-0" />
+                  Faculty
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center gap-1.5">
               <span>{schedule.startTime} – {schedule.endTime}</span>
               {(showResolved || showAllowed) && resolvedFlag}
@@ -360,19 +378,12 @@ const ScheduleCard = memo(function ScheduleCard({
         </div>
       )}
 
-      {isAwaitingFaculty && (
+      {isAwaitingFaculty && isCompact && (
         <div
-          className={
-            isWideView
-              ? "absolute bottom-1.5 right-1.5 flex h-6 items-center gap-1 rounded-lg border border-orange-600/20 bg-orange-500 px-2 text-[9px] font-bold text-white shadow-sm transition-colors group-hover:bg-orange-600"
-              : `absolute bottom-1 right-1 flex items-center justify-center rounded-lg border border-orange-600/20 bg-orange-500 font-bold text-white shadow-sm transition-colors group-hover:bg-orange-600 ${
-                  isCompact ? "h-5 w-5" : "h-5 gap-1 px-1.5 text-[8.5px]"
-                }`
-          }
+          className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-lg border border-orange-600/20 bg-orange-500 text-white shadow-sm transition-colors group-hover:bg-orange-600"
           title="Assign faculty"
         >
           <UserPlus className="h-3 w-3 shrink-0" />
-          {!isCompact && <span>Assign Faculty</span>}
         </div>
       )}
     </div>

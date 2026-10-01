@@ -95,7 +95,7 @@ const mapApiSection = (s: ApiSection): Section => ({
 export default function SecretarySections() {
   const { toast } = useToast();
   const user = getStoredUser();
-  const sectionsCacheKey = `page:sections:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const sectionsCacheKey = `page:sections:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}:${user?.program_id ?? 'all'}`;
   const cachedSectionsData = getCachedData<SectionsPageData>(sectionsCacheKey);
   const [sections, setSections] = useState<Section[]>(cachedSectionsData?.sections ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedSectionsData?.departments ?? []);
@@ -107,6 +107,14 @@ export default function SecretarySections() {
   // Section writes sit behind schedule.create, which a department without a
   // program cannot exercise; gating on the role showed buttons the API refused.
   const canManageSections = hasStoredCapability('schedule.create');
+
+  // A Program Head adds and edits sections of their own program only; the
+  // server enforces the same scope.
+  const isProgramHead = user?.role?.toLowerCase() === 'program_head';
+  const selectablePrograms = useMemo(
+    () => (isProgramHead ? programs.filter((p) => Number(p.id) === Number(user?.program_id)) : programs),
+    [programs, isProgramHead, user?.program_id],
+  );
 
   const activeSemester = useMemo(() => semesters.find((t) => t.is_active) ?? semesters[0], [semesters]);
 
@@ -430,7 +438,7 @@ export default function SecretarySections() {
         editingSection={sections.find((s) => s.id === editingId)}
         activeSemester={activeSemester ?? null}
         departments={departments}
-        programs={programs}
+        programs={selectablePrograms}
         userDepartmentId={user?.department_id}
         isVpaa={isVpaa}
         onClose={() => setIsModalOpen(false)}

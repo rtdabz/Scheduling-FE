@@ -82,9 +82,12 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
 
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
   const generatorDepartmentId = selectedSection?.departmentId ?? scheduler.sections[0]?.departmentId ?? null;
-  const generatorDepartmentLogoUrl = scheduler.departments.find(
+  const generatorDepartment = scheduler.departments.find(
     (department) => Number(department.id) === Number(generatorDepartmentId),
-  )?.logo ?? null;
+  );
+  const generatorDepartmentLogoUrl = generatorDepartment?.logo ?? null;
+  // Unknown profile (department not loaded) keeps the laboratory options shown.
+  const generatorLaboratoryEnabled = generatorDepartment?.scheduling_profile !== 'standard';
 
   useEffect(() => {
     if (!isGeneratorOpen) return;
@@ -137,6 +140,12 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onClearInstructors={scheduler.canAssignInstructor ? () => { setClearInstructorScope(scheduler.clearableSectionInstructorCount > 0 ? "section" : "department"); setIsClearInstructorConfirmOpen(true); } : undefined}
       />
 
+      {scheduler.canUpdateSchedule && !scheduler.ownsSelectedProgram && (
+        <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <span className="font-bold">View only.</span> This section's program is scheduled by its owner: its Program Head, or the department Secretary when it has none. You can view it and check conflicts against it, but only the owner can change it.
+        </p>
+      )}
+
       <div
         className={`flex min-h-0 w-full flex-col overflow-visible transition-[grid-template-columns,gap] duration-300 ease-out motion-reduce:transition-none lg:grid lg:h-auto lg:min-h-0 lg:items-stretch ${
           isCourseBankOpen
@@ -164,11 +173,14 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
           <div className="flex max-h-[calc(100dvh-1rem)] max-w-full overflow-hidden bg-white shadow-2xl sm:rounded-lg">
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
-              sections={scheduler.sections}
+              // Only the programs this account owns are generated; the
+              // others' classes still count as occupied via existingSchedules.
+              sections={scheduler.sections.filter((section) => scheduler.ownsProgram(section.programId))}
               courses={scheduler.subjects}
               activeSemester={scheduler.activeSemester}
               departmentId={generatorDepartmentId}
               departmentLogoUrl={generatorDepartmentLogoUrl}
+              laboratoryEnabled={generatorLaboratoryEnabled}
               existingSchedules={scheduler.schedules}
               onAccepted={scheduler.handleAcceptedRecommendation}
               onSectionsChanged={scheduler.refreshData}

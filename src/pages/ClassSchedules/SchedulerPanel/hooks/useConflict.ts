@@ -4,6 +4,7 @@ import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
+import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
 import { coveredContinuously } from "../../../../lib/availabilityWindows";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
@@ -563,11 +564,14 @@ export const useConflict = ({
           // A course with no laboratory component may fall back to a
           // lecture-capable lab room, matching RuleEngine::canUseLaboratoryForLecture.
           && !(requiredRoomType === "lecture" && room.roomType === "laboratory")
+          // A laboratory meeting takes the rooms the Default LAB Room
+          // Requirement allows (RoomTypeRule / SchedulingPolicy::labRoomTypes).
+          && !(requiredRoomType === "laboratory" && isLabMeetingRoomType(room.roomType))
         ) {
           return {
             conflictType: "room",
             message: requiredRoomType === "laboratory"
-              ? `Room type mismatch: ${subject?.code ?? "This class"} has a laboratory component, so it must be scheduled in a laboratory room, but '${room.name}' is a '${room.roomType}' room.`
+              ? `Room type mismatch: ${subject?.code ?? "This class"} has a laboratory component, so it must be scheduled in a ${labRoomTypes().map((type) => type === "lecture" ? "classroom" : "laboratory room").join(" or ")}, but '${room.name}' is a '${room.roomType}' room.`
               : `Room type mismatch: ${subject?.code ?? "This class"} requires a '${requiredRoomType}' room, but '${room.name}' is a '${room.roomType}' room.`
           };
         }

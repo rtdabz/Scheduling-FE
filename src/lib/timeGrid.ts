@@ -218,6 +218,13 @@ export type FixedSplitPattern = keyof typeof FIXED_SPLIT_PATTERNS;
 export const isFixedSplitPattern = (preferredPattern?: string | null): preferredPattern is FixedSplitPattern =>
   !!preferredPattern && Object.prototype.hasOwnProperty.call(FIXED_SPLIT_PATTERNS, preferredPattern);
 
+/** The named split pattern for a day pair (Tuesday + Thursday is TTh), or null. */
+export const fixedSplitPatternForDays = (day1Index: number, day2Index: number): FixedSplitPattern | null => {
+  const [low, high] = day1Index < day2Index ? [day1Index, day2Index] : [day2Index, day1Index];
+  const match = Object.entries(FIXED_SPLIT_PATTERNS).find(([, { days }]) => days[0] === low && days[1] === high);
+  return match ? (match[0] as FixedSplitPattern) : null;
+};
+
 /**
  * Day indexes a two-meeting pattern is allowed to use, or null when the pattern
  * is absent or unrecognized. Mirrors SchedulingPolicy::allowedDaysForPattern.

@@ -37,6 +37,7 @@ export interface Department {
   logo?: string | null;
   /** Defaults to true server-side when null; mirrors RuleEngine's Sunday rule. */
   sunday_online_only_enabled?: boolean | number | null;
+  scheduling_profile?: 'standard' | 'laboratory_enabled';
 }
 
 export interface Semester {
@@ -54,6 +55,8 @@ export interface UserSummary {
   last_name?: string;
   role?: string;
   department_id?: number | null;
+  /** Set for Program Heads: the program whose schedule they prepare. */
+  program_id?: number | null;
 }
 
 export interface Course {
@@ -107,6 +110,11 @@ export interface Section {
   semester: SemesterPeriod;
   departmentId: number;
   programId?: number | null;
+  /** The program's short code (e.g. BSIT), for labels. */
+  programCode?: string | null;
+  /** The program's full name and major, for the printed schedule header. */
+  programName?: string | null;
+  programMajor?: string | null;
   /**
    * The curriculum this cohort follows. A department mid-transition runs an old
    * and a new curriculum at once, so this cannot be inferred from the
@@ -360,6 +368,7 @@ export interface ApiSectionRecord {
   semester: SemesterPeriod;
   department_id: number;
   program_id?: number | null;
+  program?: { id: number; code?: string | null; name?: string; major?: string | null } | null;
   curriculum_id?: number | null;
   curriculum?: { id: number; name: string; code?: string } | null;
   semester_id: number;

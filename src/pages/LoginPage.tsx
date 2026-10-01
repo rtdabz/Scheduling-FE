@@ -28,6 +28,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -239,11 +240,33 @@ export default function LoginPage() {
             <form onSubmit={handleResetPassword} className="space-y-5">
               <div>
                 <label htmlFor="reset-password" className="mb-1.5 block text-xs font-semibold text-text">New password <span className="font-normal text-muted">(at least 10 characters)</span></label>
-                <input id="reset-password" type="password" autoComplete="new-password" required minLength={10} value={resetPassword} onChange={(e) => { setResetPassword(e.target.value); setResetMismatch(false); }} className="w-full h-12 px-4 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                <div className="relative">
+                  <input id="reset-password" type={showResetPassword ? 'text' : 'password'} autoComplete="new-password" required minLength={10} value={resetPassword} onChange={(e) => { setResetPassword(e.target.value); setResetMismatch(false); }} className="w-full h-12 pl-4 pr-12 bg-white/60 border border-gray-300 rounded-xl text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword((v) => !v)}
+                    aria-label={showResetPassword ? 'Hide passwords' : 'Show passwords'}
+                    aria-pressed={showResetPassword}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-muted hover:text-text transition-colors"
+                  >
+                    {showResetPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label htmlFor="reset-confirmation" className="mb-1.5 block text-xs font-semibold text-text">Confirm new password</label>
-                <input id="reset-confirmation" type="password" autoComplete="new-password" required minLength={10} value={resetConfirmation} onChange={(e) => { setResetConfirmation(e.target.value); setResetMismatch(false); }} aria-invalid={resetMismatch} aria-describedby={resetMismatch ? 'reset-mismatch' : undefined} className={`w-full h-12 px-4 bg-white/60 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 ${resetMismatch ? 'border-red-500' : 'border-gray-300 focus:border-primary'}`} />
+                <div className="relative">
+                  <input id="reset-confirmation" type={showResetPassword ? 'text' : 'password'} autoComplete="new-password" required minLength={10} value={resetConfirmation} onChange={(e) => { setResetConfirmation(e.target.value); setResetMismatch(false); }} aria-invalid={resetMismatch} aria-describedby={resetMismatch ? 'reset-mismatch' : undefined} className={`w-full h-12 pl-4 pr-12 bg-white/60 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary/20 ${resetMismatch ? 'border-red-500' : 'border-gray-300 focus:border-primary'}`} />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword((v) => !v)}
+                    aria-label={showResetPassword ? 'Hide passwords' : 'Show passwords'}
+                    aria-pressed={showResetPassword}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-muted hover:text-text transition-colors"
+                  >
+                    {showResetPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
                 {resetMismatch && <p id="reset-mismatch" className="mt-1 text-xs font-semibold text-red-600">The two passwords do not match.</p>}
               </div>
               <button type="submit" disabled={isUpdatingPassword} className="w-full h-12 bg-primary text-white font-semibold rounded-xl disabled:opacity-50 disabled:pointer-events-none">

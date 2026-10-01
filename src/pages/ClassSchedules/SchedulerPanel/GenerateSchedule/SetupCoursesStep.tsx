@@ -138,6 +138,7 @@ export default function SetupCoursesStep({
   customizedCourseIds = [],
   onCustomizedChange,
   defaultsOpen = false,
+  laboratoryEnabled = true,
   onDefaultsClose,
   actionsDisabled,
 }: {
@@ -180,6 +181,8 @@ export default function SetupCoursesStep({
   onCustomizedChange?: (courseIds: string[]) => void;
   /** The Default Settings sidebar, opened from the gear in the wizard header. */
   defaultsOpen?: boolean;
+  /** Laboratory-enabled department: Default Settings offer a laboratory duration. */
+  laboratoryEnabled?: boolean;
   onDefaultsClose?: () => void;
   actionsDisabled: boolean;
 }) {
@@ -1053,6 +1056,7 @@ export default function SetupCoursesStep({
           defaults={defaults}
           summarize={summarizeDefaults}
           customizedCount={customizedCourseIds.length}
+          laboratoryEnabled={laboratoryEnabled}
           onResetCustomized={resetCustomized}
           disabled={actionsDisabled}
           onClose={() => onDefaultsClose?.()}

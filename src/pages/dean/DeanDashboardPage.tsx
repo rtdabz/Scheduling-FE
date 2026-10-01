@@ -55,9 +55,13 @@ interface Schedule {
   meeting_type?:string|null; course_id?:number|null; subject_id?:number|null;
 }
 interface Semester { id:number; academic_year?:string; semester?:string; is_active?:boolean }
-interface DeptUser { id:number; name?:string; role?:string; department_id?:number|null }
-interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; users:DeptUser[]; activeSemester:Semester|null; standardHours?:StandardHours; schedulesTruncated?:boolean }
-interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; users?:DeptUser[]; active_semester?:Semester; time_grid?:TimeGridConfigInput; schedules_truncated?:boolean }
+interface Submission {
+  id:number; semester_id:number|string; submitted_at?:string|null;
+  sections?:Array<{ id:number; pivot?:{ state?:'included'|'withdrawn' }|null }>|null;
+  submitter?:{ name?:string }|null;
+}
+interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; submissions?:Submission[]; activeSemester:Semester|null; standardHours?:StandardHours; schedulesTruncated?:boolean }
+interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; schedule_submissions?:Submission[]; active_semester?:Semester; time_grid?:TimeGridConfigInput; schedules_truncated?:boolean }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
@@ -116,6 +120,7 @@ interface Package {
   awaitingReview:number;
   returned:number;
   submittedOn:string|null;
+  submittedBy:string;
 }
 
 const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'users'] as const;
@@ -138,7 +143,7 @@ export default function DeanDashboardPage() {
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
-  const [users, setUsers] = useState<DeptUser[]>(cached?.users ?? []);
+  const [submissions, setSubmissions] = useState<Submission[]>(cached?.submissions ?? []);
   const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
@@ -174,7 +179,7 @@ export default function DeanDashboardPage() {
             sections: Array.isArray(data.sections) ? data.sections : [],
             subjects: Array.isArray(data.subjects) ? data.subjects : (Array.isArray(data.courses) ? data.courses : []),
             schedules: Array.isArray(data.schedules) ? data.schedules : [],
-            users: Array.isArray(data.users) ? data.users : [],
+            submissions: Array.isArray(data.schedule_submissions) ? data.schedule_submissions : [],
             activeSemester: data.active_semester || null,
             standardHours: buildStandardHours(data.time_grid?.opening_time, data.time_grid?.closing_time, data.time_grid?.slot_minutes),
             schedulesTruncated: data.schedules_truncated === true,
@@ -187,7 +192,7 @@ export default function DeanDashboardPage() {
         setSections(overview.sections);
         setSubjects(overview.subjects);
         setSchedules(overview.schedules);
-        setUsers(overview.users);
+        setSubmissions(overview.submissions ?? []);
         setSemester(overview.activeSemester);
         setStandardHours(overview.standardHours ?? DEFAULT_STANDARD_HOURS);
         setSchedulesTruncated(overview.schedulesTruncated === true);
@@ -283,20 +288,25 @@ export default function DeanDashboardPage() {
   ];
 
   // ── Schedule packages, one per program in the department ──
+  /**
+   * Newest submission holding any of a program's sections. It records who
+   * actually submitted (Program Head or Secretary) and when.
+   */
   const latestSubmissionByProgram = useMemo(() => {
     const programBySection = new Map<number, string>();
     statusSections.forEach(section => programBySection.set(Number(section.id), programOf(section.code)));
 
-    const latest = new Map<string, string>();
-    visibleSchedules.forEach(schedule => {
-      const program = programBySection.get(Number(schedule.section_id));
-      const stamp = schedule.updated_at;
-      if (!program || !stamp) return;
-      // ISO-8601 stamps sort chronologically as text, so no Date churn per row.
-      if (!latest.has(program) || stamp > latest.get(program)!) latest.set(program, stamp);
-    });
+    const latest = new Map<string, Submission>();
+    submissions
+      .filter(submission => !semesterId || Number(submission.semester_id) === Number(semesterId))
+      .forEach(submission => (submission.sections ?? []).forEach(section => {
+        if (section.pivot?.state === 'withdrawn') return;
+        const program = programBySection.get(Number(section.id));
+        if (!program) return;
+        if (!latest.has(program) || submission.id > latest.get(program)!.id) latest.set(program, submission);
+      }));
     return latest;
-  }, [statusSections, visibleSchedules]);
+  }, [statusSections, submissions, semesterId]);
 
   const packages = useMemo<Package[]>(() => {
     const groups = new Map<string, SectionStatusItem[]>();
@@ -309,13 +319,15 @@ export default function DeanDashboardPage() {
       .map(([code, group]) => {
         const drafted = group.filter(s => s.status !== 'draft' && s.status !== 'revision').length;
         const awaitingReview = group.filter(s => s.status === 'submitted').length;
+        const submission = latestSubmissionByProgram.get(code);
         return {
           code,
           total: group.length,
           completion: percent(drafted, group.length),
           awaitingReview,
           returned: group.filter(s => s.status === 'revision').length,
-          submittedOn: awaitingReview > 0 ? latestSubmissionByProgram.get(code) ?? null : null,
+          submittedOn: submission?.submitted_at ?? null,
+          submittedBy: submission?.submitter?.name?.trim() || '—',
         };
       })
       // Packages waiting on the Dean first; a settled package can wait at the bottom.
@@ -328,18 +340,6 @@ export default function DeanDashboardPage() {
     returned: totals.returned + item.returned,
     total: totals.total + item.total,
   }), { submitted: 0, awaitingReview: 0, returned: 0, total: 0 }), [packages]);
-
-  /**
-   * Who prepares this department's schedules. Submission is a department-wide
-   * action with no per-package author column, so the queue names the department's
-   * schedule coordinator rather than inventing a per-row submitter.
-   */
-  const coordinator = useMemo(() => {
-    const deptUsers = users.filter(u => !departmentId || Number(u.department_id) === Number(departmentId));
-    const match = deptUsers.find(u => (u.role ?? '').toLowerCase() === 'secretary')
-      ?? deptUsers.find(u => (u.role ?? '').toLowerCase() === 'program_head');
-    return match?.name?.trim() || 'Schedule Coordinator';
-  }, [users, departmentId]);
 
   // ── Faculty workload ──
   const loads = useMemo(() => deptFaculties.map(f => {
@@ -695,7 +695,7 @@ export default function DeanDashboardPage() {
                   <FileText className="h-3.5 w-3.5 shrink-0 text-primary/70" />
                   <b className="truncate text-[11px] text-slate-700" title={`${item.code} Schedule`}>{item.code} Schedule</b>
                 </span>
-                <span className="truncate text-[10px] font-semibold text-slate-500" title={coordinator}>{coordinator}</span>
+                <span className="truncate text-[10px] font-semibold text-slate-500" title={item.submittedBy}>{item.submittedBy}</span>
                 <span className="truncate text-[10px] font-semibold text-slate-500" title={formatSubmittedOn(item.submittedOn)}>{formatSubmittedOn(item.submittedOn)}</span>
                 <span className="h-6 min-w-0">
                   <ResponsiveContainer width="100%" height="100%">

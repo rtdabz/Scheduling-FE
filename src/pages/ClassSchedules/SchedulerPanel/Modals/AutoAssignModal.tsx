@@ -654,6 +654,7 @@ export default function AutoAssignModal({
 function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect, allowExternalInstructors = true }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void; allowExternalInstructors?: boolean }) {
   const [tab, setTab] = useState<"department" | "external">("department");
   const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   // Department ids arrive from the API as numbers in the type contract, but
   // database-backed JSON responses may contain numeric strings. Normalize both
   // sides so department instructors are not hidden by a strict type mismatch.
@@ -668,15 +669,30 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
     }),
     [faculties, normalizedDepartmentId, tab],
   );
-  // Narrows the current tab by name, department or program, so a long roster
-  // does not have to be scrolled to find one instructor.
+  // Departments present in the "Other departments" tab, for the filter dropdown.
+  const externalDepartments = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    if (tab !== "external") return [];
+    visibleFaculties.forEach((faculty) => {
+      const key = String(faculty.departmentId ?? "none");
+      const label = faculty.departmentCode ?? faculty.departmentName ?? "No department";
+      counts.set(key, { label, count: (counts.get(key)?.count ?? 0) + 1 });
+    });
+    return [...counts.entries()]
+      .map(([value, { label, count }]) => ({ value, label, count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tab, visibleFaculties]);
+  const activeDepartment = tab === "external" && externalDepartments.some((d) => d.value === departmentFilter) ? departmentFilter : "";
+  // Narrows the current tab by department, then by name, department or program,
+  // so a long roster does not have to be scrolled to find one instructor.
   const query = search.trim().toLowerCase();
   const matchingFaculties = useMemo(
-    () => (query === ""
-      ? visibleFaculties
-      : visibleFaculties.filter((faculty) => [faculty.name, faculty.departmentCode, faculty.departmentName, faculty.programCode]
-        .some((value) => (value ?? "").toLowerCase().includes(query)))),
-    [query, visibleFaculties],
+    () => visibleFaculties.filter((faculty) => {
+      if (activeDepartment !== "" && String(faculty.departmentId ?? "none") !== activeDepartment) return false;
+      return query === "" || [faculty.name, faculty.departmentCode, faculty.departmentName, faculty.programCode]
+        .some((value) => (value ?? "").toLowerCase().includes(query));
+    }),
+    [activeDepartment, query, visibleFaculties],
   );
   const columns = useMemo<ColumnDef<Faculty>[]>(() => [
     {
@@ -733,7 +749,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 text-sm font-black text-slate-900">
         <Users className="h-4 w-4 text-[#4e0a10]" /> Instructor
         <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
-          {query ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
+          {query || activeDepartment ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
         </span>
       </div>
       {allowExternalInstructors && <div className="flex shrink-0 border-b border-slate-200 px-3">
@@ -760,6 +776,22 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
           </button>
         ))}
       </div>}
+      {tab === "external" && externalDepartments.length > 0 && (
+        <div className="relative shrink-0 px-3 pt-2.5">
+          <select
+            value={activeDepartment}
+            onChange={(event) => setDepartmentFilter(event.target.value)}
+            aria-label="Filter instructors by department"
+            className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-xs font-semibold text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"
+          >
+            <option value="">All departments ({visibleFaculties.length})</option>
+            {externalDepartments.map((department) => (
+              <option key={department.value} value={department.value}>{department.label} ({department.count})</option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-5 top-[18px] h-4 w-4 text-slate-400" />
+        </div>
+      )}
       <div className="relative shrink-0 px-3 pt-2.5">
         <Search className="pointer-events-none absolute left-[22px] top-5 h-4 w-4 text-slate-400" />
         <input
