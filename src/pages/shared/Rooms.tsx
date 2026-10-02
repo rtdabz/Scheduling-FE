@@ -252,12 +252,17 @@ export default function Rooms() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // A second click while the first save is in flight would add it twice.
+    if (isSubmitting) return;
 
     let hasError = false;
     const trimmedBuilding = building.trim();
-    
-    let trimmedCode = roomCode.trim();
-    if (!selectedBuilding && !isEditMode) {
+    const addingBuilding = !selectedBuilding && !isEditMode;
+    const sameText = (a: string, b: string) =>
+      a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
+
+    let trimmedCode = roomCode.trim().replace(/\s+/g, ' ');
+    if (addingBuilding) {
       trimmedCode = trimmedBuilding ? `${trimmedBuilding.toUpperCase()}-101` : '';
     }
 
@@ -274,8 +279,22 @@ export default function Rooms() {
     if (!trimmedBuilding) {
       setBuildingError('Building is required');
       hasError = true;
+    } else if (addingBuilding && rooms.some((r) => r.building && sameText(r.building, trimmedBuilding))) {
+      // A building is the rooms that name it, so adding it again would only
+      // add another first room to the same building.
+      setBuildingError('This building already exists. Open it to add rooms.');
+      hasError = true;
     } else {
       setBuildingError('');
+    }
+
+    if (
+      !hasError &&
+      !addingBuilding &&
+      rooms.some((r) => r.id !== editingId && sameText(r.room_code, trimmedCode))
+    ) {
+      setCodeError('This room code is already used by another room.');
+      hasError = true;
     }
 
     if (hasError) return;

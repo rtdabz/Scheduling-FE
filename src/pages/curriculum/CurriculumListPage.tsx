@@ -66,14 +66,11 @@ function CurriculumManagePage() {
   const {
     curriculumList,
     rawCurriculumList,
-    departments,
     isLoading,
     userRole,
     canManageCurriculum,
     statusFilter,
     setStatusFilter,
-    departmentFilter,
-    setDepartmentFilter,
     searchQuery,
     setSearchQuery,
     handleCreateOrUpdate,
@@ -369,23 +366,6 @@ function CurriculumManagePage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search curriculum name or code..."
           />
-
-          {/* Department Filter */}
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="all">All Depts</option>
-              {departments.map((dept) => (
-                <option key={dept.id} value={dept.id}>
-                  {dept.department_code}
-                </option>
-              ))}
-            </select>
-          </div>
 
           {/* Status Filter */}
           <div className="flex items-center gap-1.5">

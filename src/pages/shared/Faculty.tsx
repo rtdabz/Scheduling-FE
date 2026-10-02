@@ -461,6 +461,9 @@ export default function Faculty() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // A second click while the first save is in flight would add the
+    // instructor twice.
+    if (isSubmitting) return;
 
     let hasError = false;
     const trimmedFirst = firstName.trim();

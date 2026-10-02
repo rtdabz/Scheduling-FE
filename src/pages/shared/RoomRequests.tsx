@@ -29,7 +29,6 @@ import { apiErrorMessage } from '../../lib/apiError';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import {
   getStoredUserDepartmentId,
-  getStoredUserRole,
   hasStoredCapability,
 } from '../../lib/storedUser';
 import {
@@ -198,7 +197,6 @@ const makeTimeOptions = (day: string, blocks: RoomOccupancyBlock[]) => {
 export default function RoomRequests() {
   const { toast } = useToast();
   const canRequest = hasStoredCapability('room.request');
-  const isVpaa = getStoredUserRole() === 'vpaa' || hasStoredCapability('room.view_all_requests');
   const departmentId = getStoredUserDepartmentId();
   const mountedRef = useRef(true);
 
@@ -236,9 +234,8 @@ export default function RoomRequests() {
         setSchedules(initialData.schedules ?? []);
       }
 
-      // The VPAA gets every department's requests; a department gets the ones
-      // it sent and the ones for its rooms (the server scopes it either way).
-      const requestData = await fetchRoomRequests({ scope: 'all' });
+      // The department's own requests and the ones for its rooms.
+      const requestData = await fetchRoomRequests();
       if (mountedRef.current) setRequests(requestData);
     } catch (error) {
       toast.error('Room Requests Unavailable', apiErrorMessage(error, 'The department and room workspace could not be loaded.'));

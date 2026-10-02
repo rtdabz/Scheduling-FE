@@ -301,6 +301,7 @@ export interface ConflictInfo {
   startSlot: number;
   durationSlots: number;
   message: string;
+  title?: string;
 }
 
 export interface ApiDepartmentRecord {

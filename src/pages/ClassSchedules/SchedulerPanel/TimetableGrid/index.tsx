@@ -368,11 +368,16 @@ export default function TimetableGrid({
         )}
       </div>
 
+      {/* Fixed to the top of the viewport: below the grid it was off-screen
+          whenever the user had scrolled to the slot they dropped on. */}
       {conflictInfo && (
-        <div className="mx-3 my-3 flex shrink-0 animate-in items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3 slide-in-from-bottom-2 duration-150 sm:mx-6">
+        <div
+          role="alert"
+          className="fixed left-1/2 top-4 z-50 flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 animate-in items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3 shadow-lg slide-in-from-top-2 duration-150"
+        >
           <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
           <div>
-            <h4 className="text-xs font-bold text-rose-900">Schedule Conflict Detected</h4>
+            <h4 className="text-xs font-bold text-rose-900">{conflictInfo.title ?? "Schedule Conflict Detected"}</h4>
             <p className="text-[11px] text-rose-700 mt-0.5 font-medium">{conflictInfo.message}</p>
           </div>
           <button onClick={() => setConflictInfo(null)} className="ml-auto text-rose-400 hover:text-rose-600">

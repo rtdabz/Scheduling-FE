@@ -3,11 +3,11 @@ import { AlertTriangle, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, MapP
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
 import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
-import { FIXED_SPLIT_PATTERNS, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h, timeToSlot } from "../../../../lib/timeGrid";
+import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h } from "../../../../lib/timeGrid";
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, Semester } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { getCourseSlotPlan, laboratoryComponentSlots, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { evaluatePlacementQuality, type PlannedMeeting } from "../placementQuality";
 import {
   isFieldSchedulingEligible,
@@ -16,7 +16,6 @@ import {
   isOnlineSplitEligible,
   balancedSplitSettingsOf,
   isBalancedSplitSchedulingEligible,
-  savedMeetingPairShape,
 } from "../schedulingConfigurationEligibility";
 import { runLabel, runStartingOn, tickedRun, type ConsecutivePlacement } from "../GenerateSchedule/courseClassConfig";
 import PlacementAlternatives from "./PlacementAlternatives";
@@ -25,19 +24,11 @@ import {
   ALL_ROOMS,
   ROOM_TBA,
   type ClassMode,
+  rankBestMatches,
   slotRoomKey,
   type AvailableSlot,
   type AvailableSlotRoom,
-  type ConfigurationConfirmation,
-  type ConfigurationConfirmationError,
-  type ConfigurationConfirmationPrompt,
-  type DropRecommendation,
-  type DropRecommendationRow,
 } from "./placementAlternativesModel";
-
-interface DropRecommendationResponse {
-  recommendations: DropRecommendation[];
-}
 
 interface AvailableSlotsResponse {
   slots: AvailableSlot[];
@@ -45,29 +36,6 @@ interface AvailableSlotsResponse {
   total: number;
   truncated: boolean;
 }
-
-interface SelectedRecommendationResponse {
-  recommendation: {
-    id: number;
-    recommended_schedules: DropRecommendationRow[];
-  };
-}
-
-const recommendationRoomId = (row: DropRecommendationRow): string => {
-  if (row.mode === "online") return "online";
-  if (row.mode === "field") return "field";
-  return row.room_id == null ? "tba" : String(row.room_id);
-};
-
-const stableRecommendationSeed = (value: unknown): number => {
-  const serialized = JSON.stringify(value);
-  let hash = 2166136261;
-  for (let index = 0; index < serialized.length; index += 1) {
-    hash ^= serialized.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (Math.abs(hash) % 1_000_000) + 1;
-};
 
 interface DropModalProps {
   rooms: Room[];
@@ -127,8 +95,6 @@ interface DropModalProps {
   /** This open dialog showed a conflict at some point. */
   modalWasConflicted?: boolean;
   isModalLoading: boolean;
-  selectedRecommendationId: number | null;
-  setSelectedRecommendationId: (value: number | null) => void;
   setDropContext: (value: DropContext | null) => void;
   handleModalConfirm: (e: React.FormEvent) => void;
   /**
@@ -205,8 +171,6 @@ export default function DropModal({
   modalConflict,
   modalWasConflicted = false,
   isModalLoading,
-  selectedRecommendationId,
-  setSelectedRecommendationId,
   setDropContext,
   handleModalConfirm,
   modalRun = null,
@@ -215,20 +179,6 @@ export default function DropModal({
   const availableDays = isSummerSemester ? DAYS.slice(0, 5) : DAYS;
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const hasLaboratoryUnits = Number(dropSubject?.labHours ?? 0) > 0;
-  const [recommendations, setRecommendations] = useState<DropRecommendation[]>([]);
-  const [isRecommendationLoading, setIsRecommendationLoading] = useState(false);
-  // Seed of the payload the panel last finished loading. While it differs from
-  // the current payload the shown results are stale (or debouncing), so the
-  // panel shows the loading state without setting state inside the effect.
-  const [loadedRecommendationSeed, setLoadedRecommendationSeed] = useState<number | null>(null);
-  const [recommendationError, setRecommendationError] = useState<string | null>(null);
-  const [confirmationPrompt, setConfirmationPrompt] = useState<ConfigurationConfirmationPrompt | null>(null);
-  const [confirmedConfiguration, setConfirmedConfiguration] = useState<ConfigurationConfirmation | null>(null);
-  const [appliedRecommendationRank, setAppliedRecommendationRank] = useState<number | null>(null);
-  const [isApplyingRecommendation, setIsApplyingRecommendation] = useState(false);
-
-
-
   // Alternatives open automatically on a conflict, or on request for a placement
   // that is valid but not what the generator would choose.
   const [areRecommendationsRequested, setAreRecommendationsRequested] = useState(false);
@@ -236,6 +186,7 @@ export default function DropModal({
   const [availableSlotRooms, setAvailableSlotRooms] = useState<AvailableSlotRoom[]>([]);
   const [areSlotsTruncated, setAreSlotsTruncated] = useState(false);
   const [isSlotsLoading, setIsSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
   const [roomFilter, setRoomFilter] = useState<string>(ALL_ROOMS);
   /** Which half of a two-meeting pattern the slot list is answering for. */
   const [slotMeeting, setSlotMeeting] = useState<"first" | "second">("first");
@@ -331,11 +282,10 @@ export default function DropModal({
   ]);
 
   /**
-   * The day the placement was dropped on -- where it collided. Both the ranked
-   * options and the full list look on that day first and then move day by day
-   * through the rest of the week. Read from dropContext, which holds still
-   * while the dialog is open, so applying an option on another day does not
-   * re-solve and reshuffle the list under the user.
+   * The day the placement was dropped on -- where it collided. The server
+   * lists that day first and then moves day by day through the rest of the
+   * week. Read from dropContext, which holds still while the dialog is open,
+   * so applying an option on another day does not re-ask the server.
    */
   const searchFromDay = dropContext ? FULL_DAY_NAMES[dropContext.dayIndex] : undefined;
 
@@ -376,6 +326,7 @@ export default function DropModal({
       setAvailableSlots([]);
       setAvailableSlotRooms([]);
       setAreSlotsTruncated(false);
+      setSlotsError(null);
 
       return;
     }
@@ -383,9 +334,10 @@ export default function DropModal({
     let active = true;
     const controller = new AbortController();
     setIsSlotsLoading(true);
+    setSlotsError(null);
 
-    // Debounced on the same rhythm as the preview: dragging a start time
-    // through a select fires this on every keystroke otherwise.
+    // Debounced: dragging a start time through a select fires this on every
+    // keystroke otherwise.
     const timerId = window.setTimeout(() => {
       void api.post<AvailableSlotsResponse>(
         "/schedule-recommendations/available-slots",
@@ -398,11 +350,10 @@ export default function DropModal({
         setAreSlotsTruncated(Boolean(response.data.truncated));
       }).catch(() => {
         if (!active) return;
-        // The ranked options above still stand on their own, so a failure here
-        // narrows the panel rather than breaking it.
         setAvailableSlots([]);
         setAvailableSlotRooms([]);
         setAreSlotsTruncated(false);
+        setSlotsError("Suggestions are unavailable right now. You can still adjust the placement by hand.");
       }).finally(() => {
         if (active) setIsSlotsLoading(false);
       });
@@ -468,12 +419,14 @@ export default function DropModal({
       }
     });
 
+    // Best first: the start nearest the one asked for, the earlier on a tie.
+    const distance = (startSlot: number) => Math.abs(startSlot - modalDay1StartSlot);
     return [...firstStarts.entries()]
       .filter(([startSlot]) => secondStarts.has(startSlot))
       .map(([startSlot, slot]) => ({ startSlot, endSlot: slot.end_slot }))
-      .sort((left, right) => left.startSlot - right.startSlot);
+      .sort((left, right) => distance(left.startSlot) - distance(right.startSlot) || left.startSlot - right.startSlot);
   }, [
-    isSameTimePair, modalDay2Duration, availableSlots,
+    isSameTimePair, modalDay2Duration, availableSlots, modalDay1StartSlot,
     modalDay1Index, modalDay2Index, modalClassMode, modalRoomId, modalDay2ClassMode, modalDay2RoomId,
   ]);
 
@@ -485,20 +438,7 @@ export default function DropModal({
     setModalDay1StartSlot(startSlot);
     setModalDay2StartSlot(startSlot);
     setModalValidationError("");
-    discardSelectedRecommendation();
   };
-
-  /** Day -> its slots, in the order the server already sorted them. */
-  const slotsByDay = useMemo(() => {
-    const grouped = new Map<string, AvailableSlot[]>();
-    visibleSlots.forEach((slot) => {
-      const existing = grouped.get(slot.day);
-      if (existing) existing.push(slot);
-      else grouped.set(slot.day, [slot]);
-    });
-
-    return [...grouped.entries()];
-  }, [visibleSlots]);
 
   /**
    * Split Session's delivery, read from its two meetings: both online is an
@@ -510,103 +450,11 @@ export default function DropModal({
       ? "hybrid"
       : "onsite";
 
-  /**
-   * The delivery the ranked alternatives are solved for.
-   *
-   * Online on one meeting is deliberately excluded: it is not a course-wide
-   * rule, and feeding it here turned every alternative online. An Online
-   * Split is: both meetings are online, so the alternatives must be too.
-   * Field is not the same kind of choice -- a field class cannot be in a room
-   * at all, so leaving it out recommended lecture rooms for a meeting the user
-   * had already set to Field. Deriving the flag rather than reading
-   * modalClassMode in the deps keeps the Online switch from re-solving.
-   */
-  const previewMode = modalFieldEnabled || modalClassMode === "field"
-    ? "field"
-    : modalSplitEnabled && splitDelivery === "online"
-      ? "online"
-      : "on-site";
-
-  /**
-   * A Split Session with exactly one online meeting is a Hybrid Split: two
-   * equal meetings, one face-to-face and one online. Telling the solver so
-   * keeps the alternatives in that shape — without it the split came back as
-   * two face-to-face meetings and the online half the user had set by hand was
-   * silently dropped.
-   */
-  const isManualHybridSplit = modalSplitEnabled
-    && splitDelivery === "hybrid"
-    && isHybridSplitEligible(dropSubject);
-
-  const recommendationPayload = useMemo(() => {
-    if (!dropSubject || !selectedSectionId) return null;
-
-    const payload = {
-      section_id: Number(selectedSectionId),
-      course_ids: [Number(dropSubject.id)],
-      // The course's delivery, not the mode a meeting currently shows. The
-      // solver treats an explicit "online" as online-only for every meeting of
-      // the course, so switching the first meeting's room to Online used to
-      // turn every alternative -- both meetings of a split included -- online.
-      // "on-site" is the Generator's default: on-site first, online only as a
-      // fallback. Hybrid is carried by the flags below.
-      mode: previewMode,
-      // Integrated On-site is the same two-session split with the lecture kept
-      // face-to-face, so it is the split flags without the hybrid one.
-      is_hybrid: modalIsHybrid && !isIntegratedOnSite,
-      split_session_enabled: modalIsHybrid,
-      selected_split_session_course_ids: modalIsHybrid ? [Number(dropSubject.id)] : [],
-      split_gec_enabled: modalSplitEnabled,
-      selected_gec_course_ids: modalSplitEnabled ? [Number(dropSubject.id)] : [],
-      hybrid_split_course_ids: isManualHybridSplit ? [Number(dropSubject.id)] : [],
-      // Integrated's lecture and laboratory lengths, as Setup Courses sends
-      // them. Without these the solver answers for the course's own lengths
-      // and every alternative comes back the shape the user just changed.
-      component_minutes_by_course_id: modalIsHybrid && hasBoth
-        ? {
-            [Number(dropSubject.id)]: {
-              lecture: modalDay2Duration * SLOT_MINUTES,
-              laboratory: modalDay1Duration * SLOT_MINUTES,
-            },
-          }
-        : {},
-      preferred_patterns: modalPreferredPattern
-        ? { [dropSubject.id]: modalPreferredPattern }
-        : {},
-      tentative_schedules: tentativeSchedules,
-      ...(searchFromDay ? { search_from_day: searchFromDay } : {}),
-      max_solutions: 3,
-      timeout_seconds: 5,
-    };
-
-    return { ...payload, seed: stableRecommendationSeed(payload) };
-  }, [
-    dropSubject,
-    dropSubjectIsField,
-    previewMode,
-    modalIsHybrid,
-    isIntegratedOnSite,
-    isManualHybridSplit,
-    modalPreferredPattern,
-    modalSplitEnabled,
-    modalDay1Duration,
-    modalDay2Duration,
-    hasBoth,
-    selectedSectionId,
-    tentativeSchedules,
-    searchFromDay,
-  ]);
-
   useEffect(() => {
     if (!dropContext || !dropSubject) return;
 
     const frameId = window.requestAnimationFrame(() => {
-      setRecommendations([]);
-      setRecommendationError(null);
-      setAppliedRecommendationRank(null);
-      setSelectedRecommendationId(null);
       setAreRecommendationsRequested(false);
-      setLoadedRecommendationSeed(null);
       closeButtonRef.current?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -620,7 +468,7 @@ export default function DropModal({
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [dropContext, dropSubject, setDropContext, setSelectedRecommendationId]);
+  }, [dropContext, dropSubject, setDropContext]);
 
   useEffect(() => {
     if (!dropSubject || modalIsHybrid || !hasLaboratoryUnits || modalClassMode !== "online") return;
@@ -640,72 +488,53 @@ export default function DropModal({
     setModalRoomId,
   ]);
 
-  useEffect(() => {
-    if (!dropContext || !dropSubject || !selectedSectionId || !shouldShowRecommendations || !recommendationPayload) return;
+  /**
+   * The meeting the suggestions answer for, as the form holds it: its day,
+   * start and room. Best Match looks for alternatives on that day.
+   */
+  const isSecondSlotMeeting = slotMeeting === "second" && isTwoMeetingPattern && modalDay2Duration > 0;
+  const requestedDay = FULL_DAY_NAMES[isSecondSlotMeeting ? modalDay2Index : modalDay1Index];
+  const requestedStartSlot = isSecondSlotMeeting ? modalDay2StartSlot : modalDay1StartSlot;
+  const requestedRoomKey = isSecondSlotMeeting ? modalDay2RoomId : modalRoomId;
 
-    const controller = new AbortController();
+  /**
+   * Best Match: the requested day's valid slots, ranked first by the soft
+   * preferences the Placement review notes -- what the Schedule Generator
+   * would prefer, a warning weighing more than an informational note.
+   */
+  const bestMatches = useMemo(() => {
+    if (!dropSubject || availableSlots.length === 0) return [];
+    const isPlaced = (schedule: ScheduleItem) =>
+      String(schedule.sectionId) === String(selectedSectionId)
+      && String(schedule.courseId ?? schedule.subjectId) === String(dropSubject.id);
+    const otherSchedules = schedules.filter((schedule) => !isPlaced(schedule));
+    const sectionSchedules = otherSchedules.filter((schedule) => String(schedule.sectionId) === String(selectedSectionId));
+    const sectionName = sections.find((section) => String(section.id) === String(selectedSectionId))?.name ?? "this section";
 
-    const loadRecommendations = async () => {
-      setIsRecommendationLoading(true);
-      setRecommendationError(null);
-
-      try {
-        const response = await api.post<DropRecommendationResponse>(
-          "/schedule-recommendations/preview",
-          {
-            ...recommendationPayload,
-            ...(confirmedConfiguration ? { configuration_confirmation: confirmedConfiguration } : {}),
-          },
-          { signal: controller.signal }
-        );
-        setRecommendations(response.data.recommendations);
-        setConfirmationPrompt(null);
-        setLoadedRecommendationSeed(recommendationPayload.seed);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          const payload = (error as { response?: { data?: ConfigurationConfirmationError } }).response?.data;
-          const prompt = payload?.configuration_confirmation;
-          if (
-            payload?.error_code?.startsWith("configuration_confirmation_")
-            && prompt?.configuration_fingerprint
-            && Array.isArray(prompt.required_warning_rule_ids)
-          ) {
-            setConfirmationPrompt(prompt);
-            setConfirmedConfiguration(null);
-            setRecommendationError(payload.message ?? "Review the configuration warning before continuing.");
-          } else {
-            setConfirmationPrompt(null);
-            // The preflight explains why nothing can be generated (no room of
-            // the required type, an invalid setting); a generic line hid that.
-            setRecommendationError(payload?.message ?? "Recommendations are unavailable right now.");
-          }
-          setRecommendations([]);
-          setLoadedRecommendationSeed(recommendationPayload.seed);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsRecommendationLoading(false);
-        }
-      }
-    };
-
-    // Each preview runs the solver for up to five seconds, so wait for the
-    // user to stop changing options instead of solving every keystroke.
-    const timerId = window.setTimeout(() => { void loadRecommendations(); }, 350);
-
-    return () => {
-      window.clearTimeout(timerId);
-      controller.abort();
-    };
-  // The conflict message itself is not an input: the alternatives depend only
-  // on the payload, so a reworded conflict must not solve again.
+    return rankBestMatches(availableSlots, {
+      day: requestedDay,
+      startSlot: requestedStartSlot,
+      roomKey: requestedRoomKey,
+      penaltyOf: (slot) => evaluatePlacementQuality({
+        meetings: [{
+          dayIndex: getDayIndex(slot.day),
+          startSlot: slot.start_slot,
+          durationSlots: slot.end_slot - slot.start_slot,
+          mode: slot.mode,
+          roomId: slotRoomKey(slot),
+          meetingType: slotMeetingPlan.meetingType,
+        }],
+        sectionSchedules,
+        allSchedules: otherSchedules,
+        rooms,
+        sectionName,
+        isHybrid: modalIsHybrid,
+        isForcedDay: modalForceDayEnabled,
+      }).reduce((sum, note) => sum + (note.tone === "warning" ? 3 : 1), 0),
+    });
   }, [
-    dropContext,
-    dropSubject,
-    selectedSectionId,
-    shouldShowRecommendations,
-    recommendationPayload,
-    confirmedConfiguration,
+    availableSlots, dropSubject, modalForceDayEnabled, modalIsHybrid, requestedDay, requestedRoomKey,
+    requestedStartSlot, rooms, schedules, sections, selectedSectionId, slotMeetingPlan.meetingType,
   ]);
 
   if (!dropContext || !dropSubject) return null;
@@ -736,18 +565,7 @@ export default function DropModal({
       ? runLabel(currentRun)
       : "Single meeting";
 
-  const discardSelectedRecommendation = () => {
-    if (selectedRecommendationId !== null) {
-      void api.post(`/schedule-recommendations/${selectedRecommendationId}/reject`, {
-        reason: "Recommendation was modified manually before acceptance."
-      }).catch(() => undefined);
-    }
-    setSelectedRecommendationId(null);
-    setAppliedRecommendationRank(null);
-  };
-
   const updateTwoMeetingPattern = (day1Index: number, day2Index: number) => {
-    discardSelectedRecommendation();
     if (modalIsHybrid) setModalPreferredPattern(`days:${day1Index}-${day2Index}`);
   };
 
@@ -823,27 +641,11 @@ export default function DropModal({
         : modalClassMode.replace("-", " ");
 
   /**
-   * A slot is a one-meeting recommendation, so it reuses the same apply path
-   * rather than a second copy of the meeting-state writes. Rank -1 marks it as
-   * "not one of the ranked options", which keeps the Applied tick off them.
+   * Moves the meeting the suggestions answer for into the chosen slot. Only
+   * its day, start, room and delivery change; its length and pattern stay.
    */
   const applyAvailableSlot = (slot: AvailableSlot): void => {
-    if (!dropSubject || !selectedSectionId) return;
-
-    // A run's slot is listed on its first day: the run starts there.
-    if (modalRun) {
-      setModalDay1Index(getDayIndex(slot.day));
-      setModalClassMode(slot.mode);
-      setModalRoomId(slot.room_id == null ? slot.mode : String(slot.room_id));
-      setModalDay1StartSlot(slot.start_slot);
-      setModalValidationError("");
-
-      return;
-    }
-
-    // A two-meeting pattern is not a single meeting: handing one slot to
-    // applyRecommendationRows would clear the pattern and zero the second
-    // meeting, quietly turning a split into one class. Only the meeting whose
+    // A two-meeting pattern is not a single meeting: only the meeting whose
     // day this slot belongs to moves; the other is left exactly as it is.
     if (isTwoMeetingPattern) {
       const slotDayIndex = getDayIndex(slot.day);
@@ -876,173 +678,17 @@ export default function DropModal({
       return;
     }
 
-    applyRecommendationRows([{
-      semester_id: Number(activeSemester?.id ?? 0),
-      section_id: Number(selectedSectionId),
-      course_id: Number(dropSubject.id),
-      faculty_id: null,
-      room_id: slot.room_id,
-      department_id: Number(dropSubject.departmentId ?? 0),
-      day: slot.day,
-      start_time: slot.start_time,
-      end_time: slot.end_time,
-      mode: slot.mode,
-      is_hybrid: false,
-      preferred_pattern: null,
-      status: "draft",
-    }], -1, null);
-  };
-
-  /**
-   * Push one recommendation's rows into the modal's meeting state.
-   *
-   * Both branches of applyRecommendation used to carry this body verbatim —
-   * ~55 identical lines differing only in where the rows came from (audit
-   * finding #17). Only the row source and the recommendation id differ, so both
-   * are parameters.
-   */
-  const applyRecommendationRows = (
-    rows: DropRecommendationRow[],
-    rank: number,
-    recommendationId: number | null,
-  ): void => {
-    // A run comes back as one row per day at one time: its first day, time,
-    // room and length describe it.
-    if (modalRun) {
-      const [firstRunRow] = [...rows].sort((left, right) => getDayIndex(left.day) - getDayIndex(right.day));
-      if (!firstRunRow || !dropContext) return;
-      const startSlot = timeToSlot(firstRunRow.start_time);
-      setModalRoomId(recommendationRoomId(firstRunRow));
-      setModalClassMode(firstRunRow.mode);
-      setModalIsHybrid(false);
-      setModalSplitEnabled(false);
-      setModalPreferredPattern(null);
-      setModalDay1Index(getDayIndex(firstRunRow.day));
-      setModalDay1StartSlot(startSlot);
-      setModalDay1Duration(Math.max(1, timeToSlot(firstRunRow.end_time) - startSlot));
-      setModalDay2Duration(0);
-      setModalValidationError("");
-      setAppliedRecommendationRank(rank);
-      setSelectedRecommendationId(recommendationId);
-
-      return;
-    }
-
-    // The shape decides the option, as when a saved course is reopened: a
-    // generated split comes back as `days:x-y` (a Hybrid Split also hybrid),
-    // and Integrated On-site without the hybrid flag.
-    const { isIntegrated: isIntegratedRows, isSplit: isSplitRows } = savedMeetingPairShape(
-      dropSubject,
-      rows.length,
-      rows.some((row) => row.is_hybrid),
-      rows[0]?.preferred_pattern,
-      // Only rows that report their meeting types can tell a Split from Integrated.
-      rows.every((row) => row.meeting_type !== undefined) ? rows.map((row) => row.meeting_type) : undefined,
-    );
-    const laboratorySlots = laboratoryComponentSlots(dropSubject, manualSchedulingSettings);
-    // The first card is the laboratory, which is the meeting of that length.
-    const integratedRank = (row: DropRecommendationRow): number =>
-      timeToSlot(row.end_time) - timeToSlot(row.start_time) === laboratorySlots ? 0 : 1;
-    const sortedRows = [...rows].sort((left, right) => (
-      (isIntegratedRows
-        ? (left.is_hybrid || right.is_hybrid
-          ? Number(left.mode === "online") - Number(right.mode === "online")
-          : integratedRank(left) - integratedRank(right))
-        : 0)
-      || getDayIndex(left.day) - getDayIndex(right.day)
-      || timeToSlot(left.start_time) - timeToSlot(right.start_time)
-    ));
-    const firstRow = sortedRows[0];
-    if (!firstRow || !dropContext) return;
-
-    const firstDayIndex = getDayIndex(firstRow.day);
-    const firstStartSlot = timeToSlot(firstRow.start_time);
-    const firstEndSlot = timeToSlot(firstRow.end_time);
-
-    setModalRoomId(recommendationRoomId(firstRow));
-    setModalClassMode(firstRow.mode);
-    setModalIsHybrid(isIntegratedRows);
-    setModalSplitEnabled(isSplitRows);
-
-    if (sortedRows.length > 1) {
-      const secondRow = sortedRows[1];
-      const secondDayIndex = getDayIndex(secondRow.day);
-      setModalPreferredPattern(
-        (isSplitRows ? fixedSplitPatternForDays(firstDayIndex, secondDayIndex) : null)
-          ?? firstRow.preferred_pattern
-          ?? `days:${firstDayIndex}-${secondDayIndex}`
-      );
-      setModalDay1Index(firstDayIndex);
-      setModalDay2Index(secondDayIndex);
-      setModalDay1StartSlot(firstStartSlot);
-      setModalDay1Duration(Math.max(1, firstEndSlot - firstStartSlot));
-      setModalDay2StartSlot(timeToSlot(secondRow.start_time));
-      setModalDay2Duration(Math.max(1, timeToSlot(secondRow.end_time) - timeToSlot(secondRow.start_time)));
-      setModalDay2RoomId(recommendationRoomId(secondRow));
-      setModalDay2ClassMode(secondRow.mode);
-      setIsDay2ModifiedByUser(true);
-    } else {
-      setModalPreferredPattern(null);
-      setModalDay1Index(firstDayIndex);
-      setModalDay2Index(getDayIndex(FULL_DAY_NAMES[Math.min(firstDayIndex + 1, FULL_DAY_NAMES.length - 1)]));
-      setModalDay1StartSlot(firstStartSlot);
-      setModalDay1Duration(getSubjectTotalSlots(dropSubject));
-      setModalDay2StartSlot(firstStartSlot);
-      setModalDay2Duration(0);
-      setModalDay2RoomId("");
-      setModalDay2ClassMode("on-site");
-      setIsDay2ModifiedByUser(false);
-      // dropContext is deliberately left alone. Its cell is part of the
-      // placement-session key, so moving it here re-initialised the dialog for
-      // "a new cell": the recommended room was replaced by the dialog's own
-      // pick, an online option became on-site again, and the selection was
-      // cleared. The day and time fields set above are what the save uses.
-    }
-
-    // Force Day is the user's own constraint and is never rewritten by an
-    // alternative; one that misses the forced day cannot be applied at all
-    // (see missesForcedDay).
+    // A single meeting, or a run listed on its first day: it starts there.
+    setModalDay1Index(getDayIndex(slot.day));
+    setModalClassMode(slot.mode);
+    setModalRoomId(slot.room_id == null ? slot.mode : String(slot.room_id));
+    setModalDay1StartSlot(slot.start_slot);
     setModalValidationError("");
-    setAppliedRecommendationRank(rank);
-    setSelectedRecommendationId(recommendationId);
   };
 
-  // The solver reads the department's saved Force Day, not an unsaved choice
-  // in this dialog, so an alternative can land on another day. Applying it used
-  // to overwrite the Force Day with that day; now it is shown but not offered.
+  // Force Day is the user's own constraint and is never rewritten by a
+  // suggestion: one on another day is shown but cannot be applied.
   const forcedDayName = modalForceDayEnabled ? FULL_DAY_NAMES[modalForcedDayIndex] : null;
-  const missesForcedDay = (recommendation: DropRecommendation): boolean =>
-    forcedDayName !== null && recommendation.schedules.some((row) => row.day !== forcedDayName);
-
-  const applyRecommendation = async (recommendation: DropRecommendation) => {
-    if (isApplyingRecommendation || missesForcedDay(recommendation)) return;
-    discardSelectedRecommendation();
-    setIsApplyingRecommendation(true);
-
-    try {
-      if (!recommendationPayload) return;
-
-      const response = await api.post<SelectedRecommendationResponse>(
-        "/schedule-recommendations/select",
-        {
-          ...recommendationPayload,
-          ...(confirmedConfiguration ? { configuration_confirmation: confirmedConfiguration } : {}),
-          selected_rank: recommendation.rank,
-          ...(recommendation.plan_id ? { plan_id: recommendation.plan_id } : {}),
-        }
-      );
-
-      applyRecommendationRows(
-        response.data.recommendation.recommended_schedules,
-        recommendation.rank,
-        response.data.recommendation.id,
-      );
-    } catch {
-      setRecommendationError("This recommendation is no longer available. Please try again.");
-    } finally {
-      setIsApplyingRecommendation(false);
-    }
-  };
 
   const handleIntegratedToggle = (enabled: boolean) => {
     setModalSplitEnabled(false);
@@ -1084,7 +730,6 @@ export default function DropModal({
    * laboratory is always on site, so only the lecture meeting moves.
    */
   const handleIntegratedDeliveryChange = (delivery: "onsite" | "hybrid") => {
-    discardSelectedRecommendation();
     if (delivery === "hybrid") {
       setModalDay2ClassMode("online");
       setModalDay2RoomId("online");
@@ -1124,7 +769,6 @@ export default function DropModal({
    * and Online moves both. A meeting already on site keeps its room.
    */
   const handleSplitDeliveryChange = (delivery: SplitDelivery) => {
-    discardSelectedRecommendation();
     const lectureRoomId = rooms.find((room) => room.roomType === "lecture" && room.status === "available")?.id ?? "";
     const onSite = (mode: ClassMode, roomId: string): [ClassMode, string] =>
       mode === "on-site" ? [mode, roomId] : ["on-site", lectureRoomId];
@@ -1148,7 +792,6 @@ export default function DropModal({
    * department's field list. Only the Field Course checkbox does that.
    */
   const handleModeSelect = (mode: ClassMode, isSecondMeeting: boolean) => {
-    discardSelectedRecommendation();
     const currentRoomId = isSecondMeeting ? modalDay2RoomId : modalRoomId;
     const setMode = isSecondMeeting ? setModalDay2ClassMode : setModalClassMode;
     const setRoom = isSecondMeeting ? setModalDay2RoomId : setModalRoomId;
@@ -1181,12 +824,8 @@ export default function DropModal({
    */
   const integratedMaxSlots = (startSlot: number): number => Math.max(1, gridSlotCount - startSlot);
 
-  /**
-   * One session's length. It changes what the alternatives are being asked
-   * for, so a recommendation picked before it is discarded like any other edit.
-   */
+  /** One session's length. It changes what the suggestions are asked for. */
   const handleIntegratedDurationChange = (isSecondMeeting: boolean, slots: number): void => {
-    discardSelectedRecommendation();
     (isSecondMeeting ? setModalDay2Duration : setModalDay1Duration)(slots);
     setModalValidationError("");
   };
@@ -1312,7 +951,6 @@ export default function DropModal({
 
         <form
           onSubmit={handleModalConfirm}
-          onChangeCapture={discardSelectedRecommendation}
           className="flex-1 space-y-4 overflow-y-auto bg-slate-50/60 px-5 py-4"
         >
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -1636,32 +1274,28 @@ export default function DropModal({
 
       {shouldShowRecommendations && (
         <PlacementAlternatives
-          rooms={rooms}
-          recommendations={recommendations}
-          arePicksLoading={isRecommendationLoading || loadedRecommendationSeed !== recommendationPayload?.seed}
-          recommendationError={recommendationError}
-          confirmationPrompt={confirmationPrompt}
-          onConfirmConfiguration={setConfirmedConfiguration}
-          appliedRecommendationRank={appliedRecommendationRank}
-          isApplyingRecommendation={isApplyingRecommendation}
-          missesForcedDay={missesForcedDay}
-          forcedDayName={forcedDayName}
-          onApplyRecommendation={(recommendation) => void applyRecommendation(recommendation)}
           availableSlots={availableSlots}
           availableSlotRooms={availableSlotRooms}
           visibleSlots={visibleSlots}
-          slotsByDay={slotsByDay}
           isSlotsLoading={isSlotsLoading}
+          slotsError={slotsError}
           areSlotsTruncated={areSlotsTruncated}
           roomFilter={roomFilter}
           onRoomFilterChange={setRoomFilter}
           onApplySlot={applyAvailableSlot}
+          requestedDay={requestedDay}
+          bestMatches={bestMatches}
+          isSlotApplied={(slot) => slot.day === requestedDay
+            && slot.start_slot === requestedStartSlot
+            && slotRoomKey(slot) === requestedRoomKey}
+          forcedDayName={forcedDayName}
           splitPairStarts={splitPairStarts}
           onApplySplitPairStart={applySplitPairStart}
           firstDayIndex={modalDay1Index}
           secondDayIndex={modalDay2Index}
           firstMode={modalClassMode}
           secondMode={modalDay2ClassMode}
+          splitStartSlot={modalDay1StartSlot}
           showsMeetingSwitch={isTwoMeetingPattern && modalDay2Duration > 0}
           slotMeeting={slotMeeting}
           onSlotMeetingChange={(meeting) => { setSlotMeeting(meeting); setRoomFilter(ALL_ROOMS); }}

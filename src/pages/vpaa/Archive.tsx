@@ -29,7 +29,6 @@ const typeLabels: Record<string, string> = {
   semesters: 'Semesters',
   schedules: 'Schedules',
   'schedule-splits': 'Schedule splits',
-  'timeslot-overrides': 'Timeslot overrides',
 };
 
 const restoreNotes: Record<string, string> = {

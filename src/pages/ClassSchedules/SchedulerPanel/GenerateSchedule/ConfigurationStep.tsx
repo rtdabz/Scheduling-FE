@@ -14,6 +14,7 @@ import { orderDays } from "./generationTypes";
 import { YearLevelStateBadge } from "./YearLevelStateNotice";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 import type { CourseDefaults } from "./courseClassConfig";
+import { yearLabel } from "./yearLabel";
 
 export type SetupDraft = {
   completed: boolean;
@@ -30,19 +31,6 @@ export type SetupDraft = {
   excludedCourseIds: string[];
   /** Step 2: courses saved from their own Configure panel, which the defaults skip. */
   customizedCourseIds: string[];
-};
-
-const yearLabel = (yearLevel: number) => {
-  const ordinal =
-    yearLevel === 1
-      ? "1st"
-      : yearLevel === 2
-        ? "2nd"
-        : yearLevel === 3
-          ? "3rd"
-          : "4th";
-
-  return `BSIT ${ordinal} year`;
 };
 
 const FIELD_LABEL =
@@ -63,6 +51,7 @@ export default function ConfigurationStep({
   onYearChange,
   departmentId,
   sections,
+  allSections = sections,
   courses,
   onCurriculumApplied,
   yearStates,
@@ -86,6 +75,8 @@ export default function ConfigurationStep({
   onYearChange: (value: number) => void;
   departmentId: number | null;
   sections: Section[];
+  /** Every year level's sections, so each picker option names its programs. */
+  allSections?: Section[];
   courses: Course[];
   onCurriculumApplied: (curriculumId: number) => void | Promise<void>;
   yearStates: Record<number, YearLevelScheduleState>;
@@ -181,7 +172,12 @@ export default function ConfigurationStep({
                 >
                   {years.map((value) => (
                     <option key={value} value={value}>
-                      {yearLabel(value)}
+                      {yearLabel(
+                        value,
+                        allSections.filter(
+                          (section) => Number(section.yearLevel) === value,
+                        ),
+                      )}
                     </option>
                   ))}
                 </select>

@@ -632,6 +632,35 @@ describe("SetupCoursesStep", () => {
       expect(screen.getByText("2 days × 8h")).toBeDefined();
     });
 
+    it("offers only the Preferred Days as meeting days and Required Days", () => {
+      render(
+        <SetupCoursesStep
+          courses={[clinical]}
+          sections={sections}
+          configs={configs}
+          onConfigChange={vi.fn()}
+          settings={{ sunday_classes_enabled: false }}
+          preferredDays={["Monday", "Tuesday"]}
+          actionsDisabled={false}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /configure/i }));
+      const requiredDay = screen.getByLabelText(/Required Day/i) as HTMLSelectElement;
+      const option = (day: string) =>
+        Array.from(requiredDay.options).find((item) => item.value === day) as HTMLOptionElement;
+      expect(option("Monday").disabled).toBe(false);
+      expect(option("Wednesday").disabled).toBe(true);
+
+      fireEvent.click(screen.getByLabelText("Meet on several days a week"));
+      const day = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
+      expect(day("Monday").disabled).toBe(false);
+      expect(day("Tuesday").disabled).toBe(false);
+      for (const skipped of ["Wednesday", "Thursday", "Friday", "Saturday"]) {
+        expect(day(skipped).disabled).toBe(true);
+      }
+    });
+
     it("keeps the full class length on every day and takes the ticked meeting days", () => {
       const onConsecutiveDaysChange = vi.fn();
       const onConfigChange = vi.fn();

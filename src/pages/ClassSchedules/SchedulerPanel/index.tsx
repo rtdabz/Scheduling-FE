@@ -32,7 +32,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     { element: "#schedule-builder-course-bank-toggle", action: "click" as const, taskHint: "Click the toggle to continue.", title: "Show the Course Bank", description: "Show or hide the Course Bank.", side: "bottom" as const, align: "start" as const },
     { element: "#schedule-builder-course-bank", title: "Place each course", description: "Select a course and click an empty time, or drag it onto the timetable.", side: "right" as const, align: "start" as const },
     { element: "#schedule-builder-timetable", title: "Check the timetable", description: "Review times, rooms, and conflicts. Move or edit classes if needed.", side: "top" as const },
-    { element: "#schedule-builder-next-step", title: "Finish plotting", description: "When all courses are placed and checked, mark the section Done.", side: "bottom" as const },
+    { element: "#schedule-builder-next-step", title: "Finish plotting", description: "When every section is fully plotted and checked, submit the department schedule to the Dean.", side: "bottom" as const },
   ], []);
   const facultyAssignmentGuideSteps = useMemo(() => [
     { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose an approved section", description: "Select a section with classes that need instructors.", side: "bottom" as const, align: "start" as const },
@@ -46,7 +46,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     { element: "#schedule-builder-timetable", title: "Review the timetable", description: "Check classes, times, rooms, instructors, and conflicts.", side: "top" as const },
     { element: "#schedule-builder-next-step", title: "Check the next action", description: "See the section status and what you can do next.", side: "bottom" as const },
   ], []);
-  const plottingActive = ["draft", "revision"].includes(scheduler.currentStatus);
+  const plottingActive = ["draft", "revision", "completed"].includes(scheduler.currentStatus);
   const facultyAssignmentActive = ["approved", "faculty_assignment", "reassignment"].includes(scheduler.currentStatus);
   const reviewActive = !plottingActive && !facultyAssignmentActive;
   useWorkflowGuide({ id: "schedule-builder-plotting", isReady: !scheduler.isLoading && plottingActive, steps: plottingGuideSteps, mission: "Plot the Timetable" });
@@ -86,6 +86,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     (department) => Number(department.id) === Number(generatorDepartmentId),
   );
   const generatorDepartmentLogoUrl = generatorDepartment?.logo ?? null;
+  const { reloadSchedulingSettings } = scheduler;
   // Unknown profile (department not loaded) keeps the laboratory options shown.
   const generatorLaboratoryEnabled = generatorDepartment?.scheduling_profile !== 'standard';
 
@@ -102,8 +103,11 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
+      // Generate Step 2 saves department rules (Required Day, Field, LAB room);
+      // the timetable underneath re-reads them before its next save.
+      reloadSchedulingSettings();
     };
-  }, [isGeneratorOpen]);
+  }, [isGeneratorOpen, reloadSchedulingSettings]);
 
   if (!scheduler.isLoading && !scheduler.schedulingReady) {
     return (
@@ -231,15 +235,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onRemoveAssignment={scheduler.handleRemoveFacultyFromClass}
       />
       <SubmitApprovalModal {...scheduler} />
-      {scheduler.isMarkSectionsDoneModalOpen && (
-      <MarkSectionsDoneModal
-        candidates={scheduler.sectionDoneCandidates}
-        selectedSectionId={scheduler.selectedSectionId}
-        isMarking={scheduler.isMarkingSectionsDone}
-        onConfirm={scheduler.confirmMarkSectionsDone}
-        onCancel={scheduler.cancelMarkSectionsDone}
-      />
-      )}
       {scheduler.isFinalizeSectionsModalOpen && (
       <MarkSectionsDoneModal
         variant="finalize"

@@ -109,7 +109,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
   const [pendingRoomCount, setPendingRoomCount] = useState(0);
 
   useEffect(() => {
-    if (role !== 'vpaa' && role !== 'secretary' && role !== 'program_head') {
+    if (role !== 'secretary' && role !== 'program_head') {
       return;
     }
 
@@ -127,9 +127,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
           signal: controller.signal,
         });
         const reqs = Array.isArray(response.data) ? response.data : [];
-        if (role === 'vpaa') {
-          setPendingRoomCount(reqs.length);
-        } else if (user?.department_id) {
+        if (user?.department_id) {
           const deptId = user.department_id;
           const incoming = reqs.filter(
             (r) => (r.owner_department?.id ?? r.room?.department_id) === deptId,

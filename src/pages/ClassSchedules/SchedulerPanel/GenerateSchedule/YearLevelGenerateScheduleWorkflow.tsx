@@ -39,6 +39,7 @@ import {
   type DraftOption,
 } from "./draftReview";
 import GenerationGuide from "./GenerationGuide";
+import { yearLabel } from "./yearLabel";
 import { GUIDE_CHAPTER_FOR_STEP } from "./generationGuideContent";
 import { APPLY_ALL_RECOMMENDATION_ID } from "./recommendationGroups";
 import { resolveGenerationChanges } from "./generationChanges";
@@ -90,6 +91,7 @@ import { orderDays } from "./generationTypes";
 import SetupCoursesStep from "./SetupCoursesStep";
 import ReviewGenerateStep from "./ReviewGenerateStep";
 import ScheduleSummaryStep from "./ScheduleSummaryStep";
+import { configureLabRoomType, normalizeLabRoomType, type LabRoomType } from "../../../../lib/labRoomPolicy";
 
 type Step = 1 | 2 | 3 | 4;
 type CourseMode = DeliveryModeOption | "automatic";
@@ -212,27 +214,33 @@ const readSavedCourseDefaults = (key: string): CourseDefaults => {
     return EMPTY_COURSE_DEFAULTS;
   }
 };
+/**
+ * Required Day, Consecutive Days and Field Course are chosen per run in Setup
+ * Courses and sent with the run; they are never saved. The wizard therefore
+ * starts every run without the department's saved ones.
+ */
+const withoutCourseRules = (settings: SettingsResponse): SettingsResponse => ({
+  ...settings,
+  forced_day_rules: [],
+  consecutive_day_rules: [],
+  field_course_codes: [],
+});
+/** A settings update from the server, keeping this run's own course rules. */
+const keepRunRules = (
+  current: SettingsResponse,
+  next: SettingsResponse,
+): SettingsResponse => ({
+  ...next,
+  forced_day_rules: current.forced_day_rules ?? [],
+  consecutive_day_rules: current.consecutive_day_rules ?? [],
+  field_course_codes: current.field_course_codes ?? [],
+});
 const stringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String) : [];
 const formatSemester = (semester: Semester | null) =>
   semester
     ? `${semester.academic_year} - ${semester.semester.toUpperCase()} Semester`
     : "No active semester selected";
-/** "BAS 2nd year": prefixed with the programs of the sections in the run. */
-const yearLabel = (yearLevel: number, sections: Section[]) => {
-  const ordinal =
-    yearLevel === 1
-      ? "1st"
-      : yearLevel === 2
-        ? "2nd"
-        : yearLevel === 3
-          ? "3rd"
-          : "4th";
-  const programs = [
-    ...new Set(sections.map((section) => section.programCode).filter(Boolean)),
-  ].join(" / ");
-  return programs ? `${programs} ${ordinal} year` : `${ordinal[0].toUpperCase()}${ordinal.slice(1)} year`;
-};
 const normalizeGecPattern = (value: string | undefined): GecSplitPattern =>
   value === "MW" || value === "TTh" ? value : "auto";
 
@@ -612,6 +620,9 @@ export default function YearLevelGenerateScheduleWorkflow({
         : (pendingYear ?? years[0]);
     // The saved Default Settings win over whatever copy an older draft carries.
     const savedDefaults = readSavedCourseDefaults(defaultsStorageKey);
+    // A run in flight or awaiting review is read against the choices it was
+    // generated from, so those stay.
+    const keepCourseChoices = runYearLevelRef.current !== null;
     let restored = false;
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -641,7 +652,10 @@ export default function YearLevelGenerateScheduleWorkflow({
               ? stringList(parsed.targetSectionIds)
               : null,
           );
-          setConfigs(parsed.configs ?? {});
+          // Per-course choices belong to the run they were made for. Only the
+          // Default Settings carry over, so a wizard reopened with no run
+          // pending starts every course from them again.
+          setConfigs(keepCourseChoices ? (parsed.configs ?? {}) : {});
           setSetupDraft({
             ...defaultSetupDraft,
             ...parsed.setupDraft,
@@ -653,8 +667,12 @@ export default function YearLevelGenerateScheduleWorkflow({
             ),
             // Drafts saved before the course checkboxes existed have none.
             courseDefaults: savedDefaults,
-            excludedCourseIds: stringList(parsed.setupDraft?.excludedCourseIds),
-            customizedCourseIds: stringList(parsed.setupDraft?.customizedCourseIds),
+            excludedCourseIds: keepCourseChoices
+              ? stringList(parsed.setupDraft?.excludedCourseIds)
+              : [],
+            customizedCourseIds: keepCourseChoices
+              ? stringList(parsed.setupDraft?.customizedCourseIds)
+              : [],
           });
           restored = true;
         }
@@ -798,12 +816,18 @@ export default function YearLevelGenerateScheduleWorkflow({
     ? schedulingSettingsCacheKey(settingsSectionId)
     : null;
 
+  // Read through a ref: the settings load must run only when the section
+  // changes. Re-running it would replace this run's own course rules with
+  // the empty set it starts from.
+  const settingsToastRef = useRef(toast);
+  settingsToastRef.current = toast;
+
   useEffect(() => {
     if (settingsCacheKey === null || !settingsSectionId) return;
 
     let cancelled = false;
     const cached = getCachedData<SettingsResponse>(settingsCacheKey);
-    if (cached) setSettings(cached);
+    if (cached) setSettings(withoutCourseRules(cached));
     setLoadingSettings(!hasCachedData(settingsCacheKey));
 
     loadCachedData<SettingsResponse>(settingsCacheKey, async () => {
@@ -814,11 +838,11 @@ export default function YearLevelGenerateScheduleWorkflow({
       return response.data;
     })
       .then((data) => {
-        if (!cancelled) setSettings(data);
+        if (!cancelled) setSettings(withoutCourseRules(data));
       })
       .catch(() => {
         if (!cancelled && !cached) {
-          toast.error("Error", "Failed to load scheduling rules.");
+          settingsToastRef.current.error("Error", "Failed to load scheduling rules.");
         }
       })
       .finally(() => {
@@ -828,7 +852,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     return () => {
       cancelled = true;
     };
-  }, [settingsCacheKey, settingsSectionId, toast]);
+  }, [settingsCacheKey, settingsSectionId]);
 
   const roomsCacheKey = generatorRoomsCacheKey(departmentId ?? null);
 
@@ -895,105 +919,101 @@ export default function YearLevelGenerateScheduleWorkflow({
     }));
 
   /**
-   * Required Day is the department's forced-day rule for the course, not a
-   * section setting: it is saved to the scheduling settings straight away,
-   * because the Rule Engine enforces it on manual edits as well.
+   * Required Day is chosen for this run only: it is sent with the generate
+   * request and never saved, so the next run starts without it.
    */
-  const saveRequiredDay = async (courseId: string, day: string | null) => {
-    if (!settingsSectionId || !settings) return;
-    const rules = [
-      ...(settings.forced_day_rules ?? []).filter(
-        (rule) => String(rule.course_id) !== courseId,
-      ),
-      ...(day ? [{ course_id: Number(courseId), day }] : []),
-    ];
-    try {
-      const response = await api.patch<SettingsResponse>(
-        "/scheduling-settings",
-        { forced_day_rules: rules },
-        { params: { section_id: settingsSectionId } },
-      );
-      // Keep the submitted rules when an API response is partial or stale.
-      const next = { ...settings, ...response.data, forced_day_rules: rules };
-      setSettings(next);
-      // Written through rather than evicted, so reopening the generator shows
-      // what was just saved without a refetch.
-      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
-    } catch {
-      toast.error("Save failed", "Unable to update the Required Day.");
-    }
+  const saveRequiredDay = (courseId: string, day: string | null) => {
+    setSettings((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        forced_day_rules: [
+          ...(current.forced_day_rules ?? []).filter(
+            (rule) => String(rule.course_id) !== courseId,
+          ),
+          ...(day ? [{ course_id: Number(courseId), day }] : []),
+        ],
+      };
+    });
   };
 
   /**
-   * Consecutive Days is the department's rule for the course, saved straight
-   * away like Required Day: Manual Scheduling places the run from it too.
-   * The course's Required Day travels in the same request, because the
-   * server refuses a course that has both.
+   * Consecutive Days is chosen for this run only, like Required Day. The
+   * course's Required Day travels with it, because a course cannot have both.
    */
-  const saveConsecutiveDays = async (
+  const saveConsecutiveDays = (
     courseId: string,
     courseRules: ConsecutiveDayRule[],
     requiredDay: string | null,
   ) => {
-    if (!settingsSectionId || !settings) return;
-    const consecutiveRules = [
-      ...(settings.consecutive_day_rules ?? []).filter(
-        (rule) => String(rule.course_id) !== courseId,
-      ),
-      ...courseRules,
-    ];
-    const forcedRules = [
-      ...(settings.forced_day_rules ?? []).filter(
-        (rule) => String(rule.course_id) !== courseId,
-      ),
-      ...(requiredDay ? [{ course_id: Number(courseId), day: requiredDay }] : []),
-    ];
+    setSettings((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        consecutive_day_rules: [
+          ...(current.consecutive_day_rules ?? []).filter(
+            (rule) => String(rule.course_id) !== courseId,
+          ),
+          ...courseRules,
+        ],
+        forced_day_rules: [
+          ...(current.forced_day_rules ?? []).filter(
+            (rule) => String(rule.course_id) !== courseId,
+          ),
+          ...(requiredDay ? [{ course_id: Number(courseId), day: requiredDay }] : []),
+        ],
+      };
+    });
+  };
+
+  /**
+   * A course is a field course only while a field room is its Preferred Room.
+   * Like Required Day, it applies to this run only.
+   */
+  const saveFieldCourse = (courseCode: string, isField: boolean) => {
+    const normalize = (code: string) => code.trim().replace(/\s+/g, " ").toUpperCase();
+    setSettings((current) => {
+      if (!current) return current;
+      const codes = current.field_course_codes ?? [];
+      return {
+        ...current,
+        field_course_codes: isField
+          ? Array.from(new Set([...codes, courseCode]))
+          : codes.filter((code) => normalize(code) !== normalize(courseCode)),
+      };
+    });
+  };
+
+  // Every room choice in Step 2 reads the department's LAB room rule.
+  useEffect(() => {
+    configureLabRoomType(settings?.lab_room_type);
+  }, [settings]);
+
+  /**
+   * Default LAB Room Requirement is the department's rule, saved straight
+   * away like Required Day: Manual Scheduling, Edit and conflict checks
+   * read it too, not only this run.
+   */
+  const saveLabRoomType = async (labRoomType: LabRoomType) => {
+    if (!settingsSectionId || !settings || (settings.lab_room_type ?? "laboratory") === labRoomType) return;
     try {
       const response = await api.patch<SettingsResponse>(
         "/scheduling-settings",
-        { consecutive_day_rules: consecutiveRules, forced_day_rules: forcedRules },
+        { lab_room_type: labRoomType },
         { params: { section_id: settingsSectionId } },
       );
-      const next = {
-        ...settings,
+      setSettings(keepRunRules(settings, { ...settings, ...response.data, lab_room_type: labRoomType }));
+      setCachedData(schedulingSettingsCacheKey(settingsSectionId), {
         ...response.data,
-        consecutive_day_rules: response.data?.consecutive_day_rules ?? consecutiveRules,
-        forced_day_rules: forcedRules,
-      };
-      setSettings(next);
-      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
+        lab_room_type: labRoomType,
+      });
+      run.clear();
     } catch (error) {
       toast.error(
         "Save failed",
         (error as { response?: { data?: { message?: string } } })?.response?.data?.message
-          ?? "Unable to update Consecutive Days.",
+          ?? "Unable to update the LAB room requirement.",
       );
-    }
-  };
-
-  /**
-   * A course is a field course only while a field room is its Preferred
-   * Room. The department's field list is what the Generator and the Rule
-   * Engine read, so the choice is saved straight away, like Required Day.
-   */
-  const saveFieldCourse = async (courseCode: string, isField: boolean) => {
-    if (!settingsSectionId || !settings) return;
-    const normalize = (code: string) => code.trim().replace(/\s+/g, " ").toUpperCase();
-    const current = settings.field_course_codes ?? [];
-    const codes = isField
-      ? Array.from(new Set([...current, courseCode]))
-      : current.filter((code) => normalize(code) !== normalize(courseCode));
-    try {
-      const response = await api.patch<SettingsResponse>(
-        "/scheduling-settings",
-        { field_course_codes: codes },
-        { params: { section_id: settingsSectionId } },
-      );
-      const next = { ...settings, ...response.data };
-      setSettings(next);
-      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
-    } catch {
-      toast.error("Save failed", `Unable to update whether ${courseCode} is a field course.`);
     }
   };
 
@@ -1010,9 +1030,13 @@ export default function YearLevelGenerateScheduleWorkflow({
         { sunday_classes_enabled: enabled },
         { params: { section_id: settingsSectionId } },
       );
-      const next = { ...settings, ...response.data, sunday_classes_enabled: enabled };
-      setSettings(next);
-      setCachedData(schedulingSettingsCacheKey(settingsSectionId), next);
+      setSettings(
+        keepRunRules(settings, { ...settings, ...response.data, sunday_classes_enabled: enabled }),
+      );
+      setCachedData(schedulingSettingsCacheKey(settingsSectionId), {
+        ...response.data,
+        sunday_classes_enabled: enabled,
+      });
       if (!enabled && setupDraft.preferredDays.includes("Sunday")) {
         setSetupDraft((draft) => ({
           ...draft,
@@ -1122,7 +1146,12 @@ export default function YearLevelGenerateScheduleWorkflow({
             ),
             delivery_modes_by_course_id: Object.fromEntries(
               Object.entries(config.modesByCourseId)
-                .filter(([, mode]) => mode !== "automatic")
+                // The solver rejects a mode for a course outside course_ids,
+                // so an excluded course's leftover mode must not be sent.
+                .filter(
+                  ([id, mode]) =>
+                    mode !== "automatic" && !excludedCourseIdSet.has(id),
+                )
                 .map(([id, mode]) => [Number(id), mode]),
             ),
             // Setup Courses "Configure" choices. The server fits each
@@ -1156,6 +1185,18 @@ export default function YearLevelGenerateScheduleWorkflow({
               activeDraft.courseDefaults.allowFridaySaturdaySplit,
           };
         }),
+        // This run's own Required Day, Consecutive Days and Field Course
+        // rules. They stand in for the department's saved ones and are not
+        // saved. Left out only when the rules never loaded.
+        ...(settings
+          ? {
+              rule_overrides: {
+                forced_day_rules: settings.forced_day_rules ?? [],
+                consecutive_day_rules: settings.consecutive_day_rules ?? [],
+                field_course_codes: settings.field_course_codes ?? [],
+              },
+            }
+          : {}),
       };
       await run.start(payload, {
         yearLevel,
@@ -1732,6 +1773,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   targetBlockedReason={targetBlockedReason}
                   departmentId={departmentId ?? null}
                   sections={scopedSections}
+                  allSections={availableSections}
                   courses={scopedCourses}
                   onCurriculumApplied={handleCurriculumApplied}
                   yearStates={yearStates}
@@ -1757,6 +1799,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                   configs={configs}
                   onConfigChange={updateConfig}
                   settings={settings}
+                  preferredDays={setupDraft.preferredDays}
                   onRequiredDayChange={saveRequiredDay}
                   onConsecutiveDaysChange={saveConsecutiveDays}
                   onFieldCourseChange={saveFieldCourse}
@@ -1765,6 +1808,8 @@ export default function YearLevelGenerateScheduleWorkflow({
                     setSetupDraft((current) => ({ ...current, courseDefaults }));
                     saveCourseDefaults(courseDefaults);
                   }}
+                  labRoomType={normalizeLabRoomType(settings?.lab_room_type)}
+                  onLabRoomTypeChange={saveLabRoomType}
                   excludedCourseIds={setupDraft.excludedCourseIds}
                   onExcludedChange={(excludedCourseIds) =>
                     setSetupDraft((current) => ({ ...current, excludedCourseIds }))

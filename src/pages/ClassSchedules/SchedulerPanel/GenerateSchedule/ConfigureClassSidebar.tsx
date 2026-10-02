@@ -43,6 +43,11 @@ interface ConfigureClassSidebarProps {
    * a Consecutive Days run cannot reach it.
    */
   sundayClassesEnabled?: boolean;
+  /**
+   * Step 1's Preferred Days. The run never places a class outside them, so
+   * no other day can be ticked or chosen here. Empty means any day.
+   */
+  preferredDays?: string[];
   disabled: boolean;
   onClose: () => void;
   onSave: (config: CourseClassConfig) => void;
@@ -230,6 +235,7 @@ export default function ConfigureClassSidebar({
   labSettings,
   roomOptions,
   sundayClassesEnabled = true,
+  preferredDays = [],
   disabled,
   onClose,
   onSave,
@@ -266,11 +272,21 @@ export default function ConfigureClassSidebar({
         : [],
   );
   const daysChosen = meetingDays.length >= MIN_CONSECUTIVE_DAYS;
-  const meetingDaysError = isConsecutive && meetingDays.length === 1
-    ? "Tick at least two days."
-    : null;
+  const daysOutsidePreferred = preferredDays.length > 0
+    ? meetingDays.filter((day) => !preferredDays.includes(day))
+    : [];
+  const meetingDaysError = !isConsecutive
+    ? null
+    : daysOutsidePreferred.length > 0
+      ? `Untick ${daysOutsidePreferred.join(", ")}: the Preferred Days are ${preferredDays.join(", ")}.`
+      : meetingDays.length === 1
+        ? "Tick at least two days."
+        : null;
   // No day ticked yet: not an error to show, but nothing to apply either.
   const meetingDaysMissing = isConsecutive && meetingDays.length === 0;
+
+  const dayOffered = (day: string) =>
+    preferredDays.length === 0 || preferredDays.includes(day);
 
   const toggleMeetingDay = (day: string) => {
     const ticked = meetingDays.includes(day)
@@ -608,20 +624,26 @@ export default function ConfigureClassSidebar({
               >
                 {week.map((day) => {
                   const checked = meetingDays.includes(day);
+                  // A day outside the Preferred Days that is already ticked
+                  // stays enabled, so it can be unticked.
+                  const offered = dayOffered(day) || checked;
                   return (
                     <label
                       key={day}
-                      className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${
-                        checked
-                          ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      title={offered ? undefined : `${day} is not one of the Preferred Days.`}
+                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${
+                        !offered
+                          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                          : checked
+                            ? "cursor-pointer border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
+                            : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       }`}
                     >
                       <input
                         type="checkbox"
                         aria-label={day}
                         checked={checked}
-                        disabled={disabled}
+                        disabled={disabled || !offered}
                         onChange={() => toggleMeetingDay(day)}
                         className="h-3.5 w-3.5 rounded border-slate-300 accent-[#4e0a10]"
                       />
@@ -633,7 +655,9 @@ export default function ConfigureClassSidebar({
               <Hint error={meetingDaysError}>
                 {daysChosen
                   ? `Every section meets ${runLabel(meetingDays)}; the Generator picks each section's time and room.`
-                  : "Tick the days the class meets, e.g. Monday, Wednesday and Friday."}
+                  : preferredDays.length > 0
+                    ? `Tick the days the class meets, from the Preferred Days (${preferredDays.join(", ")}).`
+                    : "Tick the days the class meets, e.g. Monday, Wednesday and Friday."}
               </Hint>
             </>
           )}
@@ -654,7 +678,9 @@ export default function ConfigureClassSidebar({
             // A Sunday already saved stays visible so it can be cleared.
             (day) => day !== "Sunday" || sundayClassesEnabled || requiredDay === "Sunday",
           ).map((day) => (
-            <option key={day} value={day}>
+            // A saved day outside the Preferred Days stays selectable so the
+            // current value still shows and can be cleared.
+            <option key={day} value={day} disabled={!dayOffered(day) && requiredDay !== day}>
               {day}
             </option>
           ))}

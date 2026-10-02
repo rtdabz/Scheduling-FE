@@ -61,6 +61,7 @@ const sections: Section[] = [
   {
     id: "10",
     name: "BSIT 1A",
+    programCode: "BSIT",
     yearLevel: 1,
     semester: "1st",
     departmentId: 2,
@@ -1400,7 +1401,9 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
   });
 
-  it("warns in Setup Courses when every Required Day falls on the same day", async () => {
+  // Required Day is chosen per run in Configure and never saved, so a run
+  // starts without the department's saved ones (here, two on Monday).
+  it("starts Setup Courses without the department's saved Required Days", async () => {
     const secondCourse: Course = {
       ...courses[0],
       id: "21",
@@ -1447,11 +1450,8 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
     fireEvent.click(continueButton);
 
-    // Wait for this warning by its text rather than for the first alert.
-    const warning = await screen.findByText(/Same-day concentration warning/);
-    expect(warning.closest('[role="alert"]')).toBeTruthy();
-    expect(warning.textContent).toContain("all 2 Required Day courses");
-    expect(warning.textContent).toContain("assigned to Monday");
-    expect(warning.textContent).toContain("should be reviewed");
+    expect(await screen.findByText("IT 101")).toBeTruthy();
+    expect(screen.queryByText(/Same-day concentration warning/)).toBeNull();
+    expect(screen.queryByText(/MONDAY/i)).toBeNull();
   });
 });

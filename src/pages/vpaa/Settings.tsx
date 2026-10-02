@@ -24,7 +24,6 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import TimeslotOverridesPanel, { type TimeslotOverride } from '../../components/vpaa/TimeslotOverridesPanel';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { operatingHoursError, timeInputMinutes, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
 import {
@@ -43,7 +42,6 @@ import {
   setCachedInstitutionSettings,
   type InstitutionSettings,
 } from '../../lib/institutionSettings';
-import { LAB_ROOM_TYPE_OPTIONS, type LabRoomType } from '../../lib/labRoomPolicy';
 
 interface Semester {
   id: number;
@@ -89,21 +87,17 @@ interface TimeslotSettings {
   closing_time: string;
   /** Latest end time for field classes (institution_settings.field_end_time). */
   field_end_time?: string;
-  /** Default LAB Room Requirement (institution_settings.lab_room_type). */
-  lab_room_type?: LabRoomType;
   slot_interval: number;
 }
 
 interface TimeslotResponse {
   settings: TimeslotSettings;
-  overrides?: TimeslotOverride[];
 }
 
 const operatingHoursDraftOf = (settings: TimeslotSettings) => ({
   opening_time: toTimeInputValue(settings.opening_time),
   closing_time: toTimeInputValue(settings.closing_time),
   field_end_time: settings.field_end_time ? toTimeInputValue(settings.field_end_time) : '',
-  lab_room_type: settings.lab_room_type ?? 'laboratory',
 });
 
 const SEMESTER_LABELS: Record<Semester['semester'], string> = {
@@ -178,9 +172,8 @@ export default function Settings() {
   const [signatoryDraft, setSignatoryDraft] = useState<InstitutionSettings>(DEFAULT_INSTITUTION_SETTINGS);
   const [isSavingSignatory, setIsSavingSignatory] = useState(false);
   const [operatingHours, setOperatingHours] = useState<TimeslotSettings | null>(null);
-  const [operatingHoursDraft, setOperatingHoursDraft] = useState<{ opening_time: string; closing_time: string; field_end_time: string; lab_room_type: LabRoomType }>({ opening_time: '', closing_time: '', field_end_time: '', lab_room_type: 'laboratory' });
+  const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '', field_end_time: '' });
   const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
-  const [timeslotOverrides, setTimeslotOverrides] = useState<TimeslotOverride[]>([]);
   const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
   // State-driven disabled props update after a render. These synchronous
   // guards also reject a second click that arrives in the same event loop.
@@ -260,7 +253,6 @@ export default function Settings() {
         if (!active) return;
         setOperatingHours(data.settings);
         setOperatingHoursDraft(operatingHoursDraftOf(data.settings));
-        setTimeslotOverrides(data.overrides ?? []);
       })
       .catch((error) => toast.error('Error', apiMessage(error, 'Failed to load operating hours.')))
       .finally(() => {
@@ -432,7 +424,6 @@ export default function Settings() {
         ...(operatingHoursDraft.field_end_time
           ? { field_end_time: toApiTime(operatingHoursDraft.field_end_time) }
           : {}),
-        lab_room_type: operatingHoursDraft.lab_room_type,
         slot_interval: operatingHours.slot_interval,
       });
       setOperatingHours(data.settings);
@@ -451,7 +442,6 @@ export default function Settings() {
     operatingHoursDraft.opening_time !== savedOperatingHoursDraft.opening_time
     || operatingHoursDraft.closing_time !== savedOperatingHoursDraft.closing_time
     || operatingHoursDraft.field_end_time !== savedOperatingHoursDraft.field_end_time
-    || operatingHoursDraft.lab_room_type !== savedOperatingHoursDraft.lab_room_type
   );
   const operatingHoursValidationError = operatingHoursError(
     operatingHoursDraft.opening_time,
@@ -792,22 +782,8 @@ export default function Settings() {
               Classes held on the field must finish by this time. Set it to the closing time to allow evening field classes.
             </span>
           </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Default LAB room requirement</span>
-            <select
-              value={operatingHoursDraft.lab_room_type}
-              onChange={event => setOperatingHoursDraft(current => ({ ...current, lab_room_type: event.target.value as LabRoomType }))}
-              disabled={isLoadingOperatingHours || isSavingOperatingHours}
-              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-1/2"
-            >
-              {LAB_ROOM_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <span className="mt-1 block text-xs text-gray-500">
-              Where laboratory meetings of every course may be held. Classroom lets a LAB course (e.g. 0 LEC + 3 LAB) use a regular classroom; Either allows both, preferring a laboratory.
-            </span>
-          </label>
           <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
-            Changes apply to schedule generation, conflict checks, and faculty availability. Course-specific start-time overrides still apply.
+            Changes apply to schedule generation, conflict checks, and faculty availability.
           </p>
           {operatingHoursValidationError && !isLoadingOperatingHours && (
             <p className="flex items-center gap-1 text-xs font-semibold text-red-600 sm:col-span-2">
@@ -825,20 +801,6 @@ export default function Settings() {
             {isSavingOperatingHours ? 'Saving' : 'Save operating hours'}
           </button>
         </div>
-      </SectionCard>
-
-      <SectionCard
-        id="timeslot-overrides"
-        icon={Clock3}
-        title="Custom Start Times"
-        description="Offer your own class start times instead of the generated ones."
-        aside={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{timeslotOverrides.filter(override => override.is_active).length} active</span>}
-      >
-        {isLoadingOperatingHours ? (
-          <div className="flex justify-center p-6"><LoadingSpinner className="h-5 w-5" /></div>
-        ) : (
-          <TimeslotOverridesPanel overrides={timeslotOverrides} onChange={setTimeslotOverrides} />
-        )}
       </SectionCard>
 
       <SectionCard

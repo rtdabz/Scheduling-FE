@@ -7,7 +7,7 @@ import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
 import { coveredContinuously } from "../../../../lib/availabilityWindows";
 
-export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string } | null;
+export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string; title?: string } | null;
 
 interface UseConflictParams {
   schedules: ScheduleItem[];
@@ -21,8 +21,6 @@ interface UseConflictParams {
   faculties: Faculty[];
   fieldCourseAssignmentEnabled?: boolean;
   fieldCourseCodes?: string[];
-  /** Saved Required Day per course id (0 = Monday), for moving a placed class. */
-  forcedDayByCourseId?: Record<string, number>;
   /** The department's Custom Lab Duration, which sets a laboratory meeting's length. */
   laboratoryDurationSettings?: LaboratoryDurationSettings | null;
   /** The department's Sunday Classes setting (sunday_classes); off, Sunday is closed. */
@@ -30,8 +28,6 @@ interface UseConflictParams {
 }
 
 const SUNDAY_INDEX = 6;
-
-const NO_FORCED_DAYS: Record<string, number> = {};
 
 /**
  * The other meeting of a two-meeting group that must keep one time, mirroring
@@ -216,7 +212,8 @@ export const checkFieldEveningWindow = (
   const fieldEndLabel = formatTime12h(`${Math.floor(fieldEnd / 60)}:${String(fieldEnd % 60).padStart(2, "0")}`);
   return {
     conflictType: "section",
-    message: `Field window: field courses must end by ${fieldEndLabel}.`
+    title: "Time Restriction",
+    message: `Field courses cannot be scheduled beyond ${fieldEndLabel}.`
   };
 };
 
@@ -414,7 +411,6 @@ export const useConflict = ({
   faculties,
   fieldCourseAssignmentEnabled = false,
   fieldCourseCodes = [],
-  forcedDayByCourseId = NO_FORCED_DAYS,
   laboratoryDurationSettings = null,
   sundayClassesEnabled = true,
 }: UseConflictParams) => {
@@ -458,7 +454,8 @@ export const useConflict = ({
     if (!sundayClassesEnabled && dayIndex === SUNDAY_INDEX) {
       return {
         conflictType: "section",
-        message: "Sunday classes are not enabled for this department. The department secretary can turn them on in Generate Schedule.",
+        title: "Day Restriction",
+        message: "Sunday classes are disabled for this department.",
       };
     }
 
@@ -658,7 +655,7 @@ export const useConflict = ({
       }
     }
     return null;
-  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, forcedDayByCourseId, laboratoryDurationSettings, sundayClassesEnabled]);
+  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, laboratoryDurationSettings, sundayClassesEnabled]);
 
   const checkFacultyConflict = useCallback((facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);
@@ -690,8 +687,6 @@ export const useConflict = ({
    *  - the assigned instructor's clashes and part-time availability, since the
    *    class keeps its instructor (faculty_conflict,
    *    part_time_faculty_availability);
-   *  - the course's saved Required Day (forced_course_day). This is not part of
-   *    checkConflict because the placement dialog may be setting a new one;
    *  - a Split Session / Hybrid Split partner, which moves to the same time on
    *    its own day and must be free there too (split_group_same_time,
    *    split_group_day_separation).
@@ -701,14 +696,6 @@ export const useConflict = ({
     if (!schedule) return null;
     const courseId = String(schedule.courseId ?? schedule.subjectId ?? "");
     const courseLabel = schedule.courseCode || schedule.subjectCode || "This course";
-
-    const forcedDay = forcedDayByCourseId[courseId];
-    if (forcedDay !== undefined && forcedDay !== dayIndex) {
-      return {
-        conflictType: "section",
-        message: `Required Day: ${courseLabel} is configured to meet on ${FULL_DAY_NAMES[forcedDay]}.`,
-      };
-    }
 
     // A Consecutive Days run moves as a whole (the server shifts every day by
     // the same number of days, to the new time), so the whole shifted run is
@@ -741,7 +728,8 @@ export const useConflict = ({
     if (groupPartner && groupPartner.dayIndex === dayIndex) {
       return {
         conflictType: "section",
-        message: `Split meetings: ${courseLabel} already meets on ${FULL_DAY_NAMES[dayIndex]}; its two meetings must be on different days.`,
+        title: "Split Schedule Restriction",
+        message: `${courseLabel} cannot have both split meetings on ${FULL_DAY_NAMES[dayIndex]}. They must be on different days.`,
       };
     }
 
@@ -771,7 +759,7 @@ export const useConflict = ({
     return partnerConflict
       ? { ...partnerConflict, message: `Paired ${FULL_DAY_NAMES[partner.dayIndex]} meeting: ${partnerConflict.message}` }
       : null;
-  }, [schedules, subjects, forcedDayByCourseId, checkConflict]);
+  }, [schedules, subjects, checkConflict]);
 
   const getDragOverConflict = useCallback((d: number, t: number): boolean => {
     // Relocating a card keeps its room, instructor and partner, so the hint

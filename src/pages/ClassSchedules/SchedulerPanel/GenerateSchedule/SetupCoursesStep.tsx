@@ -29,6 +29,7 @@ import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
 import ConfigureClassSidebar from "./ConfigureClassSidebar";
 import CourseDefaultsSidebar from "./CourseDefaultsSidebar";
+import type { LabRoomType } from "../../../../lib/labRoomPolicy";
 import { getForcedDayConcentration } from "./forcedDayConcentration";
 import type {
   ClassConfiguration,
@@ -128,11 +129,14 @@ export default function SetupCoursesStep({
   configs,
   onConfigChange,
   settings,
+  preferredDays = [],
   onRequiredDayChange,
   onConsecutiveDaysChange,
   onFieldCourseChange,
   defaults = EMPTY_COURSE_DEFAULTS,
   onDefaultsChange,
+  labRoomType = "laboratory",
+  onLabRoomTypeChange,
   excludedCourseIds = [],
   onExcludedChange,
   customizedCourseIds = [],
@@ -150,6 +154,8 @@ export default function SetupCoursesStep({
     change: Partial<CourseSetupConfig>,
   ) => void;
   settings: SetupCoursesSettings | null;
+  /** Step 1's Preferred Days; none picked means any day. */
+  preferredDays?: string[];
   /**
    * Required Day is a department rule rather than a section setting, so it
    * is saved straight to the scheduling settings instead of the wizard draft.
@@ -173,6 +179,13 @@ export default function SetupCoursesStep({
   /** Default Settings: applied to every course without Configure settings of its own. */
   defaults?: CourseDefaults;
   onDefaultsChange?: (next: CourseDefaults) => void;
+  /**
+   * Default LAB Room Requirement: a department rule (Manual Scheduling,
+   * Edit and conflict checks read it too), saved straight to the
+   * scheduling settings rather than the wizard draft.
+   */
+  labRoomType?: LabRoomType;
+  onLabRoomTypeChange?: (next: LabRoomType) => void | Promise<unknown>;
   /** Courses unchecked in the table, left out of this run. */
   excludedCourseIds?: string[];
   onExcludedChange?: (courseIds: string[]) => void;
@@ -561,6 +574,8 @@ export default function SetupCoursesStep({
     defaults.lectureMinutes !== null ? `Lecture ${formatHours(defaults.lectureMinutes / 60)}` : null,
     defaults.laboratoryMinutes !== null ? `Lab ${formatHours(defaults.laboratoryMinutes / 60)}` : null,
     defaults.allowFridaySaturdaySplit ? "Fri + Sat pairs" : null,
+    laboratoryEnabled && labRoomType === "lecture" ? "Labs in classrooms" : null,
+    laboratoryEnabled && labRoomType === "either" ? "Labs in lab or classroom" : null,
   ].filter((label): label is string => label !== null);
 
   // Breakdown statistics
@@ -627,7 +642,7 @@ export default function SetupCoursesStep({
               ? `The Required Day (${row.config.requiredDay}) holds this course to one meeting. Clear it in Configure first.`
               : undefined
           }
-          disabled={actionsDisabled || !eligible}
+          disabled={actionsDisabled || !eligible || !row.included}
           onClick={() => handleSelectConfiguration(row.course, targetType)}
           className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-50 ${
             checked
@@ -810,7 +825,7 @@ export default function SetupCoursesStep({
           <div className="flex justify-center">
             <select
               value={cfg.delivery}
-              disabled={actionsDisabled}
+              disabled={actionsDisabled || !original.included}
               aria-label={`Delivery mode for ${original.course.code}`}
               onChange={(e) =>
                 handleDeliveryChange(original.course, e.target.value as DeliveryMode)
@@ -912,12 +927,12 @@ export default function SetupCoursesStep({
       size: 95,
       enableSorting: false,
       meta: { align: "right" },
-      cell: ({ row: { original: { course } } }) => {
+      cell: ({ row: { original: { course, included } } }) => {
         const isSelected = configuringCourseId === course.id;
         return (
           <button
             type="button"
-            disabled={actionsDisabled}
+            disabled={actionsDisabled || !included}
             onClick={() => setConfiguringCourseId(course.id)}
             className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
               isSelected
@@ -1057,6 +1072,8 @@ export default function SetupCoursesStep({
           summarize={summarizeDefaults}
           customizedCount={customizedCourseIds.length}
           laboratoryEnabled={laboratoryEnabled}
+          labRoomType={labRoomType}
+          onLabRoomTypeApply={onLabRoomTypeChange}
           onResetCustomized={resetCustomized}
           disabled={actionsDisabled}
           onClose={() => onDefaultsClose?.()}
@@ -1077,6 +1094,7 @@ export default function SetupCoursesStep({
           labSettings={settings}
           roomOptions={roomOptions}
           sundayClassesEnabled={settings?.sunday_classes_enabled ?? true}
+          preferredDays={preferredDays}
           disabled={actionsDisabled}
           onClose={() => setConfiguringCourseId(null)}
           onSave={(updatedConfig) => {

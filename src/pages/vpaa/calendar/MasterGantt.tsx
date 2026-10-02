@@ -100,19 +100,21 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     ? Math.max(1, timelineMinWidth, viewportWidth - labelWidth)
     : hours * ZOOM_PX_PER_HOUR[zoom];
   const pixelsPerHour = trackWidth / hours;
-  const tickStep = Math.max(1, Math.ceil(58 / pixelsPerHour)) * 60;
+  // Ticks run in 90-minute steps from the window start (7, 8:30, 10, ...),
+  // widening to multiples of 90 minutes only when the track is too narrow.
+  const tickStep = Math.max(1, Math.ceil(58 / (pixelsPerHour * 1.5))) * 90;
   const laneHeight = LANE_HEIGHT[density];
 
   const hourTicks = useMemo(() => {
     const ticks: number[] = [];
-    for (let minute = Math.ceil(timeWindow.start / tickStep) * tickStep; minute <= timeWindow.end; minute += tickStep) ticks.push(minute);
+    for (let minute = timeWindow.start; minute <= timeWindow.end; minute += tickStep) ticks.push(minute);
     return ticks;
   }, [timeWindow, tickStep]);
 
   // Half-hour (slot) lines only once there is room for them to read as structure, not noise.
   const minorTicks = useMemo(
-    () => (pixelsPerHour >= 120 ? buildTicks(timeWindow, standardHours.slotMinutes).filter((minute) => minute % 60 !== 0) : []),
-    [timeWindow, standardHours.slotMinutes, pixelsPerHour],
+    () => (pixelsPerHour >= 120 ? buildTicks(timeWindow, standardHours.slotMinutes).filter((minute) => (minute - timeWindow.start) % tickStep !== 0) : []),
+    [timeWindow, standardHours.slotMinutes, pixelsPerHour, tickStep],
   );
 
   const nowMinutes = now.getHours() * 60 + now.getMinutes();

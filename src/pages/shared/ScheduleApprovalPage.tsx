@@ -73,8 +73,6 @@ interface ScheduleApproval {
   status: ApprovalDisplayStatus;
   /** The server-side stage this entry is in; decides which meetings it holds. */
   submissionStatus: QueueSubmissionStatus;
-  /** Every delivery mode among the package's classes. */
-  modes: Mode[];
   requestType: RequestType;
   /** Whether this version changed its sections from the recalled or rejected one before it. */
   revisionStatus: RevisionStatus;
@@ -178,7 +176,6 @@ const STATUS_BADGES: Record<ApprovalDisplayStatus, string> = {
   revision: 'bg-orange-100 text-orange-800 border-orange-200/60',
 };
 
-const MODE_LABELS: Record<Mode, string> = { 'on-site': 'On-Site', online: 'Online', field: 'Field' };
 
 const QUEUE_TABS: Array<{ id: QueueTab; label: string }> = [
   { id: 'pending', label: 'Pending Approval' },
@@ -282,7 +279,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [selectedQueueTab, setSelectedQueueTab] = useState<QueueTab>('pending');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | ApprovalDisplayStatus>('all');
-  const [selectedMode, setSelectedMode] = useState<'all' | Mode>('all');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
@@ -376,7 +372,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               deanReviewedAt: submission.dean_reviewed_at,
               status: submissionDisplayStatus(submission),
               submissionStatus: submission.status,
-              modes: Array.from(new Set(packageSchedules.map((schedule) => schedule.mode))),
               requestType: requestTypeOf(submission.status),
               revisionStatus: isRevisionStatus(submission.revision_status) ? submission.revision_status : 'initial',
               workflowSectionIds: sectionIds,
@@ -414,7 +409,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     setSelectedQueueTab('pending');
     setSelectedDepartmentId('all');
     setSelectedStatus('all');
-    setSelectedMode('all');
     resetPage();
   };
 
@@ -433,8 +427,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const filteredData = useMemo(() => tabEntries.filter((entry) => (
     (selectedDepartmentId === 'all' || String(entry.id) === selectedDepartmentId)
     && (selectedStatus === 'all' || entry.status === selectedStatus)
-    && (selectedMode === 'all' || entry.modes.includes(selectedMode))
-  )), [selectedDepartmentId, selectedMode, selectedStatus, tabEntries]);
+  )), [selectedDepartmentId, selectedStatus, tabEntries]);
 
   const queueCounts = useMemo(() => QUEUE_TABS.reduce<Record<QueueTab, number>>((counts, tab) => {
     counts[tab.id] = entries.filter((entry) => matchesQueueTab(stage, entry, tab.id)).length;
@@ -780,16 +773,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               {statusOptions.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
             </select>
           )}
-
-          <select
-            aria-label="Includes delivery mode"
-            value={selectedMode}
-            onChange={(e) => { setSelectedMode(e.target.value as 'all' | Mode); resetPage(); }}
-            className={selectClass}
-          >
-            <option value="all">All Modes</option>
-            {(Object.keys(MODE_LABELS) as Mode[]).map((mode) => <option key={mode} value={mode}>Includes {MODE_LABELS[mode]}</option>)}
-          </select>
         </div>
 
         <button

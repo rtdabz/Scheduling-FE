@@ -13,7 +13,6 @@ import {
   Building2,
   BookOpen,
   Archive,
-  DoorClosed,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -24,19 +23,8 @@ export const vpaaNav: NavSection[] = [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
-      {
-        label: 'Facility Management',
-        path: '/rooms',
-        icon: DoorOpen,
-        id: 'sidebar-rooms',
-      },
-      {
-        label: 'Room Requests',
-        path: '/room-requests',
-        icon: DoorClosed,
-        id: 'sidebar-room-requests',
-        requiredCapability: 'room.view_all_requests',
-      },
+      // Room borrowing is between departments; the VPAA has no Room Requests page.
+      { label: 'Facility Management', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
       {
         label: 'Instructor Management',
         path: '/faculty',
