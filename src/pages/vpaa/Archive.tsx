@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Archive as ArchiveIcon, Filter, RotateCcw } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
-import { clearDataCache } from '../../lib/dataCache';
+import { clearDataCache, getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { useToast } from '../../context/ToastContext';
 import type { ColumnDef } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
@@ -41,23 +41,33 @@ const restoreNotes: Record<string, string> = {
   semesters: 'The semester returns to the semester list; it is not activated.',
 };
 
+interface ArchivePayload {
+  data: ArchivedRecord[];
+  counts: Record<string, number>;
+}
+
+const ARCHIVE_CACHE_KEY = 'page:archive';
+
 export default function Archive() {
   const { toast, confirm } = useToast();
-  const [records, setRecords] = useState<ArchivedRecord[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [cached] = useState(() => getCachedData<ArchivePayload>(ARCHIVE_CACHE_KEY));
+  const [records, setRecords] = useState<ArchivedRecord[]>(cached?.data ?? []);
+  const [counts, setCounts] = useState<Record<string, number>>(cached?.counts ?? {});
   const [search, setSearch] = useState('');
   const [type, setType] = useState('all');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
   const [restoringKey, setRestoringKey] = useState<string | null>(null);
 
   const loadArchive = useCallback(async () => {
-    setLoading(true);
+    // A cached list stays on screen while it is replaced; only a cold key shows the skeleton.
+    if (!hasCachedData(ARCHIVE_CACHE_KEY)) setLoading(true);
     setError('');
     try {
-      const response = await api.get<{ data: ArchivedRecord[]; counts: Record<string, number> }>('/archives');
+      const response = await api.get<ArchivePayload>('/archives');
       setRecords(response.data.data);
       setCounts(response.data.counts);
+      setCachedData<ArchivePayload>(ARCHIVE_CACHE_KEY, response.data);
     } catch (requestError) {
       setError(apiErrorMessage(requestError, 'Unable to load archived records.'));
     } finally {

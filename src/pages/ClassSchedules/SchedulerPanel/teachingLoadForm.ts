@@ -197,6 +197,11 @@ interface TextStyle {
    * cell grow, a single value overruns into the blank cells beside it.
    */
   fixedSize?: boolean;
+  /**
+   * drawTextLines only: a colour per input value, overriding `color` for that
+   * line's text. Separators keep `color`.
+   */
+  lineColors?: ReadonlyArray<readonly [number, number, number] | undefined>;
 }
 
 /** Leading between stacked lines in one cell, as a multiple of the font size. */
@@ -266,10 +271,13 @@ export const drawTextLines = (
   span: { from: Column; to?: Column; row: number; throughRow?: number },
   style: TextStyle = {},
 ): void => {
-  const lines = values.map((value) => value.trim()).filter(Boolean);
+  const entries = values
+    .map((value, index) => ({ text: value.trim(), color: style.lineColors?.[index] ?? style.color }))
+    .filter((entry) => entry.text);
+  const lines = entries.map((entry) => entry.text);
   if (lines.length <= 1) {
     // fixedSize is about a stack growing its cell; a single value still fits its width.
-    drawText(doc, lines[0] ?? "", span, { ...style, fixedSize: false });
+    drawText(doc, lines[0] ?? "", span, { ...style, color: entries[0]?.color, fixedSize: false });
     return;
   }
 
@@ -304,6 +312,7 @@ export const drawTextLines = (
     : baselineOf(span.row, throughRow, fitted) - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((line, index) => {
     const baseline = firstBaseline + index * lineHeight;
+    doc.setTextColor(...(entries[index].color ?? BLACK));
     doc.text(line, x, baseline, { align });
 
     if (style.separator === "cellRule" && index < lines.length - 1) {

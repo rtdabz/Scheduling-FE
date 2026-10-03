@@ -14,7 +14,7 @@ import { getStoredUser } from "../../lib/storedUser";
 import Skeleton from "../../components/ui/Skeleton";
 import DataTable from "../../components/ui/DataTable";
 import SearchInput from "../../components/ui/SearchInput";
-import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
+import { getCachedData, hasCachedData, isCacheFresh, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import MasterGantt from "../vpaa/calendar/MasterGantt";
 import {
@@ -266,7 +266,7 @@ export default function DeanScheduleViewer() {
   const [serverConflicts, setServerConflicts] = useState<ScheduleConflict[]>([]);
 
   useEffect(() => {
-    if (liveRevision === 0 && reloadKey === 0 && hasCachedData(deanSchedulesCacheKey)) {
+    if (liveRevision === 0 && reloadKey === 0 && isCacheFresh(deanSchedulesCacheKey)) {
       setIsLoading(false);
       return;
     }
@@ -274,7 +274,8 @@ export default function DeanScheduleViewer() {
     const loadData = async () => {
       setLoadError(null);
       try {
-        if (liveRevision === 0) setIsLoading(true);
+        // A stale copy stays on screen while it is replaced; only a cold key shows the skeleton.
+        if (liveRevision === 0 && !hasCachedData(deanSchedulesCacheKey)) setIsLoading(true);
         const response = await api.get<{
           active_semester: Semester | null;
           sections: RawSection[];

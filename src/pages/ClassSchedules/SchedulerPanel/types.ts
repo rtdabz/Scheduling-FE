@@ -163,6 +163,14 @@ export interface HeldDesignation {
 export interface Faculty {
   id: string;
   name: string;
+  /**
+   * The name as stored, for forms that print it in parts (the load sheet's
+   * Surname / Given Name / MI). `name` is first and last only.
+   */
+  firstName?: string;
+  middleName?: string | null;
+  lastName?: string;
+  suffix?: string | null;
   profilePicture?: string | null;
   employmentType?: "full-time" | "part-time";
   /** The account role; printed on the load sheet only when no designation is held. */
@@ -382,7 +390,9 @@ export interface ApiSectionRecord {
 export interface ApiFacultyRecord {
   id: number | string;
   first_name: string;
+  middle_name?: string | null;
   last_name: string;
+  suffix?: string | null;
   employment_type?: "full-time" | "part-time";
   administrative_role?: FacultyAdministrativePost | string | null;
   max_units?: number | string | null;

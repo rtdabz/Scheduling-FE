@@ -18,10 +18,10 @@ export const deanNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dean/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'Facility', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
+      { label: 'Facility', path: '/dean/facilities', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
       {
         label: 'Instructors',
-        path: '/dean/faculty',
+        path: '/dean/instructors',
         icon: GraduationCap,
         id: 'sidebar-faculty',
         requiredCapability: 'schedule.view',

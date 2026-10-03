@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCachedData, hasCachedData, setCachedData } from './dataCache';
+import { getCachedData, hasCachedData, isCacheFresh, setCachedData } from './dataCache';
 import { LIVE_UPDATE_EVENT, publishLiveTopics, scheduleResync, stopLiveUpdates, type LiveUpdateDetail } from './liveUpdates';
 import { getLiveSocketId } from './liveSocket';
 import api from './api';
@@ -35,9 +35,12 @@ describe('live updates', () => {
 
     publishLiveTopics(['approvals']);
 
-    expect(hasCachedData('page:dean-schedules:3')).toBe(false);
-    expect(getCachedData('dashboard:dean:7')).toBeUndefined();
-    expect(hasCachedData('page:users')).toBe(true);
+    expect(isCacheFresh('page:dean-schedules:3')).toBe(false);
+    expect(isCacheFresh('dashboard:dean:7')).toBe(false);
+    expect(isCacheFresh('page:users')).toBe(true);
+    // Invalidated copies stay renderable, so a revisit paints without a skeleton.
+    expect(hasCachedData('page:dean-schedules:3')).toBe(true);
+    expect(getCachedData('dashboard:dean:7')).toEqual({ rows: 1 });
   });
 
   it('coalesces a burst of signals into one page refresh', () => {
@@ -91,12 +94,12 @@ describe('live updates', () => {
     expect(result.current).toBe(1);
   });
 
-  it('drops cached data at once after a reconnect but waits to refetch', () => {
+  it('invalidates cached data at once after a reconnect but waits to refetch', () => {
     setCachedData('page:rooms:1', { rows: 1 });
 
     scheduleResync(() => 0.5);
 
-    expect(hasCachedData('page:rooms:1')).toBe(false);
+    expect(isCacheFresh('page:rooms:1')).toBe(false);
     // 1000ms + half the 2000ms jitter, then the usual 300ms debounce.
     vi.advanceTimersByTime(2000);
     expect(received).toHaveLength(0);

@@ -6,6 +6,12 @@ const isUnansweredRequest = (error: unknown): boolean => {
   return failure?.isAxiosError === true && !failure.response && failure.code !== 'ERR_CANCELED';
 };
 
+/** An Axios request cancelled on purpose, through an AbortSignal. */
+const isCancelledRequest = (error: unknown): boolean => {
+  const failure = error as { code?: string; name?: string } | undefined;
+  return failure?.code === 'ERR_CANCELED' || failure?.name === 'CanceledError';
+};
+
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
@@ -83,6 +89,13 @@ export const getCachedData = <T>(key: string): T | undefined => {
   return readStoredData<T>(key, true);
 };
 
+/**
+ * True when `key` holds a copy younger than the TTL that no write has
+ * invalidated since. Use it to decide whether a fetch can be skipped;
+ * hasCachedData() also counts stale copies, which are only fit to render.
+ */
+export const isCacheFresh = (key: string): boolean => getFreshCachedData(key) !== undefined;
+
 const getFreshCachedData = <T>(key: string): T | undefined => {
   const mem = dataCache.get(key);
   if (mem && Date.now() - mem.timestamp <= CACHE_TTL_MS) {
@@ -107,6 +120,27 @@ export const setCachedData = <T>(key: string, data: T): void => {
   writeStoredData(key, data);
 };
 
+/**
+ * Merges part of a cached entry, keeping its age. setCachedData() restamps the
+ * whole entry as fresh, so refreshing one slice of a composite payload (say,
+ * its schedules) would also pass off the other slices as just fetched, and an
+ * invalidated copy would skip its next revalidation. No-op without an entry.
+ */
+export const patchCachedData = <T extends object>(key: string, patch: Partial<T>): void => {
+  const current = getCachedData<T>(key);
+  if (current === undefined) return;
+  const entry: CacheEntry<T> = {
+    data: { ...current, ...patch },
+    timestamp: dataCache.get(key)?.timestamp ?? 0,
+  };
+  dataCache.set(key, entry as CacheEntry<unknown>);
+  try {
+    sessionStorage.setItem(getStorageKey(key), JSON.stringify(entry));
+  } catch {
+    // Ignore storage quota or privacy-mode failures.
+  }
+};
+
 export const clearCachedKey = (key: string): void => {
   dataCache.delete(key);
   pendingRequests.delete(key);
@@ -118,21 +152,26 @@ export const clearCachedKey = (key: string): void => {
 };
 
 /**
- * Drop every cached key that starts with one of `prefixes`.
+ * Invalidate every cached key that starts with one of `prefixes`.
  *
  * Mutations used to call clearDataCache(), which wiped the cache for every
  * module — renaming one room evicted curriculum, faculty, dashboards and the
  * scheduler, so the next visit to each refetched the whole ~180KB
  * /initial-data payload. Prefer this and invalidate only what the write
  * actually changed; see lib/cacheGroups.ts for the named groups.
+ *
+ * Entries are marked stale rather than deleted. A page revisited after a
+ * write or a live update still paints its last copy immediately (no skeleton)
+ * while loadCachedData, which never serves a stale entry, fetches the new one.
  */
 export const clearCachedKeysByPrefix = (prefixes: readonly string[]): void => {
   if (prefixes.length === 0) return;
 
   const matches = (key: string): boolean => prefixes.some((prefix) => key.startsWith(prefix));
+  const markStale = (entry: CacheEntry<unknown>): CacheEntry<unknown> => ({ data: entry.data, timestamp: 0 });
 
-  for (const key of Array.from(dataCache.keys())) {
-    if (matches(key)) dataCache.delete(key);
+  for (const [key, entry] of Array.from(dataCache.entries())) {
+    if (matches(key)) dataCache.set(key, markStale(entry));
   }
 
   for (const key of Array.from(pendingRequests.keys())) {
@@ -143,7 +182,14 @@ export const clearCachedKeysByPrefix = (prefixes: readonly string[]): void => {
     Object.keys(sessionStorage)
       .filter((storageKey) => storageKey.startsWith(STORAGE_PREFIX)
         && matches(storageKey.slice(STORAGE_PREFIX.length)))
-      .forEach((storageKey) => sessionStorage.removeItem(storageKey));
+      .forEach((storageKey) => {
+        try {
+          const entry = JSON.parse(sessionStorage.getItem(storageKey) ?? '') as CacheEntry<unknown>;
+          sessionStorage.setItem(storageKey, JSON.stringify(markStale(entry)));
+        } catch {
+          sessionStorage.removeItem(storageKey);
+        }
+      });
   } catch {
     // Ignore storage access errors
   }
@@ -174,7 +220,14 @@ export const loadCachedData = async <T>(
   }
 
   if (!forceRefresh && pendingRequests.has(key)) {
-    return pendingRequests.get(key) as Promise<T>;
+    // The request being joined belongs to another caller, which may abort it on
+    // unmount — StrictMode does exactly that between its two mount passes. The
+    // joiner did not cancel anything, so it fetches for itself rather than
+    // inheriting the cancellation and silently keeping a stale copy forever.
+    return (pendingRequests.get(key) as Promise<T>).catch((error: unknown) => {
+      if (!isCancelledRequest(error)) throw error;
+      return loadCachedData(key, loader, forceRefresh);
+    });
   }
 
   const request = loader()

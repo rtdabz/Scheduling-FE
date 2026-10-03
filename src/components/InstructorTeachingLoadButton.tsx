@@ -82,6 +82,10 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
   faculties: data.faculties.map((faculty) => ({
     id: String(faculty.id),
     name: `${faculty.first_name} ${faculty.last_name}`,
+    firstName: faculty.first_name,
+    middleName: faculty.middle_name ?? null,
+    lastName: faculty.last_name,
+    suffix: faculty.suffix ?? null,
     employmentType: faculty.employment_type,
     administrativeRole: normalizeAdministrativePost(faculty.administrative_role),
     designations: (faculty.designations ?? []).map(heldDesignation),

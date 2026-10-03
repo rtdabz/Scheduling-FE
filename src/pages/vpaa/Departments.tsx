@@ -33,7 +33,7 @@ import {
   getPaginationRowModel,
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
-import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, hasCachedData, isCacheFresh, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
@@ -425,13 +425,14 @@ export default function Departments() {
   const fetchDepartments = async (forceRefresh = false, silent = false) => {
     const cachedData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
 
-    if (!forceRefresh && cachedData && cachedData.departments.length > 0) {
+    if (cachedData && cachedData.departments.length > 0) {
       setDepartments(cachedData.departments);
       setIsLoading(false);
-      return;
+      if (!forceRefresh && isCacheFresh(departmentsCacheKey)) return;
     }
 
-    if (!silent) setIsLoading(true);
+    // A stale copy stays on screen while it is replaced; only a cold key shows the skeleton.
+    if (!silent && !cachedData?.departments.length) setIsLoading(true);
     try {
       const response = await api.get<ApiDepartment[]>('/departments');
       const mappedDepartments = response.data.map(mapDepartment);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CalendarDays, RefreshCw } from "lucide-react";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import api from "../../lib/api";
+import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
 import { getStoredUser } from "../../lib/storedUser";
 import TimetableGrid from "./SchedulerPanel/TimetableGrid";
 import {
@@ -47,10 +48,14 @@ const formatActiveSemester = (data: SchedulerCacheData): string => {
 
 export default function SectionTimetables() {
   const user = getStoredUser();
-  const [data, setData] = useState<SchedulerCacheData>(emptyData);
-  const [selectedSectionId, setSelectedSectionId] = useState("");
+  // Schedules group, so schedule writes invalidate it. A cached copy paints on
+  // a revisit while the fetch below replaces it.
+  const cacheKey = `scheduler:section-timetables:${user?.department_id ?? "all"}`;
+  const [cached] = useState(() => getCachedData<SchedulerCacheData>(cacheKey));
+  const [data, setData] = useState<SchedulerCacheData>(cached ?? emptyData);
+  const [selectedSectionId, setSelectedSectionId] = useState(cached?.sections[0]?.id ?? "");
   const [mode, setMode] = useState<DeliveryModeFilter>("all");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!cached);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(["schedules", "sections"]);
@@ -59,7 +64,9 @@ export default function SectionTimetables() {
     const controller = new AbortController();
 
     const load = async () => {
-      if (liveRevision === 0) setIsLoading(true);
+      // A cached copy stays on screen while it is replaced; a cold key or the
+      // Refresh button shows the skeleton.
+      if (liveRevision === 0 && (reloadKey > 0 || !hasCachedData(cacheKey))) setIsLoading(true);
       setError("");
 
       try {
@@ -75,7 +82,9 @@ export default function SectionTimetables() {
           left.yearLevel - right.yearLevel || left.name.localeCompare(right.name)
         ));
 
-        setData({ ...mapped, sections: sortedSections });
+        const next = { ...mapped, sections: sortedSections };
+        setCachedData<SchedulerCacheData>(cacheKey, next);
+        setData(next);
         setSelectedSectionId((current) => (
           sortedSections.some((section) => section.id === current)
             ? current
@@ -91,7 +100,7 @@ export default function SectionTimetables() {
 
     void load();
     return () => controller.abort();
-  }, [reloadKey, user?.department_id, liveRevision]);
+  }, [cacheKey, reloadKey, user?.department_id, liveRevision]);
 
   const selectedSection = useMemo(
     () => data.sections.find((section) => section.id === selectedSectionId) ?? null,

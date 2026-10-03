@@ -10,6 +10,7 @@ import DataTable from '../../components/ui/DataTable';
 import { useDataTable } from '../../components/ui/useDataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import { hasStoredCapability } from '../../lib/storedUser';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import {
   basicLoadAfterDeload,
@@ -40,10 +41,13 @@ const unitsLabel = (units: number) => `${units} ${units === 1 ? 'unit' : 'units'
  * as the second gate, so the screen degrades to read-only rather than
  * offering actions the API would refuse.
  */
+// Under the faculty group: a designation changes instructors' loads.
+const DESIGNATIONS_CACHE_KEY = 'page:faculty:designations';
+
 export default function Designations() {
   const { toast } = useToast();
-  const [designations, setDesignations] = useState<Designation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [designations, setDesignations] = useState<Designation[]>(() => getCachedData<Designation[]>(DESIGNATIONS_CACHE_KEY) ?? []);
+  const [isLoading, setIsLoading] = useState(() => !hasCachedData(DESIGNATIONS_CACHE_KEY));
   const [designationSearch, setDesignationSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   // Headings whose sub-designations are shown in the list view; collapsed by default.
@@ -63,9 +67,12 @@ export default function Designations() {
   const canManage = hasStoredCapability(MANAGE_CAPABILITY);
 
   const load = useCallback(async () => {
-    setIsLoading(true);
+    // A cached list stays on screen while it is replaced; only a cold key shows the skeleton.
+    if (!hasCachedData(DESIGNATIONS_CACHE_KEY)) setIsLoading(true);
     try {
-      setDesignations(await fetchDesignations());
+      const rows = await fetchDesignations();
+      setCachedData(DESIGNATIONS_CACHE_KEY, rows);
+      setDesignations(rows);
     } catch {
       toast.error('Could not load designations', 'Please refresh the page and try again.');
     } finally {

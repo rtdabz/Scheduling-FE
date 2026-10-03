@@ -20,8 +20,8 @@ describe('deanNav structure for monitoring', () => {
     expect(allPaths).toContain('/dean/departments');
     expect(allPaths).toContain('/dean/courses');
     expect(allPaths).toContain('/dean/sections');
-    expect(allPaths).toContain('/dean/faculty');
-    expect(allPaths).toContain('/dean/rooms');
+    expect(allPaths).toContain('/dean/instructors');
+    expect(allPaths).toContain('/dean/facilities');
     expect(allPaths).toContain('/dean/curriculum');
     expect(allPaths).toContain('/dean/reports');
     expect(allPaths).toContain('/dean/schedule-history');

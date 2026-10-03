@@ -46,6 +46,14 @@ export interface LoadLine {
   band?: LoadBand;
   /** A meeting of this subject was assigned over an instructor conflict on purpose. */
   overridden?: boolean;
+  /**
+   * The entries of `times` that clash, printed in red while the rest of the
+   * line stays plain: a meeting that overlaps another of this instructor's
+   * meetings on the same day. When a subject was assigned over a conflict that
+   * no meeting on the sheet explains (an availability clash, say), every one
+   * of its times is listed so the override is never printed unmarked.
+   */
+  conflictTimes?: string[];
 }
 
 export type LoadBand = "basic" | "overload" | "probono";
@@ -66,6 +74,12 @@ const hoursOf = (schedule: ScheduleItem): number => Math.max(1, schedule.duratio
  * the earliest meeting so the classification below is stable between prints.
  */
 export const buildLoadLines = (schedules: ScheduleItem[]): LoadLine[] => {
+  const clashes = (meeting: ScheduleItem): boolean => schedules.some((other) =>
+    other !== meeting
+    && other.id !== meeting.id
+    && other.dayIndex === meeting.dayIndex
+    && other.startSlot < meeting.startSlot + meeting.durationSlots
+    && meeting.startSlot < other.startSlot + other.durationSlots);
   const groups = new Map<string, ScheduleItem[]>();
 
   schedules.forEach((schedule) => {
@@ -94,6 +108,8 @@ export const buildLoadLines = (schedules: ScheduleItem[]): LoadLine[] => {
     // its own line rather than one run-on cell. Meetings are already in day
     // order, so the lines read in the order the Day column lists its codes.
     const times = [...new Set(sorted.map((m) => formatTimeRange(m.startTime, m.endTime)))];
+    const overridden = sorted.some((meeting) => Boolean(meeting.facultyConflictOverride));
+    const clashing = [...new Set(sorted.filter(clashes).map((m) => formatTimeRange(m.startTime, m.endTime)))];
 
     return {
       line: {
@@ -106,7 +122,8 @@ export const buildLoadLines = (schedules: ScheduleItem[]): LoadLine[] => {
         laboratoryUnits: first.laboratoryUnits ?? 0,
         totalUnits: first.totalUnits ?? (first.lectureUnits ?? 0) + (first.laboratoryUnits ?? 0),
         totalHours: sorted.reduce((sum, meeting) => sum + hoursOf(meeting), 0),
-        overridden: sorted.some((meeting) => Boolean(meeting.facultyConflictOverride)),
+        overridden,
+        conflictTimes: clashing.length > 0 ? clashing : overridden ? times : [],
       },
       dayIndex: first.dayIndex,
       startSlot: first.startSlot,

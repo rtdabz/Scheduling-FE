@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, ClipboardList, Download, Filter, RefreshCw, X } from 'lucide-react';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import type { ColumnDef } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import { useDataTable } from '../../components/ui/useDataTable';
@@ -127,17 +128,31 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila',
 }).format(new Date(value));
 
+interface ActivityLookups {
+  departments: Department[];
+  semesters: Semester[];
+  users: Actor[];
+}
+
+const LOOKUPS_CACHE_KEY = 'page:activity-log:lookups';
+const EMPTY_FILTERS = { search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' };
+// One entry per page + filter combination, so a revisit paints the view it left.
+const entriesCacheKey = (page: number, applied: typeof EMPTY_FILTERS): string =>
+  `page:activity-log:entries:${page}:${JSON.stringify(applied)}`;
+
 export default function ActivityLog() {
-  const [entries, setEntries] = useState<ActivityEntry[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [semesters, setSemesters] = useState<Semester[]>([]);
-  const [users, setUsers] = useState<Actor[]>([]);
+  const [initialEntries] = useState(() => getCachedData<ActivityResponse>(entriesCacheKey(1, EMPTY_FILTERS)));
+  const [initialLookups] = useState(() => getCachedData<ActivityLookups>(LOOKUPS_CACHE_KEY));
+  const [entries, setEntries] = useState<ActivityEntry[]>(initialEntries?.data ?? []);
+  const [departments, setDepartments] = useState<Department[]>(initialLookups?.departments ?? []);
+  const [semesters, setSemesters] = useState<Semester[]>(initialLookups?.semesters ?? []);
+  const [users, setUsers] = useState<Actor[]>(initialLookups?.users ?? []);
   const [selected, setSelected] = useState<ActivityEntry | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialEntries);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [meta, setMeta] = useState<ActivityResponse['meta']>({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
-  const [filters, setFilters] = useState({ search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' });
+  const [meta, setMeta] = useState<ActivityResponse['meta']>(initialEntries?.meta ?? { current_page: 1, per_page: 25, total: 0, last_page: 1 });
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(filters);
 
   useEffect(() => {
@@ -151,11 +166,23 @@ export default function ActivityLog() {
       const rawUsers = userResponse.data;
       const userList = Array.isArray(rawUsers) ? rawUsers : rawUsers.data ?? [];
       setUsers(userList);
+      setCachedData<ActivityLookups>(LOOKUPS_CACHE_KEY, {
+        departments: departmentResponse.data,
+        semesters: semesterResponse.data,
+        users: userList,
+      });
     }).catch(() => {});
   }, []);
 
   const loadEntries = useCallback(async () => {
-    setLoading(true);
+    const cacheKey = entriesCacheKey(page, applied);
+    const cached = getCachedData<ActivityResponse>(cacheKey);
+    if (cached) {
+      setEntries(cached.data);
+      setMeta(cached.meta);
+    }
+    // A cached page stays on screen while it is replaced; only a cold key shows the skeleton.
+    if (!hasCachedData(cacheKey)) setLoading(true);
     setError('');
     try {
       const response = await api.get<ActivityResponse>('/activity-log', {
@@ -163,6 +190,7 @@ export default function ActivityLog() {
       });
       setEntries(response.data.data);
       setMeta(response.data.meta);
+      setCachedData<ActivityResponse>(cacheKey, response.data);
     } catch (loadError: unknown) {
       const message = axios.isAxiosError<{ message?: string }>(loadError) ? loadError.response?.data?.message : undefined;
       setError(message || 'Unable to load the activity log.');
@@ -233,9 +261,8 @@ export default function ActivityLog() {
   };
 
   const clearFilters = () => {
-    const empty = { search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' };
-    setFilters(empty);
-    setApplied(empty);
+    setFilters(EMPTY_FILTERS);
+    setApplied(EMPTY_FILTERS);
     setPage(1);
   };
 
@@ -393,7 +420,7 @@ export default function ActivityLog() {
 
             <button
               type="button"
-              onClick={() => void loadEntries()}
+              onClick={() => { setLoading(true); void loadEntries(); }}
               disabled={loading}
               className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition cursor-pointer"
             >

@@ -28,6 +28,8 @@ import TeachingLoad from '../ClassSchedules/SchedulerPanel/TeachingLoad';
 import type { SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 import { getDeptBadgeStyles } from '../../lib/departmentTheme';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
+import { getStoredUser } from '../../lib/storedUser';
 import {
   fetchReportData,
   fetchReportsOverview,
@@ -53,38 +55,42 @@ interface ReportRow {
 }
 
 const TABS: { kind: ReportKind; label: string; description: string; icon: typeof CalendarDays }[] = [
-  { kind: 'schedule', label: 'Department Schedule', description: 'Approved class schedules by department or program.', icon: CalendarDays },
+  { kind: 'schedule', label: 'Department Schedule', description: 'Approved class schedules by department, all programs included.', icon: CalendarDays },
   { kind: 'load', label: 'Teaching Load', description: 'Instructor assignments and approved teaching loads.', icon: GraduationCap },
 ];
 
+/**
+ * One report per department, covering every program in it: a report is the
+ * department's record, and an instructor or section belongs in it whichever
+ * program they sit under. Only a Program Head, who may print nothing beyond
+ * their own program, gets that program's row instead.
+ */
 const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] => {
   const countOf = (item: { complete_section_count: number; instructor_count: number }) =>
     kind === 'schedule' ? item.complete_section_count : item.instructor_count;
   const suffix = kind === 'schedule' ? 'Class Schedule' : 'Instructors Load';
 
-  const programRows = department.programs.map((program) => ({
-    key: `${department.id}:${program.id}`,
-    departmentId: department.id,
-    programId: program.id,
-    label: `${program.code} ${suffix}`,
-    description: program.name,
-    count: countOf(program),
-  }));
-
-  // A department with a single program would list the same printout twice.
-  if (!department.can_print_department || department.programs.length === 1) return programRows;
-
-  return [
-    {
-      key: `${department.id}:all`,
+  if (!department.can_print_department) {
+    return department.programs.map((program) => ({
+      key: `${department.id}:${program.id}`,
       departmentId: department.id,
-      programId: null,
-      label: `All ${department.code} ${suffix}`,
-      description: 'All programs in this department',
-      count: countOf(department),
-    },
-    ...programRows,
-  ];
+      programId: program.id,
+      label: `${program.code} ${suffix}`,
+      description: program.name,
+      count: countOf(program),
+    }));
+  }
+
+  return [{
+    key: `${department.id}:all`,
+    departmentId: department.id,
+    programId: null,
+    label: `${department.code} ${suffix}`,
+    description: department.programs.length > 0
+      ? `All programs: ${department.programs.map((program) => program.code).join(', ')}`
+      : 'All programs in this department',
+    count: countOf(department),
+  }];
 };
 
 /**
@@ -93,8 +99,10 @@ const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] =>
  */
 export default function Reports() {
   const { toast } = useToast();
-  const [overview, setOverview] = useState<ReportsOverview | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Dashboard group: the same writes that move dashboard figures change readiness here.
+  const cacheKey = `dashboard:reports:${getStoredUser()?.id ?? 'current'}`;
+  const [overview, setOverview] = useState<ReportsOverview | null>(() => getCachedData<ReportsOverview>(cacheKey) ?? null);
+  const [isLoading, setIsLoading] = useState(() => !hasCachedData(cacheKey));
   const [kind, setKind] = useState<ReportKind>('schedule');
   const [loadingRowKey, setLoadingRowKey] = useState<string | null>(null);
   const [exportingRowKey, setExportingRowKey] = useState<string | null>(null);
@@ -108,13 +116,13 @@ export default function Reports() {
   const load = useCallback(
     () =>
       fetchReportsOverview()
-        .then((data) => { setOverview(data); setLoadError(false); })
+        .then((data) => { setCachedData(cacheKey, data); setOverview(data); setLoadError(false); })
         .catch(() => {
           setLoadError(true);
           toast.error('Reports Unavailable', 'The report list could not be loaded.');
         })
         .finally(() => setIsLoading(false)),
-    [toast],
+    [cacheKey, toast],
   );
 
   useEffect(() => {
@@ -224,7 +232,7 @@ export default function Reports() {
       rows: rows.filter(
         (row) =>
           (!readyOnly || row.count > 0) &&
-          `${department.code} ${department.name} ${row.label} ${row.description}`.toLowerCase().includes(query)
+          `${department.code} ${department.name} ${row.label} ${row.description} ${department.programs.map((program) => program.name).join(' ')}`.toLowerCase().includes(query)
       ),
     }))
     .filter((group) => group.rows.length > 0);

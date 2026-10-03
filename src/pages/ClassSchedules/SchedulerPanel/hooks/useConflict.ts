@@ -471,7 +471,8 @@ export const useConflict = ({
     if (endSlot > slotCount()) {
       return {
         conflictType: "section",
-        message: `The schedule duration exceeds the grid operating hours (${closingTimeLabel()}).`
+        title: "Time Restriction",
+        message: `The schedule must end by ${formatTime12h(closingTimeLabel())}.`
       };
     }
 

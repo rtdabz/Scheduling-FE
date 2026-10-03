@@ -217,7 +217,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
                 </span>
                 {!yl.isComplete && (
                   <button
-                    onClick={() => navigate('/secretary/schedule-builder')}
+                    onClick={() => navigate('/secretary/schedule-management')}
                     className="text-[10px] font-bold text-[#4e0a10] bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 border border-[#4e0a10]/10 px-2.5 py-1 rounded-lg transition-colors"
                   >
                     Continue drafting

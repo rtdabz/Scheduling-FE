@@ -7,6 +7,8 @@ import { useDataTable } from '../../components/ui/useDataTable';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { getStoredUser } from '../../lib/storedUser';
 
 /**
  * How the department's programs share its rooms. Each lecture or laboratory
@@ -86,17 +88,24 @@ const SHARED_LABEL = 'Shared (all programs)';
 
 export default function ProgramRooms() {
   const { toast } = useToast();
-  const [data, setData] = useState<ProgramRoomsPayload | null>(null);
-  const [policy, setPolicy] = useState<RoomSharingPolicy>('open');
-  const [homes, setHomes] = useState<Record<number, number | null>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  // Under the rooms group, so room writes invalidate it. A cached copy paints
+  // on a revisit while the mount fetch below replaces it.
+  const cacheKey = `page:rooms:program-rooms:${getStoredUser()?.id ?? 'current'}`;
+  const cached = getCachedData<ProgramRoomsPayload>(cacheKey);
+  const [data, setData] = useState<ProgramRoomsPayload | null>(cached ?? null);
+  const [policy, setPolicy] = useState<RoomSharingPolicy>(cached?.room_sharing_policy ?? 'open');
+  const [homes, setHomes] = useState<Record<number, number | null>>(
+    () => Object.fromEntries((cached?.rooms ?? []).map((room) => [room.id, room.home_program_id])),
+  );
+  const [isLoading, setIsLoading] = useState(!cached);
   const [isSaving, setIsSaving] = useState(false);
 
   const apply = useCallback((payload: ProgramRoomsPayload) => {
+    setCachedData(cacheKey, payload);
     setData(payload);
     setPolicy(payload.room_sharing_policy);
     setHomes(Object.fromEntries(payload.rooms.map((room) => [room.id, room.home_program_id])));
-  }, []);
+  }, [cacheKey]);
 
   useEffect(() => {
     let active = true;

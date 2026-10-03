@@ -1,28 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Eye,
   History,
-  List,
   Printer,
   RefreshCw,
-  X,
 } from "lucide-react";
 import api from "../../lib/api";
-import { SLOT_HEIGHT_PX } from "../ClassSchedules/SchedulerPanel/constants";
-import WeeklyTimetableGrid, {
-  WEEK_DAYS,
-} from "../../components/scheduling/WeeklyTimetableGrid";
-import {
-  formatTime12h,
-  slotCount,
-  timeToSlot,
-} from "../../lib/timeGrid";
+import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
+import { WEEK_DAYS } from "../../components/scheduling/WeeklyTimetableGrid";
+import { formatTime12h, timeToSlot } from "../../lib/timeGrid";
 import { scheduleLocationLabel } from "../../lib/scheduleLocation";
-import ScheduleCard from "../ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../components/ui/DataTable";
 import { useDataTable } from "../../components/ui/useDataTable";
@@ -30,11 +20,14 @@ import type {
   ApiDepartmentRecord,
   DeliveryMode,
   ScheduleItem,
+  UserSummary,
   Section,
   Subject,
   Semester,
 } from "../ClassSchedules/SchedulerPanel/types";
 import PrintSchedule from "../ClassSchedules/SchedulerPanel/PrintSchedule";
+import type { SchedulePdfInput } from "../ClassSchedules/SchedulerPanel/schedulePdf";
+import ScheduleApprovalPreviewModal from "../../components/scheduling/ScheduleApprovalPreviewModal";
 import { semesterLabel } from "../../lib/semesterLabel";
 import TableActionButton from "../../components/ui/TableActionButton";
 
@@ -73,6 +66,10 @@ type Entry = {
   section_count: number;
   snapshots: Snapshot[];
   action: string;
+  rejection_reason?: string | null;
+  /** The live department and signatories: workflow snapshots store neither. */
+  department?: ApiDepartmentRecord | null;
+  users?: UserSummary[];
   snapshot: Record<string, unknown>;
   actor: { name: string; username: string; role: string } | null;
   created_at: string;
@@ -89,7 +86,22 @@ type Response = {
   };
 };
 
+type HistoryType = "" | "approved" | "rejected" | "recalled";
+const TYPE_OPTIONS: [Exclude<HistoryType, "">, string][] = [
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["recalled", "Recalled"],
+];
+// The review decisions the server lists; the tone matches the decision.
+const ACTIONS: Record<string, { label: string; tone: string }> = {
+  schedule_approved_by_dean: { label: "Approved by Dean", tone: "bg-emerald-50 text-emerald-700" },
+  schedule_approved_by_vpaa: { label: "Approved by VPAA", tone: "bg-emerald-50 text-emerald-700" },
+  schedule_returned_by_dean: { label: "Rejected by Dean", tone: "bg-red-50 text-red-700" },
+  schedule_returned_by_vpaa: { label: "Rejected by VPAA", tone: "bg-red-50 text-red-700" },
+  schedule_withdrawn: { label: "Recalled", tone: "bg-amber-50 text-amber-700" },
+};
 const label = (value: string) =>
+  ACTIONS[value]?.label ??
   value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const date = (value: string) =>
   new Intl.DateTimeFormat("en-PH", {
@@ -162,34 +174,68 @@ const gridCard = (
   };
 };
 
-const snapshotColumns: ColumnDef<Snapshot>[] = [
-  { id: "schedule", accessorFn: (item) => item.schedule_id ?? 0, header: "Schedule", cell: ({ row }) => `#${row.original.schedule_id ?? "Deleted"}` },
-  { id: "section", accessorFn: (item) => item.section_name || "", header: "Section", cell: ({ row }) => row.original.section_name || `#${row.original.section_id ?? "Unknown"}` },
-  {
-    id: "course",
-    accessorFn: (item) => item.course_code || "",
-    header: "Course",
-    cell: ({ row }) => (
-      <>
-        {row.original.course_code || "Course"}
-        <span className="block font-medium text-gray-500">{row.original.course_name || ""}</span>
-      </>
-    ),
-  },
-  { id: "instructor", accessorFn: (item) => item.faculty_name || "Unassigned", header: "Instructor" },
-  { id: "room", accessorFn: (item) => location(item), header: "Room" },
-];
+/** The same document the approval preview and Print render, built from the immutable snapshot. */
+const pdfInputFor = (entry: Entry): SchedulePdfInput => {
+  const departmentOf = (item: Snapshot) => Number(item.snapshot.department_id ?? entry.department_id ?? 0);
+  const sections: Section[] = Array.from(
+    new Map(entry.snapshots.map((item) => [String(item.section_id ?? ""), item])).values(),
+  )
+    .map((item) => ({
+      id: String(item.section_id ?? ""),
+      name: item.section_name || "Section",
+      yearLevel: Math.min(4, Math.max(1, Number(item.section_year_level ?? 1))) as Section["yearLevel"],
+      semester: (item.section_semester || entry.semester || "1st") as Section["semester"],
+      departmentId: departmentOf(item),
+      // Picks the program's own Program Head as the print's preparer.
+      programId: item.snapshot.program_id == null ? undefined : Number(item.snapshot.program_id),
+      semesterId: Number(item.snapshot.semester_id ?? entry.semester_id ?? 0),
+      status: "active" as const,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const departments: ApiDepartmentRecord[] = Array.from(
+    new Map(entry.snapshots.map((item) => [departmentOf(item), {
+      id: departmentOf(item),
+      department_name: item.department_name || entry.department?.department_name || "Department",
+      department_code: item.department_code || entry.department?.department_code || "",
+      logo: item.department_logo || entry.department?.logo || null,
+    }])).values(),
+  );
+  return {
+    sections,
+    allSchedules: entry.snapshots.map((item) => {
+      const mapped = gridCard(item);
+      return { ...mapped.schedule, subjectCode: mapped.subject.code, subjectName: mapped.subject.name };
+    }),
+    selectedSectionId: sections[0]?.id ?? "",
+    departments,
+    users: entry.users ?? [],
+    activeSemester: {
+      id: entry.semester_id ?? 0,
+      academic_year: entry.academic_year || "",
+      semester: (entry.semester || "1st") as Semester["semester"],
+      is_active: false,
+    },
+  };
+};
+
+const previewStatus = (action: string): "approved" | "rejected" | "pending" =>
+  action.startsWith("schedule_approved") ? "approved" : action.startsWith("schedule_returned") ? "rejected" : "pending";
+
+// Schedules group, so schedule writes invalidate it. One entry per page + type,
+// so a revisit paints the view it left while load() replaces it.
+const historyCacheKey = (page: number, type: HistoryType): string => `page:schedule-overview:history:${page}:${type}`;
 
 export default function ScheduleHistory() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [cached] = useState(() => getCachedData<Response>(historyCacheKey(1, "")));
+  const [entries, setEntries] = useState<Entry[]>(cached?.data ?? []);
   const [selected, setSelected] = useState<Entry | null>(null);
   const [printingEntry, setPrintingEntry] = useState<Entry | null>(null);
-  const [detailMode, setDetailMode] = useState<"list" | "grid">("list");
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [type, setType] = useState<HistoryType>("");
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState("");
-  const [meta, setMeta] = useState<Response["meta"]>({
+  const [meta, setMeta] = useState<Response["meta"]>(cached?.meta ?? {
     current_page: 1,
     per_page: 25,
     total: 0,
@@ -199,14 +245,22 @@ export default function ScheduleHistory() {
   });
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cacheKey = historyCacheKey(page, type);
+    const cachedPage = getCachedData<Response>(cacheKey);
+    if (cachedPage) {
+      setEntries(cachedPage.data);
+      setMeta(cachedPage.meta);
+    }
+    // A cached page stays on screen while it is replaced; only a cold key shows the skeleton.
+    if (!hasCachedData(cacheKey)) setLoading(true);
     setError("");
     try {
       const response = await api.get<Response>("/schedule-history", {
-        params: { page, per_page: 25 },
+        params: { page, per_page: 25, type: type || undefined },
       });
       setEntries(response.data.data);
       setMeta(response.data.meta);
+      setCachedData<Response>(cacheKey, response.data);
     } catch (e: unknown) {
       setError(
         axios.isAxiosError<{ message?: string }>(e)
@@ -216,64 +270,38 @@ export default function ScheduleHistory() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, type]);
   useEffect(() => {
     // load() raises its own loading flag before awaiting the request.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
-  const snapshots = useMemo(() => selected?.snapshots ?? [], [selected]);
-  const printSnapshots = useMemo(() => printingEntry?.snapshots ?? [], [printingEntry]);
-  const cards = useMemo(() => snapshots.map(gridCard), [snapshots]);
   const open = (entry: Entry) => {
     setSelected(entry);
-    setDetailMode("list");
     setIsPrintOpen(false);
   };
   const print = (entry: Entry) => {
     setPrintingEntry(entry);
     setIsPrintOpen(true);
   };
-  const printingSections = useMemo<Section[]>(
-    () => Array.from(new Map(printSnapshots.map((item) => [String(item.section_id ?? ""), item])).values()).map((item) => ({
-      id: String(item.section_id ?? ""),
-      name: item.section_name || "Section",
-      yearLevel: Math.min(4, Math.max(1, Number(item.section_year_level ?? 1))) as Section["yearLevel"],
-      semester: (item.section_semester || printingEntry?.semester || "1st") as Section["semester"],
-      departmentId: Number(item.snapshot.department_id ?? printingEntry?.department_id ?? 0),
-      semesterId: Number(item.snapshot.semester_id ?? printingEntry?.semester_id ?? 0),
-      status: "active",
-    })),
-    [printSnapshots, printingEntry],
-  );
-  const printingSchedules = useMemo<ScheduleItem[]>(
-    () => printSnapshots.map((item) => {
-      const mapped = gridCard(item);
-      return { ...mapped.schedule, subjectCode: mapped.subject.code, subjectName: mapped.subject.name, status: "finalized" };
-    }),
-    [printSnapshots],
-  );
-  const printingDepartments = useMemo<ApiDepartmentRecord[]>(
-    () => Array.from(new Map(printSnapshots.map((item) => [Number(item.snapshot.department_id ?? printingEntry?.department_id ?? 0), {
-      id: Number(item.snapshot.department_id ?? printingEntry?.department_id ?? 0),
-      department_name: item.department_name || "Department",
-      department_code: item.department_code || "",
-      logo: item.department_logo || null,
-    }])).values()),
-    [printSnapshots, printingEntry],
-  );
-  const printingSemester = useMemo<Semester | null>(() => printingEntry ? {
-    id: printingEntry.semester_id ?? 0,
-    academic_year: printingEntry.academic_year || "",
-    semester: (printingEntry.semester || "1st") as Semester["semester"],
-    is_active: false,
-  } : null, [printingEntry]);
+  const viewInput = useMemo(() => (selected ? pdfInputFor(selected) : null), [selected]);
+  const printInput = useMemo(() => (printingEntry ? pdfInputFor(printingEntry) : null), [printingEntry]);
 
   // Rebuilt each render: the action cells call open/print, which are plain closures.
   const historyColumns: ColumnDef<Entry>[] = [
+    {
+      id: "decision",
+      header: "Decision",
+      cell: ({ row }) => (
+        <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${ACTIONS[row.original.action]?.tone ?? "bg-gray-100 text-gray-600"}`}>
+          {label(row.original.action)}
+        </span>
+      ),
+    },
+    { id: "schedule", header: "Schedule", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.schedule_label },
     { id: "semester", header: "Semester", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => semesterLabel(row.original.semester) },
-    { id: "academic_year", header: "A.Y.", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.academic_year || "Archived year" },
+    { id: "academic_year", header: "A.Y.", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.academic_year || "—" },
     { id: "created_at", header: "Date and time", meta: { cellClassName: "whitespace-nowrap font-medium text-gray-600" }, cell: ({ row }) => date(row.original.created_at) },
     {
       id: "actor",
@@ -310,19 +338,26 @@ export default function ScheduleHistory() {
     getRowId: (entry) => String(entry.group_id || entry.id),
   });
 
-  const snapshotTable = useDataTable({
-    data: snapshots,
-    columns: snapshotColumns,
-    pageSize: false,
-    getRowId: (item) => String(item.id),
-  });
-
   return (
     <div id="schedule-history-page" className="space-y-5">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <select
+          aria-label="Decision"
+          value={type}
+          onChange={(event) => {
+            setType(event.target.value as HistoryType);
+            setPage(1);
+          }}
+          className="w-full max-w-[200px] rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
+        >
+          <option value="">All decisions</option>
+          {TYPE_OPTIONS.map(([value, text]) => (
+            <option key={value} value={value}>{text}</option>
+          ))}
+        </select>
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={() => { setLoading(true); void load(); }}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
         >
@@ -383,126 +418,38 @@ export default function ScheduleHistory() {
         </div>
       </div>
       {selected && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setSelected(null);
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
-          >
-            <div className="flex shrink-0 items-start justify-between border-b border-gray-200 p-5">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-[#5A1220]">
-                  {label(selected.action)}
+        <ScheduleApprovalPreviewModal
+          open
+          title={`${selected.schedule_label} (${label(selected.action)})`}
+          status={previewStatus(selected.action)}
+          statusLabel={label(selected.action)}
+          printInput={viewInput}
+          canAct={false}
+          checks={
+            <div className="px-5 py-3 text-sm text-gray-600">
+              {date(selected.created_at)}
+              {selected.actor ? ` · by ${selected.actor.name}` : ""}
+              {" · "}
+              {selected.section_count} section{selected.section_count === 1 ? "" : "s"}
+              {selected.rejection_reason && (
+                <p className="mt-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-red-800">
+                  <span className="font-semibold">Reason:</span> {selected.rejection_reason}
                 </p>
-                <h2 className="mt-1 text-xl font-bold text-gray-900">
-                  {selected.schedule_label}
-                </h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {date(selected.created_at)} · {selected.schedule_count}{" "}
-                  related schedule{selected.schedule_count === 1 ? "" : "s"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                aria-label="Close details"
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
-              <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex w-fit rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setDetailMode("list")}
-                    aria-pressed={detailMode === "list"}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold ${detailMode === "list" ? "bg-[#4e0a10] text-white shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
-                  >
-                    <List size={14} /> List View
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailMode("grid")}
-                    aria-pressed={detailMode === "grid"}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold ${detailMode === "grid" ? "bg-[#4e0a10] text-white shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
-                  >
-                    <CalendarDays size={14} /> Weekly Grid
-                  </button>
-                </div>
-              </div>
-              {detailMode === "list" ? (
-                <DataTable
-                  table={snapshotTable}
-                  variant="embedded"
-                  density="compact"
-                  className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200"
-                  scrollClassName="min-h-0 flex-1 overflow-auto"
-                  ariaLabel="Schedules in this history entry"
-                  emptyTitle="No schedules were captured in this entry."
-                  emptyDescription=""
-                />
-              ) : cards.length === 0 ? (
-                <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
-                  The selected history entry has no timetable snapshot for this
-                  section.
-                </div>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-auto">
-                  <WeeklyTimetableGrid
-                    days={WEEK_DAYS}
-                    slotCount={slotCount()}
-                    minWidth={840}
-                    getDayCount={(dayIndex) =>
-                      cards.filter(
-                        ({ schedule }) => schedule.day === WEEK_DAYS[dayIndex],
-                      ).length
-                    }
-                  >
-                    {cards.map(({ schedule, subject }) => (
-                      <ScheduleCard
-                        key={schedule.id}
-                        rooms={[]}
-                        schedule={schedule}
-                        subject={subject}
-                        isEditable={false}
-                        isPhase2Active={false}
-                        currentStatus="finalized"
-                        draggedScheduleId={null}
-                        isMoving={false}
-                        deleteConfirmScheduleId={null}
-                        setDeleteConfirmScheduleId={noop}
-                        onDragStart={noop}
-                        onDragEnd={noop}
-                        onDelete={noop}
-                        onCardClick={noop}
-                        slotHeight={SLOT_HEIGHT_PX}
-                        isWideView
-                      />
-                    ))}
-                  </WeeklyTimetableGrid>
-                </div>
               )}
             </div>
-          </div>
-        </div>
+          }
+          onApprove={noop}
+          onReject={noop}
+          onClose={() => setSelected(null)}
+        />
       )}
-      <PrintSchedule
-        sections={printingSections}
-        departments={printingDepartments}
-        users={[]}
-        isPrintModalOpen={isPrintOpen}
-        setIsPrintModalOpen={setIsPrintOpen}
-        allSchedules={printingSchedules}
-        selectedSectionId={printingSections[0]?.id ?? ""}
-        activeSemester={printingSemester}
-      />
+      {printInput && (
+        <PrintSchedule
+          {...printInput}
+          isPrintModalOpen={isPrintOpen}
+          setIsPrintModalOpen={setIsPrintOpen}
+        />
+      )}
     </div>
   );
 }

@@ -89,7 +89,7 @@ import ConfigurationStep from "./ConfigurationStep";
 import type { SetupDraft } from "./ConfigurationStep";
 import { orderDays } from "./generationTypes";
 import SetupCoursesStep from "./SetupCoursesStep";
-import ReviewGenerateStep from "./ReviewGenerateStep";
+import ReviewGenerateStep, { type ReviewRule } from "./ReviewGenerateStep";
 import ScheduleSummaryStep from "./ScheduleSummaryStep";
 import { configureLabRoomType, normalizeLabRoomType, type LabRoomType } from "../../../../lib/labRoomPolicy";
 
@@ -574,17 +574,31 @@ export default function YearLevelGenerateScheduleWorkflow({
       ),
     [settings?.forced_day_rules],
   );
-  const activeRules = [
-    "Operating hours",
-    "Faculty availability",
-    "Room availability",
-    "Laboratory requirements",
-    "Conflict prevention",
-    ...(settings?.forced_day_rules?.length ? ["Required day rules"] : []),
-    ...(settings?.consecutive_day_rules?.length ? ["Consecutive days rules"] : []),
-    ...(settings?.field_course_codes?.length ? ["Field course rules"] : []),
+  const courseCountLabel = (count: number) =>
+    `${count} course${count === 1 ? "" : "s"}`;
+  const forcedDayCourseCount = new Set(
+    (settings?.forced_day_rules ?? []).map((rule) => String(rule.course_id)),
+  ).size;
+  const consecutiveCourseCount = new Set(
+    (settings?.consecutive_day_rules ?? []).map((rule) => String(rule.course_id)),
+  ).size;
+  const fieldCourseCount = settings?.field_course_codes?.length ?? 0;
+  const activeRules: ReviewRule[] = [
+    { label: "Operating hours", detail: "Classes stay inside the open timeslots", kind: "core" },
+    { label: "Room availability", detail: "No room is double-booked", kind: "core" },
+    { label: "Laboratory requirements", detail: "Lab sessions go to lab rooms", kind: "core" },
+    { label: "Conflict prevention", detail: "No section has two classes at once", kind: "core" },
+    ...(forcedDayCourseCount
+      ? [{ label: "Required days", detail: courseCountLabel(forcedDayCourseCount), kind: "setup" as const }]
+      : []),
+    ...(consecutiveCourseCount
+      ? [{ label: "Consecutive days", detail: courseCountLabel(consecutiveCourseCount), kind: "setup" as const }]
+      : []),
+    ...(fieldCourseCount
+      ? [{ label: "Field courses", detail: `${courseCountLabel(fieldCourseCount)} · meet in a field room`, kind: "setup" as const }]
+      : []),
     ...(setupDraft.courseDefaults.allowFridaySaturdaySplit
-      ? ["Friday + Saturday split pairs"]
+      ? [{ label: "Friday + Saturday split", detail: "Split sessions may pair Fri and Sat", kind: "setup" as const }]
       : []),
   ];
   // Step 2's checkboxes: an unchecked course is left out of the run.
