@@ -144,14 +144,14 @@ export default function CurriculumFormModal({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Code <span className="text-red-500">*</span>
+                CMO No. <span className="text-red-500">*</span>
               </label>
               <input
                 id="curriculum-code-input"
                 type="text"
                 value={code}
                 onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeError(''); }}
-                placeholder="e.g. BSCS-2024"
+                placeholder="e.g. CMO 1 S 2026"
                 className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white font-mono transition-all ${
                   codeError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
                 }`}
@@ -205,7 +205,7 @@ export default function CurriculumFormModal({
           {canChooseProgram && departmentPrograms.length > 0 && (
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Program / Major <span className="text-gray-400 normal-case">(optional)</span>
+                Program / Major
               </label>
               <select
                 id="curriculum-program-select"
@@ -213,7 +213,7 @@ export default function CurriculumFormModal({
                 onChange={(e) => setProgramId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
               >
-                <option value="">Department-wide curriculum (no program)</option>
+                <option value="">None</option>
                 {departmentPrograms.map((program) => (
                   <option key={program.id} value={program.id}>
                     {programLabel(program)}

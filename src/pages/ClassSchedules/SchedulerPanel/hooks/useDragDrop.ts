@@ -8,7 +8,7 @@ type CheckMoveConflict = (
   scheduleId: string,
   dayIndex: number,
   startSlot: number
-) => { conflictType: "room" | "faculty" | "section"; message: string } | null;
+) => { conflictType: "room" | "faculty" | "section"; message: string; title?: string } | null;
 
 interface UseDragDropParams {
   schedules: ScheduleItem[];
@@ -106,7 +106,7 @@ export const useDragDrop = ({
       const conflict = checkMoveConflict(sched.id, dayIndex, timeIndex);
 
       if (conflict) {
-        setConflictInfo({ dayIndex, startSlot: timeIndex, durationSlots: sched.durationSlots, message: conflict.message });
+        setConflictInfo({ dayIndex, startSlot: timeIndex, durationSlots: sched.durationSlots, message: conflict.message, title: conflict.title });
         setDraggedScheduleId(null);
         setDragFromCell(null);
         return;

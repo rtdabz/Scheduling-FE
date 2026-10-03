@@ -8,7 +8,6 @@ import {
   timeToSlot as timeStrToSlot,
 } from "../../../../lib/timeGrid";
 import type { TimeGridConfigInput } from "../../../../lib/timeGrid";
-import { configureLabRoomType } from "../../../../lib/labRoomPolicy";
 import type {
   ApiCourseRecord,
   ApiDepartmentRecord,
@@ -79,8 +78,6 @@ export interface InitialDataResponse {
   resource_slot_limits?: { online: number; field: number } | null;
   /** Grid window from institution_settings; the client used to hardcode it. */
   time_grid?: TimeGridConfigInput | null;
-  /** Default LAB Room Requirement: laboratory, lecture (classroom) or either. */
-  lab_room_type?: string | null;
 }
 
 /** Re-exported so existing importers keep working; canonical in lib/timeGrid. */
@@ -375,7 +372,6 @@ export const mapInitialData = (
 ): SchedulerCacheData => {
   // Applied before anything is mapped: every slot conversion below reads it.
   configureTimeGrid(initialData.time_grid);
-  configureLabRoomType(initialData.lab_room_type);
 
   let apiRooms = initialData.rooms;
   if (!options.isVpaa && options.userDepartmentId) {

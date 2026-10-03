@@ -88,7 +88,6 @@ describe('VPAA Settings operating hours', () => {
     await waitFor(() => expect(mocks.apiPatch).toHaveBeenCalledWith('/timeslots/settings', {
       opening_time: '7:00 AM',
       closing_time: '8:00 PM',
-      lab_room_type: 'laboratory',
       slot_interval: 30,
     }));
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
@@ -112,7 +111,6 @@ describe('VPAA Settings operating hours', () => {
       opening_time: '7:00 AM',
       closing_time: '7:00 PM',
       field_end_time: '6:00 PM',
-      lab_room_type: 'laboratory',
       slot_interval: 30,
     }));
   });

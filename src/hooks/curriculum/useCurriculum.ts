@@ -36,7 +36,6 @@ export function useCurriculum() {
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchCurriculumList = useCallback(
@@ -90,15 +89,13 @@ export function useCurriculum() {
     return annotatedCurriculumList.filter((item) => {
       if (item.status === 'archived') return false;
       const matchStatus = statusFilter === 'all' || item.status === statusFilter;
-      const matchDept =
-        departmentFilter === 'all' || item.department_id?.toString() === departmentFilter;
       const matchSearch =
         searchQuery === '' ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.code.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchStatus && matchDept && matchSearch;
+      return matchStatus && matchSearch;
     });
-  }, [annotatedCurriculumList, statusFilter, departmentFilter, searchQuery]);
+  }, [annotatedCurriculumList, statusFilter, searchQuery]);
 
   const handleCreateOrUpdate = async (data: Partial<Curriculum>, editingCurriculum: Curriculum | null): Promise<Curriculum> => {
     try {
@@ -224,8 +221,6 @@ export function useCurriculum() {
     programs,
     statusFilter,
     setStatusFilter,
-    departmentFilter,
-    setDepartmentFilter,
     searchQuery,
     setSearchQuery,
     fetchCurriculumList,

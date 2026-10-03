@@ -144,15 +144,14 @@ export default function SubmitApprovalModal({
             <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
               {departmentSectionProgress.map((section) => {
                 const isProtected = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "reassignment", "finalized"].includes(section.status);
-                const statusLabel = section.status === "completed"
+                const willSubmit = section.isDone && !isProtected;
+                const statusLabel = willSubmit
                   ? "Will submit"
                   : section.status === "finalized"
                     ? "Finalized"
                     : isProtected
                       ? "Unchanged"
-                      : section.isDone
-                        ? "Done"
-                        : "Not ready";
+                      : "Not ready";
                 return <div key={section.sectionId} className="flex items-center justify-between gap-3 px-4 py-2.5">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-800 truncate">{section.sectionName}</p>
@@ -161,7 +160,7 @@ export default function SubmitApprovalModal({
                     </p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                    section.status === "completed"
+                    willSubmit
                       ? "bg-emerald-50 text-emerald-700"
                       : isProtected
                         ? "bg-slate-100 text-slate-600"

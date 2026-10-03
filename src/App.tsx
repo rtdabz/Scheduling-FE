@@ -63,7 +63,7 @@ registerPagePrefetch([
   [VpaaUsers, ['/users']],
   [Departments, ['/departments', '/dean/departments', '/secretary/departments', '/program_head/departments']],
   [Reports, ['/reports', '/dean/reports', '/secretary/reports', '/program_head/reports']],
-  [RoomRequests, ['/room-requests', '/secretary/room-requests', '/program_head/room-requests']],
+  [RoomRequests, ['/secretary/room-requests', '/program_head/room-requests']],
   [VpaaActivityLog, ['/activity-log']],
   [VpaaScheduleHistory, ['/schedule-history', '/dean/schedule-history', '/secretary/schedule-history', '/program_head/schedule-history']],
   [VpaaArchive, ['/archive']],
@@ -223,7 +223,6 @@ export default function App() {
             <Route path="/users" element={<RoleRoute role="vpaa" moduleName="User Management"><VpaaUsers /></RoleRoute>} />
             <Route path="/departments" element={<RoleRoute role="vpaa" moduleName="Department Management"><Departments /></RoleRoute>} />
             <Route path="/reports" element={<RoleRoute role="vpaa" moduleName="Reports"><Reports /></RoleRoute>} />
-            <Route path="/room-requests" element={<CapabilityRoute capability="room.view_all_requests" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
             <Route path="/activity-log" element={<RoleRoute role="vpaa" moduleName="Activity Log"><VpaaActivityLog /></RoleRoute>} />
             <Route path="/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/archive" element={<RoleRoute role="vpaa" moduleName="Archive"><VpaaArchive /></RoleRoute>} />

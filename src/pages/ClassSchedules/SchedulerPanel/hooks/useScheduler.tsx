@@ -27,7 +27,6 @@ import type {
 } from "../types";
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
 import { getCourseSlotPlan, laboratoryComponentSlots, type LaboratoryDurationSettings } from "../courseSlotPlan";
-import { buildSectionDoneCandidates } from "../sectionDoneCandidates";
 import { buildSectionClearCandidates } from "../sectionClearCandidates";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
@@ -75,7 +74,7 @@ import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "..
 import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
 import { roomGrantFits } from "../../../../lib/roomRequests";
-import { roomTypeSatisfies } from "../../../../lib/labRoomPolicy";
+import { configureLabRoomType, roomTypeSatisfies } from "../../../../lib/labRoomPolicy";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
@@ -163,8 +162,17 @@ const sortSplitMeetingsForEdit = (
   );
 };
 
+// Still being plotted. There is no Done step: a fully plotted section in one
+// of these goes straight to the Dean on Submit. "completed" is a section
+// marked Done before that step was removed, or a generated one.
+const departmentPlottingStatuses: ScheduleItem["status"][] = [
+  "draft",
+  "revision",
+  "completed"
+];
+
 const departmentReadyStatuses: ScheduleItem["status"][] = [
-  "completed",
+  ...departmentPlottingStatuses,
   "submitted",
   "approved_by_dean",
   "approved",
@@ -221,12 +229,6 @@ interface AtomicScheduleResponse {
   deleted_schedule_ids: number[];
   /** Saved conflicts this edit cleared, counted by the server around the write. */
   resolved_conflicts?: { id: string; message: string }[];
-}
-
-interface AcceptedRecommendationResponse {
-  schedules: ApiScheduleRecord[];
-  /** The committed plan; its metadata names the conflicts the commit cleared. */
-  schedule_plan?: { metadata?: { resolved_conflicts?: { id: string; message: string }[] } };
 }
 
 interface FacultyAssignResponse extends Partial<ApiScheduleRecord> {
@@ -330,8 +332,6 @@ export const useScheduler = () => {
     canUseInitialCache ? cachedSchedulerData.fieldCourseCodes : []
   );
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
-  const [isMarkSectionsDoneModalOpen, setIsMarkSectionsDoneModalOpen] = useState(false);
-  const [isMarkingSectionsDone, setIsMarkingSectionsDone] = useState(false);
   const [isEditingSection, setIsEditingSection] = useState(false);
 
   const [isResubmittingSection, setIsResubmittingSection] = useState(false);
@@ -700,8 +700,12 @@ export const useScheduler = () => {
   const [modalDay2Duration, setModalDay2Duration] = useState<number>(0);
   const [isDay2ModifiedByUser, setIsDay2ModifiedByUser] = useState<boolean>(false);
   const [modalValidationError, setModalValidationError] = useState<string>("");
-  const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
   const [manualSchedulingSettings, setManualSchedulingSettings] = useState<ManualSchedulingSettings | null>(null);
+  // Bumped when another panel (Generate Schedule) may have changed the
+  // department's Required Days, Field courses or LAB room rule. The placement
+  // and move saves send whole rule lists, so a stale copy would overwrite them.
+  const [schedulingSettingsVersion, setSchedulingSettingsVersion] = useState(0);
+  const reloadSchedulingSettings = useCallback(() => setSchedulingSettingsVersion((v) => v + 1), []);
 
   useEffect(() => {
     if (!selectedSectionId) return;
@@ -718,7 +722,12 @@ export const useScheduler = () => {
     return () => {
       active = false;
     };
-  }, [selectedSectionId]);
+  }, [selectedSectionId, schedulingSettingsVersion]);
+
+  // The department's Default LAB Room Requirement, read by every room check.
+  useEffect(() => {
+    configureLabRoomType(manualSchedulingSettings?.lab_room_type);
+  }, [manualSchedulingSettings]);
 
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
   const [facultyActionSlotId, setFacultyActionSlotId] = useState<string | null>(null);
@@ -813,8 +822,7 @@ export const useScheduler = () => {
 
   const isPhase2Active = ["approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus);
   const ownsSelectedProgram = ownsProgram(sections.find((section) => section.id === selectedSectionId)?.programId);
-  const isEditable = canUpdateSchedule && ownsSelectedProgram && (currentStatus === "draft" || currentStatus === "revision");
-  const isPhase1Completed = ["completed", "approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus);
+  const isEditable = canUpdateSchedule && ownsSelectedProgram && departmentPlottingStatuses.includes(currentStatus);
   const isPhase2Completed = currentStatus === "finalized";
   const facultyAssignmentDone = sectionSchedules.length > 0 && sectionSchedules.every((schedule) => schedule.facultyAssignmentDone);
 
@@ -853,30 +861,37 @@ export const useScheduler = () => {
     return s;
   }, []);
 
-  const sectionCourses = useMemo(() => {
-    if (!selectedSection) return subjects;
-    const selectedSemester = normalizeSemester(selectedSection.semester);
+  // A section's own courses. The section's course list and the department
+  // readiness count both use it, so a fully scheduled section reads as
+  // plotted in both places.
+  const coursesForSection = useCallback((section: Section) => {
+    const sectionSemester = normalizeSemester(section.semester);
     return subjects.filter((s) => {
       const isMinor = s.category === "minor";
       const matchesDept =
         isMinor ||
         s.departmentId === null ||
-        Number(s.departmentId) === Number(selectedSection.departmentId);
+        Number(s.departmentId) === Number(section.departmentId);
       // A major belongs to one program; another program's majors are not
       // this section's courses even inside the same department.
       const matchesProgram =
         isMinor ||
         s.programId == null ||
-        selectedSection.programId == null ||
-        Number(s.programId) === Number(selectedSection.programId);
-      const matchesYear = Number(s.yearLevel) === Number(selectedSection.yearLevel);
+        section.programId == null ||
+        Number(s.programId) === Number(section.programId);
+      const matchesYear = Number(s.yearLevel) === Number(section.yearLevel);
       const matchesSem =
-        !selectedSemester ||
+        !sectionSemester ||
         !s.semester ||
-        normalizeSemester(s.semester) === selectedSemester;
+        normalizeSemester(s.semester) === sectionSemester;
       return matchesDept && matchesProgram && matchesYear && matchesSem;
     });
-  }, [subjects, selectedSection, normalizeSemester]);
+  }, [subjects, normalizeSemester]);
+
+  const sectionCourses = useMemo(
+    () => (selectedSection ? coursesForSection(selectedSection) : subjects),
+    [selectedSection, coursesForSection, subjects]
+  );
 
   const semesterSubjects = useMemo(() => {
     if (subjects.length === 0) return [];
@@ -900,6 +915,10 @@ export const useScheduler = () => {
     () => new Set(sectionSchedules.map((s) => s.subjectId)).size,
     [sectionSchedules]
   );
+  // Plotting reads done as soon as every course is scheduled; there is no
+  // Done step to wait for.
+  const isPhase1Completed = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus)
+    || (departmentPlottingStatuses.includes(currentStatus) && totalSubjects > 0 && totalScheduled >= totalSubjects);
 
   const totalSlotsCount = sectionSchedules.length;
   const assignedSlotsCount = useMemo(
@@ -919,12 +938,6 @@ export const useScheduler = () => {
       schedulesBySection.set(schedule.sectionId, sectionItems);
     });
 
-    const subjectCountByYear = new Map<number, number>();
-    semesterSubjects.forEach((subject) => {
-      if (!subject.yearLevel) return;
-      subjectCountByYear.set(subject.yearLevel, (subjectCountByYear.get(subject.yearLevel) ?? 0) + 1);
-    });
-
     // Submission and recall cover the programs this account owns; the
     // others are submitted by their own owner.
     return sections
@@ -932,7 +945,7 @@ export const useScheduler = () => {
       .sort((a, b) => a.yearLevel - b.yearLevel || a.name.localeCompare(b.name))
       .map((section) => {
         const sectionScheduleItems = schedulesBySection.get(section.id) ?? [];
-        const requiredSubjects = subjectCountByYear.get(section.yearLevel) ?? 0;
+        const requiredSubjects = coursesForSection(section).length;
         const plottedSubjects = new Set(sectionScheduleItems.map((schedule) => schedule.subjectId)).size;
         const status = sectionScheduleItems.length > 0
           ? deriveSectionProgressStatus(sectionScheduleItems)
@@ -955,14 +968,7 @@ export const useScheduler = () => {
             && sectionScheduleItems.every((schedule) => Boolean(schedule.facultyAssignmentDone))
         };
       });
-  }, [schedules, sections, selectedDepartmentId, selectedSectionId, semesterSubjects, ownsProgram]);
-
-  // Sections still open for plotting, with everything the bulk "mark done"
-  // checklist needs so the user does not have to visit each section in turn.
-  const sectionDoneCandidates = useMemo<SectionDoneCandidate[]>(
-    () => buildSectionDoneCandidates(departmentSectionProgress, schedules),
-    [departmentSectionProgress, schedules]
-  );
+  }, [schedules, sections, selectedDepartmentId, selectedSectionId, coursesForSection, ownsProgram]);
 
   // Sections in instructor assignment, for the bulk Finalize checklist.
   const sectionFinalizeCandidates = useMemo<SectionDoneCandidate[]>(
@@ -978,9 +984,11 @@ export const useScheduler = () => {
 
   const departmentTotalSections = departmentSectionProgress.length;
   const departmentDoneSections = departmentSectionProgress.filter((section) => section.isDone).length;
-  const submissionReadySections = departmentSectionProgress.filter((section) => section.status === "completed");
+  const submissionReadySections = departmentSectionProgress.filter((section) =>
+    departmentPlottingStatuses.includes(section.status)
+  );
   const departmentRemainingSections = departmentSectionProgress.filter((section) =>
-    section.status !== "completed" && !departmentProtectedStatuses.includes(section.status)
+    !section.isDone && !departmentProtectedStatuses.includes(section.status)
   ).length;
   const departmentHasSubmittedSchedule = submissionReadySections.length === 0 && departmentSectionProgress.some((section) =>
     departmentSubmittedStatuses.includes(section.status)
@@ -1007,10 +1015,7 @@ export const useScheduler = () => {
       : "dean_review";
   const departmentReadyToSubmit =
     submissionReadySections.length > 0 &&
-    departmentRemainingSections === 0 &&
-    departmentSectionProgress.every((section) =>
-      section.status === "completed" || departmentProtectedStatuses.includes(section.status)
-    );
+    departmentRemainingSections === 0;
 
   const dropSubject = dropContext
     ? subjects.find((s) => s.id === dropContext.subjectId) ?? null
@@ -1046,24 +1051,6 @@ export const useScheduler = () => {
     });
   }, [semesterSubjects, selectedSection, subjectClassFilter, searchQuery]);
 
-  // The selected section's saved Required Days, so moving a placed class is
-  // checked against them before the save refuses it (forced_course_day).
-  const forcedDayByCourseId = useMemo<Record<string, number>>(() => {
-    const byCourse: Record<string, number> = {};
-    (manualSchedulingSettings?.forced_day_rules ?? []).forEach((rule) => {
-      const dayIndex = FULL_DAY_NAMES.findIndex((day) => day === rule.day);
-      if (dayIndex >= 0) byCourse[String(rule.course_id)] = dayIndex;
-    });
-    // Like the field list below, the dialog's Force Day choice is only saved on
-    // placement, so the open dialog's own pick stands in for the saved rule.
-    if (dropSubject) {
-      const key = String(dropSubject.id);
-      if (modalForceDayEnabled) byCourse[key] = modalForcedDayIndex;
-      else delete byCourse[key];
-    }
-    return byCourse;
-  }, [manualSchedulingSettings, dropSubject, modalForceDayEnabled, modalForcedDayIndex]);
-
   // The dialog's Field Course choice is only saved on placement, so validating
   // against the saved list judged a Field room as a mismatch for a course the
   // dialog was about to make a field course — and that blocked the placement
@@ -1087,7 +1074,6 @@ export const useScheduler = () => {
     faculties,
     fieldCourseAssignmentEnabled: fieldCourseAssignmentEnabled || effectiveFieldCourseCodes.length > 0,
     fieldCourseCodes: effectiveFieldCourseCodes,
-    forcedDayByCourseId,
     laboratoryDurationSettings: manualSchedulingSettings,
     // Unknown until the settings load; the server refuses Sunday either way.
     sundayClassesEnabled: manualSchedulingSettings?.sunday_classes_enabled ?? true,
@@ -1619,6 +1605,36 @@ export const useScheduler = () => {
     [resolvedIds, placedResolvedIds, savedResolvedIds]
   );
 
+  // Moving a placed class to another day is the user's explicit choice, so it
+  // overrides the course's Required Day instead of being refused by it
+  // (forced_course_day): the pin is cleared before the move is saved. Returns
+  // the rules to restore when the move then fails, or null when nothing changed.
+  const releaseRequiredDayForMove = useCallback(async (courseId: string, dayIndex: number) => {
+    const currentRules = manualSchedulingSettings?.forced_day_rules ?? [];
+    const pin = currentRules.find((rule) => String(rule.course_id) === courseId);
+    if (!manualSchedulingSettings || !pin || pin.day === FULL_DAY_NAMES[dayIndex]) return null;
+
+    const response = await api.patch<ManualSchedulingSettings>("/scheduling-settings", {
+      section_id: Number(selectedSectionId),
+      forced_day_rules: currentRules.filter((rule) => rule !== pin),
+    });
+    setManualSchedulingSettings(response.data);
+    return currentRules;
+  }, [manualSchedulingSettings, selectedSectionId]);
+
+  const restoreRequiredDays = useCallback(async (rules: Array<{ course_id: number; day: string }> | null) => {
+    if (rules === null) return;
+    try {
+      const response = await api.patch<ManualSchedulingSettings>("/scheduling-settings", {
+        section_id: Number(selectedSectionId),
+        forced_day_rules: rules,
+      });
+      setManualSchedulingSettings(response.data);
+    } catch {
+      // The move already failed and was reported; the cleared pin is harmless.
+    }
+  }, [selectedSectionId]);
+
   const onScheduleRelocated =useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
     const sched = schedules.find((s) => s.id === scheduleId);
     if (!sched) return;
@@ -1658,13 +1674,16 @@ export const useScheduler = () => {
       ? relocatedPairPattern(sched, groupPartner, dayIndex)
       : null;
 
+    let releasedRules: Array<{ course_id: number; day: string }> | null = null;
     try {
+      releasedRules = await releaseRequiredDayForMove(String(sched.courseId ?? sched.subjectId ?? ""), dayIndex);
       const response = await api.put<ApiScheduleRecord>(`/schedules/${scheduleId}`, {
         day: dayName,
         start_time: startTime24h,
         end_time: endTime24h,
         ...(nextPattern !== null ? { preferred_pattern: nextPattern } : {}),
       });
+      releasedRules = null;
       if (nextPattern !== null && groupPartner && !isNaN(Number(groupPartner.id))) {
         await api.put<ApiScheduleRecord>(`/schedules/${groupPartner.id}`, {
           preferred_pattern: nextPattern,
@@ -1677,6 +1696,7 @@ export const useScheduler = () => {
       // delayed the feedback for a result that is almost always identical.
       void refreshSchedules();
     } catch (err) {
+      void restoreRequiredDays(releasedRules);
       if (isNotFoundError(err)) {
         toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
         clearCachedKey(schedulerCacheKey);
@@ -1695,7 +1715,7 @@ export const useScheduler = () => {
         toast.error("Relocation Failed", "Could not save the new schedule slot.");
       }
     }
-  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules, isSummerWeekendBlocked, toast, triggerConflictReminder]);
+  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules, isSummerWeekendBlocked, toast, triggerConflictReminder, releaseRequiredDayForMove, restoreRequiredDays]);
 
   const dragDrop = useDragDrop({
     schedules,
@@ -2017,46 +2037,18 @@ export const useScheduler = () => {
         .slice(targetDays.length)
         .map((schedule) => Number(schedule.id));
 
-      let savedScheduleRecords: ApiScheduleRecord[];
-      let deletedScheduleRecordIds: number[] = [];
-      let resolvedConflictCount = 0;
-
-      // Acceptance creates/replaces every replaceable row for the course. That
-      // is correct for a new placement, but too broad while rescheduling one
-      // meeting (notably a split course). Keep reschedules on the batch path,
-      // where operations carry the exact existing schedule ids to update.
-      const recommendationIdToRejectAfterBatch = dropContext.isRescheduling
-        ? selectedRecommendationId
-        : null;
-
-      if (selectedRecommendationId !== null && !dropContext.isRescheduling) {
-        const response = await api.post<AcceptedRecommendationResponse>(
-          `/schedule-recommendations/${selectedRecommendationId}/accept`
-        );
-        savedScheduleRecords = response.data.schedules;
-        resolvedConflictCount = response.data.schedule_plan?.metadata?.resolved_conflicts?.length ?? 0;
-      } else {
-        const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
-          operations,
-          delete_ids: deleteIds
-        });
-        savedScheduleRecords = response.data.schedules ?? [];
-        deletedScheduleRecordIds = response.data.deleted_schedule_ids ?? [];
-        resolvedConflictCount = response.data.resolved_conflicts?.length ?? 0;
-      }
+      const response = await api.post<AtomicScheduleResponse>('/schedules/batch', {
+        operations,
+        delete_ids: deleteIds
+      });
+      const savedScheduleRecords = response.data.schedules ?? [];
+      const deletedScheduleRecordIds = response.data.deleted_schedule_ids ?? [];
+      const resolvedConflictCount = response.data.resolved_conflicts?.length ?? 0;
 
       placementSaved = true;
 
-      if (recommendationIdToRejectAfterBatch !== null) {
-        // The recommendation was used as a validated placement preview; the
-        // actual persistence was performed by /schedules/batch.
-        await api.post(`/schedule-recommendations/${recommendationIdToRejectAfterBatch}/reject`, {
-          reason: "Applied through the atomic schedule update path."
-        }).catch(() => undefined);
-      }
-
       const savedScheduleItems = savedScheduleRecords.map(mapApiScheduleToItem);
-      const deletedScheduleIds = new Set((deletedScheduleRecordIds ?? []).map(String));
+      const deletedScheduleIds = new Set(deletedScheduleRecordIds.map(String));
 
       if (dropContext.isRescheduling) {
         if (resolvedDay1StartSlot !== modalDay1StartSlot) {
@@ -2102,7 +2094,6 @@ export const useScheduler = () => {
       });
       setIsModalLoading(false);
       setDropContext(null);
-      setSelectedRecommendationId(null);
       setConflictInfo(null);
       // Background reconciliation: the server's own response is already
       // merged above, so blocking the user on a second full-semester fetch only
@@ -2152,7 +2143,6 @@ export const useScheduler = () => {
       setIsModalLoading(false);
       if (shouldCloseModal) {
         setDropContext(null);
-        setSelectedRecommendationId(null);
         setConflictInfo(null);
       }
     }
@@ -2281,10 +2271,11 @@ export const useScheduler = () => {
     }
 
     const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
-    // Recalled (`revision`) or returned (`rejected*`) rows.
+    // Recalled rows, or returned ones the department already reopened for
+    // revision; a section still in `rejected*` is locked and never reaches here.
     const recalledCount = new Set(
       targetSchedules
-        .filter((s) => ["revision", "rejected", "rejected_by_dean", "rejected_by_vpaa"].includes(s.status))
+        .filter((s) => s.status === "revision")
         .map((s) => s.sectionId),
     ).size;
     const confirmed = await confirm({
@@ -2460,7 +2451,7 @@ export const useScheduler = () => {
           + (released > 0
             ? ` ${released} instructor assignment${released === 1 ? " was" : "s were"} released.`
             : "")
-          + " After revision, mark the section done and submit it again for Dean and VPAA approval, then assign instructors again."
+          + " After revision, submit it again for Dean and VPAA approval, then assign instructors again."
       );
       invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty', 'assignments');
       refreshSchedules().catch(() => {});
@@ -2478,90 +2469,11 @@ export const useScheduler = () => {
     }
   }, [isWithdrawingSubmission]);
 
-  const openMarkSectionsDone = useCallback(() => {
-    setIsMarkSectionsDoneModalOpen(true);
-  }, []);
-
-  const cancelMarkSectionsDone = useCallback(() => {
-    if (!isMarkingSectionsDone) setIsMarkSectionsDoneModalOpen(false);
-  }, [isMarkingSectionsDone]);
-
-  // One batch call for every selected section: the endpoint takes schedule ids
-  // across sections, so bulk done costs the same round trip as a single section.
-  const confirmMarkSectionsDone = useCallback(async (sectionIds: string[]) => {
-    if (isMarkingSectionsDone) return;
-
-    const chosen = sectionDoneCandidates.filter(
-      (candidate) => candidate.isReady && sectionIds.includes(candidate.sectionId)
-    );
-    const ids = chosen.flatMap((candidate) => candidate.scheduleIds);
-    if (ids.length === 0) {
-      toast.error("Nothing to Mark Done", "Select at least one fully plotted section.");
-      return;
-    }
-
-    try {
-      setIsMarkingSectionsDone(true);
-      await api.patch("/schedules/batch-status", { ids, status: "completed" });
-
-      const updatedScheduleIds = new Set(ids.map(String));
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          updatedScheduleIds.has(String(schedule.id))
-            ? { ...schedule, status: "completed" }
-            : schedule
-        )
-      );
-      toast.success(
-        chosen.length === 1 ? "Section Done" : `${chosen.length} Sections Done`,
-        chosen.length === 1
-          ? `${chosen[0].sectionName} is now locked for plotting.`
-          : "The selected sections are now locked for plotting."
-      );
-      setIsMarkSectionsDoneModalOpen(false);
-      refreshSchedules().catch(() => {});
-    } catch (err) {
-      toast.error("Failed to mark sections done", getApiErrorMessage(err) ?? "An error occurred.");
-    } finally {
-      setIsMarkingSectionsDone(false);
-    }
-  }, [isMarkingSectionsDone, sectionDoneCandidates, refreshSchedules, toast]);
-
+  // Reassignment opens the same kind of checklist as Finalize.
   const handleEditSection = useCallback(async () => {
-    if (!selectedSectionId || isEditingSection) return;
-
-    // Reassignment opens the same kind of checklist as Done and Finalize.
-    if (currentStatus === "finalized") {
-      setIsReassignSectionsModalOpen(true);
-      return;
-    }
-
-    // Only the rows marked Done reopen. Sending every row of the section let a
-    // stale screen pull already-submitted rows back out of the Dean's queue.
-    const completedRows = sectionSchedules.filter((s) => s.status === "completed");
-    if (completedRows.length === 0) return;
-
-    try {
-      setIsEditingSection(true);
-      const ids = completedRows.map((s) => Number(s.id));
-      await api.patch("/schedules/batch-status", { ids, status: "draft" });
-
-      const sectionScheduleIds = new Set(completedRows.map((schedule) => schedule.id));
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          sectionScheduleIds.has(schedule.id)
-            ? { ...schedule, status: "draft" }
-            : schedule
-        )
-      );
-      toast.success("Section Editable", "You can plot and edit this section again.");
-      refreshSchedules().catch(() => {});
-    } catch (err) {
-      toast.error("Failed to unlock section", getApiErrorMessage(err) ?? "An error occurred.");
-    } finally {
-      setIsEditingSection(false);
-    }
-  }, [selectedSectionId, isEditingSection, currentStatus, sectionSchedules, refreshSchedules, toast]);
+    if (!selectedSectionId || isEditingSection || currentStatus !== "finalized") return;
+    setIsReassignSectionsModalOpen(true);
+  }, [selectedSectionId, isEditingSection, currentStatus]);
 
   const cancelReassignSections = useCallback(() => {
     if (!isEditingSection) setIsReassignSectionsModalOpen(false);
@@ -2625,7 +2537,7 @@ export const useScheduler = () => {
     }
   }, [selectedSectionId, isResubmittingSection, sectionSchedules, refreshSchedules, toast]);
 
-  /** Finalize opens the same kind of checklist as Done, for every section ready to finalize. */
+  /** Finalize opens a checklist of every section ready to finalize. */
   const handleFinalize = useCallback(async () => {
     if (!selectedSectionId || isFinalizing) return;
     setIsFinalizeSectionsModalOpen(true);
@@ -3240,7 +3152,8 @@ export const useScheduler = () => {
           dayIndex,
           startSlot: timeIndex,
           durationSlots: sched.durationSlots,
-          message: conflict.message
+          message: conflict.message,
+          title: conflict.title
         });
         return;
       }
@@ -3248,12 +3161,15 @@ export const useScheduler = () => {
       const startTime24h = slotToTime24h(timeIndex);
       const endTime24h = slotToTime24h(timeIndex + sched.durationSlots);
 
+      let releasedRules: Array<{ course_id: number; day: string }> | null = null;
       try {
+        releasedRules = await releaseRequiredDayForMove(String(sched.courseId ?? sched.subjectId ?? ""), dayIndex);
         const response = await api.put<ApiScheduleRecord>(`/schedules/${sched.id}`, {
           day: dayName,
           start_time: startTime24h,
           end_time: endTime24h
         });
+        releasedRules = null;
         applyUpdatedSchedules(relocatedRows(response.data));
         toast.success("Schedule Relocated", "Class schedule successfully relocated.");
         // Background reconciliation: the server's own response is already
@@ -3261,6 +3177,7 @@ export const useScheduler = () => {
         // delayed the feedback for a result that is almost always identical.
         void refreshSchedules();
       } catch (err) {
+        void restoreRequiredDays(releasedRules);
         if (isNotFoundError(err)) {
           toast.error("Sync Error", "This schedule has been removed or modified externally. Refreshing timetable...");
           clearCachedKey(schedulerCacheKey);
@@ -3275,7 +3192,7 @@ export const useScheduler = () => {
         setConflictInfo(null);
       }
     }
-  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast, isSummerWeekendBlocked]);
+  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast, isSummerWeekendBlocked, releaseRequiredDayForMove, restoreRequiredDays]);
 
 
   const activeSemesterText = useMemo(() => {
@@ -3360,8 +3277,6 @@ export const useScheduler = () => {
     modalValidationError,
     setModalValidationError,
     modalConflict,
-    selectedRecommendationId,
-    setSelectedRecommendationId,
     handleEditMovingSchedule,
     openScheduleInBuilder,
     facultyAssignmentPopup,
@@ -3466,12 +3381,6 @@ export const useScheduler = () => {
     isFinalizeSectionsModalOpen,
     cancelFinalizeSections,
     confirmFinalizeSections,
-    sectionDoneCandidates,
-    isMarkSectionsDoneModalOpen,
-    isMarkingSectionsDone,
-    openMarkSectionsDone,
-    cancelMarkSectionsDone,
-    confirmMarkSectionsDone,
     handleEditSection,
     isEditingSection,
     isResubmittingSection,
@@ -3486,6 +3395,7 @@ export const useScheduler = () => {
     handleClearSectionInstructors,
     handleRemoveInlineFaculty,
     handleAcceptedRecommendation,
+    reloadSchedulingSettings,
     refreshSchedules,
     refreshData,
     getClassesCountForDay,

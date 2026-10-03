@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PlacementAlternatives, { type PlacementAlternativesProps } from "./PlacementAlternatives";
-import { ALL_ROOMS, type AvailableSlot, type DropRecommendation } from "./placementAlternativesModel";
+import { ALL_ROOMS, type AvailableSlot } from "./placementAlternativesModel";
 
 const slot = (day: string, startSlot: number): AvailableSlot => ({
   day,
@@ -16,55 +16,29 @@ const slot = (day: string, startSlot: number): AvailableSlot => ({
   room_type: "lecture",
 });
 
-const pick: DropRecommendation = {
-  rank: 1,
-  score: 90,
-  schedules: [{
-    semester_id: 1,
-    section_id: 1,
-    course_id: 1,
-    faculty_id: null,
-    room_id: 10,
-    department_id: 1,
-    day: "Tuesday",
-    start_time: "09:00:00",
-    end_time: "10:30:00",
-    mode: "on-site",
-    is_hybrid: false,
-    preferred_pattern: null,
-    status: "draft",
-  }],
-};
-
-const slots = [slot("Monday", 0), slot("Wednesday", 4)];
+const slots = [slot("Monday", 0), slot("Wednesday", 4), slot("Saturday", 2)];
 
 const props = (overrides: Partial<PlacementAlternativesProps> = {}): PlacementAlternativesProps => ({
-  rooms: [],
-  recommendations: [pick],
-  arePicksLoading: false,
-  recommendationError: null,
-  confirmationPrompt: null,
-  onConfirmConfiguration: () => undefined,
-  appliedRecommendationRank: null,
-  isApplyingRecommendation: false,
-  missesForcedDay: () => false,
-  forcedDayName: null,
-  onApplyRecommendation: () => undefined,
   availableSlots: slots,
-  availableSlotRooms: [{ room_id: 10, room_code: "IT 105", room_type: "lecture", mode: "on-site", slot_count: 2 }],
+  availableSlotRooms: [{ room_id: 10, room_code: "IT 105", room_type: "lecture", mode: "on-site", slot_count: 3 }],
   visibleSlots: slots,
-  slotsByDay: [["Monday", [slots[0]]], ["Wednesday", [slots[1]]]],
   isSlotsLoading: false,
+  slotsError: null,
   areSlotsTruncated: false,
   roomFilter: ALL_ROOMS,
   onRoomFilterChange: () => undefined,
   onApplySlot: () => undefined,
+  requestedDay: "Monday",
+  bestMatches: [slots[0]],
+  isSlotApplied: () => false,
+  forcedDayName: null,
   splitPairStarts: null,
   onApplySplitPairStart: () => undefined,
   firstDayIndex: 0,
   secondDayIndex: 2,
   firstMode: "on-site",
   secondMode: "on-site",
+  splitStartSlot: 0,
   showsMeetingSwitch: false,
   slotMeeting: "first",
   onSlotMeetingChange: () => undefined,
@@ -76,31 +50,57 @@ const props = (overrides: Partial<PlacementAlternativesProps> = {}): PlacementAl
 describe("PlacementAlternatives", () => {
   afterEach(cleanup);
 
-  it("leads with the ranked picks and keeps the full list behind Show all", () => {
-    const onApplyRecommendation = vi.fn();
-    render(<PlacementAlternatives {...props({ onApplyRecommendation })} />);
+  it("opens on Best Match and applies the chosen option", () => {
+    const onApplySlot = vi.fn();
+    render(<PlacementAlternatives {...props({ onApplySlot })} />);
 
-    expect(screen.getByRole("list", { name: "Generator picks" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "All valid placements" })).toBeNull();
+    expect(screen.getByRole("tab", { name: /Best Match/ }).getAttribute("aria-selected")).toBe("true");
+    const best = within(screen.getByRole("list", { name: "Best matches" }));
+    expect(best.getByText("Best match")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Use this option" }));
-    expect(onApplyRecommendation).toHaveBeenCalledWith(pick);
-
-    fireEvent.click(screen.getByRole("button", { name: "Show all 2 valid placements" }));
-    expect(screen.getByRole("region", { name: "All valid placements" })).toBeTruthy();
-    expect(screen.getByLabelText("Filter placements by room")).toBeTruthy();
+    fireEvent.click(best.getByRole("button", { name: "Use this option" }));
+    expect(onApplySlot).toHaveBeenCalledWith(slots[0]);
   });
 
-  it("opens the full list straight away when there are no picks", () => {
-    render(<PlacementAlternatives {...props({ recommendations: [] })} />);
+  it("says so when the requested day has no free room and time", () => {
+    render(<PlacementAlternatives {...props({ bestMatches: [], requestedDay: "Tuesday" })} />);
 
-    expect(screen.getByRole("region", { name: "All valid placements" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
+    expect(screen.getByText(/No room and time is free on/)).toBeTruthy();
+  });
+
+  it("splits the full list into Weekdays (Mon-Thu) and Weekend (Fri-Sat)", () => {
+    render(<PlacementAlternatives {...props()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Weekdays/ }));
+    let list = within(screen.getByRole("region", { name: "Valid placements" }));
+    expect(list.getByText(/^Monday$/)).toBeTruthy();
+    expect(list.getByText(/^Wednesday$/)).toBeTruthy();
+    expect(list.queryByText(/^Saturday$/)).toBeNull();
+    expect(screen.getByLabelText("Filter placements by room")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Weekend/ }));
+    list = within(screen.getByRole("region", { name: "Valid placements" }));
+    expect(list.getByText(/^Saturday$/)).toBeTruthy();
+    expect(list.queryByText(/^Monday$/)).toBeNull();
+  });
+
+  it("keeps a slot off the Force Day from being applied", () => {
+    render(<PlacementAlternatives {...props({ forcedDayName: "Wednesday" })} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Weekdays/ }));
+    const buttons = within(screen.getByRole("region", { name: "Valid placements" })).getAllByRole("button");
+    expect(buttons.map((button) => (button as HTMLButtonElement).disabled)).toEqual([true, false]);
   });
 
   it("says so when there is nothing to offer", () => {
-    render(<PlacementAlternatives {...props({ recommendations: [], availableSlots: [], visibleSlots: [], slotsByDay: [] })} />);
+    render(<PlacementAlternatives {...props({ availableSlots: [], visibleSlots: [], bestMatches: [] })} />);
 
     expect(screen.getByText("No alternatives found")).toBeTruthy();
+  });
+
+  it("shows why suggestions could not be loaded", () => {
+    render(<PlacementAlternatives {...props({ slotsError: "Suggestions are unavailable right now." })} />);
+
+    expect(screen.getByText("Suggestions are unavailable right now.")).toBeTruthy();
   });
 });

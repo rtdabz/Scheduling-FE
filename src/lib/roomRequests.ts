@@ -62,7 +62,7 @@ export interface RoomRequestInput {
 
 export const ROOM_REQUEST_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const fetchRoomRequests = async (params?: { status?: RoomRequestStatus; scope?: 'department' | 'all' }) =>
+export const fetchRoomRequests = async (params?: { status?: RoomRequestStatus }) =>
   (await api.get<RoomRequest[]>('/room-requests', { params })).data;
 
 export const fetchRoomOccupancy = async (roomId: number) =>

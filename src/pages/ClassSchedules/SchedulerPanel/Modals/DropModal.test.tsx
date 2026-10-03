@@ -11,8 +11,8 @@ vi.mock("../../../../lib/api", () => ({
 }));
 
 // Stable like the scheduler's own state: a fresh array or course object per
-// render would rebuild the recommendation payload and re-run the preview on
-// every render, which the real scheduler never does.
+// render would rebuild the slot payload and re-ask the server on every
+// render, which the real scheduler never does.
 const NO_SCHEDULES: ScheduleItem[] = [];
 const ROOMS: Room[] = [
   { id: "lecture-room", name: "Lecture Room", departmentId: 1, roomType: "lecture", status: "available" },
@@ -139,8 +139,6 @@ function HybridModalHarness({
       setModalValidationError={() => undefined}
       modalConflict={modalConflict}
       isModalLoading={false}
-      selectedRecommendationId={null}
-      setSelectedRecommendationId={() => undefined}
       setDropContext={setDropContext}
       handleModalConfirm={(event) => event.preventDefault()}
       modalRun={run}
@@ -149,21 +147,14 @@ function HybridModalHarness({
   );
 }
 
-/**
- * The panel now calls two endpoints: the CSP preview for the ranked options and
- * /available-slots for the exhaustive list. Assertions about "the solver ran"
- * must name the preview, or they count the slot query too.
- */
-const previewCalls = () => vi.mocked(api.post).mock.calls
-  .filter(([url]) => url === "/schedule-recommendations/preview");
+/** Every placement the Rule Engine accepts: the panel's only source. */
+const slotCalls = () => vi.mocked(api.post).mock.calls
+  .filter(([url]) => url === "/schedule-recommendations/available-slots");
 
-/** Answers each endpoint with its own shape. */
 const mockRecommendationApi = (slots: unknown[] = [], rooms: unknown[] = []) => {
-  vi.mocked(api.post).mockImplementation((url: string) => (
-    url === "/schedule-recommendations/available-slots"
-      ? Promise.resolve({ data: { slots, rooms, total: slots.length, truncated: false } })
-      : Promise.resolve({ data: { recommendations: [] } })
-  ) as never);
+  vi.mocked(api.post).mockImplementation((() => (
+    Promise.resolve({ data: { slots, rooms, total: slots.length, truncated: false } })
+  )) as never);
 };
 
 describe("DropModal Integrated configuration", () => {
@@ -240,11 +231,9 @@ describe("DropModal Integrated configuration", () => {
     fireEvent.change(duration("Laboratory Meeting"), { target: { value: "8" } });
 
     expect(duration("Laboratory Meeting").value).toBe("8");
-    // The lengths chosen are what the alternatives are asked for; without them
+    // The length chosen is what the suggestions are asked for; without it
     // every option comes back in the shape the user has just changed.
-    await waitFor(() => expect(previewCalls().at(-1)?.[1]).toMatchObject({
-      component_minutes_by_course_id: { 1: { lecture: 180, laboratory: 240 } },
-    }));
+    await waitFor(() => expect(slotCalls().at(-1)?.[1]).toMatchObject({ duration_slots: 8 }));
   });
 
   it("recalculates recommendations from the latest displayed schedule state", async () => {
@@ -280,8 +269,7 @@ describe("DropModal Integrated configuration", () => {
       <HybridModalHarness schedules={[schedule({})]} modalConflict="Section conflict" />
     );
 
-    await waitFor(() => expect(previewCalls()).toHaveLength(1));
-    const firstPayload = previewCalls()[0][1] as Record<string, unknown>;
+    await waitFor(() => expect(slotCalls()).toHaveLength(1));
 
     rerender(
       <HybridModalHarness
@@ -298,11 +286,8 @@ describe("DropModal Integrated configuration", () => {
       />
     );
 
-    await waitFor(() => expect(previewCalls()).toHaveLength(2));
-    const secondPayload = previewCalls()[1][1] as {
-      seed: number;
-      tentative_schedules: Array<Record<string, unknown>>;
-    };
+    await waitFor(() => expect(slotCalls()).toHaveLength(2));
+    const secondPayload = slotCalls()[1][1] as { tentative_schedules: Array<Record<string, unknown>> };
 
     expect(secondPayload.tentative_schedules[0]).toMatchObject({
       id: 22,
@@ -312,52 +297,8 @@ describe("DropModal Integrated configuration", () => {
       faculty_id: 12,
       room_id: 13,
     });
-    expect(secondPayload.seed).not.toBe(firstPayload.seed);
   });
 
-  it("requires explicit confirmation before retrying a warned configuration", async () => {
-    vi.mocked(api.post).mockImplementation((_url, payload) => {
-      const request = payload as { configuration_confirmation?: unknown };
-      if (request.configuration_confirmation) {
-        return Promise.resolve({ data: { recommendations: [] } });
-      }
-
-      return new Promise((_, reject) => {
-        window.setTimeout(() => reject({
-          response: {
-            data: {
-              error_code: "configuration_confirmation_required",
-              message: "The schedule may be too concentrated and should be reviewed.",
-              configuration_confirmation: {
-                schema_version: 1,
-                configuration_fingerprint: "a".repeat(64),
-                required_warning_rule_ids: ["same_day_concentration"],
-              },
-            },
-          },
-        }), 20);
-      });
-    });
-
-    render(<HybridModalHarness modalConflict="Section conflict" />);
-
-    expect(await screen.findByText("The schedule may be too concentrated and should be reviewed.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm and continue" }));
-
-    await waitFor(() => expect(vi.mocked(api.post).mock.calls.some(([, payload]) => (
-      Boolean((payload as { configuration_confirmation?: unknown }).configuration_confirmation)
-    ))).toBe(true));
-    const confirmedCall = vi.mocked(api.post).mock.calls.find(([, payload]) => (
-      Boolean((payload as { configuration_confirmation?: unknown }).configuration_confirmation)
-    ));
-    expect(confirmedCall?.[1]).toMatchObject({
-      configuration_confirmation: {
-        schema_version: 1,
-        configuration_fingerprint: "a".repeat(64),
-        confirmed_warning_rule_ids: ["same_day_concentration"],
-      },
-    });
-  });
 });
 
 describe("DropModal manual placement support", () => {
@@ -388,27 +329,24 @@ describe("DropModal manual placement support", () => {
 
     expect(screen.getByRole("complementary", { name: "Suggested alternatives" })).toBeTruthy();
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      "/schedule-recommendations/preview",
-      expect.objectContaining({ section_id: 1, course_ids: [1] }),
+      "/schedule-recommendations/available-slots",
+      expect.objectContaining({ section_id: 1, course_id: 1 }),
       expect.anything(),
     ));
     expect(await screen.findByText("No alternatives found")).toBeTruthy();
   });
 
-  it("keeps alternatives on the course's delivery when a meeting is switched to Online", async () => {
+  it("does not re-ask for slots when a meeting is switched to Online", async () => {
     render(<HybridModalHarness lectureOnly modalConflict="Room conflict: BA 201 is already occupied" />);
 
-    await waitFor(() => expect(previewCalls()).toHaveLength(1));
-    expect(previewCalls()[0][1]).toMatchObject({ mode: "on-site" });
+    await waitFor(() => expect(slotCalls()).toHaveLength(1));
 
-    // Trying Online on the meeting is not a course-wide delivery rule: it must
-    // neither narrow the alternatives to online-only nor re-run the solver.
+    // The slot list already covers every delivery the course may use, so
+    // trying Online on the meeting changes nothing it was asked for.
     fireEvent.click(screen.getByRole("button", { name: "Online" }));
     await new Promise((resolve) => window.setTimeout(resolve, 450));
 
-    const previews = previewCalls();
-    expect(previews).toHaveLength(1);
-    expect(previews.every(([, payload]) => (payload as { mode: string }).mode === "on-site")).toBe(true);
+    expect(slotCalls()).toHaveLength(1);
   });
 
   it("lists every valid slot grouped by day, with a per-room count in the filter", async () => {
@@ -438,6 +376,7 @@ describe("DropModal manual placement support", () => {
 
     render(<HybridModalHarness lectureOnly modalConflict="Section conflict" />);
 
+    fireEvent.click(await screen.findByRole("tab", { name: /Weekdays/ }));
     const roomFilter = await screen.findByLabelText<HTMLSelectElement>("Filter placements by room");
     await waitFor(() => expect(roomFilter.options).toHaveLength(3));
 
@@ -448,9 +387,8 @@ describe("DropModal manual placement support", () => {
       "NEE 204 (1)",
     ]);
 
-    // Every day the server returned gets its own heading, rather than the three
-    // ranked options the panel used to be limited to.
-    const panel = within(screen.getByRole("region", { name: "All valid placements" }));
+    // Every weekday the server returned gets its own heading.
+    const panel = within(screen.getByRole("region", { name: "Valid placements" }));
     expect(panel.getByText(/^Monday$/)).toBeTruthy();
     expect(panel.getByText(/^Tuesday$/)).toBeTruthy();
 
@@ -491,6 +429,7 @@ describe("DropModal manual placement support", () => {
 
     render(<HybridModalHarness lectureOnly modalConflict="Section conflict" />);
 
+    fireEvent.click(await screen.findByRole("tab", { name: /Weekdays/ }));
     const roomFilter = await screen.findByLabelText<HTMLSelectElement>("Filter placements by room");
     await waitFor(() => expect(roomFilter.options).toHaveLength(3));
 
@@ -504,7 +443,7 @@ describe("DropModal manual placement support", () => {
 
     // Online carries no room id, so it needs a key of its own: filtering on
     // room_id alone folded it into "All rooms".
-    const panel = within(screen.getByRole("region", { name: "All valid placements" }));
+    const panel = within(screen.getByRole("region", { name: "Valid placements" }));
     fireEvent.change(roomFilter, { target: { value: "online" } });
     expect(panel.getByText(/^Tuesday$/)).toBeTruthy();
     expect(panel.getAllByText("Online")).toHaveLength(2);
@@ -547,8 +486,7 @@ describe("DropModal manual placement support", () => {
 
       render(splitHarness());
 
-      const panel = within(await screen.findByRole("region", { name: "All valid placements" }));
-      expect(panel.getByText("Valid split times")).toBeTruthy();
+      const panel = within(await screen.findByRole("region", { name: "Valid split times" }));
 
       // Only start slot 0 is free on Thursday *and* Friday. Slot 4 is Thursday
       // only and slot 8 Friday only, so neither can hold a shared-time pair.
@@ -560,19 +498,7 @@ describe("DropModal manual placement support", () => {
       expect(screen.queryByLabelText("Filter placements by room")).toBeNull();
     });
 
-    it("tells the solver the split is a Hybrid Split so it keeps one meeting online", async () => {
-      render(splitHarness());
-
-      await waitFor(() => expect(previewCalls()).toHaveLength(1));
-      // Without this the split came back as two face-to-face meetings and the
-      // online half the user set by hand was dropped.
-      expect(previewCalls()[0][1]).toMatchObject({
-        hybrid_split_course_ids: [1],
-        split_gec_enabled: true,
-      });
-    });
-
-    it("offers Online as the split's delivery and keeps the alternatives online", async () => {
+    it("offers Online as the split's delivery", async () => {
       render(splitHarness());
 
       const delivery = screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement;
@@ -586,15 +512,6 @@ describe("DropModal manual placement support", () => {
       expect(screen.getAllByRole("button", { name: "Online", pressed: true })).toHaveLength(2);
       expect(screen.queryByRole("combobox", { name: "First Meeting room" })).toBeNull();
       expect(screen.queryByRole("combobox", { name: "Second Meeting room" })).toBeNull();
-
-      // The course is online, so the alternatives are solved online: without
-      // it they came back face-to-face. It is no longer a Hybrid Split.
-      await waitFor(() => expect(previewCalls().at(-1)?.[1]).toMatchObject({
-        mode: "online",
-        split_gec_enabled: true,
-        selected_gec_course_ids: [1],
-        hybrid_split_course_ids: [],
-      }));
     });
 
     it("puts an Online Split back on site in a lecture room", async () => {
@@ -608,7 +525,6 @@ describe("DropModal manual placement support", () => {
       await waitFor(() => expect(delivery.value).toBe("onsite"));
       expect((screen.getByRole("combobox", { name: "First Meeting room" }) as HTMLSelectElement).value).toBe("lecture-room");
       expect((screen.getByRole("combobox", { name: "Second Meeting room" }) as HTMLSelectElement).value).toBe("lecture-room");
-      await waitFor(() => expect(previewCalls().at(-1)?.[1]).toMatchObject({ mode: "on-site", hybrid_split_course_ids: [] }));
     });
 
     it("says so when no time suits both days", async () => {
@@ -619,7 +535,7 @@ describe("DropModal manual placement support", () => {
 
       render(splitHarness());
 
-      const panel = within(await screen.findByRole("region", { name: "All valid placements" }));
+      const panel = within(await screen.findByRole("region", { name: "Valid split times" }));
       await waitFor(() => expect(panel.getByText(/No time is free on both days/)).toBeTruthy());
     });
   });
@@ -632,9 +548,6 @@ describe("DropModal manual placement support", () => {
     }]);
     render(<HybridModalHarness modalConflict="Online course conflict" />);
     fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
-
-    const slotCalls = () => vi.mocked(api.post).mock.calls
-      .filter(([url]) => url === "/schedule-recommendations/available-slots");
 
     // The laboratory half: its own length, and named as a laboratory so the
     // server keeps it on-site.
@@ -666,56 +579,55 @@ describe("DropModal manual placement support", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Lecture Meeting" }));
-    const panel = within(screen.getByRole("region", { name: "All valid placements" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Weekdays/ }));
+    const panel = within(await screen.findByRole("region", { name: "Valid placements" }));
     fireEvent.click(await panel.findByText("7 AM – 9 AM"));
-
-    // modalConflict judges each meeting on parsePreferredPattern(...), not on
-    // the day indexes, so a day applied without its pattern left the dialog
-    // showing Wednesday while the conflict was still checked against the old
-    // day. The pattern must carry the new second day (index 2).
-    await waitFor(() => {
-      const pattern = (previewCalls().at(-1)?.[1] as { preferred_patterns: Record<string, string> })
-        .preferred_patterns["1"];
-      expect(pattern).toMatch(/-2$/);
-    });
 
     expect((screen.getByLabelText("Second meeting day") as HTMLSelectElement).value).toBe("2");
   });
 
-  it("re-solves for the field when the meeting is switched to Field", async () => {
-    render(<HybridModalHarness lectureOnly modalConflict="Section conflict" />);
-
-    await waitFor(() => expect(previewCalls()).toHaveLength(1));
-    expect(previewCalls()[0][1]).toMatchObject({ mode: "on-site" });
-
-    // A field class cannot be in a room at all, so unlike Online this *is* a
-    // course-wide restriction: leaving it out recommended lecture rooms for a
-    // meeting already set to Field.
-    fireEvent.click(screen.getByRole("button", { name: "Field" }));
-
-    await waitFor(() => expect(previewCalls()).toHaveLength(2));
-    expect(previewCalls()[1][1]).toMatchObject({ mode: "field" });
-  });
-
-  it("applies a recommendation without re-opening the dialog for a new cell", async () => {
-    const row = {
-      semester_id: 1, section_id: 1, course_id: 1, faculty_id: null, room_id: null, department_id: 1,
-      day: "Tuesday", start_time: "13:00", end_time: "16:00", mode: "online", is_hybrid: false,
-      preferred_pattern: null, status: "draft",
-    };
-    vi.mocked(api.post).mockImplementation((url) => Promise.resolve(url === "/schedule-recommendations/select"
-      ? { data: { recommendation: { id: 5, recommended_schedules: [row] } } }
-      : { data: { recommendations: [{ rank: 1, score: 1, schedules: [row] }] } }));
+  it("leads with the best match on the requested day and applies it in place", async () => {
+    const slot = (day: string, dayIndex: number, startSlot: number, mode: DeliveryMode, roomId: number | null) => ({
+      day, day_index: dayIndex, start_slot: startSlot, end_slot: startSlot + 6,
+      start_time: "07:00:00", end_time: "10:00:00", mode,
+      room_id: roomId, room_code: roomId == null ? "Online" : "IT 105", room_type: roomId == null ? "online" : "lecture",
+    });
+    mockRecommendationApi([
+      slot("Monday", 0, 2, "on-site", 10),
+      // Thursday is the requested day: the harness opens there at slot 2.
+      slot("Thursday", 3, 12, "on-site", 10),
+      slot("Thursday", 3, 4, "on-site", 10),
+      slot("Friday", 4, 2, "on-site", 10),
+    ]);
     const setDropContext = vi.fn();
 
     render(<HybridModalHarness lectureOnly modalConflict="Room conflict" setDropContext={setDropContext} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Use this option" }));
 
-    // The dialog's own fields take the option...
-    await waitFor(() => expect((screen.getByLabelText("First meeting day") as HTMLSelectElement).value).toBe("1"));
-    // ...and dropContext is untouched: moving its cell re-initialised the
-    // dialog, replacing the recommended room and mode with its own defaults.
+    // Best Match: Thursday only, nearest the requested start first.
+    const best = within(await screen.findByRole("list", { name: "Best matches" }));
+    const options = best.getAllByRole("listitem");
+    expect(options).toHaveLength(2);
+    expect(within(options[0]).getByText("Best match")).toBeTruthy();
+    expect(within(options[0]).getByText(/^9 AM – /)).toBeTruthy();
+
+    fireEvent.click(within(options[0]).getByRole("button", { name: "Use this option" }));
+
+    // The dialog's own fields take the option, and dropContext is untouched:
+    // moving its cell re-initialised the dialog with its own defaults.
+    await waitFor(() => expect(within(screen.getByRole("list", { name: "Best matches" })).getByRole("button", { name: "Selected" })).toBeTruthy());
+    expect((screen.getByLabelText("First meeting day") as HTMLSelectElement).value).toBe("3");
     expect(setDropContext).not.toHaveBeenCalled();
+
+    // Weekdays lists Monday to Thursday; Weekend lists Friday and Saturday.
+    fireEvent.click(screen.getByRole("tab", { name: /Weekdays/ }));
+    const weekdays = within(screen.getByRole("region", { name: "Valid placements" }));
+    expect(weekdays.getByText(/^Monday$/)).toBeTruthy();
+    expect(weekdays.queryByText(/^Friday$/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Weekend/ }));
+    const weekend = within(screen.getByRole("region", { name: "Valid placements" }));
+    expect(weekend.getByText(/^Friday$/)).toBeTruthy();
+    expect(weekend.queryByText(/^Monday$/)).toBeNull();
   });
 
   it("shows why a save was refused instead of hiding it under the room field", () => {

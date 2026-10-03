@@ -36,10 +36,8 @@ interface TopBarProps {
   totalSlotsCount: number;
   unassignedSlotsCount: number;
   departmentSectionProgress: DepartmentSectionProgress[];
-  sectionDoneCandidates: SectionDoneCandidate[];
   sectionFinalizeCandidates: SectionDoneCandidate[];
   sectionReassignCandidates: SectionDoneCandidate[];
-  openMarkSectionsDone: () => void;
   departmentTotalSections: number;
   departmentDoneSections: number;
   departmentRemainingSections: number;
@@ -122,15 +120,11 @@ function WorkflowStep({ index, label, meta, state }: { index: number; label: str
 interface ActionButtonProps {
   selectedSectionId: string;
   currentStatus: ScheduleItem["status"];
-  totalSubjects: number;
-  totalScheduled: number;
-  readySectionCount: number;
   readyFinalizeCount: number;
   finalizedSectionCount: number;
   isEditingSection: boolean;
   isResubmittingSection: boolean;
   isFinalizing: boolean;
-  openMarkSectionsDone: () => void;
   handleEditSection: () => Promise<void>;
   handleResubmit: () => Promise<void>;
   handleFinalize: () => Promise<void>;
@@ -142,15 +136,11 @@ interface ActionButtonProps {
 function ActionButton({
   selectedSectionId,
   currentStatus,
-  totalSubjects,
-  totalScheduled,
-  readySectionCount,
   readyFinalizeCount,
   finalizedSectionCount,
   isEditingSection,
   isResubmittingSection,
   isFinalizing,
-  openMarkSectionsDone,
   handleEditSection,
   handleResubmit,
   handleFinalize,
@@ -160,46 +150,8 @@ function ActionButton({
 }: ActionButtonProps) {
   if (!selectedSectionId) return null;
   switch (currentStatus) {
-    case "draft":
-    case "revision": {
-      if (!canUpdateSchedule) return null;
-      const remaining = Math.max(0, totalSubjects - totalScheduled);
-      const canMarkDone = totalSubjects > 0 && remaining === 0;
-      return (
-        <button
-          onClick={openMarkSectionsDone}
-          disabled={!canMarkDone}
-          title={!canMarkDone
-            ? `${remaining} subject${remaining !== 1 ? "s" : ""} still need placement`
-            : readySectionCount > 1
-              ? `Review and mark ${readySectionCount} ready sections done`
-              : "Mark this section as done"}
-          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-            canMarkDone
-              ? "bg-[#4e0a10] hover:bg-[#3a0809] text-white cursor-pointer"
-              : "bg-gray-200 text-gray-400 cursor-not-allowed"
-          }`}
-        >
-          {canMarkDone ? (readySectionCount > 1 ? `Done (${readySectionCount})` : "Done") : `${remaining} unplaced`}
-        </button>
-      );
-    }
-    case "completed":
-      if (!canUpdateSchedule) return null;
-      return (
-        <button
-          onClick={handleEditSection}
-          disabled={isEditingSection}
-          className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all duration-150 ${
-            isEditingSection
-              ? "bg-[#C9952A] text-white cursor-wait opacity-80"
-              : "bg-[#C9952A] hover:bg-[#b8841f] text-white cursor-pointer"
-          }`}
-        >
-          {isEditingSection && <LoadingSpinner className="h-4 w-4" />}
-          {isEditingSection ? "Unlocking..." : "Edit"}
-        </button>
-      );
+    // Plotting has no section action: the department's Submit sends every
+    // fully plotted section to the Dean.
     case "submitted":
       return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
     case "conditionally_approved":
@@ -298,10 +250,8 @@ export default function TopBar({
   totalSlotsCount,
   unassignedSlotsCount,
   departmentSectionProgress,
-  sectionDoneCandidates,
   sectionFinalizeCandidates,
   sectionReassignCandidates,
-  openMarkSectionsDone,
   departmentTotalSections,
   departmentDoneSections,
   departmentRemainingSections,
@@ -343,7 +293,6 @@ export default function TopBar({
 
   const [sectionSearch, setSectionSearch] = useState("");
   const [isReadinessOpen, setIsReadinessOpen] = useState(false);
-  const readySectionCount = sectionDoneCandidates.filter((candidate) => candidate.isReady).length;
   const readyFinalizeCount = sectionFinalizeCandidates.filter((candidate) => candidate.isReady).length;
   const finalizedSectionCount = sectionReassignCandidates.filter((candidate) => candidate.isReady).length;
 
@@ -375,7 +324,7 @@ export default function TopBar({
       };
     }
 
-    if (currentStatus === "draft" || currentStatus === "revision") {
+    if (currentStatus === "draft" || currentStatus === "revision" || currentStatus === "completed") {
       const isRev = currentStatus === "revision";
       if (remainingSubjects > 0) {
         return {
@@ -385,17 +334,8 @@ export default function TopBar({
       }
 
       return {
-        title: isRev ? "Revision ready to mark done" : "Section ready to mark done",
-        description: isRev
-          ? "Review this revised section, then click Done to lock it for department submission."
-          : "Review this section, then click Done to lock it for department submission.",
-      };
-    }
-
-    if (currentStatus === "completed") {
-      return {
-        title: "Section marked done",
-        description: "Plotting is locked for this section. Use Edit to make changes.",
+        title: isRev ? "Revision fully plotted" : "Section fully plotted",
+        description: "It stays editable until the department schedule is submitted to the Dean.",
       };
     }
 
@@ -456,13 +396,13 @@ export default function TopBar({
     : `${departmentRemainingSections} section${departmentRemainingSections !== 1 ? "s" : ""} remaining`;
 
   const getDepartmentStatusLabel = (section: DepartmentSectionProgress) => {
-    if (section.isDone) return "Done";
+    if (section.isDone) return "Plotted";
     const req = section.requiredCourses ?? section.requiredSubjects ?? 0;
     const plotted = section.plottedCourses ?? section.plottedSubjects ?? 0;
     if (req > plotted) {
       return `${Math.max(0, req - plotted)} unplaced`;
     }
-    return "Needs Done";
+    return "Not plotted";
   };
 
   useEffect(() => {
@@ -623,7 +563,7 @@ export default function TopBar({
           {!isLoading && (
             <WorkflowGuideButton
               guideId={
-                ["draft", "revision"].includes(currentStatus)
+                ["draft", "revision", "completed"].includes(currentStatus)
                   ? "schedule-builder-plotting"
                   : isAssignmentStatus
                     ? "schedule-builder-faculty-assignment"
@@ -655,7 +595,7 @@ export default function TopBar({
                 </button>
               )}
             </>
-          ) : ["draft", "revision"].includes(currentStatus) && (
+          ) : ["draft", "revision", "completed"].includes(currentStatus) && (
             <>
               {onGenerateYearLevel && (
                 <div id="schedule-builder-generate">
@@ -764,7 +704,7 @@ export default function TopBar({
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Department readiness</p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-2">
                     <p className="text-sm font-bold text-slate-800">
-                      {departmentDoneSections}<span className="text-slate-400">/{departmentTotalSections}</span> sections done
+                      {departmentDoneSections}<span className="text-slate-400">/{departmentTotalSections}</span> sections plotted
                     </p>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                       departmentReadyToSubmit || departmentRemainingSections === 0
@@ -848,15 +788,11 @@ export default function TopBar({
               <ActionButton
                 selectedSectionId={selectedSectionId}
                 currentStatus={currentStatus}
-                totalSubjects={totalSubjects}
-                totalScheduled={totalScheduled}
-                readySectionCount={readySectionCount}
                 readyFinalizeCount={readyFinalizeCount}
                 finalizedSectionCount={finalizedSectionCount}
                 isEditingSection={isEditingSection}
                 isResubmittingSection={isResubmittingSection}
                 isFinalizing={isFinalizing}
-                openMarkSectionsDone={openMarkSectionsDone}
                 handleEditSection={handleEditSection}
                 handleResubmit={handleResubmit}
                 handleFinalize={handleFinalize}

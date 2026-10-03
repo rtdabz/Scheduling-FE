@@ -360,10 +360,10 @@ describe("checkRoomGrantWindow", () => {
 });
 
 /**
- * Moving a placed class keeps its instructor, its Required Day and its
- * Split Session / Hybrid Split partner, so the move pre-check judges all three
- * before the save does (faculty_conflict, forced_course_day,
- * split_group_same_time / split_group_day_separation).
+ * Moving a placed class keeps its instructor and its Split Session / Hybrid
+ * Split partner, so the move pre-check judges both before the save does
+ * (faculty_conflict, split_group_same_time / split_group_day_separation). A
+ * Required Day does not block a move: the move clears it.
  */
 describe("checkMoveConflict", () => {
   const rooms: Room[] = [
@@ -382,7 +382,7 @@ describe("checkMoveConflict", () => {
     ...overrides,
   });
 
-  const moveCheck = (schedules: ScheduleItem[], forcedDayByCourseId: Record<string, number> = {}) =>
+  const moveCheck = (schedules: ScheduleItem[]) =>
     renderHook(() => useConflict({
       schedules,
       selectedSectionId: "10",
@@ -393,7 +393,6 @@ describe("checkMoveConflict", () => {
       departments,
       subjects: [lecture, withLab],
       faculties: [{ id: "9", name: "Ada Reyes", employmentType: "full-time", departmentId: 2, status: "active" }],
-      forcedDayByCourseId,
     })).result.current.checkMoveConflict;
 
   it("checks the class's own instructor at the new time", () => {
@@ -402,13 +401,6 @@ describe("checkMoveConflict", () => {
 
     expect(moveCheck([moving, busy])("1", 1, 4)?.conflictType).toBe("faculty");
     expect(moveCheck([moving, { ...busy, facultyId: "8" }])("1", 1, 4)).toBeNull();
-  });
-
-  it("keeps a class on its saved Required Day", () => {
-    const moving = meeting({ id: "1", dayIndex: 0, startSlot: 0 });
-
-    expect(moveCheck([moving], { 1: 0 })("1", 2, 4)?.message).toMatch(/Required Day: .* Monday/);
-    expect(moveCheck([moving], { 1: 0 })("1", 0, 4)).toBeNull();
   });
 
   describe("a Split Session pair", () => {

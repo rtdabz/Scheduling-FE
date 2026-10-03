@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 import { History } from 'lucide-react';
+import DataTable from '../ui/DataTable';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import Modal from '../ui/Modal';
+import { useDataTable } from '../ui/useDataTable';
 import api from '../../lib/api';
 import { formatTime12h } from '../../lib/timeGrid';
 
@@ -44,25 +48,85 @@ const classLabel = (row: ChangedRow | null): string => (
   [row?.course?.course_code, row?.section?.section_name].filter(Boolean).join(' · ') || 'Class'
 );
 
-const describe = (entry: RevisionChangeEntry): string[] => {
-  if (entry.action === 'revision_section_deleted') {
-    const count = entry.changes.length;
-    return [`Section ${entry.section?.section_name ?? ''} deleted with ${count} class${count === 1 ? '' : 'es'}.`];
-  }
+/** One line of the details table: a single meeting or course edit. */
+interface ChangeDetailRow {
+  key: string;
+  when: string;
+  by: string;
+  change: string;
+  classLabel: string;
+  before: string;
+  after: string;
+}
+
+const toDetailRows = (entries: RevisionChangeEntry[]): ChangeDetailRow[] => entries.flatMap((entry) => {
+  const when = entry.created_at ? new Date(entry.created_at).toLocaleString() : '';
+  const by = entry.actor?.name ?? '';
+
   if (entry.action === 'revision_course_changed') {
-    const code = entry.changes[0]?.before?.course?.course_code ?? 'Course';
-    const fields = Object.entries(entry.course_changes ?? {})
-      .map(([field, { before, after }]) => `${FIELD_LABELS[field] ?? field} ${String(before ?? '—')} → ${String(after ?? '—')}`);
-    return [`${code} details changed: ${fields.join('; ')}.`];
+    const fields = Object.entries(entry.course_changes ?? {});
+    return [{
+      key: `${entry.id}`,
+      when,
+      by,
+      change: 'Course details',
+      classLabel: entry.changes[0]?.before?.course?.course_code ?? 'Course',
+      before: fields.map(([field, { before }]) => `${FIELD_LABELS[field] ?? field}: ${String(before ?? '—')}`).join('; '),
+      after: fields.map(([field, { after }]) => `${FIELD_LABELS[field] ?? field}: ${String(after ?? '—')}`).join('; '),
+    }];
   }
-  return entry.changes.map(({ change, before, after }) => (
-    change === 'added'
-      ? `Added ${classLabel(after)}: ${meeting(after)}`
-      : change === 'removed'
-        ? `Removed ${classLabel(before)}: ${meeting(before)}`
-        : `Changed ${classLabel(before)}: ${meeting(before)} → ${meeting(after)}`
-  ));
-};
+
+  return entry.changes.map(({ schedule_id, change, before, after }) => ({
+    key: `${entry.id}-${schedule_id}-${change}`,
+    when,
+    by,
+    change: entry.action === 'revision_section_deleted'
+      ? 'Section deleted'
+      : change === 'added' ? 'Added' : change === 'removed' ? 'Removed' : 'Changed',
+    classLabel: classLabel(before ?? after),
+    before: meeting(before) || '—',
+    after: meeting(after) || '—',
+  }));
+});
+
+const detailColumns: ColumnDef<ChangeDetailRow>[] = [
+  { accessorKey: 'when', header: 'When', meta: { cellClassName: 'whitespace-nowrap' } },
+  { accessorKey: 'by', header: 'By' },
+  { accessorKey: 'change', header: 'Change', meta: { cellClassName: 'whitespace-nowrap' } },
+  { accessorKey: 'classLabel', header: 'Class' },
+  { accessorKey: 'before', header: 'Before' },
+  { accessorKey: 'after', header: 'After' },
+];
+
+function ChangeDetailsModal({ entries, isOpen, onClose }: { entries: RevisionChangeEntry[]; isOpen: boolean; onClose: () => void }) {
+  const data = useMemo(() => toDetailRows(entries), [entries]);
+  const table = useDataTable<ChangeDetailRow>({
+    data,
+    columns: detailColumns,
+    pageSize: 25,
+    getRowId: (row) => row.key,
+  });
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="xl"
+      title="Changes to the working copy"
+      description="Every change made since this version was recalled or returned."
+    >
+      <DataTable
+        table={table}
+        variant="embedded"
+        density="compact"
+        totalLabel="changes"
+        ariaLabel="Changes since this version"
+        emptyTitle="No changes recorded."
+        emptyDescription="Nothing has changed in the working copy since this version."
+      />
+    </Modal>
+  );
+}
 
 /**
  * What the department changed after this version was recalled or rejected.
@@ -73,6 +137,7 @@ const describe = (entry: RevisionChangeEntry): string[] => {
 export default function RevisionChangesPanel({ submissionId }: { submissionId: number }) {
   const [entries, setEntries] = useState<RevisionChangeEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,28 +159,25 @@ export default function RevisionChangesPanel({ submissionId }: { submissionId: n
   }
 
   return (
-    <section aria-label="Changes since this version" className="max-h-44 space-y-2 overflow-y-auto px-5 py-2.5">
-      <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
-        <History className="h-4 w-4" />
-        {entries.length === 0
-          ? 'No changes to the working copy since this version.'
-          : `Changes to the working copy since this version (${entries.length})`}
-      </p>
-      {entries.length > 0 && (
-        <ol className="space-y-1.5">
-          {entries.map((entry) => (
-            <li key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
-              <p className="text-[11px] font-semibold text-slate-500">
-                {entry.created_at ? new Date(entry.created_at).toLocaleString() : ''}
-                {entry.actor ? ` · ${entry.actor.name}` : ''}
-              </p>
-              <ul className="mt-0.5 space-y-0.5">
-                {describe(entry).map((line, index) => <li key={index}>{line}</li>)}
-              </ul>
-            </li>
-          ))}
-        </ol>
-      )}
+    <section aria-label="Changes since this version" className="px-5 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+          <History className="h-4 w-4" />
+          {entries.length === 0
+            ? 'No changes to the working copy since this version.'
+            : `Changes to the working copy since this version (${entries.length})`}
+        </p>
+        {entries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+          >
+            View details
+          </button>
+        )}
+      </div>
+      <ChangeDetailsModal entries={entries} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)} />
     </section>
   );
 }

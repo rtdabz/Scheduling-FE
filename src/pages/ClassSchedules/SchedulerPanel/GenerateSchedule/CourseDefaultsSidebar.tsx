@@ -3,9 +3,11 @@ import {
   BookOpen,
   CalendarRange,
   CheckCircle2,
+  DoorOpen,
   FlaskConical,
   Settings,
 } from "lucide-react";
+import { LAB_ROOM_TYPE_OPTIONS, type LabRoomType } from "../../../../lib/labRoomPolicy";
 import { SLOT_MINUTES } from "../courseSlotPlan";
 import type { CourseDefaults } from "./courseClassConfig";
 import SlideOverPanel from "./SlideOverPanel";
@@ -37,6 +39,8 @@ export default function CourseDefaultsSidebar({
   customizedCount,
   onResetCustomized,
   laboratoryEnabled = true,
+  labRoomType = "laboratory",
+  onLabRoomTypeApply,
   disabled,
   onClose,
   onApply,
@@ -49,6 +53,9 @@ export default function CourseDefaultsSidebar({
   onResetCustomized: () => void;
   /** A Standard department has no laboratories, so no laboratory duration. */
   laboratoryEnabled?: boolean;
+  /** The department's Default LAB Room Requirement, saved on Apply. */
+  labRoomType?: LabRoomType;
+  onLabRoomTypeApply?: (next: LabRoomType) => void | Promise<unknown>;
   disabled: boolean;
   onClose: () => void;
   onApply: (next: CourseDefaults) => void;
@@ -56,6 +63,7 @@ export default function CourseDefaultsSidebar({
   const [lectureHours, setLectureHours] = useState<Hours>(toHours(defaults.lectureMinutes));
   const [laboratoryHours, setLaboratoryHours] = useState<Hours>(toHours(defaults.laboratoryMinutes));
   const [allowFridaySaturday, setAllowFridaySaturday] = useState(defaults.allowFridaySaturdaySplit);
+  const [labRoomDraft, setLabRoomDraft] = useState<LabRoomType>(labRoomType);
 
   const lectureError = hoursError(lectureHours);
   const laboratoryError = hoursError(laboratoryHours);
@@ -86,7 +94,10 @@ export default function CourseDefaultsSidebar({
           <button
             type="button"
             disabled={disabled || lectureError !== null || laboratoryError !== null}
-            onClick={() => close(() => onApply(draft))}
+            onClick={() => close(() => {
+              onApply(draft);
+              if (laboratoryEnabled && labRoomDraft !== labRoomType) void onLabRoomTypeApply?.(labRoomDraft);
+            })}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-black text-white shadow-2xs transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <CheckCircle2 className="h-4 w-4" /> Apply Defaults
@@ -115,6 +126,33 @@ export default function CourseDefaultsSidebar({
           disabled={disabled}
           onChange={setLaboratoryHours}
         />
+      )}
+
+      {laboratoryEnabled && (
+        <div>
+          <label
+            htmlFor="default-lab-room-requirement"
+            className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-700"
+          >
+            <DoorOpen className="h-4 w-4 text-slate-400" />
+            Default LAB Room Requirement
+          </label>
+          <select
+            id="default-lab-room-requirement"
+            value={labRoomDraft}
+            disabled={disabled}
+            aria-describedby="default-lab-room-help"
+            onChange={(e) => setLabRoomDraft(e.target.value as LabRoomType)}
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-slate-100"
+          >
+            {LAB_ROOM_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <p id="default-lab-room-help" className="mt-1.5 text-[11px] font-semibold leading-snug text-slate-500">
+            The room type used for LAB classes.
+          </p>
+        </div>
       )}
 
       <div>

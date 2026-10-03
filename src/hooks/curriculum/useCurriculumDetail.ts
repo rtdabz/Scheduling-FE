@@ -224,13 +224,30 @@ export function useCurriculumDetail(id: string | undefined) {
     ) => {
       if (!id || !coursesInput || coursesInput.length === 0) return;
 
-      const validRows = coursesInput
+      const normalizeCode = (code: string) => code.trim().replace(/\s+/g, ' ').toUpperCase();
+      // A code already in this curriculum, or repeated in this batch, is a
+      // duplicate: reject the row instead of listing the course twice.
+      const takenCodes = new Set(
+        semesters.flatMap((t) => t.courses.map((c) => normalizeCode(c.code))),
+      );
+
+      const candidateRows = coursesInput
         .map((item) => ({
           ...item,
           trimmedCode: item.courseCode.trim(),
           trimmedName: item.courseName.trim(),
         }))
         .filter((item) => item.trimmedCode && item.trimmedName);
+
+      const validRows = candidateRows.filter((item) => {
+        const code = normalizeCode(item.trimmedCode);
+        if (takenCodes.has(code)) {
+          onProgress?.(item.rowId, 'error', `${item.trimmedCode} is already in this curriculum.`);
+          return false;
+        }
+        takenCodes.add(code);
+        return true;
+      });
 
       if (validRows.length === 0) return;
 
@@ -360,7 +377,7 @@ export function useCurriculumDetail(id: string | undefined) {
         }
       }
     },
-    [id, cacheKey, allCourses, curriculum, toast]
+    [id, cacheKey, allCourses, curriculum, semesters, toast]
   );
 
   const handleRemoveCourse = useCallback(

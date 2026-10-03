@@ -266,12 +266,17 @@ export default function Rooms() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // A second click while the first save is in flight would add it twice.
+    if (isSubmitting) return;
 
     let hasError = false;
     const trimmedBuilding = building.trim();
-    
-    let trimmedCode = roomCode.trim();
-    if (!selectedBuilding && !isEditMode) {
+    const addingBuilding = !selectedBuilding && !isEditMode;
+    const sameText = (a: string, b: string) =>
+      a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
+
+    let trimmedCode = roomCode.trim().replace(/\s+/g, ' ');
+    if (addingBuilding) {
       trimmedCode = trimmedBuilding ? `${trimmedBuilding.toUpperCase()}-101` : '';
     }
 
@@ -288,19 +293,27 @@ export default function Rooms() {
     if (!trimmedBuilding) {
       setBuildingError('Building is required');
       hasError = true;
+    } else if (addingBuilding && rooms.some((r) => r.building && sameText(r.building, trimmedBuilding))) {
+      // A building is the rooms that name it, so adding it again would only
+      // add another first room to the same building.
+      setBuildingError('This building already exists. Open it to add rooms.');
+      hasError = true;
     } else {
       setBuildingError('');
     }
 
-    if (!selectedBuilding && !isEditMode && liveBuildingDuplicate) {
+    if (addingBuilding && liveBuildingDuplicate) {
       setBuildingError(`A building named "${liveBuildingDuplicate}" already exists.`);
       toast.error('Duplicate Building', `A building named "${liveBuildingDuplicate}" already exists.`);
       hasError = true;
     }
 
-    if ((selectedBuilding || isEditMode) && liveRoomCodeDuplicate) {
-      setCodeError(`Room code "${liveRoomCodeDuplicate.room_code}" already exists.`);
-      toast.error('Duplicate Room Code', `A room with code "${liveRoomCodeDuplicate.room_code}" already exists.`);
+    if (!addingBuilding && (liveRoomCodeDuplicate || rooms.some((r) => r.id !== editingId && sameText(r.room_code, trimmedCode)))) {
+      const codeMsg = liveRoomCodeDuplicate
+        ? `Room code "${liveRoomCodeDuplicate.room_code}" already exists.`
+        : 'This room code is already used by another room.';
+      setCodeError(codeMsg);
+      toast.error('Duplicate Room Code', codeMsg);
       hasError = true;
     }
 

@@ -65,6 +65,8 @@ export interface LaboratoryDurationSettings {
   custom_lab_duration_6_hours_enabled?: boolean | null;
   custom_lab_duration_5_hours_enabled?: boolean | null;
   custom_lab_duration_other_enabled?: boolean | null;
+  /** Default LAB Room Requirement: laboratory, lecture (classroom) or either. */
+  lab_room_type?: string | null;
 }
 
 export const SLOT_MINUTES = 30;

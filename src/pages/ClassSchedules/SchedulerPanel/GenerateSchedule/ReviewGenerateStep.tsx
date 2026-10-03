@@ -18,6 +18,7 @@ import { useDataTable } from "../../../../components/ui/useDataTable";
 import { useGenerationRun } from "../hooks/useGenerationRun";
 import type { Course, Section, Semester } from "../types";
 import YearLevelStateNotice from "./YearLevelStateNotice";
+import { yearLabel } from "./yearLabel";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 import {
   consecutiveRulesBySection,
@@ -36,19 +37,6 @@ export type ReviewCourseRow = {
   customDuration?: string | null;
   /** Setup Courses Preferred Room code, when one was chosen. */
   preferredRoom?: string | null;
-};
-
-const yearLabel = (yearLevel: number) => {
-  const ordinal =
-    yearLevel === 1
-      ? "1st"
-      : yearLevel === 2
-        ? "2nd"
-        : yearLevel === 3
-          ? "3rd"
-          : "4th";
-
-  return `BSIT ${ordinal} year`;
 };
 
 const elapsedLabel = (ms: number) => {
@@ -468,7 +456,7 @@ export default function ReviewGenerateStep({
     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden">
       {generating ? (
         <GeneratingView
-          scopeLabel={`${yearLabel(yearLevel)} · ${fullSemesterLabel}`}
+          scopeLabel={`${yearLabel(yearLevel, sections)} · ${fullSemesterLabel}`}
           sectionCount={sections.length}
           courseCount={courseRows.length}
         />
@@ -481,7 +469,7 @@ export default function ReviewGenerateStep({
                   Generation scope
                 </p>
                 <h2 className="mt-0.5 text-base font-black leading-tight">
-                  {yearLabel(yearLevel)}
+                  {yearLabel(yearLevel, sections)}
                 </h2>
                 <p className="truncate text-[11px] font-semibold text-white/75">
                   {fullSemesterLabel} · {curriculumName ?? "No curriculum assigned"} ·{" "}

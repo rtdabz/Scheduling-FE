@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RevisionChangesPanel from './RevisionChangesPanel';
 
@@ -63,10 +63,19 @@ describe('RevisionChangesPanel', () => {
 
     expect(await screen.findByText(/Changes to the working copy since this version \(3\)/)).toBeTruthy();
     expect(mocks.apiGet.mock.calls[0][0]).toBe('/schedule-submissions/7/changes');
-    expect(screen.getByText(/Changed IT 101 · BSIT 1A: Monday .* → Thursday/)).toBeTruthy();
-    expect(screen.getByText('IT 101 details changed: units 1 → 3.')).toBeTruthy();
-    expect(screen.getByText('Section BSIT 1A deleted with 1 class.')).toBeTruthy();
-    expect(screen.getByText(/Sam Secretary/)).toBeTruthy();
+    // The list lives in the details modal, not inline.
+    expect(screen.queryByText('Sam Secretary')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+
+    expect(await screen.findByText('Sam Secretary')).toBeTruthy();
+    expect(screen.getByText('Changed')).toBeTruthy();
+    expect(screen.getAllByText(/Monday .*CIT 101/)).toHaveLength(1);
+    expect(screen.getAllByText(/Thursday .*CIT 101/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Course details')).toBeTruthy();
+    expect(screen.getByText('units: 1')).toBeTruthy();
+    expect(screen.getByText('units: 3')).toBeTruthy();
+    expect(screen.getByText('Section deleted')).toBeTruthy();
   });
 
   it('says so when nothing changed', async () => {
