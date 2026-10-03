@@ -19,6 +19,7 @@ import {
   Camera,
   UserRound,
   Archive,
+  AlertTriangle,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { photoDataUrl } from '../../lib/imageDataUrl';
@@ -323,6 +324,25 @@ export default function Faculty() {
   const [maxUnitsError, setMaxUnitsError] = useState('');
   const [departmentError, setDepartmentError] = useState('');
 
+  const effectiveDeptVal = isVpaa ? departmentId : (user?.department_id?.toString() || '');
+
+  const liveInstructorDuplicate = useMemo(() => {
+    const trimmedFirst = firstName.trim().toLowerCase();
+    const trimmedLast = lastName.trim().toLowerCase();
+    if (!trimmedFirst || !trimmedLast) return null;
+
+    return faculties.find((f) => {
+      if (isEditMode && f.id === editingId) return false;
+      const fFirst = (f.first_name || '').trim().toLowerCase();
+      const fLast = (f.last_name || '').trim().toLowerCase();
+      if (fFirst !== trimmedFirst || fLast !== trimmedLast) return false;
+      if (effectiveDeptVal && f.department_id) {
+        return String(f.department_id) === String(effectiveDeptVal);
+      }
+      return true;
+    }) || null;
+  }, [faculties, isEditMode, editingId, firstName, lastName, effectiveDeptVal]);
+
   const fetchData = async (forceRefresh = false, silent = false) => {
     if (!silent) setIsLoading(forceRefresh || !hasCachedData(facultyCacheKey));
     try {
@@ -492,6 +512,14 @@ export default function Faculty() {
       hasError = true;
     } else {
       setDepartmentError('');
+    }
+
+    if (liveInstructorDuplicate) {
+      const dupDept = departments.find((d) => d.id === liveInstructorDuplicate.department_id)?.department_name;
+      const msg = `An instructor named "${liveInstructorDuplicate.first_name} ${liveInstructorDuplicate.last_name}" already exists${dupDept ? ` in ${dupDept}` : ''}.`;
+      setLastNameError(msg);
+      toast.error('Duplicate Instructor', msg);
+      hasError = true;
     }
 
     if (hasError) return;
@@ -830,7 +858,7 @@ export default function Faculty() {
                       <img
                         src={deptLogo}
                         alt="Department Watermark"
-                        className="w-44 h-44 object-contain opacity-[0.09]"
+                        className="w-48 h-48 object-contain opacity-[0.20]"
                       />
                     </div>
                   )}
@@ -1103,6 +1131,15 @@ export default function Faculty() {
               </button>
             </div>
             <form id="instructor-form" onSubmit={handleSubmit} noValidate className="p-6 min-h-0 flex-1 overflow-y-auto font-sans">
+              {liveInstructorDuplicate && (
+                <div className="mb-4 flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
+                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
+                  <span>
+                    Duplicate detected: An instructor named &ldquo;{liveInstructorDuplicate.first_name} {liveInstructorDuplicate.last_name}&rdquo; already exists{liveInstructorDuplicate.department_id && departments.find((d) => d.id === liveInstructorDuplicate.department_id) ? ` in ${departments.find((d) => d.id === liveInstructorDuplicate.department_id)?.department_name}` : ''}.
+                  </span>
+                </div>
+              )}
+
               {/* Photo Upload Section */}
               <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-200/80">
                 <div className="relative group shrink-0">
@@ -1164,12 +1201,16 @@ export default function Faculty() {
                         setLastNameError('');
                       }}
                       placeholder="Doe"
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError || liveInstructorDuplicate
                           ? 'border-red-500 focus:ring-red-500'
                           : 'border-gray-200 focus:ring-[#C9952A]'
                         }`}
                     />
-                    {lastNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{lastNameError}</p>}
+                    {(lastNameError || liveInstructorDuplicate) && (
+                      <p className="text-xs text-red-500 mt-1 font-semibold font-sans">
+                        {lastNameError || `Duplicate: "${liveInstructorDuplicate?.first_name} ${liveInstructorDuplicate?.last_name}" is already registered.`}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -1184,7 +1225,7 @@ export default function Faculty() {
                         setFirstNameError('');
                       }}
                       placeholder="John"
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${firstNameError
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${firstNameError || liveInstructorDuplicate
                           ? 'border-red-500 focus:ring-red-500'
                           : 'border-gray-200 focus:ring-[#C9952A]'
                         }`}

@@ -201,7 +201,7 @@ export default function TimetableGrid({
                   }`}
                 >
                   <BookOpen className="h-3.5 w-3.5" />
-                  {isWideView ? "Show Course Bank" : "Hide Course Bank"}
+                  {isWideView ? "Show Course Bank" : "Manual Plotting"}
                 </button>
               ))}
               {isLoading ? <Skeleton className="h-9 w-28 rounded-lg" /> : (

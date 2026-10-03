@@ -80,4 +80,36 @@ describe('Reports directory', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Previously loaded reports'));
     expect(screen.getByText('BSIT Class Schedule')).toBeTruthy();
   });
+
+  it('opens and closes the detailed report modal with breakdown table', async () => {
+    render(<Reports />);
+    await screen.findByText('BSIT Class Schedule');
+    const detailsBtn = screen.getByRole('button', { name: 'View Details: BSIT Class Schedule' });
+    fireEvent.click(detailsBtn);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeTruthy();
+    expect(fetchReportData).toHaveBeenCalledWith(1, 11);
+
+    // Close modal
+    fireEvent.click(screen.getByRole('button', { name: 'Close detail modal' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('switches to room utilization, curriculum, and approval tabs', async () => {
+    render(<Reports />);
+    await screen.findByText('BSIT Class Schedule');
+
+    // Room tab
+    fireEvent.click(screen.getByRole('tab', { name: /Room Utilization/ }));
+    expect(await screen.findByText('BSIT Room Utilization')).toBeTruthy();
+
+    // Curriculum tab
+    fireEvent.click(screen.getByRole('tab', { name: /Curriculums & Courses/ }));
+    expect(await screen.findByText('BSIT Curriculum Courses')).toBeTruthy();
+
+    // Approval tab
+    fireEvent.click(screen.getByRole('tab', { name: /Approval & Readiness/ }));
+    expect(await screen.findByText('BSIT Approval Status')).toBeTruthy();
+  });
 });

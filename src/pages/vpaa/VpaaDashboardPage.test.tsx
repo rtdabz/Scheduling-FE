@@ -292,10 +292,10 @@ describe('VpaaDashboardPage', () => {
 
   it('reports active curriculum count in the inventory strip', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByText('Active curriculum')).toBeTruthy());
-    const card = screen.getByText('Active curriculum').closest('button');
+    await waitFor(() => expect(screen.getByText('Active curriculums')).toBeTruthy());
+    const card = screen.getByText('Active curriculums').closest('button');
     expect(card).toBeTruthy();
-    expect(within(card!).getByText('Curriculum')).toBeTruthy();
+    expect(within(card!).getByText('Curriculums')).toBeTruthy();
     expect(within(card!).getByText('5')).toBeTruthy();
   });
 

@@ -110,11 +110,14 @@ export default function SemesterCard({
               onChange={(event) => onSelectYear(Number(event.target.value))}
               className="h-9 appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-9 text-xs font-bold text-[#4e0a10] shadow-sm outline-none transition-colors hover:border-[#C9952A] focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/10 cursor-pointer"
             >
-              {[1, 2, 3, 4].map((year) => (
-                <option key={year} value={year}>
-                  {year === 1 ? '1st' : year === 2 ? '2nd' : year === 3 ? '3rd' : '4th'} Year · {yearLevelStats[year]?.units || 0}u
-                </option>
-              ))}
+              {[1, 2, 3, 4].map((year) => {
+                const uCount = yearLevelStats[year]?.units || 0;
+                return (
+                  <option key={year} value={year}>
+                    {year === 1 ? '1st' : year === 2 ? '2nd' : year === 3 ? '3rd' : '4th'} Year · {uCount} {uCount === 1 ? 'unit' : 'units'}
+                  </option>
+                );
+              })}
             </select>
             <ChevronDown
               size={14}
@@ -126,6 +129,7 @@ export default function SemesterCard({
           <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Semester">
             {curriculumSemesters.map((curriculumSemester) => {
               const isSelected = curriculumSemester.semester === selectedSemester;
+              const semUnits = curriculumSemester.totals.tu;
 
               return (
                 <button
@@ -147,7 +151,7 @@ export default function SemesterCard({
                       isSelected ? 'bg-[#C9952A] text-white' : 'bg-gray-100 text-gray-500'
                     }`}
                   >
-                    {curriculumSemester.totals.tu}u
+                    {semUnits} {semUnits === 1 ? 'unit' : 'units'}
                   </span>
                 </button>
               );
@@ -166,9 +170,9 @@ export default function SemesterCard({
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-[#4e0a10] text-white hover:bg-[#C9952A] rounded-xl transition-all duration-200 cursor-pointer shadow-sm"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
             >
-              <Plus size={14} />
+              <Plus size={15} />
               Add Course
             </button>
           )}

@@ -19,6 +19,7 @@ import {
   Filter,
   Plus,
   Archive,
+  AlertTriangle,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -216,6 +217,19 @@ export default function Rooms() {
   const [codeError, setCodeError] = useState('');
   const [buildingError, setBuildingError] = useState('');
 
+  const liveRoomCodeDuplicate = useMemo(() => {
+    const trimmed = roomCode.trim().toUpperCase();
+    if (!trimmed) return null;
+    return rooms.find((r) => (!isEditMode || r.id !== editingId) && r.room_code.trim().toUpperCase() === trimmed) || null;
+  }, [roomCode, rooms, isEditMode, editingId]);
+
+  const liveBuildingDuplicate = useMemo(() => {
+    if (selectedBuilding || isEditMode) return null;
+    const trimmed = building.trim().toLowerCase();
+    if (!trimmed) return null;
+    return rooms.find((r) => (r.building || '').trim().toLowerCase() === trimmed)?.building || null;
+  }, [selectedBuilding, isEditMode, building, rooms]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -276,6 +290,18 @@ export default function Rooms() {
       hasError = true;
     } else {
       setBuildingError('');
+    }
+
+    if (!selectedBuilding && !isEditMode && liveBuildingDuplicate) {
+      setBuildingError(`A building named "${liveBuildingDuplicate}" already exists.`);
+      toast.error('Duplicate Building', `A building named "${liveBuildingDuplicate}" already exists.`);
+      hasError = true;
+    }
+
+    if ((selectedBuilding || isEditMode) && liveRoomCodeDuplicate) {
+      setCodeError(`Room code "${liveRoomCodeDuplicate.room_code}" already exists.`);
+      toast.error('Duplicate Room Code', `A room with code "${liveRoomCodeDuplicate.room_code}" already exists.`);
+      hasError = true;
     }
 
     if (hasError) return;
@@ -623,7 +649,7 @@ export default function Rooms() {
                 setBuildingError('');
                 setIsModalOpen(true);
               }}
-              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-full hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
             >
               <Plus size={15} />
               <span>{selectedBuilding ? 'Add Room' : 'Add Building'}</span>
@@ -710,7 +736,7 @@ export default function Rooms() {
                         <img
                           src={bldgLogo}
                           alt="Department Watermark"
-                          className="w-44 h-44 object-contain opacity-[0.09]"
+                          className="w-48 h-48 object-contain opacity-[0.20]"
                         />
                       </div>
                     )}
@@ -814,7 +840,7 @@ export default function Rooms() {
                         <img
                           src={deptLogo}
                           alt="Department Watermark"
-                          className="w-44 h-44 object-contain opacity-[0.09]"
+                          className="w-48 h-48 object-contain opacity-[0.20]"
                         />
                       </div>
                     )}
@@ -921,6 +947,24 @@ export default function Rooms() {
               </button>
             </div>
             <form id="room-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
+              {liveRoomCodeDuplicate && (selectedBuilding || isEditMode) && (
+                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
+                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
+                  <span>
+                    Duplicate detected: A room with code &ldquo;{liveRoomCodeDuplicate.room_code}&rdquo; already exists{liveRoomCodeDuplicate.building ? ` in ${liveRoomCodeDuplicate.building}` : ''}.
+                  </span>
+                </div>
+              )}
+
+              {liveBuildingDuplicate && !selectedBuilding && !isEditMode && (
+                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
+                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
+                  <span>
+                    Duplicate detected: A building named &ldquo;{liveBuildingDuplicate}&rdquo; already exists.
+                  </span>
+                </div>
+              )}
+
               {!selectedBuilding && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -935,12 +979,16 @@ export default function Rooms() {
                     }}
                     placeholder="e.g. NEE Building, Building 1"
                     className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      buildingError
+                      buildingError || (liveBuildingDuplicate && !selectedBuilding && !isEditMode)
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
                     }`}
                   />
-                  {buildingError && <p className="text-xs text-red-500 mt-1 font-semibold">{buildingError}</p>}
+                  {(buildingError || (liveBuildingDuplicate && !selectedBuilding && !isEditMode)) && (
+                    <p className="text-xs text-red-500 mt-1 font-semibold">
+                      {buildingError || `Building "${liveBuildingDuplicate}" already exists.`}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -958,12 +1006,16 @@ export default function Rooms() {
                     }}
                     placeholder="e.g. CCS-LAB1"
                     className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      codeError
+                      codeError || (liveRoomCodeDuplicate && (selectedBuilding || isEditMode))
                         ? 'border-red-500 focus:ring-red-500'
                         : 'border-gray-200 focus:ring-[#C9952A]'
                     }`}
                   />
-                  {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
+                  {(codeError || (liveRoomCodeDuplicate && (selectedBuilding || isEditMode))) && (
+                    <p className="text-xs text-red-500 mt-1 font-semibold">
+                      {codeError || `Room code "${liveRoomCodeDuplicate?.room_code}" is already in use.`}
+                    </p>
+                  )}
                 </div>
               )}
 

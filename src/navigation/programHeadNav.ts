@@ -16,11 +16,24 @@ const SECRETARY_ONLY_PATHS = new Set(['/secretary/program-rooms']);
 
 const mapItems = (items: NavItem[]): NavItem[] => items
   .filter((item) => !item.path || !SECRETARY_ONLY_PATHS.has(item.path))
-  .map((item) => ({
-    ...item,
-    path: item.path ? toProgramHeadPath(item.path) : undefined,
-    children: item.children ? mapItems(item.children) : undefined,
-  }));
+  .map((item) => {
+    const mappedChildren = item.children ? mapItems(item.children) : undefined;
+    if (mappedChildren && mappedChildren.length === 1 && mappedChildren[0].path) {
+      const single = mappedChildren[0];
+      return {
+        ...single,
+        label: item.label,
+        icon: item.icon ?? single.icon,
+        id: single.id ?? item.id,
+      };
+    }
+
+    return {
+      ...item,
+      path: item.path ? toProgramHeadPath(item.path) : undefined,
+      children: mappedChildren && mappedChildren.length > 0 ? mappedChildren : undefined,
+    };
+  });
 
 export const programHeadNav: NavSection[] = secretaryNav.map((section) => ({
   ...section,

@@ -46,7 +46,7 @@ const apiDepartment = (over: Record<string, unknown> & { id: number }) => ({
   created_at: '2026-06-01T00:00:00.000000Z',
   faculties_count: 4,
   sections_count: 7,
-  users: [{ name: 'Dr. Juan dela Cruz' }],
+  users: [{ name: 'Dr. Juan dela Cruz', role: 'dean' }],
   ...over,
 });
 
@@ -178,6 +178,39 @@ describe('Departments management derives the code that other pages still show', 
     await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
     expect(patch.mock.calls[0][1]).toMatchObject({ scheduling_profile: 'laboratory_enabled' });
     expect(patch.mock.calls[0][1]).not.toHaveProperty('department_code');
+  });
+
+  it('does not assign a secretary user as the dean when no dean is assigned', async () => {
+    get.mockResolvedValueOnce({
+      data: [
+        apiDepartment({
+          id: 1,
+          department_name: 'College of Information Technology',
+          department_code: 'CIT',
+          users: [{ name: 'Kay Rejoice Waga', role: 'secretary' }],
+        }),
+      ],
+    });
+
+    render(<Departments />);
+    fireEvent.click(await screen.findByText('College of Information Technology'));
+
+    expect(await screen.findByText('Department profile')).toBeTruthy();
+    expect(screen.getByText(/CIT · Dean/i).textContent).toContain('Not assigned');
+    expect(screen.getByText('Kay Rejoice Waga')).toBeTruthy();
+  });
+
+  it('shows an alert and prevents submitting when inputting a duplicate department name', async () => {
+    render(<Departments />);
+
+    fireEvent.click(await screen.findByText('Add Department'));
+    fireEvent.change(nameInput(), { target: { value: 'College of Education' } });
+
+    expect(screen.getByText(/Duplicate detected: A department named “College of Education” already exists/i)).toBeTruthy();
+    fireEvent.click(screen.getByText('Create Department'));
+
+    expect(post).not.toHaveBeenCalled();
+    expect(screen.getByText('A department named "College of Education" already exists.')).toBeTruthy();
   });
 });
 

@@ -22,10 +22,10 @@ export const vpaaNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
-      { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
+      { label: 'Users', path: '/users', icon: Users, id: 'sidebar-users' },
+      { label: 'Departments', path: '/departments', icon: Building2, id: 'sidebar-departments' },
       {
-        label: 'Facility Management',
+        label: 'Facilities',
         path: '/rooms',
         icon: DoorOpen,
         id: 'sidebar-rooms',
@@ -38,12 +38,12 @@ export const vpaaNav: NavSection[] = [
         requiredCapability: 'room.view_all_requests',
       },
       {
-        label: 'Instructor Management',
+        label: 'Instructors',
         path: '/faculty',
         icon: GraduationCap,
         id: 'sidebar-faculty',
       },
-      { label: 'Instructor Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
+      { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
       { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
       {
         label: 'Schedule Review',

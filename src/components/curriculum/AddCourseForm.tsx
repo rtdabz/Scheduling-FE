@@ -172,7 +172,7 @@ export default function AddCourseForm({
                         </span>
                         <span className="text-gray-800">{course.course_name}</span>
                       </div>
-                      <span className="text-gray-400 text-[10px] font-bold">{course.units}u</span>
+                      <span className="text-gray-400 text-[10px] font-bold">{course.units} {course.units === 1 ? 'unit' : 'units'}</span>
                     </button>
                   ))
                 )}
@@ -186,7 +186,7 @@ export default function AddCourseForm({
           <div className="flex items-center gap-3 text-xs text-gray-600 px-2 py-1 bg-gray-100 rounded-lg shrink-0">
             <span>Lec: <strong>{selectedCourse.lecture_hours}</strong></span>
             <span>Lab: <strong>{selectedCourse.lab_hours}</strong></span>
-            <span className="text-[#4e0a10]">Total: <strong>{selectedCourse.units}u</strong></span>
+            <span className="text-[#4e0a10]">Total: <strong>{selectedCourse.units} {selectedCourse.units === 1 ? 'unit' : 'units'}</strong></span>
           </div>
         )}
 
@@ -195,16 +195,16 @@ export default function AddCourseForm({
           <button
             type="submit"
             disabled={!selectedCourseId || isAdding}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-40 shadow-sm"
+            className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-[#5A1220] hover:bg-[#410b15] hover:scale-[1.02] text-white text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-40 shadow-md whitespace-nowrap"
           >
-            {isAdding ? <LoadingSpinner size={14} className="animate-spin" /> : <Plus size={14} />}
+            {isAdding ? <LoadingSpinner size={15} className="animate-spin" /> : <Plus size={15} />}
             Add Course
           </button>
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
-              className="px-3 py-2 border border-gray-200 text-gray-500 hover:bg-gray-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2.5 border border-gray-200 text-gray-500 hover:bg-gray-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
             >
               Cancel
             </button>

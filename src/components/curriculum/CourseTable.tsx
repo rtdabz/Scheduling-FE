@@ -86,9 +86,12 @@ export default function CourseTable({
       id: 'total_units',
       accessorKey: 'total_units',
       header: 'Total Units',
-      size: 96,
+      size: 110,
       meta: { align: 'right', cellClassName: 'font-bold text-[#4e0a10]' },
-      footer: () => <span className="font-black text-[#4e0a10]">{totals.tu}</span>,
+      cell: ({ row }) => (
+        <span>{row.original.total_units} {row.original.total_units === 1 ? 'unit' : 'units'}</span>
+      ),
+      footer: () => <span className="font-black text-[#4e0a10]">{totals.tu} {totals.tu === 1 ? 'unit' : 'units'}</span>,
     },
     ...(canEdit ? [{
       id: 'actions',

@@ -545,14 +545,6 @@ export default function VpaaDashboardPage() {
       path: '/schedules/approval',
       tone: totals.pendingVpaa > 0 ? 'alert' : 'good',
     },
-    {
-      label: 'Average Room Load',
-      value: `${insights.utilization.average_utilization}%`,
-      detail: `${grouped(insights.utilization.idle_room_count)} room${insights.utilization.idle_room_count === 1 ? '' : 's'} unused`,
-      icon: GaugeCircle,
-      path: '/rooms',
-      tone: 'info',
-    },
   ];
 
   const inventory: Tile[] = [
@@ -668,7 +660,7 @@ export default function VpaaDashboardPage() {
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3.5 w-3.5" /> Retry</button>
     </div>}
 
-    <section id="dashboard-metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+    <section id="dashboard-metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
       {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
 
       <button

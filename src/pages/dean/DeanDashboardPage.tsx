@@ -14,7 +14,9 @@ import {
   ClipboardCheck,
   DoorOpen,
   FileText,
+  GaugeCircle,
   GraduationCap,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   RotateCcw,
@@ -24,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import DashboardMetricCard, { type DashboardMetricTone } from '../../components/overview/DashboardMetricCard';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardGantt from '../vpaa/calendar/DashboardGantt';
 import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
@@ -63,9 +66,9 @@ interface Submission {
 interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; submissions?:Submission[]; activeSemester:Semester|null; standardHours?:StandardHours; schedulesTruncated?:boolean }
 interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; schedule_submissions?:Submission[]; active_semester?:Semester; time_grid?:TimeGridConfigInput; schedules_truncated?:boolean }
 
-type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
+type Tone = DashboardMetricTone;
 
-interface Tile { label:string; value:number; detail:string; icon:LucideIcon; path:string; tone:Tone }
+interface Tile { label:string; value:number|string; detail:string; icon:LucideIcon; path:string; tone:Tone }
 
 const TONES: Record<Tone, string> = {
   brand: 'bg-primary/10 text-primary',
@@ -491,11 +494,22 @@ export default function DeanDashboardPage() {
   const pendingApprovals = stageCounts.submitted;
   const openApproval = () => navigate('/dean/schedules/approval');
 
-  const tiles: Tile[] = [
-    { label: 'Department Sections', value: sectionTotal, detail: 'All sections', icon: Users, path: '/dean/sections', tone: 'brand' },
-    { label: 'Instructors', value: deptFaculties.length, detail: 'Active instructors', icon: GraduationCap, path: '/dean/faculty', tone: 'good' },
-    { label: 'Curriculum Courses', value: deptSubjects.length, detail: 'Offered', icon: BookOpen, path: '/dean/curriculum', tone: 'accent' },
-    { label: 'Rooms Managed', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/rooms', tone: 'warn' },
+  const kpis: Tile[] = [
+    {
+      label: 'Awaiting Your Approval',
+      value: pendingApprovals,
+      detail: pendingApprovals ? 'Awaiting your action' : 'Nothing awaiting review',
+      icon: CalendarCheck2,
+      path: '/dean/schedules/approval',
+      tone: pendingApprovals > 0 ? 'alert' : 'good',
+    },
+  ];
+
+  const inventory: Tile[] = [
+    { label: 'Sections', value: sectionTotal, detail: 'Department scope', icon: LayoutGrid, path: '/dean/sections', tone: 'brand' },
+    { label: 'Instructors', value: deptFaculties.length, detail: 'Active instructors', icon: Users, path: '/dean/faculty', tone: 'accent' },
+    { label: 'Curriculums', value: deptSubjects.length, detail: 'Offered courses', icon: BookOpen, path: '/dean/curriculum', tone: 'good' },
+    { label: 'Rooms', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/rooms', tone: 'warn' },
   ];
 
   const completionSlices = [
@@ -600,25 +614,23 @@ export default function DeanDashboardPage() {
       The department has more class meetings than can be loaded at once, so the figures and timetable below may be missing classes.
     </TruncatedDataNotice>}
 
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
-      {tiles.map(({ label, value, detail, icon: Icon, path, tone }) => <button
-        key={label}
-        type="button"
-        onClick={() => navigate(path)}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
-      >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}><Icon className="h-4 w-4" /></span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="text-lg font-bold leading-5 text-primary">{value}</div>
-          <div className="mt-1 break-words text-[11px] font-bold leading-tight">{label}</div>
-          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{detail}</div>
-        </div>
-      </button>)}
+    <section id="dashboard-metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      {kpis.map(({ label, value, detail, icon, path, tone }) => (
+        <DashboardMetricCard
+          key={label}
+          label={label}
+          value={value}
+          detail={detail}
+          icon={icon}
+          tone={tone}
+          onClick={() => navigate(path)}
+        />
+      ))}
 
       <button
         type="button"
         onClick={() => navigate('/dean/schedules')}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
       >
         <div className="relative h-12 w-12 shrink-0 self-start">
           <ResponsiveContainer width="100%" height="100%">
@@ -638,37 +650,38 @@ export default function DeanDashboardPage() {
               </Pie>
             </PieChart>
           </ResponsiveContainer>
-          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold leading-none tabular-nums text-primary">{draftingProgress}%</span>
+          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold leading-none tabular-nums text-primary">{draftingProgress}%</span>
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="break-words text-[11px] font-bold leading-tight">Scheduling Completion</div>
+          <div className="break-words text-xs font-bold leading-tight">Scheduling Completion</div>
           <div className="mt-1 h-7 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[{ readiness: draftingProgress, label: `${draftingProgress}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
                 <XAxis type="number" domain={[0, 100]} hide />
                 <YAxis type="category" hide />
                 <Bar dataKey="readiness" fill={draftingProgress === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
-                  <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} />
+                  <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{draftedCount} / {sectionTotal} sections completed</div>
+          <div className="mt-auto break-words pt-0.5 text-[11px] leading-tight text-slate-500">{draftedCount} / {sectionTotal} sections completed</div>
         </div>
       </button>
+    </section>
 
-      <button
-        type="button"
-        onClick={openApproval}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md xl:col-span-2"
-      >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${pendingApprovals ? TONES.alert : TONES.good}`}><ClipboardCheck className="h-4 w-4" /></span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="text-lg font-bold leading-5 text-primary">{pendingApprovals}</div>
-          <div className="mt-1 break-words text-[11px] font-bold leading-tight">Pending Approvals</div>
-          <div className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{pendingApprovals ? 'Awaiting your action' : 'Nothing awaiting review'}</div>
-        </div>
-      </button>
+    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+      {inventory.map(({ label, value, detail, icon, path, tone }) => (
+        <DashboardMetricCard
+          key={label}
+          label={label}
+          value={value}
+          detail={detail}
+          icon={icon}
+          tone={tone}
+          onClick={() => navigate(path)}
+        />
+      ))}
     </section>
 
     <section className="grid gap-4 xl:grid-cols-12">

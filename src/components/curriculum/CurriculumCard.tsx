@@ -49,10 +49,23 @@ export default function CurriculumCard({
   const retirable = scheduledSections === 0;
   const blockedReason = `${scheduledSections} section${scheduledSections === 1 ? '' : 's'} already ${scheduledSections === 1 ? 'has' : 'have'} a schedule plotted from this curriculum. Archive or clear those schedules first.`;
 
+  const deptLogo = curriculum.department?.logo;
+
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative ${GRID_CARD_HOVER}`}>
+    <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative overflow-hidden ${GRID_CARD_HOVER}`}>
+      {/* Centered Background Department Watermark Logo */}
+      {deptLogo && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+          <img
+            src={deptLogo}
+            alt="Department Watermark"
+            className="w-48 h-48 object-contain opacity-[0.20]"
+          />
+        </div>
+      )}
+
       {/* Header */}
-      <div>
+      <div className="relative z-10">
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
             <h3 className="text-base font-bold text-[#1A1410] font-display truncate">{curriculum.name}</h3>
@@ -110,7 +123,7 @@ export default function CurriculumCard({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-3 border-t border-gray-100 flex-wrap">
+      <div className="relative z-10 flex items-center gap-2 pt-3 border-t border-gray-100 flex-wrap">
         <button
           onClick={() => onView(curriculum.id)}
           title="View curriculum details"
