@@ -415,10 +415,10 @@ function CurriculumManagePage() {
             <>
               <button
                 onClick={() => setIsArchiveOpen(true)}
-                className="border border-[#4e0a10] text-[#4e0a10] hover:bg-[#4e0a10]/5 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-xs shadow-sm cursor-pointer"
+                className="border border-[#5A1220] text-[#5A1220] hover:bg-[#5A1220]/5 px-5 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
                 title="View Archived Curriculum"
               >
-                <Archive size={16} />
+                <Archive size={15} />
                 <span>Archive</span>
               </button>
               <button
@@ -428,10 +428,10 @@ function CurriculumManagePage() {
                   setIsEditMode(false);
                   setIsFormModalOpen(true);
                 }}
-                className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
+                className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
               >
-                <Plus size={16} />
-                Create Curriculum
+                <Plus size={15} />
+                <span>Create Curriculum</span>
               </button>
             </>
           )}

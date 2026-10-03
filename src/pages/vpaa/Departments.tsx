@@ -24,6 +24,7 @@ import {
   UserRound,
   Building2,
   Archive,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -238,6 +239,12 @@ export default function Departments() {
   const [programFormError, setProgramFormError] = useState('');
   const [isSavingProgram, setIsSavingProgram] = useState(false);
 
+  const liveDeptDuplicate = useMemo(() => {
+    const trimmed = name.trim().toLowerCase();
+    if (!trimmed) return null;
+    return departments.find((d) => (!isEditMode || d.id !== editingId) && d.name.trim().toLowerCase() === trimmed) || null;
+  }, [name, departments, isEditMode, editingId]);
+
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -257,6 +264,17 @@ export default function Departments() {
   const [showProgramForm, setShowProgramForm] = useState(false);
   /** Null while the form is adding a program; the program's id while editing one. */
   const [editingProgramId, setEditingProgramId] = useState<number | null>(null);
+
+  const liveProgramDuplicate = useMemo(() => {
+    if (!selectedDeptForDetail || !newProgram.code.trim()) return null;
+    const targetCode = newProgram.code.trim().toUpperCase();
+    const targetMajor = newProgram.major.trim().toLowerCase();
+    return selectedDeptForDetail.programs.find((p) =>
+      p.id !== editingProgramId &&
+      p.code.trim().toUpperCase() === targetCode &&
+      (p.major || '').trim().toLowerCase() === targetMajor
+    ) || null;
+  }, [selectedDeptForDetail, newProgram.code, newProgram.major, editingProgramId]);
 
   const closeProgramForm = () => {
     setShowProgramForm(false);
@@ -333,7 +351,7 @@ export default function Departments() {
     id: department.id,
     code: department.department_code,
     name: department.department_name,
-    dean: department.users?.find((user) => user.role === 'dean')?.name ?? department.users?.[0]?.name ?? null,
+    dean: department.users?.find((user) => user.role === 'dean')?.name ?? null,
     secretary: department.users?.find((user) => user.role === 'secretary')?.name ?? null,
     programHeads: department.users?.filter((user) => user.role === 'program_head').map((user) => user.name || '') ?? [],
     facultyCount: department.faculties_count ?? 0,
@@ -357,6 +375,13 @@ export default function Departments() {
     const major = newProgram.major.trim();
     if (!code || !name) {
       setProgramFormError('Program code and name are required.');
+      return;
+    }
+
+    if (liveProgramDuplicate) {
+      const msg = `A program with code "${liveProgramDuplicate.code}"${liveProgramDuplicate.major ? ` (${liveProgramDuplicate.major})` : ''} already exists in this department.`;
+      setProgramFormError(msg);
+      toast.error('Duplicate Program', msg);
       return;
     }
 
@@ -458,6 +483,12 @@ export default function Departments() {
 
     if (trimmedName.length > 100) {
       setNameError('Department name must not exceed 100 characters');
+      return;
+    }
+
+    if (liveDeptDuplicate) {
+      setNameError(`A department named "${liveDeptDuplicate.name}" already exists.`);
+      toast.error('Duplicate Department', `A department named "${liveDeptDuplicate.name}" already exists.`);
       return;
     }
 
@@ -866,9 +897,20 @@ export default function Departments() {
                   <div
                     key={dept.id}
                     onClick={() => openDepartmentDetail(dept)}
-                    className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between space-y-4 font-sans relative group cursor-pointer ${GRID_CARD_HOVER}`}
+                    className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between space-y-4 font-sans relative group overflow-hidden cursor-pointer ${GRID_CARD_HOVER}`}
                   >
-                    <div>
+                    {/* Centered Background Department Watermark Logo */}
+                    {dept.logo && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                        <img
+                          src={dept.logo}
+                          alt="Department Watermark"
+                          className="w-48 h-48 object-contain opacity-[0.20]"
+                        />
+                      </div>
+                    )}
+
+                    <div className="relative z-10">
                       <div className="flex justify-between items-start mb-3">
                         <DepartmentLogo name={dept.name} logo={dept.logo} className="w-11 h-11" iconSize={20} />
                         {canManageDepartments && (
@@ -918,7 +960,7 @@ export default function Departments() {
                       </p>
                     </div>
 
-                    <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600 font-semibold">
+                    <div className="relative z-10 pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600 font-semibold">
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-1.5" title="Instructors">
                           <UsersIcon size={14} className="text-gray-400" />
@@ -1036,6 +1078,15 @@ export default function Departments() {
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
+              {liveDeptDuplicate && (
+                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
+                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
+                  <span>
+                    Duplicate detected: A department named &ldquo;{liveDeptDuplicate.name}&rdquo; already exists.
+                  </span>
+                </div>
+              )}
+
               {/* Photo / Logo Upload Picker */}
               <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
                 <div className="relative">
@@ -1094,12 +1145,16 @@ export default function Departments() {
                   }}
                   placeholder="e.g. College of Computing Studies"
                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    nameError 
+                    nameError || liveDeptDuplicate
                       ? 'border-red-500 focus:ring-red-500' 
                       : 'border-gray-200 focus:ring-[#C9952A]'
                   }`}
                 />
-                {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
+                {(nameError || liveDeptDuplicate) && (
+                  <p className="text-xs text-red-500 mt-1 font-semibold">
+                    {nameError || `A department named "${liveDeptDuplicate?.name}" already exists.`}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -1347,11 +1402,11 @@ export default function Departments() {
                     <button
                       type="button"
                       onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
-                      className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer ${showProgramForm
+                      className={`shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl px-5 py-2.5 text-xs font-bold transition-all duration-200 cursor-pointer shadow-md whitespace-nowrap ${showProgramForm
                         ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                        : 'bg-[#4e0a10] text-white shadow-sm hover:bg-[#C9952A]'}`}
+                        : 'bg-[#5A1220] text-white hover:bg-[#410b15] hover:scale-[1.02]'}`}
                     >
-                      {showProgramForm ? <X size={14} /> : <Plus size={14} />}
+                      {showProgramForm ? <X size={15} /> : <Plus size={15} />}
                       {showProgramForm ? 'Cancel' : 'Add program'}
                     </button>
                   )}
@@ -1359,6 +1414,14 @@ export default function Departments() {
 
                 {showProgramForm && (
                   <div className="rounded-2xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] p-5">
+                    {liveProgramDuplicate && (
+                      <div className="mb-3 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
+                        <AlertTriangle size={15} className="shrink-0 text-red-600" />
+                        <span>
+                          Duplicate detected: A program with code &ldquo;{liveProgramDuplicate.code}&rdquo;{liveProgramDuplicate.major ? ` and major &ldquo;${liveProgramDuplicate.major}&rdquo;` : ''} already exists in this department.
+                        </span>
+                      </div>
+                    )}
                     <div className="mb-3 flex items-center gap-2">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#4e0a10] text-white">
                         {editingProgramId === null ? <Plus size={15} /> : <Pencil size={13} />}
@@ -1384,7 +1447,7 @@ export default function Departments() {
                           onKeyDown={handleProgramFormKeyDown}
                           placeholder="BSED"
                           maxLength={50}
-                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-mono outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+                          className={`mt-1.5 w-full rounded-xl border bg-white px-3 py-2.5 text-sm font-mono outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
                         />
                       </label>
                       <label className="text-[11px] font-bold text-gray-500">
@@ -1408,7 +1471,7 @@ export default function Departments() {
                           onKeyDown={handleProgramFormKeyDown}
                           placeholder="English"
                           maxLength={255}
-                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+                          className={`mt-1.5 w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
                         />
                       </label>
                     </div>

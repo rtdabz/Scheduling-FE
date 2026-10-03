@@ -43,7 +43,7 @@ export default function YearLevelTabs({
                   isSelected ? 'bg-[#C9952A] text-white' : 'bg-gray-100 text-gray-600'
                 }`}
               >
-                {stats.units}u
+                {stats.units} {stats.units === 1 ? 'unit' : 'units'}
               </span>
             </button>
           );

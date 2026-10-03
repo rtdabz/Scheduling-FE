@@ -26,12 +26,12 @@ export const vpaaNav: NavSection[] = [
       // Room borrowing is between departments; the VPAA has no Room Requests page.
       { label: 'Facility Management', path: '/facilities', icon: DoorOpen, id: 'sidebar-rooms' },
       {
-        label: 'Instructor Management',
+        label: 'Instructors',
         path: '/instructors',
         icon: GraduationCap,
         id: 'sidebar-faculty',
       },
-      { label: 'Instructor Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
+      { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
       { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
       {
         label: 'Schedule Review',

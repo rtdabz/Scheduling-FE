@@ -200,7 +200,10 @@ export default function CourseManager() {
         {
           accessorKey: 'units',
           header: 'Units',
-          cell: info => <span className="font-bold text-gray-700 text-xs">{info.getValue() as number}</span>
+          cell: info => {
+            const val = info.getValue() as number;
+            return <span className="font-bold text-gray-700 text-xs">{val} {val === 1 ? 'unit' : 'units'}</span>;
+          }
         },
         {
           id: 'hours',

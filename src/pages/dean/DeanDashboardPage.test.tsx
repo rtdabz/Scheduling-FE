@@ -110,12 +110,12 @@ describe('DeanDashboardPage', () => {
 
     // Every panel from the design is present.
     ['Schedule Review Queue', 'Section Submission Readiness', 'Schedule Review Overview',
-      'Department Academic Timetable', 'Faculty Workload', 'Room Utilization'].forEach(title =>
-      expect(screen.getByText(title)).toBeTruthy());
+      'Department Academic Timetable', 'Instructor Workload', 'Room Utilization'].forEach(title =>
+      expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1));
 
     // KPI row.
-    ['Department Sections', 'Faculty Members', 'Curriculum Courses', 'Rooms Managed',
-      'Scheduling Completion', 'Pending Approvals'].forEach(label =>
+    ['Sections', 'Instructors', 'Curriculums', 'Rooms',
+      'Scheduling Completion', 'Awaiting Your Approval'].forEach(label =>
       expect(screen.getByText(label)).toBeTruthy());
   });
 

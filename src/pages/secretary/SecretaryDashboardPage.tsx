@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BookOpen,
   Building2,
+  CalendarCheck2,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -14,9 +15,11 @@ import {
   FileClock,
   FileText,
   FlaskConical,
+  GaugeCircle,
   Globe2,
   GraduationCap,
   Handshake,
+  LayoutGrid,
   MapPin,
   RotateCcw,
   Send,
@@ -49,9 +52,9 @@ interface Semester { id:number; status:string }
 interface Overview { schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null }
 interface InitialData { schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester }
 
-type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert';
+type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
-interface Tile { label:string; value:number; detail:string; icon:LucideIcon; path:string; tone:Tone }
+interface Tile { label:string; value:number|string; detail:string; icon:LucideIcon; path:string; tone:Tone }
 interface QueueRow { label:string; value:number; action:string; icon:LucideIcon; path:string }
 
 const TONES: Record<Tone, string> = {
@@ -334,27 +337,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     refetchStatus();
   };
 
-  const tiles: Tile[] = [
-    { label:'Total Sections', value:visibleSections.length, detail:'Department scope', icon:Users, path:paths.sections, tone:'brand' },
-    ...(canViewSchedules ? [{ label:'Scheduled Sections', value:scheduledSections, detail:`${sectionCoverage}% of ${visibleSections.length} sections`, icon:ShieldCheck, path:paths.schedules, tone:remaining === 0 && visibleSections.length > 0 ? 'good' : 'brand' } as Tile] : []),
-    ...(canUpdateSchedules ? [{ label:'Remaining Sections', value:remaining, detail:'Still to schedule', icon:FileClock, path:paths.schedules, tone:remaining ? 'warn' : 'good' } as Tile] : []),
-    { label:'Total Instructors', value:visibleFaculty.length, detail:'Active instructors', icon:GraduationCap, path:paths.instructors, tone:'brand' },
-    { label:'Curriculum Courses', value:visibleSubjects.length, detail:'Available offerings', icon:BookOpen, path:paths.courses, tone:'brand' },
-    { label:'Unbooked Rooms', value:unbookedRooms, detail:`of ${assignableRooms.length} rooms`, icon:Building2, path:paths.rooms, tone:'info' },
-    ...(canAssignInstructors ? [{ label:'Need Instructors', value:noInstructor, detail:'Requires assignment', icon:UserRoundCheck, path:paths.schedules, tone:noInstructor ? 'alert' : 'good' } as Tile] : []),
-    ...(canAssignCrossDepartment ? [{ label:'Delegated Classes', value:crossDepartmentPending, detail:'Other colleges, awaiting instructors', icon:Handshake, path:paths.crossDepartment, tone:crossDepartmentPending ? 'alert' : 'good' } as Tile] : []),
-  ];
 
-  // Widest layout per tile count that keeps every row full. Literal class
-  // names because Tailwind cannot see computed ones.
-  const TILE_GRID: Record<number, string> = {
-    4: 'lg:grid-cols-4',
-    5: 'sm:grid-cols-3 xl:grid-cols-5',
-    6: 'sm:grid-cols-3',
-    7: 'sm:grid-cols-4',
-    8: 'sm:grid-cols-4',
-  };
-  const tileGrid = TILE_GRID[tiles.length] ?? 'sm:grid-cols-3 lg:grid-cols-4';
 
   const queue: QueueRow[] = [
     ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
@@ -375,12 +358,35 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     ? yearLevels
     : [{ year_level:0, label:'All sections', total:visibleSections.length, drafted:scheduledSections, isComplete:remaining === 0 }];
 
+  const roomUtilization = percent(roomsUsed, assignableRooms.length);
+
+  const kpis: Tile[] = [
+    {
+      label: 'Needs Attention',
+      value: openItems,
+      detail: openItems ? `${openItems} item${openItems === 1 ? '' : 's'} to resolve` : 'All tasks cleared',
+      icon: CalendarCheck2,
+      path: paths.schedules,
+      tone: openItems > 0 ? 'alert' : 'good',
+    },
+  ];
+
+  const inventory: Tile[] = [
+    { label: 'Sections', value: visibleSections.length, detail: 'Department scope', icon: LayoutGrid, path: paths.sections, tone: 'brand' },
+    { label: 'Instructors', value: visibleFaculty.length, detail: 'Active instructors', icon: Users, path: paths.instructors, tone: 'accent' },
+    { label: 'Curriculums', value: visibleSubjects.length, detail: 'Offered courses', icon: BookOpen, path: paths.courses, tone: 'good' },
+    { label: 'Rooms', value: assignableRooms.length, detail: 'Department rooms', icon: Building2, path: paths.rooms, tone: 'warn' },
+  ];
+
+  const completionSlices = [
+    { key: 'done', value: Math.max(0, draftedCount), color: '#16a36a' },
+    { key: 'left', value: Math.max(0, totalSections - draftedCount), color: '#e2e8f0' },
+  ].filter(slice => slice.value > 0);
+
   if (loading) {
     return <DashboardSkeleton
       variant="secretary"
       secretaryLayout={{
-        tileCount: tiles.length,
-        tileGridClassName: tileGrid,
         queueRowCount: queue.length,
         showDraftingProgress: canViewSchedules,
         showFacultyAssignment: canAssignInstructors,
@@ -397,17 +403,74 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
       <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3"/> Retry</button>
     </div>}
 
-    {/*
-      Capabilities decide how many tiles render (four for a read-only account,
-      eight for a full one), so the column count has to read well for any count
-      in that range. Eight columns squeezed labels like "Curriculum Courses"
-      onto three lines and stranded the last tile whenever the count was not a
-      multiple of eight, and a fixed five stranded tiles on a half-empty second
-      row. `tileGrid` picks at most five columns and, where it can, a count
-      that divides the tiles into full rows.
-    */}
-    <section id="dashboard-metrics" className={`grid grid-cols-2 gap-2.5 ${tileGrid}`}>
-      {tiles.map(({label, value, detail, icon, path, tone}) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
+    <section id="dashboard-metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      {kpis.map(({ label, value, detail, icon, path, tone }) => (
+        <DashboardMetricCard
+          key={label}
+          label={label}
+          value={value}
+          detail={detail}
+          icon={icon}
+          tone={tone}
+          onClick={() => navigate(path)}
+        />
+      ))}
+
+      <button
+        type="button"
+        onClick={() => navigate(paths.schedules)}
+        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
+      >
+        <div className="relative h-12 w-12 shrink-0 self-start">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={completionSlices.map(slice => ({ name: slice.key, value: slice.value }))}
+                dataKey="value"
+                innerRadius="67%"
+                outerRadius="100%"
+                startAngle={90}
+                endAngle={-270}
+                paddingAngle={1}
+                stroke="#ffffff"
+                strokeWidth={3}
+              >
+                {completionSlices.map(slice => <Cell key={slice.key} fill={slice.color} />)}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold leading-none tabular-nums text-primary">{draftingProgress}%</span>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="break-words text-xs font-bold leading-tight">Drafting Completion</div>
+          <div className="mt-1 h-7 min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[{ readiness: draftingProgress, label: `${draftingProgress}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
+                <XAxis type="number" domain={[0, 100]} hide />
+                <YAxis type="category" hide />
+                <Bar dataKey="readiness" fill={draftingProgress === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
+                  <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-auto break-words pt-0.5 text-[11px] leading-tight text-slate-500">{draftedCount} / {totalSections} sections completed</div>
+        </div>
+      </button>
+    </section>
+
+    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+      {inventory.map(({ label, value, detail, icon, path, tone }) => (
+        <DashboardMetricCard
+          key={label}
+          label={label}
+          value={value}
+          detail={detail}
+          icon={icon}
+          tone={tone}
+          onClick={() => navigate(path)}
+        />
+      ))}
     </section>
 
     <section id="dashboard-work-queue" className="grid gap-4 xl:grid-cols-12">

@@ -933,7 +933,7 @@ export default function VpaaUsers() {
                       <img
                         src={deptLogo}
                         alt="Department Watermark"
-                        className="w-44 h-44 object-contain opacity-[0.09]"
+                        className="w-48 h-48 object-contain opacity-[0.20]"
                       />
                     </div>
                   )}

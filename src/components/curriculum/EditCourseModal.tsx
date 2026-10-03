@@ -231,8 +231,8 @@ export default function EditCourseModal({
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1 text-center">
                 Total Units
               </label>
-              <div className="h-[34px] flex items-center justify-center bg-[#4e0a10]/10 text-[#4e0a10] font-black text-xs rounded-xl">
-                {(Number(lecUnits) || 0) + (Number(labUnits) || 0)}u
+              <div className="h-[34px] flex items-center justify-center bg-[#4e0a10]/10 text-[#4e0a10] font-black text-xs rounded-xl px-2">
+                {(Number(lecUnits) || 0) + (Number(labUnits) || 0)} {(Number(lecUnits) || 0) + (Number(labUnits) || 0) === 1 ? 'unit' : 'units'}
               </div>
             </div>
           </div>

@@ -8,6 +8,8 @@ import {
   Pencil,
   Trash2,
   Plus,
+  Filter,
+  Users,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -104,9 +106,11 @@ export default function SecretarySections() {
   const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
+  const isSecretary = user?.role?.toLowerCase() === 'secretary';
   // Section writes sit behind schedule.create, which a department without a
-  // program cannot exercise; gating on the role showed buttons the API refused.
-  const canManageSections = hasStoredCapability('schedule.create');
+  // program cannot exercise. Secretaries and Program Heads with available programs
+  // or the schedule.create capability can manage sections.
+  const canManageSections = hasStoredCapability('schedule.create') || ((isSecretary || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false));
 
   // A Program Head adds and edits sections of their own program only; the
   // server enforces the same scope.
@@ -118,11 +122,37 @@ export default function SecretarySections() {
 
   const activeSemester = useMemo(() => semesters.find((t) => t.is_active) ?? semesters[0], [semesters]);
 
+  // Filter States
+  const [yearLevelFilter, setYearLevelFilter] = useState('all');
+  const [programFilter, setProgramFilter] = useState('all');
+  const [semesterFilter, setSemesterFilter] = useState('all');
+
   const filteredSections = useMemo(() => {
-    if (isVpaa) return sections;
-    if (!user?.department_id) return [];
-    return sections.filter(s => s.department_id !== null && Number(s.department_id) === Number(user.department_id));
-  }, [sections, isVpaa, user?.department_id]);
+    let list = sections;
+    if (isVpaa) {
+      // VPAA sees all
+    } else if (user?.department_id) {
+      list = list.filter(s => s.department_id !== null && Number(s.department_id) === Number(user.department_id));
+    } else {
+      return [];
+    }
+
+    if (isProgramHead && user?.program_id) {
+      list = list.filter(s => s.program_id !== null && Number(s.program_id) === Number(user.program_id));
+    }
+
+    if (yearLevelFilter !== 'all') {
+      list = list.filter(s => String(s.year_level) === yearLevelFilter);
+    }
+    if (programFilter !== 'all') {
+      list = list.filter(s => String(s.program_id) === programFilter);
+    }
+    if (semesterFilter !== 'all') {
+      list = list.filter(s => s.semester === semesterFilter);
+    }
+
+    return list;
+  }, [sections, isVpaa, user?.department_id, user?.program_id, isProgramHead, yearLevelFilter, programFilter, semesterFilter]);
 
   // Table States
   const [globalFilter, setGlobalFilter] = useState('');
@@ -393,28 +423,84 @@ export default function SecretarySections() {
 
   return (
     <div>
-      {/* Top Bar Section */}
-      <div id="sections-toolbar" className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
+      {/* Search and Filters Bar */}
+      <div id="sections-toolbar" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
+        {/* Search */}
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search section name, semester, etc..."
-          containerClassName="relative flex-1 sm:max-w-md"
         />
-        {canManageSections && (
-          <button
-            id="sections-add-button"
-            onClick={() => {
-              setIsEditMode(false);
-              setEditingId(null);
-              setIsModalOpen(true);
-            }}
-            className="bg-[#4e0a10] text-white px-5 py-2.5 rounded-xl hover:bg-[#C9952A] transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm cursor-pointer"
-          >
-            <Plus size={18} />
-            <span>Add Section</span>
-          </button>
-        )}
+
+        {/* Dropdowns & Actions */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Program Filter (if multiple selectable programs) */}
+          {selectablePrograms.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <Filter size={13} className="text-gray-400" />
+              <select
+                value={programFilter}
+                onChange={(e) => setProgramFilter(e.target.value)}
+                title="Filter by Program"
+                className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
+              >
+                <option value="all">All Programs</option>
+                {selectablePrograms.map((p) => (
+                  <option key={p.id} value={String(p.id)}>{p.code}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Year Level Filter */}
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
+            <select
+              value={yearLevelFilter}
+              onChange={(e) => setYearLevelFilter(e.target.value)}
+              title="Filter by Year Level"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
+            >
+              <option value="all">All Year Levels</option>
+              <option value="1">1st Year</option>
+              <option value="2">2nd Year</option>
+              <option value="3">3rd Year</option>
+              <option value="4">4th Year</option>
+            </select>
+          </div>
+
+          {/* Semester Filter */}
+          <div className="flex items-center gap-1.5">
+            <Filter size={13} className="text-gray-400" />
+            <select
+              value={semesterFilter}
+              onChange={(e) => setSemesterFilter(e.target.value)}
+              title="Filter by Semester"
+              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
+            >
+              <option value="all">All Semesters</option>
+              <option value="1st">1st Semester</option>
+              <option value="2nd">2nd Semester</option>
+              <option value="summer">Summer</option>
+            </select>
+          </div>
+
+          {canManageSections && (
+            <button
+              id="sections-add-button"
+              type="button"
+              onClick={() => {
+                setIsEditMode(false);
+                setEditingId(null);
+                setIsModalOpen(true);
+              }}
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto sm:ml-0 whitespace-nowrap"
+            >
+              <Plus size={15} />
+              <span>Add Section</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Table Container */}
@@ -427,6 +513,31 @@ export default function SecretarySections() {
           ariaLabel="Sections"
           emptyTitle="No sections found."
           emptyDescription="Try adjusting your search criteria or add a new section."
+          emptyState={
+            !isLoading && sections.length === 0 ? (
+              <div className="py-12 text-center flex flex-col items-center justify-center">
+                <Users className="w-12 h-12 text-gray-300 mb-3" />
+                <h3 className="text-base font-bold text-gray-800">No sections added yet</h3>
+                <p className="text-xs text-gray-500 max-w-sm mt-1 mb-4">
+                  Get started by adding your department's first section to begin scheduling.
+                </p>
+                {canManageSections && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditMode(false);
+                      setEditingId(null);
+                      setIsModalOpen(true);
+                    }}
+                    className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus size={15} />
+                    <span>Add Section</span>
+                  </button>
+                )}
+              </div>
+            ) : undefined
+          }
           cellClassName={(columnId) => (['section_name', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
         />
       </div>

@@ -21,8 +21,16 @@ export const secretaryNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'Facility', path: '/secretary/facilities', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
-      { label: 'Program Rooms', path: '/secretary/program-rooms', icon: Split, id: 'sidebar-program-rooms', requiredCapability: 'room.assign_program' },
+      {
+        label: 'Facility',
+        icon: DoorOpen,
+        id: 'sidebar-facility',
+        requiredCapability: ['schedule.view', 'room.assign_program'],
+        children: [
+          { label: 'Rooms', path: '/secretary/facilities', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
+          { label: 'Program Rooms', path: '/secretary/program-rooms', icon: Split, id: 'sidebar-program-rooms', requiredCapability: 'room.assign_program' },
+        ],
+      },
       {
         label: 'Instructors',
         path: '/secretary/instructors',

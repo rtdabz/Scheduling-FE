@@ -12,9 +12,8 @@ type DashboardSkeletonVariant = 'secretary' | 'dean' | 'vpaa' | 'program' | 'ins
  * the page the moment the data arrived.
  */
 export interface SecretaryDashboardLayout {
-  tileCount: number;
-  /** The page's own responsive column classes for its tile row. */
-  tileGridClassName: string;
+  tileCount?: number;
+  tileGridClassName?: string;
   queueRowCount: number;
   showDraftingProgress: boolean;
   showFacultyAssignment: boolean;
@@ -22,10 +21,8 @@ export interface SecretaryDashboardLayout {
   readinessCheckCount: number;
 }
 
-/** A full-capability account: every tile, queue row and panel. */
+/** A full-capability account: every queue row and panel. */
 const DEFAULT_SECRETARY_LAYOUT: SecretaryDashboardLayout = {
-  tileCount: 8,
-  tileGridClassName: 'sm:grid-cols-4',
   queueRowCount: 6,
   showDraftingProgress: true,
   showFacultyAssignment: true,
@@ -288,13 +285,13 @@ function SecretaryTimetableSkeleton() {
 }
 
 function SecretarySkeleton({ layout }: { layout: SecretaryDashboardLayout }) {
-  // Row for row the structure of SecretaryDashboardPage, driven by the layout
-  // the page computed from its capabilities: the same tile count and column
-  // classes, the same queue length, and only the panels the account will see.
   return (
     <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
-      <div data-skeleton="metrics" className={`grid grid-cols-2 gap-2.5 ${layout.tileGridClassName}`}>
-        {Array.from({ length: layout.tileCount }).map((_, i) => <MetricCard key={i} />)}
+      <div data-skeleton="metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => <MetricCard key={i} />)}
+      </div>
+      <div data-skeleton="inventory" className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}
       </div>
       <div className="grid gap-4 xl:grid-cols-12">
         <QueueSkeleton rows={layout.queueRowCount} />
@@ -364,10 +361,12 @@ function DonutSkeleton({ legendRows = 4 }: { legendRows?: number }) {
 function DeanSkeleton() {
   return (
     <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
-      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => <MetricCard key={i} />)}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => <MetricCard key={i} />)}
-        <MetricCard className="xl:col-span-2" />
-        <MetricCard className="xl:col-span-2" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-12">

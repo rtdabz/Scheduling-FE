@@ -479,9 +479,9 @@ export default function Designations() {
             <button
               type="button"
               onClick={() => openCreate()}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#5A1220] px-3.5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#4a0f1a] cursor-pointer"
+              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Plus size={16} />
+              <Plus size={15} />
               Add Designation
             </button>
           )}

@@ -36,32 +36,23 @@ describe('DashboardSkeleton', () => {
     expect(dashboard.container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
   });
 
-  it('gives the dean metric row two double-width tiles', () => {
-    // MetricCard grew a className prop so the composite completion and pending approval tiles
-    // can span two columns; the other four tiles stay single-width.
+  it('gives the dean two metric rows: decision KPIs then the inventory strip', () => {
     const { container } = render(<DashboardSkeleton variant="dean" />);
-    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(6);
-    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(2);
+    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(7);
   });
 
   it('gives the vpaa two metric rows: decision KPIs then the inventory strip', () => {
-    // The VPAA dashboard splits its tiles in two — four decision metrics plus the
-    // double-width completion tile, then five static inventory counts — so the
-    // skeleton has to reserve both rows or the page jumps when the data lands.
     const { container } = render(<DashboardSkeleton variant="vpaa" />);
-    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(10);
-    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(1);
+    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(8);
   });
 
-  it('leaves the secretary metric row at eight single-width tiles', () => {
+  it('gives the secretary two metric rows: decision KPIs then the inventory strip', () => {
     const { container } = render(<DashboardSkeleton variant="secretary" />);
-    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(8);
-    expect(container.querySelectorAll('.min-h-\\[90px\\].xl\\:col-span-2').length).toBe(0);
+    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(7);
   });
+
   describe('secretary layout', () => {
     const fullLayout = {
-      tileCount: 8,
-      tileGridClassName: 'sm:grid-cols-4',
       queueRowCount: 6,
       showDraftingProgress: true,
       showFacultyAssignment: true,
@@ -69,12 +60,12 @@ describe('DashboardSkeleton', () => {
       readinessCheckCount: 6,
     };
 
-    it('reserves exactly the tiles and column classes the page will render', () => {
-      const { container } = render(<DashboardSkeleton variant="secretary" secretaryLayout={{ ...fullLayout, tileCount: 5, tileGridClassName: 'sm:grid-cols-3 xl:grid-cols-5' }} />);
+    it('reserves the unified decision and inventory metric rows', () => {
+      const { container } = render(<DashboardSkeleton variant="secretary" secretaryLayout={fullLayout} />);
       const metrics = container.querySelector('[data-skeleton="metrics"]')!;
-      expect(metrics.children).toHaveLength(5);
-      expect(metrics.className).toContain('sm:grid-cols-3');
-      expect(metrics.className).toContain('xl:grid-cols-5');
+      const inventory = container.querySelector('[data-skeleton="inventory"]')!;
+      expect(metrics.children).toHaveLength(3);
+      expect(inventory.children).toHaveLength(4);
     });
 
     it('draws one queue line per queue row', () => {
