@@ -67,7 +67,6 @@ type Entry = {
   snapshots: Snapshot[];
   action: string;
   rejection_reason?: string | null;
-  /** The live department and signatories: workflow snapshots store neither. */
   department?: ApiDepartmentRecord | null;
   users?: UserSummary[];
   snapshot: Record<string, unknown>;
@@ -92,7 +91,6 @@ const TYPE_OPTIONS: [Exclude<HistoryType, "">, string][] = [
   ["rejected", "Rejected"],
   ["recalled", "Recalled"],
 ];
-// The review decisions the server lists; the tone matches the decision.
 const ACTIONS: Record<string, { label: string; tone: string }> = {
   schedule_approved_by_dean: { label: "Approved by Dean", tone: "bg-emerald-50 text-emerald-700" },
   schedule_approved_by_vpaa: { label: "Approved by VPAA", tone: "bg-emerald-50 text-emerald-700" },
@@ -174,7 +172,6 @@ const gridCard = (
   };
 };
 
-/** The same document the approval preview and Print render, built from the immutable snapshot. */
 const pdfInputFor = (entry: Entry): SchedulePdfInput => {
   const departmentOf = (item: Snapshot) => Number(item.snapshot.department_id ?? entry.department_id ?? 0);
   const sections: Section[] = Array.from(
@@ -186,7 +183,6 @@ const pdfInputFor = (entry: Entry): SchedulePdfInput => {
       yearLevel: Math.min(4, Math.max(1, Number(item.section_year_level ?? 1))) as Section["yearLevel"],
       semester: (item.section_semester || entry.semester || "1st") as Section["semester"],
       departmentId: departmentOf(item),
-      // Picks the program's own Program Head as the print's preparer.
       programId: item.snapshot.program_id == null ? undefined : Number(item.snapshot.program_id),
       semesterId: Number(item.snapshot.semester_id ?? entry.semester_id ?? 0),
       status: "active" as const,
@@ -221,8 +217,6 @@ const pdfInputFor = (entry: Entry): SchedulePdfInput => {
 const previewStatus = (action: string): "approved" | "rejected" | "pending" =>
   action.startsWith("schedule_approved") ? "approved" : action.startsWith("schedule_returned") ? "rejected" : "pending";
 
-// Schedules group, so schedule writes invalidate it. One entry per page + type,
-// so a revisit paints the view it left while load() replaces it.
 const historyCacheKey = (page: number, type: HistoryType): string => `page:schedule-overview:history:${page}:${type}`;
 
 export default function ScheduleHistory() {
@@ -251,7 +245,6 @@ export default function ScheduleHistory() {
       setEntries(cachedPage.data);
       setMeta(cachedPage.meta);
     }
-    // A cached page stays on screen while it is replaced; only a cold key shows the skeleton.
     if (!hasCachedData(cacheKey)) setLoading(true);
     setError("");
     try {
@@ -272,7 +265,6 @@ export default function ScheduleHistory() {
     }
   }, [page, type]);
   useEffect(() => {
-    // load() raises its own loading flag before awaiting the request.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
@@ -288,7 +280,6 @@ export default function ScheduleHistory() {
   const viewInput = useMemo(() => (selected ? pdfInputFor(selected) : null), [selected]);
   const printInput = useMemo(() => (printingEntry ? pdfInputFor(printingEntry) : null), [printingEntry]);
 
-  // Rebuilt each render: the action cells call open/print, which are plain closures.
   const historyColumns: ColumnDef<Entry>[] = [
     {
       id: "decision",
@@ -329,7 +320,6 @@ export default function ScheduleHistory() {
       ),
     },
   ];
-  // The server pages the history, so the table renders one page unsorted.
   const historyTable = useDataTable({
     data: entries,
     columns: historyColumns,

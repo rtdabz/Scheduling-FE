@@ -11,16 +11,10 @@ interface FacultyAvailabilityPanelProps {
   facultyId: number;
   facultyName: string;
   employmentType: 'full-time' | 'part-time';
-  /** True for an account holding schedule.assign_instructor; everyone else reads. */
   canEdit?: boolean;
   onNotify?: (kind: 'success' | 'error', title: string, message: string) => void;
 }
 
-/**
- * Reads and, for accounts granted instructor assignment, edits the weekly
- * availability windows the scheduler honours for this instructor
- * (`faculty_availabilities`).
- */
 export default function FacultyAvailabilityPanel({
   facultyId,
   facultyName,
@@ -36,8 +30,6 @@ export default function FacultyAvailabilityPanel({
   const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   useEffect(() => {
-    // The panel lives inside a modal the user can close mid-flight, so a late
-    // response must not write to unmounted state.
     let active = true;
 
     const load = async () => {

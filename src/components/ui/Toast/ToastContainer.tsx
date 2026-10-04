@@ -37,8 +37,6 @@ export default function ToastContainer() {
         onConfirm={closeActiveNotice}
       />
 
-      {/* The same modal, asking a question instead of reporting one. Rendered
-          last so a confirmation sits above any notice already on screen. */}
       <ConfirmModal
         isOpen={confirmRequest !== null}
         eyebrow={confirmRequest?.eyebrow ?? 'Confirmation Required'}

@@ -1,18 +1,7 @@
-/**
- * One colour per college, shared by the timeline blocks, the legend and the
- * detail modal so a department reads the same everywhere on the page.
- *
- * Class names are written out in full because Tailwind only generates classes
- * it can find verbatim in the source.
- */
 export interface DepartmentTone {
-  /** Block fill, border and text. */
   block: string;
-  /** Solid left accent bar on a block. */
   accent: string;
-  /** Legend dot. */
   swatch: string;
-  /** Small solid chip, e.g. the department code in the detail modal. */
   badge: string;
 }
 
@@ -34,7 +23,6 @@ const FALLBACK: DepartmentTone = {
   badge: 'bg-slate-600 text-white',
 };
 
-/** Collapses the several codes a college has gone by onto one palette key. */
 export const departmentKey = (code?: string | null, name?: string | null): string => {
   const normalizedCode = (code ?? '').trim().toUpperCase();
   const value = (name ?? code ?? '').toLowerCase();

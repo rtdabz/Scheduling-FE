@@ -28,25 +28,19 @@ import {
 
 export type ReviewCourseRow = {
   course: Course;
-  /** Integrated: lecture and laboratory as two separate sessions. */
   hybrid: boolean;
-  /** Integrated On-site: both sessions face-to-face rather than an online lecture. */
   integratedOnSite?: boolean;
   split: boolean;
-  /** Setup Courses Custom Time Duration, e.g. "2h", when one was chosen. */
   customDuration?: string | null;
-  /** Setup Courses Preferred Room code, when one was chosen. */
   preferredRoom?: string | null;
 };
 
-/** A rule the engine enforces: always ("core") or because Setup chose it. */
 export type ReviewRule = {
   label: string;
   detail: string;
   kind: "core" | "setup";
 };
 
-/** One group of the Rules applied panel. */
 function RuleGroup({
   title,
   rules,
@@ -91,7 +85,6 @@ const elapsedLabel =(ms: number) => {
     : `${seconds}s`;
 };
 
-/** Header tile: one number the scheduler checks before committing to a run. */
 function StatTile({
   icon: Icon,
   label,
@@ -121,7 +114,6 @@ function StatTile({
   );
 }
 
-/** Panel shell shared by the two review tables and the rule list. */
 function Panel({
   icon: Icon,
   title,
@@ -158,7 +150,6 @@ function Panel({
 type PlanRow = ReviewCourseRow & {
   forcedDays: string[];
   field: boolean;
-  /** Consecutive Days, e.g. "3 days · Thu–Sat · 1A, 1B". */
   consecutive: string | null;
   consecutiveDays: number | null;
 };
@@ -257,14 +248,6 @@ function Tag({ tone, children }: { tone: string; children: React.ReactNode }) {
   );
 }
 
-/**
- * The review summary, replaced in place while a run is in flight.
- *
- * There is no server-side progress to report — the solver reports only queued
- * and running — so the phase list below states which stage the run has
- * reached rather than faking a percentage. The elapsed clock is the honest
- * signal that something is still happening.
- */
 function GeneratingView({
   scopeLabel,
   sectionCount,
@@ -368,24 +351,6 @@ function GeneratingView({
   );
 }
 
-/**
- * Step 3 — everything the run will use, on one screen, then Generate.
- *
- * The per-course rules the earlier steps set are scattered by nature: a
- * forced day here, a field course there, a split session somewhere else.
- * Review is the one place they have to be read together, so they are merged
- * into a single course table with one row per course rather than a card per
- * rule kind — a scheduler reads down one column to check a whole rule.
- *
- * The step is laid out to fit its own height instead of scrolling: the
- * course table is the only part that can outgrow the space, so it is the
- * only element given a scrollbar, and only once a curriculum is long enough
- * to need one.
- *
- * Generate itself lives in the wizard footer, next to Back, so the step
- * spends none of its height on an action bar of its own. Once a run is
- * queued the summary is replaced by the run's progress.
- */
 export default function ReviewGenerateStep({
   activeSemester,
   yearLevel,
@@ -406,10 +371,8 @@ export default function ReviewGenerateStep({
   curriculumName: string | null;
   sections: Section[];
   courseRows: ReviewCourseRow[];
-  /** Step 1's Preferred Days; empty means any day. */
   preferredDays?: string[];
   forcedDayRules: Array<{ course_id: number; day: string }>;
-  /** Consecutive Days rules; each section follows its own, else the course-wide one. */
   consecutiveDayRules?: ConsecutiveDayRule[];
   fieldCourseCodes: string[];
   activeRules: ReviewRule[];
@@ -431,7 +394,6 @@ export default function ReviewGenerateStep({
     ]);
   });
 
-  /** A course's run, and the sections it applies to when not all of them. */
   const consecutiveFor = (courseId: string) => {
     const bySection = consecutiveRulesBySection(courseId, consecutiveDayRules, sections);
     const first = bySection.values().next().value as ConsecutiveDayRule | undefined;
@@ -446,7 +408,6 @@ export default function ReviewGenerateStep({
     };
   };
 
-  /** One row per course, carrying every rule that course picked up. */
   const planRows: PlanRow[] = courseRows.map((row) => ({
     ...row,
     forcedDays: forcedDaysByCourseId.get(String(row.course.id)) ?? [],
@@ -464,13 +425,6 @@ export default function ReviewGenerateStep({
       row.forcedDays.length > 0,
   ).length;
 
-  /**
-   * What this configuration will cost to generate.
-   *
-   * Measured with the year-level benchmark: a section carrying three or more
-   * split courses quadruples the solver's per-section budget. Saying so here
-   * is cheaper than a user waiting out a run and then reading a diagnostic.
-   */
   const splitLoad = hybridCourses.length + splitCourses.length;
   const costNotices: string[] = [
     ...(splitLoad >= 3

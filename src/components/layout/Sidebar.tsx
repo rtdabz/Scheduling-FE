@@ -17,7 +17,6 @@ import { prefetchPage } from '../../lib/pagePrefetch';
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Widens the collapsed rail, e.g. when a menu group is clicked in it. */
   onOpen?: () => void;
   navItems: NavSection[];
 }
@@ -96,8 +95,6 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
       .catch(() => {});
   }, []);
 
-  // Delegated classes from other colleges that still need an instructor. The
-  // count drops as they are assigned, so the badge disappears at zero.
   const canAssignCrossDepartment = (role === 'secretary' || role === 'program_head')
     && hasStoredCapability('schedule.assign_instructor_cross_department');
   const { crossDepartmentPending } = useDepartmentScheduleStatus(
@@ -210,11 +207,6 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
     }));
   };
 
-  /**
-   * The one child that owns the current page. Sibling paths nest
-   * ('/dean/schedules' and '/dean/schedules/approval'), so a plain prefix test
-   * lit both; the most specific match wins instead.
-   */
   const activeChildPath = (item: NavItem): string | null => {
     const matches = (item.children ?? [])
       .map((child) => child.path)
@@ -244,7 +236,6 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
         ${isOpen ? 'w-72 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
       `}
     >
-      {/* Background Campus Image with Maroon Overlay (reused from LoginPage) */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <img
           src={campusBg}
@@ -326,9 +317,6 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                             toast.warning('Access Restricted', lockedModuleMessage(item.requiredCapability));
                             return;
                           }
-                          // The collapsed rail has no room for a group's pages, so a
-                          // click there used to toggle state nobody could see. Open
-                          // the sidebar with the group expanded instead.
                           if (!isOpen) {
                             onOpen?.();
                             setExpandedItems((prev) => ({ ...prev, [item.label]: true }));

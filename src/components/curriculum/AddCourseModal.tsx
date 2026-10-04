@@ -51,7 +51,6 @@ const yearNames: Record<number, string> = {
   4: '4th Year',
 };
 
-/** Shared column template so the header labels line up with every row. */
 const ROW_GRID = 'md:grid-cols-[1.5rem_7.5rem_minmax(0,1fr)_6.5rem_4rem_4rem_3rem_3.5rem]';
 
 const CONTROL =
@@ -72,7 +71,6 @@ const emptyRow = (): ManualCourseRowRequest => ({
 
 const normalizeCode = (code: string) => code.split(' ').filter(Boolean).join(' ').toUpperCase();
 
-/** Names every missing required field, or returns undefined when the row is complete. */
 const missingFieldsError = (row: ManualCourseRowRequest): string | undefined => {
   const missing = [
     !row.courseCode.trim() && 'course code',
@@ -106,12 +104,10 @@ export default function AddCourseModal({
   const isSaving = rows.some((r) => r.saveStatus === 'saving');
   const allSuccessful = rows.length > 0 && rows.every((r) => r.saveStatus === 'success');
 
-  // Reset modal state when opened
   useEffect(() => {
     if (isOpen) setRows([emptyRow()]);
   }, [isOpen]);
 
-  // Automatically close modal after a short delay once all courses are successfully saved
   useEffect(() => {
     if (!isOpen || !allSuccessful) return;
     const timer = setTimeout(onClose, 800);
@@ -164,7 +160,6 @@ export default function AddCourseModal({
     try {
       await onSaveCourses([toPayload(row)], yearLevel, semester, onProgress);
     } catch {
-      // Status is updated via the progress callback
     }
   };
 
@@ -187,7 +182,6 @@ export default function AddCourseModal({
     try {
       await onSaveCourses(rowsToSave.map(toPayload), yearLevel, semester, onProgress);
     } catch {
-      // Status is updated via the progress callback
     }
   };
 

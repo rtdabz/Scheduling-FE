@@ -7,10 +7,6 @@ import {
   type GuideEntry,
 } from "./generationGuideContent";
 
-/**
- * The Generation Guide handbook, opened from the book icon in the wizard
- * header: one chapter at a time, or search results across every chapter.
- */
 export default function GenerationGuide({
   initialChapterId,
   onClose,
@@ -29,7 +25,6 @@ export default function GenerationGuide({
   const results = searchGuide(query);
   const searching = query.trim() !== "";
 
-  // A new chapter starts at its top, like turning a page.
   useEffect(() => {
     bodyTopRef.current?.scrollIntoView({ block: "start" });
   }, [chapterIndex]);

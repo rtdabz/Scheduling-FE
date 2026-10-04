@@ -24,10 +24,6 @@ interface FacultyModalProps {
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   subjects: Subject[];
   faculties: Faculty[];
-  /**
-   * Free instructors to offer when the selected one clashes; null while they
-   * load. Left out where the page offers none.
-   */
   recommendedInstructors?: InstructorRecommendation[] | null;
 }
 
@@ -81,8 +77,6 @@ export default function FacultyModal({
     ? `${subject.teachingDepartmentName} Only`
     : "Assigned Department Only";
   const hasAssignedTeachingDepartment = Boolean(subject?.teachingDepartmentId);
-  // Only instructors the save would accept are offered. A major is taught by its
-  // own department and, when the course names one, its own program.
   const eligibleFaculties = eligibleFacultiesForSubject(faculties, subject, schedule.departmentId ?? null);
   const requiredProgramId = requiredTeachingProgramId(subject);
   const programRestrictionNote = requiredProgramId === null
@@ -225,8 +219,6 @@ export default function FacultyModal({
                 {eligibleFaculties.map((faculty) => {
                   const conflict = checkFacultyConflict(faculty.id, schedule.id);
                   return (
-                    // A clash can be assigned over on purpose, so it is labelled
-                    // rather than disabled.
                     <option key={faculty.id} value={faculty.id}>
                       {instructorOptionLabel(faculty.name, faculty.employmentType, Boolean(conflict))}
                     </option>
@@ -288,7 +280,6 @@ export default function FacultyModal({
             </div>
           )}
 
-          {/* Stays up after a pick clears the warning, so the choice shows as selected. */}
           {recommendedInstructors !== undefined && canManageFaculty && (popupConflictWarning
             || recommendedInstructors?.some((option) => String(option.faculty_id) === facultyAssignmentPopup.facultyId)) && (
             <section className="space-y-2" aria-busy={recommendedInstructors === null}>

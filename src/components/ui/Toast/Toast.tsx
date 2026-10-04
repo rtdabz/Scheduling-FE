@@ -53,7 +53,6 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
         <X size={16} />
       </button>
 
-      {/* Progress Bar */}
       <div
         className="absolute bottom-0 left-0 h-0.5"
         style={{

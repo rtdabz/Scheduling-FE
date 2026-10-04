@@ -1,15 +1,3 @@
-/**
- * Turns the generator's recommendations into a short list of choices.
- *
- * The server sends one recommendation per possible change, and several of them
- * are alternatives for the same class: Hybrid Split, Online Split and one
- * Regular meeting all fix the same stuck Split Session. Shown one banner each,
- * a single failure filled the screen. Here they become one group per thing
- * being changed, each option with a short name and a one-line effect, so the
- * user picks one per group -- and "Apply all" can take one from every group
- * without applying two contradictory fixes.
- */
-
 import {
   isApplicableRecommendation,
   isYearLevelAdjustment,
@@ -19,30 +7,21 @@ import {
   type GenerationRecommendation,
 } from "./yearLevelGenerationFailure";
 
-/** One way to fix a group, as it reads in the panel. */
 export type RecommendationOption = {
   recommendation: GenerationRecommendation;
-  /** The choice's name: "Hybrid", "Online (All)", "Add Tuesday". */
   label: string;
-  /** Its button: "Apply Hybrid", "Add Tuesday". */
   action: string;
-  /** What applying it changes, in one short line. */
   effect: string;
-  /** The generator already retried with this change alone, without a timetable. */
   triedAlone: boolean;
 };
 
-/** Alternative fixes for one course, one section, or the whole year level. */
 export type RecommendationGroup = {
   key: string;
-  /** What the fixes change: "GEC 1 · BSIT 1A", "BSIT 1A", "Year level". */
   target: string;
-  /** Why they are offered, when the run's own explanation does not say it. */
   reason: string;
   options: RecommendationOption[];
 };
 
-/** Advice the wizard cannot apply itself: rooms, course data, department rules. */
 export type ManualRecommendation = {
   key: string;
   title: string;
@@ -57,7 +36,6 @@ export type GroupedRecommendations = {
   resolved: GenerationRecommendation[];
 };
 
-/** The id of the combined recommendation "Apply all" hands to the wizard. */
 export const APPLY_ALL_RECOMMENDATION_ID = "apply-all";
 
 const impactRank: Record<string, number> = { low: 0, medium: 1, high: 2 };
@@ -67,20 +45,13 @@ const unique = <T,>(values: T[]): T[] => Array.from(new Set(values));
 const find = (recommendation: GenerationRecommendation, type: string): GenerationAdjustment | undefined =>
   recommendation.adjustments.find((adjustment) => adjustment.type === type);
 
-/**
- * A way to close a year level's room-time shortfall (Hybrid Split, Online),
- * changing several courses in every section. Its options are alternatives of
- * one fix, so they share a group.
- */
 const isRoomCapacityOption = (recommendation: GenerationRecommendation): boolean =>
   recommendation.id.startsWith("room-capacity-");
 
-/** Name, button and effect for one recommendation, read from what it changes. */
 function optionText(recommendation: GenerationRecommendation): Omit<RecommendationOption, "recommendation" | "triedAlone"> {
   const apply = (label: string, effect: string) => ({ label, action: `Apply ${label}`, effect });
   const verb = (label: string, effect: string) => ({ label, action: label, effect });
 
-  // A year-level room-time option names its courses in its own effect line.
   if (isRoomCapacityOption(recommendation)) return apply(recommendation.title, recommendation.suggested_adjustment);
 
   const mode = find(recommendation, "set_delivery_mode");
@@ -106,11 +77,6 @@ function optionText(recommendation: GenerationRecommendation): Omit<Recommendati
   return { label: recommendation.title, action: "Apply", effect: recommendation.suggested_adjustment };
 }
 
-/**
- * A recommendation as a choice. `attempts` is the run's retry ladder: a
- * relaxation it already tried alone is still offered -- combined with another
- * fix it may work -- but says so, and ranks after untried ones.
- */
 export function describeOption(
   recommendation: GenerationRecommendation,
   attempts: GenerationAttempt[] = [],
@@ -131,7 +97,6 @@ export function describeOption(
   };
 }
 
-/** Where a recommendation's changes land, which is what groups alternatives. */
 function targetOf(recommendation: GenerationRecommendation): { key: string; target: string } {
   const adjustments = recommendation.adjustments;
   const first = adjustments[0];
@@ -151,17 +116,12 @@ function targetOf(recommendation: GenerationRecommendation): { key: string; targ
   return { key: `recommendation:${recommendation.id}`, target: recommendation.title };
 }
 
-/** Two recommendations that make exactly the same changes are one choice. */
 const signature = (recommendation: GenerationRecommendation): string =>
   recommendation.adjustments
     .map((adjustment) => `${adjustment.type}|${adjustment.section_id}|${adjustment.course_id}|${adjustment.value ?? ""}`)
     .sort()
     .join(";");
 
-/**
- * Group a report's recommendations. The bottleneck's own class comes first,
- * and its reason is left to the run's headline so it is not said twice.
- */
 export function groupRecommendations(
   recommendations: GenerationRecommendation[],
   attempts: GenerationAttempt[] = [],
@@ -178,7 +138,6 @@ export function groupRecommendations(
     }
 
     if (!isApplicableRecommendation(recommendation)) {
-      // The same advice repeated per section reads as one line naming them.
       const key = `${recommendation.title}|${recommendation.suggested_adjustment}`;
       const existing = manual.get(key);
       const sectionName = recommendation.section_name ?? "";
@@ -208,7 +167,6 @@ export function groupRecommendations(
     ? `class:${bottleneck.section_id}|${bottleneck.course_id}`
     : null;
   const ordered = [...groups.values()].map((group) => {
-    // Untried fixes first, then the ones that change the least.
     const options = [...group.options].sort(
       (left, right) =>
         Number(left.triedAlone) - Number(right.triedAlone)
@@ -222,12 +180,6 @@ export function groupRecommendations(
   return { groups: ordered, manual: [...manual.values()], resolved };
 }
 
-/**
- * What an adjustment decides for its class. Two fixes deciding the same thing
- * for one class contradict each other -- a section-wide "Automatic mode" and a
- * course's "Online" -- so "Apply all" keeps the first, from the group listed
- * first. Different things (days and delivery) combine freely.
- */
 const decision = (adjustment: GenerationAdjustment): string => {
   switch (adjustment.type) {
     case "set_pattern":
@@ -246,7 +198,6 @@ const decision = (adjustment: GenerationAdjustment): string => {
   }
 };
 
-/** One recommendation carrying every chosen fix, for "Apply all". */
 export function combineRecommendations(recommendations: GenerationRecommendation[]): GenerationRecommendation {
   const decided = new Set<string>();
   const adjustments: GenerationAdjustment[] = [];

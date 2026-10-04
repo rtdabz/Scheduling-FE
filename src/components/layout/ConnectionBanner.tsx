@@ -1,10 +1,6 @@
 import { CloudOff, Gauge } from 'lucide-react';
 import { useConnectionStatus } from '../../hooks/useConnectionStatus';
 
-/**
- * One persistent notice about the connection, instead of a toast per failed
- * request. Renders nothing while the connection is healthy.
- */
 export default function ConnectionBanner() {
   const { quality, showingSavedData } = useConnectionStatus();
 

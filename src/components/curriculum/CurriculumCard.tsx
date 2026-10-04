@@ -35,16 +35,12 @@ export default function CurriculumCard({
   onArchive,
 }: CurriculumCardProps) {
   const handleStatusToggle = () => {
-    // A curriculum is either in service or out of it; there is no third state.
     const newStatus = curriculum.status === 'active' ? 'deactivated' : 'active';
     onStatusChange(curriculum.id, newStatus);
   };
 
   const lifecycleBadge = curriculumLifecycleBadge(curriculum);
   const inUseBy = curriculum.active_sections_count ?? 0;
-  // Only a plotted schedule blocks retirement. A cohort merely assigned to this
-  // curriculum is repointed with a dropdown and strands nothing, so it must not
-  // disable the button — that was the bug. Mirror the API's guard exactly.
   const scheduledSections = curriculum.scheduled_sections_count ?? 0;
   const retirable = scheduledSections === 0;
   const blockedReason = `${scheduledSections} section${scheduledSections === 1 ? '' : 's'} already ${scheduledSections === 1 ? 'has' : 'have'} a schedule plotted from this curriculum. Archive or clear those schedules first.`;
@@ -53,7 +49,6 @@ export default function CurriculumCard({
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative overflow-hidden ${GRID_CARD_HOVER}`}>
-      {/* Centered Background Department Watermark Logo */}
       {deptLogo && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
           <img
@@ -64,7 +59,6 @@ export default function CurriculumCard({
         </div>
       )}
 
-      {/* Header */}
       <div className="relative z-10">
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
@@ -89,7 +83,6 @@ export default function CurriculumCard({
           </div>
         </div>
 
-        {/* Info Grid */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Department</p>
@@ -101,7 +94,6 @@ export default function CurriculumCard({
           </div>
         </div>
 
-        {/* Courses Count */}
         <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl mb-3">
           <BookOpen size={14} className="text-[#C9952A]" />
           <span className="text-xs font-bold text-gray-700">{curriculum.courses_count} Courses</span>
@@ -116,13 +108,11 @@ export default function CurriculumCard({
           )}
         </div>
 
-        {/* Description */}
         {curriculum.description && (
           <p className="text-xs text-gray-500 line-clamp-2 mb-3">{curriculum.description}</p>
         )}
       </div>
 
-      {/* Actions */}
       <div className="relative z-10 flex items-center gap-2 pt-3 border-t border-gray-100 flex-wrap">
         <button
           onClick={() => onView(curriculum.id)}
@@ -170,9 +160,6 @@ export default function CurriculumCard({
               <CheckCircle2 size={14} />
               {curriculum.status === 'active' ? 'Deactivate' : 'Activate'}
             </button>
-            {/* Archiving is offered only once a curriculum is out of service.
-                Deactivate it first — retiring something the department is still
-                running should be a deliberate two-step. */}
             {curriculum.status !== 'active' && (
               <button
                 onClick={() => onArchive(curriculum.id)}

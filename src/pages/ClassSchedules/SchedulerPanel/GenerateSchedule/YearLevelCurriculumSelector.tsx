@@ -12,23 +12,11 @@ interface Props {
   departmentId: number | null;
   semesterId: number | null;
   yearLevel: number;
-  /** The active sections of the selected year level. */
   sections: Section[];
-  /** Refresh scheduler data so the new assignment reaches every consumer. */
   onApplied: (curriculumId: number) => void | Promise<void>;
   disabled?: boolean;
 }
 
-/**
- * Chooses which curriculum a year level follows before its schedule is generated.
- *
- * A department mid-transition teaches its incoming cohort from the new
- * curriculum while the upper years finish on the old one, so the course list a
- * year level is generated from is only well-defined once somebody names a
- * curriculum. The choice is written to the sections rather than held in wizard
- * state, so course lists, teaching assignments and printing all agree with what
- * the generator used.
- */
 export default function YearLevelCurriculumSelector({
   departmentId,
   semesterId,
@@ -54,8 +42,6 @@ export default function YearLevelCurriculumSelector({
     }
 
     let cancelled = false;
-    // The list a department runs changes rarely, so a cached copy renders the
-    // picker immediately and only a cold key shows the spinner.
     const cached = getCachedData<Curriculum[]>(cacheKey);
     if (cached) setCurricula(cached);
     setLoading(!hasCachedData(cacheKey));
@@ -78,9 +64,6 @@ export default function YearLevelCurriculumSelector({
     };
   }, [cacheKey, departmentId]);
 
-  // What the sections of this year level currently follow. More than one
-  // distinct value is a real state, not an error: a single section can be
-  // piloted on the new curriculum ahead of its year level.
   const assignedIds = useMemo(
     () =>
       Array.from(
@@ -99,8 +82,6 @@ export default function YearLevelCurriculumSelector({
   const isMixed = assignedIds.length > 1;
   const currentId = assignedIds.length === 1 ? assignedIds[0] : null;
 
-  // Reset the pending choice whenever the year level or the stored assignment
-  // changes, so the control always opens showing what is actually in effect.
   useEffect(() => {
     setChoice(currentId);
   }, [currentId, yearLevel]);
@@ -170,13 +151,9 @@ export default function YearLevelCurriculumSelector({
 
       {selected !== null && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          {/* The badge is repeated outside the <option> because a select cannot
-              render styled markup in its own list. */}
           <SelectedSummary
             curriculum={curricula.find((item) => item.id === selected) ?? null}
           />
-          {/* Only offered when there is something to apply; the guided tour
-              skips its Apply step while the button is absent. */}
           {dirty || applying ? (
             <button
               id="generator-apply-curriculum"

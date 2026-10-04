@@ -9,16 +9,11 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLef
 import Skeleton from './Skeleton';
 
 declare module '@tanstack/react-table' {
-  // Presentation hints read by DataTable; TanStack itself ignores them.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     align?: 'left' | 'center' | 'right';
     headerClassName?: string;
     cellClassName?: string;
-    /**
-     * Clicks inside this cell do not reach onRowClick -- for checkboxes and
-     * action buttons in a clickable row.
-     */
     stopRowClick?: boolean;
   }
 }
@@ -28,32 +23,21 @@ export interface DataTableProps<T> {
   isLoading?: boolean;
   emptyTitle?: string;
   emptyDescription?: ReactNode;
-  /** Replaces the default empty title/description block entirely. */
   emptyState?: ReactNode;
   totalLabel?: string;
   onRowClick?: (row: T) => void;
   rowClassName?: (row: T, index: number) => string;
   cellClassName?: (columnId: string) => string;
   loadingRows?: number;
-  /** Outer wrapper classes. */
   className?: string;
-  /** Classes for the scrolling region, e.g. a max height for sticky headers. */
   scrollClassName?: string;
-  /** Classes for the table element, e.g. a min width. */
   tableClassName?: string;
-  /** `card` draws its own bordered surface; `embedded` sits inside one. */
   variant?: 'card' | 'embedded';
   density?: 'comfortable' | 'compact';
-  /**
-   * Show the pager. Defaults to whether the table was given a pagination
-   * row model, so a table built without one never shows a pager.
-   */
   showPagination?: boolean;
   pageSizeOptions?: number[];
   ariaLabel?: string;
-  /** Id on the header row group, for guided tours that point at it. */
   headerId?: string;
-  /** Extra data attributes per row, e.g. `data-tour` targets. */
   getRowAttributes?: (row: T) => Record<`data-${string}`, string | undefined>;
 }
 
@@ -68,7 +52,6 @@ const headerLabel = <T,>(column: Column<T, unknown>) => {
   return typeof header === 'string' && header ? header : column.id;
 };
 
-/** Shared accessible table surface for every interactive WICARS table. */
 export default function DataTable<T>({
   table,
   isLoading = false,
@@ -116,8 +99,6 @@ export default function DataTable<T>({
 
   return (
     <div className={`${surface} ${className}`}>
-      {/* A caller's own overflow replaces the default, so a table inside an
-          already-scrolling panel keeps its header sticky to that panel. */}
       <div className={`${scrollClassName.includes('overflow-') ? '' : 'overflow-x-auto'} ${scrollClassName}`}>
         <table className={`w-full min-w-full border-collapse text-left ${tableClassName}`} aria-label={ariaLabel} aria-busy={isLoading || undefined}>
           <thead id={headerId} className="sticky top-0 z-10 bg-gray-50/95">

@@ -30,8 +30,6 @@ export default function CourseCard({
   const isInteractive = isEditable && !isScheduled;
 
   let roomBadge = null;
-  // Derived like RuleEngine does: any laboratory component means a lab room is
-  // required, whatever room_type_required says.
   if (isLaboratorySubject(course)) {
     roomBadge = (
       <span className={`${requirementBadgeClass} bg-[#4e0a10]/[0.07] text-[#4e0a10]`} title="Laboratory room required">

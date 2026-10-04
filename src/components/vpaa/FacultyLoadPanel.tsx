@@ -2,15 +2,6 @@ import { ArrowRight } from 'lucide-react';
 import { Donut, DonutLegend, Panel, type Slice } from './DashboardPrimitives';
 import { grouped } from '../../lib/dashboardFormat';
 
-/**
- * Faculty load, institution-wide.
- *
- * The donut answers "how are loads spread"; the list under it answers "who is a
- * problem", which is the part a VPAA can actually act on. Overload is a
- * compliance and cost exposure, so the names are named rather than left as a
- * slice of a ring.
- */
-
 export interface FacultyLoadRow {
   id: number;
   name: string;

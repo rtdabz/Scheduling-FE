@@ -11,21 +11,6 @@ import {
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { instructorOptionLabel } from "./SchedulerPanel/EmploymentBadge";
 
-/**
- * The list half of the instructor-assignment workspace.
- *
- * The weekly grid answers "when does this run"; the work itself is "which
- * classes still have nobody", which meant scanning seven columns for amber
- * blocks. This groups the same schedules by section and offers the instructor
- * picker inline, so clearing a department is a column of selects rather than a
- * modal round-trip per class.
- *
- * One row is one class, not one meeting. `schedules.day` stores a row per
- * meeting, so an MWF class is three rows in the grid; assigning any one of them
- * assigns the whole split group, and showing three rows would imply three
- * decisions.
- */
-
 export interface WorklistMeeting {
   id: number;
   day: string;
@@ -38,7 +23,6 @@ export interface WorklistEligibleFaculty {
   id: number;
   name: string;
   employmentType?: "full-time" | "part-time";
-  /** Why this instructor cannot take the class, or null when they can. */
   conflict: string | null;
 }
 
@@ -51,17 +35,14 @@ export interface WorklistClass {
   sectionName: string;
   facultyId: number | null;
   facultyName: string | null;
-  /** Approved and finalized, or already marked done — the picker is read-only. */
   locked: boolean;
   meetings: WorklistMeeting[];
   eligible: WorklistEligibleFaculty[];
-  /** Program or department restriction to explain an empty picker. */
   restrictionNote: string | null;
 }
 
 interface AssignmentWorklistProps {
   classes: WorklistClass[];
-  /** The class whose assignment is in flight, so only its row shows a spinner. */
   busyScheduleId: number | null;
   onAssign: (scheduleId: number, facultyId: number | null) => void;
   emptyMessage: string;
@@ -79,11 +60,6 @@ const DAY_ABBREVIATIONS: Record<string, string> = {
 
 const DAY_ORDER = Object.keys(DAY_ABBREVIATIONS);
 
-/**
- * "MWF 8:00 AM - 9:00 AM" rather than three separate lines, collapsing the days
- * that share a time. A class whose meetings run at different times keeps them
- * on separate lines, because there is no honest way to fold those together.
- */
 export const meetingPatterns = (meetings: WorklistMeeting[]): string[] => {
   const byTime = new Map<string, string[]>();
   for (const meeting of meetings) {
@@ -120,8 +96,6 @@ export default function AssignmentWorklist({
       .sort((left, right) => left.sectionName.localeCompare(right.sectionName));
   }, [classes]);
 
-  // Sections that still need somebody open themselves; a finished section stays
-  // folded so the remaining work is what fills the screen.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   useEffect(() => {
     setCollapsed((previous) => {

@@ -1,20 +1,5 @@
 import api from './api';
 
-/**
- * The conflict inbox and the resolution workflow behind it.
- *
- * Conflicts are derived by the server on every read, so a conflict's id is its
- * content -- `rule:lowScheduleId:highScheduleId` -- and not a row in a table.
- * That matters to the client in one way: a conflict the user is looking at may
- * already be gone by the time they act on it, and the server answers 409 rather
- * than pretending the resolution worked.
- *
- * Nothing here decides whether a conflict is resolved. The server re-scans
- * inside the same transaction as the write and refuses anything that leaves the
- * clash in place, so `resolveConflict` either returns the new open list or
- * throws.
- */
-
 export type ConflictRule =
   | 'section_conflict'
   | 'room_conflict'
@@ -57,7 +42,6 @@ export interface ScheduleConflict {
   overlap_end: string;
   message: string;
   resolution_options: ResolutionAction[];
-  /** Always two rows, lower schedule id first. */
   schedules: [ConflictSchedule, ConflictSchedule];
 }
 
@@ -81,20 +65,13 @@ export interface ResolutionRequest {
   mode?: string;
   reason?: string;
   confirm_overload?: boolean;
-  /** A ranked recommendation applied as offered, or a change the user entered. */
   source?: 'manual' | 'recommendation';
 }
 
-/**
- * How one conflict ended, from `/conflicts/resolved`. Read back from the audit
- * trail, so it is history: `reopened` means a fresh scan finds the same clash
- * again and it is back on the open list.
- */
 export interface ConflictResolution {
   key: string;
   conflict_id: string;
   rule: ConflictRule | string;
-  /** Empty for entries recorded before the message was stored. */
   message: string;
   day: string | null;
   overlap_start: string | null;
@@ -108,17 +85,11 @@ export interface ConflictResolution {
   affected_schedule_ids: number[];
 }
 
-/**
- * One ranked fix from `/conflicts/{id}/recommendations`. The server has already
- * checked it against the Rule Engine and left out anything the caller may not
- * apply, so `payload` goes to `resolveConflict` as it is -- one click.
- */
 export interface ConflictRecommendation {
   rank: number;
   action: ResolutionRequest['action'];
   schedule_id: number;
   summary: string;
-  /** Why it ranks where it does: "Same day and time", "Keeps its room", … */
   reasons?: string[];
   score: number;
   day?: string;
@@ -130,7 +101,6 @@ export interface ConflictRecommendation {
   faculty_id?: number;
   faculty_name?: string;
   projected_units?: number;
-  /** Assigning this instructor pushes them past their Basic Load. */
   requires_overload_confirmation?: boolean;
   payload: ResolutionRequest;
 }
@@ -155,15 +125,6 @@ export const resolutionStatusLabel = (status: ConflictResolution['status']): str
   }
 };
 
-/**
- * Classes whose saved conflict stayed fixed, for the green flag on the
- * timetable: both sides of the clash (named in its id, `rule:low:high`) and
- * any class the fix changed. Both, because both left the conflict -- the page
- * flags both the moment it happens, and a reload has to show the same.
- * Reopened entries are left out -- that clash is back -- and so are overrides,
- * whose amber flag follows the live override mark instead. Ids of classes a
- * plan replaced simply match nothing on the grid.
- */
 export const resolvedScheduleIds = (resolutions: ConflictResolution[]): Set<string> => {
   const ids = new Set<string>();
   resolutions.forEach((entry) => {
@@ -177,11 +138,6 @@ export const resolvedScheduleIds = (resolutions: ConflictResolution[]): Set<stri
   return ids;
 };
 
-/**
- * A saved class that no longer satisfies a rule on its own, from
- * `/conflicts/rule-issues`: its room was taken out of service, its instructor
- * deactivated, operating hours narrowed, and so on. Derived on every read.
- */
 export interface RuleIssue {
   id: string;
   rule: string;
@@ -189,7 +145,6 @@ export interface RuleIssue {
   schedule: ConflictSchedule;
 }
 
-/** A short heading for the rules a saved class most often drifts out of. */
 export const ruleIssueLabel = (rule: string): string => {
   switch (rule) {
     case 'room_availability':
@@ -217,7 +172,6 @@ export const ruleIssueLabel = (rule: string): string => {
   }
 };
 
-/** Which kinds of saved conflict a class is in, for a per-row badge. */
 export interface ConflictFlags {
   faculty: boolean;
   room: boolean;
@@ -225,14 +179,6 @@ export interface ConflictFlags {
   online: boolean;
 }
 
-/**
- * Per-class flags from the server's conflict scan, keyed by schedule id.
- *
- * Read-only screens badge rows from this instead of re-deriving clashes in
- * the browser: the server already leaves out instructor clashes allowed to
- * stand, catches clashes with other departments' classes, and knows which
- * rooms are shared -- a local check got all three wrong.
- */
 export const conflictFlagsBySchedule = (conflicts: ScheduleConflict[]): Map<string, ConflictFlags> => {
   const flags = new Map<string, ConflictFlags>();
   conflicts.forEach((conflict) => {
@@ -250,13 +196,11 @@ export const conflictFlagsBySchedule = (conflicts: ScheduleConflict[]): Map<stri
   return flags;
 };
 
-/** Statuses whose timetable placement may still be edited. */
 const EDITABLE_STATUSES = ['draft', 'completed', 'revision'];
 
 export const isReplottable = (schedule: ConflictSchedule): boolean =>
   EDITABLE_STATUSES.includes(schedule.status);
 
-/** Plain-language label for each rule, for headings and filters. */
 export const conflictRuleLabel = (rule: ConflictRule | string): string => {
   switch (rule) {
     case 'section_conflict':
@@ -289,7 +233,6 @@ export const resolutionActionLabel = (action: ResolutionAction | string): string
   }
 };
 
-/** A short "CS 101 — BSIT 1A, Mon 08:00-09:00" for one side of a conflict. */
 export const describeConflictSchedule = (schedule: ConflictSchedule): string =>
   [
     [schedule.course_code, schedule.section_name].filter(Boolean).join(' — ') || `Class #${schedule.id}`,
@@ -316,10 +259,6 @@ export const fetchConflicts = async (params: {
   return response.data.conflicts ?? [];
 };
 
-/**
- * Ranked fixes for one open conflict. A 404 means the conflict is already gone;
- * the caller treats that like any other stale selection.
- */
 export const fetchConflictRecommendations = async (
   conflictId: string,
   params: { limit?: number; signal?: AbortSignal } = {},
@@ -332,7 +271,6 @@ export const fetchConflictRecommendations = async (
   return response.data.options ?? [];
 };
 
-/** A free, eligible instructor for one class, as ranked by the server. */
 export interface InstructorRecommendation {
   faculty_id: number;
   faculty_name: string;
@@ -344,11 +282,6 @@ export interface InstructorRecommendation {
   requires_overload_confirmation: boolean;
 }
 
-/**
- * Instructors free for every meeting of a class, best first. Offered when the
- * chosen instructor clashes, so the user can pick someone free instead of
- * assigning over the conflict.
- */
 export const fetchInstructorRecommendations = async (
   scheduleId: number | string,
   params: { limit?: number; signal?: AbortSignal } = {},
@@ -421,11 +354,6 @@ export const overrideConflict = async (
   return response.data;
 };
 
-/**
- * The server's 409: the conflict was fixed by someone else, or by an earlier
- * action in this session, before this request arrived. Not an error to show as
- * a failure -- the list simply needs replacing with what came back.
- */
 export const alreadyResolvedFrom = (err: unknown): ScheduleConflict[] | null => {
   const response = (err as { response?: { status?: number; data?: unknown } })?.response;
   if (!response || response.status !== 409) return null;
@@ -435,7 +363,6 @@ export const alreadyResolvedFrom = (err: unknown): ScheduleConflict[] | null => 
   return Array.isArray(conflicts) ? (conflicts as ScheduleConflict[]) : [];
 };
 
-/** Every violation message a 422 refusal carried, de-duplicated. */
 export const refusalDetails = (err: unknown): string[] => {
   const violations = (err as { response?: { data?: { violations?: unknown } } })?.response?.data?.violations;
   if (!Array.isArray(violations)) return [];
@@ -448,11 +375,9 @@ export const refusalDetails = (err: unknown): string[] => {
   )];
 };
 
-/** Log that a user opened and reviewed conflict details. */
 export const reviewConflict = async (conflictId: string): Promise<void> => {
   try {
     await api.post(`/conflicts/${encodeURIComponent(conflictId)}/review`);
   } catch {
-    // Non-blocking audit ping
   }
 };

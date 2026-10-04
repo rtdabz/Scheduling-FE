@@ -35,12 +35,7 @@ const isHybrid = (item: ApprovalScheduleItem) => item.is_hybrid === true || item
 
 const meetingKey = (item: ApprovalScheduleItem) => {
   const courseKey = item.course_id ?? item.subject_id ?? 'course';
-  // A split group is the persisted relationship between hybrid meetings. Use it
-  // even when one meeting's legacy payload is missing the boolean hybrid flag.
   if (item.split_group_id) return `hybrid:${item.section_id}:${courseKey}:${item.split_group_id}`;
-  // Older approval payloads may expose is_hybrid without split_group_id. Within
-  // one section, the course is still a safe fallback because normal offerings
-  // are represented by a single schedule row.
   if (isHybrid(item)) return `hybrid-fallback:${item.section_id}:${courseKey}`;
   return `single:${item.id}`;
 };

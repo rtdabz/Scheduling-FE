@@ -24,24 +24,15 @@ export interface DepartmentScheduleStatusData {
   department_id: number;
   department_name: string;
   sections: SectionStatusItem[];
-  /** Whether an active Dean is assigned to this department. */
   has_dean?: boolean;
-  /**
-   * Delegated classes still without an instructor. Counted server-side because
-   * they sit in other departments' sections, so the dashboard's own schedule
-   * rows never contain them.
-   */
   cross_department_pending?: number;
 }
 
-/** Shown wherever submitting is blocked for want of a Dean. */
 export const DEAN_REQUIRED_MESSAGE =
   'Submission unavailable. Please assign a Department Dean before submitting the schedule.';
 
 interface StageCounts {
-  /** draft + revision — sections that still need drafting work */
   draft: number;
-  /** returned by the dean for revision (subset of `draft`) */
   revision: number;
   completed: number;
   submitted: number;
@@ -59,9 +50,7 @@ interface UseDepartmentScheduleStatusReturn {
   totalSections: number;
   draftingProgress: number;
   canSubmit: boolean;
-  /** False when no active Dean is assigned; submitting is refused server-side. */
   hasDean: boolean;
-  /** Delegated classes from other departments that still need an instructor. */
   crossDepartmentPending: number;
   loading: boolean;
   error: string | null;
@@ -82,8 +71,6 @@ export function useDepartmentScheduleStatus(
   const cachedStatus = statusCacheKey ? getCachedData<DepartmentScheduleStatusData>(statusCacheKey) : undefined;
   const [sections, setSections] = useState<SectionStatusItem[]>(cachedStatus?.sections ?? []);
   const [departmentName, setDepartmentName] = useState(cachedStatus?.department_name ?? '');
-  // Assume a Dean until told otherwise, so a stale cache or a failed fetch never
-  // blocks submitting on its own -- the backend is the authority either way.
   const [hasDean, setHasDean] = useState(cachedStatus?.has_dean ?? true);
   const [crossDepartmentPending, setCrossDepartmentPending] = useState(cachedStatus?.cross_department_pending ?? 0);
   const [loading, setLoading] = useState(!!departmentId && !hasCachedData(statusCacheKey));
@@ -136,8 +123,6 @@ export function useDepartmentScheduleStatus(
     };
   }, [departmentId, fetchKey, statusCacheKey, liveRevision]);
 
-  // ── Derived values ──
-
   const stageCounts: StageCounts = useMemo(() => ({
     draft: sections.filter(s => s.status === 'draft' || s.status === 'revision').length,
     revision: sections.filter(s => s.status === 'revision').length,
@@ -150,14 +135,12 @@ export function useDepartmentScheduleStatus(
 
   const totalSections = sections.length;
 
-  // "Drafted" means the section has left the draft stage (status is neither draft nor revision)
   const draftedCount = useMemo(() => sections.filter(s => s.status !== 'draft' && s.status !== 'revision').length, [sections]);
 
   const draftingProgress = useMemo(() =>
     totalSections > 0 ? Math.round((draftedCount / totalSections) * 100) : 0
   , [totalSections, draftedCount]);
 
-  // Build year-level summaries for the checklist
   const yearLevels: YearLevelSummary[] = useMemo(() => {
     const presentYears = Array.from(new Set(sections.map(s => s.year_level))).sort();
     return presentYears.map(yr => {
@@ -173,8 +156,6 @@ export function useDepartmentScheduleStatus(
     });
   }, [sections]);
 
-  // Submit is allowed only when every year level is complete (no drafts
-  // remaining) and the department has a Dean to receive the submission.
   const canSubmit = useMemo(() =>
     hasDean && yearLevels.length > 0 && yearLevels.every(yl => yl.isComplete)
   , [hasDean, yearLevels]);

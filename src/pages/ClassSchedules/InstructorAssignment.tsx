@@ -26,7 +26,6 @@ import {
 } from "../../lib/conflicts";
 import ResolveConflictModal from "./SchedulerPanel/Modals/ResolveConflictModal";
 
-/** Module scope so the prop identity is stable across renders. */
 const FACULTY_CONFLICT_ONLY: ConflictRule[] = ["faculty_conflict"];
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
@@ -121,8 +120,6 @@ interface ApiFaculty {
   program_id?: number | null;
   employment_type?: "full-time" | "part-time";
   status?: "active" | "inactive";
-  // Live load, decorated by the API so the picker reads the same numbers the
-  // overload gate projects from rather than guessing at a ceiling.
   max_units?: number | null;
   deload_units?: number | null;
   overload_units?: number | null;
@@ -145,7 +142,6 @@ interface ApiSchedule {
   semester_id: number;
   department_id: number;
   course_id?: number;
-  /** Legacy API alias retained for compatibility with older payloads. */
   subject_id?: number;
   faculty_id: number | null;
   faculty_assignment_done?: boolean | number;
@@ -173,11 +169,9 @@ interface ApiIncomingCourse {
   units?: number | null;
   year_level?: number | null;
   department?: ApiDepartment | null;
-  /** The program that handed the course over ("BSED" + "English"). */
   teaching_source_program?: { id?: number; code?: string | null; major?: string | null } | null;
 }
 
-/** "BSED-English", or "BEED" for a program without a major — matches Program::shortLabel(). */
 const sourceProgramLabel = (program?: ApiIncomingCourse['teaching_source_program']): string | null => {
   const code = program?.code?.trim();
   if (!code) return null;
@@ -201,7 +195,6 @@ interface AssignmentWarning {
   message: string;
 }
 
-/** The load the instructor carries now that the assignment is committed. */
 interface AssignmentLoad {
   faculty_id: number;
   projected_units: number;
@@ -214,7 +207,6 @@ interface AssignmentLoad {
 interface AssignmentUpdateResponse {
   schedule: ApiSchedule;
   schedules?: ApiSchedule[];
-  /** Soft rules the assignment broke without being refused, e.g. a unit ceiling. */
   warnings?: AssignmentWarning[];
   load?: AssignmentLoad | null;
 }
@@ -228,7 +220,6 @@ const VIEW_MODE_STORAGE_KEY = "instructor-assignment:view";
 
 type AssignmentView = "list" | "grid";
 
-/** Remembered per browser; a fresh workspace opens on the worklist. */
 const storedViewMode = (): AssignmentView => {
   try {
     return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "grid" ? "grid" : "list";
@@ -278,9 +269,6 @@ const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedul
   };
   const dayIndex = dayIndexMap[schedule.day] ?? -1;
 
-  // Mirrors RuleEngine's part_time_faculty_availability: a part-timer with no
-  // windows recorded at all is unrestricted. Otherwise the meeting has to fit
-  // inside a recorded window for that day, and a day with no window is outside.
   const recorded = faculty.availabilities ?? [];
   if (recorded.length === 0) return false;
   const dayAvailabilities = recorded.filter(
@@ -306,11 +294,6 @@ const getFacultyName = (schedule: ApiSchedule): string | null => {
   return [schedule.faculty.first_name, schedule.faculty.last_name].filter(Boolean).join(" ") || null;
 };
 
-/**
- * The frame around the weekly grid. By default the grid is held to the viewport
- * and scrolls on its own; with `scrollableTimetable` off it runs at full height
- * in the page, so every hour is visible without an inner scrollbar.
- */
 const timetableFrameClass = (scrollableTimetable: boolean): string => (scrollableTimetable
   ? "max-h-[calc(100vh-13.5rem)] overflow-auto rounded-xl bg-white"
   : "rounded-xl bg-white");
@@ -405,7 +388,6 @@ interface InstructorAssignmentProps {
   workflowGuideId?: string | null;
   onWorkflowReady?: () => void;
   refreshToken?: number;
-  /** False lets the Grid view run at full height instead of scrolling inside the page. */
   scrollableTimetable?: boolean;
 }
 
@@ -431,12 +413,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
   const autoOpenedRef = useRef(false);
   const [selectedSection, setSelectedSection] = useState("all");
-  // An instructor double-booked between two saved classes. Placement never sees
-  // these: they appear when an assignment is overridden, when a class moves
-  // after its instructor was set, or when another department delegates a class.
   const [facultyConflictCount, setFacultyConflictCount] = useState(0);
-  // Instructor clashes resolved or allowed this semester, for the badge's
-  // "M resolved" half. Reopened ones are already in the open count.
   const [facultyResolvedCount, setFacultyResolvedCount] = useState(0);
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
   const [conflictsRevision, setConflictsRevision] = useState(0);
@@ -453,29 +430,21 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "assigned">("all");
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
-  // A clash the server reported for an instructor picked in the worklist. The
-  // local check only sees this page's classes, so the dialog it opens shows
-  // the server's words when the local check finds nothing.
   const [refusedConflict, setRefusedConflict] = useState<{
     scheduleId: string;
     facultyId: string;
     message: string;
   } | null>(null);
-  // Free instructors for the class in the dialog, fetched the first time its
-  // chosen instructor clashes.
   const [instructorRecommendations, setInstructorRecommendations] = useState<{
     scheduleId: string;
     options: InstructorRecommendation[];
     failed: boolean;
   } | null>(null);
   const recommendationsForRef = useRef<string | null>(null);
-  // The assignment the server is asking about, kept whole so confirming replays
-  // exactly what the user reviewed.
   const [overloadPrompt, setOverloadPrompt] = useState<{
     confirmation: OverloadConfirmation;
     schedule: AssignmentSchedule;
     facultyId: number;
-    /** Carried so confirming the overload keeps an override already chosen. */
     overrideConflicts: boolean;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(assignmentsCacheKey));
@@ -544,13 +513,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     };
   }, [assignmentsCacheKey, refreshToken, user.department_id, liveRevision, conflictsRevision]);
 
-  /**
-   * Count the instructors double-booked in this semester.
-   *
-   * The same derived scan the server does everywhere else, narrowed to the one
-   * rule this screen can act on. It follows the loaded schedules rather than
-   * polling, because a conflict can only change when the timetable does.
-   */
   useEffect(() => {
     const semesterId = activeSemester ? Number(activeSemester.id) : null;
     if (semesterId === null || assignmentLocked) return;
@@ -564,7 +526,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       .then((conflicts) => setFacultyConflictCount(
         conflicts.filter((conflict) => conflict.rule === "faculty_conflict").length,
       ))
-      // A failed scan must not blank the page; the count simply stays put.
       .catch(() => undefined);
     void fetchResolvedConflicts({
       semesterId,
@@ -589,14 +550,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   );
 
   const assignmentSchedules = useMemo<AssignmentSchedule[]>(() => schedules.flatMap((schedule) => {
-    // schedules.course_id is the canonical database/API field. Some older
-    // payloads used subject_id, so accept both without dropping valid rows.
     const courseId = Number(schedule.course_id ?? schedule.subject_id ?? 0);
     const subject = subjectMap.get(courseId);
-    // Delegated schedules are owned by the source department while the course's
-    // teaching department is the receiving department. Older payloads can omit
-    // the schedule department relation, so retain the source department from the
-    // course record as a compatibility fallback.
     const department = departmentMap.get(Number(schedule.department_id))
       ?? (subject?.department_id != null ? departmentMap.get(Number(subject.department_id)) : null)
       ?? subject?.department
@@ -612,9 +567,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     return [{ ...schedule, subject, department }];
   }), [currentDepartmentId, departmentMap, schedules, subjectMap]);
 
-  // Incoming courses with no approved class yet. Listed even when the page has
-  // other timetables: a course handed over by a sibling program shares this
-  // college's card, so "no cards" was never a reliable sign of what is waiting.
   const awaitingIncomingCourses = useMemo(
     () => incomingCourses.filter((course) => !assignmentSchedules.some(
       (schedule) => Number(schedule.course_id ?? schedule.subject_id ?? 0) === Number(course.id),
@@ -633,21 +585,12 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       Number(item.department.id) !== Number(currentDepartmentId)
       && item.schedules.length > 0
     )), [assignmentSchedules, currentDepartmentId, departments]);
-  // The header totals follow the department table: this department's own
-  // sections are staffed in Schedule Builder, not here.
   const offeredSchedules = useMemo(
     () => offeringDepartments.flatMap((item) => item.schedules),
     [offeringDepartments],
   );
 
-  /**
-   * The page always lands on the department list, even with a single
-   * department, so its totals are seen first. Only a `?department=` deep link
-   * (e.g. from a notification) opens a department directly.
-   */
   useEffect(() => {
-    // Auto-open only once, otherwise Back (which clears the selection) would
-    // immediately re-open the deep-linked department.
     if (autoOpenedRef.current || selectedDepartmentId !== null || isLoading) return;
     const requested = Number(new URLSearchParams(window.location.search).get("department"));
     const deepLinked = offeringDepartments.find(
@@ -678,8 +621,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const sections = [...new Set(departmentSchedules.map(
     (schedule) => schedule.section?.section_name || "Unspecified section",
   ))].sort();
-  // The section filter alone decides what "clear this section" covers, so a
-  // search or status narrowing never makes that button understate its reach.
   const sectionSchedules = departmentSchedules.filter((schedule) =>
     selectedSection === "all" || schedule.section?.section_name === selectedSection,
   );
@@ -696,14 +637,11 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       getFacultyName(schedule),
     ].some((field) => (field ?? "").toLowerCase().includes(query));
   });
-  // With "All sections" selected this is the whole department, so clearing
-  // there really does empty every instructor's load.
   const clearableSectionSchedules = sectionSchedules.filter((schedule) => (
     schedule.faculty_id !== null
     && schedule.status !== "finalized"
     && !schedule.faculty_assignment_done
   ));
-  // Grid view reuses the shared Gantt the dean and VPAA calendars draw with.
   const ganttSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map((schedule) => ({
     id: schedule.id,
     day: schedule.day,
@@ -848,7 +786,6 @@ const selectedSchedule = assignmentSchedules.find(
     try {
       localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
     } catch {
-      // A browser that refuses storage still gets the view for this session.
     }
   };
   const openDepartment = (departmentId: number) => {
@@ -856,7 +793,6 @@ const selectedSchedule = assignmentSchedules.find(
     setSelectedSection("all");
   };
 
-  /** Conflict help belongs to one visit of the dialog. */
   const resetConflictHelp = () => {
     setRefusedConflict(null);
     setInstructorRecommendations(null);
@@ -880,11 +816,6 @@ const selectedSchedule = assignmentSchedules.find(
     resetConflictHelp();
   };
 
-  /**
-   * The one request path. An overload is confirmed by replaying the same call with
-   * the flag set, so the assignment that gets written is the one the confirmation
-   * described.
-   */
   const submitAssignment = async (
     schedule: AssignmentSchedule,
     facultyId: number | null,
@@ -900,13 +831,9 @@ const selectedSchedule = assignmentSchedules.find(
         ...(confirmOverload ? { confirm_overload: true } : {}),
         ...(overrideConflicts && facultyId !== null ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
       });
-      // Soft rules do not refuse the assignment, so the reason has to be shown
-      // after the save rather than blocking it.
       setWarnings(response.data.warnings ?? []);
 
       const load = response.data.load;
-      // The picker's load hint is now a save behind, so move it forward here
-      // instead of refetching the whole page payload.
       const nextFaculties = load
         ? faculties.map((faculty) =>
             faculty.id === load.faculty_id
@@ -942,22 +869,16 @@ const selectedSchedule = assignmentSchedules.find(
           : "The instructor was assigned successfully.",
       );
     } catch (err) {
-      // Past the Basic Load the server asks rather than refuses, so this is a
-      // question to put to the user — not an error to report.
       const confirmation = overloadConfirmationFrom(err);
       if (confirmation && facultyId !== null) {
         setOverloadPrompt({ confirmation, schedule, facultyId, overrideConflicts });
         return;
       }
 
-      // Only the instructor's own clash: ask, then replay with the override,
-      // keeping any overload answer already given.
       const question = facultyId === null || overrideConflicts ? null : conflictOverrideFrom(err);
       if (question && facultyId !== null) {
         setIsSaving(false);
         setSavingScheduleId(null);
-        // Picked from the worklist: open the class's dialog on the clash
-        // instead, where free instructors are offered beside assigning anyway.
         if (facultyAssignmentPopup?.scheduleId !== String(schedule.id)) {
           resetConflictHelp();
           setRefusedConflict({
@@ -992,8 +913,6 @@ const selectedSchedule = assignmentSchedules.find(
       return;
     }
 
-    // Sent without the override: a confirmed clash comes back as a question,
-    // and the "Assign anyway" confirmation decides whether to assign over it.
     const facultyId = Number(facultyAssignmentPopup.facultyId);
     void submitAssignment(selectedSchedule, facultyId, false);
   };
@@ -1003,15 +922,6 @@ const selectedSchedule = assignmentSchedules.find(
     void submitAssignment(selectedSchedule, null, false);
   };
 
-  /**
-   * The worklist assigns straight from its row. It reuses submitAssignment, so
-   * overload confirmation, warnings and the split-group update behave exactly
-   * as they do from the modal.
-   */
-  /**
-   * Progress is counted in classes so it agrees with the worklist. Counting
-   * schedule rows made an MWF class look like three units of work.
-   */
   const departmentClassTotals = useMemo(() => {
     const assignedByClass = new Map<string, boolean>();
     for (const schedule of departmentSchedules) {
@@ -1033,13 +943,8 @@ const selectedSchedule = assignmentSchedules.find(
     setWarnings([]);
     void submitAssignment(schedule, facultyId, false);
   };
-  // The Faculty pages, dashboards and timetables cache their own copies of each
-  // instructor's load; without this they kept showing assignments made or
-  // cleared here until those caches expired.
   const invalidateAssignmentDependents = () => {
     invalidateCacheGroups("faculty", "schedules", "dashboards");
-    // Tells mounted views, such as the sidebar's pending-instructor badge, to
-    // refetch now instead of waiting for the server's broadcast.
     publishLiveTopics(["schedules"]);
   };
 
@@ -1121,11 +1026,6 @@ const selectedSchedule = assignmentSchedules.find(
     return conflict ? "Instructor has an overlapping class at this time." : null;
   };
 
-  /**
-   * One entry per class, not per meeting. The grouping key matches the one
-   * FacultyModal uses to gather a class's meetings (semester + section + course),
-   * so both views agree on what a single assignment decision covers.
-   */
   const worklistClasses = useMemo<WorklistClass[]>(() => {
     const grouped = new Map<string, AssignmentSchedule[]>();
     for (const schedule of visibleSchedules) {
@@ -1182,8 +1082,6 @@ const selectedSchedule = assignmentSchedules.find(
           : `Only ${subject?.programCode ?? "the assigned"} program instructors can teach this course.`,
       };
     }).sort((left, right) => left.courseCode.localeCompare(right.courseCode));
-    // checkModalFacultyConflict closes over the current schedules, which the
-    // visibleSchedules dependency already tracks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignmentLocked, modalFaculties, modalSubjects, visibleSchedules]);
 
@@ -1198,27 +1096,17 @@ const selectedSchedule = assignmentSchedules.find(
     ? facultyAssignmentPopup.scheduleId
     : null;
 
-  /**
-   * Free instructors for a class whose chosen instructor clashes. Fetched once
-   * per dialog visit: the list does not depend on who is selected, and a pick
-   * from it clears the warning without needing a new list.
-   */
   useEffect(() => {
     if (recommendationScheduleId === null || recommendationsForRef.current === recommendationScheduleId) return;
     const scheduleId = recommendationScheduleId;
-    // Until the list lands the dialog shows it as loading: the stored list is
-    // for no class, or for another one.
     recommendationsForRef.current = scheduleId;
 
-    // Not aborted on cleanup: picking a free instructor clears the warning,
-    // and the list should still arrive for the dialog it was asked for.
     void fetchInstructorRecommendations(scheduleId)
       .then((options) => {
         if (recommendationsForRef.current === scheduleId) {
           setInstructorRecommendations({ scheduleId, options, failed: false });
         }
       })
-      // Without a list the dialog falls back to the plain "assign anyway" note.
       .catch(() => {
         if (recommendationsForRef.current === scheduleId) {
           setInstructorRecommendations({ scheduleId, options: [], failed: true });
@@ -1445,7 +1333,6 @@ const selectedSchedule = assignmentSchedules.find(
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              {/* Always offered: the department list is the landing screen. */}
               <button
                 type="button"
                 onClick={() => setSelectedDepartmentId(null)}
@@ -1547,9 +1434,6 @@ const selectedSchedule = assignmentSchedules.find(
                 <UserMinus className="h-4 w-4" />
                 {selectedSection === "all" ? "Clear All Instructors" : "Clear Instructor"}
               </button>
-              {/* Only when there is one. A clash between two saved classes has
-                  no assignment dialog to surface it, so this is the only place
-                  it can be seen -- and the only screen whose actions fix it. */}
               {(facultyConflictCount > 0 || facultyResolvedCount > 0) && activeSemester && !assignmentLocked && (
                 <button
                   type="button"
@@ -1713,16 +1597,10 @@ const selectedSchedule = assignmentSchedules.find(
           onConfirm={() =>
             void submitAssignment(overloadPrompt.schedule, overloadPrompt.facultyId, true, overloadPrompt.overrideConflicts)
           }
-          // "No" sends nothing, so the drawer is left exactly as the user had it:
-          // the instructor is still only selected, never assigned.
           onCancel={() => setOverloadPrompt(null)}
         />
       )}
 
-      {/* Mounted only while open so each visit starts from a fresh scan. Rooms
-          are not passed because a faculty conflict never offers a room change:
-          its fixes are reassigning the instructor, moving the class, or letting
-          it stand with a reason. */}
       {isConflictsOpen && (
         <ResolveConflictModal
           isOpen

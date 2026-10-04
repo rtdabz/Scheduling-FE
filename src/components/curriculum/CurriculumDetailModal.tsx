@@ -9,7 +9,6 @@ import type { Curriculum, Program } from '../../types/curriculum';
 interface CurriculumDetailModalProps {
   isOpen: boolean;
   curriculumId: number | null;
-  /** Used to title the printable; the program is looked up by the curriculum's program_id. */
   programs?: Program[];
   onClose: () => void;
 }
@@ -24,11 +23,6 @@ const statusColors: Record<string, string> = {
   archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
-/**
- * The curriculum view is the printed curriculum itself, embedded the same way
- * the schedule approval preview embeds the printed schedule, so every role
- * reviews the document that Print produces.
- */
 export default function CurriculumDetailModal({ isOpen, curriculumId, programs = NO_PROGRAMS, onClose }: CurriculumDetailModalProps) {
   const [curriculum, setCurriculum] = useState<Curriculum | null>(null);
   const [pdf, setPdf] = useState<PdfState>({ url: null, failed: false });

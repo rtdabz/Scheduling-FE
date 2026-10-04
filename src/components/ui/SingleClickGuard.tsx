@@ -1,13 +1,5 @@
 import { useEffect, type PropsWithChildren } from 'react';
 
-/**
- * Prevents accidental duplicate activation of native buttons and form submits.
- *
- * The guard is intentionally event-based so it works with existing buttons,
- * including buttons rendered by lazy-loaded pages. Add `data-repeatable-click`
- * to controls such as steppers or other actions where rapid repetition is
- * intentional.
- */
 const LOCK_DURATION_MS = 800;
 
 const isOptedOut = (element: Element): boolean =>

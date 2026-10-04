@@ -36,12 +36,6 @@ interface TeachingLoadProps {
 const PRINT_DEBOUNCE_MS = 1500;
 let lastTeachingLoadPrintAt = 0;
 
-/**
- * Section C of the form asks for "Other Designation/Functions". It prints the
- * designations the instructor holds; an account role is printed only for an
- * instructor who holds none, written as on the appointment rather than as the
- * short badge label the scheduler UI uses.
- */
 const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   dean: "Department Dean",
   secretary: "Department Secretary",
@@ -50,7 +44,6 @@ const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
 };
 
 const semesterLabel = (semester?: string): string => {
-  // Reports print across semesters, so the blank stays blank.
   if (!semester) return "";
   if (semester === "1st") return "1ST";
   if (semester === "2nd") return "2ND";
@@ -58,7 +51,6 @@ const semesterLabel = (semester?: string): string => {
   return semester.toUpperCase();
 };
 
-/** Absolute URL for a bundled asset, so jsPDF can read it through the DOM. */
 const assetUrl = (asset: string): string => {
   if (asset.startsWith("data:") || asset.startsWith("http:") || asset.startsWith("https:")) return asset;
   return `${window.location.origin}${asset.startsWith("/") ? "" : "/"}${asset}`;
@@ -95,8 +87,6 @@ export default function TeachingLoad({
 
     const { default: JsPDF } = await import("jspdf");
 
-    // fetchInstitutionSettings never rejects, so a signatory lookup failure
-    // still prints -- with the standing names.
     Promise.all([
       loadImage(assetUrl(tccLogo)),
       loadImage(assetUrl(municipalLogo)),
@@ -117,9 +107,6 @@ export default function TeachingLoad({
     const isVpaa = getStoredUserRole() === "vpaa";
     const userDeptId = getStoredUserDepartmentId();
 
-    // The printed form is an official record of load, so it lists the same
-    // assignments the load figures count: approved ones only. A withdrawn row
-    // keeps neither its instructor nor a place on this form.
     const assignedSchedules = allSchedules.filter((s) => INSTRUCTOR_ASSIGNED_STATUSES.includes(s.status));
 
     let targetDeptId: number | null = null;
@@ -145,13 +132,8 @@ export default function TeachingLoad({
       return;
     }
 
-    // The VPAA signs every department's sheet and holds no department of their
-    // own, which is why the payload carries the account alongside the
-    // department-scoped ones.
     const vpaaAccount = users.find((u) => u.role?.toLowerCase() === "vpaa");
 
-    // Created with the first sheet, because each sheet's page is sized to its
-    // own overload table.
     let doc: jsPDF | null = null;
 
     for (const faculty of targetFaculties) {
@@ -163,17 +145,11 @@ export default function TeachingLoad({
         "INFORMATION TECHNOLOGY"
       )
         .toUpperCase()
-        // The banner already reads "COLLEGE OF", so a department stored as
-        // "College of Information Technology" must not print it twice.
         .replace(/^COLLEGE\s+OF\s+/, "");
 
       const deptId = faculty.departmentId?.toString();
       const byRole = (role: string) =>
         users.find((u) => u.role?.toLowerCase() === role && u.department_id?.toString() === deptId);
-      // The form's line covers both posts, so either may sign it. A department
-      // report spans every program, so it is the instructor's own Program Head,
-      // or the only one there is -- never whichever of several comes first.
-      // Otherwise the Secretary signs.
       const programHeads = users.filter((u) => u.role?.toLowerCase() === "program_head" && u.department_id?.toString() === deptId);
       const ownProgramHead = faculty.programId == null
         ? undefined
@@ -185,10 +161,6 @@ export default function TeachingLoad({
 
       const load = classifyLoad(faculty, assignedSchedules.filter((s) => s.facultyId === faculty.id));
 
-      // The blank form holds seven basic and six overload lines. A basic load
-      // past seven still spills onto a continuation sheet, but the overload
-      // table grows by a line per extra subject instead, so the whole overload
-      // reads as one table on the first sheet.
       const sheetCount = Math.max(1, Math.ceil(load.basic.length / BASIC_LINE_COUNT));
 
       for (let sheet = 0; sheet < sheetCount; sheet += 1) {
@@ -215,8 +187,6 @@ export default function TeachingLoad({
           instructorName: fullName,
           preparedBy: preparer?.name ?? "",
           verifiedBy: byRole("dean")?.name ?? "",
-          // Left blank rather than defaulting to a past VPAA: a stale name on
-          // an official form is worse than an empty signature line.
           vpaaName: vpaaAccount?.name ?? "",
           presidentName: settings.president_name,
           presidentTitle: settings.president_title,

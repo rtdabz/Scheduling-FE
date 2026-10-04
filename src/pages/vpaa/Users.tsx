@@ -59,7 +59,6 @@ interface User {
   createdAt: string;
 }
 
-/** How a new account relates to the instructor roster. Mirrors UserFacultyProfileService::MODES. */
 type FacultyMode = 'create' | 'link' | 'none';
 
 interface LinkableFaculty {
@@ -158,8 +157,6 @@ const mapApiUser = (u: ApiUser): User => ({
   createdAt: u.created_at,
 });
 
-// Shared field styling for the account form, kept compact so the dialog fits
-// on screen without scrolling.
 const FORM_LABEL = 'block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1';
 const formInput = (hasError = false) =>
   `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm bg-white transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
@@ -217,11 +214,7 @@ export default function VpaaUsers() {
   const [programError, setProgramError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Teaching profile. Kept apart from formData because it only exists on create:
-  // an edit syncs whatever profile the account already has.
   const [facultyMode, setFacultyMode] = useState<FacultyMode>('create');
-  // Until the VPAA picks a mode, a name match on the roster may switch it to
-  // `link`; once they choose, the suggestion never overrides them.
   const [facultyModeTouched, setFacultyModeTouched] = useState(false);
   const [linkFacultyId, setLinkFacultyId] = useState('');
   const [designationIds, setDesignationIds] = useState<string[]>([]);
@@ -258,7 +251,6 @@ export default function VpaaUsers() {
   const [selectedUserForDetail, setSelectedUserForDetail] = useState<User | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
-  // Keep modal states mutually exclusive so dialogs can never stack over one another.
   const openDetailModal = (user: User) => {
     setSelectedUserForDetail(user);
     setIsModalOpen(false);
@@ -301,7 +293,6 @@ export default function VpaaUsers() {
       .then((res) => {
         if (cancelled) return;
         setLinkableFaculty(res.data);
-        // A selection from the previous department is not linkable here.
         setLinkFacultyId((current) => (res.data.some((f) => String(f.id) === current) ? current : ''));
       })
       .catch(() => {
@@ -331,14 +322,10 @@ export default function VpaaUsers() {
     ) ?? null;
   }, [linkableFaculty, formData.first_name, formData.last_name]);
 
-  // The Basic Load the designations deload from: a new profile starts at the
-  // default 21 units, a linked instructor keeps their own maximum.
   const designationMaxUnits = facultyMode === 'link'
     ? linkableFaculty.find((f) => String(f.id) === linkFacultyId)?.max_units ?? undefined
     : 21;
 
-  // Suggest linking when the person already appears on the roster, so the
-  // default path does not create a second instructor for them.
   useEffect(() => {
     if (!isCreatingAccount || facultyModeTouched) return;
     if (matchingInstructor) {
@@ -409,7 +396,6 @@ export default function VpaaUsers() {
       setFirstNameError('');
     }
 
-    // The API stores a single initial: one letter, no punctuation.
     const middleInitial = formData.middle_initial.trim();
     if (middleInitial && !/^[A-Za-z]$/.test(middleInitial)) {
       setMiddleInitialError('Use a single letter');
@@ -557,8 +543,6 @@ export default function VpaaUsers() {
     }
   };
 
-  // Only one active account may hold a role slot, so deactivating is how a
-  // replacement Dean, Program Head or Secretary is made possible.
   const toggleActive = async (user: User) => {
     const activate = user.status !== 'Active';
     const confirmed = await confirm({
@@ -629,7 +613,6 @@ export default function VpaaUsers() {
       const updated = mapApiUser(response.data.data);
       setUsers((previous) => {
         const nextUsers = previous.map((item) => item.id === user.id ? updated : item);
-        // Kept in step with the page cache, or a revisit showed the account as still linked.
         setCachedData<UsersPageData>(usersCacheKey, { users: nextUsers, departments, programs });
         return nextUsers;
       });
@@ -826,18 +809,14 @@ export default function VpaaUsers() {
 
   return (
     <div>
-      {/* Search and Actions Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
-        {/* Search */}
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search name, username, or role..."
         />
 
-        {/* Action Group: View Mode Toggle + Add User */}
         <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
-          {/* View Mode Toggle (Grid / List) */}
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               type="button"
@@ -927,7 +906,6 @@ export default function VpaaUsers() {
                   }}
                   className={`bg-white rounded-2xl border border-gray-100 p-6 flex flex-col justify-between space-y-4 font-sans relative group shadow-sm hover:shadow-md overflow-hidden cursor-pointer ${GRID_CARD_HOVER}`}
                 >
-                  {/* Centered Background Department Watermark Logo */}
                   {deptLogo && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                       <img
@@ -1054,9 +1032,7 @@ export default function VpaaUsers() {
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="flex flex-col min-h-0 flex-1">
-              {/* Very short viewports (phones) still get a scrollable body; desktop layouts fit without it. */}
               <div className={`min-h-0 flex-1 overflow-y-auto p-5 grid gap-5 ${isEditMode ? '' : 'lg:grid-cols-[1.15fr_1fr]'}`}>
-                {/* Account details */}
                 <div className="space-y-3">
                   <div className="flex gap-4 items-start">
                     <div className="relative shrink-0">
@@ -1262,14 +1238,11 @@ export default function VpaaUsers() {
                     )}
                   </div>
 
-                  {/* Google login is always on for every account (UserController
-                      sets it on create and update), so there is nothing to toggle. */}
                   <p className="text-[11px] font-semibold text-gray-500">
                     Google login is enabled for every account. It links on first sign-in and must match the email above.
                   </p>
                 </div>
 
-                {/* Teaching profile (create only) */}
                 {!isEditMode && (
                   <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4 space-y-3 self-start w-full">
                     <div>
@@ -1402,11 +1375,9 @@ export default function VpaaUsers() {
         </div>
       )}
 
-      {/* User Detail Modal */}
       {isDetailModalOpen && selectedUserForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
-            {/* Header Banner */}
             <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
               <div className="flex items-center gap-3">
                 {selectedUserForDetail.profile_picture ? (
@@ -1439,7 +1410,6 @@ export default function VpaaUsers() {
               </div>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6 space-y-5">
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs col-span-2">
@@ -1479,7 +1449,6 @@ export default function VpaaUsers() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="pt-3 border-t border-gray-200/80 flex flex-wrap items-center justify-end gap-3">
                 <button
                   disabled={isSendingSetupLink || selectedUserForDetail.status !== 'Active'}

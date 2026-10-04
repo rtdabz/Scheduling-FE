@@ -72,7 +72,6 @@ interface InstructorTimetableModalProps {
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-/** The /schedules row in the shape the shared VPAA Gantt reads. */
 const toCalendarSchedule = (s: ApiScheduleRecord): CalendarSchedule => ({
   id: s.id,
   day: s.day,
@@ -121,9 +120,6 @@ export default function InstructorTimetableModal({
       }
 
       try {
-        // Only this instructor's active-semester week. The unfiltered list is
-        // capped campus-wide and spans every semester, so classes went missing
-        // and past terms' classes appeared.
         const res = await api.get<ApiScheduleRecord[]>("/schedules", {
           params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
         });
@@ -146,8 +142,6 @@ export default function InstructorTimetableModal({
     };
   }, [isOpen, facultyId]);
 
-  // Same wiring as the Room Schedule modal: the shared VPAA Gantt, with its
-  // axis aligned to the configured time grid.
   const ganttSchedules = useMemo(() => records.map(toCalendarSchedule), [records]);
   const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", ALL_DAYS), [ganttSchedules]);
   const ganttStandardHours = useMemo<StandardHours>(() => {

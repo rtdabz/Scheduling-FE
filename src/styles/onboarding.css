@@ -11,8 +11,6 @@
   letter-spacing: 0.04em;
 }
 
-/* Task-based mission tooltip (rendered by TaskTooltip.tsx). Reuses the
-   WICARS maroon/gold palette; no new component library involved. */
 .wicars-task-tip {
   width: min(360px, calc(100vw - 24px));
   overflow: hidden;
@@ -98,8 +96,6 @@
   color: #475569;
 }
 
-/* Remounts on every step (keyed by step id) so the content pops in
-   game-tutorial style whenever the spotlight moves. */
 .wicars-task-tip-anim {
   animation: wicars-task-in 0.28s ease-out;
 }

@@ -31,13 +31,6 @@ interface CourseBankProps {
   isLoading?: boolean;
 }
 
-/**
- * Whether the bank has anything to offer for the current workflow step.
- *
- * The panel animates the bank open and closed, so its column is laid out by
- * the parent - which has to know the bank would render nothing before it
- * reserves and animates that space.
- */
 // eslint-disable-next-line react-refresh/only-export-components
 export const isCourseBankAvailable = (isPhase2Active: boolean, currentStatus: string): boolean =>
   !isPhase2Active || currentStatus === "approved";

@@ -59,14 +59,9 @@ interface RoomDetailModalProps {
   className?: string;
   initialRoom?: Room | null;
   initialSchedules?: Schedule[];
-  /**
-   * False when the page's own meeting list was cut short by the server's cap;
-   * the room's week is then fetched on its own instead of seeded from it.
-   */
   initialSchedulesComplete?: boolean;
 }
 
-/** One room's meetings in the active semester, uncapped by the campus-wide list. */
 const fetchRoomSchedules = (roomId: number) => api.get<Schedule[]>('/schedules', {
   params: { room_id: roomId, semester_id: 'active', per_page: 1000 },
 });
@@ -89,11 +84,6 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
       return;
     }
 
-    // The Rooms page already has the room and timetable payload. Seed the
-    // detail view synchronously so printing never captures an async skeleton,
-    // including for rooms whose schedule list is empty.
-    // The page owns and live-refreshes that payload, so refetching here only
-    // swapped the cards a second time once the request came back.
     if (initialRoom && initialRoom.id === roomId && initialSchedulesComplete) {
       setRoom(initialRoom);
       setSchedules(initialSchedules);
@@ -127,7 +117,6 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
           setRoom(roomRes.data);
           setSchedules(schedulesRes.data);
         } catch {
-          // Ignore background fetch errors
         }
       };
       fetchRoomBackground();
@@ -135,8 +124,6 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
     }
 
     const fetchRoom = async () => {
-      // Held in the loading state until the week arrives, so Print never
-      // captures a grid that is about to be replaced.
       setIsLoading(true);
       setRoom(initialRoom && initialRoom.id === roomId ? initialRoom : null);
       try {

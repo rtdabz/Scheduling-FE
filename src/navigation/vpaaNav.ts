@@ -23,7 +23,6 @@ export const vpaaNav: NavSection[] = [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
-      // Room borrowing is between departments; the VPAA has no Room Requests page.
       { label: 'Facility Management', path: '/facilities', icon: DoorOpen, id: 'sidebar-rooms' },
       {
         label: 'Instructors',

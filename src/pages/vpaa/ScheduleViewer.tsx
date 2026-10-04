@@ -43,7 +43,6 @@ import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from "../../components/scheduling/WeeklyTimetableGrid";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
-// TypeScript Interfaces
 export interface Department {
   id: string;
   name: string;
@@ -81,7 +80,6 @@ export interface Schedule {
   departmentId: string;
   departmentName: string;
   departmentCode: string;
-  /** Falls back to the subject code for rows without a course id. */
   courseId: string;
   subjectCode: string;
   subjectName: string;
@@ -89,15 +87,13 @@ export interface Schedule {
   facultyName: string;
   roomId: string;
   roomName: string;
-  day: string; // "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
-  startTime: string; // e.g. "09:00 AM"
-  endTime: string; // e.g. "10:30 AM"
-  /** 24-hour "HH:MM", what the class table groups and sorts on. */
+  day: string;
+  startTime: string;
+  endTime: string;
   startClock: string;
   endClock: string;
   mode: 'on-site' | 'online' | 'field';
   meetingType?: string | null;
-  /** Instructor assigned over a conflict on purpose; shown as an override, not a clash. */
   facultyConflictOverride?: boolean;
 }
 
@@ -193,14 +189,8 @@ const slotToTimeStr12h = (slotIndex: number): string => {
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-/** The most rows `/initial-data` will return; asking for more is refused. */
 const INITIAL_DATA_SCHEDULE_LIMIT = 2000;
 
-/**
- * One `schedules` row as the viewer needs it. Module scope because two
- * sources feed this screen: the bulk `/initial-data` payload, and a targeted
- * per-section fetch used for the weekly grid.
- */
 const mapRawSchedule = (
   item: RawSchedule,
   departments: Department[],
@@ -248,7 +238,6 @@ const mapRawSchedule = (
 };
 
 
-/** Aliased to the shared geometry so cards keep matching the rows they sit on. */
 const VIEWER_SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
 
 const getModeLabel = (mode: Schedule["mode"]) => {
@@ -304,7 +293,6 @@ const buildConflictMap = (items: Schedule[]) => {
         rightInfo.section = true;
         hasPairConflict = true;
       }
-      // A clash both meetings were deliberately assigned over is an override.
       if (
         !isUnassignedFaculty(left)
         && left.facultyId === right.facultyId
@@ -335,12 +323,7 @@ const getConflictLabels = (info?: ScheduleConflictInfo) => {
   ].filter(Boolean);
 };
 
-// Parse time string e.g. "09:30 AM" to half-hour slot index starting from 7:00 AM
 const parseTimeToSlotIndex = (timeStr: string): number => {
-  // slotToTimeLabel drops ":00" on the hour ("7 AM", not "7:00 AM"), so the
-  // minutes are optional here. Requiring them made every whole-hour time fall
-  // through to slot 0, which read as a mutual overlap and raised phantom
-  // room/section conflicts on rows that never overlapped.
   const match = timeStr.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
   if (!match) return 0;
   
@@ -360,7 +343,6 @@ const parseTimeToSlotIndex = (timeStr: string): number => {
   return Math.max(0, Math.round(((totalHalfHours * 30) - gridOpeningMinutes()) / slotMinutes()));
 };
 
-// Intersect/overlap layouts analyzer
 interface LayoutItem {
   schedule: Schedule;
   leftPct: number;
@@ -455,11 +437,6 @@ export default function VpaaScheduleViewer() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  /**
-   * Institution-wide counts come from a dedicated aggregate endpoint rather
-   * than from the `/initial-data` rows below: that payload is capped, so
-   * counting it reports part of the semester as the whole of it.
-   */
   const {
     departments: overviewDepartments,
     isLoading: isOverviewLoading,
@@ -472,11 +449,6 @@ export default function VpaaScheduleViewer() {
     searchParams.get("section") ? "grid" : searchParams.get("dept") ? "sections" : "overview",
   );
 
-  /**
-   * The drill-down scope lives in the URL, not in component state. Moving down
-   * a level pushes a history entry, so the browser's Back button walks back up
-   * the levels instead of leaving the screen; filter tweaks replace the entry.
-   */
   const selectedDeptId = searchParams.get("dept") ?? "All";
   const selectedSectionId = searchParams.get("section") ?? "All";
   const setScope = (deptId: string, sectionId: string, { push = false }: { push?: boolean } = {}) => {
@@ -490,7 +462,6 @@ export default function VpaaScheduleViewer() {
     }
   };
 
-  // Filters State
   const [selectedFacultyId, setSelectedFacultyId] = useState<string>("All");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("All");
   const [selectedMode, setSelectedMode] = useState<string>("All");
@@ -511,13 +482,8 @@ export default function VpaaScheduleViewer() {
     return count;
   }, [selectedFacultyId, selectedRoomId, selectedDay, selectedConflictStatus, selectedAssignmentStatus]);
   
-  // Detail State
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  // The printed department schedule is built from the scheduler's own mapping
-  // of this payload, the same one the approval previews print from. The page's
-  // lighter rows lack year levels, units and department names, and the
-  // signatories used to come from `/users`, a route that does not exist.
   const [printSource, setPrintSource] = useState<SchedulerCacheData | null>(null);
 
   const liveRevision = useLiveRevision(['schedules', 'sections', 'rooms', 'departments']);
@@ -540,7 +506,6 @@ export default function VpaaScheduleViewer() {
         setActiveSemester(semester);
         setPrintSource(mapInitialData(response.data as unknown as InitialDataResponse, { isVpaa: true }));
 
-        // Map departments
         const mappedDepts = response.data.departments.map((d) => ({
           id: d.id.toString(),
           name: d.department_name,
@@ -549,7 +514,6 @@ export default function VpaaScheduleViewer() {
         }));
         setDepartments(mappedDepts);
 
-        // Map sections (filtered by active semester)
         let rawSections = response.data.sections;
         if (semester) {
           rawSections = rawSections.filter((s) => s.semester_id == null || Number(s.semester_id) === Number(semester.id));
@@ -562,7 +526,6 @@ export default function VpaaScheduleViewer() {
         const sectionDepartmentById = new Map(mappedSections.map((section) => [section.id, section.departmentId]));
         setSections(mappedSections);
 
-        // Map faculties
         const mappedFaculties = response.data.faculties.map((f) => ({
           id: f.id.toString(),
           name: `${f.first_name ?? ""} ${f.last_name ?? ""}`.trim(),
@@ -570,14 +533,12 @@ export default function VpaaScheduleViewer() {
         }));
         setFaculties(mappedFaculties);
 
-        // Map rooms
         const mappedRooms = response.data.rooms.map((r) => ({
           id: r.id.toString(),
           name: r.room_code
         }));
         setRooms(mappedRooms);
 
-        // Map schedules (filtered by active semester)
         let rawSchedules = response.data.schedules;
         if (semester) {
           rawSchedules = rawSchedules.filter((s) => s.semester_id == null || Number(s.semester_id) === Number(semester.id));
@@ -587,9 +548,6 @@ export default function VpaaScheduleViewer() {
           (item) => mapRawSchedule(item, mappedDepts, sectionDepartmentById),
         );
         setSchedules(mappedSchedules);
-        // The endpoint caps this payload. The aggregate counts above are
-        // unaffected, but the flat list below would silently show part of the
-        // semester as all of it, so say so instead.
         setIsScheduleListTruncated(rawSchedules.length >= INITIAL_DATA_SCHEDULE_LIMIT);
         setCachedData<ScheduleViewerData>(scheduleViewerCacheKey, {
           departments: mappedDepts,
@@ -601,8 +559,6 @@ export default function VpaaScheduleViewer() {
         });
 
       } catch {
-        // Left silent, a failed load showed an empty timetable as if nothing
-        // had been scheduled.
         setLoadError(hasCache
           ? 'Schedules could not be refreshed. What is shown may be out of date.'
           : 'Schedules could not be loaded.');
@@ -614,12 +570,6 @@ export default function VpaaScheduleViewer() {
     loadData();
   }, [scheduleViewerCacheKey, liveRevision, reloadKey]);
 
-  /**
-   * The bulk payload above is capped, so a section opened from the drill-down
-   * is not guaranteed to have all of its meetings in it. Fetch that one
-   * section's rows directly and merge them in, so the weekly grid always shows
-   * the whole week rather than whichever part of it arrived.
-   */
   useEffect(() => {
     if (selectedSectionId === "All") return;
 
@@ -643,8 +593,6 @@ export default function VpaaScheduleViewer() {
           return [...untouched, ...rows];
         });
       } catch {
-        // The bulk payload already loaded is a usable fallback; failing here
-        // should not blank out a grid the user is looking at.
       }
     };
 
@@ -655,7 +603,6 @@ export default function VpaaScheduleViewer() {
     };
   }, [selectedSectionId, sections, departments, activeSemester]);
 
-  // Dynamic Options filtering based on department selection
   const filteredSections = sections.filter((sec) => {
     if (selectedDeptId === "All") return true;
     return sec.departmentId === selectedDeptId;
@@ -666,18 +613,6 @@ export default function VpaaScheduleViewer() {
     return fac.departmentId === selectedDeptId;
   });
 
-  /**
-   * The three levels of the drill-down, as explicit moves rather than something
-   * inferred from whichever filter changed last. The level a filter change used
-   * to imply was set in three different places, which is what made it hard to
-   * tell what the screen would show next.
-   */
-  /**
-   * One focus at a time ("conflicts", "missing faculty", "missing room"),
-   * shared by every level. It is set from the summary cards or a department
-   * chip, and deliberately survives moving between levels, so filtering for
-   * conflicts and then opening a department still shows only its conflicts.
-   */
   const focus: OverviewFocus | null = selectedConflictStatus === "Conflict"
     ? "conflicts"
     : selectedAssignmentStatus === "Missing Faculty"
@@ -702,34 +637,27 @@ export default function VpaaScheduleViewer() {
   const openDepartment = (departmentId: number | string, nextFocus?: OverviewFocus) => {
     setScope(String(departmentId), "All", { push: true });
     setCurrentPage(1);
-    // A chip carries the reason it was clicked, so the level below opens on
-    // what the user was pointing at instead of everything.
     if (nextFocus !== undefined) setFocus(nextFocus);
     setViewMode("sections");
   };
 
   const openSection = (sectionId: number | string) => {
     const id = String(sectionId);
-    // Record the section's department too, so the breadcrumb and Back always
-    // have a level to return to, however the section was reached.
     const departmentId = sections.find((section) => section.id === id)?.departmentId || selectedDeptId;
     setScope(departmentId, id, { push: true });
     setCurrentPage(1);
     setViewMode("grid");
   };
 
-  // Handle department change - cascading reset logic
   const handleDepartmentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const deptId = e.target.value;
     setCurrentPage(1);
 
-    // Reset section filter if the currently selected section does not belong to the new department
     const activeSec = sections.find((s) => s.id === selectedSectionId);
     const keepSection = deptId !== "All" && activeSec?.departmentId === deptId;
     setScope(deptId, keepSection ? selectedSectionId : "All");
 
     if (deptId !== "All") {
-      // Reset faculty filter if the currently selected faculty does not belong to the new department
       const activeFac = faculties.find((f) => f.id === selectedFacultyId);
       if (activeFac && activeFac.departmentId !== deptId) {
         setSelectedFacultyId("All");
@@ -754,20 +682,12 @@ export default function VpaaScheduleViewer() {
   const { map: conflictMap } = useMemo(() => buildConflictMap(schedules), [schedules]);
 
   const hasGridScope = selectedSectionId !== "All" || selectedFacultyId !== "All" || selectedRoomId !== "All";
-  /**
-   * The view actually shown. The drill-down level is derived from the scope
-   * (which lives in the URL and can change under the screen via browser
-   * Back/Forward), so the breadcrumb never names a level the content is not
-   * showing. The flat list and a faculty or room grid are views the user
-   * chose, so those requests are honoured as long as they still make sense.
-   */
   const drillViewMode: ViewMode = selectedSectionId !== "All" ? "grid" : selectedDeptId !== "All" ? "sections" : "overview";
   const viewMode: ViewMode = requestedViewMode === "list" || (requestedViewMode === "grid" && hasGridScope)
     ? requestedViewMode
     : drillViewMode;
   const isFlatView = viewMode === "list" || viewMode === "grid";
 
-  /** One level up from wherever the screen is. Null at the top. */
   const goBack = viewMode === "list"
     ? () => setViewMode(drillViewMode)
     : viewMode === "grid" && selectedSectionId === "All"
@@ -874,11 +794,6 @@ export default function VpaaScheduleViewer() {
     ?? sections.find((section) => section.id === selectedSectionId)?.name
     ?? "Section";
 
-  /**
-   * The summary follows the breadcrumb: all departments, then the opened
-   * department, then the opened section. It used to show institution totals
-   * at every level, so drilling in never changed a single number.
-   */
   const scopeLevel: "institution" | "department" | "section" = selectedSectionId !== "All"
     ? "section"
     : selectedDeptId !== "All" ? "department" : "institution";
@@ -960,11 +875,6 @@ export default function VpaaScheduleViewer() {
     });
   }, [overviewDepartments, searchTerm, focus]);
 
-  /**
-   * The section level honours the chip that was clicked to reach it, and the
-   * search box, so arriving from "3 conflicts" shows those three sections
-   * rather than the whole department again.
-   */
   const visibleSections = useMemo(() => {
     const all = selectedDepartment?.sections ?? [];
     const search = searchTerm.trim().toLowerCase();
@@ -981,12 +891,6 @@ export default function VpaaScheduleViewer() {
     });
   }, [selectedDepartment, selectedConflictStatus, selectedAssignmentStatus, searchTerm]);
 
-  /**
-   * The list shows one row per class, the same table as the generator's
-   * Schedule Summary. A class matches when any of its meetings passes the
-   * filters and is then shown whole: hiding its other days would misstate when
-   * the class actually meets.
-   */
   const listClasses = useMemo<SummaryClass[]>(() => {
     const classKeyOf = (schedule: Schedule) => `${schedule.sectionId}|${schedule.courseId}`;
     const matching = new Set(filteredSchedules.map(classKeyOf));
@@ -1022,7 +926,6 @@ export default function VpaaScheduleViewer() {
   const pageCount = Math.max(1, Math.ceil(listClasses.length / pageSize));
   const paginatedClasses = listClasses.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  /** Every meeting of the class the detail modal is open on. */
   const selectedClassParts = useMemo(() => {
     if (!selectedSchedule) return [];
     const siblings = schedules.filter((schedule) => (
@@ -1056,12 +959,6 @@ export default function VpaaScheduleViewer() {
     searchTerm.trim() ? `Search: ${searchTerm.trim()}` : "",
   ].filter(Boolean);
 
-  /**
-   * Every timetable in the system shows the same 7:00 AM-8:30 PM window. This
-   * screen used to crop the grid to the extent of whatever was filtered in, so
-   * the same class sat at a different height depending on the filter and did
-   * not line up with the builder it was scheduled on.
-   */
   const gridRange = useMemo(() => {
     const latestEnd = filteredSchedules.reduce(
       (max, schedule) => Math.max(max, parseTimeToSlotIndex(schedule.endTime)),
@@ -1076,7 +973,6 @@ export default function VpaaScheduleViewer() {
       : selectedDeptId === "All" || String(section.departmentId) === selectedDeptId
   )), [printSource, selectedSectionId, selectedDeptId]);
 
-  // The same meetings the filters show, as the scheduler maps them for print.
   const printSchedules = useMemo(() => {
     const visibleIds = new Set(filteredSchedules.map((schedule) => String(schedule.id)));
     return (printSource?.schedules ?? []).filter((schedule) => visibleIds.has(String(schedule.id)));
@@ -1155,7 +1051,6 @@ export default function VpaaScheduleViewer() {
     </button>
   ) : null;
 
-  /** A filter that matches nothing must still offer a way out, not a blank page. */
   const focusEmptyState = (noun: string) => (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
       <p className="text-sm font-bold text-slate-600">No {noun} {focusDescription}.</p>
@@ -1200,12 +1095,7 @@ export default function VpaaScheduleViewer() {
                 </span>
               )}
             </div>
-            {/*
-              * The breadcrumb is the level indicator. It replaces having to
-              * read the filter selects to work out how deep the screen is.
-              */}
             <nav aria-label="Breadcrumb" className="mt-1.5 flex flex-wrap items-center gap-1 text-xs font-bold">
-              {/* Earlier levels are links (underlined on hover); the current level is plain text. */}
               {scopeLevel === "institution" ? (
                 <span aria-current="page" className="rounded-lg px-2 py-1 text-[#4e0a10]">All departments</span>
               ) : (
@@ -1314,11 +1204,6 @@ export default function VpaaScheduleViewer() {
             containerClassName="relative"
           />
 
-          {/*
-            * Picking a department from a select duplicates clicking its card,
-            * and the rest of these narrow the flat list rather than the cards,
-            * so the drill-down levels keep only the search box.
-            */}
           {isFlatView && (
             <>
           <select 

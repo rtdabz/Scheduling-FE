@@ -7,7 +7,6 @@ interface ProfileAvatarProps {
   iconClassName?: string;
 }
 
-/** Shared profile image with a neutral person silhouette when no photo is uploaded. */
 export default function ProfileAvatar({ src, alt = '', className, iconClassName = 'h-1/2 w-1/2' }: ProfileAvatarProps) {
   if (src) {
     return <img src={src} alt={alt} className={`${className} object-cover`} />;

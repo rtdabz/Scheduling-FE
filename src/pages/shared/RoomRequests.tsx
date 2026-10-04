@@ -169,21 +169,12 @@ const formatDateCompact = (isoString?: string | null): string => {
   }
 };
 
-/**
- * Mirrors the server's assertLendable: only another department's available
- * lecture rooms can be borrowed; laboratories are never lent. Shared rooms are already
- * usable, so they are never requested.
- */
 const isLendable = (room: RoomRecord, departmentId: number | null) =>
   room.room_type === 'lecture'
   && room.status === 'available'
   && room.department_id !== null
   && room.department_id !== departmentId;
 
-/**
- * Vacant windows for one day, built from the occupancy endpoint so both the
- * room's classes and windows already lent to another department count.
- */
 const makeTimeOptions = (day: string, blocks: RoomOccupancyBlock[]) => {
   const totalSlots = slotCount();
   const durationSlots = 3;
@@ -209,8 +200,6 @@ export default function RoomRequests() {
   const departmentId = getStoredUserDepartmentId();
   const mountedRef = useRef(true);
 
-  // Rooms group, so room and room-request writes invalidate it. A cached copy
-  // paints on a revisit while the mount fetch below replaces it.
   const cacheKey = `page:rooms:room-requests:${departmentId ?? 'all'}`;
   const [cached] = useState(() => {
     const data = getCachedData<RoomRequestsPageData>(cacheKey);
@@ -251,7 +240,6 @@ export default function RoomRequests() {
         setSchedules(initialData.schedules ?? []);
       }
 
-      // The department's own requests and the ones for its rooms.
       const requestData = await fetchRoomRequests();
       if (mountedRef.current) setRequests(requestData);
       setCachedData<RoomRequestsPageData>(cacheKey, {
@@ -446,7 +434,6 @@ export default function RoomRequests() {
             className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
             onClick={() => openDepartment(department)}
           >
-            {/* Centered Background Department Watermark Logo */}
             {department.logo && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <img
@@ -527,7 +514,6 @@ export default function RoomRequests() {
                 onClick={() => setSelectedRoom(room)}
                 className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
               >
-                {/* Centered Background Department Watermark Logo */}
                 {deptLogo && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                     <img
@@ -742,7 +728,6 @@ export default function RoomRequests() {
         renderDepartmentGrid()
       )}
 
-      {/* Modals */}
       {showRequests && (
         <RequestsModal
           requests={requests}
@@ -958,11 +943,6 @@ function RequestRoomModal({
   );
 }
 
-/**
- * The borrowing department withdraws a pending request or gives back an
- * approved room, at any time. Classes it holds in the room under that grant
- * become Room TBA (the server reports how many).
- */
 function useGiveBack(onChanged: (request: RoomRequest) => void) {
   const { toast, confirm } = useToast();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -1153,7 +1133,6 @@ function RequestPreviewModal({
   const [isBusy, setIsBusy] = useState(false);
   const remarksRef = useRef<HTMLTextAreaElement>(null);
 
-  // Only the secretary of the department that owns the room decides; the VPAA only watches.
   const canReview = hasStoredCapability('room.review_requests') && departmentId !== null && getOwnerId(request) === departmentId;
   const isOwn = canGiveBack(request, departmentId);
   const { giveBack, busyId } = useGiveBack(onChanged);
@@ -1187,9 +1166,6 @@ function RequestPreviewModal({
     if (confirmed) await run(() => reviewRoomRequest(request.id, 'approve', remarks.trim()));
   };
 
-  // Rejecting and revoking need a reason and ask for confirmation like
-  // approving. The buttons stay enabled so a click without a reason points at
-  // the remarks box instead of silently doing nothing.
   const requireRemarks = (): boolean => {
     if (remarks.trim() !== '') return true;
     setRemarksMissing(true);

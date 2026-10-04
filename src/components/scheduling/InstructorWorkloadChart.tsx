@@ -5,9 +5,7 @@ export interface InstructorWorkload {
   id: number | string;
   first_name: string;
   last_name: string;
-  /** Units already on the instructor's plate. */
   assigned: number;
-  /** Ceiling after deloading. May be 0 for staff with no teaching allocation. */
   max: number;
   profile_picture?: string | null;
 }
@@ -19,9 +17,7 @@ interface WorkloadDatum {
   units: string;
 }
 
-/** Tall enough for the 28px avatar plus breathing room on either side. */
 const ROW_HEIGHT = 46;
-/** Avatar + name + unit count. The bar takes whatever is left. */
 const AXIS_WIDTH = 196;
 
 const toDatum = (instructor: InstructorWorkload): WorkloadDatum => {
@@ -31,26 +27,11 @@ const toDatum = (instructor: InstructorWorkload): WorkloadDatum => {
   return {
     name: `${first} ${last}`.trim() || 'Instructor',
     photo: instructor.profile_picture ?? null,
-    // Capped so an over-allocated instructor cannot run the bar past the track.
     progress: instructor.max > 0 ? Math.min(100, Math.round((instructor.assigned / instructor.max) * 100)) : 0,
     units: `${instructor.assigned}/${instructor.max}u`,
   };
 };
 
-/**
- * Avatar, name and unit count for one instructor, drawn as the category tick so
- * it stays locked to its own bar.
- *
- * Two things here are deliberate. The row is looked up by `index` because a
- * category tick's `payload` carries only {coordinate, value, index, offset} —
- * recharts does not hand the datum to the tick, so the previous
- * `payload.payload.profilePicture` read was always undefined and every
- * instructor fell back to the default avatar. And the contents are laid out left to right
- * from the axis origin (`x` is the tick anchor, so `-x` is the plot's left
- * edge); anchoring them to the axis line instead made each avatar's position
- * depend on the width of the name beside it, which is what made the column
- * zig-zag.
- */
 function InstructorAxisTick({ x = 0, y = 0, index = 0, rows = [] }: { x?: number; y?: number; index?: number; rows?: WorkloadDatum[] }) {
   const row = rows[index];
   if (!row) return <g />;
@@ -68,14 +49,6 @@ function InstructorAxisTick({ x = 0, y = 0, index = 0, rows = [] }: { x?: number
   );
 }
 
-/**
- * Assigned-versus-maximum teaching load, one bar per instructor.
- *
- * `minPointSize` is load-bearing rather than cosmetic: recharts skips a bar
- * whose value is 0, and it skips that bar's background track and label with it,
- * so instructors with nothing assigned yet rendered as a bare name with no
- * track at all. A one-pixel floor keeps the row on the chart.
- */
 export default function InstructorWorkloadChart({ instructors }: { instructors: InstructorWorkload[] }) {
   if (!instructors.length) {
     return <p className="mt-3 py-3 text-center text-[11px] italic text-slate-400">No instructors available to this department.</p>;

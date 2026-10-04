@@ -1,11 +1,6 @@
 import { TriangleAlert } from 'lucide-react';
 import type { StoredUser } from '../../lib/storedUser';
 
-/**
- * Explains why building, section and assignment screens are locked for a
- * department with no program yet. Without it the sidebar showed padlocks and
- * pages silently hid their Add buttons, with nothing saying what to do.
- */
 export default function DepartmentSetupBanner({ user }: { user: StoredUser | null }) {
   const role = user?.role?.toLowerCase();
   if (user?.scheduling_ready !== false || (role !== 'secretary' && role !== 'program_head')) return null;

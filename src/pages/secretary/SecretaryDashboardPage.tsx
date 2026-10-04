@@ -65,17 +65,12 @@ const TONES: Record<Tone, string> = {
   alert: 'bg-rose-50 text-rose-600',
 };
 
-/** Workflow stages a department schedule moves through, in order. */
 const STAGES = ['Draft', 'Ready to Submit', 'Submitted to Dean', 'Returned by Dean', 'Approved by Dean', 'Approved by VPAA'];
 
 const percent = (part:number, total:number) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
 type Delivery = 'on-site' | 'online' | 'field';
 
-/**
- * Delivery mode of a class. Matches DashboardTimetableGrid's own reading:
- * the `mode` column wins, the room's type is the fallback for older rows.
- */
 const deliveryOf = (schedule:Schedule): Delivery => {
   const mode = (schedule.mode ?? '').toLowerCase();
   if (mode.includes('online')) return 'online';
@@ -86,15 +81,8 @@ const deliveryOf = (schedule:Schedule): Delivery => {
   return 'on-site';
 };
 
-/**
- * Only on-site classes occupy a physical room. Online classes are roomless by
- * design (migration allow_online_schedules_without_rooms made room_id nullable
- * for exactly this) and field classes are located by their delivery mode, so
- * neither is a room gap to chase.
- */
 const needsRoom = (schedule:Schedule) => deliveryOf(schedule) === 'on-site';
 
-/** Keep rows that belong to the user's department (rows with no department are shared/global). */
 const inDepartment = <T extends {department_id?:number|null}>(items:T[], departmentId?:number) =>
   items.filter(item => !departmentId || !item.department_id || Number(item.department_id) === Number(departmentId));
 
@@ -132,8 +120,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         rooms: '/secretary/facilities',
         crossDepartment: '/secretary/cross-department-assignments',
       };
-  // Rooms are assigned to classes in Schedule Management; without schedule
-  // editing rights the Room List is the most useful place to send someone.
   const roomAssignmentPath = canUpdateSchedules ? paths.schedules : paths.rooms;
   const cacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? departmentId ?? 'current'}`;
   const cached = getCachedData<Overview>(cacheKey);
@@ -154,7 +140,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     let active = true;
 
     const load = async () => {
-      // A live refresh keeps the current figures on screen until new ones land.
       setLoading(liveRevision === 0 && !hasCachedData(cacheKey));
       setLoadError(null);
       try {
@@ -201,7 +186,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     refetch: refetchStatus,
   } = useDepartmentScheduleStatus(departmentId);
 
-  // ── Department-scoped views of the raw payload ──
   const visibleSections = useMemo(() => inDepartment(sections, departmentId), [sections, departmentId]);
   const visibleRooms = useMemo(() => inDepartment(rooms, departmentId), [rooms, departmentId]);
   const visibleSubjects = useMemo(() => inDepartment(subjects, departmentId), [subjects, departmentId]);
@@ -219,7 +203,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     [schedules, semesterId, sectionIds, departmentId],
   );
 
-  // ── Counts ──
   const scheduledSections = useMemo(() => new Set(visibleSchedules.map(s => s.section_id)).size, [visibleSchedules]);
   const sectionCoverage = percent(scheduledSections, visibleSections.length);
   const remaining = Math.max(0, visibleSections.length - scheduledSections);
@@ -237,17 +220,11 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     })
     .sort((a, b) => b.remaining - a.remaining), [visibleFaculty]);
 
-  /** Busiest five instructors, the rows of the Workload Progress list. */
   const workload = useMemo(
     () => [...loads].sort((a, b) => b.assigned - a.assigned).slice(0, 5),
     [loads],
   );
 
-  // ── Room inventory ──
-  // Physical rooms only. ONLINE and FIELD are placeholder rows that exist so an
-  // online or field class has something to point at; treating them as rooms made
-  // the unbooked count look worse than it was and reported them as "Unbooked"
-  // while a hundred classes were delivered through them.
   const assignableRooms = useMemo(() => physicalRooms(visibleRooms), [visibleRooms]);
   const classesByRoom = useMemo(() => {
     const counts = new Map<number, number>();
@@ -261,8 +238,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const unbookedRooms = Math.max(0, assignableRooms.length - roomsUsed);
   const labRooms = assignableRooms.filter(r => (r.room_type ?? '').toLowerCase().includes('lab')).length;
 
-  // ── Submission readiness ──
-  // The last item mirrors the backend gate for POST /departments/{id}/submit-schedules.
   const checks: ReadonlyArray<readonly [string, boolean]> = [
     ['All required sections have schedules', remaining === 0],
     ['All scheduled classes have instructors', noInstructor === 0],
@@ -282,8 +257,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     : 0;
 
   const pendingYears = yearLevels.filter(y => !y.isComplete).map(y => y.label);
-  // A missing Dean outranks drafting progress: there is nobody to submit to, so
-  // say that rather than pointing at year levels the user cannot act on.
   const submitHint = !hasDean
     ? DEAN_REQUIRED_MESSAGE
     : canSubmit
@@ -292,7 +265,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         ? `Finish drafting ${pendingYears.join(', ')} before submitting.`
         : 'No active sections found for this department yet.';
 
-  // ── Current status ──
   const progress = submissionProgress(currentStage);
   const statusNote = progress.isComplete
     ? 'Approved all the way through. Nothing further is needed for this semester.'
@@ -343,13 +315,11 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
     ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
     ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Handshake, path:paths.crossDepartment } as QueueRow] : []),
-    // Rooms are given to classes in Schedule Management; the Room List only browses rooms.
     { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:roomAssignmentPath },
     ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
     ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
   ];
 
-  /** Outstanding work first, biggest first; a settled row can wait at the bottom. */
   const openQueue = queue.filter(row => row.value > 0).sort((a, b) => b.value - a.value);
   const clearedQueue = queue.filter(row => row.value === 0);
   const openItems = openQueue.reduce((total, row) => total + row.value, 0);

@@ -6,13 +6,6 @@ interface LoadErrorBannerProps {
   className?: string;
 }
 
-/**
- * Says that a page's data failed to load, with a way to try again.
- *
- * A list that failed to load and a list that is genuinely empty look the same
- * on screen; on an approval queue the second reads as "nothing to approve".
- * Pages show this instead of leaving the empty list to speak for itself.
- */
 export default function LoadErrorBanner({ message, onRetry, className = '' }: LoadErrorBannerProps) {
   return (
     <div role="alert" className={`flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-800 ${className}`}>

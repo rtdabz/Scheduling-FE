@@ -7,7 +7,6 @@ import InstructorTeachingLoadButton from '../InstructorTeachingLoadButton';
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, loadBandsOf, loadTierForUnits } from '../../lib/facultyLoad';
 import SegmentedLoadBar from './SegmentedLoadBar';
 
-/** The fields this modal reads; every role's Faculty page record satisfies it. */
 export interface FacultyDetailsRecord {
   id: number;
   first_name: string;
@@ -29,22 +28,15 @@ export interface FacultyDetailsRecord {
 interface FacultyDetailsModalProps {
   faculty: FacultyDetailsRecord;
   onClose: () => void;
-  /** Shown only when provided: the load editor for accounts that cannot edit the roster itself. */
   onEditLoad?: () => void;
   canEditAvailability: boolean;
   onNotify: (kind: 'success' | 'error', title: string, message: string) => void;
 }
 
-/**
- * Instructor details: load against Basic Load, what they teach this semester,
- * and their availability windows. Shared by the VPAA, dean, program head and
- * secretary Faculty pages, which each carried an identical copy.
- */
 export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canEditAvailability, onNotify }: FacultyDetailsModalProps) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   useEffect(() => {
-    // While Teaching History is stacked on top, Escape closes only that.
     if (isHistoryOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -56,16 +48,11 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
   const name = `${faculty.first_name} ${faculty.last_name}`;
   const basicLoad = faculty.required_units;
   const assigned = faculty.assigned_units;
-  // Same gate as the server: an overload-only instructor (Basic Load 0) still
-  // moves Overload -> Pro-bono.
   const tier = basicLoad + Math.max(0, faculty.overload_units) > 0
     ? loadTierForUnits({ basicLoad, overloadUnits: faculty.overload_units }, assigned)
     : null;
   const remaining = basicLoad - assigned;
   const aboveCeiling = assigned > basicLoad + Math.max(0, faculty.overload_units);
-  // The whole load the instructor may carry: Basic Load plus the Overload
-  // allowance; anything past it is pro bono. Measuring against Basic Load alone read an approved
-  // overload as "36 / 18", double the load, beside a ceiling of 33.
   const ceiling = faculty.unit_ceiling;
   const bands = loadBandsOf({
     assignedUnits: assigned,
@@ -125,8 +112,6 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
           </button>
         </header>
 
-        {/* Two columns from md up so the whole record fits without scrolling;
-            a phone still stacks them and scrolls. */}
         <div className="min-h-0 flex-1 overflow-y-auto bg-parchment p-5">
           <div className="grid gap-4 md:grid-cols-5">
             <div className="space-y-4 md:col-span-3">

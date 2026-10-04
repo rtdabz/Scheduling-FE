@@ -2,16 +2,6 @@ import type { ReactNode } from 'react';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 
-/**
- * The shared furniture of the VPAA dashboard.
- *
- * Extracted from the page so the panels below it stay readable, and so the type
- * scale lives in one place. The previous dashboard set body copy at 9-10px,
- * which is below the point where a table of numbers is comfortably legible;
- * everything here is 11px at the smallest and 12-13px for data a reader is
- * expected to actually compare.
- */
-
 export interface Slice {
   key: string;
   label: string;
@@ -76,12 +66,6 @@ export function Panel({
   );
 }
 
-/**
- * Donut and its centre readout.
- *
- * An all-zero series is drawn as one neutral ring rather than nothing: recharts
- * renders no arcs when every value is 0, which reads as a broken chart.
- */
 export function Donut({ slices, headline, caption }: { slices: Slice[]; headline: number | string; caption: string }) {
   const filled = slices.filter(slice => slice.value > 0);
   const rows: Slice[] = filled.length ? filled : [{ key: 'empty', label: 'No data', value: 1, color: '#e2e8f0' }];
@@ -113,7 +97,6 @@ export function Donut({ slices, headline, caption }: { slices: Slice[]; headline
   );
 }
 
-/** One decimal — the precision the donut legends quote each share to. */
 const share1 = (part: number, total: number) => (total > 0 ? ((part / total) * 100).toFixed(1) : '0.0');
 
 export function DonutLegend({ slices, total }: { slices: Slice[]; total: number }) {

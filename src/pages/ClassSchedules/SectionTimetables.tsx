@@ -48,8 +48,6 @@ const formatActiveSemester = (data: SchedulerCacheData): string => {
 
 export default function SectionTimetables() {
   const user = getStoredUser();
-  // Schedules group, so schedule writes invalidate it. A cached copy paints on
-  // a revisit while the fetch below replaces it.
   const cacheKey = `scheduler:section-timetables:${user?.department_id ?? "all"}`;
   const [cached] = useState(() => getCachedData<SchedulerCacheData>(cacheKey));
   const [data, setData] = useState<SchedulerCacheData>(cached ?? emptyData);
@@ -64,8 +62,6 @@ export default function SectionTimetables() {
     const controller = new AbortController();
 
     const load = async () => {
-      // A cached copy stays on screen while it is replaced; a cold key or the
-      // Refresh button shows the skeleton.
       if (liveRevision === 0 && (reloadKey > 0 || !hasCachedData(cacheKey))) setIsLoading(true);
       setError("");
 

@@ -11,7 +11,6 @@ import { LOAD_LEVELS, UNAVAILABLE_STATUS, loadLevelOf } from '../../lib/facultyL
 import { formatFacultyListName } from '../../lib/formatters';
 import { designationLabel, type Designation } from '../../lib/designations';
 
-/** The fields the list view reads; each role's Faculty page passes its own richer record. */
 export interface FacultyListRow {
   id: number;
   first_name: string;
@@ -32,7 +31,6 @@ export interface FacultyListRow {
 }
 
 interface FacultyListTableProps<T extends FacultyListRow> {
-  /** Already sorted and paginated: the page shares both with its grid view. */
   faculties: T[];
   isLoading: boolean;
   highlightedId: number | null;
@@ -41,7 +39,6 @@ interface FacultyListTableProps<T extends FacultyListRow> {
   onView: (faculty: T) => void;
   onEdit: (faculty: T) => void;
   onArchive: (faculty: T) => void;
-  /** Marks the first row's View button for a guided tour. */
   viewDetailsTourId?: string;
 }
 
@@ -55,7 +52,6 @@ const workloadStatus = (f: FacultyListRow) => f.status === 'inactive' ? UNAVAILA
 
 const tooltipClass = 'absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap';
 
-/** The Faculty / Instructors list view shared by the VPAA, Dean, Program Head and Secretary pages. */
 export default function FacultyListTable<T extends FacultyListRow>({
   faculties,
   isLoading,
@@ -224,7 +220,6 @@ export default function FacultyListTable<T extends FacultyListRow>({
     },
   ], [canManage, getDepartmentColor, onArchive, onEdit, onView, viewDetailsTourId]);
 
-  // Sorting and paging belong to the page, which shares them with the grid view.
   const table = useDataTable<T>({ data: faculties, columns, pageSize: false, enableSorting: false, getRowId: (f) => String(f.id) });
 
   return (

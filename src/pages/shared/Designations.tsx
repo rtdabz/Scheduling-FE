@@ -28,20 +28,10 @@ import {
 
 const MANAGE_CAPABILITY = 'faculty.manage_designations';
 
-/** The common full-time maximum, used only to illustrate a deload's effect. */
 const REFERENCE_MAX_UNITS = 21;
 
 const unitsLabel = (units: number) => `${units} ${units === 1 ? 'unit' : 'units'}`;
 
-/**
- * Maintains the administrative designations instructors may hold.
- *
- * Reached from the VPAA route alone -- a designation rewrites an instructor's
- * Basic Load, so the list is not delegated. The capability check below stays
- * as the second gate, so the screen degrades to read-only rather than
- * offering actions the API would refuse.
- */
-// Under the faculty group: a designation changes instructors' loads.
 const DESIGNATIONS_CACHE_KEY = 'page:faculty:designations';
 
 export default function Designations() {
@@ -50,7 +40,6 @@ export default function Designations() {
   const [isLoading, setIsLoading] = useState(() => !hasCachedData(DESIGNATIONS_CACHE_KEY));
   const [designationSearch, setDesignationSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
-  // Headings whose sub-designations are shown in the list view; collapsed by default.
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
 
   const [editing, setEditing] = useState<Designation | null>(null);
@@ -67,7 +56,6 @@ export default function Designations() {
   const canManage = hasStoredCapability(MANAGE_CAPABILITY);
 
   const load = useCallback(async () => {
-    // A cached list stays on screen while it is replaced; only a cold key shows the skeleton.
     if (!hasCachedData(DESIGNATIONS_CACHE_KEY)) setIsLoading(true);
     try {
       const rows = await fetchDesignations();
@@ -81,15 +69,10 @@ export default function Designations() {
   }, [toast]);
 
   useEffect(() => {
-    // Same initial-fetch pattern the other list screens use: the state this
-    // sets is the fetch result, not derived render state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
-  // Each top-level designation followed by the sub-designations under it, so a
-  // heading reads as a group. Search matches the full "Director · Networking
-  // Dev't" label, and keeps a matching sub-designation's heading in view.
   const visible = useMemo(() => {
     const ordered: Designation[] = [];
     designations.filter((d) => d.parent_id === null).forEach((top) => {
@@ -103,8 +86,6 @@ export default function Designations() {
     return ordered.filter((d) => matches.has(d.id) || designations.some((child) => child.parent_id === d.id && matches.has(child.id)));
   }, [designations, designationSearch]);
 
-  // The list view folds sub-designations under their heading. A search opens
-  // every heading so a matching sub-designation is never hidden.
   const isSearching = designationSearch.trim() !== '';
   const listRows = useMemo(
     () => (isSearching ? visible : visible.filter((d) => d.parent_id === null || expanded.has(d.parent_id) || !visible.some((p) => p.id === d.parent_id))),
@@ -120,7 +101,6 @@ export default function Designations() {
     });
   }, []);
 
-  /** Top-level designations another may be placed under. */
   const parentOptions = useMemo(
     () => designations.filter((d) => d.parent_id === null && d.id !== editing?.id),
     [designations, editing],
@@ -130,7 +110,6 @@ export default function Designations() {
   const openCreate = (parent: Designation | null = null) => {
     setEditing(null);
     setForm({ ...emptyDesignation(), parent_id: parent?.id ?? null });
-    // Open the heading so the new sub-designation shows once saved.
     if (parent) setExpanded((current) => new Set(current).add(parent.id));
     setFieldErrors({});
     setIsFormOpen(true);
@@ -165,7 +144,6 @@ export default function Designations() {
           <div className={`flex min-w-[14rem] items-center gap-3 ${isSub ? 'pl-8' : ''}`}>
             {isSub && <CornerDownRight size={16} aria-hidden="true" className="-ml-6 shrink-0 text-gray-300" />}
             <div className="min-w-0 flex-1">
-              {/* Line 1: Designation Name (single line, no wrapping) */}
               <div className="flex items-center gap-2 text-sm font-bold text-gray-900 whitespace-nowrap">
                 <span className="whitespace-nowrap font-bold text-gray-900" title={designation.name}>{designation.name}</span>
                 {designation.code && (
@@ -179,7 +157,6 @@ export default function Designations() {
                   </span>
                 )}
               </div>
-              {/* Line 2: Deload Units directly below */}
               <div className="mt-0.5 flex items-center gap-2 text-xs font-semibold text-[#8a6412] whitespace-nowrap">
                 <span>{unitsLabel(designation.deload_units)} deload</span>
                 {isSub && (
@@ -306,9 +283,6 @@ export default function Designations() {
 
   const table = useDataTable({ data: listRows, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
 
-  // Folds a saved designation into the list in place, so a save does not
-  // re-fetch and flash the whole table. A heading's sub-designation count is
-  // adjusted when a row joins or leaves it.
   const applySaved = (saved: Designation, previousParentId: number | null) => {
     setDesignations((current) => {
       const exists = current.some((d) => d.id === saved.id);
@@ -320,7 +294,6 @@ export default function Designations() {
         }
         return delta === 0 ? d : { ...d, children_count: Math.max(0, (d.children_count ?? 0) + delta) };
       });
-      // Same order the server lists them in: sort order, then name.
       return next.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
     });
   };
@@ -341,8 +314,6 @@ export default function Designations() {
           parent_id: form.parent_id,
         });
         applySaved(saved, editing.parent_id);
-        // The deload is copied onto each holder, so a changed figure moves real
-        // teaching loads. Saying how many keeps that from being a silent edit.
         toast.success(
           'Designation updated',
           holdersUpdated > 0
@@ -380,8 +351,6 @@ export default function Designations() {
       await load();
     } catch (error) {
       const response = (error as { response?: { status?: number; data?: { message?: string } } }).response;
-      // 409 means instructors still hold it — the server refuses rather than
-      // silently changing their Basic Load.
       toast.error(
         response?.status === 409 ? 'Still in use' : 'Archive failed',
         response?.data?.message ?? 'The designation could not be archived.',
@@ -397,7 +366,6 @@ export default function Designations() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* The page title is rendered by the layout's PageHeader. */}
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
           label="Designations"
@@ -422,9 +390,7 @@ export default function Designations() {
         />
       </div>
 
-      {/* Standalone Dedicated Search Bar & Control Toolbar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white border border-gray-200 rounded-2xl p-3.5 shadow-xs">
-        {/* Reused search bar component style */}
         <div className="relative w-full sm:w-80">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -447,7 +413,6 @@ export default function Designations() {
         </div>
 
         <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
-          {/* View Mode Switcher (Grid / List) */}
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 shrink-0">
             <button
               type="button"
@@ -498,7 +463,6 @@ export default function Designations() {
                     key={index}
                     className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-xs flex flex-col justify-between space-y-3 font-sans animate-pulse"
                   >
-                    {/* Top accent line matching stat cards */}
                     <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220]/40 via-[#8a2434]/40 to-[#C9952A]/40" />
 
                     <div className="space-y-2.5 pt-0.5">
@@ -551,21 +515,18 @@ export default function Designations() {
                       key={d.id}
                       className={`relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-xs flex flex-col justify-between space-y-3 font-sans group hover:border-[#C9952A]/50 transition-all ${GRID_CARD_HOVER}`}
                     >
-                      {/* Top accent line matching dashboard StatCards */}
                       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220] via-[#8a2434] to-[#C9952A]" />
 
                       <div className="space-y-2 pt-0.5">
                         <div className="flex items-start justify-between gap-2.5">
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="min-w-0 flex-1">
-                              {/* Line 1: Designation on Line 1 (single line, no wrapping) */}
                               <h3
                                 className="text-sm font-bold text-gray-900 leading-tight whitespace-nowrap truncate"
                                 title={d.name}
                               >
                                 {d.name}
                               </h3>
-                              {/* Line 2: Units on Line 2 directly below designation */}
                               <p className="mt-0.5 text-xs font-semibold text-[#8a6412] whitespace-nowrap">
                                 {unitsLabel(d.deload_units)} deload
                               </p>
@@ -582,7 +543,6 @@ export default function Designations() {
                           </span>
                         </div>
 
-                        {/* Hierarchical metadata & badges */}
                         {(d.code || isSub || subCount > 0) && (
                           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                             {d.code && (
@@ -605,7 +565,6 @@ export default function Designations() {
                         )}
                       </div>
 
-                      {/* Card Footer / Metrics & Actions */}
                       <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-1.5 text-xs">
                           <Users size={13} className="text-gray-400" />
@@ -712,10 +671,7 @@ export default function Designations() {
           </div>
         }
       >
-        {/* Modal renders children with no padding of its own, so the body
-            supplies it -- matching the header and footer insets. */}
         <div className="space-y-4 p-5 sm:p-6">
-          {/* Designation Details preview showing Designation on Line 1 and Units directly below */}
           {(editing || form.name.trim()) && (
             <div className="rounded-xl border border-gray-200/90 bg-gray-50/70 p-3 flex items-center gap-3">
               <div className="min-w-0 flex-1">
@@ -845,7 +801,6 @@ const holderColumns: ColumnDef<DesignationHolder>[] = [
   },
 ];
 
-/** Read-only table of the instructors currently holding one designation. */
 function DesignationHoldersModal({ designation, onClose }: { designation: Designation | null; onClose: () => void }) {
   const { toast } = useToast();
   const [holders, setHolders] = useState<DesignationHolder[]>([]);

@@ -85,7 +85,6 @@ interface SettingsPageData {
 interface TimeslotSettings {
   opening_time: string;
   closing_time: string;
-  /** Latest end time for field classes (institution_settings.field_end_time). */
   field_end_time?: string;
   slot_interval: number;
 }
@@ -114,7 +113,6 @@ const mapApiSemester = (t: ApiSemester): Semester => ({
   is_enabled: t.is_enabled !== undefined ? !!t.is_enabled : true
 });
 
-/** Server-supplied reasons beat generic copy, so surface them when present. */
 const apiMessage = (error: unknown, fallback: string): string => {
   const data = (error as { response?: { data?: { message?: string } } })?.response?.data;
   return typeof data?.message === 'string' && data.message ? data.message : fallback;
@@ -162,8 +160,6 @@ export default function Settings() {
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(!hasCachedData(settingsCacheKey));
 
-  // Academic years are stored joined but edited as two fields, so the draft
-  // halves live beside the semesters until they are saved.
   const [yearDrafts, setYearDrafts] = useState<Record<number, AcademicYearParts>>({});
   const [savingYearId, setSavingYearId] = useState<number | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
@@ -175,22 +171,17 @@ export default function Settings() {
   const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '', field_end_time: '' });
   const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
   const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
-  // State-driven disabled props update after a render. These synchronous
-  // guards also reject a second click that arrives in the same event loop.
   const savingYearIdsRef = useRef(new Set<number>());
   const togglingIdsRef = useRef(new Set<number>());
   const activatingRef = useRef(false);
   const savingSignatoryRef = useRef(false);
   const savingOperatingHoursRef = useRef(false);
 
-  // Table States
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: 10
   });
-
-  // Modal states
 
   const rememberSemesters = useCallback((next: Semester[]) => {
     setCachedData<SettingsPageData>(settingsCacheKey, { semesters: next });
@@ -265,7 +256,6 @@ export default function Settings() {
   const activePeriod = useMemo(() => semesters.find(t => t.is_active)?.semester, [semesters]);
   const isSummerToggleEnabled = activePeriod === '2nd';
 
-  // Summer is not offered alongside a 1st semester.
   useEffect(() => {
     if (activePeriod !== '1st') return;
     setSemesters(prev => {
@@ -281,7 +271,6 @@ export default function Settings() {
     [yearDrafts],
   );
 
-  /** Typing a complete starting year fills the end year in, still editable. */
   const handleStartYearChange = (semester: Semester, value: string) => {
     const start = sanitizeYearInput(value);
     setYearDrafts(prev => {
@@ -348,15 +337,11 @@ export default function Settings() {
     });
     if (!confirmed) return;
 
-    // The dialog is gone by now, so this ref is what stops a second activation
-    // from overlapping the first.
     if (activatingRef.current) return;
     activatingRef.current = true;
     try {
       await api.patch<{ semester: ApiSemester }>(`/semesters/${id}/activate`);
 
-      // The active semester scopes scheduler sections, courses, and schedules.
-      // Discard snapshots created for the previous semester before navigating back.
       clearDataCache();
       setSemesters(prev => rememberSemesters(prev.map(t => ({ ...t, is_active: t.id === id }))));
 
@@ -615,7 +600,6 @@ export default function Settings() {
                     )}
                   </div>
 
-                  {/* Academic year: one field per year rather than a YYYY-YYYY string. */}
                   <div>
                     <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
                       Academic Year
@@ -871,7 +855,6 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* What the print builders will stamp, so it can be checked before saving. */}
           <figure aria-label="Document signature preview" className="m-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <figcaption className="flex items-center gap-2 text-[11px] font-semibold text-slate-500"><FileText className="h-4 w-4" />Preview on printed documents</figcaption>
             <div className="mt-3 rounded-lg border border-slate-200 bg-white p-5">

@@ -2,10 +2,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
-/** Long enough to read as a slide, short enough never to feel like a wait. */
 const TRANSITION_MS = 200;
 
-/** Closes the panel, running `then` (default: `onClose`) once it has slid out. */
 export type CloseSlideOver = (then?: () => void) => void;
 
 const prefersMotion = () =>
@@ -13,16 +11,6 @@ const prefersMotion = () =>
   typeof window.matchMedia === "function" &&
   !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/**
- * The right-hand slide-over the Setup Courses step opens: a course's
- * Configure panel and the Default Settings. Portaled to document.body so it
- * sits outside the wizard modal, mirroring the navigation sidebar on the left.
- *
- * It slides in and out briefly -- a transform and an opacity fade, nothing
- * that repaints while scrolling (the old backdrop blur did) -- and closes at
- * once when the user prefers reduced motion. Its body contains its own
- * scroll, so reaching the end never scrolls the modal behind it.
- */
 export default function SlideOverPanel({
   ariaLabel,
   icon,
@@ -37,14 +25,12 @@ export default function SlideOverPanel({
   heading: ReactNode;
   subheading?: ReactNode;
   onClose: () => void;
-  /** The footer's buttons; given `close` so Cancel and Apply slide out too. */
   footer: ReactNode | ((close: CloseSlideOver) => ReactNode);
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
 
-  // Mounted closed, then opened on the next frame so the slide-in runs.
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setOpen(true));
     return () => window.cancelAnimationFrame(frame);

@@ -105,7 +105,6 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
 
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2.5">
           <LayoutGrid className="w-5 h-5 text-[#4e0a10]" />
@@ -121,7 +120,6 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         </span>
       </div>
 
-      {/* Drafting Progress Bar */}
       <div className="mb-8">
         <div className="flex items-center justify-between text-xs text-gray-500 font-semibold mb-1.5">
           <span>Drafting progress</span>
@@ -135,9 +133,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         </div>
       </div>
 
-      {/* 4-Stage Count Cards */}
       <div className="relative flex flex-col sm:flex-row gap-4 sm:gap-3 mb-8">
-        {/* Visual connector — desktop only */}
         <div className="hidden sm:block absolute left-[14%] right-[14%] top-6 h-0.5 bg-gray-100 z-0 rounded-full" />
 
         {STAGE_LABELS.map((label, idx) => {
@@ -155,7 +151,6 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
                   : 'bg-gray-50/50 border-gray-100'
               }`}
             >
-              {/* Stage icon node */}
               <div
                 className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-200 ${
                   isFirst && isActive
@@ -186,7 +181,6 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         })}
       </div>
 
-      {/* Year Level Completion Checklist */}
       <div className="mb-6">
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
           Year Level Completion
@@ -235,7 +229,6 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
         </div>
       </div>
 
-      {/* Footer — hint + submit button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-t border-gray-100 pt-6">
         <p className="text-xs text-gray-400 leading-relaxed max-w-xs">
           {hintText}

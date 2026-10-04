@@ -1,13 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-/**
- * Three different ways to take a record out of sight, each with its own look so
- * they are never mistaken for one another:
- *  - `delete`  permanently erases it (solid red, trash icon)
- *  - `archive` hides it but keeps it restorable (stone, archive-box icon)
- *  - `remove`  takes a row out of a list or form, not the record (white, X icon)
- * `danger` remains for other destructive actions that are none of these.
- */
 export type TableActionVariant = 'view' | 'print' | 'edit' | 'copy' | 'success' | 'danger' | 'delete' | 'archive' | 'remove' | 'neutral';
 
 interface TableActionButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -29,7 +21,6 @@ const variants: Record<TableActionVariant, string> = {
   neutral: 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100',
 };
 
-/** Consistent color-coded icon action used by tables and compact record cards. */
 export default function TableActionButton({
   label,
   variant = 'neutral',

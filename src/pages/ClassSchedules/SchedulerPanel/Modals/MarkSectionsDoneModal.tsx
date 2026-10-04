@@ -12,10 +12,6 @@ interface MarkSectionsDoneModalProps {
   isMarking: boolean;
   onConfirm: (sectionIds: string[]) => void;
   onCancel: () => void;
-  /**
-   * "done" locks plotting, "finalize" locks instructor assignment, "reassign"
-   * reopens finalized assignments. Same checklist in every case.
-   */
   variant?: SectionChecklistVariant;
   contextText?: string;
 }
@@ -34,11 +30,6 @@ const COPY: Record<SectionChecklistVariant, {
   closeLabel: string;
   working: string;
   confirm: (count: number) => string;
-  /**
-   * Which sections start ticked. Locking actions pre-check every ready section;
-   * reopening one only pre-checks the section that is open, so unlocking the
-   * whole department is never a single click.
-   */
   preselect: "ready" | "open";
 }> = {
   clear: {
@@ -102,12 +93,6 @@ const COPY: Record<SectionChecklistVariant, {
 const readyIdsOf = (candidates: SectionDoneCandidate[]): string[] =>
   candidates.filter((candidate) => candidate.isReady).map((candidate) => candidate.sectionId);
 
-/**
- * Bulk replacement for walking every section and clicking Done -- or Finalize --
- * one at a time. Ready sections are pre-checked; blocked ones stay visible
- * (disabled) with the reason, so the remaining work is obvious without leaving
- * the modal.
- */
 export default function MarkSectionsDoneModal({
   candidates,
   selectedSectionId,
@@ -125,8 +110,6 @@ export default function MarkSectionsDoneModal({
     cancelButtonRef.current?.focus();
     return () => previousFocus?.focus();
   }, [variant]);
-  // The modal is mounted only while open, so the ready sections are pre-checked
-  // once on mount instead of being resynced from an effect.
   const [selectedIds, setSelectedIds] = useState<string[]>(() => (
     COPY[variant].preselect === "open"
       ? readyIdsOf(candidates).filter((id) => id === selectedSectionId)

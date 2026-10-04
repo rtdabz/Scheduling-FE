@@ -105,8 +105,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
     return days[getPhilippineNowParts().weekdayIndex];
   });
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(initialViewMode);
-  // Hold the timetable until the room's borrowed windows are known, so the
-  // cards and the windows render together instead of in two passes.
   const { grants: roomGrants, ready: grantsReady } = useRoomGrants(room?.id ?? null);
   const activeDayGrants = useMemo(
     () => roomGrants
@@ -233,7 +231,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* Room Info Block */}
       <div className="room-detail-print-info flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans border-b border-gray-150 pb-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-[#5A1220]/10 text-[#5A1220] flex items-center justify-center border border-[#5A1220]/25">
@@ -258,7 +255,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
         </div>
       </div>
 
-      {/* Quick Stats Grid */}
       <div className="room-detail-print-info grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-sans mt-3">
         <div className="bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
           <p className="text-[9px] font-bold uppercase tracking-wider text-gray-450 mb-0.5">Building</p>
@@ -287,7 +283,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
         </div>
       </div>
 
-      {/* Weekly Timetable Section */}
       <div className="room-detail-print-grid flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">
         <div className="room-print-title hidden px-2 pb-2 text-base font-bold uppercase text-slate-900">
           {room.room_code} {room.building ? `- ${room.building}` : ''}
@@ -295,7 +290,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
         <div className="room-detail-print-toolbar flex items-center justify-between border-b border-gray-200 px-6 py-4 bg-gray-50/50 flex-wrap gap-3">
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Weekly Classroom Schedule</h3>
           
-          {/* View Mode Switcher */}
           <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200">
             <button
               onClick={() => setViewMode('list')}
@@ -376,7 +370,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0">
-            {/* Day Tabs */}
             <div className="flex border-b border-gray-200 overflow-x-auto bg-gray-50/50">
               {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
                 const count = schedules.filter(s => s.room_id === room.id && s.day === day).length;
@@ -404,7 +397,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
               })}
             </div>
 
-            {/* Day Schedules List */}
             <div className="flex-1 overflow-y-auto p-6">
               {activeDayGrants.length > 0 && (
                 <div className="mb-5 space-y-2">
@@ -442,7 +434,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
 
                     return (
                       <div key={sched.id} className="relative group">
-                        {/* Timeline node dot */}
                         <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center transition-colors ${
                           isCurrentlyRunning
                             ? 'border-emerald-500 ring-4 ring-emerald-100'
@@ -451,7 +442,6 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                           {isCurrentlyRunning && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
                         </div>
 
-                        {/* Schedule card box */}
                         <div className={`border rounded-2xl p-4 transition-all ${
                           isCurrentlyRunning
                             ? 'bg-emerald-50/20 border-emerald-150 shadow-sm'

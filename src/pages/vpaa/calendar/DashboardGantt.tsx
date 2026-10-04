@@ -14,7 +14,6 @@ interface DashboardGanttProps {
   isFullscreen: boolean;
 }
 
-/** Dashboard controls around the same renderer used by the Master Calendar. */
 export default function DashboardGantt({ schedules, allSchedules, standardHours, overlaps, now, onSelect, isFullscreen }: DashboardGanttProps) {
   const [period, setPeriod] = useState<'today' | 'week'>('today');
   const [deliveryMode, setDeliveryMode] = useState<'on-site' | 'online' | 'field'>('on-site');

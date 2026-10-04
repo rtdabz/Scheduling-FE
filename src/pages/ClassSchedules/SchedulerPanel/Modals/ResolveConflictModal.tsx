@@ -48,29 +48,10 @@ interface ResolveConflictModalProps {
   faculties: ResolveConflictOption[];
   canUpdateSchedule: boolean;
   canAssignInstructor: boolean;
-  /**
-   * The class the user clicked to get here. Its conflict is selected once the
-   * first scan answers, so the badge they clicked and this dialog are one flow
-   * rather than two. A row the server reports no conflict for simply leaves the
-   * list unselected.
-   */
   focusScheduleId?: number | null;
-  /**
-   * Narrows the list to these rules. Instructor Assignment passes
-   * `faculty_conflict`, because that is the only family whose fix -- change who
-   * teaches, or let it stand -- belongs on that screen. Left out, every rule is
-   * listed.
-   */
   rules?: ConflictRule[];
-  /** The tab shown first; the caller opens on Resolved when nothing is open. */
   initialTab?: "open" | "resolved";
-  /**
-   * Opens a class in the Schedule Builder's placement dialog, where its
-   * alternatives are offered. Given, the Rule issues tab is shown and each
-   * editable issue gets a fix button; left out, the tab is not offered.
-   */
   onOpenInBuilder?: (scheduleId: number) => void;
-  /** Called after any successful write so the caller reloads. */
   onResolved: () => void;
 }
 
@@ -80,7 +61,6 @@ const DELIVERY_MODES = [
   { value: "field", label: "Field" },
 ];
 
-/** The actions this modal applies itself, in the order the server lists them. */
 const APPLIABLE: ResolutionAction[] = [
   "move_schedule",
   "change_room",
@@ -93,7 +73,6 @@ const fieldClass =
 
 const hhmm = (time: string): string => time.slice(0, 5);
 
-/** Green for fixed, amber for allowed to stand, red for back on the open list. */
 const RESOLUTION_STATUS_CLASSES: Record<ConflictResolution["status"], string> = {
   resolved: "border-emerald-200 bg-emerald-50 text-emerald-800",
   overridden: "border-amber-200 bg-amber-50 text-amber-800",
@@ -109,18 +88,6 @@ const formatResolvedAt = (iso: string | null): string => {
     : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
 
-/**
- * The Resolve dialog: what is clashing, which class to change, and how.
- *
- * Everything it can do maps to an action the server already knows how to
- * validate, so nothing here decides whether a fix worked. The server re-scans
- * inside the same transaction as the write; this component only renders what
- * comes back. A refusal is shown with every violation the server named, and the
- * timetable is untouched -- the whole resolution rolled back.
- *
- * Recommended fixes are resolve requests too: each option carries the exact
- * body to send, so Apply and the manual forms share one path.
- */
 export default function ResolveConflictModal({
   isOpen,
   onClose,
@@ -137,8 +104,6 @@ export default function ResolveConflictModal({
   onResolved,
 }: ResolveConflictModalProps) {
   const { toast } = useToast();
-  // null until the first scan answers. Kept as a sentinel rather than a second
-  // `isLoading` flag so the opening effect never writes state synchronously.
   const [conflicts, setConflicts] = useState<ScheduleConflict[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -147,36 +112,23 @@ export default function ResolveConflictModal({
   const [reason, setReason] = useState("");
   const [violations, setViolations] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // The server's pro bono question for a reassignment, asked before anything is
-  // written. Answering No sends nothing, so the conflict stays exactly as it was.
   const [overloadPrompt, setOverloadPrompt] = useState<{
     confirmation: OverloadConfirmation;
     request: ResolutionRequest;
   } | null>(null);
-  // Ranked fixes for the selected conflict, tagged with the conflict they were
-  // asked for so a late answer for an earlier selection is simply not shown.
-  // `options: null` while the request is in flight.
   const [recommendations, setRecommendations] = useState<{
     conflictId: string;
     options: ConflictRecommendation[] | null;
   } | null>(null);
   const [applyingRank, setApplyingRank] = useState<number | null>(null);
   const [tab, setTab] = useState<"open" | "resolved" | "issues">(initialTab);
-  // null until the Rule issues tab is first opened: it re-runs every rule on
-  // every class, so it is read when asked for rather than with the list.
   const [ruleIssues, setRuleIssues] = useState<RuleIssue[] | null>(null);
-  // null until the Resolved tab is first opened, and again after any write so
-  // the next visit reads the new entry rather than a stale list.
   const [resolutions, setResolutions] = useState<ConflictResolution[] | null>(null);
 
-  // Filtered where the list is read rather than where it is stored, so a write
-  // that answers with the whole open set does not have to know about the filter.
   const open = useMemo(
     () => (conflicts ?? []).filter((conflict) => !rules || rules.includes(conflict.rule)),
     [conflicts, rules],
   );
-  // Derived, so a conflict someone else resolved simply stops being selected
-  // and the panel falls back to its placeholder.
   const selected = useMemo(
     () => open.find((conflict) => conflict.id === selectedId) ?? null,
     [open, selectedId],
@@ -186,22 +138,12 @@ export default function ResolveConflictModal({
     [selected, targetId],
   );
 
-  /**
-   * Scan, and -- when the dialog was opened from a class on the timetable --
-   * land on that class's conflict.
-   *
-   * The selection belongs to the scan rather than to a separate effect: it
-   * happens once, on the list this dialog opened with, so a later write that
-   * replaces the list cannot drag the user back to where they came in.
-   */
   const loadRecommendations = useCallback(async (conflictId: string) => {
     setRecommendations({ conflictId, options: null });
     let options: ConflictRecommendation[] = [];
     try {
       options = await fetchConflictRecommendations(conflictId);
     } catch {
-      // A failed or stale (404) lookup leaves the manual fixes, which are
-      // always there; it is not worth an error toast on top of the conflict.
     }
     setRecommendations((current) =>
       current?.conflictId === conflictId ? { conflictId, options } : current);
@@ -233,8 +175,6 @@ export default function ResolveConflictModal({
     }
   }, [departmentId, focusScheduleId, loadRecommendations, rules, semesterId, toast]);
 
-  // The dialog is mounted only while it is open, so one scan on mount is the
-  // whole of its loading: every later list comes back with a write's response.
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
@@ -270,7 +210,6 @@ export default function ResolveConflictModal({
     ? (["open", "resolved", "issues"] as const)
     : (["open", "resolved"] as const);
 
-  // Filtered like the open list, so Instructor Assignment sees only its rule.
   const shownResolutions = useMemo(
     () => (resolutions ?? []).filter((entry) => !rules || rules.includes(entry.rule as ConflictRule)),
     [resolutions, rules],
@@ -306,8 +245,6 @@ export default function ResolveConflictModal({
           : { action: "reassign_instructor", schedule_id: schedule.id, faculty_id: schedule.faculty_id });
   };
 
-  // Every write answers with the open list, so the panel is replaced rather
-  // than re-fetched, and a 409 means someone else already fixed it.
   const settle = (outcome: { status: string; remaining_conflicts: ScheduleConflict[] }) => {
     setConflicts(outcome.remaining_conflicts);
     setSelectedId(null);
@@ -346,10 +283,6 @@ export default function ResolveConflictModal({
     toast.error("Conflicts", details[0] ?? apiErrorMessage(err, fallback));
   };
 
-  /**
-   * One path for a manual fix and a recommended one: both are a resolve request,
-   * and both answer the pro bono question the same way.
-   */
   const send = async (request: ResolutionRequest, confirmOverload = false) => {
     if (!selected) return;
     setIsSubmitting(true);
@@ -358,8 +291,6 @@ export default function ResolveConflictModal({
       settle(await resolveConflict(selected.id, {
         ...request,
         reason: reason.trim() || undefined,
-        // Only after the user has seen the pro bono question: resolving the
-        // clash is not consent to push the instructor past their Basic Load.
         confirm_overload: confirmOverload || undefined,
       }));
       setOverloadPrompt(null);

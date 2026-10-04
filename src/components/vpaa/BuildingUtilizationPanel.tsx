@@ -3,17 +3,6 @@ import { Panel } from './DashboardPrimitives';
 import { grouped } from '../../lib/dashboardFormat';
 import type { VpaaInsights } from '../../lib/vpaaInsights';
 
-/**
- * Room utilisation, per building.
- *
- * Utilisation is booked minutes against the institution's own operating window,
- * not against a flat 24 hours — "62%" means 62% of the hours the campus actually
- * runs, which is the only figure a capital-planning conversation can use.
- *
- * A Dean sees this for their own rooms. Buildings are shared, so the campus-wide
- * rollup only exists here.
- */
-
 const COLUMNS = 'minmax(0,1.3fr) minmax(0,1fr) 64px 72px';
 
 const barFill = (utilization: number) => {

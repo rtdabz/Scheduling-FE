@@ -1,11 +1,8 @@
 import type { CSSProperties } from "react";
 
 export interface LoadingSpinnerProps {
-  /** Diameter of the spinner in pixels. */
   size?: number;
-  /** Spinner color. Defaults to the surrounding text color. */
   color?: string;
-  /** Accessible label announced while loading. */
   label?: string;
   className?: string;
 }
@@ -68,8 +65,6 @@ const spinnerStyles = `
 `;
 
 export default function LoadingSpinner({
-  // Compact by default so the spinner fits button-sized containers. Larger
-  // loading states pass an explicit size.
   size = 16,
   color = "currentColor",
   label = "Loading",

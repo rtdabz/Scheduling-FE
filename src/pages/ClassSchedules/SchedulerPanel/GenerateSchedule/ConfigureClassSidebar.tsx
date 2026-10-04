@@ -38,15 +38,7 @@ interface ConfigureClassSidebarProps {
   isFieldCourse: boolean;
   labSettings?: LaboratoryDurationSettings | null;
   roomOptions: PreferredRoomOption[];
-  /**
-   * Off, Sunday is not offered as a Required Day (the server refuses it), and
-   * a Consecutive Days run cannot reach it.
-   */
   sundayClassesEnabled?: boolean;
-  /**
-   * Step 1's Preferred Days. The run never places a class outside them, so
-   * no other day can be ticked or chosen here. Empty means any day.
-   */
   preferredDays?: string[];
   disabled: boolean;
   onClose: () => void;
@@ -66,7 +58,6 @@ const SELECT_CLASS =
 
 const TITLE_CLASS = "text-xs font-black uppercase tracking-wider text-slate-700";
 
-/** One setting: a title row, the control and an optional hint. */
 function ConfigSection({
   label,
   htmlFor,
@@ -105,7 +96,6 @@ function ConfigSection({
   );
 }
 
-/** A one-line explanation under a control; an error replaces it. */
 function Hint({ error = null, children }: { error?: string | null; children?: ReactNode }) {
   return (
     <p
@@ -221,12 +211,6 @@ function ResetLink({ disabled, onClick }: { disabled: boolean; onClick: () => vo
   );
 }
 
-/**
- * Configure Course Right Sidebar
- *
- * Appears from the right edge of the screen as a slide-over sidebar
- * (portaled to document.body, mirroring the main navigation sidebar on the left).
- */
 export default function ConfigureClassSidebar({
   course,
   sections,
@@ -243,20 +227,12 @@ export default function ConfigureClassSidebar({
   const configType = initialConfig.configuration;
   const shape = durationShape(initialConfig);
 
-  // Working local state: Class Component
-  // Lecture vs Laboratory is only a choice for a course with laboratory
-  // units; any other course is a lecture and the section is not shown.
   const hasLaboratory =
     Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
   const [component, setComponent] = useState<ClassComponent>(
     initialConfig.component === "field" ? "lecture" : initialConfig.component,
   );
 
-  // Consecutive Days: a Regular class met on several days, for its full
-  // length every day. The user ticks the exact days it meets, back-to-back
-  // (Thursday, Friday, Saturday) or not (Monday, Wednesday, Friday); their
-  // number is the run's length. Nothing is ticked for them, and a class
-  // cannot be applied until at least two days are.
   const [runEnabled, setRunEnabled] = useState<boolean>(isConsecutiveConfig(initialConfig));
   const isConsecutive = shape === "single" && runEnabled;
   const week = teachingWeek(sundayClassesEnabled);
@@ -282,7 +258,6 @@ export default function ConfigureClassSidebar({
       : meetingDays.length === 1
         ? "Tick at least two days."
         : null;
-  // No day ticked yet: not an error to show, but nothing to apply either.
   const meetingDaysMissing = isConsecutive && meetingDays.length === 0;
 
   const dayOffered = (day: string) =>
@@ -295,9 +270,6 @@ export default function ConfigureClassSidebar({
     setMeetingDays(week.filter((item) => ticked.includes(item)));
   };
 
-  // Custom Time Duration, entered in hours: the whole meeting (each day's,
-  // for a Consecutive Days class), or each of the two Split meetings. Hybrid
-  // Split is fixed; Integrated is below.
   const perMeeting = shape === "split" ? 2 : 1;
   const editableDuration = shape === "single" || shape === "split";
   const defaultMinutes = defaultDurationMinutes(course);
@@ -316,11 +288,6 @@ export default function ConfigureClassSidebar({
           : null
     : null;
 
-  // Integrated (On-site or Hybrid): the lecture and the laboratory are set
-  // separately and used exactly as entered. A blank field keeps the course's
-  // own length (one hour per lecture unit; the laboratory at three hours per
-  // unit or the department's Custom Lab Duration). No unit-derived total caps
-  // the pair; the server only requires each to fit the teaching day.
   const hybridDefaults = hybridLaboratoryMinutes(course, labSettings);
   const [lectureHours, setLectureHours] = useState<number | "">(
     initialConfig.lectureMinutes !== undefined ? initialConfig.lectureMinutes / 60 : "",
@@ -342,9 +309,6 @@ export default function ConfigureClassSidebar({
           : null;
 
   const [requiredDay, setRequiredDay] = useState<string>(initialConfig.requiredDay ?? "");
-  // A Required Day holds the course to one meeting on that day (the payload
-  // drops its Split/Hybrid markers), so a Split or Integrated course saves as
-  // a Regular class. Say so where it is chosen.
   const requiredDayCollapsesShape = requiredDay !== "" && shape !== "single";
   const compatibleRooms = useMemo(
     () => compatibleRoomOptions(course, initialConfig, isFieldCourse, roomOptions),
@@ -356,17 +320,12 @@ export default function ConfigureClassSidebar({
       ? initialConfig.preferredRoomId
       : "",
   );
-  // A course is a field course only while a field room is its Preferred
-  // Room (or its record requires the field). No preference schedules it like
-  // any other minor. Field status is a department rule, so it is saved for
-  // every section.
   const fieldRequired = course.roomTypeRequired === "field";
   const selectedRoom = compatibleRooms.find((room) => String(room.id) === preferredRoomId);
   const meetsInField = fieldRequired || selectedRoom?.room_type === "field";
   const classroomOptions = compatibleRooms.filter((room) => room.room_type !== "field");
   const fieldRoomOptions = compatibleRooms.filter((room) => room.room_type === "field");
 
-  // Section scope state
   const [sectionScope, setSectionScope] = useState<SectionScope>(
     initialConfig.sectionScope,
   );
@@ -395,14 +354,12 @@ export default function ConfigureClassSidebar({
       consecutiveDays: isConsecutive ? meetingDays.length : null,
       preferredStartDay: isConsecutive ? meetingDays[0] : null,
       meetingDays: isConsecutive ? meetingDays : null,
-      // A blank session stays unset, so it follows the course's own length.
       ...(isIntegratedShape(shape)
         ? {
             lectureMinutes: lectureHours === "" ? undefined : lectureMinutes,
             laboratoryMinutes: laboratoryHours === "" ? undefined : laboratoryMinutes,
           }
         : {}),
-      // A run cannot also be held to one Required Day.
       requiredDay: isConsecutive ? null : requiredDay || null,
       preferredRoomId: preferredRoomId || null,
       sectionScope,
@@ -469,8 +426,6 @@ export default function ConfigureClassSidebar({
         </>
       )}
     >
-      {/* Class Component: only for a course with laboratory units, or to say
-          it meets in the field. */}
       {(hasLaboratory || meetsInField) && (
         <ConfigSection label="Class Component">
           {meetsInField ? (
@@ -502,7 +457,6 @@ export default function ConfigureClassSidebar({
         </ConfigSection>
       )}
 
-      {/* Custom Time Duration */}
       <ConfigSection
         label="Custom Time Duration"
         htmlFor={editableDuration ? "configure-duration-hours" : undefined}
@@ -599,7 +553,6 @@ export default function ConfigureClassSidebar({
         )}
       </ConfigSection>
 
-      {/* Consecutive Days: a Regular class repeated on the ticked days */}
       {shape === "single" && (
         <ConfigSection label="Consecutive Days" labelId="configure-consecutive-days" optional>
           <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
@@ -624,8 +577,6 @@ export default function ConfigureClassSidebar({
               >
                 {week.map((day) => {
                   const checked = meetingDays.includes(day);
-                  // A day outside the Preferred Days that is already ticked
-                  // stays enabled, so it can be unticked.
                   const offered = dayOffered(day) || checked;
                   return (
                     <label
@@ -664,7 +615,6 @@ export default function ConfigureClassSidebar({
         </ConfigSection>
       )}
 
-      {/* Required Day */}
       <ConfigSection label="Required Day" htmlFor="configure-required-day" optional>
         <select
           id="configure-required-day"
@@ -675,11 +625,8 @@ export default function ConfigureClassSidebar({
         >
           <option value="">None</option>
           {DAYS.filter(
-            // A Sunday already saved stays visible so it can be cleared.
             (day) => day !== "Sunday" || sundayClassesEnabled || requiredDay === "Sunday",
           ).map((day) => (
-            // A saved day outside the Preferred Days stays selectable so the
-            // current value still shows and can be cleared.
             <option key={day} value={day} disabled={!dayOffered(day) && requiredDay !== day}>
               {day}
             </option>
@@ -694,7 +641,6 @@ export default function ConfigureClassSidebar({
         </Hint>
       </ConfigSection>
 
-      {/* Preferred Room */}
       <ConfigSection label="Preferred Room" htmlFor="configure-preferred-room" optional>
         {compatibleRooms.length === 0 ? (
           <Hint>
@@ -746,7 +692,6 @@ export default function ConfigureClassSidebar({
         )}
       </ConfigSection>
 
-      {/* Apply To */}
       <ConfigSection label="Apply To">
         <div className="grid grid-cols-2 gap-1.5">
           {(

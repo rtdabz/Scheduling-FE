@@ -21,13 +21,6 @@ import {
 import type { GenerationChange } from "../GenerateSchedule/generationChanges";
 import type { UnplacedCourse } from "../GenerateSchedule/draftReview";
 
-/**
- * Year-level generation runs on a queue worker and regularly outlives the
- * modal that started it. Ownership of the run therefore lives here, above the
- * generator, so closing the panel or reloading the page never orphans work
- * that is still in flight.
- */
-
 export type GenerationRunStatus =
   | "idle"
   | "queued"
@@ -41,7 +34,6 @@ export type GenerationResult = {
   applied_adjustments?: GenerationAdjustment[];
   generation_changes?: GenerationChange[];
   recommendations?: GenerationRecommendation[];
-  /** `partial`: no complete timetable existed; `unplaced_courses` lists what was left out. */
   status?: "complete" | "partial";
   message?: string;
   unplaced_courses?: UnplacedCourse[];
@@ -74,9 +66,6 @@ type GenerationRunSnapshot = {
 };
 
 const POLL_INTERVAL_MS = 1500;
-// On a slow link a status check can take longer than the interval itself, so
-// back off rather than keep the connection busy. A hidden tab needs no live
-// progress; it catches up the moment it is shown again.
 const SLOW_POLL_INTERVAL_MS = 5000;
 const HIDDEN_POLL_INTERVAL_MS = 10_000;
 
@@ -84,9 +73,6 @@ const pollDelayMs = (): number => {
   if (document.visibilityState === "hidden") return HIDDEN_POLL_INTERVAL_MS;
   return getConnectionStatus().quality === "online" ? POLL_INTERVAL_MS : SLOW_POLL_INTERVAL_MS;
 };
-// The queue worker not running is the most common reason a run never starts,
-// and it is not a generation failure. Surface it as its own hint well before
-// the server expires the run at its queue-wait limit.
 const WORKER_STALL_HINT_MS = 20_000;
 
 const idleSnapshot: GenerationRunSnapshot = {
@@ -108,15 +94,12 @@ const storageKeyFor = (departmentId: number | null, semesterId: number | null) =
 
 type GenerationRunContextValue = GenerationRunSnapshot & {
   isActive: boolean;
-  /** Result is ready but the user has not opened it yet. */
   hasUnreviewedResult: boolean;
   elapsedMs: number;
   workerStalled: boolean;
   start: (payload: unknown, meta: GenerationRunMeta) => Promise<void>;
   markReviewed: () => void;
-  /** Stop waiting locally without telling the server. */
   clear: () => void;
-  /** Stop the run itself: the worker unwinds at its next checkpoint. */
   cancel: () => Promise<void>;
 };
 
@@ -136,8 +119,6 @@ export function GenerationRunProvider({
   const [snapshot, setSnapshot] = useState<GenerationRunSnapshot>(idleSnapshot);
   const [reviewed, setReviewed] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  // Every queue submission supersedes the previous one: a stale poll response
-  // must never overwrite the run the user is actually waiting on.
   const requestIdRef = useRef(0);
   const storageKey = storageKeyFor(departmentId, semesterId);
 
@@ -147,7 +128,6 @@ export function GenerationRunProvider({
         if (runId) window.localStorage.setItem(storageKey, runId);
         else window.localStorage.removeItem(storageKey);
       } catch {
-        // A browser with storage disabled still tracks the run in memory.
       }
     },
     [storageKey],
@@ -186,16 +166,12 @@ export function GenerationRunProvider({
         ...current,
         status: "failed",
         result: null,
-        // A structured diagnostic drives the Recommended Adjustment panel; a
-        // plain message is shown as text instead.
         failure: parseYearLevelFailurePayload(run.result),
         errorMessage: run.error_message ?? "Year-level generation failed.",
       }));
       return;
     }
 
-    // A run still searching past the interim mark carries a provisional
-    // report; show it while the search goes on.
     const interim = run.status === "running" ? parseYearLevelFailurePayload(run.result) : null;
     setSnapshot((current) => ({
       ...current,
@@ -205,12 +181,6 @@ export function GenerationRunProvider({
     }));
   }, []);
 
-  /**
-   * Queue a run. Starting over one still in progress -- a fix applied from a
-   * provisional report -- replaces it: the new run shows as queued at once,
-   * with no idle moment in between, while the old one is cancelled on the
-   * server before the new one is queued, so it never waits behind it.
-   */
   const start = useCallback(
     async (payload: unknown, meta: GenerationRunMeta) => {
       const requestId = ++requestIdRef.current;
@@ -226,7 +196,6 @@ export function GenerationRunProvider({
       try {
         if (replacedRunId) {
           persistRunId(null);
-          // A run the server never cancelled still expires on its own limits.
           await api
             .post(`/schedule-recommendations/generation-runs/${replacedRunId}/cancel`)
             .catch(() => undefined);
@@ -268,8 +237,6 @@ export function GenerationRunProvider({
     setSnapshot(idleSnapshot);
   }, [persistRunId]);
 
-  // Cancel locally first so the spinner and the poll stop immediately; the
-  // request only has to reach the server eventually for the worker to notice.
   const cancel = useCallback(async () => {
     const runId = snapshot.runId;
     const wasActive = isActiveStatus(snapshot.status);
@@ -278,15 +245,11 @@ export function GenerationRunProvider({
     try {
       await api.post(`/schedule-recommendations/generation-runs/${runId}/cancel`);
     } catch {
-      // A run the server never cancelled still expires on its own limits.
     }
   }, [clear, snapshot.runId, snapshot.status]);
 
   const markReviewed = useCallback(() => setReviewed(true), []);
 
-  // Rehydrate after a reload or a return to the page. The stored id also
-  // recovers a finished run whose result was never applied; the server lookup
-  // is the fallback when this browser has no record of it.
   useEffect(() => {
     if (departmentId === null || semesterId === null) return;
     let cancelled = false;
@@ -340,7 +303,6 @@ export function GenerationRunProvider({
         );
         if (data.run) adopt(data.run);
       } catch {
-        // No recoverable run; the panel simply starts idle.
       }
     };
 
@@ -349,12 +311,9 @@ export function GenerationRunProvider({
     return () => {
       cancelled = true;
     };
-    // Restoration is per department/semester context, not per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [departmentId, semesterId, storageKey]);
 
-  // Poll only while the run is genuinely in flight. There is no client-side
-  // deadline: the server reconciles an orphaned run and reports it as failed.
   useEffect(() => {
     if (!snapshot.runId || !isActiveStatus(snapshot.status)) return;
     const requestId = requestIdRef.current;
@@ -374,8 +333,6 @@ export function GenerationRunProvider({
       } catch (error: unknown) {
         if (cancelled || requestIdRef.current !== requestId) return;
         const apiError = error as { response?: { status?: number } };
-        // A transient poll error should not kill a healthy run; only an
-        // unrecoverable one stops the loop.
         if (apiError.response?.status === 404) {
           setSnapshot((current) => ({
             ...current,
@@ -390,9 +347,6 @@ export function GenerationRunProvider({
       if (!cancelled) timer = window.setTimeout(tick, pollDelayMs());
     };
 
-    // Returning to the tab should show current progress, not wait out the
-    // longer hidden-tab interval. Only a loop that is waiting for its next
-    // tick is sped up; one that stopped (404, superseded) stays stopped.
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible" || inFlight || cancelled || timer === 0) return;
       window.clearTimeout(timer);
@@ -400,7 +354,6 @@ export function GenerationRunProvider({
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    // Poll once straight away so a fast run is not held back by the interval.
     timer = window.setTimeout(tick, 0);
 
     return () => {
@@ -410,13 +363,10 @@ export function GenerationRunProvider({
     };
   }, [applyRun, snapshot.runId, snapshot.status]);
 
-  // Elapsed time only ticks while something is running.
   const active = isActiveStatus(snapshot.status);
   useEffect(() => {
     if (!active) return;
     const tick = () => setNowMs(Date.now());
-    // The first tick is deferred so a restored run does not render a stale
-    // elapsed time for a full second.
     const immediate = window.setTimeout(tick, 0);
     const timer = window.setInterval(tick, 1000);
     return () => {

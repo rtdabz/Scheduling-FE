@@ -14,11 +14,6 @@ import {
   type DraftOption,
 } from "./draftReview";
 
-/**
- * The courses a generated draft still needs fixed, each with its ranked
- * placements. Choices are collected across courses and applied together; the
- * draft is then reviewed again, so the list only ever shows what is left.
- */
 export default function DraftIssuesPanel({
   issues,
   reviewing,
@@ -27,10 +22,8 @@ export default function DraftIssuesPanel({
   onApply,
   onRetry,
 }: {
-  /** `null` while the first review is still loading. */
   issues: DraftIssue[] | null;
   reviewing: boolean;
-  /** Why the generator could not place everything, when it could not. */
   message?: string | null;
   error?: string | null;
   onApply: (options: DraftOption[]) => void;
@@ -41,8 +34,6 @@ export default function DraftIssuesPanel({
     undefined,
   );
 
-  // Choices survive a fresh review only for the courses and options it still
-  // reports; everything else it resolved or replaced.
   const selected = useMemo(() => {
     const next: Record<string, string> = {};
     for (const issue of issues ?? []) {
@@ -53,8 +44,6 @@ export default function DraftIssuesPanel({
     }
     return next;
   }, [issues, picked]);
-  // The first course starts open; a course the review no longer reports
-  // hands that over to the new first one.
   const openKey =
     expandedKey === null
       ? null
@@ -73,8 +62,6 @@ export default function DraftIssuesPanel({
     [issues, selected],
   );
 
-  // Each course's options were found against the draft alone, so another
-  // course's approval may already hold the same hour, room or instructor.
   const takenBy = (issue: DraftIssue, option: DraftOption): string | null => {
     for (const other of issues ?? []) {
       if (other.key === issue.key) continue;
@@ -114,12 +101,9 @@ export default function DraftIssuesPanel({
     );
   }
 
-  // Nothing left: the summary above already says what was generated, and
-  // the apply that cleared the last course says so in its toast.
   if (issues.length === 0) return null;
 
   const withOptions = issues.filter((issue) => issue.options.length > 0);
-  // The review lists courses section by section already; keep that order.
   const groups: {
     sectionId: number;
     sectionName: string;
@@ -188,8 +172,6 @@ export default function DraftIssuesPanel({
                     type="button"
                     disabled={reviewing}
                     onClick={() => {
-                      // Other sections' approvals stand; this section's
-                      // are chosen afresh around them.
                       const keys = new Set(
                         approvable.map((issue) => issue.key),
                       );

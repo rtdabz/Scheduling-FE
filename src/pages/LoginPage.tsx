@@ -43,7 +43,6 @@ export default function LoginPage() {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [resetMismatch, setResetMismatch] = useState(false);
 
-  // The forgot-password dialog closes on Escape like every other dialog.
   useEffect(() => {
     if (!showForgot) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -76,8 +75,6 @@ export default function LoginPage() {
     const storage = rememberMe ? localStorage : sessionStorage;
     storage.setItem('token', response.token);
     storage.setItem('user', JSON.stringify(response.user));
-    // Start the inactivity window now, so a timestamp left by an earlier
-    // session cannot expire this one on its first screen.
     writeLastActivity(Date.now());
     navigateAfterLogin(response.user);
   };
@@ -158,7 +155,6 @@ export default function LoginPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUpdatingPassword) return;
-    // Caught here rather than by a round trip that only says "try again".
     if (resetPassword !== resetConfirmation) {
       setResetMismatch(true);
       return;
@@ -168,7 +164,6 @@ export default function LoginPage() {
       const { data } = await api.post<{ message: string }>('/reset-password', { token: resetToken, email: username, password: resetPassword, password_confirmation: resetConfirmation, invite: isInviteMode });
       toast.success(isInviteMode ? 'Account ready' : 'Password updated', data.message);
       leaveResetMode();
-      // Drop the spent token from the address bar so a refresh cannot resubmit it.
       window.history.replaceState(null, '', window.location.pathname);
       setPassword('');
     } catch (error) {
@@ -181,9 +176,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex w-full relative font-sans">
-      {/* Left Panel */}
       <div className="hidden md:flex flex-1 relative bg-[#4e0a10] overflow-hidden items-center justify-center p-12">
-        {/* Campus Background Image with Maroon Overlay */}
         <div className="absolute inset-0 z-0">
           <img
             src={campusBg}
@@ -194,7 +187,6 @@ export default function LoginPage() {
           <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/55" />
         </div>
 
-        {/* Content */}
         <div className="relative z-20 flex flex-col items-center text-center max-w-lg">
           <img src={logo} alt="TCC Logo" className="w-28 h-28 object-contain rounded-full mb-6 shadow-2xl ring-4 ring-[#C9952A]/40 bg-white/10 p-1 backdrop-blur-xs" />
           <h1 className="font-display text-4xl text-white font-bold mb-2 drop-shadow-md">Tagoloan Community College</h1>
@@ -204,9 +196,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel */}
       <div className="flex-1 flex items-center justify-center p-6 relative overflow-hidden bg-white">
-        {/* Perspective Grid Background Overlay */}
         <img
           src={loginPattern}
           alt=""
@@ -277,7 +267,6 @@ export default function LoginPage() {
               </button>
             </form>
           ) : <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
-            {/* Username Floating Label Input */}
             <div className="relative pt-1">
               <input
                 id="username"
@@ -301,7 +290,6 @@ export default function LoginPage() {
               </label>
             </div>
 
-            {/* Password Floating Label Input */}
             <div className="relative pt-1">
               <input
                 id="password"
@@ -334,7 +322,6 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {/* Remember Me and Forgot Password */}
             <div className="flex items-center justify-between mt-5 pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-text">
                 <input

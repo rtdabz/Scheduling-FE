@@ -25,7 +25,6 @@ export default function AppLayout() {
   const [user, setUser] = useState<StoredUser | null>(() => getStoredUser())
   const userId = user?.id
 
-  // One live-updates connection for the signed-in shell; sign-out closes it.
   useEffect(() => {
     if (userId) void startLiveUpdates(Number(userId))
   }, [userId])
@@ -104,23 +103,16 @@ export default function AppLayout() {
   }, [sidebarOpen])
 
   return (
-    // `fixed inset-0` rather than `h-screen`: an h-screen shell still sits in
-    // document flow, so the browser kept its own window scrollbar alongside
-    // <main>'s — two vertical scrollbars, side by side. Taking the shell out of
-    // flow leaves <main> as the only scroller on the page.
     <div className="fixed inset-0 flex overflow-hidden bg-[#F7F4F0] print:static print:h-auto print:w-full print:overflow-visible print:bg-white">
 
-      {/* Ends the session and explains why after a spell of inactivity. */}
       <SessionTimeoutGuard />
 
-      {/* Mobile overlay */}
       <div
         className={`fixed inset-0 z-30 bg-black/50 transition-opacity duration-300 ease-in-out md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />
 
-      {/* Sidebar */}
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -133,7 +125,6 @@ export default function AppLayout() {
         ${sidebarOpen ? 'w-0 md:w-72' : 'w-0 md:w-16'}
       `} />
 
-      {/* Main content */}
       <div
         className="flex flex-col flex-1 min-w-0 overflow-hidden print:block print:w-full print:overflow-visible"
       >
@@ -146,9 +137,6 @@ export default function AppLayout() {
           <div className="print:hidden">
             <PageHeader navItems={navItems} homePath={homePath} />
           </div>
-          {/* Keyed by path so each route gets a fresh boundary. The router has
-              transitions turned off (App.tsx); the key keeps this correct even
-              if a navigation is ever run inside a transition again. */}
           <Suspense key={location.pathname} fallback={<RouteLoadingBar />}>
             <Outlet />
           </Suspense>

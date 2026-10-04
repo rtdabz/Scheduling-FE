@@ -74,7 +74,6 @@ interface DropModalProps {
   setModalForceDayEnabled: (value: boolean) => void;
   modalForcedDayIndex: number;
   setModalForcedDayIndex: (value: number) => void;
-  /** Recommendation routes require `schedule.generate`, not a particular role. */
   canGenerateSchedule: boolean;
   manualSchedulingSettings: (LaboratoryDurationSettings & {
     forced_day_rules?: Array<{ course_id: number; day: string }>;
@@ -103,21 +102,11 @@ interface DropModalProps {
   modalValidationError: string;
   setModalValidationError: (value: string) => void;
   modalConflict: string | null;
-  /** This open dialog showed a conflict at some point. */
   modalWasConflicted?: boolean;
   isModalLoading: boolean;
   setDropContext: (value: DropContext | null) => void;
   handleModalConfirm: (e: React.FormEvent) => void;
-  /**
-   * Consecutive Days: the department's rule for this course and section. The
-   * class is placed as one run -- a starting day, one time and one room.
-   */
   modalRun?: ConsecutivePlacement | null;
-  /**
-   * Consecutive Days chosen in this dialog (2+ days), or null. For this
-   * placement only, like Generate's per-run rules. Without the setter the
-   * option is not offered.
-   */
   modalConsecutiveDays?: number | null;
   setModalConsecutiveDays?: (value: number | null) => void;
   checkConflict: (
@@ -139,7 +128,6 @@ const getDayIndex = (day: string): number => {
   return DAYS.findIndex((item) => item.toLowerCase() === day.toLowerCase());
 };
 
-/** Split Session's delivery, the same three Generate Schedule offers. */
 type SplitDelivery = "onsite" | "hybrid" | "online";
 
 export default function DropModal({
@@ -198,8 +186,6 @@ export default function DropModal({
   const availableDays = isSummerSemester ? DAYS.slice(0, 5) : DAYS;
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const hasLaboratoryUnits = Number(dropSubject?.labHours ?? 0) > 0;
-  // Alternatives open automatically on a conflict, or on request for a placement
-  // that is valid but not what the generator would choose.
   const [areRecommendationsRequested, setAreRecommendationsRequested] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [availableSlotRooms, setAvailableSlotRooms] = useState<AvailableSlotRoom[]>([]);
@@ -207,7 +193,6 @@ export default function DropModal({
   const [isSlotsLoading, setIsSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [roomFilter, setRoomFilter] = useState<string>(ALL_ROOMS);
-  /** Which half of a two-meeting pattern the slot list is answering for. */
   const [slotMeeting, setSlotMeeting] = useState<"first" | "second">("first");
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -215,16 +200,9 @@ export default function DropModal({
   const hasConflict = !!modalConflict;
   const shouldShowRecommendations = canUseRecommendations && (hasConflict || areRecommendationsRequested);
   const isTwoMeetingPattern = modalIsHybrid || modalSplitEnabled;
-  // A run is one class on N back-to-back days; its days follow the first.
   const currentRun = modalRun ? runStartingOn(modalRun, modalDay1Index) : null;
-  // The days ticked in Setup Courses: the class meets on exactly these.
   const preferredRun = modalRun ? tickedRun(modalRun) : null;
-  // Split Session and Hybrid Split meet at one time on both days; only a
-  // course with a laboratory gives its second meeting a time of its own.
   const isSameTimePair = isTwoMeetingPattern && !hasLaboratoryUnits;
-  // Integrated is a lecture plus a laboratory, as in Generate Schedule. Its
-  // delivery is carried by the lecture meeting -- online for Hybrid,
-  // face-to-face for On-Site -- so there is one source of truth for it.
   const isIntegrated = Boolean(modalIsHybrid && hasBoth);
   const isIntegratedOnSite = isIntegrated && modalDay2ClassMode !== "online";
   const tentativeSchedules = useMemo(() => schedules
@@ -256,34 +234,9 @@ export default function DropModal({
       };
     }), [dropSubject?.id, rooms, schedules, selectedSectionId]);
 
-  /**
-   * The exhaustive slot query. It asks for every delivery at once rather than
-   * the meeting's current mode: a Split Session whose second meeting is online
-   * still needs somewhere online to put it, and pinning the query to the first
-   * meeting's mode left the list showing rooms only. The server drops the
-   * deliveries this course cannot take, so asking for all three is safe.
-   *
-   * Length still matters, so a duration change re-asks.
-   */
-  /**
-   * The meeting the slot list is answering for.
-   *
-   * An Integrated pair is two different questions: a 3-hour on-site laboratory
-   * and a 2-hour online lecture. One list cannot serve both — asked with the
-   * laboratory's length and no meeting type, the server rightly refused every
-   * online candidate (a laboratory course cannot go online), so a conflict on
-   * the lecture half had no offered slot that would fix it.
-   *
-   * `meeting_type` is what lets the lecture half go online:
-   * SchedulingPolicy::allowsOnlineRoomFallback applies the lecture rule when a
-   * row names itself a lecture, rather than refusing it for the laboratory
-   * metadata its parent course carries.
-   */
   const slotMeetingPlan = useMemo(() => {
     const hasPartner = isTwoMeetingPattern && modalDay2Duration > 0;
     const isSecond = hasPartner && slotMeeting === "second";
-    // A same-time pair is intersected across both its days, so it must keep
-    // seeing both; every other two-meeting shape loses its partner's day.
     const excludedDays = hasPartner && !isSameTimePair
       ? [FULL_DAY_NAMES[isSecond ? modalDay1Index : modalDay2Index]]
       : [];
@@ -300,18 +253,10 @@ export default function DropModal({
     modalDay1Duration, modalDay2Duration, modalDay1Index, modalDay2Index, modalIsHybrid,
   ]);
 
-  /**
-   * The day the placement was dropped on -- where it collided. The server
-   * lists that day first and then moves day by day through the rest of the
-   * week. Read from dropContext, which holds still while the dialog is open,
-   * so applying an option on another day does not re-ask the server.
-   */
   const searchFromDay = dropContext ? FULL_DAY_NAMES[dropContext.dayIndex] : undefined;
 
   const availableSlotsPayload = useMemo(() => {
     if (!dropSubject || !selectedSectionId) return null;
-    // getSubjectTotalSlots rather than the `totalSlots` const below: this memo
-    // runs before that declaration in the component body.
     const durationSlots = slotMeetingPlan.durationSlots > 0
       ? slotMeetingPlan.durationSlots
       : getSubjectTotalSlots(dropSubject);
@@ -322,16 +267,9 @@ export default function DropModal({
       course_id: Number(dropSubject.id),
       duration_slots: durationSlots,
       meeting_type: slotMeetingPlan.meetingType,
-      // split_group_day_separation: two meetings of one course may not share a
-      // day, so the day its partner holds is not on offer. Excluded at the
-      // source rather than filtered here, so each room's count still matches
-      // the slots listed under it. A same-time pair is exempt: its view needs
-      // both days to intersect them.
       excluded_days: slotMeetingPlan.excludedDays,
       tentative_schedules: tentativeSchedules,
       ...(searchFromDay ? { search_from_day: searchFromDay } : {}),
-      // A run is offered only where one start and room is free on every day,
-      // and only on its ticked days when it has them.
       ...(modalRun ? {
         consecutive_days: modalRun.dayCount,
         meeting_type: null,
@@ -355,8 +293,6 @@ export default function DropModal({
     setIsSlotsLoading(true);
     setSlotsError(null);
 
-    // Debounced: dragging a start time through a select fires this on every
-    // keystroke otherwise.
     const timerId = window.setTimeout(() => {
       void api.post<AvailableSlotsResponse>(
         "/schedule-recommendations/available-slots",
@@ -386,12 +322,10 @@ export default function DropModal({
     };
   }, [shouldShowRecommendations, availableSlotsPayload]);
 
-  // Turning the pattern off leaves no second meeting to answer for.
   useEffect(() => {
     if (!isTwoMeetingPattern || modalDay2Duration <= 0) setSlotMeeting("first");
   }, [isTwoMeetingPattern, modalDay2Duration]);
 
-  // A room that no longer has any valid slot must not keep filtering the list.
   useEffect(() => {
     if (roomFilter === ALL_ROOMS) return;
     if (!availableSlotRooms.some((room) => slotRoomKey(room) === roomFilter)) {
@@ -406,19 +340,6 @@ export default function DropModal({
     [availableSlots, roomFilter],
   );
 
-  /**
-   * Start times a Split Session could move to as a whole.
-   *
-   * Both meetings of a same-time pair are hard-locked to one start, so a time
-   * only works when it is free on *both* pattern days — for the first meeting
-   * in its own room and mode, and for the second in its own. Offering the two
-   * days separately would have let the user pick a Monday time the Wednesday
-   * half could not take, and applying a single slot to a split silently
-   * collapsed it back to one meeting.
-   *
-   * The meetings' rooms and deliveries are read as the user set them, so a
-   * manually chosen F2F | Online pair survives the search.
-   */
   const splitPairStarts = useMemo(() => {
     if (!isSameTimePair || modalDay2Duration <= 0) return null;
 
@@ -438,7 +359,6 @@ export default function DropModal({
       }
     });
 
-    // Best first: the start nearest the one asked for, the earlier on a tie.
     const distance = (startSlot: number) => Math.abs(startSlot - modalDay1StartSlot);
     return [...firstStarts.entries()]
       .filter(([startSlot]) => secondStarts.has(startSlot))
@@ -449,20 +369,12 @@ export default function DropModal({
     modalDay1Index, modalDay2Index, modalClassMode, modalRoomId, modalDay2ClassMode, modalDay2RoomId,
   ]);
 
-  /**
-   * Moves the whole split to one start time. Days, rooms and deliveries are
-   * left exactly as they are: only the time was in question.
-   */
   const applySplitPairStart = (startSlot: number): void => {
     setModalDay1StartSlot(startSlot);
     setModalDay2StartSlot(startSlot);
     setModalValidationError("");
   };
 
-  /**
-   * Split Session's delivery, read from its two meetings: both online is an
-   * Online Split, exactly one online a Hybrid Split, anything else On-Site.
-   */
   const splitDelivery: SplitDelivery = modalClassMode === "online" && modalDay2ClassMode === "online"
     ? "online"
     : (modalClassMode === "online") !== (modalDay2ClassMode === "online")
@@ -507,20 +419,11 @@ export default function DropModal({
     setModalRoomId,
   ]);
 
-  /**
-   * The meeting the suggestions answer for, as the form holds it: its day,
-   * start and room. Best Match looks for alternatives on that day.
-   */
   const isSecondSlotMeeting = slotMeeting === "second" && isTwoMeetingPattern && modalDay2Duration > 0;
   const requestedDay = FULL_DAY_NAMES[isSecondSlotMeeting ? modalDay2Index : modalDay1Index];
   const requestedStartSlot = isSecondSlotMeeting ? modalDay2StartSlot : modalDay1StartSlot;
   const requestedRoomKey = isSecondSlotMeeting ? modalDay2RoomId : modalRoomId;
 
-  /**
-   * Best Match: the requested day's valid slots, ranked first by the soft
-   * preferences the Placement review notes -- what the Schedule Generator
-   * would prefer, a warning weighing more than an informational note.
-   */
   const bestMatches = useMemo(() => {
     if (!dropSubject || availableSlots.length === 0) return [];
     const isPlaced = (schedule: ScheduleItem) =>
@@ -567,16 +470,10 @@ export default function DropModal({
     dropSubject,
     balancedSplitSettingsOf(manualSchedulingSettings),
   );
-  // A delivery the meetings already have stays listed, so the select never
-  // shows a value it does not offer.
   const offersHybridSplit = isHybridSplitEligible(dropSubject) || splitDelivery === "hybrid";
   const offersOnlineSplit = (!modalFieldEnabled && isOnlineSplitEligible(dropSubject))
     || splitDelivery === "online";
-  // A course may be designated as Field by department settings even when its
-  // stored room_type_required value is still lecture/laboratory.
   const fieldEligible = dropSubjectIsField || isFieldSchedulingEligible(dropSubject);
-  // Locked only when the course record itself is a field course. Being on the
-  // department's field list is a default the scheduler may turn off.
   const fieldRequired = dropSubject.roomTypeRequired === "field";
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
@@ -615,20 +512,16 @@ export default function DropModal({
     const isPhysicalRoom = r.roomType === "lecture" || r.roomType === "laboratory";
     if (!isPhysicalRoom) return false;
 
-    // A mixed split needs both room types on offer, one per meeting.
     const hasLectureAndLabComponents =
       Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
     if (modalIsHybrid && hasLectureAndLabComponents) return isLabMeetingRoomType(r.roomType);
 
     const requiredRoomType = modalClassMode === "field" ? "field" : requiredRoomTypeForMeeting(dropSubject);
-    // A laboratory meeting takes the rooms the Default LAB Room Requirement allows.
     if (requiredRoomType === "laboratory") return isLabMeetingRoomType(r.roomType);
 
     return !requiredRoomType || r.roomType === requiredRoomType;
   });
 
-  // Integrated's second meeting is the lecture, so it needs a lecture room
-  // rather than the laboratory the first card is restricted to above.
   const secondMeetingRoomOptions = isIntegrated
     ? rooms.filter((room) => room.roomType === "lecture")
     : onSiteRoomOptions;
@@ -658,24 +551,12 @@ export default function DropModal({
         ? splitDelivery === "online" ? "Online split" : "Hybrid split"
         : modalClassMode.replace("-", " ");
 
-  /**
-   * Moves the meeting the suggestions answer for into the chosen slot. Only
-   * its day, start, room and delivery change; its length and pattern stay.
-   */
   const applyAvailableSlot = (slot: AvailableSlot): void => {
-    // A two-meeting pattern is not a single meeting: only the meeting whose
-    // day this slot belongs to moves; the other is left exactly as it is.
     if (isTwoMeetingPattern) {
       const slotDayIndex = getDayIndex(slot.day);
       const roomId = slot.room_id == null ? slot.mode : String(slot.room_id);
-      // The list was built for one meeting, so it applies to that meeting.
       const isSecondMeeting = slotMeeting === "second" && modalDay2Duration > 0;
 
-      // The pattern is moved with the day, never behind it. modalConflict
-      // validates against parsePreferredPattern(modalPreferredPattern), not the
-      // day indexes, so setting a day without the pattern left the dialog
-      // showing Wednesday while the conflict was still being judged on Tuesday.
-      // The day selects go through updateTwoMeetingPattern for the same reason.
       if (isSecondMeeting) {
         setModalDay2Index(slotDayIndex);
         updateTwoMeetingPattern(modalDay1Index, slotDayIndex);
@@ -696,7 +577,6 @@ export default function DropModal({
       return;
     }
 
-    // A single meeting, or a run listed on its first day: it starts there.
     setModalDay1Index(getDayIndex(slot.day));
     setModalClassMode(slot.mode);
     setModalRoomId(slot.room_id == null ? slot.mode : String(slot.room_id));
@@ -704,8 +584,6 @@ export default function DropModal({
     setModalValidationError("");
   };
 
-  // Force Day is the user's own constraint and is never rewritten by a
-  // suggestion: one on another day is shown but cannot be applied.
   const forcedDayName = modalForceDayEnabled ? FULL_DAY_NAMES[modalForcedDayIndex] : null;
 
   const handleIntegratedToggle = (enabled: boolean) => {
@@ -715,15 +593,11 @@ export default function DropModal({
     if (enabled) {
       const preservedDayIndex = modalDay1Index;
       const lectureSlots = getCourseSlotPlan(dropSubject).lectureSlots;
-      // Custom Lab Duration wins over three hours per unit, as in the Rule Engine.
       const laboratorySlots = laboratoryComponentSlots(dropSubject, manualSchedulingSettings);
       const secondDay = preservedDayIndex === modalDay2Index
         ? getFallbackMeetingDayIndex(preservedDayIndex)
         : modalDay2Index;
       setModalPreferredPattern(`days:${preservedDayIndex}-${secondDay}`);
-      // Preferred-pattern setters may synchronize both day fields. The day
-      // chosen before enabling Hybrid remains the laboratory day unless the
-      // user changes it explicitly.
       setModalDay1Index(preservedDayIndex);
       setModalDay2Index(secondDay);
       setModalDay1Duration(laboratorySlots);
@@ -732,8 +606,6 @@ export default function DropModal({
       setModalRoomId(rooms.find((room) => isLabMeetingRoomType(room.roomType) && room.status === "available")?.id ?? ROOM_TBA);
       setModalDay2ClassMode("online");
       setModalDay2RoomId("online");
-      // Keep Integrated active after configuring both required component
-      // meetings so the second card stays open.
       setModalIsHybrid(true);
     } else {
       setModalIsHybrid(false);
@@ -746,7 +618,6 @@ export default function DropModal({
   const sundayEnabled = Boolean(manualSchedulingSettings?.sunday_classes_enabled);
   const maxConsecutiveDays = teachingWeek(sundayEnabled).length;
 
-  /** A run is a Regular class repeated: every day meets for its full length. */
   const handleConsecutiveDaysChange = (dayCount: number) => {
     if (!setModalConsecutiveDays) return;
     setModalIsHybrid(false);
@@ -756,8 +627,6 @@ export default function DropModal({
     setIsDay2ModifiedByUser(false);
     setModalDay2Duration(0);
     if (!modalRun) setModalDay1Duration(getCourseSlotPlan(dropSubject).singleBlockSlots || totalSlots);
-    // Keep the start where it is when a run can begin there, else the nearest
-    // run that still covers the chosen day.
     setModalDay1Index(runStartForDay(
       { dayCount, preferredStartDay: null, runs: consecutiveDayRuns(dayCount, sundayEnabled) },
       modalDay1Index,
@@ -793,17 +662,12 @@ export default function DropModal({
     if (next === "integrated") return handleIntegratedToggle(true);
     if (next === "split") return handleSplitToggle(true);
     if (next === "consecutive") return handleConsecutiveDaysChange(DEFAULT_CONSECUTIVE_DAYS);
-    // Back to one meeting.
     if (meetingShape === "integrated") handleIntegratedToggle(false);
     else if (meetingShape === "split") handleSplitToggle(false);
     else setModalDay1Duration(totalSlots);
     setModalValidationError("");
   };
 
-  /**
-   * Integrated's delivery, the same two choices Generate Schedule offers: the
-   * laboratory is always on site, so only the lecture meeting moves.
-   */
   const handleIntegratedDeliveryChange = (delivery: "onsite" | "hybrid") => {
     if (delivery === "hybrid") {
       setModalDay2ClassMode("online");
@@ -838,11 +702,6 @@ export default function DropModal({
     }
   };
 
-  /**
-   * Split Session's delivery, the same choices Generate Schedule offers:
-   * On-Site keeps both meetings face-to-face, Hybrid moves the second online,
-   * and Online moves both. A meeting already on site keeps its room.
-   */
   const handleSplitDeliveryChange = (delivery: SplitDelivery) => {
     const lectureRoomId = rooms.find((room) => room.roomType === "lecture" && room.status === "available")?.id ?? "";
     const onSite = (mode: ClassMode, roomId: string): [ClassMode, string] =>
@@ -861,11 +720,6 @@ export default function DropModal({
     setModalValidationError("");
   };
 
-  /**
-   * Class Mode is a property of this meeting, not of the course: picking Field
-   * here puts one class in the field without adding the course to the
-   * department's field list. Only the Field Course checkbox does that.
-   */
   const handleModeSelect = (mode: ClassMode, isSecondMeeting: boolean) => {
     const currentRoomId = isSecondMeeting ? modalDay2RoomId : modalRoomId;
     const setMode = isSecondMeeting ? setModalDay2ClassMode : setModalClassMode;
@@ -880,17 +734,8 @@ export default function DropModal({
     setModalValidationError("");
   };
 
-  // The grid window is configurable, so the latest start is derived from it
-  // rather than the 24-slot day these selects used to assume.
   const gridSlotCount = slotCount();
 
-  /**
-   * Every meeting's length is typed in and never capped here: a length the
-   * rules refuse -- past the end of the teaching day, or over what the course
-   * carries (`class_duration`; an Integrated session is judged on its own) --
-   * is reported by the conflict check or the save. A same-time pair shares
-   * one length.
-   */
   const handleMeetingDurationChange = (isSecondMeeting: boolean, slots: number): void => {
     if (isSameTimePair) {
       setModalDay1Duration(slots);
@@ -901,7 +746,6 @@ export default function DropModal({
     setModalValidationError("");
   };
 
-  /** One session's length. It changes what the suggestions are asked for. */
   const handleIntegratedDurationChange = (isSecondMeeting: boolean, slots: number): void => {
     (isSecondMeeting ? setModalDay2Duration : setModalDay1Duration)(slots);
     setModalValidationError("");
@@ -914,8 +758,6 @@ export default function DropModal({
     ? `${slotToTimeStr(modalDay1StartSlot)} · ${slotsToHours(modalDay1Duration + modalDay2Duration)} contact hrs total`
     : `${slotToTimeStr(modalDay1StartSlot)} – ${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}${modalRun ? " each day" : ""}`;
 
-  // What the Schedule Generator would have said about this placement. Only
-  // meaningful once the placement is valid; a conflict already says enough.
   const plannedMeetings: PlannedMeeting[] = currentRun ? currentRun.map((day) => ({
     dayIndex: getDayIndex(day),
     startSlot: modalDay1StartSlot,
@@ -962,11 +804,6 @@ export default function DropModal({
       className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-slate-950/55 p-2 sm:p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
     >
-      {/*
-        The alternatives panel is two columns wide, so the shell has to grow
-        with it: at the old 2xl width the 600px panel ate the dialog's own
-        room, day and time fields.
-      */}
       <div className={`flex max-h-[94vh] w-full max-w-[96vw] flex-col gap-3 xl:flex-row xl:items-stretch ${
         shouldShowRecommendations
           ? "2xl:max-w-[1540px]"
@@ -1002,7 +839,6 @@ export default function DropModal({
           </button>
         </div>
 
-        {/* Pinned above the scrolling form so the conflict is visible without scrolling. */}
         {hasConflict && (
           <div role="alert" className="flex shrink-0 items-start gap-2.5 border-b border-red-200 bg-red-50 px-5 py-2.5">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
@@ -1196,7 +1032,6 @@ export default function DropModal({
                 if (modalRun) {
                   const run = runStartingOn(modalRun, index);
                   if (!run) return { value: index, label: `${day} (runs past the week)`, disabled: true };
-                  // A class with ticked days starts only on the first of them.
                   return preferredRun && run[0] !== preferredRun[0]
                     ? { value: index, label: `${day} (not the ticked days)`, disabled: true }
                     : { value: index, label: `${day} (${runLabel(run)})` };
@@ -1221,7 +1056,6 @@ export default function DropModal({
                 title={secondMeetingTitle}
                 mode={modalDay2ClassMode}
                 isModeDisabled={(mode) =>
-                  // Integrated's lecture follows the Delivery mode select above.
                   (modalIsHybrid && mode !== modalDay2ClassMode)
                   || (!modalIsHybrid && hasLaboratoryUnits && mode === "online")
                   || (fieldRequired && mode !== "field")

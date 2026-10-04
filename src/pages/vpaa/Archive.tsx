@@ -60,7 +60,6 @@ export default function Archive() {
   const [restoringKey, setRestoringKey] = useState<string | null>(null);
 
   const loadArchive = useCallback(async () => {
-    // A cached list stays on screen while it is replaced; only a cold key shows the skeleton.
     if (!hasCachedData(ARCHIVE_CACHE_KEY)) setLoading(true);
     setError('');
     try {
@@ -80,7 +79,6 @@ export default function Archive() {
     return () => window.clearTimeout(timer);
   }, [loadArchive]);
 
-  // Every type is always offered; an empty one shows a zero instead of vanishing.
   const availableTypes = Object.keys(typeLabels);
 
   const filteredRecords = useMemo(() => {
@@ -117,7 +115,6 @@ export default function Archive() {
     }
   };
 
-  // Rebuilt each render: the restore cell reads the live restoringKey.
   const columns: ColumnDef<ArchivedRecord>[] = [
     {
       id: 'label',
@@ -150,7 +147,6 @@ export default function Archive() {
       cell: ({ row }) => (
         <span className="text-xs text-gray-600 font-semibold whitespace-nowrap">
           {new Date(row.original.deleted_at).toLocaleString('en-US', {
-            // Pinned like every other date in the app; the browser's zone varied by device.
             timeZone: 'Asia/Manila',
             month: 'short',
             day: 'numeric',
@@ -196,16 +192,13 @@ export default function Archive() {
 
   return (
     <div id="archive-page" className="space-y-6 font-sans">
-      {/* Search and Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
-        {/* Search Input using reusable SearchInput component */}
         <SearchInput
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search archived records..."
         />
 
-        {/* Record Type Filter */}
         <div className="flex items-center gap-1.5">
           <Filter size={13} className="text-gray-400" />
           <select

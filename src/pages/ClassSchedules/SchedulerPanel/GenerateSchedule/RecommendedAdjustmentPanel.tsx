@@ -14,9 +14,7 @@ interface Props {
   onApplyAndRetry: (recommendation: GenerationRecommendation) => void;
   onReviewConstraints: (sectionId: number | null) => void;
   onCancel: () => void;
-  /** Provisional report only: hide it and keep waiting on the search. */
   onKeepSearching?: () => void;
-  /** Generate again with the configuration unchanged. */
   onRetry?: () => void;
 }
 
@@ -27,21 +25,12 @@ const outcomeLabels: Record<string, string> = {
   not_applicable: "nothing to change",
 };
 
-/**
- * A failed (or still searching) run as one summary: what blocked it in a
- * line, the fixes grouped by what they change, and the run's full evidence
- * folded away under Details. Every part used to be its own banner, and a
- * single failure could stack seven of them.
- */
 export default function RecommendedAdjustmentPanel({ failure, busy, onApplyAndRetry, onReviewConstraints, onCancel, onKeepSearching, onRetry }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const provisional = failure.provisional === true;
-  // Ran out of search time rather than proving nothing fits: the same
-  // settings may well work on another run, so that comes before any fix.
   const timedOut = !provisional && failure.searchIncomplete === true;
   const bottleneck = failure.bottleneck;
   const reviewSectionId = bottleneck?.section_id ?? null;
-  // The retry ladder's own first attempt is the configuration as entered.
   const fixesTried = failure.attempts.filter(
     (attempt) => attempt.strategy !== "baseline" && attempt.strategy !== "preflight_pattern" && attempt.outcome === "failed",
   ).length;

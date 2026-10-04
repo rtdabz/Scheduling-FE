@@ -31,14 +31,10 @@ export default function CurriculumFormModal({
   const [nameError, setNameError] = useState('');
   const [codeError, setCodeError] = useState('');
   const [effectiveYearError, setEffectiveYearError] = useState('');
-  // The curriculum belongs to the department that authors it; the server sets
-  // it from the signed-in account, so only that department's programs apply.
   const departmentId = isEditMode && curriculum?.department_id
     ? curriculum.department_id
     : getStoredUserDepartmentId();
   const departmentPrograms = programs.filter((program) => program.department_id === departmentId);
-  // A program head's curriculum is always their own program's; the server
-  // enforces it, so there is nothing to choose.
   const canChooseProgram = getStoredUserRole() !== 'program_head';
 
   useEffect(() => {
@@ -175,7 +171,6 @@ export default function CurriculumFormModal({
                 onChange={(e) => {
                   const value = e.target.value.replace(/\D/g, '');
                   setStartYear(value);
-                  // A school year spans consecutive years, so the second follows the first.
                   if (value.length === 4) setEndYear(String(Number(value) + 1));
                   setEffectiveYearError('');
                 }}

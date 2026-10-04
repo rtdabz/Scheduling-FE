@@ -2,17 +2,6 @@ import { createElement, type ReactNode } from "react";
 import type { Step } from "react-joyride";
 import { getStoredUser } from "../lib/storedUser";
 
-/**
- * Task-based interactive guide core.
- *
- * This module keeps the existing react-joyride tour library and adds a small
- * reusable action layer on top of it, so guides behave like game tutorials:
- * each step names an action, the user performs it on the real UI, and the
- * tour advances automatically. Steps are declared as data ({@link TaskGuideStep})
- * instead of hard-coded Joyride configuration.
- */
-
-/** Reusable interaction kinds a tour step can require from the user. */
 export type TourAction =
   | "click"
   | "select"
@@ -22,73 +11,23 @@ export type TourAction =
   | "navigate"
   | "complete";
 
-/** Declarative definition of one interactive tour step. */
 export interface TaskGuideStep {
-  /** Stable id used for progress tracking (must be unique within a tour). */
   id: string;
-  /** CSS selector of the element to spotlight. */
   target: string;
-  /** Action the user must perform before the tour continues. */
   action: TourAction;
-  /** Tooltip heading. */
   title: string;
-  /** Tooltip body copy. */
   text: string;
-  /** Short imperative hint, e.g. "Click Curriculum to continue". */
   taskHint?: string;
-  /**
-   * Expected location after the action (matched with endsWith against
-   * `window.location.pathname`). Used to detect navigation-driven steps.
-   */
   navigateTo?: string;
-  /**
-   * Selector the runner waits for before showing the step. Defaults to
-   * `target`. Useful when the spotlight target appears conditionally.
-   */
   waitFor?: string;
-  /**
-   * How long to wait for this step's target before giving up. Raise it for
-   * steps that follow genuinely slow work (a queued generation run). The
-   * clock is paused only while the target exists behind a dialog, so a
-   * selector that matches nothing still times out on schedule.
-   */
   waitTimeoutMs?: number;
-  /**
-   * Selector of a parent expander (e.g. a collapsed sidebar group) to click
-   * when `target` is not in the DOM yet.
-   */
   reveal?: string;
-  /**
-   * Skip this step (instead of ending the tour) when its target never mounts.
-   * Use for genuinely conditional UI, e.g. a program selector that only
-   * appears after a department with programs is chosen.
-   */
   skipIfMissing?: boolean;
-  /** Custom completion check; overrides the default per-action validation. */
   validate?: (element: Element) => boolean;
-  /**
-   * Which side of the target the tooltip sits on. Use `"center"` when the
-   * target is a whole panel rather than one control: an edge-anchored
-   * tooltip on an element that fills the viewport has nowhere to go and ends
-   * up with its header clipped off-screen, while a centered one stays
-   * readable and the spotlight still marks the panel.
-   */
   side?: "top" | "right" | "bottom" | "left" | "center";
   align?: "start" | "center" | "end";
 }
 
-/**
- * How a mission ended.
- *
- * - `completed`  — the user performed every step.
- * - `dismissed`  — the user deliberately exited (Exit tutorial / close).
- * - `aborted`    — the tour gave up on its own (a target never mounted, a
- *                  dialog closed, another tour took over).
- *
- * Only the first two are user decisions, so only they may be persisted as
- * "done". Persisting an abort would silently retire a guide the user never
- * actually saw.
- */
 export type TaskGuideOutcome = "completed" | "dismissed" | "aborted";
 
 const LOCATION_CHANGE_EVENT = "wicars:location-change";
@@ -109,28 +48,22 @@ export const isTaskTourDone = (tourId: string): boolean => {
   }
 };
 
-/** Marks a mission finished/dismissed so it never auto-starts again. */
 export const markTaskTourDone = (tourId: string): void => {
   try {
     localStorage.setItem(taskTourDoneKey(tourId), "true");
   } catch {
-    // Non-persistent environments can still run the tour in-memory.
   }
 };
 
-/** Clears completion so the mission can be restarted from Help. */
 export const clearTaskTourDone = (tourId: string): void => {
   try {
     localStorage.removeItem(taskTourDoneKey(tourId));
   } catch {
-    // Ignore storage failures; restart still works for this session.
   }
 };
 
-/** True for steps that require a real user action (no Next button). */
 export const stepRequiresAction = (step: TaskGuideStep): boolean => step.action !== "complete";
 
-/** Short game-tutorial verb for an action, shown as a pill in the tooltip. */
 export const actionVerb = (action: TourAction): string => {
   switch (action) {
     case "click": return "Click";
@@ -163,19 +96,8 @@ export const isElementVisible = (element: Element | null): element is HTMLElemen
   return element.getClientRects().length > 0;
 };
 
-/**
- * Modal layers the app puts over the page. Joyride's own tooltip also sets
- * `aria-modal` (with role="alertdialog"), and the guide hosts live in their
- * own detached roots, so both are excluded or the tour would treat itself as
- * the thing blocking the page.
- */
 const MODAL_SELECTOR = '[aria-modal="true"]:not([role="alertdialog"]), dialog[open]';
 
-/**
- * The topmost open modal layer, or null when nothing covers the page. Last
- * in document order approximates topmost: React appends later-opened
- * dialogs after earlier ones.
- */
 export const openModalLayer = (): HTMLElement | null => {
   let layer: HTMLElement | null = null;
   try {
@@ -184,17 +106,10 @@ export const openModalLayer = (): HTMLElement | null => {
       if (isElementVisible(node)) layer = node;
     }
   } catch {
-    // Old engines without :not() support simply see no modal layer.
   }
   return layer;
 };
 
-/**
- * True when an open modal covers `element`. A spotlight on a covered target
- * points at something the user cannot see or click, so the runner has to
- * wait for the dialog to close (or for a tour inside the dialog to take
- * over) instead of narrating the page underneath it.
- */
 export const isCoveredByModal = (element: Element): boolean => {
   const layer = openModalLayer();
   return layer !== null && !layer.contains(element);
@@ -203,17 +118,6 @@ export const isCoveredByModal = (element: Element): boolean => {
 const coveredBy = (layer: HTMLElement | null, element: Element): boolean =>
   layer !== null && !layer.contains(element);
 
-/**
- * True when the selector matches something that exists and is only out of
- * reach because a dialog sits over it.
- *
- * The distinction matters for the wait deadline: a target the user cannot
- * get to *yet* deserves patience, but a selector that matches nothing at all
- * is missing for its own reasons — an already-applied button that stays
- * disabled, a panel that never mounts — and must be allowed to time out even
- * though a dialog happens to be open. Treating every open dialog as a reason
- * to wait forever strands the mission on the first such step.
- */
 export const isSelectorCovered = (selector: string, root: ParentNode = document): boolean => {
   try {
     const layer = openModalLayer();
@@ -222,25 +126,19 @@ export const isSelectorCovered = (selector: string, root: ParentNode = document)
       if (isElementVisible(node) && coveredBy(layer, node)) return true;
     }
   } catch {
-    // Invalid selectors match nothing, so nothing is covered.
   }
   return false;
 };
 
-/** First visible, uncovered match for a selector, or null. */
 export const queryVisible = (selector: string, root: ParentNode = document): HTMLElement | null => {
   try {
     const nodes = root.querySelectorAll(selector);
     if (nodes.length === 0) return null;
-    // Resolve the blocking layer once per lookup rather than per candidate:
-    // this runs on a timer while a tour is open, and each call walks the
-    // document for open dialogs.
     const layer = openModalLayer();
     for (const node of nodes) {
       if (isElementVisible(node) && !coveredBy(layer, node)) return node;
     }
   } catch {
-    // Invalid selectors never match; the runner treats them as "not ready".
   }
   return null;
 };
@@ -251,47 +149,18 @@ export interface WaitForElementOptions {
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 12000;
-/**
- * How often DOM watchers re-check the page.
- *
- * Every check costs a `getComputedStyle` plus `getClientRects`, which forces
- * layout. Running that per animation frame was enough to make the whole app
- * feel sluggish while a tour was open, and nothing the tours watch for — a
- * panel mounting, a button enabling, a dialog opening — needs frame-rate
- * resolution. A DOM mutation still triggers a check immediately; this only
- * caps how often it can repeat.
- */
 export const DOM_POLL_INTERVAL_MS = 150;
 
-/**
- * Attributes worth re-checking on. Deliberately excludes `style`: Joyride
- * rewrites its tooltip's inline style every frame while positioning, and
- * watching that turns any document-wide observer into a per-frame loop.
- */
 export const WATCHED_ATTRIBUTES = ["class", "disabled", "aria-disabled", "aria-modal", "hidden", "open", "role"];
 
-/**
- * Anything the tour itself renders: its own hosts, and Joyride's portal,
- * overlay, spotlight and floating tooltip.
- */
 const GUIDE_OWN_SELECTOR = '[data-wicars-guide-root], #react-joyride-portal, [class*="react-joyride__"]';
 
-/**
- * True when every mutation came from the tour's own DOM. Reacting to those
- * would mean re-measuring the page in response to the tour's own paint — a
- * loop that never settles for as long as the tour is open.
- */
 export const isSelfInflicted = (records: MutationRecord[]): boolean =>
   records.every((record) => {
     const node = record.target instanceof Element ? record.target : record.target.parentElement;
     return node?.closest(GUIDE_OWN_SELECTOR) != null;
   });
 
-/**
- * Resolves with the first visible element matching `selector`, waiting for
- * React to mount it (MutationObserver, no arbitrary sleeps). Resolves null
- * on timeout so the caller can decide how to recover.
- */
 export const waitForElement = (
   selector: string,
   { timeoutMs = DEFAULT_WAIT_TIMEOUT_MS, root = document }: WaitForElementOptions = {},
@@ -310,10 +179,6 @@ export const waitForElement = (
       window.clearTimeout(timer);
       resolve(element);
     };
-    // The observer catches the target mounting; the interval is the backstop
-    // for changes it cannot see (a parent un-hiding, a dialog closing above
-    // the target). A frame-by-frame poll here made long waits — a queued
-    // generation run can hold one open for minutes — cost real frame budget.
     const check = () => {
       if (settled) return;
       const found = queryVisible(selector, root);
@@ -333,10 +198,6 @@ export const waitForElement = (
       });
     }
     pollId = window.setInterval(check, DOM_POLL_INTERVAL_MS);
-    // A target that exists but sits behind a dialog is not missing, only out
-    // of reach while the user is busy in that dialog: giving up on it would
-    // abandon the mission for as long as the dialog stays open. A selector
-    // that matches nothing still times out normally, dialog or not.
     let timer = 0;
     const arm = () => {
       timer = window.setTimeout(() => {
@@ -352,7 +213,6 @@ export const waitForElement = (
   });
 };
 
-/** Patches history once so SPA navigation can be observed like popstate. */
 let locationPatchInstalled = false;
 export const ensureLocationChangeEvents = (): void => {
   if (locationPatchInstalled || typeof window === "undefined" || !window.history) return;
@@ -394,7 +254,6 @@ const readControlValue = (container: Element): string | null => {
   return null;
 };
 
-/** Default completion check per action; custom `validate` always wins. */
 export const defaultValidate = (action: TourAction, element: Element): boolean => {
   switch (action) {
     case "select":
@@ -415,7 +274,6 @@ export const defaultValidate = (action: TourAction, element: Element): boolean =
   }
 };
 
-/** Actions whose step can already be satisfied before the user touches it. */
 const VALUE_ACTIONS = new Set<TourAction>(["select", "input", "toggle"]);
 
 const controlOf = (element: Element): Element => {
@@ -434,21 +292,6 @@ const isControlUnavailable = (element: Element): boolean => {
   ) && control.disabled;
 };
 
-/**
- * Why a step needs no action from the user, or null when it genuinely does.
- *
- * Two dead ends this rescues, both of which otherwise strand the tour with a
- * task that can never be performed and no Next button to escape with:
- *
- * - `"value"` — the control already holds the value the step asks for. A
- *   select with a single option, or a field the page pre-filled, fires no
- *   change event no matter what the user does.
- * - `"unavailable"` — the control is disabled here, so it cannot be clicked,
- *   typed into, or changed at all.
- *
- * The step still listens: acting on it anyway advances as usual. This only
- * decides whether the tooltip offers a way forward.
- */
 export type StepSatisfaction = "value" | "unavailable";
 
 export const stepSatisfaction = (step: TaskGuideStep, element: Element): StepSatisfaction | null => {
@@ -468,7 +311,6 @@ const matchesTarget = (event: Event, selector: string): Element | null => {
   if (!(target instanceof Element)) return null;
   const direct = target.closest(selector);
   if (direct) return direct;
-  // Submit events target the <form>; accept submits from controls inside it.
   if (event.type === "submit" && target instanceof HTMLFormElement) {
     if (target.matches(selector)) return target;
     return target.querySelector(selector);
@@ -476,11 +318,6 @@ const matchesTarget = (event: Event, selector: string): Element | null => {
   return null;
 };
 
-/**
- * Listens for the step's required action exactly once, then calls `onDone`.
- * Uses a single document-level capture listener per attachment and returns a
- * cleanup that removes every listener (call it on step change and unmount).
- */
 export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (() => void) => {
   if (step.action === "complete") return () => undefined;
   ensureLocationChangeEvents();
@@ -520,8 +357,6 @@ export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (()
     const onChange = (event: Event) => {
       const element = matchesTarget(event, step.target);
       if (!element) return;
-      // Filter bars hold several controls (search + selects). Validate the
-      // control that fired the event, not the wrapper's first nested input.
       const source = event.target;
       const control = source instanceof HTMLSelectElement
         || source instanceof HTMLInputElement
@@ -540,10 +375,6 @@ export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (()
       const element = matchesTarget(event, step.target);
       if (element) complete(element);
     };
-    // Fallback for targets that are not real <form>s (a dialog footer, a
-    // toolbar). A form target must wait for its own submit event: counting
-    // the button click instead would mark the task done even when the
-    // handler rejects the values and nothing was ever saved.
     const onClickSubmit = (event: Event) => {
       const clicked = event.target instanceof Element
         ? event.target.closest("[type='submit']")
@@ -557,7 +388,6 @@ export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (()
     return () => controller.abort();
   }
 
-  // click + toggle: any activating click on the spotlighted element counts.
   const onClick = (event: Event) => {
     const element = matchesTarget(event, step.target);
     if (element) complete(element);
@@ -575,7 +405,6 @@ export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (()
 
 const joyridePlacement = (step: TaskGuideStep): Step["placement"] => {
   const side = step.side ?? "bottom";
-  // Centered tooltips are not anchored to an edge, so alignment is moot.
   if (side === "center") return "center";
   if (!step.align || step.align === "center") return side;
   return (side + "-" + step.align) as Step["placement"];
@@ -586,16 +415,10 @@ export interface JoyrideTaskData {
   action: TourAction;
   taskHint: string;
   completed: boolean;
-  /** Set when the step needs no action from the user; see {@link stepSatisfaction}. */
   satisfied: StepSatisfaction | null;
   mission: string;
 }
 
-/**
- * Converts declarative task steps to Joyride steps. Body copy and completion
- * state travel in the step so the custom tooltip can render progress and the
- * no-Next-button rule without extra wiring.
- */
 export const toJoyrideSteps = (
   steps: TaskGuideStep[],
   completedIds: ReadonlySet<string>,

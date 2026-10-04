@@ -3,30 +3,12 @@ import { Clock } from "lucide-react";
 import Skeleton from "../ui/Skeleton";
 import { slotCount as gridSlotCount, slotMinutes, slotToTimeLabel } from "../../lib/timeGrid";
 
-/**
- * Canonical grid geometry, shared by every timetable in the system.
- *
- * Each screen used to pick its own row height, header height and time-column
- * width (24/26/28/34px rows, 40/44/48/54px headers, 62/80/88/96px gutters), so
- * the same 7:00 AM-8:30 PM window rendered at a different scale in the builder,
- * the approval modals, the room view and the dashboards. Cards are positioned
- * by grid row, so a screen that overrode the row height also had to repeat that
- * number in its card `height` calculation - and the two drifted apart.
- *
- * Override these per call site only when a layout genuinely cannot fit them.
- */
 export const GRID_SLOT_HEIGHT_PX = 24;
 export const GRID_HEADER_HEIGHT_PX = 48;
 export const GRID_TIME_COLUMN_WIDTH_PX = 80;
 
-/**
- * The time axis is labelled in 1.5-hour bands (7:00, 8:30, 10:00 ...), the
- * standard class period. Rows underneath stay 30 minutes so 1-hour and 2-hour
- * classes still position and conflict-check exactly.
- */
 const AXIS_BAND_MINUTES = 90;
 
-// Shared by calendar views that must use the same weekday ordering as the grid.
 // eslint-disable-next-line react-refresh/only-export-components
 export const WEEK_DAYS = [
   "Monday",
@@ -40,7 +22,6 @@ export const WEEK_DAYS = [
 
 interface WeeklyTimetableGridProps {
   days?: readonly string[];
-  /** Defaults to the configured 7:00 AM-8:30 PM window. */
   slotCount?: number;
   startSlot?: number;
   headerHeight?: number;
@@ -127,8 +108,6 @@ export default function WeeklyTimetableGrid({
 
       {Array.from({ length: slotCount }).map((_, slotOffset) => {
         const slot = startSlot + slotOffset;
-        // Bands are anchored to the grid opening, not to startSlot, so a
-        // trimmed view still reads 7:00, 8:30, 10:00 rather than shifting.
         const slotsIntoBand = ((slot % AXIS_BAND_SLOTS) + AXIS_BAND_SLOTS) % AXIS_BAND_SLOTS;
         const bandSpan = Math.min(AXIS_BAND_SLOTS - slotsIntoBand, slotCount - slotOffset);
         const endsBand = (slotsIntoBand + 1) % AXIS_BAND_SLOTS === 0;

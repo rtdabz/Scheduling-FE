@@ -1,29 +1,14 @@
-/**
- * The Generation Guide: a plain-language handbook of every option in the
- * Generate Schedule wizard. The guided tour shows *where* things are; this
- * says *what they mean* and how they affect the generated timetable.
- *
- * Keep an entry in step with the option it explains: its `term` is the
- * label the user sees in the wizard.
- */
-
 export type GuideEntry = {
-  /** The option's label, as the wizard shows it. */
   term: string;
-  /** What it means, in one or two sentences. */
   meaning: string;
-  /** When to use it. */
   whenToUse?: string;
-  /** A concrete example. */
   example?: string;
-  /** Limits and interactions with other options. */
   notes?: string[];
 };
 
 export type GuideChapter = {
   id: string;
   title: string;
-  /** Which wizard step it belongs to, shown as "Step 2". */
   step?: number;
   intro: string;
   entries: GuideEntry[];
@@ -274,7 +259,6 @@ export const GENERATION_GUIDE: GuideChapter[] = [
   },
 ];
 
-/** The chapter the guide opens on for each wizard step. */
 export const GUIDE_CHAPTER_FOR_STEP: Record<number, string> = {
   1: "configuration",
   2: "class-types",
@@ -282,7 +266,6 @@ export const GUIDE_CHAPTER_FOR_STEP: Record<number, string> = {
   4: "generate",
 };
 
-/** Entries whose text contains every word of `query`, grouped by chapter. */
 export function searchGuide(
   query: string,
   chapters: GuideChapter[] = GENERATION_GUIDE,

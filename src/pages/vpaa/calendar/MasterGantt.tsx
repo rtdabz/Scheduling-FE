@@ -24,14 +24,12 @@ import DepartmentLogo from '../../../components/ui/DepartmentLogo';
 import { LAB_PATTERN, OFF_HOURS_PATTERN, ZOOM_PX_PER_HOUR, overlapSummary, type Density, type ZoomLevel } from './ganttPresentation';
 
 const LANE_HEIGHT: Record<Density, number> = { comfortable: 66, compact: 44 };
-/** Below this width a block drops its badges so the course code is what survives. */
 const NARROW_BLOCK_PX = 88;
 const ROW_PADDING = 4;
 const AXIS_HEIGHT = 44;
 const DAY_HEADER_HEIGHT = 40;
 
 export interface MasterGanttHandle {
-  /** Scrolls the current time, and today's row when shown, into view. */
   scrollToNow: () => void;
 }
 
@@ -48,19 +46,14 @@ interface MasterGanttProps {
   onSelect: (schedule: CalendarSchedule) => void;
   now: Date;
   className?: string;
-  /** Continue the time grid through unused viewport space below the meetings. */
   fillHeight?: boolean;
-  /** Suppress sideways scrolling; only meaningful alongside zoom="fit", where the timeline already matches the viewport width. */
   lockHorizontalScroll?: boolean;
-  /** Time held for someone other than the classes drawn, e.g. a room lent to another department. */
   reservations?: readonly GanttReservation[];
-  /** Tint classes that already have an instructor green, overriding the department colour. */
   highlightAssigned?: boolean;
 }
 
 export interface GanttReservation {
   dayIndex: number;
-  /** Minutes from midnight. */
   start: number;
   end: number;
   label: string;
@@ -100,8 +93,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     ? Math.max(1, timelineMinWidth, viewportWidth - labelWidth)
     : hours * ZOOM_PX_PER_HOUR[zoom];
   const pixelsPerHour = trackWidth / hours;
-  // Ticks run in 90-minute steps from the window start (7, 8:30, 10, ...),
-  // widening to multiples of 90 minutes only when the track is too narrow.
   const tickStep = Math.max(1, Math.ceil(58 / (pixelsPerHour * 1.5))) * 90;
   const laneHeight = LANE_HEIGHT[density];
 
@@ -111,7 +102,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     return ticks;
   }, [timeWindow, tickStep]);
 
-  // Half-hour (slot) lines only once there is room for them to read as structure, not noise.
   const minorTicks = useMemo(
     () => (pixelsPerHour >= 120 ? buildTicks(timeWindow, standardHours.slotMinutes).filter((minute) => (minute - timeWindow.start) % tickStep !== 0) : []),
     [timeWindow, standardHours.slotMinutes, pixelsPerHour, tickStep],
@@ -142,7 +132,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     width: `${percentOf(to, timeWindow) - percentOf(from, timeWindow)}%`,
   });
 
-  /** Gridlines and off-hours shading behind one day's rows. */
   const trackBackdrop = (isToday: boolean) => (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">
       {timeWindow.start < standardHours.opening && <div className="absolute inset-y-0" style={{ ...span(timeWindow.start, standardHours.opening), ...OFF_HOURS_PATTERN }} />}
@@ -159,7 +148,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     </div>
   );
 
-  /** Per-slot load across a day, drawn in the day header so a collapsed day still shows its shape. */
   const dayReservations = (dayIndex: number) =>
     (reservations ?? []).filter((reservation) => reservation.dayIndex === dayIndex
       && reservation.end > timeWindow.start && reservation.start < timeWindow.end);
@@ -224,7 +212,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
       >
         <span className={`w-1 shrink-0 ${tone.accent}`} aria-hidden="true" />
         <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-1.5 py-1">
-          {/* The code keeps its full width; badges after it are what the block clips. */}
           <span className="flex min-w-0 items-center gap-1 overflow-hidden">
             <DepartmentLogo name={schedule.department?.department_name || schedule.department?.department_code || 'Department'} logo={schedule.department?.logo} className="h-4 w-4" iconSize={10} />
             <strong className="max-w-[calc(100%_-_1.25rem)] shrink-0 truncate text-[11px] font-black leading-tight">{code}</strong>
@@ -264,7 +251,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         className={`relative rounded-xl border border-slate-200 bg-white print:h-auto print:min-h-0 print:max-h-none print:overflow-visible ${lockHorizontalScroll ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto'} ${className}`}
       >
         <div className={fillHeight ? 'flex min-h-full flex-col [&>section]:shrink-0' : undefined}>
-        {/* Time axis, pinned to the top while the days scroll beneath it. */}
         <div className="sticky top-0 z-40 grid shrink-0 border-b border-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white" style={{ ...gridStyle, height: AXIS_HEIGHT }}>
           <div className="sticky left-0 z-10 flex items-center gap-1.5 border-r border-[#c9952a]/30 bg-[#45090e] px-3 text-[10px] font-black uppercase tracking-wider text-[#c9952a]">
             <Clock className="h-3.5 w-3.5" aria-hidden="true" />
@@ -273,7 +259,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
           <div className="relative">
             {hourTicks.map((minute) => {
               const left = percentOf(minute, timeWindow);
-              // Edge labels would hang outside the track, so they align inward instead of centring.
               const align = left >= 99 ? '-translate-x-full pr-1' : left <= 1 ? 'pl-1' : '-translate-x-1/2';
               return (
                 <span key={minute} className={`absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold tracking-wide ${align}`} style={{ left: `${left}%` }}>
@@ -307,7 +292,6 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
               aria-label={`${day.name}, ${day.count} ${day.count === 1 ? 'class' : 'classes'}`}
               className={`border-slate-200 ${fillHeight && day === days[days.length - 1] ? '' : 'border-b-2 last:border-b-0'}`}
             >
-              {/* Day header: pinned under the axis while its own rows are on screen. */}
               <div className="sticky z-30 grid border-b border-slate-200 bg-slate-50" style={{ ...gridStyle, top: AXIS_HEIGHT, height: DAY_HEADER_HEIGHT }}>
                 <button
                   type="button"

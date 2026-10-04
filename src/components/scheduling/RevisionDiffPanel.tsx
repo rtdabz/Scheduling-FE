@@ -39,8 +39,6 @@ interface RevisionDiffResponse {
 const meeting = (row: DiffRow | null): string => {
   if (!row) return '';
   const time = `${row.day ?? ''} ${formatTime12h(row.start_time)}–${formatTime12h(row.end_time)}`.trim();
-  // Online and field meetings have no room by design; only an on-site meeting
-  // without one is still waiting on a room (TBA).
   const room = row.mode === 'online' || row.mode === 'field'
     ? null
     : row.room?.room_code ?? 'Room TBA';
@@ -57,7 +55,6 @@ const previousLabel = (status: string): string => (
   status === 'rejected_by_dean' || status === 'rejected_by_vpaa' ? 'returned' : 'recalled'
 );
 
-/** One line of the details table: a single class meeting change. */
 interface DiffDetailRow {
   key: string;
   section: string;
@@ -116,11 +113,6 @@ function DiffDetailsModal({ sections, isOpen, onClose }: { sections: SectionDiff
   );
 }
 
-/**
- * What a resubmitted (Modified) version changed from the recalled or returned
- * version before it, so a reviewer sees the difference instead of a badge.
- * Read from both submit snapshots; instructor changes are not counted.
- */
 export default function RevisionDiffPanel({ submissionId }: { submissionId: number }) {
   const [sections, setSections] = useState<SectionDiff[] | null>(null);
   const [failed, setFailed] = useState(false);

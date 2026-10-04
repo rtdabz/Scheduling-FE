@@ -19,7 +19,6 @@ export default function CurriculumHeader({
 }: CurriculumHeaderProps) {
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-      {/* Back Button */}
       <button
         onClick={onBack}
         className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-[#4e0a10] transition-colors cursor-pointer"

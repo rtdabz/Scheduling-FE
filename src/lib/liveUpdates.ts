@@ -3,22 +3,6 @@ import { invalidateCacheGroups, type CacheGroupName } from './cacheGroups';
 import { registerLiveDisconnect, setLiveSocketState } from './liveSocket';
 import type Pusher from 'pusher-js';
 
-/**
- * Real-time updates over WebSocket (Laravel Reverb, Pusher protocol).
- *
- * The server never pushes records, only the names of what changed
- * ("schedules", "approvals", ...). On each signal this module:
- *   1. drops the matching dataCache groups, so the next read is fresh, and
- *   2. tells mounted pages, which refetch through their normal API calls.
- *
- * Keeping it light:
- *   - pusher-js is loaded on demand after sign-in, not in the initial bundle;
- *   - bursts are coalesced into one refresh per DEBOUNCE_MS;
- *   - a hidden tab only invalidates its cache and refreshes when shown again;
- *   - refetches hit the API's ETag/304 path, so unchanged payloads are cheap.
- * If the socket is unavailable the app keeps working exactly as before.
- */
-
 export const LIVE_TOPICS = [
   'schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty',
   'courses', 'curriculum', 'departments', 'users', 'settings', 'notifications',
@@ -32,7 +16,6 @@ export interface LiveUpdateDetail {
   topics: LiveTopic[];
 }
 
-/** Topics that also change the figures on the role dashboards. */
 const DASHBOARD_TOPICS: ReadonlySet<LiveTopic> = new Set([
   'schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'curriculum',
 ]);
@@ -53,11 +36,6 @@ const TOPIC_CACHE_GROUPS: Record<LiveTopic, CacheGroupName[]> = {
 };
 
 const DEBOUNCE_MS = 300;
-/**
- * After a reconnect every topic is refetched. Waiting a moment (with jitter, so
- * every open tab does not refetch at once) lets a connection that is flapping
- * settle, and a drop before the wait ends cancels the refetch outright.
- */
 const RESYNC_DELAY_MIN_MS = 1000;
 const RESYNC_DELAY_JITTER_MS = 2000;
 
@@ -81,9 +59,7 @@ const cancelResync = (): void => {
   resyncTimer = undefined;
 };
 
-/** Exported for tests. Signals sent while the socket was down are lost; catch up once. */
 export const scheduleResync = (random: () => number = Math.random): void => {
-  // Cached data is already out of date, so drop it now; only the refetch waits.
   invalidateTopics(LIVE_TOPICS);
   cancelResync();
   resyncTimer = window.setTimeout(() => {
@@ -110,12 +86,10 @@ const invalidateTopics = (topics: readonly LiveTopic[]): void => {
   invalidateCacheGroups(...groups);
 };
 
-/** Record topics as changed. Exported for tests and for same-tab broadcasts. */
 export const publishLiveTopics = (topics: readonly LiveTopic[]): void => {
   if (topics.length === 0) return;
 
   topics.forEach((topic) => pending.add(topic));
-  // Invalidate right away, even in a hidden tab, so navigating shows fresh data.
   invalidateTopics(topics);
 
   if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
@@ -144,11 +118,6 @@ export const stopLiveUpdates = (): void => {
   registerLiveDisconnect(null);
 };
 
-/**
- * Open the connection for the signed-in user. Safe to call repeatedly; any
- * failure (socket server down, broadcasting disabled) leaves the app on its
- * existing request-driven refresh.
- */
 export const startLiveUpdates = (userId: number): Promise<void> => {
   if (startedForUser === userId && (client || starting)) return starting ?? Promise.resolve();
   stopLiveUpdates();
@@ -176,8 +145,6 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
         channelAuthorization: {
           endpoint: '/broadcasting/auth',
           transport: 'ajax',
-          // Authorise through the API client: same base URL, bearer token and
-          // 401 handling as every other request.
           customHandler: ({ socketId, channelName }, callback) => {
             api.post('/broadcasting/auth', { socket_id: socketId, channel_name: channelName })
               .then(({ data }) => callback(null, data))
@@ -195,7 +162,6 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
         setLiveSocketState(isConnected ? pusher.connection.socket_id : null, isConnected);
 
         if (!isConnected) {
-          // Dropped again before catching up; the next reconnect reschedules.
           cancelResync();
           return;
         }
@@ -209,8 +175,6 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
       });
 
       const userChannel = pusher.subscribe(`private-App.Models.User.${userId}`);
-      // The account signed in on another device. Any tab not holding the new
-      // token makes one request, whose 401 runs the normal sign-out and notice.
       userChannel.bind('session.replaced', (payload: { token_id?: unknown }) => {
         const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
         if (token.split('|')[0] !== String(payload?.token_id)) {
@@ -221,7 +185,6 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
         publishLiveTopics(['notifications']);
       });
     } catch {
-      // Realtime is an enhancement; the app works without it.
     } finally {
       starting = null;
     }

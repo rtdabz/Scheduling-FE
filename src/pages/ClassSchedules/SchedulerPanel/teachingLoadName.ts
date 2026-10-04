@@ -1,6 +1,5 @@
 import type { Faculty } from "./types";
 
-/** "CBA" / "secretary demo" -> "Cba" / "Secretary Demo": first letter of each word only. */
 const capitalizeWords = (text: string) =>
   text.toLowerCase().replace(/(^|\s)(\S)/g, (_, gap: string, letter: string) => gap + letter.toUpperCase());
 
@@ -27,14 +26,6 @@ const parseFacultyName = (name: string) => {
   return { surname, givenName, mi };
 };
 
-/**
- * The sheet's name fields, read from the stored parts rather than re-split from
- * `name`, which carries first and last name only: splitting it lost every
- * middle initial and suffix. `middle_name` holds a full name or just an
- * initial, so only its first letter is used. The suffix rides with the given
- * name, as on the Personal Data Sheet's name extension, and is printed as
- * stored -- "III" must not become "Iii".
- */
 export const facultyNameParts = (faculty: Faculty) => {
   if (!faculty.firstName || !faculty.lastName) {
     const parsed = parseFacultyName(faculty.name);

@@ -18,7 +18,6 @@ import { departmentTone } from './departmentPalette';
 
 interface ScheduleDetailModalProps {
   schedule: CalendarSchedule | null;
-  /** Every loaded meeting, unfiltered, so sibling meetings hidden by a filter still list. */
   allSchedules: readonly CalendarSchedule[];
   overlaps: ReadonlyMap<number, OverlapEntry[]>;
   onClose: () => void;

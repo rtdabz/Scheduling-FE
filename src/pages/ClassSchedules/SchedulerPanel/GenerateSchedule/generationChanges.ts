@@ -16,12 +16,10 @@ export type GenerationChangeItem = {
   course_id: number;
   course_code: string;
   detail: string;
-  /** The retry adjustment behind a `preference_relaxed` item. */
   adjustment_type?: string;
   adjustment_value?: string | null;
 };
 
-/** What blocked the original configuration and made the generator retry. */
 export type GenerationDetectedIssue = {
   type: string;
   section_name: string;
@@ -29,7 +27,6 @@ export type GenerationDetectedIssue = {
   detected_cause: string;
 };
 
-/** One kind of difference between what was configured and what was generated. */
 export type GenerationChange = {
   kind: GenerationChangeKind | string;
   severity: "warning" | "critical" | string;
@@ -38,13 +35,10 @@ export type GenerationChange = {
   items: GenerationChangeItem[];
   status?: "active" | "resolved" | string;
   resolved?: boolean;
-  /** `preference_relaxed` only; absent on runs made before it was reported. */
   detected_issue?: GenerationDetectedIssue | null;
-  /** `preference_relaxed` only: attempts that failed before the retry that worked. */
   failed_attempts?: number;
 };
 
-/** Short labels for the badge a changed class carries in the summary table. */
 const badgeLabels: Record<string, string> = {
   preference_relaxed: "Preference changed",
   split_session_single_meeting: "One meeting",
@@ -55,12 +49,6 @@ const badgeLabels: Record<string, string> = {
 export const classKey = (sectionId: number | string, courseId: number | string) =>
   `${sectionId}|${courseId}`;
 
-/**
- * The run's change report. Runs finished before the server produced
- * `generation_changes` only carry the applied retry strategy, so that is
- * rebuilt into the same shape rather than showing such a run as unchanged.
- * `null` means the run's changes are unknown.
- */
 export function resolveGenerationChanges(result: {
   generation_changes?: GenerationChange[] | null;
   applied_strategy?: AppliedStrategy | null;
@@ -69,8 +57,6 @@ export function resolveGenerationChanges(result: {
   if (!result) return null;
   if (Array.isArray(result.generation_changes)) return result.generation_changes;
 
-  // Without the server report a run cannot be called unchanged: it may still
-  // hold online or Room TBA fallbacks that only the report lists.
   const adjustments = result.applied_adjustments ?? [];
   if (!result.applied_strategy || adjustments.length === 0) return null;
 
@@ -108,7 +94,6 @@ export function resolveGenerationChanges(result: {
   ].filter((change) => change.items.length > 0);
 }
 
-/** Every badge a class earns, keyed by `classKey`, in report order. */
 export function changeBadgesByClass(changes: GenerationChange[]): Map<string, GenerationChange[]> {
   const byClass = new Map<string, GenerationChange[]>();
   for (const change of changes) {

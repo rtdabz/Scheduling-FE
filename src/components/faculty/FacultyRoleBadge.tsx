@@ -1,20 +1,10 @@
-/**
- * Kept as a loose string rather than a union of three role names. Roles and
- * designations are both data — a new one must not need a type edit before it
- * can be displayed.
- */
 export type FacultyAdministrativeRole = string;
 
 interface FacultyRoleBadgeProps {
-  /** A slugged value such as an account role; humanised for display. */
   role?: string | null;
-  /** An already-human label (a designation name) shown verbatim. */
   label?: string | null;
-  /** `gold` distinguishes a designation from the maroon account-role badge. */
   tone?: 'maroon' | 'gold';
-  /** Appended in parentheses, e.g. the deload a designation carries. */
   hint?: string | null;
-  /** When true, renders designation on line 1 (no wrapping) and units on line 2 directly below. */
   stacked?: boolean;
 }
 
@@ -23,7 +13,6 @@ const TONES = {
   gold: 'border-[#C9952A]/30 bg-[#C9952A]/10 text-[#8a6412]',
 } as const;
 
-/** `program_head` -> `Program Head`. Works for any value the server sends. */
 const humanise = (value: string): string =>
   value
     .replace(/[_-]+/g, ' ')

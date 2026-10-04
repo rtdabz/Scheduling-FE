@@ -56,21 +56,9 @@ interface TimetableGridProps {
   isWideView?: boolean;
   handleToggleWideView?: () => void;
   isReadOnlyViewer?: boolean;
-  /**
-   * Shown over the grid while a save that will replace its rows is in flight,
-   * which also keeps the rows about to be replaced from being edited.
-   */
   savingMessage?: string | null;
 }
 
-/**
- * Timetable grid, in both layouts.
- *
- * `isWideView` used to select between this component and a 323-line copy in
- * WideTimetableGrid.tsx that differed in five places: the scroll container, the
- * grid's minimum width, the course-bank toggle's label and styling, and whether
- * ScheduleCard rendered its wide variant. Those five are now derived here.
- */
 export default function TimetableGrid({
   sections,
   rooms,
@@ -234,8 +222,6 @@ export default function TimetableGrid({
             </div>
           </div>
         )}
-        {/* A selected card carries its own Edit / Remove tooltip; the banner is
-            only for a course armed from the Course Bank, which has no card yet. */}
         {placementSubjectId && !movingScheduleId && (
           <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
             <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />
@@ -271,9 +257,6 @@ export default function TimetableGrid({
               headerHeight={GRID_HEADER_HEIGHT_PX}
               rowTemplate={`repeat(${timetableSlotCount}, ${SLOT_HEIGHT_PX}px)`}
               minWidth={isWideView ? 0 : 900}
-              // Never `flex-1`: the rows are fixed pixels, so growing the grid
-              // past their total only paints blank space inside its border when
-              // the row is stretched by a taller Course Bank.
               className="shrink-0"
               isLoading={isLoading}
               disabledDayIndexes={isSummerSemester ? [5, 6] : []}
@@ -332,8 +315,6 @@ export default function TimetableGrid({
                 ))
               ) : (
                 sectionSchedules.map((schedule) => {
-                  // A course missing from `subjects` still holds its slot, so the
-                  // card is rendered degraded rather than dropped.
                   const { subject } = resolveScheduleSubject(schedule, subjectsById);
                   return (
                     <ScheduleCard
@@ -368,8 +349,6 @@ export default function TimetableGrid({
         )}
       </div>
 
-      {/* Fixed to the top of the viewport: below the grid it was off-screen
-          whenever the user had scrolled to the slot they dropped on. */}
       {conflictInfo && (
         <div
           role="alert"

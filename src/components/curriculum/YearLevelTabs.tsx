@@ -20,7 +20,6 @@ export default function YearLevelTabs({
 }: YearLevelTabsProps) {
   return (
     <div className="bg-white rounded-2xl p-2 border border-gray-200/80 shadow-sm mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-      {/* Horizontal Tab Buttons */}
       <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-gray-50/80 rounded-xl border border-gray-100">
         {[1, 2, 3, 4].map((year) => {
           const isSelected = selectedYear === year;
@@ -50,7 +49,6 @@ export default function YearLevelTabs({
         })}
       </div>
 
-      {/* Selected Year Summary Info */}
       <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 font-semibold shrink-0">
         <span>Year {selectedYear} Total:</span>
         <span className="bg-[#4e0a10]/10 text-[#4e0a10] font-bold px-2.5 py-0.5 rounded-full">

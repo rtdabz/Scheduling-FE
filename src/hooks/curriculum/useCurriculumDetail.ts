@@ -96,8 +96,6 @@ export function useCurriculumDetail(id: string | undefined) {
     }
   }, []);
 
-  // A major's program decides which instructors may teach it, so the course
-  // editor needs the department's programs to choose from.
   const fetchPrograms = useCallback(async (departmentId?: number | null) => {
     try {
       const params = departmentId ? `?department_id=${departmentId}` : '';
@@ -225,8 +223,6 @@ export function useCurriculumDetail(id: string | undefined) {
       if (!id || !coursesInput || coursesInput.length === 0) return;
 
       const normalizeCode = (code: string) => code.trim().replace(/\s+/g, ' ').toUpperCase();
-      // A code already in this curriculum, or repeated in this batch, is a
-      // duplicate: reject the row instead of listing the course twice.
       const takenCodes = new Set(
         semesters.flatMap((t) => t.courses.map((c) => normalizeCode(c.code))),
       );
@@ -251,7 +247,6 @@ export function useCurriculumDetail(id: string | undefined) {
 
       if (validRows.length === 0) return;
 
-      // Report "saving" progress for each row before sending the request
       if (onProgress) {
         for (const item of validRows) {
           onProgress(item.rowId, 'saving');
@@ -260,8 +255,6 @@ export function useCurriculumDetail(id: string | undefined) {
 
       try {
         const payload = validRows.map((item) => ({
-          // Curriculum units stay academic units. Laboratory contact-hour
-          // expansion belongs only to scheduling, not course data.
           units: (item.lecUnits ?? 0) + (item.labUnits ?? 0),
           row_id: item.rowId,
           course_code: item.trimmedCode,
@@ -291,7 +284,6 @@ export function useCurriculumDetail(id: string | undefined) {
               onProgress(rowId, 'success');
             }
             if (courseData) {
-              // Add to allCourses catalog if not already in it
               const exists = allCourses.some((c) => c.id === courseData.id);
               if (!exists) {
                 setAllCourses((prev) => [...prev, courseData]);
@@ -414,7 +406,6 @@ export function useCurriculumDetail(id: string | undefined) {
         invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
         toast.success('Course Removed', `${courseCode} removed from curriculum.`);
       } catch (error) {
-        // The server says why, e.g. a section still has the course scheduled.
         toast.error('Error', apiErrorMessage(error, 'Failed to remove course.'));
         fetchCurriculum(true);
       } finally {
@@ -437,8 +428,6 @@ export function useCurriculumDetail(id: string | undefined) {
       if (!id) return;
       const { courseId, courseCode, courseName, courseCategory, lecUnits, labUnits } = data;
       const programId = data.programId ?? null;
-      // Curriculum total units are academic units. Do not use laboratory
-      // scheduling/contact hours here.
       const totalUnits = lecUnits + labUnits;
       const normalizedCode = courseCode.replace(/\s+/g, ' ').trim().toUpperCase();
       const currentSemester = semesters.find((t) => t.courses.some((c) => c.id === courseId));

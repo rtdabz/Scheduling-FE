@@ -16,14 +16,6 @@ interface OverloadConfirmationModalProps {
 const tierLabel = (projection: OverloadProjection): string =>
   projection.tier_label || LOAD_TIER_LABELS[projection.tier] || projection.tier;
 
-/**
- * The question the server asks before an assignment pushes an instructor into
- * pro bono (past their Basic Load and overload allowance).
- *
- * Assignment is not being refused, so the modal reports what the load becomes and lets the user
- * decide. Answering No sends nothing at all, which is why the assignment behind it
- * is left exactly as it was.
- */
 export default function OverloadConfirmationModal({
   confirmation,
   isSaving = false,

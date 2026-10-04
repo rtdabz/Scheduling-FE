@@ -10,14 +10,6 @@ import { apiErrorMessage } from '../../lib/apiError';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { getStoredUser } from '../../lib/storedUser';
 
-/**
- * How the department's programs share its rooms. Each lecture or laboratory
- * room may belong to one program (its home program); a room with none is shared
- * by every program. The policy says whether a program may go beyond its home
- * rooms. Only the secretary (`room.assign_program`) changes it; anyone else who
- * opens the page sees it read-only.
- */
-
 type RoomSharingPolicy = 'open' | 'home_first' | 'strict';
 
 interface ProgramOption {
@@ -33,7 +25,6 @@ interface ProgramRoom {
   room_type: string;
   status: string;
   home_program_id: number | null;
-  /** Owning program per weekday, as saved; null when the rooms are not divided. */
   days: Record<string, { program_id: number; borrowable: boolean }> | null;
 }
 
@@ -77,7 +68,6 @@ const DAY_LABELS: Record<string, string> = {
   Saturday: 'Sat',
 };
 
-// The same badges the Room List uses.
 const ROOM_TYPE_STYLES: Record<string, string> = {
   lecture: 'bg-blue-50 text-blue-700 border-blue-200',
   laboratory: 'bg-purple-50 text-purple-700 border-purple-200',
@@ -88,8 +78,6 @@ const SHARED_LABEL = 'Shared (all programs)';
 
 export default function ProgramRooms() {
   const { toast } = useToast();
-  // Under the rooms group, so room writes invalidate it. A cached copy paints
-  // on a revisit while the mount fetch below replaces it.
   const cacheKey = `page:rooms:program-rooms:${getStoredUser()?.id ?? 'current'}`;
   const cached = getCachedData<ProgramRoomsPayload>(cacheKey);
   const [data, setData] = useState<ProgramRoomsPayload | null>(cached ?? null);
@@ -382,7 +370,6 @@ export default function ProgramRooms() {
   );
 }
 
-/** The room's days grouped by program: "X Mon · Wed · Fri", or "Y Every day" for a home room. */
 function RoomDays({
   days,
   programCode,

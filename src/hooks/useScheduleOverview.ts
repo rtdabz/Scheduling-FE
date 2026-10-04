@@ -3,14 +3,6 @@ import api from '../lib/api';
 import { getCachedData, hasCachedData, setCachedData } from '../lib/dataCache';
 import { useLiveRevision } from './useLiveRefresh';
 
-/**
- * Aggregated schedule counts for the All Schedules screen.
- *
- * These deliberately do not come from `/initial-data`: that payload is capped,
- * so counting its rows reports a slice of the semester as the whole of it. Every
- * figure here is aggregated server-side over the entire active semester.
- */
-
 export type SectionScheduleStage =
   | 'draft'
   | 'revision'
@@ -24,9 +16,7 @@ export interface ConflictBreakdown {
   faculty: number;
   room: number;
   section: number;
-  /** Meetings in at least one conflict, counted once however many kinds they trip. */
   total: number;
-  /** Meetings in a clash both sides were deliberately assigned over; not in total. */
   overridden?: number;
 }
 
@@ -37,9 +27,7 @@ export interface SectionOverview {
   department_id: number;
   program_id: number | null;
   status: SectionScheduleStage;
-  /** Distinct section/course pairs. */
   classes: number;
-  /** `schedules` rows: an MWF class is three. */
   meetings: number;
   unassigned_faculty: number;
   unassigned_rooms: number;
@@ -99,15 +87,12 @@ export function useScheduleOverview() {
   const [fetchKey, setFetchKey] = useState(0);
 
   const refresh = useCallback(() => setFetchKey((key) => key + 1), []);
-  // Live refreshes stay silent: fetchKey (a manual refresh) shows the spinner.
   const liveRevision = useLiveRevision(['approvals', 'schedules', 'sections']);
 
   useEffect(() => {
     let cancelled = false;
 
     const fetchOverview = async () => {
-      // A cached payload is already on screen, so only a refresh shows a
-      // spinner; the first load starts in the loading state already.
       if (fetchKey > 0) setIsLoading(true);
       try {
         const response = await api.get<ScheduleOverviewData>('/departments/schedule-overview');
@@ -116,8 +101,6 @@ export function useScheduleOverview() {
         setCachedData(CACHE_KEY, response.data);
         setError(null);
       } catch {
-        // A stale cache beats an empty screen, but the caller still needs to
-        // know the numbers on it are not current.
         if (!cancelled) setError('Could not load the schedule overview.');
       } finally {
         if (!cancelled) setIsLoading(false);

@@ -83,7 +83,6 @@ export default function SemesterCard({
     try {
       await onAddCourseToSemester(courseRequests, yearLevel, semester, onProgress);
     } catch {
-      // Handled per-row
     }
   };
 
@@ -100,7 +99,6 @@ export default function SemesterCard({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {/* Semester navigation and table actions */}
       <div className="flex flex-col gap-3 border-b border-gray-100 bg-gray-50/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-1.5">
           <label className="relative shrink-0">
@@ -179,7 +177,6 @@ export default function SemesterCard({
         </div>
       </div>
 
-      {/* Course Table */}
       <CourseTable
         courses={semester.courses}
         totals={semester.totals}
@@ -193,7 +190,6 @@ export default function SemesterCard({
         onConfirmRemove={onConfirmRemove}
       />
 
-      {/* Add Course Modal */}
       {canEdit && (
         <AddCourseModal
           isOpen={isAddOpen}
@@ -204,7 +200,6 @@ export default function SemesterCard({
         />
       )}
 
-      {/* Edit Course Modal */}
       {canEdit && (
         <EditCourseModal
           isOpen={Boolean(editingCourse)}

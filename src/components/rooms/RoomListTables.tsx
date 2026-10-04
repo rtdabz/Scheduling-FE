@@ -5,12 +5,6 @@ import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import TableActionButton from '../ui/TableActionButton';
 
-/*
- * The Rooms list views shared by the VPAA, Dean, Program Head and Secretary
- * pages. Each page keeps its own filtering and building grouping; these only
- * render the rows it hands over.
- */
-
 export interface BuildingListRow {
   name: string;
   totalCount: number;
@@ -46,10 +40,8 @@ export function BuildingsTable<T extends BuildingListRow>({
 }: {
   buildings: T[];
   onSelect: (building: T) => void;
-  /** Rename and archive actions; pages that cannot manage rooms omit them. */
   onEdit?: (building: T) => void;
   onArchive?: (building: T) => void;
-  /** `data-tour` value on each building row, for the guided tour. */
   rowTourId?: string;
 }) {
   const columns = useMemo<ColumnDef<T>[]>(() => [
@@ -134,12 +126,10 @@ export function RoomsTable<T extends RoomListRow>({
   onOpen: (room: T) => void;
   onEdit: (room: T) => void;
   onArchive: (room: T) => void;
-  /** Adds a Print Room Timetable action; pages without printing omit it. */
   onPrint?: (room: T) => void;
 }) {
   const hasActions = canManage || Boolean(onPrint);
 
-  // Rebuilt each render: "Today's Status" reads the live clock and schedules.
   const columns: ColumnDef<T>[] = [
     {
       id: 'room_code',

@@ -22,6 +22,7 @@ export default defineConfig([
       // A leading underscore marks a parameter kept on purpose, e.g. for
       // existing callers or to match a shared signature.
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
 ])

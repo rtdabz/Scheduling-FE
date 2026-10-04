@@ -58,8 +58,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const [isClearInstructorConfirmOpen, setIsClearInstructorConfirmOpen] = useState(false);
   const [clearInstructorScope, setClearInstructorScope] = useState<"section" | "department">("section");
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
-  // The inbox lists every rule here, so it offers every room and instructor;
-  // the server still refuses anything the Rule Engine rejects.
   const conflictRoomOptions = useMemo(
     () => scheduler.rooms.map((room) => ({ id: Number(room.id), label: room.name })),
     [scheduler.rooms],
@@ -75,8 +73,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     }
   }, [autoAssignOnOpen, scheduler.schedules.length]);
 
-  // The bank stays mounted so showing and hiding it animates; the parent owns
-  // its column so the timetable slides into the freed space.
   const isCourseBankOpen =
     !scheduler.isWideView && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus);
 
@@ -87,12 +83,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   );
   const generatorDepartmentLogoUrl = generatorDepartment?.logo ?? null;
   const { reloadSchedulingSettings } = scheduler;
-  // Unknown profile (department not loaded) keeps the laboratory options shown.
   const generatorLaboratoryEnabled = generatorDepartment?.scheduling_profile !== 'standard';
 
-  // Instructor Assignment lists only this department's own program sections,
-  // taught by this department. Another department's section (even one delegated
-  // here) and a course taught by another college belong to Cross-Department.
   const assignDepartmentId = selectedSection?.departmentId ?? null;
   const ownDepartmentSchedules = useMemo(() => {
     if (assignDepartmentId === null) return scheduler.schedules;
@@ -117,8 +109,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
-      // Generate Step 2 saves department rules (Required Day, Field, LAB room);
-      // the timetable underneath re-reads them before its next save.
       reloadSchedulingSettings();
     };
   }, [isGeneratorOpen, reloadSchedulingSettings]);
@@ -137,11 +127,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   }
 
   return (
-    // The generation run is owned above the generator modal so a queued run
-    // survives closing the panel, and is recovered after a page reload.
     <GenerationRunProvider
-      // A different department or semester is a different scheduling context, so
-      // the tracker is rebuilt rather than carrying the previous run over.
       key={`${generatorDepartmentId ?? "none"}.${scheduler.activeSemester?.id ?? "none"}`}
       departmentId={generatorDepartmentId === null ? null : Number(generatorDepartmentId)}
       semesterId={scheduler.activeSemester ? Number(scheduler.activeSemester.id) : null}
@@ -191,8 +177,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
           <div className="flex max-h-[calc(100dvh-1rem)] max-w-full overflow-hidden bg-white shadow-2xl sm:rounded-lg">
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
-              // Only the programs this account owns are generated; the
-              // others' classes still count as occupied via existingSchedules.
               sections={scheduler.sections.filter((section) => scheduler.ownsProgram(section.programId))}
               courses={scheduler.subjects}
               activeSemester={scheduler.activeSemester}
@@ -208,7 +192,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         </div>
       )}
 
-      {/* Mounted only while open so each visit starts from a fresh scan. */}
       {isConflictsOpen && scheduler.activeSemester && (
         <ResolveConflictModal
           isOpen
@@ -221,8 +204,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
           canAssignInstructor={scheduler.canAssignInstructor}
           initialTab={(scheduler.conflictCounts?.open ?? 0) > 0 ? "open" : "resolved"}
           onOpenInBuilder={scheduler.canUpdateSchedule ? (scheduleId) => {
-            // The placement dialog takes over; closing the inbox keeps one
-            // modal on screen, and its next open re-reads the issues.
             if (scheduler.openScheduleInBuilder(String(scheduleId))) setIsConflictsOpen(false);
           } : undefined}
           onResolved={() => {
@@ -327,8 +308,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         selectedSectionId={scheduler.selectedSectionId}
         activeSemester={scheduler.activeSemester}
       />
-      {/* One overload confirmation for all three faculty paths: the slot popup,
-          the inline picker and Auto-Assign each await this same answer. */}
       {scheduler.overloadPrompt && (
         <OverloadConfirmationModal
           confirmation={scheduler.overloadPrompt.confirmation}

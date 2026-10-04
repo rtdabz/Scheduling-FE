@@ -14,11 +14,8 @@ import {
 
 interface PreApprovalCheckProps {
   departmentId: number;
-  /** The sections the package under review covers. */
   sectionIds: string[];
-  /** The package's classes, to find the instructor clashes allowed on them. */
   scheduleIds: string[];
-  /** Reports the open conflicts found, so the caller can hold its Approve button. */
   onOpenConflicts?: (count: number) => void;
 }
 
@@ -28,16 +25,6 @@ interface CheckResult {
   issues: RuleIssue[];
 }
 
-/**
- * What an approver should know before approving a package, checked now rather
- * than when it was sent: a package is conflict-free when submitted, but data
- * can change before the Dean or VPAA opens it.
- *
- * Nothing is derived here. It reads the same three lists the Schedule Builder
- * shows -- open conflicts, the history of clashes allowed to stand, and the
- * rule check -- narrowed to this package. Open conflicts are also refused by
- * the server on approval; this only says so before the click.
- */
 export default function PreApprovalCheck({ departmentId, sectionIds, scheduleIds, onOpenConflicts }: PreApprovalCheckProps) {
   const [result, setResult] = useState<CheckResult | null>(null);
   const [failed, setFailed] = useState(false);

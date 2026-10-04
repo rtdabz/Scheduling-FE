@@ -15,8 +15,6 @@ export default function CurriculumDetailPage() {
   const [selectedSemester, setSelectedSemester] = useState(1);
 
   const userRole = getStoredUserRole() || 'user';
-  // Same capability the write routes enforce, so the dean and the VPAA open this
-  // page read-only no matter which `mode` the URL asks for.
   const canManageCurriculum = hasStoredCapability('curriculum.manage');
   const canEditCourses = canManageCurriculum && searchParams.get('mode') === 'edit';
 
@@ -63,7 +61,6 @@ export default function CurriculumDetailPage() {
         </div>
       ) : (
         <>
-          {/* Header Component */}
           <CurriculumHeader
             curriculum={curriculum}
             isActivating={isActivating}

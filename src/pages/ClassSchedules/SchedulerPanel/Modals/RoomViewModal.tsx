@@ -19,19 +19,11 @@ import {
   type StandardHours,
 } from "../../../vpaa/calendar/ganttLayout";
 
-/**
- * Stable numeric id for a schedule the scheduler has not persisted yet.
- *
- * The timeline keys blocks and the overlap map by `id`, so a placeholder must
- * never land on a real schedule's id. Real ids are positive, so hashed ones are
- * pushed negative rather than merely hashed.
- */
 const placeholderGanttId = (id: string): number => {
   const hash = id.split("").reduce((acc, char) => ((acc << 5) - acc + char.charCodeAt(0)) | 0, 0);
   return -(Math.abs(hash) + 1);
 };
 
-/** "Juan Dela Cruz" -> { first_name: "Juan", last_name: "Dela Cruz" }. */
 const splitFacultyName = (name: string): { first_name: string; last_name: string } => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return { first_name: parts[0] ?? "", last_name: "" };
@@ -58,15 +50,8 @@ export default function RoomViewModal({
   schedules,
   departments,
 }: RoomViewModalProps) {
-  /**
-   * The room grid renders the same window as every other timetable. It was
-   * pinned at 24 slots, which cut the day off at 7:00 PM and hid any evening
-   * booking in the room it was meant to prove was free. Read during render, not
-   * at module scope: `/initial-data` configures the window after import.
-   */
   const SLOT_COUNT = slotCount();
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
-  // Close on Escape
   useEffect(() => {
     if (!isRoomViewOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -83,7 +68,6 @@ export default function RoomViewModal({
 
   const currentDepartmentId = useMemo(() => getStoredUserDepartmentId(), []);
 
-  // Only a real lecture room or laboratory can be lent to another department.
   const lendableRoomId = room && (room.roomType === "lecture" || room.roomType === "laboratory") && isRoomViewOpen
     ? Number(room.id) || null
     : null;
@@ -114,21 +98,12 @@ export default function RoomViewModal({
     });
   }, [schedules, roomViewRoomId, room, currentDepartmentId]);
 
-  // Adapt the scheduler's compact client model to the shared VPAA timeline
-  // contract. The room filter above remains the single source of truth.
   const ganttSchedules = useMemo<CalendarSchedule[]>(() => roomClasses.map((item) => {
     const department = departments.find((candidate) => Number(candidate.id) === Number(item.departmentId));
     const numericId = Number(item.id);
     const faculty = item.facultyName ? splitFacultyName(item.facultyName) : null;
     return {
       id: Number.isFinite(numericId) ? numericId : placeholderGanttId(item.id),
-      /*
-       * The timeline works in minutes parsed from "HH:MM", while the scheduler
-       * carries 12-hour display labels ("7 AM", "1:30 PM") and slot offsets.
-       * Feeding it the labels made `toMinutes` return null for every meeting,
-       * so `buildGanttDays` skipped them all and the chart drew an empty week.
-       * Rebuild the times from the slots, which are the model's real position.
-       */
       day: CALENDAR_DAYS[item.dayIndex] ?? item.day,
       start_time: slotToTime24h(item.startSlot),
       end_time: slotToTime24h(item.startSlot + item.durationSlots),
@@ -152,7 +127,6 @@ export default function RoomViewModal({
     };
   }), [roomClasses, departments]);
   const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", [0, 1, 2, 3, 4, 5, 6]), [ganttSchedules]);
-  /* Keep the Gantt axis aligned with the scheduler's configured time grid. */
   const ganttStandardHours = useMemo<StandardHours>(() => {
     const opening = gridOpeningMinutes();
     return { opening, closing: opening + SLOT_COUNT * slotMinutes(), slotMinutes: slotMinutes() };
@@ -163,8 +137,6 @@ export default function RoomViewModal({
   );
   const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules), [ganttSchedules]);
 
-  // Field and online rooms are shared without a limit, so the chip reports how
-  // busy the room gets rather than measuring against a capacity.
   const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
   const peakSharedOccupancy = useMemo(() => {
     if (!isSharedRoom) return 0;
@@ -203,7 +175,6 @@ export default function RoomViewModal({
         aria-labelledby="room-view-title"
         className="bg-white rounded-2xl shadow-2xl h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
       >
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-3 border-b border-slate-200 bg-slate-50/50 shrink-0">
           <div className="flex items-start gap-3">
             <DoorOpen className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
@@ -247,7 +218,6 @@ export default function RoomViewModal({
           </div>
         </div>
 
-        {/* Summary strip */}
         <div className="px-6 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-2 shrink-0">
           <span className="flex items-center gap-1.5 bg-[#4e0a10]/10 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-1 rounded-lg text-xs font-bold">
             <DoorOpen className="w-3.5 h-3.5" />
@@ -264,7 +234,6 @@ export default function RoomViewModal({
           )}
         </div>
 
-        {/* Room timetable */}
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden p-3 bg-slate-50/30 [contain:layout_paint]">
           {reservations.length > 0 ? (
             <div className="mb-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-800">

@@ -66,11 +66,8 @@ export type CourseSetupConfig = {
   gecSplitCourseIds: string[];
   hybridSplitCourseIds?: string[];
   modesByCourseId?: Record<string, "automatic" | "on-site" | "online" | "field">;
-  /** Custom Time Duration: weekly minutes, only where it differs from the course's. */
   durationMinutesByCourseId?: Record<string, number>;
-  /** Preferred Room: a room id the generator tries first. */
   preferredRoomsByCourseId?: Record<string, string>;
-  /** Integrated Hybrid: the online lecture's and on-site laboratory's minutes. */
   componentMinutesByCourseId?: Record<string, { lecture: number; laboratory: number }>;
 };
 
@@ -81,9 +78,7 @@ export type SetupCoursesSettings = LaboratoryDurationSettings & {
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
   lecture_lab_schedule_override_enabled?: boolean;
-  /** Required Day, stored as the department's forced-day rules. */
   forced_day_rules?: RequiredDayRule[];
-  /** Consecutive Days, stored as the department's rules (course-wide or per section). */
   consecutive_day_rules?: ConsecutiveDayRule[];
   preferred_room_options?: PreferredRoomOption[];
   sunday_classes_enabled?: boolean;
@@ -91,7 +86,6 @@ export type SetupCoursesSettings = LaboratoryDurationSettings & {
 
 type SetupCourseTableRow = {
   course: Course;
-  /** Unchecked courses are left out of this run. */
   included: boolean;
   isField: boolean;
   config: CourseClassConfig;
@@ -102,27 +96,12 @@ type SetupCourseTableRow = {
   };
 };
 
-/**
- * What kind of course this is, at a glance.
- */
 const courseIcon = (course: Course, isField: boolean) => {
   if (isField) return MapPin;
   if (Number(course.labHours ?? 0) > 0) return FlaskConical;
   return course.category === "minor" ? BookMarked : BookOpen;
 };
 
-/**
- * Step 2: Setup Courses
- *
- * Full-width course configuration table with:
- * - Single-select checkboxes: Regular [ ], Split [ ], Integrated [ ]
- * - Delivery Mode dropdown (On-Site, Online, Hybrid)
- * - Duration display
- * - Configure button that opens the slide-over sidebar outside the modal:
- *   Class Component, Custom Time Duration, Consecutive Days (optional, a
- *   Regular class on back-to-back days), Required Day (optional),
- *   Preferred Room (optional) and the section scope
- */
 export default function SetupCoursesStep({
   courses,
   sections,
@@ -154,47 +133,23 @@ export default function SetupCoursesStep({
     change: Partial<CourseSetupConfig>,
   ) => void;
   settings: SetupCoursesSettings | null;
-  /** Step 1's Preferred Days; none picked means any day. */
   preferredDays?: string[];
-  /**
-   * Required Day is a department rule rather than a section setting, so it
-   * is saved straight to the scheduling settings instead of the wizard draft.
-   */
   onRequiredDayChange?: (courseId: string, day: string | null) => void | Promise<unknown>;
-  /**
-   * Consecutive Days is a department rule too (Manual Scheduling places the
-   * run as well), saved with the course's Required Day in one request since
-   * the server refuses a course that has both.
-   */
   onConsecutiveDaysChange?: (
     courseId: string,
     rules: ConsecutiveDayRule[],
     requiredDay: string | null,
   ) => void | Promise<unknown>;
-  /**
-   * Field status is a department rule too: a course becomes a field course
-   * when a field room is its Preferred Room, and stops being one when not.
-   */
   onFieldCourseChange?: (courseCode: string, isField: boolean) => void | Promise<unknown>;
-  /** Default Settings: applied to every course without Configure settings of its own. */
   defaults?: CourseDefaults;
   onDefaultsChange?: (next: CourseDefaults) => void;
-  /**
-   * Default LAB Room Requirement: a department rule (Manual Scheduling,
-   * Edit and conflict checks read it too), saved straight to the
-   * scheduling settings rather than the wizard draft.
-   */
   labRoomType?: LabRoomType;
   onLabRoomTypeChange?: (next: LabRoomType) => void | Promise<unknown>;
-  /** Courses unchecked in the table, left out of this run. */
   excludedCourseIds?: string[];
   onExcludedChange?: (courseIds: string[]) => void;
-  /** Courses saved from their own Configure panel, which the defaults skip. */
   customizedCourseIds?: string[];
   onCustomizedChange?: (courseIds: string[]) => void;
-  /** The Default Settings sidebar, opened from the gear in the wizard header. */
   defaultsOpen?: boolean;
-  /** Laboratory-enabled department: Default Settings offer a laboratory duration. */
   laboratoryEnabled?: boolean;
   onDefaultsClose?: () => void;
   actionsDisabled: boolean;
@@ -231,7 +186,6 @@ export default function SetupCoursesStep({
     () => new Map(roomOptions.map((room) => [String(room.id), room.room_code])),
     [roomOptions],
   );
-  // Piling every Required Day onto one day is legal but rarely intended.
   const concentration = getForcedDayConcentration(requiredDayRules, [], "");
   const infer = (course: Course) =>
     inferInitialCourseClassConfig(
@@ -255,7 +209,6 @@ export default function SetupCoursesStep({
     [majorLectureSplitEnabled, minorSplitEnabled],
   );
 
-  // Local state dictionary storing course-level configurations
   const [courseConfigs, setCourseConfigs] = useState<
     Record<string, CourseClassConfig>
   >(() => {
@@ -266,7 +219,6 @@ export default function SetupCoursesStep({
     return initial;
   });
 
-  // Keep courseConfigs in sync when course list changes or new courses appear
   useEffect(() => {
     setCourseConfigs((prev) => {
       let changed = false;
@@ -288,12 +240,6 @@ export default function SetupCoursesStep({
     });
   }, [configs, consecutiveRules, courses, fieldCourseCodes, requiredDays, sections]);
 
-  /**
-   * The course's working configuration. Required Day is read from the
-   * department rules every time, so a save elsewhere never shows stale here.
-   * It is the department's saved rule, so it outranks a Split or Integrated
-   * draft: the course is shown as the one meeting the Generator receives.
-   */
   const withRequiredDay = useCallback(
     (course: Course, config: CourseClassConfig): CourseClassConfig => {
       const requiredDay = isConsecutive(config) ? null : requiredDays.get(course.id) ?? null;
@@ -309,12 +255,6 @@ export default function SetupCoursesStep({
   const excluded = useMemo(() => new Set(excludedCourseIds), [excludedCourseIds]);
   const customized = useMemo(() => new Set(customizedCourseIds), [customizedCourseIds]);
 
-  /**
-   * Default Settings for every course without its own Configure settings,
-   * written in one pass. Syncing course by course would let each call rebuild
-   * a section's duration and room maps from the same stale snapshot, so every
-   * course but the last would lose its change.
-   */
   const applyDefaultsToCourses = (nextDefaults: CourseDefaults, nextCustomized: Set<string>) => {
     const working: Record<string, CourseSetupConfig> = { ...configs };
     const touched = new Set<string>();
@@ -374,9 +314,6 @@ export default function SetupCoursesStep({
     onExcludedChange?.(courses.map((course) => course.id).filter((id) => next.has(id)));
   };
 
-  // Handle saving a course's configuration from the sidebar or direct table controls.
-  // A course saved from its own Configure panel keeps those settings; any
-  // other change still follows the Default Settings.
   const updateCourseConfig = (
     course: Course,
     changedConfig: CourseClassConfig,
@@ -394,7 +331,6 @@ export default function SetupCoursesStep({
       [course.id]: updatedConfig,
     }));
 
-    // Maintain 100% downstream compatibility with Review & Generate and CSP solver
     syncCourseConfigToSectionConfigs(
       course,
       updatedConfig,
@@ -404,8 +340,6 @@ export default function SetupCoursesStep({
       settings,
     );
 
-    // Consecutive Days and Required Day are saved together when the run
-    // changes, so clearing one and setting the other is a single request.
     const nextRules = consecutiveRulesForCourse(course.id, updatedConfig, sections);
     const nextRequiredDay = isConsecutive(updatedConfig) ? null : updatedConfig.requiredDay ?? null;
     if (!sameConsecutiveRules(nextRules, savedConsecutiveRules(course.id))) {
@@ -423,11 +357,6 @@ export default function SetupCoursesStep({
     }
   };
 
-  /**
-   * A change of shape resets the duration to the course's own: a length
-   * chosen for one meeting means something different split over two, and
-   * both Hybrid shapes have fixed lengths.
-   */
   const withShapeDuration = (
     course: Course,
     current: CourseClassConfig,
@@ -470,7 +399,6 @@ export default function SetupCoursesStep({
         configuration: targetConfigType,
         delivery: nextDelivery,
         hybridType: nextHybridType,
-        // Consecutive Days is a Regular class's option; a split drops it.
         ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null, meetingDays: null }),
         sectionScope: "all",
         selectedSectionIds: sections.map((s) => s.id),
@@ -520,13 +448,10 @@ export default function SetupCoursesStep({
         courseConfigs[course.id] ??
         inferInitialCourseClassConfig(course, configs, sections, fieldCourseCodes, null, consecutiveRules);
       const config = withRequiredDay(course, base);
-      // A Required Day holds the course to one meeting on that day.
       const oneMeeting = config.requiredDay !== null;
 
       const canSplit = !oneMeeting && isBalancedSplitSchedulingEligible(course, splitSettings);
 
-      // The same courses the server accepts as Integrated: a non-field
-      // major with both lecture and laboratory units.
       const canIntegrated =
         !oneMeeting && isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes);
 
@@ -556,8 +481,6 @@ export default function SetupCoursesStep({
   ]);
 
   const includedCount = rows.filter((row) => row.included).length;
-  // What a set of Default Settings would do to the included courses without
-  // their own settings: previewed in the sidebar before it is applied.
   const summarizeDefaults = (candidate: CourseDefaults) =>
     rows.reduce(
       (summary, row) => {
@@ -578,7 +501,6 @@ export default function SetupCoursesStep({
     laboratoryEnabled && labRoomType === "either" ? "Labs in lab or classroom" : null,
   ].filter((label): label is string => label !== null);
 
-  // Breakdown statistics
   const regularCount = useMemo(
     () => rows.filter((r) => r.config.configuration === "regular").length,
     [rows],
@@ -592,7 +514,6 @@ export default function SetupCoursesStep({
     [rows],
   );
 
-  // Filtered rows based on search and configuration filter
   const filteredRows = useMemo(() => {
     let result = rows;
     if (searchQuery.trim()) {
@@ -614,7 +535,6 @@ export default function SetupCoursesStep({
     [rows, configuringCourseId],
   );
 
-  // Helper to render configuration checkbox cell with partial support
   const renderConfigCheckbox = (
     row: SetupCourseTableRow,
     targetType: ClassConfiguration,
@@ -670,7 +590,6 @@ export default function SetupCoursesStep({
   const allIncluded = rows.length > 0 && includedCount === rows.length;
   const someIncluded = includedCount > 0 && !allIncluded;
 
-  // Course table columns: INCLUDE | COURSE | REGULAR | SPLIT | INTEGRATED | DELIVERY MODE | DURATION | CONFIGURE
   const courseColumns: ColumnDef<SetupCourseTableRow>[] = [
     {
       id: "include",
@@ -878,7 +797,6 @@ export default function SetupCoursesStep({
             (config.laboratoryMinutes ?? hybridDefaults.laboratory) !== hybridDefaults.laboratory
           : isDurationEditable(shape) && config.durationMinutes !== defaultDurationMinutes(course);
         if (shape === "hybrid-split" || isIntegratedShape(shape)) {
-          // Two separate sessions, each with its own length and delivery.
           return (
             <span className="inline-flex flex-col items-center gap-0.5">
               <span className="text-[9px] font-black uppercase tracking-wide text-slate-500">
@@ -957,7 +875,6 @@ export default function SetupCoursesStep({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      {/* Top Filter and Search Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative min-w-[220px]">
@@ -1048,7 +965,6 @@ export default function SetupCoursesStep({
         </p>
       )}
 
-      {/* Main Course Table */}
       <DataTable
         table={courseTable}
         variant="embedded"
@@ -1084,7 +1000,6 @@ export default function SetupCoursesStep({
         />
       )}
 
-      {/* Slide-over Right Sidebar (portaled outside the modal directly to document.body) */}
       {configuringRow && (
         <ConfigureClassSidebar
           course={configuringRow.course}

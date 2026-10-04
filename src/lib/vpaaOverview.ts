@@ -1,22 +1,3 @@
-/**
- * Institution-wide approval rollup for the VPAA dashboard.
- *
- * Approval state is read from `schedule_submissions`, never from
- * `schedules.status`. Two things make the schedule row the wrong source:
- *
- *  1. `/initial-data` caps its `schedules` array (500 rows by default, 2,000 at
- *     most), and `schedules.day` is one row per meeting — so an institution-wide
- *     viewer sees a truncated slice and every section past the cut looks
- *     unscheduled. `schedule_submissions` ships uncapped.
- *  2. VPAA approval does not set `schedules.status` to 'approved'. It moves the
- *     rows to 'faculty_assignment', then on to 'reassignment' and 'finalized'.
- *     Counting `status === 'approved'` therefore made a department's completion
- *     fall the moment it was approved. See lib/scheduleStatus.ts.
- *
- * The submission statuses are a clean six-state model and are what the approval
- * screens already read, so the dashboard now agrees with them by construction.
- */
-
 export type SubmissionStatus =
   | 'pending_dean'
   | 'pending_vpaa'
@@ -48,7 +29,6 @@ export interface OverviewSubmission {
   deanReviewer?: { name?: string } | null;
 }
 
-/** Where one section sits in the pipeline, as the dashboard reports it. */
 export type SectionStage = 'draft' | 'pending_dean' | 'pending_vpaa' | 'approved' | 'returned';
 
 export interface DepartmentRollup {
@@ -57,18 +37,13 @@ export interface DepartmentRollup {
   department_code: string;
   sectionsCount: number;
   approvedCount: number;
-  /** With the Dean or with the VPAA — anywhere in review. */
   pendingCount: number;
-  /** Dean-cleared and waiting on the VPAA. This queue. */
   pendingVpaaCount: number;
   returnedCount: number;
   draftCount: number;
-  /** Newest Dean hand-off among the sections waiting on the VPAA. */
   submittedAt: string | null;
-  /** The Dean approved with an override on the package now awaiting the VPAA. */
   hasOverride: boolean;
   overrideReason: string | null;
-  /** Highest revision seen; > 1 means the package has been round the loop. */
   revisionNumber: number;
   approvalStatus: 'Fully Approved' | 'Pending Review' | 'Returned' | 'Partially Approved' | 'Draft';
   progressPercent: number;
@@ -85,15 +60,6 @@ const STAGE_OF_STATUS: Partial<Record<SubmissionStatus, SectionStage>> = {
 export const percent = (part: number, total: number) =>
   total > 0 ? Math.round((part / total) * 100) : 0;
 
-/**
- * Newest submission first.
- *
- * Revision number is the authoritative ordering — it is what the backend
- * increments on every resubmission — with the review timestamps only breaking
- * ties between two revisions of the same number. The previous dashboard sorted
- * schedule rows by `created_at` and then read `updated_at` off the winner, which
- * are different clocks and could report a stale status with a fresh age.
- */
 const newestFirst = (a: OverviewSubmission, b: OverviewSubmission) => {
   if (a.revision_number !== b.revision_number) return b.revision_number - a.revision_number;
   const stamp = (s: OverviewSubmission) =>
@@ -101,11 +67,6 @@ const newestFirst = (a: OverviewSubmission, b: OverviewSubmission) => {
   return stamp(b).localeCompare(stamp(a));
 };
 
-/**
- * The live submission for each section — its newest revision that still has the
- * section included. A section withdrawn from a package is back with its
- * department and must not be reported as in review.
- */
 export const latestSubmissionBySection = (
   submissions: OverviewSubmission[],
   activeSemesterId?: number | null,
@@ -142,14 +103,6 @@ export interface DepartmentLike {
   department_code: string;
 }
 
-/**
- * Per-department totals, plus the institution-wide spread, from one pass over
- * the sections. Every section is counted exactly once and lands in exactly one
- * stage, so the buckets always sum to the section total — which the old
- * status-matching rollup did not guarantee, because it had no branch for
- * `completed`, `faculty_assignment`, `reassignment`, `finalized`, `revision` or
- * `conditionally_approved` and silently called all six "draft".
- */
 export const rollupDepartments = (
   departments: DepartmentLike[],
   sections: SectionLike[],
@@ -188,7 +141,6 @@ export const rollupDepartments = (
         case 'pending_vpaa': {
           pendingVpaaCount++;
           const handoff = submission?.dean_reviewed_at ?? submission?.submitted_at ?? null;
-          // ISO-8601 sorts chronologically as text, so no Date churn per row.
           if (handoff && (!submittedAt || handoff > submittedAt)) submittedAt = handoff;
           if (submission?.approval_override) {
             hasOverride = true;
@@ -262,7 +214,6 @@ export const institutionTotals = (rollups: DepartmentRollup[]): InstitutionTotal
   return { ...totals, progressPercent: percent(totals.approved, totals.sections) };
 };
 
-/** Ageing bands for the approval queue, so a stale package reads as stale. */
 export type QueueSeverity = 'fresh' | 'ageing' | 'overdue';
 
 export const AGEING_DAYS = 2;
@@ -278,12 +229,6 @@ export const queueSeverity = (submittedAt: string | null, reference: Date): Queu
   return 'fresh';
 };
 
-/**
- * "3 days ago" — how long a package has been sitting in the VPAA queue.
- *
- * `reference` is the dashboard's minute ticker rather than a fresh Date, so every
- * row in a render agrees on "now".
- */
 export const relativeAge = (value: string | null | undefined, reference: Date) => {
   if (!value) return '—';
   const then = new Date(value).getTime();

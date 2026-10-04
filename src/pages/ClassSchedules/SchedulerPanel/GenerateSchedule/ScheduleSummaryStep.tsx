@@ -17,14 +17,6 @@ import RecommendationList from "./RecommendationList";
 
 const ALL = "all";
 
-/**
- * Step 4 — the generated timetable as a filterable list.
- *
- * A year level produces several hundred rows, so the table is the primary
- * view: a scheduler checks one section, one day, or one course at a time
- * before committing the result. Save and Generate again live in the wizard
- * footer, so the table keeps the full height of the step.
- */
 export default function ScheduleSummaryStep({
   preview,
   sections,
@@ -42,17 +34,12 @@ export default function ScheduleSummaryStep({
   sections: Section[];
   courses: Course[];
   roomCodeById: Map<string, string>;
-  /** `null` when the run predates change reports and its changes are unknown. */
   changes: GenerationChange[] | null;
   recommendations?: GenerationRecommendation[];
-  /** Writes the recommendation into the generator's configuration and regenerates. */
   onApplyRecommendation?: (recommendation: GenerationRecommendation) => void;
   applying?: boolean;
-  /** Courses the generator could not place and the draft still lacks. */
   unplacedCount?: number;
-  /** The review of courses that still need a fix, shown above the table. */
   attention?: ReactNode;
-  /** `section_id:course_id` of classes the review reports, badged in the table. */
   attentionKeys?: Set<string>;
 }) {
   const [sectionFilter, setSectionFilter] = useState(ALL);
@@ -111,8 +98,6 @@ export default function ScheduleSummaryStep({
 
   const classes = useMemo(() => buildSummaryClasses(rows), [rows]);
 
-  // A class matches when any of its meetings does, and is then shown whole:
-  // hiding its other days would misstate when the class actually meets.
   const filtered = useMemo(
     () =>
       classes
@@ -179,7 +164,6 @@ export default function ScheduleSummaryStep({
     setChangedOnly(false);
   };
 
-  // Narrow the table to exactly one class; any other filter could hide it.
   const focusClass = (item: GenerationChangeItem) => {
     clearFilters();
     setSectionFilter(String(item.section_id));
@@ -207,8 +191,6 @@ export default function ScheduleSummaryStep({
         onFocusClass={focusClass}
       />
 
-      {/* A draft under review is fixed course by course beside the table;
-          settings changes that regenerate belong to a complete timetable only. */}
       {recommendations.length > 0 && !attention && (
         <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <RecommendationList
@@ -220,9 +202,6 @@ export default function ScheduleSummaryStep({
         </section>
       )}
 
-      {/* The courses to fix sit beside the table on a wide screen, each
-          scrolling on its own, so neither squeezes the other; stacked on a
-          narrow one, the table keeps a readable height and the step scrolls. */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
         <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
           <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">

@@ -2,7 +2,7 @@ import { getCourseSlotPlan } from "./courseSlotPlan";
 import type { RevisionStatus, SubmissionStatus } from "../../../lib/submissionStatus";
 
 export type CourseCategory = "major" | "minor";
-export type SubjectCategory = CourseCategory; // Legacy alias
+export type SubjectCategory = CourseCategory;
 export type SemesterPeriod = "1st" | "2nd" | "summer";
 export type YearLevel = 1 | 2 | 3 | 4;
 export type RoomType = "lecture" | "laboratory" | "field" | "online";
@@ -23,7 +23,6 @@ export type ScheduleStatus =
   | "rejected"
   | "revision";
 
-/** Workflow stages in which instructor assignment may be changed. */
 export const INSTRUCTOR_ASSIGNABLE_STATUSES: ScheduleStatus[] = [
   "approved",
   "faculty_assignment",
@@ -35,7 +34,6 @@ export interface Department {
   department_name: string;
   department_code: string;
   logo?: string | null;
-  /** Defaults to true server-side when null; mirrors RuleEngine's Sunday rule. */
   sunday_online_only_enabled?: boolean | number | null;
   scheduling_profile?: 'standard' | 'laboratory_enabled';
 }
@@ -55,7 +53,6 @@ export interface UserSummary {
   last_name?: string;
   role?: string;
   department_id?: number | null;
-  /** Set for Program Heads: the program whose schedule they prepare. */
   program_id?: number | null;
 }
 
@@ -69,22 +66,10 @@ export interface Course {
   category: CourseCategory;
   semester: SemesterPeriod;
   departmentId: number | null;
-  /**
-   * College whose instructors may teach this course, mirroring the rule engine's
-   * `SchedulingPolicy::assignedTeachingDepartmentId`. A secretary may delegate a
-   * non-major to another college — IT owns GEC 101, CAS teaches it — and that
-   * override wins. With no override the owner teaches its own GEC subjects, so
-   * this is null for a major (own-department and program rules cover those) and
-   * for a shared minor open to every department.
-   */
   teachingDepartmentId?: number | null;
   teachingDepartmentCode?: string;
   teachingDepartmentName?: string;
   teachingProgramId?: number | null;
-  /**
-   * Program (major) that owns this course. When set on a major, only instructors
-   * of that program may be assigned to it.
-   */
   programId?: number | null;
   programCode?: string | null;
   categories?: { id: number | string; name: string; description?: string | null }[];
@@ -92,14 +77,8 @@ export interface Course {
   roomTypeRequired: RoomType;
   status: "active" | "inactive";
 }
-export type Subject = Course; // Legacy alias
+export type Subject = Course;
 
-/**
- * Slots a single meeting covering the whole course occupies — the server's
- * `units * 2`. For the lecture/laboratory split convention use
- * `getCourseSlotPlan` from ./courseSlotPlan; conflating the two was audit
- * finding #19.
- */
 export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number =>
   getCourseSlotPlan(subject).singleBlockSlots;
 
@@ -110,23 +89,14 @@ export interface Section {
   semester: SemesterPeriod;
   departmentId: number;
   programId?: number | null;
-  /** The program's short code (e.g. BSIT), for labels. */
   programCode?: string | null;
-  /** The program's full name and major, for the printed schedule header. */
   programName?: string | null;
   programMajor?: string | null;
-  /**
-   * The curriculum this cohort follows. A department mid-transition runs an old
-   * and a new curriculum at once, so this cannot be inferred from the
-   * department — null means nobody has chosen yet and generation is blocked.
-   */
   curriculumId?: number | null;
   curriculumName?: string | null;
   semesterId: number;
   status: "active" | "inactive";
-  /** Where the section's latest submitted version stands; Draft if never submitted. */
   submissionStatus?: SubmissionStatus;
-  /** Whether the working copy differs from the last recalled or rejected version. */
   revisionStatus?: RevisionStatus;
 }
 
@@ -138,15 +108,10 @@ export interface FacultyAvailability {
   end_time: string;
 }
 
-/**
- * Administrative post a faculty profile holds, mirrored from its linked user
- * account by UserFacultyProfileService. Null for a plain instructor.
- */
 export type FacultyAdministrativePost = "dean" | "secretary" | "program_head" | "vpaa";
 
 const ADMINISTRATIVE_POSTS: readonly FacultyAdministrativePost[] = ["dean", "secretary", "program_head", "vpaa"];
 
-/** Narrows the raw `administrative_role` column, which is a free string server-side. */
 export const normalizeAdministrativePost = (
   value: string | null | undefined,
 ): FacultyAdministrativePost | null => {
@@ -154,7 +119,6 @@ export const normalizeAdministrativePost = (
   return ADMINISTRATIVE_POSTS.find((known) => known === post) ?? null;
 };
 
-/** A designation as the load sheet prints it: its label ("Director · Networking Dev't") and deload. */
 export interface HeldDesignation {
   label: string;
   deloadUnits: number;
@@ -163,38 +127,25 @@ export interface HeldDesignation {
 export interface Faculty {
   id: string;
   name: string;
-  /**
-   * The name as stored, for forms that print it in parts (the load sheet's
-   * Surname / Given Name / MI). `name` is first and last only.
-   */
   firstName?: string;
   middleName?: string | null;
   lastName?: string;
   suffix?: string | null;
   profilePicture?: string | null;
   employmentType?: "full-time" | "part-time";
-  /** The account role; printed on the load sheet only when no designation is held. */
   administrativeRole?: FacultyAdministrativePost | null;
-  /** Held designations, printed in section C of the load sheet with their deload. */
   designations?: HeldDesignation[];
   departmentId?: number;
   departmentCode?: string;
   departmentName?: string;
-  /** Program (major) the instructor belongs to, when recorded. */
   programId?: number | null;
   programCode?: string | null;
   maxUnits?: number;
-  /** Units subtracted from maxUnits by an administrative role. */
   deloadUnits?: number;
-  /** Allowance the instructor may teach past their Basic Load. */
   overloadUnits?: number;
-  /** Further allowance past the overload one, taught unpaid. */
   probonoUnits?: number;
-  /** Units already assigned this semester, deduped so a split course counts once. */
   assignedUnits?: number;
-  /** Basic Load as the server computes it: maxUnits - deloadUnits. */
   requiredUnits?: number;
-  /** Basic Load plus both allowances. */
   unitCeiling?: number;
   status?: "active" | "inactive";
   availabilities?: FacultyAvailability[];
@@ -206,13 +157,11 @@ export interface Room {
   departmentId: number | null;
   roomType: RoomType;
   status: RoomStatus;
-  /** Set when another department lent this room for the semester: the only windows it may be used in. */
   grantWindows?: RoomGrantWindow[];
 }
 
 export interface RoomGrantWindow {
   day: string;
-  /** HH:mm, 24-hour. */
   start_time: string;
   end_time: string;
 }
@@ -222,18 +171,17 @@ export interface ScheduleItem {
   semesterId: number;
   departmentId: number;
   courseId: string;
-  subjectId?: string; // Legacy alias
+  subjectId?: string;
   courseCode: string;
-  subjectCode?: string; // Legacy alias
+  subjectCode?: string;
   courseName: string;
-  subjectName?: string; // Legacy alias
+  subjectName?: string;
   courseType: CourseCategory;
-  subjectType?: CourseCategory; // Legacy alias
+  subjectType?: CourseCategory;
   lectureUnits: number;
   laboratoryUnits: number;
   totalUnits: number;
   sectionName: string;
-  /** The section's program code (e.g. BSIT), for labels. */
   programCode?: string | null;
   roomName: string;
   day: string;
@@ -243,10 +191,6 @@ export interface ScheduleItem {
   facultyName: string | null;
   facultyId: string | null;
   facultyAssignmentDone?: boolean;
-  /**
-   * The instructor was assigned over their own conflict on purpose (double-booked
-   * or outside availability). Shown as an override rather than a conflict.
-   */
   facultyConflictOverride?: boolean;
   status: ScheduleStatus;
   dayIndex: number;
@@ -272,23 +216,18 @@ export interface DepartmentSectionProgress {
   status: ScheduleItem["status"];
   isDone: boolean;
   isSelected: boolean;
-  /** Meeting blocks in this section that currently have an instructor. */
   assignedInstructorBlocks: number;
-  /** True only when every schedule row has completed the instructor handoff. */
   facultyAssignmentDone: boolean;
 }
 
-/** One department section offered in the shared schedule-action checklist. */
 export interface SectionDoneCandidate {
   sectionId: string;
   sectionName: string;
   yearLevel: number;
   requiredSubjects: number;
   plottedSubjects: number;
-  /** Schedule row ids affected by the checklist action for this section. */
   scheduleIds: number[];
   isReady: boolean;
-  /** Why the section cannot be selected; empty when isReady. */
   blockedReason: string;
 }
 
@@ -343,16 +282,10 @@ export interface ApiCourseRecord {
   subject_category?: CourseCategory;
   semester: SemesterPeriod;
   department_id: number | null;
-  /** Eager-loaded owner, used to label the college that teaches a GEC subject. */
   department?: {
     department_code?: string;
     department_name?: string;
   } | null;
-  /**
-   * College another one delegated this course to, when it is not the owner.
-   * Null on the common course — see `Course.teachingDepartmentId` for the
-   * fallback the mapper applies then.
-   */
   teaching_department_id?: number | null;
   teaching_department?: {
     department_code?: string;
@@ -370,7 +303,7 @@ export interface ApiCourseRecord {
   room_type_required: RoomType;
   status?: "active" | "inactive";
 }
-export type ApiSubjectRecord = ApiCourseRecord; // Legacy alias
+export type ApiSubjectRecord = ApiCourseRecord;
 
 export interface ApiSectionRecord {
   id: number | string;
@@ -398,8 +331,6 @@ export interface ApiFacultyRecord {
   employment_type?: "full-time" | "part-time";
   administrative_role?: FacultyAdministrativePost | string | null;
   max_units?: number | string | null;
-  // The load fields /initial-data adds via FacultyLoadService::get(); raw
-  // columns arrive as strings from some drivers, hence the union.
   deload_units?: number | string | null;
   overload_units?: number | string | null;
   probono_units?: number | string | null;
@@ -420,7 +351,6 @@ export interface ApiFacultyRecord {
     department_name?: string;
   } | null;
   availabilities?: FacultyAvailability[];
-  /** Held designations, in their listed order. */
   designations?: {
     id: number;
     name: string;
@@ -492,7 +422,6 @@ export interface ApiScheduleRecord {
     section_name?: string;
     program?: { code?: string | null } | null;
   } | null;
-  /** The meeting's own program; endpoints that skip `section.program` still load it. */
   program?: { code?: string | null } | null;
   faculty?: {
     id?: number | string;

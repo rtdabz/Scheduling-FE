@@ -1,16 +1,5 @@
 import { loadBandsOf, type LoadBands } from '../../lib/facultyLoad';
 
-/**
- * An instructor's load split into the three bands the scheduler enforces
- * (see `loadTierForUnits` / `SchedulingPolicy::facultyLoadTier()`):
- *
- *   Basic Load (green) -> Overload (light red) -> Pro bono (grey)
- *
- * The track is scaled to the full ceiling, so every band keeps its own share of
- * the bar even while nothing is assigned yet, and the fill shows which band the
- * assigned units have reached. Units beyond the ceiling add a dark red segment and
- * are called out in the label.
- */
 const BANDS = [
   { key: 'basic', label: 'Basic', track: 'bg-emerald-100', fill: 'bg-emerald-500', dot: 'bg-emerald-500' },
   { key: 'overload', label: 'Overload', track: 'bg-red-100', fill: 'bg-red-400', dot: 'bg-red-400' },
@@ -24,13 +13,10 @@ export default function SegmentedLoadBar({
   ...load
 }: LoadBands & {
   size?: 'sm' | 'md';
-  /** Band capacities under the bar, e.g. "Basic 21 · Overload 6". */
   showLegend?: boolean;
   className?: string;
 }) {
   const bands = loadBandsOf(load);
-  // Units past the ceiling still need room on the bar, or they would not show.
-  // Sized to everything drawn: the ceiling plus any pro bono spilling past it.
   const scale = Math.max(bands.basic + bands.overload + bands.probono, 1);
   const pct = (units: number) => `${(units / scale) * 100}%`;
   const height = size === 'sm' ? 'h-1.5' : 'h-2.5';
@@ -73,7 +59,6 @@ export default function SegmentedLoadBar({
           {BANDS.map((band) => bands[band.key] > 0 && (
             <span key={band.key} className="inline-flex items-center gap-1">
               <span className={`h-2 w-2 rounded-full ${band.dot}`} />
-              {/* Pro bono has no allowance to measure against, only a count. */}
               {band.label} {band.key === 'probono'
                 ? bands.filled.probono
                 : `${bands.filled[band.key]}/${bands[band.key]}`}

@@ -19,7 +19,6 @@ interface FacultyAvailabilityEditorProps {
   onError: (message: string) => void;
 }
 
-/** A row being edited: no id yet, and times held as the `HH:MM` the input gives. */
 interface DraftWindow {
   key: string;
   dayIndex: number;
@@ -38,10 +37,6 @@ const toDraft = (windows: AvailabilityWindow[]): DraftWindow[] =>
 const overlaps = (a: DraftWindow, b: DraftWindow): boolean =>
   a.dayIndex === b.dayIndex && a.startTime < b.endTime && a.endTime > b.startTime;
 
-/**
- * Weekly window editor. Saves with a whole-week replace, matching
- * `PUT /faculties/{id}/availabilities`: what the grid shows is what is stored.
- */
 export default function FacultyAvailabilityEditor({
   facultyId,
   facultyName,
@@ -60,8 +55,6 @@ export default function FacultyAvailabilityEditor({
   const openingShort = openingTime.slice(0, 5);
   const closingShort = closingTime.slice(0, 5);
 
-  // Mirrors the server's `after` validation so the reasons show up as the user
-  // types rather than only on submit.
   const rowErrors = useMemo(() => {
     const errors: Record<string, string> = {};
 

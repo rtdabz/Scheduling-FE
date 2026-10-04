@@ -8,7 +8,6 @@ export type HelperMessage = {
   type: MessageType;
 };
 
-// Maps each message type to a facial expression state
 const expressionByType: Record<MessageType, "worried" | "neutral" | "happy" | "sad"> = {
   conflict: "worried",
   info: "neutral",
@@ -17,7 +16,6 @@ const expressionByType: Record<MessageType, "worried" | "neutral" | "happy" | "s
 };
 
 function StudentFace({ expression }: { expression: "worried" | "neutral" | "happy" | "sad" }) {
-  // Eyebrow paths per expression
   const brows = {
     worried: (
       <>
@@ -45,7 +43,6 @@ function StudentFace({ expression }: { expression: "worried" | "neutral" | "happ
     ),
   };
 
-  // Mouth paths per expression
   const mouths = {
     worried: <ellipse cx="50" cy="62" rx="6" ry="7" fill="#5A1220" />,
     neutral: <path d="M42 60 Q50 66 58 60" stroke="#5A1220" strokeWidth="3" fill="none" strokeLinecap="round" />,
@@ -57,11 +54,8 @@ function StudentFace({ expression }: { expression: "worried" | "neutral" | "happ
 
   return (
     <svg viewBox="0 0 100 100" width="64" height="64">
-      {/* head */}
       <circle cx="50" cy="46" r="36" fill="#FCEFE3" stroke="#5A1220" strokeWidth="2.5" />
-      {/* hair */}
       <path d="M16 40 Q20 8 50 8 Q80 8 84 40 Q70 26 50 26 Q30 26 16 40 Z" fill="#3A2B22" />
-      {/* eyes: closed curve when happy, open circle otherwise (blink handled by CSS) */}
       {isHappy ? (
         <>
           <path d="M30 50 Q35 44 40 50" stroke="#5A1220" strokeWidth="3" fill="none" strokeLinecap="round" />
@@ -75,10 +69,8 @@ function StudentFace({ expression }: { expression: "worried" | "neutral" | "happ
       )}
       {brows[expression]}
       {mouths[expression]}
-      {/* cheeks */}
       <circle cx="26" cy="58" r="5" fill="#F5A623" opacity="0.35" />
       <circle cx="74" cy="58" r="5" fill="#F5A623" opacity="0.35" />
-      {/* collar / uniform */}
       <path d="M20 92 Q50 78 80 92 L84 100 L16 100 Z" fill="#5A1220" />
       <path d="M42 82 L50 92 L58 82" fill="#F5A623" />
     </svg>
@@ -294,7 +286,6 @@ export function HelperBuddy({ message }: { message: HelperMessage | null }) {
               {message.text}
             </div>
 
-            {/* speech bubble tail decoration */}
             <div
               style={{
                 position: "absolute",

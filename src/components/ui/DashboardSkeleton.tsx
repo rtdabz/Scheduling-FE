@@ -5,18 +5,6 @@ import Skeleton from './Skeleton';
 
 type DashboardSkeletonVariant = 'secretary' | 'dean' | 'vpaa' | 'program' | 'institutional';
 
-/**
- * Each variant mirrors its dashboard section for section: the same grids,
- * panel order, header furniture, chart heights and table column templates, so
- * the page does not reflow when the data replaces the placeholders. When a
- * dashboard's markup changes, change the matching variant here with it.
- */
-
-/**
- * What the secretary / program head dashboard will actually render, taken from
- * the same capability checks the page uses. Those checks decide how many queue
- * rows there are and which panels exist.
- */
 export interface SecretaryDashboardLayout {
   queueRowCount: number;
   showDraftingProgress: boolean;
@@ -25,7 +13,6 @@ export interface SecretaryDashboardLayout {
   readinessCheckCount: number;
 }
 
-/** A full-capability account: every queue row and panel. */
 const DEFAULT_SECRETARY_LAYOUT: SecretaryDashboardLayout = {
   queueRowCount: 6,
   showDraftingProgress: true,
@@ -37,11 +24,9 @@ const DEFAULT_SECRETARY_LAYOUT: SecretaryDashboardLayout = {
 interface DashboardSkeletonProps {
   metricCount?: number;
   variant?: DashboardSkeletonVariant | 'dashboard' | 'summary';
-  /** Secretary variant only. */
   secretaryLayout?: SecretaryDashboardLayout;
 }
 
-/** One line of text: the box takes the line height, the bar the glyph height. */
 function TextLine({ line = 'h-4', className = '' }: { line?: string; className?: string }) {
   return (
     <div className={`flex ${line} items-center`}>
@@ -50,10 +35,6 @@ function TextLine({ line = 'h-4', className = '' }: { line?: string; className?:
   );
 }
 
-/**
- * The dashboards' Panel: uppercase title (with an optional subtitle under it)
- * and an optional header link on the right.
- */
 function PanelFrame({ className = '', children, action = true, subtitle = true }: {
   className?: string;
   children?: ReactNode;
@@ -74,7 +55,6 @@ function PanelFrame({ className = '', children, action = true, subtitle = true }
   );
 }
 
-/** Same box as DashboardMetricCard: the detail line sits at the foot of the tile. */
 function MetricCard() {
   return (
     <div className="flex h-full min-h-[90px] min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -88,10 +68,6 @@ function MetricCard() {
   );
 }
 
-/**
- * The KPI strip: the decision KPI, the completion tile and the inventory tiles
- * share one grid (and one tile box), so every card sits on the same columns.
- */
 function MetricStrip({ count, className }: { count: number; className: string }) {
   return (
     <div data-skeleton="metrics" className={`grid grid-cols-2 gap-2.5 md:grid-cols-3 ${className}`}>
@@ -100,7 +76,6 @@ function MetricStrip({ count, className }: { count: number; className: string })
   );
 }
 
-/** Donut ring with the white centre the readout sits on. */
 function DonutRing() {
   return (
     <div className="relative mx-auto h-32 w-32">
@@ -110,7 +85,6 @@ function DonutRing() {
   );
 }
 
-/** Donut plus its legend: one dot, label and "value (share%)" line per slice. */
 function DonutSkeleton({ legendRows }: { legendRows: number }) {
   return (
     <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
@@ -130,11 +104,6 @@ function DonutSkeleton({ legendRows }: { legendRows: number }) {
   );
 }
 
-/**
- * A dashboard table: header labels, then rows on the page's own column
- * template. `cells` draws each row's cells so a progress-bar or action column
- * keeps its real height.
- */
 function TableSkeleton({ template, rows, cells, footer = false }: {
   template: string;
   rows: number;
@@ -163,7 +132,6 @@ function TableSkeleton({ template, rows, cells, footer = false }: {
   );
 }
 
-/** The inline progress bar the tables draw in a 24px-high cell. */
 function BarCell() {
   return (
     <div className="flex h-6 items-center gap-2">
@@ -173,7 +141,6 @@ function BarCell() {
   );
 }
 
-/** Legend strip under a table: icon + label pairs on one line. */
 function LegendStrip({ widths, lastRight = false }: { widths: string[]; lastRight?: boolean }) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5">
@@ -186,7 +153,6 @@ function LegendStrip({ widths, lastRight = false }: { widths: string[]; lastRigh
   );
 }
 
-/** InstructorWorkloadChart: a 196px avatar/name/units column, then the bar, 46px a row. */
 function WorkloadRows({ rows = 5 }: { rows?: number }) {
   return (
     <div className="mt-3 min-w-0">
@@ -204,7 +170,6 @@ function WorkloadRows({ rows = 5 }: { rows?: number }) {
   );
 }
 
-/** Room usage bar chart: 140px, five rows of code, bar and label. */
 function RoomUsageChart() {
   return (
     <div className="mt-2 flex h-[140px] flex-col justify-around py-1">
@@ -229,10 +194,6 @@ function StatChipSkeleton({ height = 'h-[66px]' }: { height?: string }) {
   );
 }
 
-/**
- * DashboardGantt: the period / mode / rows / zoom controls, the timeline
- * viewport (420px, or the column's spare height on xl), and the legend.
- */
 function GanttSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -260,9 +221,6 @@ function GanttSkeleton() {
   );
 }
 
-/* ───────────────────────────── Secretary / Program Head ───────────────────────────── */
-
-/** Scheduling Work Queue: the attention band, then one line per queue row. */
 function QueueSkeleton({ rows }: { rows: number }) {
   return (
     <PanelFrame subtitle={false} className="xl:col-span-4">
@@ -290,7 +248,6 @@ function QueueSkeleton({ rows }: { rows: number }) {
   );
 }
 
-/** Department Drafting Progress: donut, year-level bars, three totals and a button. No header link. */
 function ProgressSkeleton() {
   return (
     <PanelFrame action={false} subtitle={false} className="flex flex-col xl:col-span-4">
@@ -316,7 +273,6 @@ function ProgressSkeleton() {
   );
 }
 
-/** Instructor Assignment: caption row, then the five busiest instructors. */
 function WorkloadSkeleton() {
   return (
     <PanelFrame subtitle={false} className="xl:col-span-4">
@@ -329,7 +285,6 @@ function WorkloadSkeleton() {
   );
 }
 
-/** Room Assignment: status button, four stat chips, the usage chart and its link. */
 function RoomAssignmentSkeleton() {
   return (
     <PanelFrame subtitle={false}>
@@ -354,7 +309,6 @@ function RoomAssignmentSkeleton() {
   );
 }
 
-/** Submission Overview: status band, the four milestones, readiness bar and checklist, then the button. No header link. */
 function SubmissionOverviewSkeleton({ checks }: { checks: number }) {
   return (
     <PanelFrame action={false} subtitle={false} className="flex flex-1 flex-col">
@@ -401,7 +355,6 @@ function SubmissionOverviewSkeleton({ checks }: { checks: number }) {
   );
 }
 
-/** DashboardTimetableGrid: header with the delivery toggle, today's column, the category legend. */
 function SecretaryTimetableSkeleton() {
   const scheduleCards = [
     { id: 'dashboard-grid-1', startSlot: 2, durationSlots: 4 },
@@ -474,8 +427,6 @@ function SecretarySkeleton({ layout }: { layout: SecretaryDashboardLayout }) {
   );
 }
 
-/* ───────────────────────────── Dean ───────────────────────────── */
-
 const DEAN_QUEUE_COLUMNS = 'minmax(0,1.25fr) minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr) 80px';
 const DEAN_OVERVIEW_COLUMNS = 'minmax(0,1.4fr) 58px 62px 66px 62px';
 
@@ -485,7 +436,6 @@ function DeanSkeleton() {
       <MetricStrip count={6} className="xl:grid-cols-6" />
 
       <div className="grid gap-4 xl:grid-cols-12">
-        {/* Schedule Review Queue */}
         <PanelFrame className="xl:col-span-4">
           <TableSkeleton
             template={DEAN_QUEUE_COLUMNS}
@@ -501,12 +451,10 @@ function DeanSkeleton() {
           <LegendStrip widths={['w-16', 'w-28', 'w-14']} />
         </PanelFrame>
 
-        {/* Section Submission Readiness */}
         <PanelFrame className="xl:col-span-4">
           <DonutSkeleton legendRows={5} />
         </PanelFrame>
 
-        {/* Schedule Review Overview */}
         <PanelFrame action={false} className="xl:col-span-4">
           <TableSkeleton
             template={DEAN_OVERVIEW_COLUMNS}
@@ -521,7 +469,6 @@ function DeanSkeleton() {
       </div>
 
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        {/* Like the page, the side column sets the desktop height, not the timetable. */}
         <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <PanelFrame className="flex min-h-0 flex-1 flex-col">
@@ -541,7 +488,6 @@ function DeanSkeleton() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          {/* Instructor Workload */}
           <PanelFrame className="flex flex-col">
             <DonutSkeleton legendRows={4} />
             <div className="mt-auto border-t border-slate-100 pt-3">
@@ -553,7 +499,6 @@ function DeanSkeleton() {
             </div>
           </PanelFrame>
 
-          {/* Room Utilization */}
           <PanelFrame action={false} className="flex flex-col">
             <DonutSkeleton legendRows={2} />
             <div className="mt-3.5 flex items-center justify-between">
@@ -569,8 +514,6 @@ function DeanSkeleton() {
   );
 }
 
-/* ───────────────────────────── VPAA ───────────────────────────── */
-
 const VPAA_ATTENTION_COLUMNS = 'minmax(0,1.4fr) minmax(0,1.1fr) minmax(0,0.95fr) minmax(0,0.9fr) 78px';
 const VPAA_WORKFLOW_COLUMNS = 'minmax(0,1.5fr) minmax(0,1.3fr) minmax(0,0.95fr) 92px';
 const VPAA_BUILDING_COLUMNS = 'minmax(0,1.3fr) minmax(0,1fr) 64px 72px';
@@ -580,7 +523,6 @@ function VpaaSkeleton() {
     <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
       <MetricStrip count={7} className="xl:grid-cols-7" />
 
-      {/* Requires Attention */}
       <div className="grid gap-4">
         <PanelFrame>
           <div className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
@@ -607,7 +549,6 @@ function VpaaSkeleton() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-12">
-        {/* Workflow · Department Scheduling Progress */}
         <PanelFrame className="xl:col-span-6">
           <TableSkeleton
             template={VPAA_WORKFLOW_COLUMNS}
@@ -622,7 +563,6 @@ function VpaaSkeleton() {
           <LegendStrip widths={['w-36', 'w-36', 'w-24']} lastRight />
         </PanelFrame>
 
-        {/* Room Utilisation by Building */}
         <PanelFrame className="flex flex-col xl:col-span-6">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -648,7 +588,6 @@ function VpaaSkeleton() {
       </div>
 
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        {/* Like the page, the side column sets the desktop height, not the timetable. */}
         <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -668,18 +607,15 @@ function VpaaSkeleton() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          {/* Instructor Load Overview */}
           <PanelFrame className="flex flex-col">
             <DonutSkeleton legendRows={4} />
             <div className="mt-auto pt-3"><TextLine className="w-36" /></div>
           </PanelFrame>
 
-          {/* Institutional Readiness */}
           <PanelFrame>
             <DonutSkeleton legendRows={6} />
           </PanelFrame>
 
-          {/* Recent Administrative Activity (compact rows) */}
           <PanelFrame className="flex min-h-[220px] flex-1 flex-col">
             <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-hidden">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -699,8 +635,6 @@ function VpaaSkeleton() {
     </div>
   );
 }
-
-/* ───────────────────────────── Legacy institutional ───────────────────────────── */
 
 function PanelSkeleton({ rows = 4 }: { rows?: number }) {
   return (
@@ -740,7 +674,6 @@ export default function DashboardSkeleton({ metricCount, variant = 'institutiona
   if (variant === 'secretary') return <SecretarySkeleton layout={secretaryLayout} />;
   if (variant === 'dean') return <DeanSkeleton />;
   if (variant === 'vpaa') return <VpaaSkeleton />;
-  // The program head dashboard is the secretary page; its skeleton is too.
   if (variant === 'program' || variant === 'summary') return <SecretarySkeleton layout={secretaryLayout} />;
   if (metricCount && metricCount !== 4) return <SecretarySkeleton layout={secretaryLayout} />;
   return <InstitutionalSkeleton />;

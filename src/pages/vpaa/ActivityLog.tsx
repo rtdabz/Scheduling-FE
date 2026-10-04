@@ -52,7 +52,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
-  // Account & Access
   login_succeeded: { label: 'Login', category: 'account_access' },
   logout: { label: 'Logout', category: 'account_access' },
   password_reset: { label: 'Password Reset', category: 'account_access' },
@@ -65,7 +64,6 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
   google_linked: { label: 'Google Account Linked', category: 'account_access' },
   google_unlinked: { label: 'Google Account Unlinked', category: 'account_access' },
 
-  // Institutional Setup (not yet logged by the backend)
   department_created: { label: 'Department Created', category: 'institutional_setup' },
   department_updated: { label: 'Department Updated', category: 'institutional_setup' },
   program_created: { label: 'Program Created', category: 'institutional_setup' },
@@ -75,7 +73,6 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
   instructor_created: { label: 'Instructor Created', category: 'institutional_setup' },
   instructor_updated: { label: 'Instructor Updated', category: 'institutional_setup' },
 
-  // Academic Setup
   curriculum_created: { label: 'Curriculum Created', category: 'academic_setup' },
   curriculum_updated: { label: 'Curriculum Updated', category: 'academic_setup' },
   course_created: { label: 'Course Created', category: 'academic_setup' },
@@ -85,7 +82,6 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
   semester_activated: { label: 'Semester Activated', category: 'academic_setup' },
   schedule_semester_archived: { label: 'Semester Archived', category: 'academic_setup' },
 
-  // Scheduling
   schedule_created: { label: 'Schedule Created', category: 'scheduling' },
   schedule_updated: { label: 'Schedule Updated', category: 'scheduling' },
   schedule_deleted: { label: 'Schedule Deleted', category: 'scheduling' },
@@ -101,7 +97,6 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
   recommendation_accepted: { label: 'Recommendation Accepted', category: 'scheduling' },
   recommendation_rejected: { label: 'Recommendation Rejected', category: 'scheduling' },
 
-  // Approval
   schedule_submitted: { label: 'Schedule Submitted', category: 'approval' },
   schedule_returned: { label: 'Schedule Returned', category: 'approval' },
   schedule_returned_by_dean: { label: 'Schedule Returned', category: 'approval' },
@@ -111,11 +106,9 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
   schedule_approved_by_vpaa: { label: 'Schedule Approved', category: 'approval' },
   schedule_withdrawn: { label: 'Schedule Withdrawn', category: 'approval' },
 
-  // Instructor Assignment
   instructor_assigned: { label: 'Instructor Assigned', category: 'instructor_assignment' },
   instructor_assignment_released: { label: 'Assignment Released', category: 'instructor_assignment' },
 
-  // Reports
   schedule_report_generated: { label: 'Schedule Report Generated', category: 'reports' },
   conflict_report_generated: { label: 'Conflict Report Generated', category: 'reports' },
   report_downloaded: { label: 'Report Downloaded', category: 'reports' },
@@ -136,7 +129,6 @@ interface ActivityLookups {
 
 const LOOKUPS_CACHE_KEY = 'page:activity-log:lookups';
 const EMPTY_FILTERS = { search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' };
-// One entry per page + filter combination, so a revisit paints the view it left.
 const entriesCacheKey = (page: number, applied: typeof EMPTY_FILTERS): string =>
   `page:activity-log:entries:${page}:${JSON.stringify(applied)}`;
 
@@ -181,7 +173,6 @@ export default function ActivityLog() {
       setEntries(cached.data);
       setMeta(cached.meta);
     }
-    // A cached page stays on screen while it is replaced; only a cold key shows the skeleton.
     if (!hasCachedData(cacheKey)) setLoading(true);
     setError('');
     try {

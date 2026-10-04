@@ -27,12 +27,6 @@ const hoursError = (hours: Hours): string | null =>
 
 const toMinutes = (hours: Hours): number | null => (hours === "" ? null : Math.round(hours * 60));
 
-/**
- * Step 2's Default Settings, in the same right-hand sidebar as a course's
- * Configure panel. Set once, they apply to every course without Configure
- * settings of its own; a course's own Configure choice always wins. Changes
- * are a draft until Apply, like Configure.
- */
 export default function CourseDefaultsSidebar({
   defaults,
   summarize,
@@ -46,14 +40,10 @@ export default function CourseDefaultsSidebar({
   onApply,
 }: {
   defaults: CourseDefaults;
-  /** How many courses these defaults would set, and how many they do not fit. */
   summarize: (defaults: CourseDefaults) => { applied: number; skipped: number };
-  /** Courses with their own Configure settings, which defaults skip. */
   customizedCount: number;
   onResetCustomized: () => void;
-  /** A Standard department has no laboratories, so no laboratory duration. */
   laboratoryEnabled?: boolean;
-  /** The department's Default LAB Room Requirement, saved on Apply. */
   labRoomType?: LabRoomType;
   onLabRoomTypeApply?: (next: LabRoomType) => void | Promise<unknown>;
   disabled: boolean;

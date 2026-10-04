@@ -3,7 +3,6 @@ import { useCallback } from "react";
 import { DAYS, slotToTimeStr } from "../constants";
 import type { ConflictInfo, DropContext, ScheduleItem, Subject, Semester } from "../types";
 
-/** useConflict.checkMoveConflict: judges moving a placed class as a whole. */
 type CheckMoveConflict = (
   scheduleId: string,
   dayIndex: number,
@@ -28,17 +27,6 @@ interface UseDragDropParams {
   activeSemester: Semester | null;
 }
 
-/**
- * Drag-and-drop handlers for the timetable grid.
- *
- * Every handler is memoized: handleDragOver and handleDrop are passed to all 168
- * memoized GridCells, so an unstable identity here re-renders the entire grid on
- * each cell the pointer crosses.
- *
- * handleDragOver deliberately excludes `hoveredCell` from its dependencies and
- * reads it through a functional setState instead — depending on it would rebuild
- * the callback on every hover, which is the problem being fixed.
- */
 export const useDragDrop = ({
   schedules,
   dragSubjectId,

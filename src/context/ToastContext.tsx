@@ -20,10 +20,6 @@ export interface ModalNoticeItem {
   message: string
 }
 
-/**
- * A question asked through the same modal that renders error and warning
- * notices, so every confirmation in the system looks and behaves identically.
- */
 export interface ConfirmOptions {
   title: string
   message: string
@@ -31,11 +27,6 @@ export interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
   variant?: ConfirmModalVariant
-  /**
-   * Work to run once the user confirms. While it runs the modal stays open with
-   * a spinner on the confirm button and cannot be dismissed; confirm() resolves
-   * after it settles. The action is expected to report its own errors.
-   */
   onConfirm?: () => unknown
 }
 
@@ -54,10 +45,8 @@ interface ToastContextValue {
   }
   dismiss: (id: string) => void
   dismissModalNotice: (id: string) => void
-  /** Resolves true when the user confirms, false when they cancel or dismiss. */
   confirm: (options: ConfirmOptions) => Promise<boolean>
   confirmRequest: ConfirmRequest | null
-  /** True while the confirmed request's onConfirm action is running. */
   isConfirming: boolean
   resolveConfirm: (answer: boolean) => void
 }
@@ -78,7 +67,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       prev.map((t) => (t.id === id ? { ...t, exiting: true } : t))
     )
 
-    // Wait for exit animation then remove
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 300)
@@ -92,12 +80,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setToasts((prev) => {
         const next = [...prev, newToast]
         if (next.length > 5) {
-          return next.slice(1) // Remove oldest
+          return next.slice(1)
         }
         return next
       })
 
-      // Auto dismiss
       setTimeout(() => {
         dismiss(id)
       }, duration)
@@ -116,8 +103,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const confirm = useCallback(
     (options: ConfirmOptions) =>
       new Promise<boolean>((resolve) => {
-        // A question superseded before it is answered still has to settle, or the
-        // caller awaiting it would hang forever.
         pendingConfirm.current?.(false)
         pendingConfirm.current = resolve
         pendingAction.current = options.onConfirm
@@ -127,14 +112,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 
   const resolveConfirm = useCallback((answer: boolean) => {
-    // Once the confirmed action is running, neither a second click nor a
-    // cancel/Escape may close the modal out from under it.
     if (confirmingRef.current) return
 
     const resolve = pendingConfirm.current
     const action = answer ? pendingAction.current : undefined
     const settle = () => {
-      // Only close the modal if it is still showing this request.
       if (pendingConfirm.current === resolve) {
         pendingConfirm.current = null
         pendingAction.current = undefined

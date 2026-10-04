@@ -1,12 +1,3 @@
-/**
- * Turns an Axios rejection into the sentence the API actually sent.
- *
- * Every page used to `catch { toast.error('Error', 'Failed to save') }`, which
- * threw away the reason: a 422 listing the offending field, a 403 naming the
- * role restriction, a 409 explaining what still references the record. The
- * fallback stays for genuine network failures, where there is no body to read.
- */
-
 interface ApiErrorBody {
   message?: unknown;
   error?: unknown;
@@ -30,10 +21,6 @@ const firstFieldError = (errors: unknown): string | null => {
 const asText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
 
-/**
- * `fallback` is used only when the response carried nothing readable — an
- * offline browser, a proxy timeout, or a 500 with an empty body.
- */
 export const apiErrorMessage = (err: unknown, fallback: string): string => {
   const failure = err as {
     config?: { method?: string };
@@ -43,9 +30,6 @@ export const apiErrorMessage = (err: unknown, fallback: string): string => {
 
   if (!response) {
     const method = (failure?.config?.method ?? 'get').toLowerCase();
-    // A write can reach the server and succeed even though the reply never
-    // made it back. Resending the identical change is safe: it carries the
-    // same idempotency key and is not applied twice (see lib/idempotency.ts).
     if (method !== 'get' && method !== 'head') {
       return 'The connection dropped before the server replied, so this change may already be saved. Refresh to check, or try again. It will not be saved twice.';
     }
@@ -56,8 +40,6 @@ export const apiErrorMessage = (err: unknown, fallback: string): string => {
   const message = asText(data.message) ?? asText(data.error);
   const field = firstFieldError(data.errors);
 
-  // A validation response carries a generic headline ("The given data was
-  // invalid") plus the field that actually failed, so lead with the field.
   if (field && (!message || response.status === 422)) {
     return message && message !== field && response.status !== 422
       ? `${message} ${field}`
@@ -72,7 +54,6 @@ export const apiErrorMessage = (err: unknown, fallback: string): string => {
   return fallback;
 };
 
-/** Every field error, for forms that can highlight more than one input. */
 export const apiFieldErrors = (err: unknown): Record<string, string> => {
   const errors = (err as { response?: { data?: ApiErrorBody } })?.response?.data?.errors;
   if (!errors || typeof errors !== 'object') return {};

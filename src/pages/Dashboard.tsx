@@ -23,11 +23,6 @@ const Dashboard: FC<DashboardProps> = ({ role }) => {
 
   if (!Component) return <h2>Invalid Role</h2>;
 
-  // Deliberately not a skeleton. Every dashboard page already renders
-  // DashboardSkeleton while its first fetch is in flight, and a fallback here
-  // renders the *same* skeleton for the chunk download — so the user saw it
-  // appear, unmount and appear again. The chunk resolves far faster than the
-  // fetch that follows it, so the page's own skeleton is the one worth showing.
   return (
     <Suspense fallback={<RouteLoadingBar />}>
       <Component />

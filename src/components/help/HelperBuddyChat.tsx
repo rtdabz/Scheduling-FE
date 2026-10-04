@@ -105,8 +105,6 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
       if (detail.status) setScheduleStatus(detail.status);
       setMessages((current) => [...current.slice(-7), { id: crypto.randomUUID(), sender: "assistant", text: detail.text ?? "", }]);
       setAnimation(detail.type === "conflict" ? "warning" : detail.type === "rejected" ? "error" : detail.type === "approved" ? "success" : "waiting");
-      // Status and reminder events may update the chat history while it stays
-      // minimized. Opening is opt-in for callers that explicitly request it.
       if (detail.open === true) setOpen(true);
     };
     window.addEventListener("show-helper-buddy", handleHelperEvent);
@@ -163,7 +161,7 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
     suppressClickRef.current = true;
     setPosition((current) => {
       const bounded = clampPosition(current);
-      try { localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(bounded)); } catch { /* Position persistence is optional. */ }
+      try { localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(bounded)); } catch { }
       return bounded;
     });
   };

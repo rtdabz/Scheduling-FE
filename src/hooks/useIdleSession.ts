@@ -7,9 +7,6 @@ import {
   writeLastActivity,
 } from '../lib/sessionTimeout';
 
-// Activity fires far more often than it needs to be recorded; one write per
-// second is enough to keep every tab in step without touching storage on each
-// mouse move.
 const ACTIVITY_WRITE_INTERVAL_MS = 1000;
 const CHECK_INTERVAL_MS = 1000;
 
@@ -19,11 +16,6 @@ interface UseIdleSessionOptions {
   onIdle: () => void;
 }
 
-/**
- * Reports whether the session has gone idle. Elapsed time is measured from a
- * stored timestamp rather than a running countdown, so a throttled background
- * tab or a sleeping machine still expires at the right moment on wake.
- */
 export function useIdleSession({
   enabled = true,
   timeoutMs = IDLE_TIMEOUT_MS,
@@ -50,9 +42,6 @@ export function useIdleSession({
   useEffect(() => {
     if (!enabled) return;
 
-    // A reload inside the idle window must not hand back a fresh full window,
-    // so resume from the shared timestamp when one is present. An expired
-    // session is likewise never revived here; only a fresh sign-in clears it.
     const stored = readLastActivity();
     const now = Date.now();
     lastActivityRef.current = stored ?? now;
@@ -70,7 +59,6 @@ export function useIdleSession({
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== LAST_ACTIVITY_KEY || !event.newValue) return;
       const parsed = Number(event.newValue);
-      // Another tab is in use; only ever move the deadline forward.
       if (Number.isFinite(parsed) && parsed > lastActivityRef.current) {
         lastActivityRef.current = parsed;
       }
@@ -87,7 +75,6 @@ export function useIdleSession({
       if (Date.now() - lastActivityRef.current >= timeoutMs) goIdle();
     };
 
-    // Coming back to a hidden tab is the moment a long absence becomes visible.
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkIdle();
     };

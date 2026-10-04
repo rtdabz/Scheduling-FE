@@ -23,12 +23,7 @@ const stageStyles: Record<string, string> = {
   approved: 'bg-emerald-50 text-emerald-800 border-emerald-200',
 };
 
-/**
- * Meetings per weekday. A section whose week is lopsided shows it here without
- * anyone having to open the grid to find out.
- */
 function DayLoadStrip({ dayLoad }: { dayLoad: Record<string, number> }) {
-  // Sunday classes are allowed, so Sunday shows whenever a section has one.
   const days = WEEK_DAYS.filter((day) => day !== 'Sunday' || (dayLoad[day] ?? 0) > 0);
   const peak = Math.max(1, ...days.map((day) => dayLoad[day] ?? 0));
 
@@ -44,7 +39,6 @@ function DayLoadStrip({ dayLoad }: { dayLoad: Record<string, number> }) {
                 style={{ height: `${count === 0 ? 0 : Math.max(18, (count / peak) * 100)}%` }}
               />
             </div>
-            {/* Two letters: one made Tuesday and Thursday both "T". */}
             <span className="text-[9px] font-bold uppercase text-slate-400">{day.slice(0, 2)}</span>
           </div>
         );

@@ -1,15 +1,10 @@
 import api from './api';
 
-/**
- * College-wide document signatories, edited in the VPAA's Settings page and
- * stamped onto printed schedules and teaching loads.
- */
 export interface InstitutionSettings {
   president_name: string;
   president_title: string;
 }
 
-/** Neutral fallback until the VPAA sets the real signatory in Settings. */
 export const DEFAULT_INSTITUTION_SETTINGS: InstitutionSettings = {
   president_name: 'College President',
   president_title: 'President',
@@ -31,11 +26,6 @@ export const normalizeInstitutionSettings = (raw: unknown): InstitutionSettings 
 let cached: InstitutionSettings | null = null;
 let inFlight: Promise<InstitutionSettings> | null = null;
 
-/**
- * Cached for the session: printing happens in bursts, and a signatory change is
- * rare. Never rejects -- a printed document falls back to the standing names
- * rather than failing to print.
- */
 export const fetchInstitutionSettings = async (): Promise<InstitutionSettings> => {
   if (cached) return cached;
   if (inFlight) return inFlight;
@@ -51,7 +41,6 @@ export const fetchInstitutionSettings = async (): Promise<InstitutionSettings> =
   return inFlight;
 };
 
-/** Called after a successful save so the next print uses the new name. */
 export const setCachedInstitutionSettings = (settings: InstitutionSettings): void => {
   cached = normalizeInstitutionSettings(settings);
 };

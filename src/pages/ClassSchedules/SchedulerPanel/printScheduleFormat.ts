@@ -1,14 +1,6 @@
 import { semesterLabel } from "../../../lib/semesterLabel";
 import type { ScheduleItem, Semester } from "./types";
 
-/**
- * Pure formatting for the printed class schedule.
- *
- * These live outside PrintSchedule.tsx so the component file exports only a
- * component, and so the table's row building can be tested without driving
- * jsPDF.
- */
-
 export const buildPrintSemesterTitle = (semester: Semester | null): string => semester
   ? `CLASS SCHEDULE AY ${semester.academic_year}    ${semesterLabel(semester.semester)}`
   : "CLASS SCHEDULE";
@@ -37,7 +29,6 @@ const DAY_SHORT_CODES: Record<string, string> = {
 };
 
 export type PrintMeetingGroup = {
-  /** The meeting that carries the course columns for the group. */
   first: ScheduleItem;
   days: string[];
   dayLabel: string;
@@ -49,15 +40,6 @@ const printRoomLabel = (item: ScheduleItem): string =>
   item.roomName
   || (item.mode === "online" ? "Online" : item.mode === "field" ? "Field" : "");
 
-/**
- * A meeting that repeats at the same time in the same room is one line.
- *
- * `schedules.day` holds one row per meeting, so an MWF class arrives as three
- * rows identical apart from the day. Printing them verbatim repeated the time
- * and room on consecutive lines; a registrar reads those as a single entry
- * with the days combined. Anything that genuinely differs — another room, or
- * another time — keeps its own line.
- */
 export const groupPrintMeetings = (
   schedules: ScheduleItem[],
   formatTime: (time: string) => string,
@@ -79,8 +61,6 @@ export const groupPrintMeetings = (
     return {
       first: meetings[0],
       days,
-      // One meeting keeps its full day name; a combined one uses the
-      // shorthand, which is both the convention and what fits the column.
       dayLabel: days.length === 1
         ? days[0]
         : days.map((day) => DAY_SHORT_CODES[day] ?? day).join(""),

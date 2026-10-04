@@ -24,11 +24,6 @@ export interface InstructorTimetableScheduleItem {
   facultyName?: string | null;
 }
 
-/**
- * The fields the timetable draws. Callers outside the scheduler (the VPAA
- * schedule viewer, the instructor timetable modal) hold lighter rows than the
- * scheduler's ScheduleItem, so the input asks only for what is used.
- */
 export interface InstructorTimetableMeeting {
   day: string;
   startTime: string;
@@ -97,7 +92,6 @@ function formatMins12hShort(mins: number): string {
   return m === 0 ? `${hrs} ${suffix}` : `${hrs}:${m.toString().padStart(2, "0")} ${suffix}`;
 }
 
-// Axis label for a block, e.g. "7-8:30 AM" or "11:30 AM-1 PM" when it crosses noon.
 function formatBlockRange(start: number, end: number): string {
   const clock = (mins: number) => {
     const hrs = Math.floor(mins / 60) % 12 || 12;
@@ -175,9 +169,6 @@ function createTransparentWatermarkDataUrl(img: HTMLImageElement, targetOpacity 
   }
 }
 
-/**
- * Clips an image into a circle with an optional border for circular badge rendering.
- */
 function createCircularImage(img: HTMLImageElement): string {
   try {
     const canvas = document.createElement("canvas");
@@ -222,17 +213,14 @@ const HAIRLINE: Rgb = [226, 232, 240];
 const FRAME: Rgb = [203, 213, 225];
 const WHITE: Rgb = [255, 255, 255];
 
-// Class card text sizes (pt). Prominent, high-legibility sizing for paper timetable prints.
 const CARD_CODE_PT = 10;
 const CARD_PILL_PT = 7;
 const CARD_BODY_PT = 7.5;
 const CARD_FOOTER_PT = 7;
-/** Baseline-to-baseline step (mm) for the card's body and footer lines. */
 const CARD_LINE_H = 3.6;
 
 type CardKind = "lecture" | "laboratory" | "online" | "field" | "conflict";
 
-/** Accent (strip, border, code) and tint per card kind; also drives the legend. */
 const CARD_STYLES: Record<CardKind, { label: string; accent: Rgb; tint: Rgb }> = {
   lecture: { label: "Lecture", accent: [30, 64, 175], tint: [239, 246, 255] },
   laboratory: { label: "Laboratory", accent: [109, 40, 217], tint: [245, 243, 255] },
@@ -291,15 +279,12 @@ export async function buildInstructorTimetablePdf({
     }
     doc.setFontSize(size);
   };
-  /** The part of `text` that fits `width` on one line, so nothing spills out of its box. */
   const fit = (text: string, width: number): string =>
     (doc.splitTextToSize(text, Math.max(1, width)) as string[])[0] ?? "";
 
   const pageX = 10;
   const pageW = 277;
 
-  // Classes on the week, packed into lanes with the VPAA calendar Gantt's own
-  // packing so overlapping classes sit in separate lanes instead of covering each other.
   const items = schedules.flatMap((sch, index) => {
     const dayIdx = normalizeDay(sch.day);
     const start = parseTimeToMinutes(sch.startTime);
@@ -319,7 +304,6 @@ export async function buildInstructorTimetablePdf({
   const conflictCount = days.reduce((sum, day) => sum + day.blocks.filter((block) => block.isConflict).length, 0);
   const weeklyMinutes = items.reduce((sum, item) => sum + (item.end - item.start), 0);
 
-  // 1. Header band: logo, name block, summary chips, department logo.
   const headerY = 8;
   const headerH = 26;
   fill(MAROON);
@@ -333,7 +317,6 @@ export async function buildInstructorTimetablePdf({
     const centerX = x + radius;
     const centerY = headerY + headerH / 2;
 
-    // Circular white badge with a gold border
     fill(WHITE);
     doc.circle(centerX, centerY, radius, "F");
     stroke(GOLD_LIGHT);
@@ -352,7 +335,6 @@ export async function buildInstructorTimetablePdf({
     doc.addImage(targetImg, imgFormat, centerX - w / 2, centerY - h / 2, w, h);
   };
 
-  // Department or college logo badge before the instructor name
   const effectiveDeptLogoImg = deptLogoImg || tccLogoImg;
   let textX = pageX + 5;
   if (effectiveDeptLogoImg) {
@@ -363,7 +345,6 @@ export async function buildInstructorTimetablePdf({
 
   let rightEdge = pageX + pageW - 3;
 
-  // Summary chips, laid out right to left.
   const chips: Array<{ label: string; value: string; alert?: boolean }> = [
     { label: "CONFLICTS", value: String(conflictCount), alert: conflictCount > 0 },
     { label: "HOURS / WEEK", value: formatHours(weeklyMinutes) },
@@ -385,7 +366,6 @@ export async function buildInstructorTimetablePdf({
     rightEdge = x - 2.5;
   });
 
-  // Name block: "INSTRUCTOR: KAY WAGA" becomes an eyebrow and a heading.
   const rawTitle = (title || (facultyName ? `INSTRUCTOR: ${facultyName}` : "CLASS TIMETABLE")).trim();
   const colon = rawTitle.indexOf(":");
   const eyebrow = colon > 0 ? `${rawTitle.slice(0, colon).trim().toUpperCase()} TIMETABLE` : "WEEKLY TIMETABLE";
@@ -413,7 +393,6 @@ export async function buildInstructorTimetablePdf({
   ink(CREAM);
   doc.text(fit(subTitle, textW), textX, headerY + 21.5);
 
-  // 2. Chart geometry
   const chartY = headerY + headerH + 4;
   const labelW = 28;
   const timelineX = pageX + labelW;
@@ -423,7 +402,6 @@ export async function buildInstructorTimetablePdf({
   const rowsBottomLimit = 194;
   const emptyRowH = 8;
 
-  // 7:00 AM - 8:30 PM in 90-minute blocks, widened (on the same grid) only when a class falls outside it.
   const BLOCK = 90;
   const earliest = Math.min(420, ...items.map((item) => item.start));
   const latest = Math.max(1230, ...items.map((item) => item.end));
@@ -431,7 +409,6 @@ export async function buildInstructorTimetablePdf({
   const windowEnd = windowStart + Math.ceil((latest - windowStart) / BLOCK) * BLOCK;
   const minuteX = (minutes: number) => timelineX + ((minutes - windowStart) / (windowEnd - windowStart)) * timelineW;
 
-  // Days without classes collapse to a thin row; busy days share the rest.
   const emptyDays = days.filter((day) => day.blocks.length === 0).length;
   const busyLanes = days.reduce((sum, day) => sum + (day.blocks.length ? day.laneCount : 0), 0);
   const laneH = busyLanes ? Math.min(22, (rowsBottomLimit - rowsTopY - emptyDays * emptyRowH) / busyLanes) : 0;
@@ -443,7 +420,6 @@ export async function buildInstructorTimetablePdf({
   });
   const rowsBottomY = nextY;
 
-  // Day label column and alternate row shading
   fill([250, 247, 244]);
   doc.rect(pageX, rowsTopY, labelW, rowsBottomY - rowsTopY, "F");
   days.forEach((day, idx) => {
@@ -453,7 +429,6 @@ export async function buildInstructorTimetablePdf({
     }
   });
 
-  // Watermark behind the timeline: clearly visible background emblem
   if (tccLogoImg) {
     const wmSize = Math.min(105, rowsBottomY - rowsTopY - 4);
     const wmX = timelineX + (timelineW - wmSize) / 2;
@@ -479,7 +454,6 @@ export async function buildInstructorTimetablePdf({
     }
   }
 
-  // Time axis
   fill([248, 250, 252]);
   doc.rect(pageX, chartY, pageW, axisH, "F");
   fill(MAROON);
@@ -496,7 +470,6 @@ export async function buildInstructorTimetablePdf({
   fill(GOLD);
   doc.rect(pageX, chartY + axisH - 0.6, pageW, 0.6, "F");
 
-  // Gridlines: solid on block boundaries, dashed every 30 minutes inside a block
   for (let minutes = windowStart; minutes <= windowEnd; minutes += 30) {
     const isBoundary = (minutes - windowStart) % BLOCK === 0;
     stroke(isBoundary ? [175, 190, 205] : [205, 218, 230]);
@@ -506,7 +479,6 @@ export async function buildInstructorTimetablePdf({
     doc.setLineDashPattern([], 0);
   }
 
-  // Day rows
   days.forEach((day) => {
     stroke([175, 190, 205]);
     doc.setLineWidth(0.35);
@@ -536,7 +508,6 @@ export async function buildInstructorTimetablePdf({
   doc.line(timelineX, chartY, timelineX, rowsBottomY);
   doc.roundedRect(pageX, chartY, pageW, rowsBottomY - chartY, 1.2, 1.2, "S");
 
-  // 4. Class cards
   days.forEach((day) => {
     day.blocks.forEach(({ sch, start, end, lane, isConflict }) => {
       const style = CARD_STYLES[cardKindOf(sch, isConflict)];
@@ -580,7 +551,6 @@ export async function buildInstructorTimetablePdf({
       const roomOrMode = sch.mode === "online" ? "Online" : sch.mode === "field" ? "Field" : (sch.roomName || "Room TBA");
       const timeRange = [formatTime12hShort(sch.startTime), formatTime12hShort(sch.endTime)].filter(Boolean).join(" - ");
 
-      // Section pill beside the code when the card is wide enough
       font("bold", CARD_PILL_PT);
       const pillW = section ? doc.getTextWidth(section) + 3.6 : 0;
       const pillBeside = Boolean(section) && innerW >= pillW + 18;
@@ -594,7 +564,6 @@ export async function buildInstructorTimetablePdf({
         doc.text(section, pillX + pillW / 2, y + 4.3, { align: "center" });
       }
 
-      // Room and time get a line each when the card is tall enough, else they share one.
       const footerLines = h >= 18 && roomOrMode && timeRange
         ? [roomOrMode, timeRange]
         : [[roomOrMode, timeRange].filter(Boolean).join("  |  ")];
@@ -603,12 +572,9 @@ export async function buildInstructorTimetablePdf({
       const footerTop = footerY - (footerLines.length - 1) * CARD_LINE_H;
       const middleBottom = hasFooter ? footerTop - 3.2 : y + h - 1;
 
-      // Course code and name on the left side
       const centerX = x + w / 2;
       const maxTextW = Math.max(1, pillBeside ? innerW - pillW - 2 : innerW);
 
-      // Wrap the title at the size it is drawn in, and fit as many lines as the
-      // card's height allows; the last line is ellipsized if the title is longer.
       const CODE_LINE_H = 4.2;
       const TITLE_LINE_H = 3.1;
       const middleTop = y + (pillBeside ? 1.5 : 0.8);
@@ -626,7 +592,6 @@ export async function buildInstructorTimetablePdf({
 
       let lineY = middleTop + (middleH - textBlockH) / 2 + 3;
 
-      // Draw Section on the left if not placed in top pill
       if (!pillBeside && section) {
         font("bold", CARD_PILL_PT + 0.5);
         ink(style.accent);
@@ -634,12 +599,10 @@ export async function buildInstructorTimetablePdf({
         lineY += sectionH;
       }
 
-      // Draw Course Code (prominent and large on the left side)
       font("bold", CARD_CODE_PT);
       ink(style.accent);
       doc.text(fit(code, maxTextW), x + padL, lineY);
 
-      // Draw Course Title / Name (large and bold on the left side directly below code)
       if (titleLines.length > 0) {
         font("bold", CARD_BODY_PT);
         ink(BODY);
@@ -649,7 +612,6 @@ export async function buildInstructorTimetablePdf({
         });
       }
 
-      // Building, room and time centered in the footer
       if (hasFooter) {
         stroke([210, 222, 234]);
         doc.setLineWidth(0.2);
@@ -663,7 +625,6 @@ export async function buildInstructorTimetablePdf({
     });
   });
 
-  // 5. Footer: legend, then print details
   const legendY = 200;
   let legendX = pageX;
   font("bold", 8);

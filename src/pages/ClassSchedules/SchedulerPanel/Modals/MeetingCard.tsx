@@ -12,7 +12,6 @@ const CLASS_MODE_OPTIONS: { value: ClassMode; label: string; Icon: typeof Buildi
   { value: "field", label: "Field", Icon: TreePine },
 ];
 
-/** Durations are whole and half hours, from one hour up. */
 const MIN_DURATION_SLOTS = SLOTS_PER_HOUR;
 
 const fieldLabelClass = "mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500";
@@ -39,22 +38,10 @@ interface MeetingCardProps {
   startOptionCount: number;
   onStartChange: (slot: number) => void;
   durationSlots: number;
-  /**
-   * Makes the length typed in, in hours. Deliberately uncapped: a length the
-   * rules refuse (past the day's end, or over what the course carries) is
-   * reported by the conflict check and the save, not hidden from the input.
-   */
   onDurationChange?: (slots: number) => void;
   endLabelSuffix?: string;
 }
 
-/**
- * One meeting's delivery, room, day and time.
- *
- * The first and second meeting used to be two ~190-line copies of the same
- * markup that had already drifted (label spacing, cursor styles). They differ
- * only in the values and rules passed in here.
- */
 export default function MeetingCard({
   title,
   mode,
@@ -79,7 +66,6 @@ export default function MeetingCard({
   onDurationChange,
   endLabelSuffix,
 }: MeetingCardProps) {
-  // The typed text, so "1." or an empty box survives while being edited.
   const [durationDraft, setDurationDraft] = useState(() => String(slotsToHours(durationSlots)));
   useEffect(() => {
     setDurationDraft(String(slotsToHours(durationSlots)));
@@ -91,8 +77,6 @@ export default function MeetingCard({
     if (next !== durationSlots) onDurationChange?.(next);
   };
 
-  // Only digits and one decimal point can be typed; a value is taken as soon
-  // as it is a whole or half hour of at least one hour (1, 1.5, 2, ...).
   const handleDurationInput = (value: string) => {
     if (!/^\d*\.?\d*$/.test(value)) return;
     setDurationDraft(value);
@@ -102,7 +86,6 @@ export default function MeetingCard({
     }
   };
 
-  // Anything else snaps to the nearest half hour when the box is left.
   const handleDurationBlur = () => {
     const hours = Number(durationDraft);
     commitDurationSlots(durationDraft.trim() === "" || !Number.isFinite(hours)
@@ -213,7 +196,6 @@ export default function MeetingCard({
 
       </div>
 
-      {/* Start, length and end read left to right on one aligned row. */}
       <div className={`grid gap-3 ${onDurationChange ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         <div>
           <span className={fieldLabelClass}>Start time</span>

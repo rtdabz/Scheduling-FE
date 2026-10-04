@@ -35,12 +35,6 @@ const statusBadges: Record<CurriculumStatus, string> = {
 const selectClassName =
   'px-3.5 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors';
 
-/**
- * The Dean's and the VPAA's curriculum screen. Both review curricula without
- * changing them, so the page follows Schedule Approval: status tabs with counts,
- * a filter card, a table, and a View action that opens a read-only preview.
- * Authoring stays on the secretary's page behind `curriculum.manage`.
- */
 export default function CurriculumReviewPage() {
   const { toast } = useToast();
   const { rawCurriculumList, departments, programs, isLoading } = useCurriculum();
@@ -61,8 +55,6 @@ export default function CurriculumReviewPage() {
     [departments],
   );
 
-  // A dean's list is already scoped to one department; the filter only earns
-  // its place when the list spans several.
   const listedDepartments = useMemo(() => {
     const ids = new Set(rawCurriculumList.map((item) => item.department_id));
     return departments.filter((dept) => ids.has(dept.id));

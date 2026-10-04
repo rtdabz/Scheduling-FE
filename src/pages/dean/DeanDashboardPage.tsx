@@ -84,24 +84,14 @@ const OVERVIEW_COLUMNS = 'minmax(0,1.4fr) 54px 56px 60px 56px';
 
 const percent = (part:number, total:number) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
-/** One decimal — the precision the donut legends quote each share to. */
 const share1 = (part:number, total:number) => (total > 0 ? ((part / total) * 100).toFixed(1) : '0.0');
 
-/**
- * Program a section belongs to, read off its name.
- *
- * Sections are named "<program> <year><letter>" ("BSIT 1A", "BSBA 2C") and the
- * sections table carries no program_id, so the leading run of non-digits is the
- * only place the program is recorded. Everything before the first digit is the
- * package name; a name with no digit at all is its own package.
- */
 const programOf = (sectionName:string) => {
   const trimmed = (sectionName ?? '').trim();
   const head = trimmed.replace(/\s*\d.*$/, '').trim();
   return head || trimmed || 'Unassigned';
 };
 
-/** "Aug 12, 2026, 10:24 AM" — the queue's Submitted On column. */
 const formatSubmittedOn = (value?:string|null) => {
   if (!value) return 'Not submitted';
   const date = new Date(value);
@@ -109,13 +99,11 @@ const formatSubmittedOn = (value?:string|null) => {
   return formatPhilippineDate(value, { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
 };
 
-/** Keep rows that belong to the Dean's department (rows with no department are shared/global). */
 const inDepartment = <T extends {department_id?:number|null}>(items:T[], departmentId?:number) =>
   items.filter(item => !departmentId || !item.department_id || Number(item.department_id) === Number(departmentId));
 
 interface Slice { key:string; label:string; value:number; color:string }
 
-/** A schedule package: every section of one program, and where each one sits. */
 interface Package {
   code:string;
   total:number;
@@ -151,14 +139,12 @@ export default function DeanDashboardPage() {
   const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
 
-  // Ticks once a minute so the timeline's "now" line keeps moving.
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
 
-  // ── Timetable controls ──
   const [yearFilter, setYearFilter] = useState('all');
   const [sectionFilter, setSectionFilter] = useState('all');
   const [facultyFilter, setFacultyFilter] = useState('all');
@@ -170,7 +156,6 @@ export default function DeanDashboardPage() {
     let active = true;
 
     const load = async () => {
-      // A live refresh keeps the current figures on screen until new ones land.
       setLoading(liveRevision === 0 && !hasCachedData(cacheKey));
       setLoadError(null);
       try {
@@ -225,7 +210,6 @@ export default function DeanDashboardPage() {
     refetchStatus();
   };
 
-  // ── Department-scoped views of the raw payload ──
   const deptSections = useMemo(
     () => sections.filter(s => !departmentId || Number(s.department_id) === Number(departmentId)),
     [sections, departmentId],
@@ -251,15 +235,8 @@ export default function DeanDashboardPage() {
     [schedules, semesterId, sectionIds, departmentId],
   );
 
-  /**
-   * Sections total. The schedule-status endpoint is the authority — it counts the
-   * active sections of the active semester, the same set every readiness and
-   * completion figure below is measured against. The payload is the fallback that
-   * keeps the tile populated while that request is still in flight.
-   */
   const sectionTotal = totalSections || deptSections.length;
 
-  // ── Section submission readiness ──
   const scheduledSectionIds = useMemo(() => new Set(visibleSchedules.map(s => Number(s.section_id))), [visibleSchedules]);
 
   const readiness = useMemo(() => {
@@ -273,8 +250,6 @@ export default function DeanDashboardPage() {
       if (section.status === 'submitted') awaitingReview += 1;
       else if (section.status === 'revision') returned += 1;
       else if (section.status === 'approved_by_dean' || section.status === 'approved') reviewed += 1;
-      // The backend reports a section with no schedule rows as 'draft', which is a
-      // different problem from one that is actively being drafted.
       else if (!scheduledSectionIds.has(Number(section.id))) notStarted += 1;
       else inPreparation += 1;
     });
@@ -290,11 +265,6 @@ export default function DeanDashboardPage() {
     { key: 'not-started', label: 'Not Started', value: readiness.notStarted, color: '#cbd5e1' },
   ];
 
-  // ── Schedule packages, one per program in the department ──
-  /**
-   * Newest submission holding any of a program's sections. It records who
-   * actually submitted (Program Head or Secretary) and when.
-   */
   const latestSubmissionByProgram = useMemo(() => {
     const programBySection = new Map<number, string>();
     statusSections.forEach(section => programBySection.set(Number(section.id), programOf(section.code)));
@@ -333,7 +303,6 @@ export default function DeanDashboardPage() {
           submittedBy: submission?.submitter?.name?.trim() || '—',
         };
       })
-      // Packages waiting on the Dean first; a settled package can wait at the bottom.
       .sort((a, b) => b.awaitingReview - a.awaitingReview || b.completion - a.completion || a.code.localeCompare(b.code));
   }, [statusSections, latestSubmissionByProgram]);
 
@@ -344,10 +313,8 @@ export default function DeanDashboardPage() {
     total: totals.total + item.total,
   }), { submitted: 0, awaitingReview: 0, returned: 0, total: 0 }), [packages]);
 
-  // The queue holds only packages with sections waiting on the Dean.
   const queuedPackages = useMemo(() => packages.filter(item => item.awaitingReview > 0), [packages]);
 
-  // ── Faculty workload ──
   const loads = useMemo(() => deptFaculties.map(f => {
     const assigned = f.assigned_units || 0;
     const max = basicLoadOf(f.max_units, f.deload_units);
@@ -377,12 +344,8 @@ export default function DeanDashboardPage() {
     { key: 'none', label: 'No Assignments', value: workloadBands.none, color: '#f43f5e' },
   ];
 
-  /** Busiest five instructors, the rows of the workload chart. */
   const workload = useMemo(() => [...loads].sort((a, b) => b.assigned - a.assigned).slice(0, 5), [loads]);
 
-  // ── Room inventory ──
-  // Physical rooms only: ONLINE and FIELD are placeholder rows standing in for a
-  // delivery mode, so counting them would understate utilization.
   const assignableRooms = useMemo(() => physicalRooms(deptRooms), [deptRooms]);
   const classesByRoom = useMemo(() => {
     const counts = new Map<number, number>();
@@ -401,7 +364,6 @@ export default function DeanDashboardPage() {
     { key: 'free', label: 'Available Rooms', value: roomsFree, color: '#cbd5e1' },
   ];
 
-  // ── Timetable filters ──
   const yearBySection = useMemo(() => {
     const map = new Map<number, string>();
     deptSections.forEach(s => { if (s.year_level != null) map.set(Number(s.id), String(s.year_level)); });
@@ -446,10 +408,6 @@ export default function DeanDashboardPage() {
     });
   }, [visibleSchedules, yearFilter, sectionFilter, facultyFilter, roomFilter, searchQuery, yearBySection]);
 
-  /**
-   * The timetable rows in the shape the VPAA Gantt reads. Delivery mode follows
-   * the VPAA dashboard: virtual and field placeholder rooms count as online/field.
-   */
   const calendarSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map(item => ({
     ...item,
     course_id: item.course_id ?? item.course?.id ?? item.subject_id,
@@ -515,10 +473,6 @@ export default function DeanDashboardPage() {
     { label: 'Rooms', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/facilities', tone: 'warn' },
   ];
 
-  /**
-   * The timetable panel. Extracted so the same tree can be portalled to the body
-   * for the full-window view without the grid remounting into a different shape.
-   */
   const timetablePanel = (
     <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <Panel
@@ -750,7 +704,6 @@ export default function DeanDashboardPage() {
     </section>
 
     <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      {/* Let the side column set the desktop height, not the number of Gantt rows. */}
       <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>
@@ -838,13 +791,6 @@ function Panel({ title, subtitle, badge, children, action, onAction, className =
   </section>;
 }
 
-/**
- * Donut and its centre readout — the same recharts configuration as the Secretary
- * dashboard's drafting donut, so both dashboards draw the same ring.
- *
- * An all-zero series is drawn as one neutral ring rather than nothing: recharts
- * renders no arcs when every value is 0, which reads as a broken chart.
- */
 function Donut({ slices, headline, caption }: { slices: Slice[]; headline: number | string; caption: string }) {
   const filled = slices.filter(slice => slice.value > 0);
   const rows: Slice[] = filled.length ? filled : [{ key: 'empty', label: 'No data', value: 1, color: '#e2e8f0' }];
@@ -908,15 +854,6 @@ function StatChip({ icon: Icon, value, label }: { icon: LucideIcon; value: numbe
   </div>;
 }
 
-/**
- * One queue row action.
- *
- * Approve, return and reject are department-wide operations — POST
- * /departments/{id}/approve-by-dean and .../return-by-dean act on every submitted
- * row in the department, and there is no per-program endpoint. So these open the
- * approval workspace, where the package is reviewed and a return reason captured,
- * rather than firing a department-wide write from a single program's row.
- */
 function QueueAction({ icon: Icon, label, tone, disabled, onClick }: { icon: LucideIcon; label: string; tone: 'good' | 'warn' | 'alert'; disabled?: boolean; onClick: () => void }) {
   const tones: Record<'good' | 'warn' | 'alert', string> = {
     good: 'text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50',

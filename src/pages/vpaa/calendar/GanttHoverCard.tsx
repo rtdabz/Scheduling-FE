@@ -12,17 +12,10 @@ const CARD_HEIGHT_ESTIMATE = 200;
 
 interface GanttHoverCardProps {
   schedule: CalendarSchedule;
-  /** The block's viewport rectangle, captured when the pointer or focus arrived. */
   anchor: DOMRect;
   overlap: string;
 }
 
-/**
- * Details for the timeline block under the pointer or keyboard focus.
- *
- * Portalled to the body with fixed positioning so the chart's scroll container
- * cannot clip it; it flips above the block when there is no room below.
- */
 export default function GanttHoverCard({ schedule, anchor, overlap }: GanttHoverCardProps) {
   const isLab = sessionTypeOf(schedule) === 'laboratory';
   const tone = departmentTone(schedule.department?.department_code, schedule.department?.department_name);

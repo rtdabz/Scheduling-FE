@@ -42,15 +42,6 @@ import { mapApiScheduleToItem, mapInitialData, type InitialDataResponse, type Sc
 import type { ApiScheduleRecord, ScheduleItem } from '../ClassSchedules/SchedulerPanel/types';
 import type { SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
 
-/**
- * The schedule approval queue for both reviewing stages.
- *
- * The Dean reviews their own department's submissions first (and may approve
- * with Room TBA, which makes the approval conditional); the VPAA then gives the
- * final approval for every department. The two used to be separate ~1,200-line
- * copies that drifted apart — the VPAA copy previewed a returned package as
- * empty and swallowed load errors that the Dean copy reported.
- */
 export type ApprovalStage = 'dean' | 'vpaa';
 
 type Mode = 'on-site' | 'online' | 'field';
@@ -58,13 +49,10 @@ type QueueTab = 'pending' | 'approved' | 'withdrawn' | 'rejected';
 type RequestType = 'approval' | 'withdrawal' | 'revision';
 
 interface ScheduleApproval {
-  /** The department id; every approve/return endpoint is addressed by it. */
   id: number;
   submissionId: number;
-  /** A partially recalled submission yields two entries sharing one id. */
   entryKey: string;
   department: string;
-  /** The program(s) whose sections this entry holds, e.g. "BAS — Bachelor of Arts in Sociology". */
   program: string;
   section: string;
   subjectsScheduled: number;
@@ -72,10 +60,8 @@ interface ScheduleApproval {
   submittedAt: string;
   deanReviewedAt: string | null;
   status: ApprovalDisplayStatus;
-  /** The server-side stage this entry is in; decides which meetings it holds. */
   submissionStatus: QueueSubmissionStatus;
   requestType: RequestType;
-  /** Whether this version changed its sections from the recalled or rejected one before it. */
   revisionStatus: RevisionStatus;
   workflowSectionIds: string[];
   sectionCount: number;
@@ -117,7 +103,6 @@ interface RawScheduleSubmission {
   submitted_at: string | null;
   dean_reviewed_at: string | null;
   approval_override?: boolean;
-  /** What was sent, recorded at submit; null on submissions from before it was kept. */
   section_count?: number | null;
   subject_count?: number | null;
   revision_status?: string;
@@ -134,11 +119,6 @@ interface ApprovalPayload {
   schedules_truncated?: boolean;
 }
 
-/**
- * Recalled and returned versions are shown as they were sent. Their meetings
- * are the department's working copy, which may since have been edited, reset
- * or resubmitted as a new version.
- */
 const CLOSED_SUBMISSION_STATUSES = new Set<QueueSubmissionStatus>([
   'withdrawn',
   'partially_withdrawn',
@@ -148,13 +128,11 @@ const CLOSED_SUBMISSION_STATUSES = new Set<QueueSubmissionStatus>([
 
 interface SubmissionSnapshotResponse {
   data: {
-    /** False for submissions from before snapshots were linked. */
     available: boolean;
     schedules: ApiScheduleRecord[];
   };
 }
 
-/** The largest page /initial-data serves; anything past it is reported, not hidden. */
 const SCHEDULE_LIMIT = 2000;
 
 const STATUS_LABELS: Record<ApprovalDisplayStatus, string> = {
@@ -185,7 +163,6 @@ const QUEUE_TABS: Array<{ id: QueueTab; label: string }> = [
   { id: 'rejected', label: 'Rejected' },
 ];
 
-/** Which stage an entry waits in before this reviewer can act on it. */
 const isPendingFor = (stage: ApprovalStage, status: ApprovalDisplayStatus) => (stage === 'dean'
   ? status === 'submitted'
   : status === 'approved_by_dean' || status === 'conditionally_approved');
@@ -194,7 +171,6 @@ const matchesQueueTab = (stage: ApprovalStage, entry: ScheduleApproval, tab: Que
   if (tab === 'withdrawn') return entry.requestType === 'withdrawal';
   if (tab === 'pending') return entry.requestType === 'approval' && isPendingFor(stage, entry.status);
   if (tab === 'approved') {
-    // The Dean's part is done once a package moves on to the VPAA.
     return stage === 'dean'
       ? ['approved_by_dean', 'conditionally_approved', 'approved'].includes(entry.status)
       : entry.status === 'approved';
@@ -215,11 +191,6 @@ const formatSectionSummary = (sections: RawSection[], sectionIds: string[]): str
   return visible.map((section) => section.section_name).join(', ');
 };
 
-/**
- * Submissions are made per program but recorded per department, so the
- * program is read from the sections that were sent. One program prints in
- * full; a secretary's multi-program submission lists the codes.
- */
 const formatProgramSummary = (sections: RawSection[], sectionIds: string[]): string => {
   const selected = new Set(sectionIds);
   const programs = new Map<string, NonNullable<RawSection['program']>>();
@@ -232,7 +203,6 @@ const formatProgramSummary = (sections: RawSection[], sectionIds: string[]): str
   return list.map((program) => program.code?.trim() || programLabel(program)).sort().join(', ');
 };
 
-/** How an entry is named in titles and messages: "Arts and Sciences (BAS — Bachelor of Arts in Sociology)". */
 const entryLabel = (entry: Pick<ScheduleApproval, 'department' | 'program'>): string => (
   entry.program === 'No program' ? entry.department : `${entry.department} (${entry.program})`
 );
@@ -256,7 +226,6 @@ const previewStatusOf = (status: ApprovalDisplayStatus, pending: boolean): 'pend
   return 'approved';
 };
 
-/** The endpoints each reviewing stage approves and returns through. */
 const STAGE_ENDPOINT: Record<ApprovalStage, { approve: string; reject: string }> = {
   dean: { approve: 'approve-by-dean', reject: 'return-by-dean' },
   vpaa: { approve: 'approve-by-vpaa', reject: 'return-by-vpaa' },
@@ -273,11 +242,8 @@ interface ApprovalQueueCache {
 export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }) {
   const { toast, confirm } = useToast();
   const user = useMemo(() => getStoredUser(), []);
-  // A Dean reviews one department; the VPAA reviews them all.
   const scopeDepartmentId = stage === 'dean' ? user?.department_id ?? null : null;
 
-  // Schedules group (approval signals invalidate it too). A cached queue paints
-  // on a revisit while the mount fetch below replaces it.
   const cacheKey = `page:approval-queue:${stage}:${scopeDepartmentId ?? 'all'}`;
   const [cached] = useState(() => getCachedData<ApprovalQueueCache>(cacheKey));
   const [entries, setEntries] = useState<ScheduleApproval[]>(cached?.entries ?? []);
@@ -296,12 +262,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
   const [viewEntry, setViewEntry] = useState<ScheduleApproval | null>(null);
-  // Open conflicts the pre-approval check found in the package being viewed;
-  // null until it answers. Tagged with the entry so another package's answer
-  // is never read as this one's.
   const [viewCheck, setViewCheck] = useState<{ entryKey: string; open: number } | null>(null);
-  // The frozen meetings of a recalled or returned version being viewed; null
-  // schedules means none were kept, so the live working copy is shown.
   const [viewSnapshot, setViewSnapshot] = useState<{ submissionId: number; schedules: ScheduleItem[] | null } | null>(null);
   const [tbaApproval, setTbaApproval] = useState<ScheduleApproval | null>(null);
   const [tbaReason, setTbaReason] = useState('');
@@ -317,13 +278,9 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   useEffect(() => {
     let active = true;
     const load = async () => {
-      // A live refresh keeps the queue on screen while it reloads.
       if (liveRevision === 0 && reloadKey === 0 && !hasCachedData(cacheKey)) setIsLoading(true);
       setLoadError(null);
       try {
-        // The VPAA portal is otherwise limited to approved meetings; this screen
-        // has to show what is still waiting on that approval, so it asks for
-        // the pending rows explicitly.
         const { data } = await api.get<ApprovalPayload>('/initial-data', {
           params: { schedule_limit: SCHEDULE_LIMIT, ...(stage === 'vpaa' ? { approval_queue: 1 } : {}) },
         });
@@ -363,9 +320,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
             const packageSchedules = departmentSchedules.filter((schedule) => (
               sectionIds.includes(String(schedule.section_id)) && allowed.has(schedule.status)
             ));
-            // An entry holding the whole submission reports what was sent; the
-            // live meetings are gone once a recalled section is regenerated.
-            // A split entry holds part of it, so it can only count live.
             const wholeSubmission = sectionIds.length >= submission.sections.length;
             const liveSubjects = new Set(packageSchedules.map((schedule) => String(schedule.course_id ?? schedule.subject_id))).size;
             return {
@@ -409,8 +363,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
         });
       } catch (error) {
         if (!active) return;
-        // An empty queue after a failed load reads as "nothing to approve",
-        // which is the one thing this page must never claim by mistake.
         const message = apiErrorMessage(error, 'The approval queue could not be loaded.');
         setLoadError(message);
         toast.error('Load Failed', message);
@@ -438,8 +390,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     [entries, selectedQueueTab, stage],
   );
 
-  // Status choices come from what the open tab holds, so a filter can never
-  // contradict the tab it sits under.
   const statusOptions = useMemo(
     () => Array.from(new Set(tabEntries.map((entry) => entry.status))),
     [tabEntries],
@@ -485,7 +435,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const viewSnapshotLoading = viewIsClosed && !viewSnapshotLoaded;
   const viewSnapshotSchedules = viewIsClosed && viewSnapshotLoaded ? viewSnapshot.schedules : null;
 
-  /** What the preview and its printout show: the package's meetings at its own stage. */
   const printInput = useMemo<SchedulePdfInput | null>(() => {
     if (!viewEntry || !printSource || viewSnapshotLoading) return null;
     const allowed = new Set(scheduleStatusesForSubmission(viewEntry.submissionStatus));
@@ -508,7 +457,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     };
   }, [inPackage, printSource, rawSchedules, viewEntry, viewSnapshotLoading, viewSnapshotSchedules]);
 
-  /** The package's classes at its own stage, for the pre-approval check. */
   const viewScheduleIds = useMemo(() => {
     if (!viewEntry) return [];
     const allowed = new Set(scheduleStatusesForSubmission(viewEntry.submissionStatus));
@@ -528,10 +476,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     setEntries((prev) => prev.map((item) => (item.entryKey === entry.entryKey
       ? { ...item, status, submissionStatus, deanReviewedAt: stage === 'dean' ? now : item.deanReviewedAt }
       : item)));
-    // The server leaves this tab out of its own live broadcast, so announce
-    // the change here: the sidebar's pending badge refetches, and so does this
-    // queue -- the meetings' new statuses are the server's to decide, read
-    // back instead of guessed, so the preview keeps matching the printout.
     publishLiveTopics(['approvals']);
   };
 
@@ -549,9 +493,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       toast.success('Approved', `${entryLabel(entry)} schedule has been approved.`);
       return true;
     } catch (error) {
-      // The server decides Room TBA, not this page. When the queue was read
-      // before a room went TBA, the plain approval is refused; ask for the
-      // reason here instead of ending on an error the Dean cannot act on.
       const code = (error as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
       if (stage === 'dean' && overrideReason === null && code === 'room_tba_override_required') {
         setTbaReason('');
@@ -567,8 +508,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   };
 
   const handleApprove = async (entry: ScheduleApproval) => {
-    // Only the Dean may approve an on-site class that still has no room, and
-    // only with a reason; that approval is conditional.
     const hasRoomTba = stage === 'dean' && rawSchedules.some((schedule) => (
       inPackage(entry, schedule) && schedule.status === 'submitted' && schedule.mode === 'on-site' && !schedule.room
     ));
@@ -584,7 +523,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       eyebrow: 'Approval Required',
       confirmLabel: 'Confirm Approve',
       variant: 'maroon',
-      // Awaited by the dialog, which shows its spinner until the request settles.
       onConfirm: () => submitApproval(entry, null),
     });
   };
@@ -599,7 +537,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     setIsApproving(true);
     const approved = await submitApproval(tbaApproval, reason);
     setIsApproving(false);
-    // Keep the dialog, and the reason typed into it, when the approval failed.
     if (approved) setTbaApproval(null);
   };
 
@@ -628,7 +565,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       setRejectEntry(null);
       setRejectReason('');
     } catch (error) {
-      // The dialog stays open with the reason intact so it can be resent.
       setRejectError(apiErrorMessage(error, 'Failed to return the schedule. Try again.'));
     } finally {
       setIsRejecting(false);
@@ -647,9 +583,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       cell: (info) => <span className="font-medium text-gray-700">{info.getValue() as string}</span>,
     },
     {
-      // A count, not the names: a department submits dozens of sections and
-      // listing them all pushed every other column off screen. The names stay
-      // on hover and in the preview.
       id: 'sections',
       accessorFn: (entry) => entry.sectionCount,
       header: () => <div className="text-center">Sections</div>,
@@ -860,7 +793,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
         />
       )}
 
-      {/* Room TBA approval: the shared confirmation modal, with the reason it must collect. */}
       <ConfirmModal
         isOpen={tbaApproval !== null}
         title="Approve Schedule"

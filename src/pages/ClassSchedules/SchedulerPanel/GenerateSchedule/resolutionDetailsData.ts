@@ -1,12 +1,10 @@
 import type { GenerationChange, GenerationDetectedIssue } from "./generationChanges";
 import { describeAdjustment, type GenerationRecommendation } from "./yearLevelGenerationFailure";
 
-/** One step of how a change came about, in the order the generator took it. */
 export type ResolutionStep = {
   label: string;
   text?: string;
   items?: string[];
-  /** A quieter supporting line under the text. */
   note?: string;
 };
 
@@ -18,17 +16,11 @@ export type ResolutionDetails = {
 
 type Subject = { section_name?: string | null; course_code?: string | null };
 
-/** "GEC 5 in BSIT 3E", or whichever half is known. */
 function classLabel({ course_code, section_name }: Subject): string {
   if (course_code && section_name) return `${course_code} in ${section_name}`;
   return course_code || section_name || "";
 }
 
-/**
- * The configured setup an adjustment replaced, and why the replacement is
- * easier to place. Each reason restates the retry strategy's own rationale
- * (YearLevelRetryStrategyPlanner) in plain words; types without one get none.
- */
 function adjustmentStory(
   type: string,
   targets: Subject[],
@@ -91,7 +83,6 @@ function adjustmentStory(
   }
 }
 
-/** What blocked the original setup, in plain words (YearLevelGenerationDiagnostics::causeText). */
 function detectedIssueText(issue: GenerationDetectedIssue): string {
   const where = classLabel(issue) || "One class";
   const section = issue.section_name || "One section";
@@ -116,7 +107,6 @@ function detectedIssueText(issue: GenerationDetectedIssue): string {
   }
 }
 
-/** The first attempt is always the configuration as entered. */
 function attemptsText(failedAttempts: number | undefined): string {
   const others = Math.max(0, (failedAttempts ?? 1) - 1);
   return others === 0
@@ -127,8 +117,6 @@ function attemptsText(failedAttempts: number | undefined): string {
 function issueStep(change: GenerationChange): ResolutionStep {
   switch (change.kind) {
     case "preference_relaxed":
-      // Runs made before the detected issue was reported only know that the
-      // original setup failed.
       return change.detected_issue
         ? { label: "Issue found", text: detectedIssueText(change.detected_issue), note: attemptsText(change.failed_attempts) }
         : { label: "Issue found", text: attemptsText(change.failed_attempts) };
@@ -154,8 +142,6 @@ function storyForChange(change: GenerationChange): { setup?: string; reason?: st
         reason: "An online lecture does not need a room, so it could still be scheduled.",
       };
     default:
-      // A retry strategy relaxes one kind of preference, so the first item
-      // speaks for the rest.
       return adjustmentStory(
         change.items[0]?.adjustment_type ?? "",
         change.items,
@@ -196,7 +182,6 @@ export function resolutionDetailsForRecommendation(
         first.value,
       )
     : {};
-  // Year-level adjustments repeat once per section with the same wording.
   const changesMade = [...new Set(recommendation.adjustments.map(describeAdjustment))];
 
   return {

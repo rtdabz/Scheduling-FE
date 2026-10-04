@@ -1,23 +1,9 @@
-/**
- * The queue behind Course Teaching Assignments.
- *
- * The page is the Auto-Assign wizard with a college where the instructor sits:
- * pick the college that will teach, tick the courses, review, save. Everything
- * that decides *whether* a course may be queued lives here so it can be tested
- * without rendering the wizard — and so the page stays a view.
- *
- * None of this is a rule of its own. `delegable` and
- * `effective_teaching_department_id` are the server's answers, already resolved
- * by `SchedulingPolicy`; this module only reads them.
- */
-
 export interface DepartmentOption {
   id: number;
   department_code: string;
   department_name: string;
 }
 
-/** One row of `GET /api/course-teaching-assignments`. */
 export interface CourseRow {
   id: number;
   course_code: string;
@@ -36,11 +22,6 @@ export interface CourseRow {
   effective_teaching_department_id: number | null;
 }
 
-/**
- * The pseudo-target that hands a course back to the college that owns it. It is
- * the same "no override" state a cleared select used to mean, and it saves as
- * DELETE rather than PATCH.
- */
 export const RELEASE_TARGET = 'owner';
 
 export type TeachingTarget = number | typeof RELEASE_TARGET;
@@ -53,7 +34,6 @@ export interface QueuedChange {
   programCode: string | null;
   units: number;
   ownerLabel: string;
-  /** Who teaches it now — what this change replaces. */
   currentLabel: string;
   target: TeachingTarget;
   targetLabel: string;
@@ -67,7 +47,6 @@ export interface QueueGroup {
 
 export interface CourseFilters {
   courseType: 'delegable' | 'major' | 'all';
-  /** `'all'`, `'shared'`, or a department id as a string. */
   owner: string;
   search: string;
 }
@@ -87,11 +66,6 @@ export const ownerLabelOf = (course: CourseRow): string => (
     : 'Shared / No college'
 );
 
-/**
- * Who teaches the course today. An explicit assignment is named outright; with
- * none, the server's derived answer is shown as the owner teaching its own
- * course, and a course no college teaches by default is open to all.
- */
 export const currentTeachingLabel = (course: CourseRow, departments: DepartmentOption[]): string => {
   if (course.teaching_department_id !== null) {
     return course.teaching_department_code ?? course.teaching_department_name ?? 'Assigned';
@@ -131,19 +105,12 @@ export const filterCourses = (courses: CourseRow[], filters: CourseFilters): Cou
     .sort((left, right) => left.course_code.localeCompare(right.course_code, undefined, { numeric: true }));
 };
 
-/**
- * Why this course cannot be queued for this college, or null when it can. The
- * wizard's Status column is this string, and a row with an issue is not
- * selectable — mirroring how Auto-Assign refuses an ineligible section.
- */
 export const issueForCourse = (
   course: CourseRow,
   target: TeachingTarget | null,
   queuedCourseIds: ReadonlySet<number>,
 ): string | null => {
   if (queuedCourseIds.has(course.id)) return 'Queued';
-  // A major belongs to the department and program that offer it, and the save
-  // would be refused — so the row says so instead of failing later.
   if (!course.delegable) return 'Major stays with its department';
   if (target === null) return 'Select a teaching college';
 
@@ -171,7 +138,6 @@ export const buildQueuedChange = (
   targetLabel: targetLabel(target, departments),
 });
 
-/** Queued changes gathered per college, in label order, for the review panes. */
 export const groupQueueByTarget = (queue: QueuedChange[]): QueueGroup[] => {
   const groups = new Map<string, QueueGroup>();
 
@@ -193,11 +159,6 @@ export const totalsOf = (items: QueuedChange[]): TeachingTotals => ({
   units: items.reduce((total, item) => total + item.units, 0),
 });
 
-/**
- * What each college has been explicitly assigned, which is what this page
- * manages. Courses it teaches under the derived service rule are not counted —
- * nobody assigned those, and they cannot be removed here.
- */
 export const assignedTotalsByDepartment = (courses: CourseRow[]): Map<number, TeachingTotals> => {
   const totals = new Map<number, TeachingTotals>();
 

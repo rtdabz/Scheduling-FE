@@ -146,8 +146,6 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
         inFlight = false;
         if (active) {
           setIsLoading(false);
-          // With the live socket up, new notifications arrive as a push; the
-          // poll is only a safety net, so it can run far less often.
           const baseDelay = isLiveConnected() ? pollMs * 4 : pollMs;
           const delay = document.visibilityState === 'visible' ? baseDelay : baseDelay * 4;
           timerId = window.setTimeout(load, delay);
@@ -171,7 +169,6 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
     };
   }, [limit, pollMs]);
 
-  // Approvals and returns also change what the activity feed says.
   useLiveRefresh(['notifications', 'approvals'], () => {
     void refresh().catch(() => undefined);
   });

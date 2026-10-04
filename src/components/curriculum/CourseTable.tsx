@@ -36,8 +36,6 @@ export default function CourseTable({
   onCancelRemove,
   onConfirmRemove,
 }: CourseTableProps) {
-  // Majors first, then by code -- the order the curriculum is read in. Column
-  // sorting starts from this order and returns to it when cleared.
   const sortedCourses = useMemo(() => {
     return [...courses].sort((a, b) => {
       const catA = a.category?.toLowerCase() === 'major' ? 1 : 2;

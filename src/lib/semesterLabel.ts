@@ -1,10 +1,3 @@
-/**
- * Human labels for an academic semester.
- *
- * The `semesters` table stores only `academic_year` and `semester` ('1st' | '2nd' |
- * 'summer') -- there is no `semester_name` column and no accessor for one, so every
- * `semester.semester_name` in the UI renders blank. The label is built here instead.
- */
 export interface LabelledSemester {
   academic_year?: string | null;
   semester?: string | null;
@@ -16,7 +9,6 @@ const SEMESTER_LABELS: Record<string, string> = {
   summer: 'Summer',
 };
 
-/** 'summer' has no ordinal, so it is titled rather than suffixed. */
 export const semesterLabel = (semester?: string | null): string => {
   const key = (semester ?? '').trim().toLowerCase();
   if (!key) return 'Unset semester';
@@ -36,7 +28,6 @@ export const yearLevelLabel = (yearLevel?: number | string | null): string => {
   return `${year}${suffix} Year`;
 };
 
-/** '1st Semester, AY 2026-2027' -- the year is dropped when unknown. */
 export const fullSemesterLabel = (semester?: LabelledSemester | null): string => {
   if (!semester) return 'No active semester';
   const year = academicYearLabel(semester.academic_year);

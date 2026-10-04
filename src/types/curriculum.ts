@@ -13,19 +13,6 @@ export interface Program {
   department_id: number;
 }
 
-/**
- * Where a curriculum sits relative to its department's others.
- *
- * Derived by the API from the effective school year, never stored: a department
- * mid-transition runs the new curriculum for its incoming cohort and the old one
- * for the upper years, and nobody should have to maintain that flag by hand.
- * `only` means there is nothing to compare against, so no badge is shown.
- */
-/**
- * A curriculum is in service or it is not. There is no separate "draft": an
- * unpublished curriculum and a withdrawn one are the same state and offer the
- * same next step, which is to activate it.
- */
 export type CurriculumStatus = 'active' | 'deactivated' | 'archived';
 
 export type CurriculumLifecycle =
@@ -45,11 +32,7 @@ export interface Curriculum {
   status: CurriculumStatus;
   description: string | null;
   courses_count: number;
-  /** Cohorts pointed at this curriculum. Informational: an assignment on its
-   *  own is undone with a dropdown and does not block retirement. */
   active_sections_count?: number;
-  /** The subset of those with a schedule already plotted from it. Blocks
-   *  deactivating and archiving while non-zero. */
   scheduled_sections_count?: number;
   lifecycle?: CurriculumLifecycle | null;
   lifecycle_label?: string | null;
@@ -85,9 +68,7 @@ export interface CurriculumCourse {
   lec_units: number;
   lab_units: number;
   total_units: number;
-  /** Program (major) that owns this course; only instructors of it may teach it. */
   program_id?: number | null;
-  /** Owning department: every course belongs to exactly one. */
   department_id?: number | null;
 }
 
@@ -126,18 +107,6 @@ export const mapApiCurriculum = (c: ApiCurriculum): Curriculum => ({
   updated_at: c.updated_at,
 });
 
-/**
- * Re-ranks a list of curricula into new/old within each department+program group.
- *
- * The API sends the same labels, but they describe a curriculum's *siblings*, so
- * activating one row can relabel others the response says nothing about. Rather
- * than refetch the whole table to learn that — which throws the list back into a
- * loading skeleton for a one-row change — the ranking is recomputed here from
- * state already in hand. Mirrors Curriculum::annotateLifecycle() on the backend.
- *
- * Must be given the unfiltered list: a status filter would hide the very
- * siblings the ranking is relative to.
- */
 export const annotateCurriculumLifecycle = (list: Curriculum[]): Curriculum[] => {
   const ranks = new Map<number, CurriculumLifecycle>();
   const groups = new Map<string, Curriculum[]>();
@@ -149,8 +118,6 @@ export const annotateCurriculumLifecycle = (list: Curriculum[]): Curriculum[] =>
   }
 
   for (const group of groups.values()) {
-    // Newest effective school year first; the id breaks ties, matching the
-    // backend's ordering so a refetch never contradicts what is on screen.
     const ordered = [...group].sort((a, b) => {
       const byYear = b.effective_school_year.localeCompare(a.effective_school_year);
       return byYear !== 0 ? byYear : b.id - a.id;
@@ -189,12 +156,6 @@ const curriculumLifecycleLabel = (lifecycle: CurriculumLifecycle): string => {
   }
 };
 
-/**
- * The old/new badge, or null when there is nothing worth badging.
- *
- * Only an old-vs-new distinction earns a badge here — the status pill already
- * carries draft and archived, and repeating them would be noise.
- */
 export const curriculumLifecycleBadge = (
   curriculum: Pick<Curriculum, 'lifecycle' | 'lifecycle_label'>,
 ): { label: string; className: string } | null => {

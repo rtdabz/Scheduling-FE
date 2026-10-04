@@ -50,7 +50,6 @@ interface TopBarProps {
   canWithdrawSubmission: boolean;
   isWithdrawingSubmission: boolean;
   onPrint: () => void;
-  /** Opens the conflict inbox; left out, the button is not shown. */
   onOpenConflicts?: () => void;
   conflictCounts?: { open: number; resolved: number } | null;
   onGenerateYearLevel?: () => void;
@@ -76,8 +75,6 @@ interface TopBarProps {
   sectionSchedules: ScheduleItem[];
 }
 
-// Tinted rather than solid: the badges label state, and solid fills competed
-// with the section's primary action for attention.
 function SubmissionBadges({ section }: { section: Section | undefined }) {
   const submission = section?.submissionStatus ?? "draft";
   const revision = section?.revisionStatus ?? "initial";
@@ -150,8 +147,6 @@ function ActionButton({
 }: ActionButtonProps) {
   if (!selectedSectionId) return null;
   switch (currentStatus) {
-    // Plotting has no section action: the department's Submit sends every
-    // fully plotted section to the Dean.
     case "submitted":
       return <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Pending Dean Approval</button>;
     case "conditionally_approved":
@@ -471,7 +466,6 @@ export default function TopBar({
 
   return (
     <div className="flex flex-col rounded-t-2xl border-b border-slate-200 bg-white shadow-sm">
-      {/* Toolbar: what you are editing, where it is in the workflow, and the phase tools. */}
       <div className="flex flex-col gap-3 px-4 py-3 sm:px-5 xl:flex-row xl:items-center xl:gap-6">
         <div id="schedule-builder-section" className="relative shrink-0" ref={dropdownRef}>
           {isLoading ? <Skeleton className="h-[46px] w-full rounded-xl sm:w-[260px]" /> : <><button
@@ -619,12 +613,6 @@ export default function TopBar({
             </>
           )}</>}
           <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
-          {/*
-            Always shown: it is the way into the Resolved history and the Rule
-            issues check too, so hiding it when nothing clashes hid those.
-            Red while anything is open, green once there is history and
-            nothing open, plain before the first count or with nothing at all.
-          */}
           {!isLoading && onOpenConflicts && (() => {
             const open = conflictCounts?.open ?? 0;
             const resolved = conflictCounts?.resolved ?? 0;
@@ -673,7 +661,6 @@ export default function TopBar({
         </div>
       </div>
 
-      {/* Status strip: the next step, department readiness, and the section's primary action. */}
       <div id="schedule-builder-next-step" className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5">
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_auto] xl:items-center xl:gap-0 xl:divide-x xl:divide-slate-200">
           <div className="min-w-0 xl:pr-5">

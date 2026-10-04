@@ -15,20 +15,13 @@ export interface UseDataTableOptions<T> {
   data: T[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   columns: ColumnDef<T, any>[];
-  /** Rows per page, or false for an unpaginated table (modals, short lists). */
   pageSize?: number | false;
   initialSorting?: SortingState;
-  /** Free-text filter applied across every column that has an accessor. */
   globalFilter?: string;
   getRowId?: (row: T, index: number) => string;
   enableSorting?: boolean;
 }
 
-/**
- * The client-side table setup most WICARS screens need: sorting, an optional
- * global filter, and optional pagination, with state kept here so callers
- * only describe their columns.
- */
 export function useDataTable<T>({
   data,
   columns,
@@ -57,8 +50,6 @@ export function useDataTable<T>({
     enableSorting,
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
-    // Reloading after an edit must not throw the user back to page one;
-    // the effect below only steps back when the current page empties.
     autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -69,7 +60,6 @@ export function useDataTable<T>({
   const pageCount = paginated ? table.getPageCount() : 1;
   useEffect(() => {
     if (!paginated) return;
-    // A narrower search or a deleted row can leave the page past the end.
     setPagination((current) => (
       current.pageIndex > 0 && current.pageIndex >= pageCount
         ? { ...current, pageIndex: Math.max(0, pageCount - 1) }

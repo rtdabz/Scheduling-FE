@@ -5,7 +5,6 @@ export type RoomRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled
 
 export interface RoomRequestWindow {
   day: string;
-  /** HH:mm, 24-hour. */
   start_time: string;
   end_time: string;
 }
@@ -41,7 +40,6 @@ export interface RoomRequest {
 }
 
 export interface RoomOccupancyBlock extends RoomRequestWindow {
-  /** A class already placed in the room, or another department's approved grant. */
   kind: 'class' | 'grant';
   department_code: string | null;
   label: string;
@@ -82,7 +80,6 @@ export const toMinutes = (time: string): number => {
   return (hours || 0) * 60 + (minutes || 0);
 };
 
-/** "11:00" -> "11:00 AM". */
 export const formatClock = (time: string): string => {
   const total = toMinutes(time);
   const hours = Math.floor(total / 60);
@@ -94,11 +91,6 @@ export const formatClock = (time: string): string => {
 export const describeWindow = (window: RoomRequestWindow): string =>
   `${window.day.slice(0, 3)} ${formatClock(window.start_time)} – ${formatClock(window.end_time)}`;
 
-/**
- * Whether a meeting may use the room: always for the department's own and
- * shared rooms, and for a borrowed room only inside one of its granted windows
- * (the server's RoomAccessPolicy::fitsWindows).
- */
 export const roomGrantFits = (
   room: { grantWindows?: RoomRequestWindow[] },
   dayIndex: number,
@@ -114,7 +106,6 @@ export const roomGrantFits = (
   );
 };
 
-/** True when the proposed window overlaps anything already in the room that day. */
 export const windowConflicts = (window: RoomRequestWindow, occupied: RoomOccupancyBlock[]): RoomOccupancyBlock[] => {
   const start = toMinutes(window.start_time);
   const end = toMinutes(window.end_time);

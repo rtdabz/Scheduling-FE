@@ -1,6 +1,5 @@
 import type { Section } from "../types";
 
-/** "BSBA 2nd year": prefixed with the programs of the given sections. */
 export const yearLabel = (yearLevel: number, sections: Section[]) => {
   const ordinal =
     yearLevel === 1

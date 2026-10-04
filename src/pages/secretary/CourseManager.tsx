@@ -98,7 +98,6 @@ export default function CourseManager() {
   });
 
 
-  // Table States
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({
@@ -140,12 +139,10 @@ export default function CourseManager() {
   useLiveRefresh(['courses', 'curriculum'], () => { void fetchData(true); });
 
   const fetchData = async (silent = false) => {
-    // Only show skeleton loader if we don't have any cached courses
     if (!silent && !hasCachedData(coursesCacheKey)) {
       setIsLoading(true);
     }
     try {
-      // Force refresh to always get the most up-to-date active curriculum
       const data = await loadCachedData<CoursesPageData>(coursesCacheKey, async () => {
         const url = user?.department_id ? `/courses?department_id=${user.department_id}` : '/courses';
         const [coursesRes] = await Promise.all([
@@ -273,16 +270,13 @@ export default function CourseManager() {
 
   return (
     <div className="w-full">
-      {/* Search and Filters Bar */}
       <div id="course-list-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
-        {/* Search */}
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search course code, name, etc..."
         />
 
-        {/* Dropdowns */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
@@ -331,7 +325,6 @@ export default function CourseManager() {
         </div>
       </div>
 
-      {/* Table Section */}
       <WorkflowGuideButton guideId="course-list" />
       <div id="course-list-table">
         <DataTable

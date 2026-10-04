@@ -31,7 +31,6 @@ export default function FacultyPanel({
 
   return (
     <div className="w-full lg:w-1/4 min-w-[280px] shrink-0 bg-white border-r border-gray-200 flex flex-col h-full font-sans select-none">
-      {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-slate-100 bg-slate-50/50 shrink-0">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-[#4e0a10]/10 rounded-lg">
@@ -46,7 +45,6 @@ export default function FacultyPanel({
         </div>
       </div>
 
-      {/* Progress Bar & Stats */}
       <div className="p-4 border-b border-slate-100 bg-[#4e0a10]/5 shrink-0">
         <div className="flex justify-between items-center">
           <span className="text-xs font-bold text-[#4e0a10]">Assignment Progress</span>
@@ -84,7 +82,6 @@ export default function FacultyPanel({
         </div>
       </div>
 
-      {/* Guidance Overview & Status Card */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {isLoading ? (
           <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4">

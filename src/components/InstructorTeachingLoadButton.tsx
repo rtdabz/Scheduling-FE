@@ -92,9 +92,6 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
     departmentId: faculty.department_id,
     departmentCode: faculty.department?.department_code,
     departmentName: faculty.department?.department_name,
-    // The load sheet splits subjects by these bands. 0 is a real allowance
-    // (an overload-only instructor has a Basic Load of 0), so none of them may
-    // fall back when they are zero.
     maxUnits: unitsOrUndefined(faculty.max_units),
     deloadUnits: unitsOrUndefined(faculty.deload_units),
     overloadUnits: unitsOrUndefined(faculty.overload_units),
@@ -146,7 +143,6 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
       laboratoryUnits: Number(course?.lab_hours ?? 0),
       totalUnits: Number(course?.units ?? 0),
       sectionName: schedule.section?.section_name ?? "",
-      // Building first, then the room: "Building 4 · CL 1".
       roomName: [schedule.room?.building, schedule.room?.room_code]
         .map((part) => part?.trim())
         .filter(Boolean)
@@ -177,8 +173,6 @@ import LoadingSpinner from "./ui/LoadingSpinner";
 export default function InstructorTeachingLoadButton({ facultyId }: InstructorTeachingLoadButtonProps) {
   const { toast } = useToast();
 
-  // Printouts are official documents: ask for the largest page the API serves
-  // and say so when even that was cut short, rather than print a partial load.
   const loadTeachingData = async () => {
     const response = await api.get<InitialTeachingLoadData>("/initial-data", { params: { schedule_limit: 2000 } });
     if (response.data.schedules_truncated) {
@@ -186,7 +180,6 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     }
     return response.data;
   };
-  // Which button is working, so only that one shows a spinner; both stay disabled meanwhile.
   const [loadingAction, setLoadingAction] = useState<"load" | null>(null);
   const isLoading = loadingAction !== null;
   const [isPrinting, setIsPrinting] = useState(false);

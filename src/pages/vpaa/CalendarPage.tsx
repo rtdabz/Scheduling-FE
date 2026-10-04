@@ -67,7 +67,6 @@ interface CalendarData {
 
 const CACHE_KEY = 'page:vpaa-calendar:gantt';
 
-/** GET /schedules clamps per_page to this; a full page means rows may be missing. */
 const SCHEDULE_ROW_LIMIT = 1000;
 const WEEKDAYS = [0, 1, 2, 3, 4, 5];
 
@@ -129,7 +128,6 @@ function ToolButton({ onClick, label, children, active = false }: { onClick: () 
 
 export default function VpaaCalendarPage() {
   const { toast } = useToast();
-  // Read through a ref so a toast API that is not referentially stable cannot re-trigger the load.
   const toastRef = useRef(toast);
   useEffect(() => { toastRef.current = toast; });
   const cached = getCachedData<CalendarData>(CACHE_KEY);
@@ -161,12 +159,9 @@ export default function VpaaCalendarPage() {
   const ganttRef = useRef<MasterGanttHandle>(null);
 
   const fetchData = useCallback(async (options: { force?: boolean; silent?: boolean } = {}) => {
-    // A manual refresh keeps the chart on screen and spins the button instead.
     if (options.force) setIsRefreshing(true);
     else if (!options.silent && !hasCachedData(CACHE_KEY)) setIsLoading(true);
     try {
-      // The active semester scopes the schedules, so it resolves first. A 404 means
-      // no semester is active; the calendar then shows everything it can see.
       const [semesterRes, timeslotRes, departmentRes] = await Promise.all([
         api.get<ActiveSemester>('/semesters/active').catch(() => ({ data: null })),
         api.get<TimeslotSettingsResponse>('/timeslots').catch(() => ({ data: null })),
@@ -196,12 +191,10 @@ export default function VpaaCalendarPage() {
     }
   }, []);
 
-  // Initial load; fetchData flips the loading flag before it awaits anything.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void fetchData(); }, [fetchData]);
   useLiveRefresh(['schedules', 'departments', 'settings'], () => { void fetchData({ silent: true }); });
 
-  // Keeps the "now" marker moving without a page refresh.
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
@@ -210,7 +203,6 @@ export default function VpaaCalendarPage() {
   useEffect(() => {
     if (!isFullscreen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      // Escape belongs to the detail modal while it is open.
       if (event.key === 'Escape' && !selected) setIsFullscreen(false);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -220,8 +212,6 @@ export default function VpaaCalendarPage() {
   const { departments, semester, standardHours } = data;
   const schedules = useMemo(() => withCalendarDepartments(data.schedules, departments), [data.schedules, departments]);
 
-  // Overlaps are a property of the timetable, not of the current filter, so they
-  // are found across every loaded meeting.
   const overlaps = useMemo(() => findOverlaps(schedules), [schedules]);
 
   const filteredSchedules = useMemo(() => {
@@ -236,18 +226,15 @@ export default function VpaaCalendarPage() {
     });
   }, [schedules, departmentId, sessionType, overlapsOnly, overlaps, searchQuery]);
 
-  // Sunday is only offered when something actually meets on it.
   const availableDays = useMemo(
     () => (schedules.some((item) => dayIndexOf(item.day) === 6) ? [...WEEKDAYS, 6] : WEEKDAYS),
     [schedules],
   );
   const visibleDays = useMemo(() => availableDays.filter((day) => !hiddenDays.has(day)), [availableDays, hiddenDays]);
 
-  // The axis spans every loaded class, not just the filtered ones, so it holds still while filtering.
   const timeWindow = useMemo(() => buildTimeWindow(standardHours, schedules), [standardHours, schedules]);
   const ganttDays = useMemo(() => buildGanttDays(filteredSchedules, groupBy, visibleDays), [filteredSchedules, groupBy, visibleDays]);
 
-  // Match the summary and legend to the selected days, including valid meetings only.
   const visibleSchedules = useMemo(
     () => ganttDays.flatMap((day) => day.rows.flatMap((row) => row.blocks.map((block) => block.schedule))),
     [ganttDays],

@@ -37,16 +37,8 @@ export function canGenerateYearLevel(
   });
 }
 
-/**
- * - `unscheduled`: no section of the year level has a class yet.
- * - `scheduled`: classes exist but are still editable; generating again and
- *   saving replaces them.
- * - `locked`: classes have moved past plotting (submitted, approved, or only
- *   partly recalled), so generation is refused.
- */
 export type YearLevelScheduleState = {
   kind: "unscheduled" | "scheduled" | "locked";
-  /** Sections of the year level that already have at least one class. */
   scheduledSectionCount: number;
   sectionCount: number;
 };

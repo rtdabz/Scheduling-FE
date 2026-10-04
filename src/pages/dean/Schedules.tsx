@@ -149,10 +149,6 @@ const slotToTimeStr12h = (slotIndex: number): string => {
 const DAYS: Schedule["day"][] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const parseTimeToSlot = (time: string): number => {
-  // slotToTimeLabel drops ":00" on the hour ("7 AM", not "7:00 AM"), so the
-  // minutes are optional here. Requiring them made every whole-hour time fall
-  // through to slot 0, which read as a mutual overlap and raised phantom
-  // room/section conflicts on rows that never overlapped.
   const match = time.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
   if (!match) return 0;
   let hour = Number(match[1]);
@@ -192,12 +188,10 @@ const getConflictLabels = (info?: ConflictFlags) => {
   ].filter(Boolean);
 };
 
-/** Day first, then start time: the order a week is read in. */
 const scheduleSortKey = (schedule: Schedule) => DAYS.indexOf(schedule.day) * 10_000 + parseTimeToSlot(schedule.startTime);
 
 type ViewMode = "table" | "grid";
 
-/** "1:30 PM" -> "13:30", the shape the shared Gantt reads. */
 const to24h = (label: string): string => {
   const match = label.match(/^(\d+)(?::(\d+))?\s*(AM|PM)$/i);
   if (!match) return "";
@@ -208,7 +202,6 @@ const to24h = (label: string): string => {
 
 const toNumberOrNull = (value: string): number | null => (value ? Number(value) : null);
 
-/** Maps this page's rows onto the calendar shape so the VPAA Gantt renders them as-is. */
 const toCalendarSchedule = (schedule: Schedule): CalendarSchedule => {
   const [firstName, ...rest] = (schedule.facultyName ?? "").split(" ");
   return {
@@ -218,8 +211,6 @@ const toCalendarSchedule = (schedule: Schedule): CalendarSchedule => {
     end_time: to24h(schedule.endTime),
     meeting_type: schedule.meetingType ?? null,
     mode: schedule.mode,
-    // The Gantt colours each bar from the department code/name (IT is blue),
-    // the same palette as the VPAA calendar. The id is not read for colour.
     department: { id: 0, department_code: schedule.departmentCode, department_name: schedule.departmentName },
     room_id: toNumberOrNull(schedule.roomId),
     room: schedule.roomId ? { id: Number(schedule.roomId), room_code: schedule.roomName } : null,
@@ -233,7 +224,6 @@ const toCalendarSchedule = (schedule: Schedule): CalendarSchedule => {
   };
 };
 
-/** The configured teaching day, as every other timetable in the system uses. */
 const currentStandardHours = (): StandardHours => ({
   opening: gridOpeningMinutes(),
   closing: gridOpeningMinutes() + slotCount() * slotMinutes(),
@@ -247,7 +237,6 @@ export default function DeanScheduleViewer() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  // Read through the guarded accessor: a corrupt session entry used to throw here.
   const user = getStoredUser() as StoredUser | null;
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name || "College of Information Technology";
@@ -261,8 +250,6 @@ export default function DeanScheduleViewer() {
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals']);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-  // The server's scan, not a local one: it knows which instructor clashes were
-  // allowed to stand and sees clashes with other departments' classes.
   const [serverConflicts, setServerConflicts] = useState<ScheduleConflict[]>([]);
 
   useEffect(() => {
@@ -274,7 +261,6 @@ export default function DeanScheduleViewer() {
     const loadData = async () => {
       setLoadError(null);
       try {
-        // A stale copy stays on screen while it is replaced; only a cold key shows the skeleton.
         if (liveRevision === 0 && !hasCachedData(deanSchedulesCacheKey)) setIsLoading(true);
         const response = await api.get<{
           active_semester: Semester | null;
@@ -347,8 +333,6 @@ export default function DeanScheduleViewer() {
           schedulesTruncated: truncated,
         });
       } catch {
-        // Left silent, a failed load showed an empty timetable as if the
-        // department had scheduled nothing.
         setLoadError('The department schedule could not be loaded.');
       } finally {
         setIsLoading(false);
@@ -366,14 +350,10 @@ export default function DeanScheduleViewer() {
     });
   }, [schedules, selectedMode, selectedSectionId]);
 
-  // Re-read whenever the timetable does. Over the whole department, not the
-  // filtered view: a clash with a class in another section is still a clash
-  // when that section is filtered out.
   useEffect(() => {
     const controller = new AbortController();
     void fetchConflicts({ departmentId: userDeptId ? Number(userDeptId) : null, signal: controller.signal })
       .then(setServerConflicts)
-      // A badge, not the page: a failed scan leaves the last one shown.
       .catch(() => undefined);
 
     return () => controller.abort();
@@ -469,13 +449,11 @@ export default function DeanScheduleViewer() {
   const resetPage = () => setPagination((current) => ({ ...current, pageIndex: 0 }));
   const showGrid = viewMode === "grid";
 
-  // Gantt view: the filtered rows laid out as a weekly timeline.
   const [ganttGroupBy, setGanttGroupBy] = useState<GroupBy>("none");
   const [ganttZoom, setGanttZoom] = useState<ZoomLevel>("fit");
   const [collapsedGanttDays, setCollapsedGanttDays] = useState<ReadonlySet<number>>(new Set());
   const [ganttNow] = useState(() => new Date());
   const scheduleById = useMemo(() => new Map(schedules.map((schedule) => [Number(schedule.id), schedule])), [schedules]);
-  // Department-wide, like conflictMap, so a clash with another section is still outlined.
   const ganttOverlaps = useMemo(() => findOverlaps(schedules.map(toCalendarSchedule)), [schedules]);
   const ganttSchedules = useMemo(() => filteredSchedules.map(toCalendarSchedule), [filteredSchedules]);
   const ganttVisibleDays = useMemo(

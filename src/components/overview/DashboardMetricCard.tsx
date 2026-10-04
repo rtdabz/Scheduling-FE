@@ -12,12 +12,6 @@ const TONES: Record<DashboardMetricTone, string> = {
   accent: 'bg-violet-50 text-violet-600',
 };
 
-/**
- * The tones that mean "act on this" also colour the number, so the state is
- * legible from the figure itself rather than from the icon chip alone. The
- * neutral tones keep the brand colour: tinting every value would leave nothing
- * for the actionable ones to stand out against.
- */
 const VALUE_TONES: Record<DashboardMetricTone, string> = {
   brand: 'text-primary',
   info: 'text-primary',
@@ -27,11 +21,6 @@ const VALUE_TONES: Record<DashboardMetricTone, string> = {
   alert: 'text-rose-700',
 };
 
-/**
- * Matches the `min-h-[90px]` the loading skeleton reserves for each tile, so
- * the row does not resize when the data lands, and gives the flex column the
- * slack that pins `detail` to the bottom on every card in the row.
- */
 const CARD_BASE =
   'flex h-full min-h-[90px] min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left';
 
@@ -40,14 +29,12 @@ interface DashboardMetricCardProps {
   value: string | number;
   detail: string;
   icon?: LucideIcon;
-  /** 0-100. Draws a progress ring in the icon slot instead of the icon. */
   progress?: number;
   tone?: DashboardMetricTone;
   onClick?: () => void;
   className?: string;
 }
 
-/** Same 36px footprint as the icon chip, so a ring card lines up with its row. */
 function ProgressRing({ progress }: { progress: number }) {
   const radius = 15;
   const circumference = 2 * Math.PI * radius;
@@ -98,10 +85,6 @@ export default function DashboardMetricCard({
   );
 
   if (onClick) {
-    // `shadow-sm`/`hover:shadow-md` are inert here: index.css zeroes box-shadow
-    // globally for anything matching [class*="shadow"], so the hover state has
-    // to come from the shared transform affordance instead. GRID_CARD_HOVER
-    // owns the transition and the border colour, so neither is set separately.
     return <button type="button" onClick={onClick} className={`relative ${CARD_BASE} ${GRID_CARD_HOVER} ${className}`}>{content}</button>;
   }
 

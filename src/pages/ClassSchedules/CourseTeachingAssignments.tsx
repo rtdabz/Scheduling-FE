@@ -43,23 +43,15 @@ interface CourseRow {
   curriculum_program_name?: string | null;
   curriculum_program_major?: string | null;
   delegable: boolean;
-  /** A major can only go to another program of the college that offers it. */
   is_major?: boolean;
-  /**
-   * Classes this semester that already have an instructor. While any do, the
-   * server refuses to change who teaches the course, so the page locks it too.
-   */
   instructor_assigned_classes?: number;
 }
 interface PageData {
   courses: CourseRow[];
   departments: DepartmentOption[];
   programs: { id: number; department_id: number; code: string; name?: string | null; major?: string | null }[];
-  /** The department whose courses these are — the acting user's own. */
   currentDepartmentId: number | null;
-  /** False when the department has published no curriculum, so there is nothing to offer. */
   hasActiveCurriculum: boolean;
-  /** The semester the list is scoped to; null when no semester is active and nothing is narrowed. */
   activeSemester: ActiveSemester | null;
 }
 
@@ -78,7 +70,6 @@ interface IndexResponse {
   programs?: PageData['programs'];
 }
 
-// v11 lists majors (is_major) and the acting department's own programs as targets.
 const cacheKey = 'page:course-teaching-assignments:v11';
 
 const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
@@ -93,7 +84,6 @@ const errorMessage = (error: unknown, fallback: string) =>
   (axios.isAxiosError<ApiErrorResponse>(error) ? error.response?.data?.message : null) || fallback;
 const unitsOf = (course: CourseRow) => Number(course.units ?? 0) || 0;
 const yearOf = (course: CourseRow) => Number(course.year_level ?? 0) || 0;
-/** A GEC/GEE minor belongs to no college, so it reads as shared rather than blank. */
 const ownerOf = (course: CourseRow) => course.department_code ?? 'Shared';
 const programOf = (course: CourseRow) => ({
   code: course.curriculum_program_code ?? course.program_code ?? 'Shared',
@@ -106,10 +96,6 @@ const programOf = (course: CourseRow) => ({
   ),
 });
 
-/**
- * Who teaches the course today: the recorded college, or the owner teaching its
- * own course when nothing has been recorded.
- */
 const instructorClassesOf = (course: CourseRow) => Number(course.instructor_assigned_classes ?? 0) || 0;
 const instructorLockMessage = (course: CourseRow) => {
   const classes = instructorClassesOf(course);
@@ -192,10 +178,6 @@ export default function CourseTeachingAssignments() {
     ? departments.find((department) => department.id === selectedProgram.department_id) ?? targetDepartment
     : targetDepartment;
 
-  // The curriculum's courses per year level. Minors and majors can go to any
-  // college; inside its own college a major needs a sibling program (statusOf()).
-  // The year comes from the curriculum placement, so these tabs are this
-  // department's — the same subject can sit in a different year for another college.
   const byYear = useMemo(() => {
     const years = new Map<number, CourseRow[]>();
 
@@ -219,8 +201,6 @@ export default function CourseTeachingAssignments() {
     return counts;
   }, [courses]);
 
-  // Opens on the first year level that has something to assign, the way the
-  // Auto-Assign wizard opens on the first year level with sections.
   const firstPopulatedYear = YEAR_LEVELS.find((year) => (byYear.get(year)?.length ?? 0) > 0) ?? 1;
   const activeYear = yearLevel ?? firstPopulatedYear;
   const yearCourses = byYear.get(activeYear) ?? [];
@@ -239,7 +219,6 @@ export default function CourseTeachingAssignments() {
     }
     if (instructorClassesOf(course) > 0) return 'Has an instructor';
     if (!effectiveTargetDepartment) return 'Select a department or program';
-    // A major can go to any college; inside its own college it needs a sibling program.
     if (course.is_major && course.department_id != null && Number(effectiveTargetDepartment.id) === Number(course.department_id)) {
       if (!selectedProgram) return 'Select a program for majors';
       if (selectedProgram.id === (course.curriculum_program_id ?? course.program_id)) return 'Already its program';
@@ -268,11 +247,6 @@ export default function CourseTeachingAssignments() {
     setSelectedIds([]);
   };
 
-  /**
-   * Only the teaching columns are merged in. The row's year level came from this
-   * department's curriculum, while the saved record carries the level stored on the
-   * course — replacing the row wholesale would move the course to another year tab.
-   */
   const applySaved = (savedIds: number[], department: DepartmentOption, program = selectedProgram) => {
     if (savedIds.length === 0) return;
 
@@ -289,11 +263,7 @@ export default function CourseTeachingAssignments() {
       : course));
 
     setCourses(next);
-    // The scheduler caches each course's teaching college for its eligibility
-    // checks, so its copy is stale the moment this one changes.
     invalidateCacheGroups('schedules');
-    // The live flag, not the mount-time `cached` snapshot: writing that back would
-    // record "no curriculum published" for a department that has one.
     setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester });
     setSelectedIds((current) => current.filter((id) => !savedIds.includes(id)));
   };
@@ -330,18 +300,11 @@ export default function CourseTeachingAssignments() {
     } catch (saveError) {
       toast.error('Not saved', errorMessage(saveError, 'Failed to save assignments.'));
     } finally {
-      // Whatever went through is kept, so a failure part-way does not leave the
-      // saved courses looking unassigned.
       applySaved(savedIds, effectiveTargetDepartment);
       setSaving(false);
     }
   };
 
-  /**
-   * Clears the override, handing the course back to the derived rule: the
-   * college that owns it teaches it. Only the teaching columns change, for the
-   * same year-tab reason as `applySaved`.
-   */
   const removeAssignment = async (course: CourseRow) => {
     if (instructorClassesOf(course) > 0) {
       toast.error('Not removed', instructorLockMessage(course));
@@ -393,7 +356,6 @@ export default function CourseTeachingAssignments() {
       : [...new Set([...current, ...ids])]));
   };
 
-  // Rebuilt each render: every cell reads the live selection and target.
   const courseColumns: ColumnDef<CourseRow>[] = [
     {
       id: 'select',
@@ -541,8 +503,6 @@ export default function CourseTeachingAssignments() {
               {loading && departments.length === 0
                 ? Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-lg bg-slate-100" />)
                 : availableDepartments.map((department) => {
-                  // A program selection is the active responsible target. Do not
-                  // leave an unrelated department (such as CAS) visually checked.
                   const selected = selectedProgram === null && activeTarget === String(department.id);
                   const inTarget = activeTarget === String(department.id);
                   const assigned = assignedCounts.get(department.id) ?? 0;
@@ -648,12 +608,8 @@ export default function CourseTeachingAssignments() {
                   emptyState={
                     <p className="text-sm font-semibold text-slate-500">
                       {!hasActiveCurriculum
-                        // The list is the curriculum's, so no published curriculum is a
-                        // different problem from an empty year — and a different fix.
                         ? `${ownDepartment?.department_code ?? 'Your department'} has no active curriculum, so there are no courses to assign yet. Publish one to manage its minor courses here.`
                         : yearCourses.length === 0
-                          // The list is one semester's, so name it — otherwise an empty
-                          // year reads as a curriculum that is missing courses.
                           ? `No courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
                           : 'No courses match this filter.'}
                     </p>

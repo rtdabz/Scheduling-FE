@@ -3,15 +3,6 @@ import { formatPhilippineDate } from '../../lib/philippineTime';
 import { relativeAge } from '../../lib/vpaaOverview';
 import { humaniseEvent } from '../../lib/dashboardFormat';
 
-/**
- * The institution's recent administrative trail.
- *
- * Sourced from `/activity-log`, the same audit feed the full Activity Log page
- * reads, rather than from notifications: notifications are addressed to a
- * recipient and are marked read, so they describe what this account has been
- * told, not what the institution did.
- */
-
 export interface ActivityRow {
   id: string;
   event: string;
@@ -43,8 +34,6 @@ export default function AdministrativeActivityPanel({
   now: Date;
   onOpen: () => void;
   className?: string;
-  /** Narrow column placement: rows stack their badge above the headline and the
-   *  list scrolls inside whatever height the panel is given. */
   compact?: boolean;
 }) {
   return (
@@ -72,9 +61,6 @@ export default function AdministrativeActivityPanel({
             const title = humaniseEvent(row.event);
             const when = formatPhilippineDate(row.occurredAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-            /* Narrow column: the badge gets its own line beside the age instead of
-               competing with the headline for the same 360px, which left the text
-               wrapping mid-phrase. */
             if (compact) return (
               <li key={row.id} className="py-2.5">
                 <div className="flex items-center gap-2">

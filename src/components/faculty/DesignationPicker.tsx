@@ -10,37 +10,15 @@ import {
 } from '../../lib/designations';
 
 interface DesignationPickerProps {
-  /** Assignable designations, usually the active list. */
   designations: Designation[];
-  /**
-   * What the instructor holds now. Merged into the options so saving an
-   * instructor who still holds an inactive designation does not drop it.
-   */
   held?: Designation[];
-  /** Selected designation ids, in the order they will be listed and printed. */
   value: string[];
   onChange: (ids: string[]) => void;
   disabled?: boolean;
-  /**
-   * When given, the Basic Load the selection leaves is shown underneath, and
-   * no further deloading designation can be added once it reaches zero.
-   */
   maxUnits?: number;
   disabledHint?: string;
 }
 
-/**
- * Picks the designations an instructor holds. There is no fixed count, but the
- * deloads may not add up to more than the instructor's maximum: a designation
- * that would take the Basic Load below zero is disabled (the server refuses
- * the same).
- *
- * The form shows only the current selection; clicking it opens a checklist
- * modal that edits a draft, so Cancel leaves the form untouched. Sub-designations
- * are listed under their heading ("Director" over "Networking Dev't"); the
- * heading itself cannot be picked. Selection order is kept, because it is the
- * order the teaching-load sheet prints them in.
- */
 export default function DesignationPicker({
   designations,
   held = [],
@@ -76,8 +54,6 @@ export default function DesignationPicker({
     setOpen(true);
   };
 
-  // Only the Basic Load still left can be deloaded. A designation without a
-  // deload takes nothing from it, so it always stays open.
   const blocked = (id: string) => maxUnits !== undefined
     && draftDeload + (options.find((designation) => String(designation.id) === id)?.deload_units ?? 0) > maxUnits;
 
@@ -91,7 +67,6 @@ export default function DesignationPicker({
     setOpen(false);
   };
 
-  // Escape closes only this modal, not the instructor form underneath it.
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -166,7 +141,6 @@ export default function DesignationPicker({
         <div
           className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4 font-sans animate-in fade-in duration-200"
           onClick={(event) => {
-            // Portal events still bubble to the trigger in the React tree.
             event.stopPropagation();
             setOpen(false);
           }}

@@ -1,13 +1,3 @@
-/**
- * Pure layout arithmetic for the Master Calendar's Gantt view.
- *
- * Kept free of React so the rules that decide where a block sits, which lane it
- * takes and what counts as an overlap can be tested without rendering the page.
- * Everything here works in minutes from midnight rather than grid slots: a
- * timeline positions a 7:15 class at 7:15, where the slot helpers in timeGrid
- * would round it onto the nearest half hour.
- */
-
 export interface CalendarDepartment {
   id: number;
   department_name: string;
@@ -35,32 +25,22 @@ export interface CalendarSchedule {
   subject?: { subject_code?: string; subject_name?: string; units?: number } | null;
 }
 
-/** Row order of the chart. Matches SchedulingPolicy::PERSISTABLE_DAYS. */
 export const CALENDAR_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 
-/**
- * Row index for a stored day, or -1 when it is not a weekday name.
- *
- * `schedules.day` holds one full day name per meeting, but older rows and some
- * imports use the three-letter form, so match on the prefix.
- */
 export const dayIndexOf = (day: string | null | undefined): number => {
   const prefix = (day ?? '').trim().toLowerCase().slice(0, 3);
   if (prefix.length < 3) return -1;
   return CALENDAR_DAYS.findIndex((name) => name.toLowerCase().startsWith(prefix));
 };
 
-/** Monday-first index of a Date, matching CALENDAR_DAYS. */
 export const dateDayIndex = (date: Date): number => (date.getDay() + 6) % 7;
 
-/** Minutes from midnight for "HH:MM" or "HH:MM:SS"; null when unparseable. */
 export const toMinutes = (time: string | null | undefined): number | null => {
   const [hours, minutes] = (time ?? '').split(':').map((part) => Number.parseInt(part, 10));
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
   return hours * 60 + minutes;
 };
 
-/** "7 AM", "1:30 PM" for an axis tick. */
 export const minutesToLabel = (total: number): string => {
   const hours = Math.floor(total / 60);
   const minutes = total % 60;
@@ -71,7 +51,6 @@ export const minutesToLabel = (total: number): string => {
 
 export type SessionType = 'lecture' | 'laboratory';
 
-/** A meeting without a type is a lecture: the column is nullable and lecture is the default. */
 export const sessionTypeOf = (schedule: Pick<CalendarSchedule, 'meeting_type'>): SessionType =>
   (schedule.meeting_type ?? '').toLowerCase() === 'laboratory' ? 'laboratory' : 'lecture';
 
@@ -87,7 +66,6 @@ export const instructorNameOf = (schedule: CalendarSchedule): string =>
 export const departmentIdOf = (schedule: CalendarSchedule): number | null =>
   schedule.department_id ?? schedule.department?.id ?? schedule.section?.department_id ?? null;
 
-/** Resolve logos once from the department directory, not from repeated API relations. */
 export const withCalendarDepartments = <T extends CalendarSchedule>(schedules: readonly T[], departments: readonly CalendarDepartment[]): T[] => {
   const byId = new Map(departments.map(department => [department.id, department]));
   return schedules.map(schedule => {
@@ -97,9 +75,7 @@ export const withCalendarDepartments = <T extends CalendarSchedule>(schedules: r
 };
 
 export interface TimeWindow {
-  /** First minute drawn on the axis. */
   start: number;
-  /** Last minute drawn on the axis. */
   end: number;
 }
 
@@ -109,10 +85,8 @@ export interface StandardHours {
   slotMinutes: number;
 }
 
-/** Server defaults (institution_settings), used until GET /timeslots answers. */
 export const DEFAULT_STANDARD_HOURS: StandardHours = { opening: 7 * 60, closing: 20 * 60 + 30, slotMinutes: 30 };
 
-/** Shared normalization for /timeslots and /initial-data time-grid settings. */
 export const buildStandardHours = (openingTime?: string | null, closingTime?: string | null, slotInterval?: number | null): StandardHours => {
   const opening = toMinutes(openingTime);
   const closing = toMinutes(closingTime);
@@ -124,11 +98,6 @@ export const buildStandardHours = (openingTime?: string | null, closingTime?: st
   };
 };
 
-/**
- * The axis span: the configured opening-to-closing hours, stretched to cover any
- * class that starts earlier or ends later so nothing is clipped off either edge.
- * The stretched part is drawn shaded, so the standard window stays visible.
- */
 export const buildTimeWindow = (hours: StandardHours, schedules: readonly CalendarSchedule[]): TimeWindow => {
   let start = hours.opening;
   let end = hours.closing;
@@ -138,13 +107,11 @@ export const buildTimeWindow = (hours: StandardHours, schedules: readonly Calend
     if (from !== null) start = Math.min(start, from);
     if (to !== null) end = Math.max(end, to);
   }
-  // An extended edge snaps outward to the hour so the axis never starts on "6:50".
   if (start < hours.opening) start = Math.floor(start / 60) * 60;
   if (end > hours.closing) end = Math.ceil(end / 60) * 60;
   return { start, end: Math.max(end, start + 60) };
 };
 
-/** Axis ticks every `step` minutes, aligned to the window start. */
 export const buildTicks = (window: TimeWindow, step: number): number[] => {
   const ticks: number[] = [];
   const safeStep = step > 0 ? step : 30;
@@ -152,7 +119,6 @@ export const buildTicks = (window: TimeWindow, step: number): number[] => {
   return ticks;
 };
 
-/** Horizontal position of a minute, as a percentage of the timeline width. */
 export const percentOf = (minute: number, window: TimeWindow): number =>
   ((minute - window.start) / (window.end - window.start)) * 100;
 
@@ -163,14 +129,6 @@ export interface OverlapEntry {
   kinds: OverlapKind[];
 }
 
-/**
- * Meetings that share a day, an interval, and a room, instructor or section.
- *
- * These are reported as overlaps, not conflicts: an instructor clash can be a
- * deliberate override, and a combined class legitimately shares a room. The
- * calendar surfaces them for monitoring and leaves the verdict to the reader.
- * Online and field meetings do not occupy their room, so they never overlap on it.
- */
 export const findOverlaps = (schedules: readonly CalendarSchedule[]): Map<number, OverlapEntry[]> => {
   const result = new Map<number, OverlapEntry[]>();
   const byDay = new Map<number, { schedule: CalendarSchedule; start: number; end: number }[]>();
@@ -198,7 +156,6 @@ export const findOverlaps = (schedules: readonly CalendarSchedule[]): Map<number
     meetings.sort((a, b) => a.start - b.start);
     for (let i = 0; i < meetings.length; i++) {
       const a = meetings[i];
-      // Sorted by start, so once a later meeting starts after `a` ends none overlap.
       for (let j = i + 1; j < meetings.length && meetings[j].start < a.end; j++) {
         const b = meetings[j];
         const kinds: OverlapKind[] = [];
@@ -227,7 +184,6 @@ export interface GanttBlock {
 export interface GanttRow {
   key: string;
   label: string;
-  /** Groups with no real value ("No instructor") sort after named ones. */
   isPlaceholder: boolean;
   laneCount: number;
   blocks: GanttBlock[];
@@ -240,11 +196,6 @@ export interface GanttDay {
   rows: GanttRow[];
 }
 
-/**
- * Greedy interval packing: each meeting takes the first lane that is free by its
- * start. Sorted by start (longest first on ties), this uses the fewest lanes the
- * busiest moment allows, so a row is exactly as tall as its peak concurrency.
- */
 export const packLanes = <T extends { schedule: { id: number }; start: number; end: number }>(
   items: readonly T[],
 ): { blocks: (T & { lane: number })[]; laneCount: number } => {
@@ -277,7 +228,6 @@ const groupKeyOf = (schedule: CalendarSchedule, groupBy: GroupBy): { key: string
       return schedule.faculty_id != null
         ? {
             key: `faculty:${schedule.faculty_id}`,
-            // Surname first, so the rows read like a faculty roster.
             label: schedule.faculty ? `${schedule.faculty.last_name}, ${schedule.faculty.first_name}` : `Instructor #${schedule.faculty_id}`,
             isPlaceholder: false,
           }
@@ -297,11 +247,6 @@ const groupKeyOf = (schedule: CalendarSchedule, groupBy: GroupBy): { key: string
   }
 };
 
-/**
- * Day groups for the chart, one per visible day, each split into rows by
- * `groupBy` and packed into lanes. Meetings with an unreadable day or time are
- * skipped rather than drawn at the axis origin.
- */
 export const buildGanttDays = (
   schedules: readonly CalendarSchedule[],
   groupBy: GroupBy,
@@ -338,11 +283,6 @@ export const buildGanttDays = (
   });
 };
 
-/**
- * The other weekly meetings of the same class: same section, course and session
- * type. `schedules.day` is one row per meeting, so an MWF lecture is three rows
- * and the detail view lists its siblings rather than pretending it meets once.
- */
 export const siblingMeetingsOf = (target: CalendarSchedule, schedules: readonly CalendarSchedule[]): CalendarSchedule[] => {
   const courseKey = (s: CalendarSchedule) => s.course_id ?? courseCodeOf(s);
   return schedules

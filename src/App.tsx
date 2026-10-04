@@ -8,15 +8,11 @@ import { getStoredUser, getStoredUserRole, requiresDepartmentProgram, type Store
 import LockedModuleView from './components/ui/LockedModuleView';
 import { lazyPage, registerPagePrefetch } from './lib/pagePrefetch';
 
-// VPAA Pages
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
 const VpaaSchedules = lazyPage(() => import('./pages/vpaa/Schedules'));
-// Dean and VPAA review through one page; `stage` picks the queue and endpoints.
 const ScheduleApprovalPage = lazyPage(() => import('./pages/shared/ScheduleApprovalPage'));
 const VpaaCalendarPage = lazyPage(() => import('./pages/vpaa/CalendarPage'));
-// One instructor roster for every portal; what a role may change is decided inside it.
 const Faculty = lazyPage(() => import('./pages/shared/Faculty'));
-// One room page for every portal; what a role may change is decided inside it.
 const Rooms = lazyPage(() => import('./pages/shared/Rooms'));
 const VpaaUsers = lazyPage(() => import('./pages/vpaa/Users'));
 const Departments = lazyPage(() => import('./pages/vpaa/Departments'));
@@ -27,7 +23,6 @@ const VpaaScheduleHistory = lazyPage(() => import('./pages/vpaa/ScheduleHistory'
 const VpaaArchive = lazyPage(() => import('./pages/vpaa/Archive'));
 const Settings = lazyPage(() => import('./pages/vpaa/Settings'));
 
-// Other Role Pages
 const DeanSchedules = lazyPage(() => import('./pages/dean/Schedules'));
 const SecretaryScheduleBuilder = lazyPage(() => import('./pages/secretary/ScheduleBuilder'));
 const SecretarySchedules = lazyPage(() => import('./pages/secretary/Schedules'));
@@ -36,9 +31,6 @@ const SecretarySectionTimetables = lazyPage(() => import('./pages/secretary/Sect
 const ProgramHeadScheduleBuilder = lazyPage(() => import('./pages/program_head/ScheduleBuilder'));
 const ProgramHeadSchedules = lazyPage(() => import('./pages/program_head/Schedules'));
 const ProgramHeadSectionTimetables = lazyPage(() => import('./pages/program_head/SectionTimetables'));
-// VPAA-only: a designation rewrites an instructor's Basic Load, so the list is
-// maintained by the office that owns faculty loading. Other roles read the
-// designation badge on their roster screens but have no route to this page.
 const Designations = lazyPage(() => import('./pages/shared/Designations'));
 const InstructorAssignment = lazyPage(() => import('./pages/ClassSchedules/InstructorAssignment'));
 const CrossDepartmentAssignments = lazyPage(() => import('./pages/ClassSchedules/CrossDepartmentAssignments'));
@@ -49,9 +41,6 @@ const CurriculumListPage = lazyPage(() => import('./pages/curriculum/CurriculumL
 const CurriculumDetailPage = lazyPage(() => import('./pages/curriculum/CurriculumDetailPage'));
 const SecretarySections = lazyPage(() => import('./pages/secretary/Sections'));
 
-// Menu path -> page chunk, so the sidebar can start the download on hover.
-// Paths that share a page share its chunk; a path missing here still works,
-// it just loads on click. Keep in step with the routes below.
 registerPagePrefetch([
   [VpaaSchedules, ['/schedules']],
   [ScheduleApprovalPage, ['/schedules/approval', '/dean/schedules/approval']],
@@ -83,8 +72,6 @@ registerPagePrefetch([
   [ProgramHeadSectionTimetables, ['/program_head/section-timetables']],
 ]);
 
-// Old path -> current path. URLs now follow the menu labels
-// (Instructors, Facility, Schedule Management, Course Assignment).
 const LEGACY_REDIRECTS: ReadonlyArray<readonly [string, string]> = [
   ['/faculty', '/instructors'],
   ['/rooms', '/facilities'],
@@ -108,8 +95,6 @@ type CapabilityUser = Pick<StoredUser, 'permissions' | 'scheduling_ready' | 'cap
 const hasRequestedCapability = (user: CapabilityUser | null, capability: string | string[]): boolean => {
   if (!user) return false;
   const requested = Array.isArray(capability) ? capability : [capability];
-  // Only the capabilities the server declares as program-dependent are withheld
-  // from a program-less department; the rest stay usable, as the API allows.
   const usable = user.scheduling_ready === false
     ? requested.filter((name) => !requiresDepartmentProgram(name, user.capability_catalog))
     : requested;
@@ -159,10 +144,6 @@ const CapabilityRoute = ({
         if (active) setHasAccess(hasRequestedCapability(data, capability));
       })
       .catch(() => {
-        // A failed refresh (offline, server down) says nothing about access, so
-        // keep the stored session's answer; locking here showed "Access
-        // Restricted" to accounts that hold the capability. Only fail closed
-        // when there is no stored session to go on. The API still enforces it.
         if (active) setHasAccess((current) => current ?? false);
       });
 
@@ -211,24 +192,15 @@ export default function App() {
     if (storedUser) return;
 
     fetchCurrentUser()
-      // A rejected token is handled once, by the API layer: it clears the
-      // session and hands the shell an expiry notice to show. Nothing is left
-      // for this call to do but stay quiet.
       .catch(() => undefined);
   }, []);
 
   return (
-    // Navigations commit immediately. With transitions on (the v7 default) React
-    // kept the previous page on screen until the next one finished rendering,
-    // which on heavy or constantly refreshing pages looked like the click did
-    // nothing. The per-route Suspense in AppLayout covers the chunk download.
     <BrowserRouter useTransitions={false}>
       <Routes>
           <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
         
-          {/* Main Layout wrapper for all authenticated routes */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            {/* VPAA Routes */}
             <Route path="/dashboard" element={<DashboardRoute />} />
             <Route path="/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><VpaaSchedules /></CapabilityRoute>} />
             <Route path="/schedules/approval" element={<CapabilityRoute capability="schedule.approve_vpaa" moduleName="Schedule Approval"><ScheduleApprovalPage stage="vpaa" /></CapabilityRoute>} />
@@ -247,7 +219,6 @@ export default function App() {
             <Route path="/archive" element={<RoleRoute role="vpaa" moduleName="Archive"><VpaaArchive /></RoleRoute>} />
             <Route path="/settings" element={<RoleRoute role="vpaa" moduleName="Settings"><Settings /></RoleRoute>} />
 
-            {/* Dean Routes */}
             <Route path="/dean/dashboard" element={<DashboardRoute />} />
             <Route path="/dean/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="All Schedules"><DeanSchedules /></CapabilityRoute>} />
             <Route path="/dean/schedules/approval" element={<CapabilityRoute capability="schedule.approve_dean" moduleName="Schedule Approval"><ScheduleApprovalPage stage="dean" /></CapabilityRoute>} />
@@ -261,10 +232,8 @@ export default function App() {
             <Route path="/dean/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/dean/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/dean/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
-            {/* Dean account settings were retired; keep old bookmarks inside the Dean shell. */}
             <Route path="/dean/settings" element={<Navigate to="/dean/dashboard" replace />} />
 
-            {/* Secretary Routes */}
             <Route path="/secretary/dashboard" element={<DashboardRoute />} />
             <Route path="/secretary/departments" element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />
             <Route path="/secretary/schedule-management" element={<CapabilityRoute capability="schedule.create" moduleName="Schedule Management"><SecretaryScheduleBuilder /></CapabilityRoute>} />
@@ -286,7 +255,6 @@ export default function App() {
             <Route path="/secretary/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CourseTeachingAssignments /></CapabilityRoute>} />
             <Route path="/secretary/settings" element={<Navigate to="/secretary/schedule-management" replace />} />
             
-            {/* Program Head Routes */}
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
             <Route path="/program_head/departments" element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />
             <Route path="/program_head/schedule-management" element={<CapabilityRoute capability="schedule.create" moduleName="Schedule Management"><ProgramHeadScheduleBuilder /></CapabilityRoute>} />
@@ -306,8 +274,6 @@ export default function App() {
             <Route path="/program_head/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CourseTeachingAssignments /></CapabilityRoute>} />
             <Route path="/program_head/settings" element={<Navigate to="/program_head/schedule-management" replace />} />
 
-            {/* Old URLs from before the paths were renamed to match the menu labels.
-                Kept so bookmarks and stored notification links still land. */}
             {LEGACY_REDIRECTS.map(([from, to]) => (
               <Route key={from} path={from} element={<Navigate to={to} replace />} />
             ))}

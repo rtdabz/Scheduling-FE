@@ -8,12 +8,6 @@ import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
-/**
- * Cross-department keeps its department cards and timetable workspace, while
- * reusing the Schedule Builder Auto-Assign wizard for the assignment workflow.
- * The authenticated department is always the receiving/teaching department;
- * schedule ownership must never change the instructor scope.
- */
 export default function CrossDepartmentAssignments() {
   const scheduler = useScheduler();
   const [isOpen, setIsOpen] = useState(false);
@@ -45,8 +39,6 @@ export default function CrossDepartmentAssignments() {
         || subject?.teachingDepartmentId === undefined
         || Number(subject.teachingDepartmentId) !== Number(scheduler.userDepartmentId)
       ) return false;
-      // Another college's class, or a course of this college handed to a sibling
-      // program (BSED-ENG Prof Ed taught by BEED), which never leaves the college.
       if (Number(schedule.departmentId) !== Number(scheduler.userDepartmentId)) return true;
       const handedToProgram = subject.teachingProgramId ?? null;
       return handedToProgram !== null

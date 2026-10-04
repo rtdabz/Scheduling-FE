@@ -1,11 +1,3 @@
-/**
- * Shapes and pure transforms for the year-level generator's diagnostic report.
- *
- * The backend returns a machine-applicable `adjustments` list with every
- * recommendation. Keeping the parse and the apply step here — away from the
- * modal's rendering — is what lets "Apply & Retry" be tested without a DOM.
- */
-
 import { orderDays } from "./generationTypes";
 
 export type AdjustmentType =
@@ -84,15 +76,7 @@ export type YearLevelGenerationFailure = {
   bottleneck: GenerationBottleneck | null;
   attempts: GenerationAttempt[];
   recommendations: GenerationRecommendation[];
-  /**
-   * Published while the run is still searching: what it would recommend if it
-   * stopped now. A timetable found later replaces it.
-   */
   provisional?: boolean;
-  /**
-   * The search stopped at its time or step limit: nothing was proven not to
-   * fit, so generating again with the same settings is worth trying first.
-   */
   searchIncomplete?: boolean;
 };
 
@@ -103,7 +87,6 @@ export type AppliedStrategy = {
   impact: string;
 };
 
-/** The subset of a wizard section config that an adjustment can rewrite. */
 export type AdjustableSectionConfig = {
   splitCourseIds: string[];
   gecSplitCourseIds: string[];
@@ -126,13 +109,6 @@ export const impactLabels: Record<string, string> = {
   high: "Changes several preferences",
 };
 
-/**
- * Read a diagnostic report out of an axios-shaped error.
- *
- * Returns null for anything that is not this endpoint's structured 422 (session
- * expiry, timeouts, plain validation errors) so the caller can keep its existing
- * toast handling for those.
- */
 export function parseYearLevelFailure(error: unknown): YearLevelGenerationFailure | null {
   const data = (error as { response?: { data?: unknown } } | null)?.response?.data;
   return parseYearLevelFailurePayload(data);
@@ -170,7 +146,6 @@ export function parseYearLevelFailurePayload(data: unknown): YearLevelGeneration
   };
 }
 
-/** Preflight rejects on data, not capacity, so nothing here is auto-applicable. */
 const preflightTitles: Record<string, string> = {
   invalid_section_status: "Activate the section",
   invalid_curriculum_assignment: "Correct the curriculum assignment",
@@ -221,16 +196,11 @@ function preflightFailure(payload: Record<string, unknown>): YearLevelGeneration
   };
 }
 
-/** A recommendation the wizard can apply itself, rather than advice to read. */
 export const isApplicableRecommendation = (recommendation: GenerationRecommendation): boolean =>
   recommendation.adjustments.length > 0
   && !recommendation.resolved
   && recommendation.status !== "resolved";
 
-/**
- * What an Apply button changes: "PE 101 in BSIT 1A" for a course, "BSIT 1A"
- * for a section-wide setting.
- */
 export function recommendationTarget(recommendation: GenerationRecommendation): string {
   const first = recommendation.adjustments[0];
   if (first && isYearLevelAdjustment(first)) return "the year level";
@@ -241,7 +211,6 @@ export function recommendationTarget(recommendation: GenerationRecommendation): 
   return courseCode || sectionName || "the configuration";
 }
 
-/** Human-readable summary of one adjustment, used in the panel and the toast. */
 export function describeAdjustment(adjustment: GenerationAdjustment): string {
   const course = adjustment.course_code || `course ${adjustment.course_id}`;
   const section = adjustment.section_name || `section ${adjustment.section_id}`;
@@ -275,26 +244,16 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
   }
 }
 
-/**
- * Preferred Days and the Friday + Saturday pairing are one choice for the whole
- * year level (Step 1 and Step 2's Default Settings), not a per-section config.
- * The backend repeats them on every section, so they arrive once per section.
- */
 const yearLevelAdjustmentTypes = new Set(["enable_friday_saturday_split", "add_preferred_day"]);
 
 export const isYearLevelAdjustment = (adjustment: GenerationAdjustment): boolean =>
   yearLevelAdjustmentTypes.has(adjustment.type);
 
-/** The year-level settings a recommendation can change. */
 export type AdjustableYearLevelSettings = {
   preferredDays: string[];
   allowFridaySaturdaySplit: boolean;
 };
 
-/**
- * Apply the year-level adjustments. Like applyAdjustments, `applied` holds only
- * changes that landed -- one entry per setting, not one per section echo.
- */
 export function applyYearLevelAdjustments(
   settings: AdjustableYearLevelSettings,
   adjustments: GenerationAdjustment[],
@@ -309,7 +268,6 @@ export function applyYearLevelAdjustments(
     } else if (
       adjustment.type === "add_preferred_day"
       && adjustment.value
-      // No Preferred Days means every day is already open.
       && next.preferredDays.length > 0
       && !next.preferredDays.includes(adjustment.value)
     ) {
@@ -321,12 +279,6 @@ export function applyYearLevelAdjustments(
   return { settings: next, applied };
 }
 
-/**
- * Rewrite the wizard configs so the next run matches what the generator
- * recommended. Unknown adjustment types and unknown sections are ignored, and
- * `applied` reports only the changes that actually landed — so the caller can
- * tell the user what changed rather than claiming a no-op succeeded.
- */
 export function applyAdjustments<T extends AdjustableSectionConfig>(
   configs: Record<string, T>,
   adjustments: GenerationAdjustment[],
@@ -377,7 +329,6 @@ function applyOne<T extends AdjustableSectionConfig>(
       return { ...config, splitCourseIds: config.splitCourseIds.filter((id) => id !== courseKey) };
     }
     case "disable_minor_split": {
-      // A Hybrid Split is a Split Session with one meeting online, so it goes too.
       if (!config.gecSplitCourseIds.includes(courseKey)) return null;
       return {
         ...config,
@@ -386,11 +337,8 @@ function applyOne<T extends AdjustableSectionConfig>(
       };
     }
     case "enable_hybrid_split": {
-      // Hybrid Split only exists on a course already set to Split Session.
       const hybridIds = config.hybridSplitCourseIds ?? [];
       if (!config.gecSplitCourseIds.includes(courseKey) || hybridIds.includes(courseKey)) return null;
-      // Setup Courses stores a Hybrid Split with no mode pin; an On-site or
-      // Online pin would contradict the one-online, one-on-site shape.
       return {
         ...config,
         hybridSplitCourseIds: [...hybridIds, courseKey],
@@ -398,8 +346,6 @@ function applyOne<T extends AdjustableSectionConfig>(
       };
     }
     case "set_hybrid_split": {
-      // A regular course made a Hybrid Split in one step: it becomes a Split
-      // Session with one meeting online, which halves its room time.
       const hybridIds = config.hybridSplitCourseIds ?? [];
       if (hybridIds.includes(courseKey)) return null;
       return {
@@ -414,7 +360,6 @@ function applyOne<T extends AdjustableSectionConfig>(
     case "disable_hybrid_split": {
       const hybridIds = config.hybridSplitCourseIds ?? [];
       if (!hybridIds.includes(courseKey)) return null;
-      // Back to an On-site Split Session: both meetings face-to-face.
       return {
         ...config,
         hybridSplitCourseIds: hybridIds.filter((id) => id !== courseKey),
@@ -422,14 +367,11 @@ function applyOne<T extends AdjustableSectionConfig>(
       };
     }
     case "disable_section_hybrid": {
-      // Section-wide, like the backend: every lecture/lab split in the section.
       if (config.splitCourseIds.length === 0) return null;
       return { ...config, splitCourseIds: [] };
     }
     case "set_delivery_mode": {
       const value = adjustment.value === null || adjustment.value === "automatic" ? "automatic" : adjustment.value;
-      // Online Split holds both meetings online, so a Hybrid Split's
-      // one-online, one-on-site marker cannot stay beside it.
       const hybridIds = config.hybridSplitCourseIds ?? [];
       const dropsHybrid = value === "online" && hybridIds.includes(courseKey);
       if (config.modesByCourseId[courseKey] === value && !dropsHybrid) return null;

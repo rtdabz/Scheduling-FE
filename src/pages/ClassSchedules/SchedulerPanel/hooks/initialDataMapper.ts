@@ -40,19 +40,8 @@ export interface SchedulerCacheData {
   fieldCourseAssignmentEnabled: boolean;
   fieldCourseCodes: string[];
   schedulingReady: boolean;
-  /**
-   * Programs this account owns: its own as Program Head, or every program
-   * without an active Program Head as Secretary. Null when the payload
-   * predates the field; the server still enforces ownership.
-   */
   canEditProgramIds?: number[] | null;
-  /** False when no active Dean is assigned; submitting is refused server-side. */
   hasDean: boolean;
-  /**
-   * True when the server cut the schedule list at its limit. Classes past it
-   * are neither drawn nor checked for conflicts. Optional so cached payloads
-   * from before the flag stay usable.
-   */
   schedulesTruncated?: boolean;
 }
 
@@ -60,27 +49,22 @@ export interface InitialDataResponse {
   active_semester: ApiSemesterRecord | null;
   rooms: ApiRoomRecord[];
   courses?: ApiCourseRecord[];
-  /** Legacy alias; /initial-data no longer sends it. Kept for cached payloads. */
   subjects?: ApiSubjectRecord[];
   faculties: ApiFacultyRecord[];
   sections: ApiSectionRecord[];
   schedules: ApiScheduleRecord[];
-  /** The schedule list was cut at `schedule_limit`. */
   schedules_truncated?: boolean;
   departments: ApiDepartmentRecord[];
   scheduling_ready?: boolean;
-  /** Programs whose timetable this account may change; the rest are read-only. */
   can_edit_program_ids?: number[];
   has_dean?: boolean;
   users: UserSummary[];
   field_course_assignment_enabled?: boolean;
   field_course_codes?: string[];
   resource_slot_limits?: { online: number; field: number } | null;
-  /** Grid window from institution_settings; the client used to hardcode it. */
   time_grid?: TimeGridConfigInput | null;
 }
 
-/** Re-exported so existing importers keep working; canonical in lib/timeGrid. */
 export { slotToTime24h, timeStrToSlot };
 export const dayMapToIndex = DAY_NAME_TO_INDEX;
 
@@ -109,35 +93,20 @@ export const hasUsableSchedulerCache = (data: SchedulerCacheData | undefined): d
   );
 };
 
-/**
- * A numeric field that may legitimately be 0, so absence and zero stay distinct.
- * Non-numeric junk reads as absent rather than NaN.
- */
 const numberOrUndefined = (value: number | string | null | undefined): number | undefined => {
   if (value === null || value === undefined || value === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-/**
- * Days already reported as unrecognized, so a malformed payload warns once per
- * value instead of once per schedule row.
- */
 const warnedUnknownDays = new Set<string>();
 
-/**
- * Client mirror of `SchedulingPolicy::isCasServiceCourse`. A GEC subject is a
- * service course taught by the college that owns it, which is what makes its
- * owner the teaching department below.
- */
 const isGecServiceCourse = (course: ApiCourseRecord | ApiSubjectRecord): boolean => (
   (course.course_code ?? course.subject_code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith("GEC")
   || (course.categories ?? []).some((category) => category.name.toLowerCase() === "gec")
 );
 
 export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
-  // An unrecognized day used to become Monday silently, which moved a class to a
-  // day nobody chose. It still has to resolve to a grid row, but it says so.
   const rawDay = String(item.day ?? "");
   const resolvedDayIndex = dayMapToIndex[rawDay] ?? dayMapToIndex[rawDay.trim()];
   const dayIndex = resolvedDayIndex ?? 0;
@@ -198,15 +167,10 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     sectionName: item.section?.section_name ?? "",
     programCode: (item.section?.program ?? item.program)?.code ?? null,
     roomName,
-    // Long names throughout: DAYS is FULL_DAY_NAMES, so a short fallback would
-    // put a foreign value into a long-name domain.
     day: DAYS[dayIndex] ?? DAYS[0],
     startTime: slotToTimeStr(startSlot),
     endTime: slotToTimeStr(endSlot),
     mode: item.mode ?? "on-site",
-    // Some schedule endpoints return the eager-loaded faculty relation while
-    // omitting/normalizing the scalar foreign key. Prefer the FK, but fall back
-    // to the relation so a successful assignment is visible immediately.
     facultyName: item.faculty
       ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim()
       : null,
@@ -229,10 +193,6 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
   };
 };
 
-/**
- * Keep the current section when it belongs to the saved result; otherwise move
- * the timetable to the first generated section so a successful save is visible.
- */
 export const generatedScheduleSectionId = (
   currentSectionId: string,
   schedules: ScheduleItem[],
@@ -249,34 +209,9 @@ export const generatedScheduleSectionId = (
     ?? currentSectionId;
 };
 
-/**
- * Single mapper for the `/initial-data` payload.
- *
- * Both the mount effect and refreshData() go through this. They previously kept
- * hand-copied mappers that had drifted: refreshData dropped faculty
- * `availabilities` (silently downgrading part-time conflict detection to the
- * hardcoded fallback in useConflict) and used a looser section filter that
- * admitted sections from other academic years.
- */
-/**
- * One API course row to the scheduler's Subject shape.
- *
- * Exported because the generator re-fetches courses scoped to a single
- * curriculum — the initial-data payload flattens each course to one year level
- * across all of a department's active curricula, which is the wrong answer for
- * a cohort still on the old one.
- */
 export const mapApiCourse = (s: ApiCourseRecord): Subject => {
-  // A secretary can delegate a non-major to another college, and that override
-  // decides who teaches it. With no override a GEC subject is taught by the
-  // college that offers it, and anything else — a major, or a shared minor such
-  // as PATH FIT — carries no teaching college: majors are held to their own
-  // department and program instead, and a shared minor is open to every
-  // department by design.
   const delegatedTo = s.teaching_department_id ?? null;
   const servesOwnCollege = delegatedTo === null && isGecServiceCourse(s) && s.department_id !== null;
-  // Whichever college the two branches above landed on, so the labels cannot
-  // drift from the id the eligibility check reads.
   const teachingDepartment = delegatedTo !== null ? s.teaching_department : (servesOwnCollege ? s.department : null);
 
   return {
@@ -302,10 +237,6 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
   };
 };
 
-/**
- * One API faculty row to the scheduler's Faculty shape. Exported so an
- * instructor change can refetch just `?include=faculties` for fresh loads.
- */
 export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Faculty => ({
   id: f.id.toString(),
   name: `${f.first_name} ${f.last_name}`,
@@ -322,11 +253,7 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   departmentName: f.department?.department_name,
   programId: f.program_id ?? null,
   programCode: f.program?.code ?? null,
-  // A Basic Load of 0 (overload-only instructor) is real, so this coerces too.
   maxUnits: numberOrUndefined(f.max_units),
-  // Zero is a real allowance, so these coerce rather than falling back:
-  // treating 0 as "unknown" would make the Auto-Assign labels invent room the
-  // instructor does not have.
   deloadUnits: numberOrUndefined(f.deload_units),
   overloadUnits: numberOrUndefined(f.overload_units),
   probonoUnits: numberOrUndefined(f.probono_units),
@@ -337,12 +264,6 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   availabilities: f.availabilities
 });
 
-/**
- * Sections must match the active semester by id, or by semester *and*
- * academic year. Matching on semester alone leaks sections from other
- * academic years. Shared by the initial load and `refreshSections`, so a
- * live-refresh sees the same set the page loaded with.
- */
 export const mapApiSections = (
   sections: ApiSectionRecord[],
   semester: ApiSemesterRecord | null,
@@ -375,7 +296,6 @@ export const mapInitialData = (
   initialData: InitialDataResponse,
   options: { isVpaa: boolean; userDepartmentId?: number | null },
 ): SchedulerCacheData => {
-  // Applied before anything is mapped: every slot conversion below reads it.
   configureTimeGrid(initialData.time_grid);
 
   let apiRooms = initialData.rooms;
@@ -386,7 +306,6 @@ export const mapInitialData = (
         || (r.grant_windows?.length ?? 0) > 0
     );
   }
-  // Borrowed rooms go last so a default room pick prefers the department's own.
   apiRooms = [...apiRooms].sort(
     (a, b) => Number((a.grant_windows?.length ?? 0) > 0) - Number((b.grant_windows?.length ?? 0) > 0)
   );

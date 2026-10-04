@@ -8,25 +8,11 @@ import {
   type SummaryPart,
 } from "../../pages/ClassSchedules/SchedulerPanel/GenerateSchedule/summaryRows";
 
-/**
- * The lines a per-part cell prints. A value shared by every part is printed
- * once: "Unassigned" stacked three times says nothing the first one did not.
- * Values that differ keep one line per part, aligned with that part's day and
- * time.
- */
 const partLines = (item: SummaryClass, valueOf: (part: SummaryPart) => string): string[] => {
   const values = item.parts.map(valueOf);
   return values.every((value) => value === values[0]) ? values.slice(0, 1) : values;
 };
 
-/**
- * One row per class, with every meeting folded into it.
- *
- * Shared by the generator's Schedule Summary step and the All Schedules list so
- * both read the same way: a split or hybrid class is a single row whose Day,
- * Time, Room (and Faculty) cells stack one line per part, so each day lines up
- * with its own time and room instead of being scattered over separate rows.
- */
 export default function ClassSummaryTable({
   classes,
   showFaculty = false,
@@ -40,20 +26,14 @@ export default function ClassSummaryTable({
   sortable = true,
 }: {
   classes: SummaryClass[];
-  /** Adds a Faculty column, one line per part. */
   showFaculty?: boolean;
-  /** Replaces the plain section name, e.g. to add a department badge. */
   renderSection?: (item: SummaryClass) => ReactNode;
-  /** Badges under the course name (generation changes, conflicts). */
   renderCourseExtras?: (item: SummaryClass) => ReactNode;
   onRowClick?: (item: SummaryClass) => void;
-  /** Tints the row, e.g. for a class involved in a conflict. */
   isRowFlagged?: (item: SummaryClass) => boolean;
   emptyMessage?: string;
   className?: string;
-  /** The scrolling region; keep it the scroll container so the header sticks. */
   scrollClassName?: string;
-  /** Turn off when the caller paginates, or a sort would only reorder one page. */
   sortable?: boolean;
 }) {
   const columns = useMemo<ColumnDef<SummaryClass>[]>(() => [
@@ -78,7 +58,6 @@ export default function ClassSummaryTable({
       ),
     },
     {
-      // One line per part, so each day lines up with its own time and room.
       id: "day",
       header: "Day",
       enableSorting: false,

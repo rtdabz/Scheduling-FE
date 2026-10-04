@@ -32,17 +32,6 @@ const yearLabel = (yearLevel: number) => {
   return `${ordinal} year`;
 };
 
-/**
- * The generator modal is no longer the only place a run is visible. This
- * drawer keeps a run reachable while the user works on the timetable, and
- * survives closing the panel or reloading the page.
- *
- * A completed run is deliberately not shown. Saving applies the result to the
- * timetable and closes the generator on the click, so a "ready to review"
- * card would only flash in the corner behind the refresh it is announcing.
- * A result that was never applied is still recovered by reopening the
- * generator, which returns to the summary step.
- */
 export default function GenerationProgressDrawer({
   hidden = false,
   onOpenGenerator,

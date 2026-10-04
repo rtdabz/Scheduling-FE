@@ -18,32 +18,15 @@ import { yearLabel } from "./yearLabel";
 
 export type SetupDraft = {
   completed: boolean;
-  /**
-   * Step 1's Preferred Days, in calendar order. Empty means every day is open.
-   * One choice for the whole year level: it is sent as `allowed_days` on every
-   * section, and the generator places no meeting -- regular, Split Session or
-   * Hybrid -- on a day left out.
-   */
   preferredDays: string[];
-  /** Step 2's Default Settings, for the whole year level. */
   courseDefaults: CourseDefaults;
-  /** Step 2: courses unchecked in Setup Courses, left out of this run. */
   excludedCourseIds: string[];
-  /** Step 2: courses saved from their own Configure panel, which the defaults skip. */
   customizedCourseIds: string[];
 };
 
 const FIELD_LABEL =
   "block text-[11px] font-black uppercase tracking-wide text-slate-500";
 
-/**
- * Step 1 — two cards side by side: what to schedule (year level and
- * curriculum) and when (the year level's Preferred Days).
- *
- * Course-level rules (Required Day, Preferred Room, Custom Time Duration)
- * live in each course's Configure panel in Step 2, next to the rest of that
- * course's setup. What is left here applies to the whole year level.
- */
 export default function ConfigurationStep({
   activeSemester,
   years,
@@ -75,37 +58,22 @@ export default function ConfigurationStep({
   onYearChange: (value: number) => void;
   departmentId: number | null;
   sections: Section[];
-  /** Every year level's sections, so each picker option names its programs. */
   allSections?: Section[];
   courses: Course[];
   onCurriculumApplied: (curriculumId: number) => void | Promise<void>;
   yearStates: Record<number, YearLevelScheduleState>;
-  /**
-   * Kept apart from `actionsDisabled`: a locked year level disables its rules,
-   * but the picker must stay usable or the user is stuck on that year level.
-   */
   yearChangeDisabled: boolean;
   actionsDisabled: boolean;
   preferredDays: string[];
   onPreferredDaysChange: (days: string[]) => void;
-  /** The department's Required Days, to flag one the chosen days leave out. */
   requiredDayRules?: Array<{ course_id: number; day: string }>;
-  /**
-   * The department's Sunday Classes setting; null while it loads. Off, the
-   * generator and manual scheduling place nothing on Sunday.
-   */
   sundayClassesEnabled?: boolean | null;
-  /** Only the department secretary may change it. */
   canManageSundayClasses?: boolean;
-  /** Classes already on Sunday, which stay when Sunday is turned off. */
   sundayClassCount?: number;
   onSundayClassesChange?: (enabled: boolean) => void | Promise<void>;
-  /** Sections to generate; null means the whole year level. */
   targetSectionIds?: string[] | null;
-  /** Sections that already have classes this semester. */
   scheduledSectionIds?: Set<string>;
   onTargetSectionIdsChange?: (ids: string[] | null) => void;
-  /** Why the current target cannot be generated, shown under the picker. */
   targetBlockedReason?: string | null;
 }) {
   const [savingSunday, setSavingSunday] = useState(false);
@@ -127,8 +95,6 @@ export default function ConfigurationStep({
           : [...preferredDays, day],
       ),
     );
-  // The server refuses a run whose Preferred Days leave out a course's
-  // Required Day; saying so here saves the round trip.
   const excludedRequiredDays =
     preferredDays.length === 0
       ? []
@@ -142,8 +108,6 @@ export default function ConfigurationStep({
         });
 
   const disabled = actionsDisabled;
-  // No pick means every open day is allowed, so the tiles show "Open" rather
-  // than looking switched off.
   const anyDay = preferredDays.length === 0;
 
   return (
@@ -316,7 +280,6 @@ export default function ConfigurationStep({
                   <span className="text-sm font-black leading-none">
                     {day.slice(0, 3)}
                   </span>
-                  {/* Hidden from the accessible name, which stays the short day. */}
                   <span
                     aria-hidden
                     className={`text-[10px] font-bold uppercase leading-none tracking-wide ${statusTone}`}
@@ -399,11 +362,6 @@ export default function ConfigurationStep({
   );
 }
 
-/**
- * Generate the whole year level, or only some of its sections -- a section
- * added after the year level was scheduled is fitted around the classes the
- * other sections already have, which stay as they are.
- */
 function SectionTargetPicker({
   sections,
   targetSectionIds,
@@ -461,8 +419,6 @@ function SectionTargetPicker({
             role="radio"
             aria-checked={perSection}
             disabled={disabled}
-            // Start from the sections with no classes yet: the usual reason to
-            // pick sections is a newly added one.
             onClick={() => onChange(unscheduledIds)}
             className={modeButton(perSection)}
           >

@@ -1,33 +1,16 @@
 import type { DepartmentSectionProgress, ScheduleItem, SectionDoneCandidate } from "./types";
 
-/** Section statuses the Finalize action applies to: instructors are being assigned. */
 export const SECTION_FINALIZE_ELIGIBLE_STATUSES: ScheduleItem["status"][] = [
   "approved",
   "faculty_assignment",
   "reassignment",
 ];
 
-/** An on-site laboratory meeting still waiting for a room -- the server refuses to finalize it. */
 const labRoomMissing = (schedule: ScheduleItem): boolean =>
   schedule.mode === "on-site"
   && !schedule.roomId
   && (schedule.meetingType === "laboratory" || Number(schedule.laboratoryUnits ?? 0) > 0);
 
-/**
- * Builds the checklist behind the bulk Finalize modal: every section of the
- * department still in instructor assignment, the rows that would move to
- * "finalized", and why a section cannot be finalized yet.
- *
- * Mirrors the rules POST batch-status enforces for "finalized", so the modal
- * never offers a section the server would refuse:
- *
- * - the whole section is finalized together, so every one of its rows is sent;
- * - every meeting has an instructor;
- * - no on-site laboratory meeting is still Room TBA.
- *
- * The `requiredSubjects`/`plottedSubjects` pair reads here as classes and
- * classes that have an instructor for every meeting.
- */
 export function buildSectionFinalizeCandidates(
   departmentSectionProgress: DepartmentSectionProgress[],
   schedules: ScheduleItem[]
@@ -72,15 +55,6 @@ export function buildSectionFinalizeCandidates(
     });
 }
 
-/**
- * Builds the checklist behind the bulk Reassignment modal: every finalized
- * section, with the rows that would reopen for instructor reassignment.
- *
- * The server only moves finalized rows to "reassignment", so each candidate
- * carries its finalized rows. There is nothing to be blocked on -- a finalized
- * section can always be reopened -- which is why the modal pre-checks only the
- * open section rather than every one.
- */
 export function buildSectionReassignCandidates(
   departmentSectionProgress: DepartmentSectionProgress[],
   schedules: ScheduleItem[]

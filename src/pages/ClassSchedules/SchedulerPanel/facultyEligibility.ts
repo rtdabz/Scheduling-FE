@@ -1,16 +1,7 @@
 import type { Faculty, Subject } from "./types";
 
-/**
- * Client-side mirror of the rule engine's instructor-eligibility rules
- * (`major_faculty_department_alignment`, `major_faculty_program_alignment`,
- * `service_subject_faculty_department_alignment`, `faculty_department_alignment`).
- *
- * The pickers filter with this so they never offer an instructor the save would
- * refuse. It is a convenience, not the enforcement — the server decides.
- */
 export interface FacultyEligibility {
   eligible: boolean;
-  /** Why the instructor is ineligible, phrased for display. Null when eligible. */
   reason: string | null;
 }
 
@@ -19,17 +10,11 @@ const ELIGIBLE: FacultyEligibility = { eligible: true, reason: null };
 export const isMajorSubject = (subject?: Subject | null): boolean =>
   (subject?.category ?? "major") === "major";
 
-/** The department whose instructors may teach a major; a cross-assignment wins. */
 export const majorTeachingDepartmentId = (
   subject: Subject | null | undefined,
   scheduleDepartmentId: number | null
 ): number | null => subject?.teachingDepartmentId ?? subject?.departmentId ?? scheduleDepartmentId;
 
-/**
- * The program an instructor must belong to, or null when the course has none.
- * An assigned teaching program wins (BSED-FIL Prof Ed taught by BEED); a major
- * cross-assigned to a whole college is open to any of its programs.
- */
 export const requiredTeachingProgramId = (subject?: Subject | null): number | null => {
   if (subject?.teachingProgramId != null) return subject.teachingProgramId;
   if (subject?.teachingDepartmentId != null) return null;
@@ -68,10 +53,6 @@ export const facultyEligibilityForSubject = (
     return ELIGIBLE;
   }
 
-  // A minor or service course is only tied to a department when it is a GEC
-  // subject owned by a college. Otherwise it is open to every department — shared
-  // minors are taught by external instructors, so the section's department is not
-  // a restriction here.
   const assignedTeachingDepartmentId = subject?.teachingDepartmentId ?? null;
 
   if (

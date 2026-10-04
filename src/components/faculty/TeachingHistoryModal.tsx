@@ -35,14 +35,8 @@ interface TeachingHistoryModalProps {
   onClose: () => void;
 }
 
-/** One academic year's worth of semesters (1st, 2nd, summer) per page. */
 const SEMESTERS_PER_PAGE = 3;
 
-/**
- * The semesters an instructor has taught, newest first, with the courses and
- * sections they carried and the units that came to. Opened from the
- * instructor details modal, so it stacks above it.
- */
 export default function TeachingHistoryModal({ facultyId, facultyName, onClose }: TeachingHistoryModalProps) {
   const [semesters, setSemesters] = useState<TeachingHistorySemester[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,8 +64,6 @@ export default function TeachingHistoryModal({ facultyId, facultyName, onClose }
   }, [onClose]);
 
   useEffect(() => {
-    // The user can close the modal mid-flight, so a late response must not
-    // write to unmounted state.
     let active = true;
 
     const load = async () => {

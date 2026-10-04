@@ -78,7 +78,6 @@ const nameFormFrom = (user: ProfileUser | null): NameForm => ({
   suffix: user?.suffix ?? '',
 });
 
-/** Center-crops to a square and scales down, so avatars stay small and never stretch. */
 const toAvatarDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   const url = URL.createObjectURL(file);
   const img = new Image();
@@ -91,7 +90,6 @@ const toAvatarDataUrl = (file: File) => new Promise<string>((resolve, reject) =>
     const ctx = canvas.getContext('2d');
     URL.revokeObjectURL(url);
     if (!ctx) return reject(new Error('Canvas unavailable'));
-    // JPEG has no transparency; without a backdrop a transparent PNG turned black.
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, size, size);
     ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
@@ -135,7 +133,6 @@ function TeachingLoad({ teaching }: { teaching: Teaching }) {
           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
             {teaching.semester ? `${teaching.semester.semester} Semester · A.Y. ${teaching.semester.academic_year}` : 'No active semester'}
           </p>
-          {/* Measured against Basic Load plus Overload, not Basic Load alone. */}
           <p className="mt-1 text-2xl font-bold text-slate-800">{assigned}<span className="text-sm font-semibold text-slate-400"> / {basic + overload} units</span></p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tierStyles[teaching.tier] ?? tierStyles.basic}`}>{teaching.tier_label}</span>
@@ -183,7 +180,6 @@ function TeachingLoad({ teaching }: { teaching: Teaching }) {
   </div>;
 }
 
-/** Mounted only while open, so each opening starts from fresh state. */
 export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: UserProfileModalProps) {
   const { toast } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);

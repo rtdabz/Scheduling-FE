@@ -20,7 +20,6 @@ export const logoutCurrentSession = (): void => {
     beginLogout();
     cancelPendingRequests();
 
-    // Preserve the captured token for server-side revocation while the UI signs out immediately.
     void api.post('/logout', undefined, { headers }).catch(() => undefined);
     clearStoredSession();
 };

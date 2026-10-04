@@ -9,12 +9,6 @@ const severityTone: Record<string, { icon: string; count: string }> = {
   warning: { icon: "text-amber-600", count: "bg-amber-100 text-amber-800" },
 };
 
-/**
- * One compact bar with the generation summary and "what changed during
- * generation": every difference between the configured setup and the generated
- * timetable, one row per kind. Picking a class filters the summary table to it,
- * so the change can be checked in place.
- */
 export default function GenerationChangesPanel({
   summary,
   changes,
@@ -26,7 +20,6 @@ export default function GenerationChangesPanel({
 }) {
   const list = changes ?? [];
   const total = list.reduce((sum, change) => sum + change.items.length, 0);
-  // Critical changes stay visible; everything else is one click away.
   const [open, setOpen] = useState(() => list.some((change) => change.severity === "critical"));
 
   return (

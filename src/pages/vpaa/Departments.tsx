@@ -65,23 +65,22 @@ const getDepartmentColor = (name: string) => {
   };
 };
 
-const CODE_MAX_LENGTH = 20; // departments.department_code is validated max:20
+const CODE_MAX_LENGTH = 20;
 
-/** Shown for the `laboratory_enabled` profile; the stored value is unchanged. */
 const SPECIALIZED_PROFILE_LABEL = 'Specialized rooms';
 
 interface Department {
   id: number;
-  code: string;          // e.g. "CIT"
-  name: string;          // e.g. "College of Computing Studies"
-  dean: string | null;   // e.g. "Dr. Juan dela Cruz" or null
+  code: string;
+  name: string;
+  dean: string | null;
   secretary: string | null;
   programHeads: string[];
-  facultyCount: number;  // number
-  sectionsCount: number; // number
+  facultyCount: number;
+  sectionsCount: number;
   logo?: string | null;
   schedulingProfile: 'standard' | 'laboratory_enabled';
-  createdAt: string;     // ISO date string
+  createdAt: string;
   programs: Program[];
 }
 
@@ -135,7 +134,6 @@ interface DepartmentsPageData {
   departments: Department[];
 }
 
-/** The logo, or a department-tinted placeholder when none has been uploaded. */
 function DepartmentLogo({
   name,
   logo,
@@ -179,12 +177,10 @@ export default function Departments() {
 
 
   
-  // Faculty List state for department detail view
   const [faculties, setFaculties] = useState<ApiFacultyMember[]>([]);
   const [isLoadingFaculties, setIsLoadingFaculties] = useState(false);
   const [activeFacultyTab, setActiveFacultyTab] = useState<'full-time' | 'part-time'>('full-time');
   
-  // Table & View States
   const [globalFilter, setGlobalFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -193,12 +189,10 @@ export default function Departments() {
     pageSize: 10,
   });
   
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
-  // Form state
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [logo, setLogo] = useState<string | null>(null);
@@ -234,7 +228,6 @@ export default function Departments() {
   const [selectedDeptForDetail, setSelectedDeptForDetail] = useState<Department | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [showProgramForm, setShowProgramForm] = useState(false);
-  /** Null while the form is adding a program; the program's id while editing one. */
   const [editingProgramId, setEditingProgramId] = useState<number | null>(null);
 
   const liveProgramDuplicate = useMemo(() => {
@@ -276,8 +269,6 @@ export default function Departments() {
   };
 
   const openAddProgram = (department: Department) => {
-    // Reuse the department detail form so the new program is always linked to
-    // the department represented by the row action.
     openDepartmentDetail(department);
     setShowProgramForm(true);
   };
@@ -288,7 +279,6 @@ export default function Departments() {
       const res = await api.get<ApiFacultyMember[]>('/faculties');
       setFaculties(Array.isArray(res.data) ? res.data : []);
     } catch {
-      // Non-blocking fallback
     } finally {
       setIsLoadingFaculties(false);
     }
@@ -334,11 +324,6 @@ export default function Departments() {
     programs: department.programs ?? [],
   });
 
-  /**
-   * Adds a program, or saves the one being edited. Both paths land in the same
-   * place -- the department's directory, re-sorted -- so they share a handler
-   * rather than drifting apart over the cache and the detail copy.
-   */
   const saveProgram = async () => {
     if (!selectedDeptForDetail) return;
 
@@ -401,12 +386,8 @@ export default function Departments() {
     }
   };
 
-  // Code and name are what make a program readable in every other screen, so the
-  // form refuses to submit without them; the major stays genuinely optional.
   const canSubmitProgram = newProgram.code.trim() !== '' && newProgram.name.trim() !== '';
 
-  // The major changes what the program is called everywhere else, so the form
-  // shows the resulting label before it is saved.
   const programPreview = programLabel(
     { code: newProgram.code.trim(), name: newProgram.name.trim(), major: newProgram.major.trim() },
     'Unnamed program'
@@ -428,7 +409,6 @@ export default function Departments() {
       if (!forceRefresh && isCacheFresh(departmentsCacheKey)) return;
     }
 
-    // A stale copy stays on screen while it is replaced; only a cold key shows the skeleton.
     if (!silent && !cachedData?.departments.length) setIsLoading(true);
     try {
       const response = await api.get<ApiDepartment[]>('/departments');
@@ -445,7 +425,6 @@ export default function Departments() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Input Validation
     const trimmedName = name.trim();
 
     if (!trimmedName) {
@@ -526,8 +505,6 @@ export default function Departments() {
       setIsEditMode(false);
       setEditingId(null);
     } catch (err) {
-      // Archived departments still reserve their code, so the API can reject
-      // one the list above does not show.
       const fieldErrors = apiFieldErrors(err);
       if (fieldErrors.department_code) setCodeError(fieldErrors.department_code);
       if (fieldErrors.department_name) setNameError(fieldErrors.department_name);
@@ -548,7 +525,6 @@ export default function Departments() {
     setIsModalOpen(true);
   };
 
-  /** The details toggle saves on its own; the API refuses Standard while lab courses remain. */
   const toggleSpecializedRooms = async (dept: Department) => {
     const nextProfile = dept.schedulingProfile === 'laboratory_enabled' ? 'standard' : 'laboratory_enabled';
     setIsSavingProfile(true);
@@ -596,7 +572,6 @@ export default function Departments() {
       if (editingProgramId === program.id) closeProgramForm();
       toast.success('Archived', 'Program moved to the Archive');
     } catch (error) {
-      // The server says why, e.g. users, faculty or courses still belong to it.
       toast.error('Archive Failed', apiErrorMessage(error, 'Could not archive the program.'));
     }
   };
@@ -624,14 +599,11 @@ export default function Departments() {
     }
   };
 
-  // Define Columns for TanStack Table
   const columns = useMemo<ColumnDef<Department>[]>(
     () => [
       {
         accessorKey: 'logo',
         header: 'Logo',
-        // A base64 data URI is meaningless to sort by and would match every
-        // search semester, so the column is display-only.
         enableSorting: false,
         enableGlobalFilter: false,
         cell: info => {
@@ -731,7 +703,6 @@ export default function Departments() {
                     Add Program
                   </span>
                 </div>
-                {/* Edit Button */}
                 <div className="relative group/tooltip">
                   <TableActionButton
                     label="Edit"
@@ -747,7 +718,6 @@ export default function Departments() {
                     Edit
                   </span>
                 </div>
-                {/* Delete Button */}
                 <div className="relative group/tooltip">
                   <TableActionButton
                     label="Archive"
@@ -772,7 +742,6 @@ export default function Departments() {
     [departments]
   );
 
-  // TanStack Table Instance
   const table = useReactTable<Department>({
     data: displayedDepartments,
     columns,
@@ -793,19 +762,15 @@ export default function Departments() {
 
   return (
     <div id="departments-page">
-      {/* Search and Actions Bar */}
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
 
-        {/* Search */}
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search department name..."
         />
 
-        {/* Action Group: View Mode Toggle + Add Department */}
         <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
-          {/* View Mode Toggle (Grid / List) */}
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               type="button"
@@ -855,7 +820,6 @@ export default function Departments() {
       </div>
 
       {viewMode === 'grid' ? (
-        /* Grid View Cards */
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
             {isLoading ? (
@@ -887,7 +851,6 @@ export default function Departments() {
                     onClick={() => openDepartmentDetail(dept)}
                     className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between space-y-4 font-sans relative group overflow-hidden cursor-pointer ${GRID_CARD_HOVER}`}
                   >
-                    {/* Centered Background Department Watermark Logo */}
                     {dept.logo && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                         <img
@@ -966,7 +929,6 @@ export default function Departments() {
             )}
           </div>
 
-          {/* Pagination Section for Grid View */}
           {table.getFilteredRowModel().rows.length > 0 && (
             <div className="px-6 py-4 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="flex items-center gap-4">
@@ -1033,7 +995,6 @@ export default function Departments() {
           )}
         </div>
       ) : (
-        /* Table Section */
         <DataTable
           table={table}
           isLoading={isLoading}
@@ -1049,7 +1010,6 @@ export default function Departments() {
         />
       )}
 
-      {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
@@ -1075,7 +1035,6 @@ export default function Departments() {
                 </div>
               )}
 
-              {/* Photo / Logo Upload Picker */}
               <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
                 <div className="relative">
                   <div
@@ -1195,11 +1154,9 @@ export default function Departments() {
         document.body
       )}
 
-      {/* Department Detail Modal */}
       {isDetailModalOpen && selectedDeptForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-3xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 font-sans">
-            {/* Header Banner */}
             <div className="relative shrink-0 overflow-hidden border-b border-slate-200/80 bg-white px-7 py-5">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#4e0a10] via-[#C9952A] to-[#4e0a10]" />
               <div className="flex items-start justify-between gap-4">
@@ -1229,7 +1186,6 @@ export default function Departments() {
               </div>
             </div>
 
-            {/* Modal Body */}
             <div className="flex-1 overflow-y-auto px-7 py-6 space-y-6 font-sans">
               {!showProgramForm && (
                 <>
@@ -1301,7 +1257,6 @@ export default function Departments() {
                     </div>
                   </div>
 
-                  {/* Faculty Directory Section */}
                   <section className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-3">
                       <div>
@@ -1581,7 +1536,6 @@ export default function Departments() {
               </section>
             </div>
 
-            {/* Action Buttons */}
             <div className="shrink-0 border-t border-gray-200/80 bg-[#F8F6F2] px-7 py-4 flex items-center justify-end gap-3">
               <button
                 onClick={() => setIsDetailModalOpen(false)}

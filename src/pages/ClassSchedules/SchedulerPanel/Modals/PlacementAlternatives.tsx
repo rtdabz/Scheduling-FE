@@ -16,10 +16,8 @@ import {
 } from "./placementAlternativesModel";
 
 export interface PlacementAlternativesProps {
-  /** Every valid placement, for the room filter's counts. */
   availableSlots: AvailableSlot[];
   availableSlotRooms: AvailableSlotRoom[];
-  /** The valid placements the room filter leaves. */
   visibleSlots: AvailableSlot[];
   isSlotsLoading: boolean;
   slotsError: string | null;
@@ -27,26 +25,19 @@ export interface PlacementAlternativesProps {
   roomFilter: string;
   onRoomFilterChange: (value: string) => void;
   onApplySlot: (slot: AvailableSlot) => void;
-  /** The day the meeting asks for, by full name: Best Match looks only there. */
   requestedDay: string;
-  /** The requested day's best placements, best first. */
   bestMatches: AvailableSlot[];
-  /** True when a slot is exactly what the form already holds. */
   isSlotApplied: (slot: AvailableSlot) => boolean;
-  /** Force Day: only this day may be used. */
   forcedDayName: string | null;
 
-  /** A same-time split's shared free starts, best first, or null for any other shape. */
   splitPairStarts: { startSlot: number; endSlot: number }[] | null;
   onApplySplitPairStart: (startSlot: number) => void;
   firstDayIndex: number;
   secondDayIndex: number;
   firstMode: DeliveryMode;
   secondMode: DeliveryMode;
-  /** The split's current start, which is not offered again. */
   splitStartSlot: number;
 
-  /** An Integrated pair answers for one meeting at a time. */
   showsMeetingSwitch: boolean;
   slotMeeting: "first" | "second";
   onSlotMeetingChange: (meeting: "first" | "second") => void;
@@ -60,14 +51,6 @@ const VIEWS: { value: RecommendationView; label: string; hint: string }[] = [
   { value: "weekend", label: "Weekend", hint: "Fri – Sat" },
 ];
 
-/**
- * The placement dialog's suggestions, in three views of the placements the
- * Rule Engine accepts:
- *
- * - Best Match: the most suitable room and time on the requested day.
- * - Weekdays: every valid placement Monday to Thursday.
- * - Weekend: every valid placement Friday and Saturday.
- */
 export default function PlacementAlternatives({
   availableSlots,
   availableSlotRooms,
@@ -136,11 +119,6 @@ export default function PlacementAlternatives({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3" role="tabpanel" aria-label={VIEWS.find((item) => item.value === view)?.label}>
-        {/*
-          An Integrated pair's halves have different lengths and different
-          legal deliveries, so the suggestions answer for one of them at a time
-          and say which.
-        */}
         {showsMeetingSwitch && !isSplitPair && (
           <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-0.5">
             {([["first", firstMeetingTitle], ["second", secondMeetingTitle]] as const).map(([value, label]) => (
@@ -243,7 +221,6 @@ function SlotLabel({ slot }: { slot: AvailableSlot }) {
   );
 }
 
-/** The requested day's most suitable room and time, as ranked options. */
 function BestMatches({
   requestedDay,
   bestMatches,
@@ -303,7 +280,6 @@ function BestMatches({
   );
 }
 
-/** Every valid placement on the given days, one group per day. */
 function SlotsByDay({
   days,
   slots,
@@ -352,11 +328,6 @@ function SlotsByDay({
   );
 }
 
-/**
- * Start times a same-time split could move to as a whole. Its two days are
- * fixed by the Split pattern, so Best Match ranks the shared free starts and
- * the Weekdays and Weekend tabs list them when the pattern's days fall there.
- */
 function SplitPairStarts({
   view,
   starts,
@@ -426,10 +397,6 @@ function SplitPairStarts({
   );
 }
 
-/**
- * Narrows the Weekdays and Weekend lists by room. A select for the long list
- * of rooms, and chips for picking one at a glance when there are a few.
- */
 function RoomFilter({
   availableSlots,
   availableSlotRooms,

@@ -3,20 +3,8 @@ import { useLiveRevision } from './useLiveRefresh';
 import { hasStoredCapability } from '../lib/storedUser';
 import { fetchRoomOccupancy, type RoomOccupancyBlock } from '../lib/roomRequests';
 
-/** Approved borrowing windows per room, kept across opens so a revisit draws at once. */
 const grantCache = new Map<number, RoomOccupancyBlock[]>();
 
-/**
- * Windows of a room approved for another department in the active semester.
- * They block the owner from scheduling there, so timetables draw them as
- * reserved time.
- *
- * `ready` stays false until the first read for a room lands, letting a view
- * hold its timetable and draw classes and borrowed windows in one pass. The
- * occupancy read is gated on the room-request and schedule-building
- * capabilities, so for anyone
- * else the hook is immediately ready with no windows.
- */
 export function useRoomGrants(roomId: number | null): { grants: RoomOccupancyBlock[]; ready: boolean } {
   const [, setRevision] = useState(0);
   const liveRevision = useLiveRevision(['rooms']);

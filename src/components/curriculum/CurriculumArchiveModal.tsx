@@ -22,7 +22,6 @@ export default function CurriculumArchiveModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [hiddenIds, setHiddenIds] = useState<number[]>([]);
 
-  // Reset hiddenIds when modal opens
   useEffect(() => {
     if (isOpen) {
       setHiddenIds([]);
@@ -43,9 +42,6 @@ export default function CurriculumArchiveModal({
   const handleRestoreClick = useCallback(async (id: number) => {
     setHiddenIds((prev) => [...prev, id]);
     try {
-      // Restored out of the archive, not back to unfinished: an archived
-      // curriculum was published once, so it returns as deactivated and the
-      // owner activates it deliberately.
       await onRestore(id, 'deactivated');
     } catch {
       setHiddenIds((prev) => prev.filter((rid) => rid !== id));
@@ -101,7 +97,6 @@ export default function CurriculumArchiveModal({
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200">
-        {/* Modal Header */}
         <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#C9952A]/20 border border-[#C9952A]/30 flex items-center justify-center text-[#C9952A]">
@@ -124,9 +119,7 @@ export default function CurriculumArchiveModal({
           </button>
         </div>
 
-        {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0">
-          {/* Search bar */}
           <div className="relative mb-4 shrink-0">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -138,7 +131,6 @@ export default function CurriculumArchiveModal({
             />
           </div>
 
-          {/* Curriculum List */}
           <div className="flex-1 overflow-y-auto min-h-0 border border-gray-100 rounded-xl bg-gray-50/20">
             <DataTable
               table={table}
@@ -158,7 +150,6 @@ export default function CurriculumArchiveModal({
           </div>
         </div>
 
-        {/* Modal Footer */}
         <div className="bg-gray-50 px-6 py-4 border-t border-gray-100 flex justify-end shrink-0">
           <button
             type="button"

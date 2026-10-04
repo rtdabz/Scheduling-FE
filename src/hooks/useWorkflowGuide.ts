@@ -17,31 +17,15 @@ export interface WorkflowGuideStep {
   element: string;
   title: string;
   description: string;
-  /** `"center"` renders an unanchored, centered tooltip — see TaskGuideStep. */
   side?: "top" | "right" | "bottom" | "left" | "center";
   align?: "start" | "center" | "end";
-  /**
-   * Optional task-mode fields. When any step sets an `action` other than
-   * "complete", the guide runs as a game-style mission: no Next button until
-   * the user performs the action, then it auto-advances. Steps without an
-   * action keep the classic walkthrough behavior.
-   */
   id?: string;
   action?: TourAction;
   taskHint?: string;
   waitFor?: string;
-  /**
-   * How long to wait for this step's target before giving up (default 12s).
-   * Raise it for a step that follows genuinely slow work, such as a queued
-   * generation run.
-   */
   waitTimeoutMs?: number;
   skipIfMissing?: boolean;
   validate?: (element: Element) => boolean;
-  /**
-   * Selector of a collapsed parent (sidebar group, accordion, tab) to click
-   * once when `element` is not in the DOM yet.
-   */
   reveal?: string;
 }
 
@@ -49,7 +33,6 @@ interface UseWorkflowGuideOptions {
   id: string;
   isReady: boolean;
   steps: WorkflowGuideStep[];
-  /** Mission label shown in task-mode tooltips, e.g. "Create Your First Schedule". */
   mission?: string;
 }
 
@@ -89,7 +72,6 @@ const createSteps = (steps: WorkflowGuideStep[]): Step[] => steps
 const isTaskMode = (steps: WorkflowGuideStep[]): boolean =>
   steps.some((step) => step.action !== undefined && step.action !== "complete");
 
-/** Shared React Joyride lifecycle for focused, page-specific coach marks. */
 export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGuideOptions) {
   useEffect(() => {
     if (!isReady) return;
@@ -112,9 +94,6 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
       const rootToUnmount = root;
       root = null;
       if (!rootToUnmount) return;
-      // React can run effect cleanup while the parent root is still in its
-      // commit. Unmount this independently-created Joyride root in the next
-      // microtask so it never synchronously tears down a root during render.
       queueMicrotask(() => {
         rootToUnmount.unmount();
         host.remove();
@@ -122,7 +101,6 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
     };
 
     if (isTaskMode(steps)) {
-      // ---- Task-based mission: perform each action to advance. ----
       const taskSteps = steps.map((step, index) => ({
         id: step.id ?? "step-" + (index + 1),
         target: step.element,
@@ -139,9 +117,6 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
         align: step.align,
       }));
 
-      // Nonce forces a fresh TaskGuideRunner on every restart: the runner
-      // keeps step/progress state internally, so re-rendering the same
-      // element would resume a finished mission instead of replaying it.
       let runNonce = 0;
 
       const renderTaskTour = () => {
@@ -153,19 +128,12 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
           mission: mission ?? "Guided tutorial",
           steps: taskSteps,
           onFinish: (outcome: TaskGuideOutcome) => {
-            // An abort is the tour's own failure (target never mounted, a
-            // dialog closed under it), not a decision by the user: leave it
-            // unmarked so the next visit still offers the mission.
             if (outcome !== "aborted") {
               try {
                 localStorage.setItem(completionKey, "true");
               } catch {
-                // Non-persistent environments still finish the tour in-memory.
               }
             }
-            // Unmount the runner but keep this root alive: tearing it down
-            // here left the help button with nothing to render into, so
-            // restart silently did nothing after the first run.
             if (mounted && root) root.render(null);
             else teardown();
           },
@@ -180,8 +148,6 @@ export function useWorkflowGuide({ id, isReady, steps, mission }: UseWorkflowGui
         });
       };
 
-      // Completion is marked on finish/exit (not on start) so an interrupted
-      // mission can resume on the next visit instead of vanishing silently.
       try {
         if (!localStorage.getItem(completionKey)) scheduleStart();
       } catch {

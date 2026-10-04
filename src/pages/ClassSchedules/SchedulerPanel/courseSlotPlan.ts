@@ -1,40 +1,16 @@
 import type { Course } from "./types";
 
-/**
- * Slot arithmetic for one course, mirroring the server.
- *
- * Audit finding #19 (and finding #3 of the July 2026 split-hours audit) reported
- * "three inconsistent slot-duration formulas". Two of the three are in fact the
- * server's own, and they are different on purpose:
- *
- *  - a **single block** lasts `units * 2` slots — `CspSolver::rawDurationSlots`
- *  - a **lecture/laboratory split** lasts `lectureHours * 2` for the lecture and
- *    `labHours * 6` for the laboratory — `CspSolver::buildVariables`, where one
- *    laboratory unit is three clock hours
- *
- * The third was neither: `(isMajor && hasBoth) ? 6 : totalSlots` hardcoded a
- * 3-unit answer, so a 5-unit major with both components was offered a 3-hour
- * block. Naming both conventions here is what stops them being conflated again.
- */
-
-/** 30-minute grid: one clock hour is two slots. */
 export const SLOTS_PER_HOUR = 2;
 
-/** One laboratory unit is three clock hours. */
 export const SLOTS_PER_LABORATORY_UNIT = 6;
 
 type CourseHours = Pick<Partial<Course>, "units" | "lectureHours" | "labHours">;
 
 export interface CourseSlotPlan {
-  /** `units * 2` — one meeting covering the whole course. */
   singleBlockSlots: number;
-  /** `lectureHours * 2` — the lecture meeting of a lecture/laboratory split. */
   lectureSlots: number;
-  /** `labHours * 6` — the laboratory meeting of a lecture/laboratory split. */
   laboratorySlots: number;
-  /** Lecture + laboratory, i.e. what a lecture/laboratory split actually occupies. */
   splitTotalSlots: number;
-  /** True when the course has both a lecture and a laboratory component. */
   hasBothComponents: boolean;
 }
 
@@ -55,27 +31,19 @@ export const getCourseSlotPlan = (course?: CourseHours | null): CourseSlotPlan =
   };
 };
 
-/** Slots to clock hours, for labels. Never call this "units". */
 export const slotsToHours = (slots: number): number => slots / SLOTS_PER_HOUR;
 
-/** The department's Custom Lab Duration settings, as `/scheduling-settings` returns them. */
 export interface LaboratoryDurationSettings {
   custom_lab_duration_override_enabled?: boolean | null;
   custom_lab_duration_minutes?: number | null;
   custom_lab_duration_6_hours_enabled?: boolean | null;
   custom_lab_duration_5_hours_enabled?: boolean | null;
   custom_lab_duration_other_enabled?: boolean | null;
-  /** Default LAB Room Requirement: laboratory, lecture (classroom) or either. */
   lab_room_type?: string | null;
 }
 
 export const SLOT_MINUTES = 30;
 
-/**
- * The configured Custom Lab Duration in slots, or null when none applies.
- * Mirrors `SchedulingPolicy::customLaboratoryDurationSlots`, including its
- * preset precedence (6 hours, then 5 hours, then a custom minute count).
- */
 export const customLaboratoryDurationSlots = (settings?: LaboratoryDurationSettings | null): number | null => {
   if (!settings?.custom_lab_duration_override_enabled) return null;
 
@@ -91,13 +59,6 @@ export const customLaboratoryDurationSlots = (settings?: LaboratoryDurationSetti
   return minutes / SLOT_MINUTES;
 };
 
-/**
- * Slots for the laboratory meeting of a lecture/laboratory split: the
- * department's Custom Lab Duration when set, otherwise three hours per
- * laboratory unit (`SchedulingPolicy::laboratoryComponentSlots`). A Hybrid
- * saved with the per-unit length while a custom duration is configured is
- * rejected by the Rule Engine as `hybrid_component_shape`.
- */
 export const laboratoryComponentSlots = (
   course?: CourseHours | null,
   settings?: LaboratoryDurationSettings | null,

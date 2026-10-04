@@ -110,7 +110,6 @@ interface FacultyMember {
   assigned_units: number;
   assigned_subjects: AssignedSubject[];
   assigned_classes: AssignedClass[];
-  /** Approved meetings that would lose their instructor if this record went away. */
   live_schedule_count: number;
   required_units: number;
   unit_ceiling: number;
@@ -191,7 +190,6 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   createdAt: f.created_at
 });
 
-/** Regular -> Overload -> Pro Bono, levelling up as the load bands fill. See loadLevelOf. */
 const getWorkloadStatus = (f: FacultyMember) => f.status === 'inactive' ? UNAVAILABLE_STATUS : LOAD_LEVELS[loadLevelOf({
   assignedUnits: f.assigned_units,
   maxUnits: f.max_units,
@@ -199,13 +197,6 @@ const getWorkloadStatus = (f: FacultyMember) => f.status === 'inactive' ? UNAVAI
   overloadUnits: f.overload_units,
 })];
 
-/**
- * The instructor roster for every portal. The VPAA owns the roster (add, edit,
- * archive); roles with instructor assignment edit load and availability; a
- * program head sees only their own program. This used to be four copies, one
- * per role, and fixes kept landing in only one of them.
- */
-/** Lists arrive bare or wrapped in `{ data }`, depending on the endpoint. */
 type ListPayload<T> = T[] | { data?: T[] } | null | undefined;
 const listOf = <T,>(payload: ListPayload<T>): T[] => (Array.isArray(payload) ? payload : payload?.data ?? []);
 
@@ -221,16 +212,11 @@ export default function Faculty() {
   const [programs, setPrograms] = useState<Program[]>(cachedFacultyData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(facultyCacheKey));
 
-  // Filters & Sorting states
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [employmentFilter, setEmploymentFilter] = useState('');
   const [sortBy, setSortBy] = useState('name');
 
-  // Pagination states
-  // The page is remembered together with the filters it was chosen under, so
-  // changing a filter or the sort starts again from page 1 without an effect
-  // resetting it after the fact.
   const filterKey = [searchQuery, departmentFilter, employmentFilter, sortBy].join('|');
   const [pageState, setPageState] = useState({ filterKey, page: 1 });
   const currentPage = pageState.filterKey === filterKey ? pageState.page : 1;
@@ -241,24 +227,17 @@ export default function Faculty() {
     });
   }, [filterKey]);
   const [pageSize, setPageSize] = useState(6);
-  /** The instructor just created, shown and highlighted wherever the sort puts it. */
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
 
   const isVpaa = userRole === 'vpaa';
   const isProgramHead = userRole === 'program_head';
   const canManageFaculty = isVpaa;
-  // The roster itself (identity, department, program, status) is the VPAA's.
-  // The unit allowances and the weekly availability windows are instructor
-  // assignment data, so they follow schedule.assign_instructor -- naming the
-  // secretary here meant a Program Head the VPAA had granted every capability
-  // never saw the editors at all, matching the 403 the API used to return.
   const canEditLoad = isVpaa || hasStoredCapability('schedule.assign_instructor');
   const canEditAvailability = canEditLoad;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -266,23 +245,16 @@ export default function Faculty() {
   const [detailsFaculty, setDetailsFaculty] = useState<FacultyMember | null>(null);
   const [loadEditorFaculty, setLoadEditorFaculty] = useState<FacultyMember | null>(null);
 
-  // Form states
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [suffix, setSuffix] = useState('');
   const [employmentType, setEmploymentType] = useState<'full-time' | 'part-time'>('full-time');
   const [maxUnits, setMaxUnits] = useState<number>(21);
-  // Which column the Load (Units) input writes to. Basic Load is the contract
-  // ceiling; Overload is the allowance granted on top of it.
   const [overloadUnits, setOverloadUnits] = useState<number>(0);
   const [deloadUnits, setDeloadUnits] = useState<number>(0);
   const [departmentId, setDepartmentId] = useState('');
   const [programId, setProgramId] = useState('');
-  // The designation list is server data, never a hardcoded set -- the picker
-  // renders whatever /designations returns. Assigning one is its own
-  // capability; without it the field is read-only and is never submitted,
-  // because sending it unprivileged would fail the whole roster save.
   const [designationIds, setDesignationIds] = useState<string[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const canManageDesignations = hasStoredCapability('faculty.manage_designations');
@@ -294,8 +266,6 @@ export default function Faculty() {
       .catch(() => { if (active) setDesignations([]); });
     return () => { active = false; };
   }, []);
-  // An instructor's program has to belong to their own department: it exists to
-  // say which majors of that department they are eligible to teach.
   const formPrograms = programs.filter(program =>
     Number(program.department_id) === Number(isVpaa ? departmentId : user?.department_id)
   );
@@ -318,7 +288,6 @@ export default function Faculty() {
       .catch(() => toast.error('Error', 'Failed to process the photo. Try a JPEG, PNG or WEBP image.'));
   };
 
-  // Form error states
   const [firstNameError, setFirstNameError] = useState('');
   const [lastNameError, setLastNameError] = useState('');
   const [maxUnitsError, setMaxUnitsError] = useState('');
@@ -372,8 +341,6 @@ export default function Faculty() {
     }
   };
 
-  // Declared after fetchData, which the React Compiler requires of anything an
-  // effect reads. fetchData raises its own loading flag before it awaits.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchData();
@@ -411,8 +378,6 @@ export default function Faculty() {
     const faculty = faculties.find(f => f.id === id) ?? null;
     const liveCount = faculty?.live_schedule_count ?? 0;
 
-    // The live-meeting caveat is part of the question, so it is folded into the
-    // message the shared confirmation modal renders.
     const liveWarning = liveCount > 0
       ? `\n\n${liveCount} approved meeting${liveCount === 1 ? '' : 's'} on the timetable`
         + `${liveCount === 1 ? ' is' : ' are'} assigned to this instructor. The assignment will be`
@@ -440,8 +405,6 @@ export default function Faculty() {
         return nextFaculties;
       });
 
-      // Deleting an instructor nulls the faculty_id on their approved meetings
-      // instead of removing them, so say how many now need a new instructor.
       const released = res.data?.released_schedule_count ?? 0;
       if (released > 0) {
         toast.warning(
@@ -461,9 +424,6 @@ export default function Faculty() {
     setDetailsFaculty(faculty);
     setIsDetailsModalOpen(true);
 
-    // The row came from a cached list payload, but this panel is where assigned
-    // load and classes are actually read, so refresh the record behind the
-    // already-open modal rather than making the user wait for it.
     try {
       const res = await api.get<ApiFacultyMember>(`/faculties/${faculty.id}`);
       const fresh = mapApiFaculty(res.data);
@@ -474,15 +434,11 @@ export default function Faculty() {
         return nextFaculties;
       });
     } catch {
-      // The cached record is already on screen; a failed refresh is not worth
-      // interrupting the user over.
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // A second click while the first save is in flight would add the
-    // instructor twice.
     if (isSubmitting) return;
 
     let hasError = false;
@@ -536,9 +492,6 @@ export default function Faculty() {
       employment_type: employmentType,
       department_id: Number(deptVal),
       program_id: programId ? Number(programId) : null,
-      // Only sent when the account may change it. Submitting the field without
-      // faculty.manage_designations is refused outright, which would block
-      // every ordinary roster edit for roles that never touch designations.
       ...(canManageDesignations ? { designation_ids: designationIds.map(Number) } : {}),
       status,
       profile_picture: profilePicture,
@@ -567,9 +520,6 @@ export default function Faculty() {
           setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
           return nextFaculties;
         });
-        // The list is sorted by name and paged, so a new record rarely lands
-        // on the page in view. Clear anything that could hide it; the effect
-        // below then opens its page and highlights it.
         setSearchQuery('');
         setDepartmentFilter('');
         setEmploymentFilter('');
@@ -587,21 +537,16 @@ export default function Faculty() {
     }
   };
 
-  // Filter in-memory
   const filteredFaculties = useMemo(() => {
-    // 1. Filter by role access/department
     let list = [...faculties];
     if (!isVpaa && user?.department_id) {
       list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(user.department_id));
     }
 
-    // A program head owns one program roster. Keep this client-side guard in
-    // addition to the API scope so cached payloads cannot leak another program.
     if (isProgramHead) {
       list = list.filter(f => userProgramId !== null && Number(f.program_id) === Number(userProgramId));
     }
 
-    // 2. Filter by search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(f => {
@@ -610,12 +555,10 @@ export default function Faculty() {
       });
     }
 
-    // 3. Filter by department select
     if (departmentFilter) {
       list = list.filter(f => f.department_id !== null && Number(f.department_id) === Number(departmentFilter));
     }
 
-    // 4. Filter by employment type select
     if (employmentFilter) {
       list = list.filter(f => f.employment_type === employmentFilter);
     }
@@ -623,7 +566,6 @@ export default function Faculty() {
     return list;
   }, [faculties, searchQuery, departmentFilter, employmentFilter, isVpaa, isProgramHead, userProgramId, user?.department_id]);
 
-  // Sort in-memory
   const sortedFaculties = useMemo(() => {
     const list = [...filteredFaculties];
     list.sort((a, b) => {
@@ -653,7 +595,6 @@ export default function Faculty() {
   useEffect(() => {
     if (highlightedId === null) return;
     const index = sortedFaculties.findIndex((f) => f.id === highlightedId);
-    // Deferred so it lands after the filter reset above sends the list to page 1.
     const jump = index >= 0
       ? setTimeout(() => setCurrentPage(Math.floor(index / pageSize) + 1), 0)
       : undefined;
@@ -683,9 +624,6 @@ export default function Faculty() {
   }, [sortedFaculties, activePage, pageSize]);
 
 
-  // The guided tour has only ever been offered to the secretary. Adding
-  // instructors is VPAA-only, so it stops at finding and opening one; it used
-  // to walk on to the Add button, which a secretary never sees, and aborted.
   const showGuide = userRole === 'secretary';
   const instructorGuideSteps = useMemo(() => [
     { element: '#instructors-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Find an instructor', description: 'Search by name or filter by job type or workload.', side: 'bottom' as const },
@@ -695,18 +633,14 @@ export default function Faculty() {
 
   return (
     <div id="faculty-page" className="space-y-6 font-sans">
-      {/* Search and Filters Bar */}
       <div id="instructors-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
-        {/* Search */}
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search instructors by name..."
         />
 
-        {/* Dropdowns */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Department Filter (Only for VPAA) */}
           {isVpaa && (
             <div className="flex items-center gap-1.5">
               <Filter size={13} className="text-gray-400" />
@@ -723,7 +657,6 @@ export default function Faculty() {
             </div>
           )}
 
-          {/* Employment Type Filter */}
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -737,7 +670,6 @@ export default function Faculty() {
             </select>
           </div>
 
-          {/* Sort Dropdown */}
           <div className="flex items-center gap-1.5">
             <ArrowUpDown size={13} className="text-gray-400" />
             <select
@@ -752,7 +684,6 @@ export default function Faculty() {
             </select>
           </div>
 
-          {/* View Mode Toggle (Grid / List) */}
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 ml-auto lg:ml-0">
             <button
               type="button"
@@ -780,7 +711,6 @@ export default function Faculty() {
             </button>
           </div>
 
-          {/* Add button inside filter bar */}
           {canManageFaculty && (
             <button
               id="instructors-add-button"
@@ -819,7 +749,6 @@ export default function Faculty() {
       {showGuide && <WorkflowGuideButton guideId="instructors" />}
       <div id="instructors-workspace">
       {viewMode === 'grid' ? (
-        /* Redesigned Card-based visual dashboard */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
           {isLoading ? (
             Array.from({ length: 6 }).map((_, index) => (
@@ -855,7 +784,6 @@ export default function Faculty() {
 
               return (
                 <div key={f.id} className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between font-sans relative group overflow-hidden transition-shadow ${GRID_CARD_HOVER} ${f.id === highlightedId ? 'ring-2 ring-[#C9952A] ring-offset-2' : ''}`}>
-                  {/* Centered Background Department Watermark Logo */}
                   {deptLogo && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                       <img
@@ -868,7 +796,6 @@ export default function Faculty() {
 
                   <div className="space-y-4 relative z-10">
 
-                    {/* Header: Name, Dept, Status */}
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex items-start gap-3">
                         {f.profile_picture ? (
@@ -899,7 +826,6 @@ export default function Faculty() {
                       </span>
                     </div>
 
-                    {/* Progress bar info */}
                     <div className="space-y-1.5 font-sans pt-1">
                       <div className="flex justify-between text-xs font-semibold text-gray-500">
                         <span>Workload Progress</span>
@@ -914,7 +840,6 @@ export default function Faculty() {
                       />
                     </div>
 
-                    {/* Card stats / details */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 pt-3 border-t border-gray-50 text-xs font-sans">
                       <div className="col-span-2">
                         <span className="text-gray-400 font-semibold block text-[10px] uppercase mb-1">Designation</span>
@@ -951,7 +876,6 @@ export default function Faculty() {
                       </div>
                     </div>
 
-                    {/* Tags summary */}
                     {(f.assigned_subjects.length > 0 || f.assigned_classes.length > 0) && (
                       <div className="space-y-2 pt-2 border-t border-gray-50 font-sans">
                         {f.assigned_subjects.length > 0 && (
@@ -984,7 +908,6 @@ export default function Faculty() {
                     )}
                   </div>
 
-                  {/* Quick Actions Footer */}
                   <div className="flex items-center justify-between gap-2 pt-4 border-t border-gray-100 mt-4 relative z-10">
                     <div className="flex items-center gap-2">
                       <button
@@ -1026,7 +949,6 @@ export default function Faculty() {
           )}
         </div>
       ) : (
-        /* List View Table */
         <FacultyListTable
           faculties={paginatedFaculties}
           isLoading={isLoading}
@@ -1041,7 +963,6 @@ export default function Faculty() {
       )}
       </div>
 
-      {/* Pagination Section */}
       {totalItems > 0 && (
         <div className="px-6 py-4 border border-gray-100 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 bg-white shadow-sm mt-6">
           <div className="flex items-center gap-4">
@@ -1117,7 +1038,6 @@ export default function Faculty() {
         />
       )}
 
-      {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
           <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
@@ -1143,7 +1063,6 @@ export default function Faculty() {
                 </div>
               )}
 
-              {/* Photo Upload Section */}
               <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-200/80">
                 <div className="relative group shrink-0">
                   <div
@@ -1190,7 +1109,6 @@ export default function Faculty() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
-                {/* Name in the order it is written on records: last, first, middle initial, suffix. */}
                 <div className="sm:col-span-2 grid grid-cols-2 gap-4 sm:grid-cols-[1fr_1fr_4.5rem_6.5rem]">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
@@ -1327,7 +1245,6 @@ export default function Faculty() {
                   <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">Optional. Units granted on top of the basic load.</p>
                 </div>
 
-                {/* The load as it will be saved, band by band. */}
                 <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white px-4 py-3">
                   <div className="flex items-center justify-between gap-3 text-xs font-bold text-gray-500 font-sans">
                     <span className="uppercase tracking-wider">Load Preview</span>
@@ -1352,8 +1269,6 @@ export default function Faculty() {
                       onChange={(e) => {
                         setDepartmentId(e.target.value);
                         setDepartmentError('');
-                        // A program only belongs to one department, so the previous
-                        // pick is never valid for the newly chosen one.
                         setProgramId('');
                       }}
                       className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${departmentError
@@ -1415,7 +1330,6 @@ export default function Faculty() {
                   </>
                 )}
 
-                {/* VPAA has no unit fields, so Program pairs with Department on one row. */}
                 <div className={isVpaa ? '' : 'sm:col-span-2'}>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
                     Program / Major
@@ -1438,7 +1352,6 @@ export default function Faculty() {
                 </div>
               </div>
             </form>
-            {/* Form Buttons */}
             <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200/80 bg-gray-50/50 px-6 py-4 font-sans">
               <button
                 type="button"
@@ -1462,8 +1375,6 @@ export default function Faculty() {
         document.body
       )}
 
-      {/* Delete Confirmation Modal */}
-      {/* Load-only editor: the secretary's write path into an instructor record. */}
       {loadEditorFaculty && (
         <FacultyLoadEditorModal
           faculty={loadEditorFaculty}

@@ -22,11 +22,6 @@ interface FacultyLoadEditorModalProps {
   onError: (message: string) => void;
 }
 
-/**
- * The load allowances, in the order they build on each other. Pro bono is not
- * one of them: it is whatever passes Overload. Deload is shown but not edited:
- * it is the sum of the instructor's designations, so it changes there.
- */
 const FIELDS = [
   {
     key: 'max_units' as const,
@@ -48,11 +43,6 @@ const FIELDS = [
   },
 ];
 
-/**
- * The secretary's write path into an instructor record. The API narrows a
- * secretary to these three columns, so the form offers exactly those and nothing
- * else: sending any other key comes back 403.
- */
 export default function FacultyLoadEditorModal({
   faculty,
   onClose,

@@ -1,12 +1,3 @@
-/**
- * The two statuses a section's schedule is shown with, derived on the server
- * (SubmissionStatusResolver) from its submissions and their snapshots.
- *
- * Submission: where the latest submitted version stands. A recalled or rejected
- * version stays so until it is resubmitted, whatever the working copy does.
- * Revision: whether the working copy (or the version resubmitted from it)
- * differs from the last recalled or rejected version.
- */
 export type SubmissionStatus = 'draft' | 'submitted' | 'dean_approved' | 'vpaa_approved' | 'recalled' | 'rejected';
 export type RevisionStatus = 'initial' | 'modified' | 'reset';
 

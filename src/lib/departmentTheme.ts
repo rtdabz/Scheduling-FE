@@ -1,11 +1,3 @@
-/**
- * Department colour identity, shared so a department looks the same wherever it
- * appears. Extracted from the VPAA schedule viewer, which held the only copy.
- *
- * Codes vary by how a department was named when it was created ("IT" vs "CIT"),
- * so the key is normalised from the code and the name together rather than
- * matched exactly.
- */
 export const normalizeDepartmentKey = (code: string, name = ''): string => {
   const normalizedCode = code.trim().toUpperCase();
   const value = name.toLowerCase();
@@ -20,7 +12,6 @@ export const normalizeDepartmentKey = (code: string, name = ''): string => {
   return '';
 };
 
-/** Classes for a schedule card sitting on the weekly grid. */
 export const getDeptStyles = (code: string, name = ''): string => {
   switch (normalizeDepartmentKey(code, name)) {
     case 'IT':
@@ -44,7 +35,6 @@ export const getDeptStyles = (code: string, name = ''): string => {
   }
 };
 
-/** Classes for a small department badge. */
 export const getDeptBadgeStyles = (code: string, name = ''): string => {
   switch (normalizeDepartmentKey(code, name)) {
     case 'IT': return 'bg-blue-100 text-blue-800 border-blue-200';
@@ -59,11 +49,6 @@ export const getDeptBadgeStyles = (code: string, name = ''): string => {
   }
 };
 
-/**
- * The identity stripe down the side of a department card. Kept separate from
- * the status colour: the stripe says *which* department, the status band says
- * how it is doing, and letting one colour carry both makes neither readable.
- */
 export const getDeptAccentClass = (code: string, name = ''): string => {
   switch (normalizeDepartmentKey(code, name)) {
     case 'IT': return 'bg-blue-600';

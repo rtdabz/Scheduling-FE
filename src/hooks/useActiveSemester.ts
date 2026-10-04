@@ -8,12 +8,6 @@ export interface ActiveSemester {
   is_active?: boolean;
 }
 
-/**
- * The semester flagged is_active, for the app shell.
- *
- * GET /semesters/active answers 404 when no semester is active -- that is an empty
- * result, not a failure, so it resolves to null like any other miss.
- */
 export function useActiveSemester() {
   const [semester, setSemester] = useState<ActiveSemester | null>(null);
   const [isLoading, setIsLoading] = useState(true);

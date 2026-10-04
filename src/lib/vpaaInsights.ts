@@ -1,12 +1,3 @@
-/**
- * Institution-wide aggregates from `GET /vpaa/dashboard-insights`.
- *
- * These cannot be derived in the browser from `/initial-data`: that payload caps
- * its `schedules` array, so campus-wide utilisation measured from it would be
- * understated. The server counts over every meeting in the active semester and sends
- * back a few kilobytes of totals.
- */
-
 export interface BuildingUtilization {
   building: string;
   rooms: number;
@@ -82,7 +73,6 @@ export const EMPTY_INSIGHTS: VpaaInsights = {
   },
 };
 
-/** "14" -> "2 PM". The heatmap axis, in the 12-hour clock a reader expects. */
 export const hourLabel = (hour: number) => {
   const suffix = hour < 12 ? 'AM' : 'PM';
   const display = hour % 12 === 0 ? 12 : hour % 12;

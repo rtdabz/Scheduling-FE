@@ -19,22 +19,6 @@ export type ClassComponent = "lecture" | "laboratory" | "field";
 export type DeliveryMode = "onsite" | "online" | "hybrid";
 export type SectionScope = "all" | "selected";
 
-/**
- * How a course's meetings are laid out, which decides whether its length can
- * be changed:
- * - `single` — one meeting (Regular)
- * - `split` — two equal meetings on different days, both online for an
- *   Online Split
- * - `hybrid-split` — two fixed sessions, one online and one face-to-face,
- *   of `HYBRID_SPLIT_MEETING_MINUTES` each
- * - `integrated-onsite` (Integrated On-site) — a lecture and a laboratory
- *   as two separate sessions, both face-to-face
- * - `hybrid-laboratory` (Integrated Hybrid) — an online lecture and an
- *   on-site laboratory as two separate sessions
- * Both Integrated shapes size each session from the course (the laboratory
- * from the department's Custom Lab Duration when set), and each can be
- * changed on its own.
- */
 export type DurationShape =
   | "single"
   | "split"
@@ -46,41 +30,19 @@ export interface CourseClassConfig {
   configuration: ClassConfiguration;
   component: ClassComponent;
   delivery: DeliveryMode;
-  /** Hybrid Split is represented separately from Hybrid Laboratory. */
   hybridType?: "split" | "laboratory";
-  /**
-   * Weekly minutes: the one meeting, or both Split meetings together. Only
-   * `single` and `split` shapes can change it; see {@link DurationShape}.
-   */
   durationMinutes: number;
-  /**
-   * Integrated's two sessions (On-site or Hybrid), set separately and used
-   * exactly. Unset (left blank) means the course's own length.
-   */
   lectureMinutes?: number;
   laboratoryMinutes?: number;
-  /** Department-wide: every section of the course meets on this day. */
   requiredDay: string | null;
-  /**
-   * Consecutive Days, a Regular class only: the class meets on this many
-   * days (the ticked ones, back-to-back or not), for its full length each
-   * day (8 units, 8 hours every day). Unset or null is one meeting a week.
-   */
   consecutiveDays?: number | null;
-  /** Consecutive Days: the day the run should start on; null lets the Generator choose. */
   preferredStartDay?: string | null;
-  /**
-   * Consecutive Days: the exact days ticked, in week order, back-to-back or
-   * not (Monday, Wednesday, Friday). Null on an older rule saved without them.
-   */
   meetingDays?: string[] | null;
-  /** A ranking preference, never a restriction. */
   preferredRoomId: string | null;
   sectionScope: SectionScope;
   selectedSectionIds: string[];
 }
 
-/** Format hours into a clean duration string like "3h" or "1.5h". */
 export function formatHours(hours: number): string {
   if (hours <= 0) return "0h";
   return hours % 1 === 0 ? `${hours}h` : `${Number(hours.toFixed(2))}h`;
@@ -98,25 +60,17 @@ export function durationShape(
   return "single";
 }
 
-/** Integrated, on site or hybrid: a lecture and a laboratory, each its own length. */
 export const isIntegratedShape = (shape: DurationShape): boolean =>
   shape === "integrated-onsite" || shape === "hybrid-laboratory";
 
 export const isDurationEditable = (shape: DurationShape): boolean =>
   shape === "single" || shape === "split";
 
-/** A Regular class set to meet on several days (Consecutive Days). */
 export const isConsecutive = (
   config: Pick<CourseClassConfig, "configuration" | "consecutiveDays">,
 ): boolean =>
   config.configuration === "regular" && (config.consecutiveDays ?? 0) >= MIN_CONSECUTIVE_DAYS;
 
-/**
- * The course as a Regular class, which is all a Required Day allows: the
- * generation payload drops a Split or Integrated marker for a course with a
- * Required Day and places it as one meeting on that day. A Split keeps its
- * weekly length; the Hybrid shapes' fixed lengths fall back to the course's.
- */
 export function asRegularClass(config: CourseClassConfig, course: Course): CourseClassConfig {
   if (config.configuration === "regular") return config;
   return {
@@ -131,29 +85,20 @@ export function asRegularClass(config: CourseClassConfig, course: Course): Cours
   };
 }
 
-/** A saved Consecutive Days rule, as `/scheduling-settings` returns it. */
 export interface ConsecutiveDayRule {
   course_id: number;
-  /** Null is the course-wide rule; a section's own rule overrides it. */
   section_id: number | null;
   day_count: number;
   preferred_start_day: string | null;
-  /** The exact days ticked, in week order; null on an older back-to-back rule. */
   meeting_days?: string[] | null;
 }
 
 export const MIN_CONSECUTIVE_DAYS = 2;
 export const DEFAULT_CONSECUTIVE_DAYS = 2;
 
-/** Monday-Saturday, or through Sunday once the department opens it. */
 export const teachingWeek = (sundayClassesEnabled: boolean): string[] =>
   sundayClassesEnabled ? [...DAYS] : DAYS.filter((day) => day !== "Sunday");
 
-/**
- * Every run of `dayCount` calendar-consecutive teaching days, in week order.
- * Mirrors `SchedulingPolicy::consecutiveDayRuns`: the week does not wrap, and
- * a day outside `allowedDays` (Step 1's Preferred Days) breaks a run.
- */
 export function consecutiveDayRuns(
   dayCount: number,
   sundayClassesEnabled: boolean,
@@ -170,7 +115,6 @@ export function consecutiveDayRuns(
   return runs;
 }
 
-/** "Thursday–Saturday" for back-to-back days, else "Monday, Wednesday, Friday". */
 export const runLabel = (run: string[]): string =>
   run.length === 0
     ? ""
@@ -178,10 +122,6 @@ export const runLabel = (run: string[]): string =>
       ? `${run[0]}–${run[run.length - 1]}`
       : run.join(", ");
 
-/**
- * The course's Consecutive Days rules as the settings save expects them: one
- * course-wide rule for every section, or one per selected section.
- */
 export function consecutiveRulesForCourse(
   courseId: string,
   config: CourseClassConfig,
@@ -201,7 +141,6 @@ export function consecutiveRulesForCourse(
     .map((id) => ({ ...base, section_id: Number(id) }));
 }
 
-/** Two rule lists for one course say the same thing, in any order. */
 export function sameConsecutiveRules(left: ConsecutiveDayRule[], right: ConsecutiveDayRule[]): boolean {
   const key = (rule: ConsecutiveDayRule) =>
     `${rule.section_id ?? "all"}:${rule.day_count}:${rule.preferred_start_day ?? ""}:${(rule.meeting_days ?? []).join(",")}`;
@@ -210,11 +149,6 @@ export function sameConsecutiveRules(left: ConsecutiveDayRule[], right: Consecut
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-/**
- * The Consecutive Days rule each of this run's sections follows for a
- * course: its own, else the course-wide one. Mirrors
- * `SchedulingPolicy::resolveConsecutiveDayRules`.
- */
 export function consecutiveRulesBySection(
   courseId: string,
   rules: ConsecutiveDayRule[],
@@ -228,7 +162,6 @@ export function consecutiveRulesBySection(
   return resolved;
 }
 
-/** One section's Consecutive Days rule for a course: its own, else the course-wide one. */
 export function consecutiveRuleForSection(
   courseId: string,
   sectionId: string,
@@ -242,10 +175,8 @@ export function consecutiveRuleForSection(
   );
 }
 
-/** The marker every meeting of a run is saved with: `consecutive:N`. */
 export const consecutivePattern = (dayCount: number): string => `consecutive:${dayCount}`;
 
-/** A Consecutive Days placement in Manual Scheduling: its length and the runs the week allows. */
 export interface ConsecutivePlacement {
   dayCount: number;
   preferredStartDay: string | null;
@@ -260,7 +191,6 @@ export function consecutivePlacementFor(
 ): ConsecutivePlacement | null {
   const rule = consecutiveRuleForSection(courseId, sectionId, rules);
   if (!rule) return null;
-  // Ticked days are the one run; an older rule keeps its back-to-back runs.
   const ticked = rule.meeting_days && rule.meeting_days.length >= MIN_CONSECUTIVE_DAYS ? rule.meeting_days : null;
   return {
     dayCount: ticked ? ticked.length : rule.day_count,
@@ -269,19 +199,12 @@ export function consecutivePlacementFor(
   };
 }
 
-/** The run that starts on this day, or null when it would run past the week. */
 export const runStartingOn = (placement: ConsecutivePlacement, dayIndex: number): string[] | null =>
   placement.runs.find((run) => run[0] === DAYS[dayIndex]) ?? null;
 
-/** The days ticked in Setup Courses, which the class meets on, or null. */
 export const tickedRun = (placement: ConsecutivePlacement): string[] | null =>
   placement.runs.find((run) => run[0] === placement.preferredStartDay) ?? null;
 
-/**
- * Where a run starts when it is dropped on `dayIndex`: on its ticked days
- * when it has them; else on that day if a run can, else the latest run that
- * still covers it, else the first run of the week.
- */
 export function runStartForDay(placement: ConsecutivePlacement, dayIndex: number): number {
   const day = DAYS[dayIndex];
   const covering = placement.runs.filter((run) => run.includes(day));
@@ -293,11 +216,6 @@ export function runStartForDay(placement: ConsecutivePlacement, dayIndex: number
   return chosen ? DAYS.indexOf(chosen[0]) : dayIndex;
 }
 
-/**
- * The run of `dayCount` days starting on `startDay`, kept inside the teaching
- * week: a run that would pass its end starts earlier instead (Friday + 3
- * days without Sunday is Thursday-Saturday). Empty for a day not in the week.
- */
 export function runFrom(startDay: string, dayCount: number, sundayClassesEnabled: boolean): string[] {
   const week = teachingWeek(sundayClassesEnabled);
   const start = week.indexOf(startDay);
@@ -306,10 +224,6 @@ export function runFrom(startDay: string, dayCount: number, sundayClassesEnabled
   return week.slice(from, from + dayCount);
 }
 
-/**
- * Whether `days` are distinct and calendar-consecutive, in any order. Mirrors
- * `SchedulingPolicy::isConsecutiveDaySet`: Sunday -> Monday is the next week.
- */
 export function isBackToBack(days: string[]): boolean {
   const indexes = [...new Set(days)].map((day) => DAYS.indexOf(day)).sort((a, b) => a - b);
   return (
@@ -318,10 +232,6 @@ export function isBackToBack(days: string[]): boolean {
   );
 }
 
-/**
- * "3 days · Mon, Wed, Fri" or "3 days · Thu–Sat" when the days are chosen,
- * else "3 consecutive days".
- */
 export function consecutiveSummary(
   dayCount: number,
   startDay: string | null,
@@ -340,20 +250,10 @@ export function consecutiveSummary(
     : `${dayCount} consecutive days`;
 }
 
-/** The Generator's own weekly length for an editable shape: `units × 60`. */
 export function defaultDurationMinutes(course: Course): number {
   return getCourseSlotPlan(course).singleBlockSlots * SLOT_MINUTES;
 }
 
-/**
- * The longest weekly time the save will accept. A Split Session (and the
- * fixed Hybrid Split) is capped at the course's units
- * (`minor_split_duration`). A single meeting (each day's, for Consecutive
- * Days) may run as long as the teaching day (`class_duration` raises the
- * course's ceiling to it): some departments hold one eight-hour class.
- * Integrated's two sessions are not capped by it: each takes the length the
- * user sets.
- */
 export function maxDurationMinutes(
   course: Course,
   shape: DurationShape,
@@ -364,12 +264,6 @@ export function maxDurationMinutes(
   return Math.max(ceiling, slotCount() * SLOT_MINUTES);
 }
 
-/**
- * The weekly time the course's own units carry: a Split at its units, a
- * single meeting at the larger of the Generator's two shapes. Default
- * Settings applies a department-wide length only within this, so a default
- * never stretches a short course to a whole day.
- */
 function courseCeilingMinutes(
   course: Course,
   shape: DurationShape,
@@ -386,12 +280,6 @@ function courseCeilingMinutes(
   return Math.max(units, plan.lectureSlots * SLOT_MINUTES + laboratory);
 }
 
-/**
- * Lecture and laboratory minutes of an Integrated Hybrid, as the Generator
- * places them: one hour per lecture unit, and the laboratory at three hours
- * per laboratory unit unless the department set a Custom Lab Duration. Both
- * come from the course, never from fixed numbers, and stay separate.
- */
 export function hybridLaboratoryMinutes(
   course: Course,
   labSettings?: LaboratoryDurationSettings | null,
@@ -402,16 +290,9 @@ export function hybridLaboratoryMinutes(
   };
 }
 
-/**
- * Step 2's Default Settings: set once and applied to every course that has no
- * Configure settings of its own. `null` keeps each course's own length.
- */
 export interface CourseDefaults {
-  /** Weekly minutes of a lecture course, and of an Integrated course's lecture. */
   lectureMinutes: number | null;
-  /** Weekly minutes of a laboratory course, and of an Integrated course's laboratory. */
   laboratoryMinutes: number | null;
-  /** A Split Session or Hybrid Split may also meet Friday + Saturday, after MW and TTh. */
   allowFridaySaturdaySplit: boolean;
 }
 
@@ -424,17 +305,6 @@ export const EMPTY_COURSE_DEFAULTS: CourseDefaults = {
 const meetsAsLaboratory = (course: Course): boolean =>
   Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
 
-/**
- * The course's configuration with the Default Settings applied.
- *
- * A lecture course takes the Lecture Duration, a laboratory course the
- * Laboratory Duration, and an Integrated course one for each session. A
- * default that does not fit the course -- longer than it may meet a week
- * (`class_duration`), or not whole slots per meeting -- leaves the course its
- * own length and is reported as `skipped`, so a default never produces a
- * configuration the save refuses. Field courses and Hybrid Split's fixed
- * meetings are left alone.
- */
 export function applyCourseDefaults(
   config: CourseClassConfig,
   course: Course,
@@ -449,7 +319,6 @@ export function applyCourseDefaults(
     const wanted = defaults.lectureMinutes !== null || defaults.laboratoryMinutes !== null;
     const lecture = defaults.lectureMinutes ?? own.lecture;
     const laboratory = defaults.laboratoryMinutes ?? own.laboratory;
-    // Each session takes its length exactly; no unit-derived total caps the pair.
     const fits = [lecture, laboratory].every((minutes) => minutes > 0 && minutes % SLOT_MINUTES === 0);
     return {
       config: {
@@ -477,7 +346,6 @@ export function applyCourseDefaults(
   };
 }
 
-/** Integrated Hybrid's session lengths: the ones chosen, else the course's own. */
 export function integratedHybridMinutes(
   config: Pick<CourseClassConfig, "lectureMinutes" | "laboratoryMinutes">,
   course: Course,
@@ -490,20 +358,12 @@ export function integratedHybridMinutes(
   };
 }
 
-/** One weekly meeting the Generator will place for a course. */
 export interface MeetingPart {
-  /** "Class", "Meeting 1", "Lecture", "Laboratory", … */
   label: string;
   minutes: number;
-  /** Set when the meeting's delivery is fixed by the shape. */
   mode?: "Online" | "F2F";
 }
 
-/**
- * The course's meetings, one entry per session. Both Hybrid types are always
- * two separate sessions — never one combined block — so callers can show
- * each with its own length and delivery.
- */
 export function meetingParts(
   config: CourseClassConfig,
   course: Course,
@@ -511,8 +371,6 @@ export function meetingParts(
 ): MeetingPart[] {
   switch (durationShape(config)) {
     case "split": {
-      // An Online Split meets online both times; an On-Site one keeps the
-      // Generator's own choice of room.
       const mode = config.delivery === "online" ? "Online" : undefined;
       return [
         { label: "Meeting 1", minutes: config.durationMinutes / 2, mode },
@@ -533,7 +391,6 @@ export function meetingParts(
       ];
     }
     default:
-      // A Consecutive Days class meets for its full length on every day.
       return isConsecutive(config)
         ? Array.from({ length: config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS }, (_, index) => ({
             label: `Day ${index + 1}`,
@@ -547,24 +404,18 @@ export function meetingParts(
 const describePart = (part: MeetingPart): string =>
   `${formatHours(part.minutes / 60)}${part.mode ? ` ${part.mode}` : ""}`;
 
-/**
- * What the Generator will place, one session per part, e.g. "3h",
- * "1.5h + 1.5h", "1.5h Online + 1.5h F2F" or "2h Online + 3h F2F".
- */
 export function durationLabel(
   config: CourseClassConfig,
   course: Course,
   labSettings?: LaboratoryDurationSettings | null,
 ): string {
   const parts = meetingParts(config, course, labSettings);
-  // A run's days are one class at one length: "3 days × 8h".
   if (isConsecutive(config) && parts.length > 0) {
     return `${parts.length} days × ${describePart(parts[0])}`;
   }
   return parts.map(describePart).join(" + ");
 }
 
-/** A room `/scheduling-settings` says this department can reach (RoomAccessPolicy). */
 export interface PreferredRoomOption {
   id: number | string;
   room_code: string;
@@ -573,11 +424,6 @@ export interface PreferredRoomOption {
   allow_lecture_usage?: boolean;
 }
 
-/**
- * Whether a laboratory may host this course's lecture meeting. Mirrors
- * `SchedulingPolicy::laboratoryServesLecture`: a lecture-only major, in a
- * laboratory flagged for lecture use. Minors never use a laboratory.
- */
 const laboratoryServesLecture = (course: Course, room: PreferredRoomOption): boolean =>
   course.category === "major" &&
   Number(course.lectureHours ?? 0) > 0 &&
@@ -586,19 +432,6 @@ const laboratoryServesLecture = (course: Course, room: PreferredRoomOption): boo
   room.room_type === "laboratory" &&
   Boolean(room.allow_lecture_usage);
 
-/**
- * Rooms the course's face-to-face meeting can use, by the same rule the
- * server validates the choice with (it also refuses a room that is not
- * available or not reachable). The options come from the department's own
- * room list; nothing here names a room. An online class uses none.
- *
- * Field is chosen here, not by the course's name or kind: every face-to-face
- * course, laboratory or lecture, is offered field rooms beside its own rooms,
- * and picking one is what makes it a field course for this run (the server
- * then accepts only a field room for it). With no preference it is scheduled
- * as usual. Only a course whose record requires the field is limited to
- * field rooms.
- */
 export function compatibleRoomOptions(
   course: Course,
   config: Pick<CourseClassConfig, "configuration" | "delivery">,
@@ -609,8 +442,6 @@ export function compatibleRoomOptions(
   const fieldRooms = options.filter((room) => room.room_type === "field");
   if (course.roomTypeRequired === "field") return fieldRooms;
 
-  // A laboratory course meets in the rooms the Default LAB Room Requirement
-  // allows: as one block, or as the on-site half of an Integrated Hybrid.
   const needsLaboratory =
     Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
   const ownRooms = needsLaboratory
@@ -621,10 +452,6 @@ export function compatibleRoomOptions(
   return [...ownRooms, ...fieldRooms];
 }
 
-/**
- * Infer the course-level configuration from course metadata and the section
- * configs, so reopening Setup Courses shows what the Generator will receive.
- */
 export function inferInitialCourseClassConfig(
   course: Course,
   configs: Record<string, CourseSetupConfig>,
@@ -642,8 +469,6 @@ export function inferInitialCourseClassConfig(
   const sectionsWithSplit = sectionsWith("gecSplitCourseIds");
   const sectionsWithHybrid = sectionsWith("splitCourseIds");
   const sectionsWithHybridSplit = sectionsWith("hybridSplitCourseIds");
-  // Consecutive Days is the department's saved rule, so it outranks what the
-  // draft says: the server refuses a run that also splits the course.
   const consecutiveBySection = consecutiveRulesBySection(course.id, consecutiveRules, sections);
   const sectionsWithConsecutive = sections.filter((s) => consecutiveBySection.has(s.id));
 
@@ -652,7 +477,6 @@ export function inferInitialCourseClassConfig(
   const isAnyHybrid = sectionsWithHybrid.length > 0;
   const isAnyHybridSplit = sectionsWithHybridSplit.length > 0;
 
-  // Determine section scope
   let sectionScope: SectionScope = "all";
   let selectedSectionIds: string[] = sections.map((s) => s.id);
   const narrowTo = (subset: Section[]) => {
@@ -666,8 +490,6 @@ export function inferInitialCourseClassConfig(
   else if (isAnyHybrid) narrowTo(sectionsWithHybrid);
   else if (isAnyHybridSplit) narrowTo(sectionsWithHybridSplit);
 
-  // A saved custom duration or room lives on each targeted section; the
-  // first targeted section that carries one speaks for the course.
   const targets = sections.filter((s) => selectedSectionIds.includes(s.id));
   const savedMinutes = targets
     .map((s) => configs[s.id]?.durationMinutesByCourseId?.[course.id])
@@ -702,7 +524,6 @@ export function inferInitialCourseClassConfig(
       consecutiveDays: rule.day_count,
       preferredStartDay: rule.preferred_start_day,
       meetingDays: rule.meeting_days ?? null,
-      // A run cannot also have a Required Day; the server refuses the pair.
       requiredDay: null,
     };
   }
@@ -721,8 +542,6 @@ export function inferInitialCourseClassConfig(
   }
 
   if (isAnyHybrid) {
-    // Integrated is always lecture + laboratory; the delivery decides the
-    // lecture: On-site keeps it face-to-face, otherwise it is online.
     const onSite = sectionsWithHybrid.some(
       (s) => configs[s.id]?.modesByCourseId?.[course.id] === "on-site",
     );
@@ -746,10 +565,6 @@ export function inferInitialCourseClassConfig(
 const sameIds = (left: string[], right: string[]) =>
   left.length === right.length && left.every((id, index) => id === right[index]);
 
-/**
- * Synchronize the course-level configuration back to the per-section configs
- * the Review step and the generation payload read.
- */
 export function syncCourseConfigToSectionConfigs(
   course: Course,
   courseConfig: CourseClassConfig,
@@ -764,15 +579,11 @@ export function syncCourseConfigToSectionConfigs(
       ? sections.map((s) => s.id)
       : courseConfig.selectedSectionIds,
   );
-  // Only a length that differs from the Generator's own is sent, so a later
-  // change to the course's units is not masked by a stale copy of the default.
   const customMinutes =
     isDurationEditable(durationShape(courseConfig)) &&
     courseConfig.durationMinutes !== defaultDurationMinutes(course)
       ? courseConfig.durationMinutes
       : null;
-  // Integrated's two sessions, sent only when one differs from the
-  // course's own so a later curriculum change still reaches the Generator.
   const hybridDefaults = hybridLaboratoryMinutes(course, labSettings);
   const chosenComponents = integratedHybridMinutes(courseConfig, course, labSettings);
   const customComponents =
@@ -809,13 +620,9 @@ export function syncCourseConfigToSectionConfigs(
 
     if (isTarget) {
       if (courseConfig.configuration === "split") {
-        // Split Session is gecSplitCourseIds. Hybrid Split is a separate
-        // marker because Hybrid Laboratory uses splitCourseIds.
         nextGecSplit = withCourse(currentGecSplit);
         if (courseConfig.delivery === "hybrid") nextHybridSplit = withCourse(currentHybridSplit);
       } else if (courseConfig.configuration === "integrated") {
-        // Lecture and laboratory as two sessions; the course's mode below
-        // tells the Generator whether the lecture is on site or online.
         nextSplit = withCourse(currentSplit);
       }
       if (customMinutes !== null) nextDurations[courseId] = customMinutes;

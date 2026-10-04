@@ -44,7 +44,6 @@
   }
 }
 
-/* System-wide No Shadows Override */
 *,
 *::before,
 *::after {
@@ -80,7 +79,6 @@
     animation: skeleton-shimmer 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
-  /* Shared data-table row interaction, matching the instructor list. */
   table tbody > tr:not(.animate-pulse):not(:has(> td[colspan])):hover {
     background-color: rgba(90, 18, 32, 0.05) !important;
     transition: background-color 200ms ease;
@@ -99,8 +97,6 @@
     border-left: 3px solid #C9952A;
     color: #F5C842;
   }
-  /* A group whose page is open: highlighted text only, so the accent bar
-     marks the one item that is the current page. */
   .sidebar-parent-active {
     color: #F5C842;
   }
@@ -119,7 +115,6 @@
     border: 1px solid rgba(255, 255, 255, 0.3);
   }
 
-  /* Keep dense data views usable without allowing the page itself to widen. */
   .responsive-table {
     max-width: 100%;
     overflow-x: auto;
@@ -163,7 +158,6 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Sidebar dropdown children drop in one after another when a parent expands. */
 .sidebar-submenu-item {
   animation: sidebarChildFall 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }

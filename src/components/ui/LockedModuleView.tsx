@@ -26,11 +26,9 @@ export default function LockedModuleView({ moduleName = 'This Module', requiredC
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center font-sans">
       <div className="w-full max-w-md bg-white rounded-3xl border border-gray-200 shadow-xl p-8 flex flex-col items-center relative overflow-hidden">
-        {/* Subtle decorative background glow */}
         <div className="absolute -top-12 -right-12 w-36 h-36 bg-amber-100/60 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute -bottom-12 -left-12 w-36 h-36 bg-red-100/40 rounded-full blur-2xl pointer-events-none" />
 
-        {/* Lock Icon */}
         <div className="w-16 h-16 rounded-2xl bg-[#5A1220]/10 text-[#5A1220] flex items-center justify-center mb-5 border border-[#5A1220]/20 shadow-inner">
           <Lock size={32} className="text-[#5A1220]" />
         </div>

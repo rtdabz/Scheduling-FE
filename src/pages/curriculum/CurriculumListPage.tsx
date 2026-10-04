@@ -42,7 +42,6 @@ import { useToast } from '../../context/ToastContext';
 import { hasStoredCapability } from '../../lib/storedUser';
 import CurriculumReviewPage from './CurriculumReviewPage';
 
-/** Curricula per page in the grid view (three rows of three). */
 const GRID_PAGE_SIZE = 9;
 
 const statusColors: Record<string, string> = {
@@ -51,11 +50,6 @@ const statusColors: Record<string, string> = {
   archived: 'bg-red-50 text-red-700 border-red-200',
 };
 
-/**
- * One route per role serves both audiences: the secretary, who holds
- * `curriculum.manage`, gets the authoring page; the dean and the VPAA get the
- * read-only review page laid out like Schedule Approval.
- */
 export default function CurriculumListPage() {
   return hasStoredCapability('curriculum.manage') ? <CurriculumManagePage /> : <CurriculumReviewPage />;
 }
@@ -80,35 +74,25 @@ function CurriculumManagePage() {
     programs,
   } = useCurriculum();
 
-  /**
-   * The VPAA portal is mounted at the root, every other role under its own
-   * prefix, so a curriculum link has to be built from the viewer's role.
-   */
   const curriculumPathFor = useCallback(
     (curriculumId: number) => (userRole === 'vpaa' ? `/curriculum/${curriculumId}` : `/${userRole}/curriculum/${curriculumId}`),
     [userRole],
   );
 
-  // View mode
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [printingCurriculumId, setPrintingCurriculumId] = useState<number | null>(null);
   const [viewCurriculumId, setViewCurriculumId] = useState<number | null>(null);
 
-  // Table states
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-  // Grid view pagination. It had page state but no controls, so every
-  // curriculum after the ninth was unreachable in the grid.
   const [gridPage, setGridPage] = useState(1);
 
-  // Modal states
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingCurriculum, setEditingCurriculum] = useState<Curriculum | null>(null);
 
-  // Confirmation modal state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -154,14 +138,12 @@ function CurriculumManagePage() {
     }
   }, [printingCurriculumId, programs, toast]);
 
-  // Newest first, as the grid has always shown them.
   const gridFilteredCurriculumList = useMemo(
     () => [...curriculumList].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()),
     [curriculumList],
   );
 
   const gridTotalPages = Math.ceil(gridFilteredCurriculumList.length / GRID_PAGE_SIZE) || 1;
-  // A search or archive can shrink the list under the page being shown.
   const currentGridPage = Math.min(gridPage, gridTotalPages);
   const gridPaginatedCurriculumList = useMemo(() => {
     const start = (currentGridPage - 1) * GRID_PAGE_SIZE;
@@ -207,9 +189,6 @@ function CurriculumManagePage() {
         header: 'Status',
         cell: ({ row, getValue }) => {
           const val = (getValue() as string) || 'deactivated';
-          // Old/new is a statement about the department's other curricula, so it
-          // sits beside the status rather than replacing it — a curriculum can
-          // be both "active" and "the old one".
           const lifecycle = curriculumLifecycleBadge(row.original);
           return (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -298,8 +277,6 @@ function CurriculumManagePage() {
                       >
                         <CheckCircle2 size={15} strokeWidth={item.status === 'active' ? 2.5 : 2} />
                       </TableActionButton>
-                      {/* Archiving is offered only once a curriculum is out of
-                          service; deactivate it first. */}
                       {item.status !== 'active' && (
                         <TableActionButton
                           label="Archive Curriculum"
@@ -348,26 +325,14 @@ function CurriculumManagePage() {
 
   return (
     <div className="w-full">
-      {/*
-        Toolbar, filters and page actions share one card: the actions used to
-        float in a bare strip above it, which read as though they belonged to
-        the page title rather than to the list they act on.
-
-        The row wraps instead of switching direction at a breakpoint — search,
-        filters and three buttons do not fit side by side at every width, and
-        wrapping lets the groups fall onto a second line inside the card while
-        staying on one line whenever there is room.
-      */}
       <div id="curriculum-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
-          {/* Search */}
           <SearchInput
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search curriculum name or code..."
           />
 
-          {/* Status Filter */}
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -382,7 +347,6 @@ function CurriculumManagePage() {
           </div>
         </div>
 
-        {/* View mode, then the page actions. */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
@@ -405,8 +369,6 @@ function CurriculumManagePage() {
             </button>
           </div>
 
-          {/* Separates the view control, which only changes how the list looks,
-              from the actions that change the data. */}
           <span aria-hidden="true" className="hidden h-7 w-px bg-gray-200 sm:block" />
 
           <WorkflowGuideButton guideId="curriculum" />
@@ -438,7 +400,6 @@ function CurriculumManagePage() {
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div id="curriculum-list">
       {isLoading ? (
         viewMode === 'grid' ? (
@@ -476,7 +437,6 @@ function CurriculumManagePage() {
           }
         />
       ) : (
-        /* Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {gridPaginatedCurriculumList.length === 0 ? (
             <div className="col-span-full bg-white rounded-2xl p-12 border border-gray-100 text-center text-gray-400">
@@ -516,7 +476,6 @@ function CurriculumManagePage() {
       )}
       </div>
 
-      {/* Curriculum Form Modal */}
       <CurriculumFormModal
         isOpen={isFormModalOpen}
         isEditMode={isEditMode}
@@ -527,9 +486,6 @@ function CurriculumManagePage() {
           const saved = await handleCreateOrUpdate(data, editingCurriculum);
           setIsFormModalOpen(false);
           if (!editingCurriculum) {
-            // Curriculum authoring moved to the secretary, whose curriculum
-            // pages are namespaced by role; this used to hard-code the VPAA
-            // path and dropped the creator on a route they cannot open.
             navigate(`${curriculumPathFor(saved.id)}?mode=edit`);
           }
         }}
@@ -542,7 +498,6 @@ function CurriculumManagePage() {
         onClose={() => setViewCurriculumId(null)}
       />
 
-      {/* Curriculum Archive Modal */}
       <CurriculumArchiveModal
         isOpen={isArchiveOpen}
         onClose={() => setIsArchiveOpen(false)}
@@ -550,7 +505,6 @@ function CurriculumManagePage() {
         onRestore={handleStatusChange}
       />
 
-      {/* Confirm Action Modal */}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}

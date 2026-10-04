@@ -107,13 +107,8 @@ export default function SecretarySections() {
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
-  // Section writes sit behind schedule.create, which a department without a
-  // program cannot exercise. Secretaries and Program Heads with available programs
-  // or the schedule.create capability can manage sections.
   const canManageSections = hasStoredCapability('schedule.create') || ((isSecretary || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false));
 
-  // A Program Head adds and edits sections of their own program only; the
-  // server enforces the same scope.
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const selectablePrograms = useMemo(
     () => (isProgramHead ? programs.filter((p) => Number(p.id) === Number(user?.program_id)) : programs),
@@ -122,19 +117,15 @@ export default function SecretarySections() {
 
   const activeSemester = useMemo(() => semesters.find((t) => t.is_active) ?? semesters[0], [semesters]);
 
-  // Filter States
   const [yearLevelFilter, setYearLevelFilter] = useState('all');
   const [programFilter, setProgramFilter] = useState('all');
   const [semesterFilter, setSemesterFilter] = useState('all');
 
   const filteredSections = useMemo(() => {
     let list = sections;
-    if (isVpaa) {
-      // VPAA sees all
-    } else if (user?.department_id) {
+    if (!isVpaa) {
+      if (!user?.department_id) return [];
       list = list.filter(s => s.department_id !== null && Number(s.department_id) === Number(user.department_id));
-    } else {
-      return [];
     }
 
     if (isProgramHead && user?.program_id) {
@@ -154,7 +145,6 @@ export default function SecretarySections() {
     return list;
   }, [sections, isVpaa, user?.department_id, user?.program_id, isProgramHead, yearLevelFilter, programFilter, semesterFilter]);
 
-  // Table States
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({
@@ -162,7 +152,6 @@ export default function SecretarySections() {
     pageSize: 10
   });
 
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -226,7 +215,6 @@ export default function SecretarySections() {
         });
         toast.success('Deleted', 'Section deleted successfully');
       } catch (error) {
-        // The server says why, e.g. the section still has classes scheduled.
         toast.error('Delete Failed', apiErrorMessage(error, 'Failed to delete section.'));
       } finally {
         setIsDeleteModalOpen(false);
@@ -423,18 +411,14 @@ export default function SecretarySections() {
 
   return (
     <div>
-      {/* Search and Filters Bar */}
       <div id="sections-toolbar" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
-        {/* Search */}
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search section name, semester, etc..."
         />
 
-        {/* Dropdowns & Actions */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Program Filter (if multiple selectable programs) */}
           {selectablePrograms.length > 1 && (
             <div className="flex items-center gap-1.5">
               <Filter size={13} className="text-gray-400" />
@@ -452,7 +436,6 @@ export default function SecretarySections() {
             </div>
           )}
 
-          {/* Year Level Filter */}
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -469,7 +452,6 @@ export default function SecretarySections() {
             </select>
           </div>
 
-          {/* Semester Filter */}
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -503,7 +485,6 @@ export default function SecretarySections() {
         </div>
       </div>
 
-      {/* Table Container */}
       <WorkflowGuideButton guideId="sections" />
       <div id="sections-table" className="font-sans">
         <DataTable
@@ -542,7 +523,6 @@ export default function SecretarySections() {
         />
       </div>
 
-      {/* Create / Edit Modal (Portal Isolated for 0-lag typing) */}
       <SectionModal
         isOpen={isModalOpen}
         isEditMode={isEditMode}

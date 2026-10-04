@@ -18,23 +18,14 @@ const NO_ATTEMPTS: GenerationAttempt[] = [];
 
 interface Props {
   recommendations: GenerationRecommendation[];
-  /** The run's retry ladder, to mark fixes it already tried alone. */
   attempts?: GenerationAttempt[];
-  /** The run's blocking class, listed first and explained by the caller. */
   bottleneck?: GenerationBottleneck | null;
   heading: string;
   busy: boolean;
-  /** Absent: the fixes are listed but cannot be applied from here. */
   onApply?: (recommendation: GenerationRecommendation) => void;
   onReviewConstraints?: (sectionId: number | null) => void;
 }
 
-/**
- * The generator's recommendations as one list: a row per thing to fix, its
- * alternatives as choices, and an Apply button that names the fix. "Apply
- * all" takes the chosen fix of every row at once. Advice the wizard cannot
- * apply itself follows as short lines.
- */
 export default function RecommendationList({
   recommendations,
   attempts = NO_ATTEMPTS,
@@ -48,8 +39,6 @@ export default function RecommendationList({
     () => groupRecommendations(recommendations, attempts, bottleneck),
     [attempts, bottleneck, recommendations],
   );
-  // Chosen option per group, resolved at render time so a new report with
-  // other options can never leave a row pointing at one it no longer has.
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [resolvedOpen, setResolvedOpen] = useState(false);
   const selectedOption = (key: string, options: RecommendationOption[]): RecommendationOption =>

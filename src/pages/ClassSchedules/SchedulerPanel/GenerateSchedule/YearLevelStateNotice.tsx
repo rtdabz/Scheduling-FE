@@ -4,10 +4,6 @@ import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 const sectionsText = (state: YearLevelScheduleState) =>
   `${state.scheduledSectionCount} of ${state.sectionCount} section${state.sectionCount === 1 ? "" : "s"}`;
 
-/**
- * Compact pill that sits beside the year-level picker. The full explanation
- * lives in its tooltip, so the picker row stays one line wide where it fits.
- */
 export function YearLevelStateBadge({
   state,
 }: {
@@ -43,11 +39,6 @@ export function YearLevelStateBadge({
   );
 }
 
-/**
- * Says up front that a year level was already generated, so running the
- * generator again is a deliberate choice rather than a surprise on save.
- * Renders nothing for a year level that has no classes yet.
- */
 export default function YearLevelStateNotice({
   state,
   className = "mt-3",

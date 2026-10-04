@@ -1,6 +1,5 @@
 import type { ScheduleItem, Section, SectionDoneCandidate } from "./types";
 
-/** Matches ScheduleController::REPLACEABLE_BATCH_STATUSES. */
 const CLEARABLE_STATUSES: ScheduleItem["status"][] = ["draft", "completed", "revision"];
 
 export function buildSectionClearCandidates(

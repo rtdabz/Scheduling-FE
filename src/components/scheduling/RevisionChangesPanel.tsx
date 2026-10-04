@@ -48,7 +48,6 @@ const classLabel = (row: ChangedRow | null): string => (
   [row?.course?.course_code, row?.section?.section_name].filter(Boolean).join(' · ') || 'Class'
 );
 
-/** One line of the details table: a single meeting or course edit. */
 interface ChangeDetailRow {
   key: string;
   when: string;
@@ -128,12 +127,6 @@ function ChangeDetailsModal({ entries, isOpen, onClose }: { entries: RevisionCha
   );
 }
 
-/**
- * What the department changed after this version was recalled or rejected.
- * The version itself is shown as sent; this lists the steps since, each read
- * from the history recorded at the time, so deleted sections and edited
- * courses still read as they were.
- */
 export default function RevisionChangesPanel({ submissionId }: { submissionId: number }) {
   const [entries, setEntries] = useState<RevisionChangeEntry[] | null>(null);
   const [failed, setFailed] = useState(false);

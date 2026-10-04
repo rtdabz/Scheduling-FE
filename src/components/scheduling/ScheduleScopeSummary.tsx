@@ -7,14 +7,6 @@ import {
 } from '../../hooks/useScheduleOverview';
 import type { OverviewFocus } from './DepartmentOverviewCards';
 
-/**
- * The figures for whatever the All Schedules screen is currently scoped to:
- * every department, one department, or one section.
- *
- * Every problem figure is counted in meetings (one weekly session: an MWF class
- * is three), so each card says "of N meetings" rather than sitting next to a
- * class count it can exceed.
- */
 export interface ScopeStats {
   sectionsScheduled: number;
   sectionsTotal: number;
@@ -23,7 +15,6 @@ export interface ScopeStats {
   unassignedFaculty: number;
   unassignedRooms: number;
   conflicts: ConflictBreakdown;
-  /** Only at section scope, where a single stage is meaningful. */
   status?: SectionScheduleStage;
 }
 
@@ -61,8 +52,6 @@ function IssueCard({
   isActive: boolean;
   onClick: () => void;
 }) {
-  // Nothing to show means nothing to click: render it as a calm, static card
-  // instead of a button that lifts on hover and then does nothing.
   if (count === 0 && !isActive) {
     return (
       <div className="flex min-h-[112px] flex-col justify-between rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5">

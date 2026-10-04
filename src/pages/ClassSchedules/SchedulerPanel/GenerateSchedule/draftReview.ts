@@ -1,17 +1,6 @@
 import api from "../../../../lib/api";
 import type { ApiScheduleRecord } from "../types";
 
-/**
- * Reviewing a generated timetable before it is saved.
- *
- * When no complete timetable exists the generator still places every course
- * that fits and lists the rest. The draft is then reviewed as a whole: the
- * server re-checks every row and returns each course that is unplaced or
- * conflicting, with ranked placements. The user picks fixes for several courses,
- * applies them together, and the draft is reviewed again -- a course whose fix
- * worked is simply not reported the next time.
- */
-
 export type DraftMeeting = {
   meeting_type: "lecture" | "laboratory" | null;
   duration_slots: number;
@@ -24,7 +13,6 @@ export type UnplacedCourse = {
   course_id: number;
   course_code: string;
   reason: string;
-  /** How a split course meets: Split Session, or Online Split (one meeting online). */
   shape?: "split" | "online_split" | null;
   meetings: DraftMeeting[];
 };
@@ -34,15 +22,12 @@ export type DraftOption = {
   rank: number;
   score: number;
   summary: string;
-  /** Set when the option changes the class's shape, e.g. "Online Split". */
   label?: string | null;
   reasons: string[];
-  /** Every row the course holds once this option is applied. */
   rows: ApiScheduleRecord[];
 };
 
 export type DraftIssue = {
-  /** `section_id:course_id` */
   key: string;
   kind: "unplaced" | "conflict";
   section_id: number;
@@ -122,10 +107,6 @@ export function draftReviewErrorMessage(error: unknown): string {
   );
 }
 
-/**
- * The draft with each chosen option written in: the course's rows are
- * replaced by the option's, and every other row is left as it was.
- */
 export function applyDraftOptions(
   rows: ApiScheduleRecord[],
   chosen: DraftOption[],
@@ -175,21 +156,12 @@ const rowsClash = (
   );
 };
 
-/**
- * Whether two courses' options cannot both be applied. The review finds each
- * course's options against the draft alone, so two courses are often offered
- * the same free hour; approving one takes it from the other.
- */
 export function optionsClash(left: DraftOption, right: DraftOption): boolean {
   return left.rows.some((row) =>
     right.rows.some((other) => rowsClash(row, other)),
   );
 }
 
-/**
- * The best option for each course that clashes with none already chosen,
- * course by course in list order. Courses with no such option are left out.
- */
 export function pickBestOptions(
   issues: DraftIssue[],
   alreadyChosen: DraftOption[] = [],
@@ -208,7 +180,6 @@ export function pickBestOptions(
   return picks;
 }
 
-/** Unplaced courses the draft still holds no rows for. */
 export function stillUnplaced(
   unplaced: UnplacedCourse[],
   rows: ApiScheduleRecord[],

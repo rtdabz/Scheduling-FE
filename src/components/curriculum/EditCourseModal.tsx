@@ -82,7 +82,6 @@ export default function EditCourseModal({
       courseCategory,
       lecUnits: Number(lecUnits),
       labUnits: Number(labUnits),
-      // Only a major is program-bound; a minor is taught across programs.
       programId: courseCategory === 'major' && programId ? Number(programId) : null,
     });
 
@@ -92,7 +91,6 @@ export default function EditCourseModal({
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 animate-in fade-in duration-200">
       <div className="bg-[#F7F4F0] w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col">
-        {/* Modal Header */}
         <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#C9952A]/20 border border-[#C9952A]/30 flex items-center justify-center text-[#C9952A]">
@@ -115,7 +113,6 @@ export default function EditCourseModal({
           </button>
         </div>
 
-        {/* Modal Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-600 text-xs font-medium">
@@ -124,7 +121,6 @@ export default function EditCourseModal({
             </div>
           )}
 
-          {/* Course Code */}
           <div>
             <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
               Course Code <span className="text-red-500">*</span>
@@ -139,7 +135,6 @@ export default function EditCourseModal({
             />
           </div>
 
-          {/* Course Title */}
           <div>
             <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
               Course Name <span className="text-red-500">*</span>
@@ -154,7 +149,6 @@ export default function EditCourseModal({
             />
           </div>
 
-          {/* Category Dropdown */}
           <div>
             <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
               Category
@@ -169,7 +163,6 @@ export default function EditCourseModal({
             </select>
           </div>
 
-          {/* Program — decides which instructors may teach this major */}
           {courseCategory === 'major' && (
             <div>
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
@@ -193,7 +186,6 @@ export default function EditCourseModal({
             </div>
           )}
 
-          {/* Units Inputs */}
           <div className="grid grid-cols-3 gap-3 pt-1">
             <div>
               <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
@@ -237,7 +229,6 @@ export default function EditCourseModal({
             </div>
           </div>
 
-          {/* Modal Footer Controls */}
           <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-2 shrink-0">
             <button
               type="button"

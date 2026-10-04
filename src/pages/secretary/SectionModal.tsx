@@ -55,7 +55,6 @@ interface SectionModalProps {
   onClose: () => void;
   onSaveSingle: (sectionName: string, yearLevel: YearLevel, departmentId: number, programId: number) => Promise<void>;
   onSaveBatch: (sections: Array<{ section_name: string; year_level: YearLevel }>, departmentId: number, programId: number) => Promise<void>;
-  /** Every loaded section, so a taken name is flagged while it is typed rather than on save. */
   existingSections?: Array<{ id: number; section_name: string; department_id: number | null; semester_id: number }>;
 }
 
@@ -72,7 +71,6 @@ const CONTROL =
 const controlTone = (hasError: boolean) =>
   hasError ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-200 focus:border-[#C9952A] focus:ring-[#C9952A]/25';
 
-/** Mirrors Sections::normalizeName() on the server: trimmed, spaces collapsed, upper-cased. */
 const normalizeSectionName = (name: string) => name.trim().split(' ').filter(Boolean).join(' ').toUpperCase();
 
 const newRow = (section_name = '', year_level: YearLevel = '1'): SectionBatchRow => ({
@@ -81,7 +79,6 @@ const newRow = (section_name = '', year_level: YearLevel = '1'): SectionBatchRow
   year_level,
 });
 
-/** 'BSIT 1A' -> 'BSIT 1B'; anything that does not end in a single letter gets no suggestion. */
 const suggestNextName = (name: string): string => {
   const match = name.trim().match(/^(.*?)([A-Za-z])(\d*)$/);
   if (!match || match[3] || /[A-Za-z]$/.test(match[1])) return '';
@@ -146,9 +143,6 @@ export default function SectionModal({
 
   const effectiveDepartmentId = isVpaa ? departmentId : (userDepartmentId?.toString() || '');
 
-  // The same scope the server enforces: live sections of this department in the
-  // semester the section belongs to (the active one for new sections), minus
-  // the section being edited.
   const targetSemesterId = isEditMode ? editingSection?.semester_id : activeSemester?.id;
   const takenNames = new Set(
     existingSections
@@ -227,7 +221,6 @@ export default function SectionModal({
         await onSaveSingle(trimmedName, yearLevel, Number(effectiveDepartmentId), Number(programId));
         onClose();
       } catch (error) {
-        // A duplicate name comes back as a field error; show it on the input.
         const fieldError = apiFieldErrors(error).section_name;
         if (fieldError) setNameError(fieldError);
         else toast.error('Section not saved', apiErrorMessage(error, 'Failed to save the section.'));
@@ -259,7 +252,6 @@ export default function SectionModal({
       );
       onClose();
     } catch (error) {
-      // Per-row errors ("sections.2.section_name") land on their own rows.
       const fieldErrors = apiFieldErrors(error);
       const rowErrors = validatedRows.map((row, index) => ({ ...row, error: fieldErrors[`sections.${index}.section_name`] ?? '' }));
       if (rowErrors.some((row) => row.error)) setBatchRows(rowErrors);

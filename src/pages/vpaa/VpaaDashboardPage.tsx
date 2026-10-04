@@ -53,21 +53,6 @@ import {
   type OverviewSubmission,
 } from '../../lib/vpaaOverview';
 
-/**
- * The VPAA's institutional overview.
- *
- * Two rules govern where each figure comes from, and they are the reason this
- * page does not simply count the `schedules` array the way the department
- * dashboards do:
- *
- *  - Approval state comes from `schedule_submissions`. See lib/vpaaOverview.ts
- *    for why reading `schedules.status` reported approved departments as drafts.
- *  - Campus-wide aggregates (room load, peak hours, coverage gaps) come from
- *    `/vpaa/dashboard-insights`, which counts server-side over every meeting in
- *    the semester. The `schedules` array here is capped and is used only to draw the
- *    timetable preview, which is explicitly a preview.
- */
-
 interface Schedule {
   course_id?:number|null; department_id?:number|null; department?:Department|null; meeting_type?:string|null;
   id:number; semester_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
@@ -105,15 +90,8 @@ interface Tile { label:string; value:string; detail:string; icon:LucideIcon; pat
 const ATTENTION_COLUMNS = 'minmax(0,1.4fr) minmax(0,1.1fr) minmax(0,0.95fr) minmax(0,0.9fr) 78px';
 const WORKFLOW_COLUMNS = 'minmax(0,1.5fr) minmax(0,1.3fr) minmax(0,0.95fr) 92px';
 
-/**
- * The dashboard asks for the ceiling the API allows. The timetable preview is
- * still a preview at this size, but a truncated draw is at least reported rather
- * than passed off as the whole campus — and no statistic on the page is derived
- * from this list.
- */
 const SCHEDULE_PREVIEW_LIMIT = 2000;
 
-/** "May 11, 2026" — the approval queue's Submitted column. */
 const formatSubmittedOn = (value?:string|null) => {
   if (!value) return '—';
   const date = new Date(value);
@@ -134,8 +112,6 @@ export default function VpaaDashboardPage() {
 
   const user = useMemo(() => getStoredUser(), []);
   const cacheKey = `dashboard:${user?.role ?? 'vpaa'}:${user?.id ?? 'current'}`;
-  // Both keep the `dashboard:` prefix so invalidateCacheGroups('dashboards')
-  // still evicts them along with the main payload.
   const insightsCacheKey = `${cacheKey}:insights`;
   const activityCacheKey = `${cacheKey}:activity`;
   const cached = getCachedData<DashboardData>(cacheKey);
@@ -157,14 +133,6 @@ export default function VpaaDashboardPage() {
   const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
 
-  // Campus-wide aggregates. Loaded alongside the main payload rather than inside
-  // it: it is a separate, individually cacheable endpoint.
-  //
-  // These start from their own cache entry rather than from EMPTY_INSIGHTS. They
-  // used to fetch unconditionally with `loading` hard-coded true, so on a revisit
-  // /initial-data resolved from cache instantly while these two still went to the
-  // network — the utilisation and heatmap panels visibly arrived after the rest
-  // of the page had already painted.
   const cachedInsights = getCachedData<VpaaInsights>(insightsCacheKey);
   const [insights, setInsights] = useState<VpaaInsights>(cachedInsights ?? EMPTY_INSIGHTS);
   const [insightsLoading, setInsightsLoading] = useState(!hasCachedData(insightsCacheKey));
@@ -174,11 +142,6 @@ export default function VpaaDashboardPage() {
   const [activityLoading, setActivityLoading] = useState(!hasCachedData(activityCacheKey));
   const [activityError, setActivityError] = useState(false);
 
-  // True while any refresh is in flight, cached or not. `insightsLoading` only
-  // reports "nothing to paint yet", so the header's spinner needs its own flag
-  // to still turn during a manual refresh over warm cache.
-
-  // ── Timetable controls ──
   const [filterDept, setFilterDept] = useState('all');
   const [filterBuilding, setFilterBuilding] = useState('all');
   const [filterRoom, setFilterRoom] = useState('all');
@@ -186,8 +149,6 @@ export default function VpaaDashboardPage() {
   const [showTimetableFilters, setShowTimetableFilters] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Minute ticker. Drives the queue's Age column so it stays current without a
-  // reload, and keeps every row in a render agreeing on "now".
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -198,7 +159,6 @@ export default function VpaaDashboardPage() {
     let active = true;
 
     const load = async () => {
-      // A live refresh keeps the current figures on screen until new ones land.
       setLoading(liveRevision === 0 && !hasCachedData(cacheKey));
       setLoadError(null);
       try {
@@ -217,8 +177,6 @@ export default function VpaaDashboardPage() {
             subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray(d.courses) ? d.courses : []),
             activeSemester: d.active_semester || null,
             submissions: Array.isArray(d.schedule_submissions) ? d.schedule_submissions : [],
-            // The API caps the array rather than reporting a total, so hitting
-            // the ceiling exactly is the only signal that rows were dropped.
             scheduleLimitReached: rows.length >= SCHEDULE_PREVIEW_LIMIT,
             standardHours: buildStandardHours(d.time_grid?.opening_time, d.time_grid?.closing_time, d.time_grid?.slot_minutes),
             activeCurriculaCount: typeof d.active_curricula_count === 'number' ? d.active_curricula_count : 0,
@@ -260,7 +218,6 @@ export default function VpaaDashboardPage() {
         }, reloadKey > 0);
         if (active) setInsights(data);
       } catch {
-        // Keep whatever the cache already gave us; only a cold failure is blank.
         if (active && !hasCachedData(insightsCacheKey)) setInsights(EMPTY_INSIGHTS);
       } finally {
         if (active) {
@@ -295,7 +252,6 @@ export default function VpaaDashboardPage() {
         }, reloadKey > 0);
         if (active) setActivity(rows);
       } catch {
-        // A cached trail is still worth showing; only a cold failure is an error.
         if (active && !hasCachedData(activityCacheKey)) setActivityError(true);
       } finally {
         if (active) setActivityLoading(false);
@@ -310,7 +266,6 @@ export default function VpaaDashboardPage() {
 
   const activeSemesterId = activeSemester?.id ?? null;
 
-  // ── Approval rollup, from schedule_submissions ──
   const submissionBySection = useMemo(
     () => latestSubmissionBySection(submissions, activeSemesterId),
     [submissions, activeSemesterId],
@@ -323,7 +278,6 @@ export default function VpaaDashboardPage() {
 
   const totals = useMemo(() => institutionTotals(departmentStats), [departmentStats]);
 
-  /** Furthest-along first — the reference's descending completion table. */
   const workflowRows = useMemo(
     () => [...departmentStats].sort(
       (a, b) => b.progressPercent - a.progressPercent || a.department_code.localeCompare(b.department_code),
@@ -333,13 +287,6 @@ export default function VpaaDashboardPage() {
 
   const fullyApprovedDepartments = departmentStats.filter(d => d.approvalStatus === 'Fully Approved').length;
 
-  /**
-   * Departments still needing the VPAA, longest-waiting first.
-   *
-   * A package with no hand-off stamp sorts last rather than first: an empty
-   * string compares below every ISO date, which would otherwise put an undated
-   * row at the head of the queue and report it as the oldest thing waiting.
-   */
   const attentionRows = useMemo(
     () => departmentStats
       .filter(d => d.pendingVpaaCount > 0)
@@ -356,9 +303,6 @@ export default function VpaaDashboardPage() {
     [departmentStats],
   );
 
-  // ── Institutional readiness, by department ──
-  // Everything that was not ready, returned or approved used to count as
-  // "Still Drafting", including departments sitting with their Dean.
   const readiness = useMemo(() => {
     let readyForApproval = 0;
     let withDean = 0;
@@ -388,16 +332,12 @@ export default function VpaaDashboardPage() {
     { key: 'approved', label: 'Fully Approved', value: readiness.fullyApproved, color: '#8b5cf6' },
   ];
 
-  // ── Faculty load bands ──
   const facultyBands = useMemo(() => {
     let completeLoad = 0;
     let remainingCapacity = 0;
     let overloaded = 0;
     let noAssignment = 0;
 
-    // Measured against Basic Load (max less deload), the same line the Dean and
-    // Secretary dashboards and the Faculty list's load level use. Reading
-    // max_units alone missed every designation's deload.
     faculties.forEach(f => {
       const assigned = f.assigned_units || 0;
       const max = basicLoadOf(f.max_units, f.deload_units);
@@ -441,21 +381,16 @@ export default function VpaaDashboardPage() {
     [faculties, departmentNames],
   );
 
-  // Physical rooms only: ONLINE and FIELD are placeholder rows standing in for a
-  // delivery mode, so counting them would overstate the campus room inventory.
   const campusRooms = useMemo(() => physicalRooms(rooms), [rooms]);
 
-  // ── Timetable filters ──
   const semesterSchedules = useMemo(
     () => (activeSemesterId ? schedules.filter(s => Number(s.semester_id) === Number(activeSemesterId)) : schedules),
     [activeSemesterId, schedules],
   );
 
-  // Keep the dashboard a published view; the Master Calendar has a broader scope.
   const publishedSchedules = useMemo(() => withCalendarDepartments(semesterSchedules, departments).filter((item) => isVpaaApproved(item.status)).map((item) => ({
     ...item,
     course_id: item.course_id ?? item.course?.id ?? item.subject_id,
-    // Preserve the old dashboard's virtual-room and field classification.
     mode: item.mode?.toLowerCase().includes('online') || item.room?.room_type?.toLowerCase().includes('online') ? 'online' as const
       : item.mode?.toLowerCase().includes('field') || item.room?.room_type?.toLowerCase().includes('field') ? 'field' as const : 'on-site' as const,
   })), [semesterSchedules, departments]);
@@ -492,11 +427,6 @@ export default function VpaaDashboardPage() {
     });
   }, [publishedSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
 
-  /**
-   * The room list is scoped by building, so switching building has to clear the
-   * room too — a room from the previous building matches nothing and would filter
-   * the grid to empty with no visible reason why.
-   */
   const changeBuilding = (value:string) => {
     setFilterBuilding(value);
     setFilterRoom('all');
@@ -530,10 +460,6 @@ export default function VpaaDashboardPage() {
 
   const openApproval = () => navigate('/schedules/approval');
 
-  // ── Decision metrics ──
-  // Inventory counts (departments, faculty, courses, rooms) moved to the strip
-  // below these: they never change during a semester and carry no decision, so they
-  // were crowding out the figures the VPAA is meant to act on.
   const kpis: Tile[] = [
     {
       label: 'Awaiting Your Approval',
@@ -555,10 +481,6 @@ export default function VpaaDashboardPage() {
     { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules', tone: 'info' },
   ];
 
-  /**
-   * The master-timetable panel. Extracted so the same tree can be portalled to the
-   * body for the full-window view without the grid remounting into a new shape.
-   */
   const timetablePanel = (
     <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -641,11 +563,6 @@ export default function VpaaDashboardPage() {
     </div>
   );
 
-  // Hold the skeleton until every source has something to paint. Showing the
-  // page as soon as /initial-data landed meant the utilisation, heatmap and
-  // activity panels filled in seconds later against an otherwise finished page.
-  // None of the three blocks a revisit: each is seeded from its own cache above,
-  // so a warm dashboard skips this entirely.
   if (loading || insightsLoading || activityLoading) return <DashboardSkeleton variant="vpaa" />;
 
   return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
@@ -802,7 +719,6 @@ export default function VpaaDashboardPage() {
     </section>
 
     <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      {/* Let the activity column set the desktop height, not the number of Gantt rows. */}
       <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
         {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>
@@ -827,7 +743,6 @@ export default function VpaaDashboardPage() {
           </div>
         </Panel>
 
-        {/* Both columns share a bottom edge; the Gantt viewport absorbs extra height. */}
         <AdministrativeActivityPanel
           rows={activity}
           loading={activityLoading}
@@ -850,11 +765,6 @@ const STAGE_BADGES: Record<DepartmentRollup['approvalStatus'], { label:string; c
   Draft: { label: 'Drafting', className: 'bg-slate-100 text-slate-600' },
 };
 
-/**
- * The workflow table's rightmost column used to be a tick or a dash, which could
- * only say "approved" or "not approved" — a department whose schedules the Dean
- * had sent back looked identical to one that had not started.
- */
 function StageBadge({ status }: { status: DepartmentRollup['approvalStatus'] }) {
   const badge = STAGE_BADGES[status];
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`} title={status}>{badge.label}</span>;

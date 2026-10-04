@@ -6,7 +6,6 @@ export interface WizardStep {
 }
 
 interface WizardProgressStepperProps {
-  /** DOM id, so guided tours can anchor a step to the progress bar. */
   id?: string;
   currentStep: number;
   steps: WizardStep[];

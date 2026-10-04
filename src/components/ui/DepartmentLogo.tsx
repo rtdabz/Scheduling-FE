@@ -9,7 +9,6 @@ interface DepartmentLogoProps {
   fallbackClassName?: string;
 }
 
-/** Existing department uploads, with a placeholder for missing or broken images. */
 export default function DepartmentLogo({ name, logo, className, iconSize, fallbackClassName = 'border-slate-200 bg-slate-100 text-slate-500' }: DepartmentLogoProps) {
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   if (logo && logo !== failedLogo) {

@@ -31,30 +31,19 @@ const NOTICE: Record<SessionEndedReason, { eyebrow: string; title: string; body:
   },
 };
 
-/**
- * The single place a signed-in page explains that its session is over. It
- * covers both ways that happens — this app's inactivity policy, and the server
- * rejecting the token — rather than bouncing the user to the login screen with
- * no account of why.
- */
 export default function SessionTimeoutGuard() {
   const [reason, setReason] = useState<SessionEndedReason | null>(null);
   const backToLogin = useRef<HTMLButtonElement>(null);
 
   const handleIdle = useCallback(() => {
-    // End the session at the moment it lapses; the notice is an explanation,
-    // not a grace period during which the page stays usable.
     logoutCurrentSession();
     setReason('idle');
   }, []);
 
-  // Once the session is over there is nothing left to time out.
   useIdleSession({ enabled: reason === null, onIdle: handleIdle });
 
   useEffect(() => {
     const handleSessionEnded = (event: Event) => {
-      // Claiming the event tells the API layer that the expiry is being shown
-      // here, so it does not fall back to a redirect.
       event.preventDefault();
       const detail = (event as CustomEvent<SessionEndedReason>).detail;
       setReason((current) => current ?? detail ?? 'expired');

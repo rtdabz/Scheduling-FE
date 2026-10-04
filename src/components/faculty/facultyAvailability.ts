@@ -1,8 +1,3 @@
-/**
- * Shapes returned by `/faculties/{id}/availabilities`, shared by the viewer
- * panel and the editor so the two cannot drift apart.
- */
-
 export interface AvailabilityWindow {
   id?: number;
   day_index: number;

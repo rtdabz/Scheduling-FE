@@ -1,10 +1,3 @@
-/**
- * Whether [start, end) is covered by the windows with no gap. Units are the
- * caller's (minutes or grid slots). Back-to-back windows (08:00-10:00,
- * 10:00-12:00) count as one, so a 09:00-11:00 class inside them fits.
- *
- * Mirrors InstructorAvailabilityRule::coveredContinuously on the server.
- */
 export const coveredContinuously = (
   windows: Array<[number, number]>,
   start: number,
@@ -26,7 +19,6 @@ export const AVAILABILITY_WARNING_TITLE = "Availability Warning";
 
 const AVAILABILITY_WARNING_PREFIX = "This assignment is outside ";
 
-/** The message shown when a class falls outside a part-timer's availability. */
 export const availabilityWarningMessage = (instructorName: string): string =>
   `${AVAILABILITY_WARNING_PREFIX}${instructorName}’s available time.`;
 

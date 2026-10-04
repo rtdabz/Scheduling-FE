@@ -16,13 +16,11 @@ import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
 import EmploymentBadge, { employmentLabel } from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 
-/* Opening the wizard resets its local draft state. */
 /* eslint-disable react-hooks/set-state-in-effect */
 
 interface AssignmentBatch {
   scheduleIds: string[];
   facultyId: string;
-  /** Assign over the instructor's own conflict (sent as override_conflicts). */
   overrideConflicts?: boolean;
 }
 
@@ -38,9 +36,7 @@ interface AutoAssignModalProps {
   canManageScheduleFaculty: (schedule: ScheduleItem) => boolean;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   onAssign: (assignments: AssignmentBatch[]) => Promise<boolean>;
-  /** Clears the instructor from one class; omitted where removal is not offered. */
   onRemoveAssignment?: (scheduleIds: string[]) => Promise<boolean>;
-  /** Cross-department assignment is restricted to the receiving department. */
   allowExternalInstructors?: boolean;
 }
 
@@ -68,7 +64,6 @@ interface QueuedAssignment {
   schedule: string;
   mode: string;
   scheduleIds: string[];
-  /** The instructor's clash this class is being assigned over, if any. */
   conflict?: string | null;
 }
 
@@ -85,13 +80,6 @@ const overlaps = (left: ScheduleItem, right: ScheduleItem): boolean =>
 
 const QUEUED_ISSUE = "Queued for assignment";
 
-/**
- * An instructor's load bands. Basic Load is what the server calls
- * `required_units` (max_units - deload_units); the fallback recomputes it from
- * the raw columns so an older cached payload still reads correctly. There is no
- * magic default any more: an instructor with nothing configured has a Basic Load
- * of 0, which reads as "no load recorded" rather than an invented 24-unit cap.
- */
 const loadBandsOf = (faculty?: Faculty): LoadAllowances => ({
   basicLoad: faculty?.requiredUnits ?? basicLoadOf(faculty?.maxUnits, faculty?.deloadUnits),
   overloadUnits: faculty?.overloadUnits ?? 0,
@@ -100,7 +88,6 @@ const loadBandsOf = (faculty?: Faculty): LoadAllowances => ({
 
 interface LoadDisplay {
   bands: LoadAllowances;
-  /** Basic Load plus Overload: the instructor's full load, shown as the "/ N". */
   ceiling: number;
   tier: LoadTier | null;
   label: string;
@@ -109,19 +96,10 @@ interface LoadDisplay {
   barClass: string;
 }
 
-/**
- * How a load reads on screen. The bar fills against Basic Load, so once it is
- * full the band name carries the rest of the story — that is the point of the
- * change: past Basic Load is a label now, not a wall.
- */
 const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay => {
   const bands = loadBandsOf(faculty);
   const ceiling = bands.basicLoad + Math.max(0, bands.overloadUnits);
 
-  // No allowance at all means there is no band to report, and it is the same
-  // condition under which the server's confirmation leaves the instructor alone.
-  // An overload-only instructor (Basic Load 0) still has bands: Overload, then
-  // Pro-bono once it is used up.
   if (ceiling <= 0) {
     return {
       bands,
@@ -140,7 +118,6 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
     bands,
     ceiling,
     tier,
-    // The "/ N" is Basic Load plus Overload, so the in-range badge reads "Total Load".
     label: tier === "basic" ? "Total Load" : LOAD_TIER_LABELS[tier],
     badgeClass: LOAD_TIER_BADGE_CLASSES[tier],
     percentage: Math.min(100, (units / ceiling) * 100),
@@ -148,11 +125,6 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
   };
 };
 
-/**
- * In any band above Basic Load — which is exactly the set the server asks about
- * when the batch is saved, so the counts shown here and the prompt agree. An
- * instructor with no recorded load is not past anything.
- */
 const isPastBasicLoad = (faculty: Faculty | undefined, units: number): boolean => {
   const { tier } = loadDisplay(faculty, units);
 
@@ -162,11 +134,6 @@ const isPastBasicLoad = (faculty: Faculty | undefined, units: number): boolean =
 const MODE_ORDER: Record<string, number> = { "on-site": 0, field: 1, online: 2 };
 const MODE_LABELS: Record<string, string> = { "on-site": "On-site", field: "Field", online: "Online" };
 
-/**
- * 'Mon/Wed 7 PM-8:30 PM | Tue 9 AM-11 AM'. `schedules.day` is one row per
- * meeting, so meetings at the same time and mode fold into one entry, and
- * in-person entries come before online ones.
- */
 const scheduleEntries = (group: SectionGroup): { label: string; scheduleIds: string[] }[] => {
   const entries = new Map<string, ScheduleItem[]>();
   group.schedules
@@ -188,15 +155,12 @@ const scheduleLabel = (group: SectionGroup): string => scheduleEntries(group).ma
 
 const meetingLabel = (schedule: ScheduleItem): string => `${schedule.day} ${schedule.startTime}-${schedule.endTime}`;
 
-/** An instructor clash and the meetings of the class it lands on. */
 interface ConflictDetail {
   message: string;
   scheduleIds: Set<string>;
-  /** The other class's meetings it collides with (none for the instructor's saved load). */
   counterpartIds: string[];
 }
 
-/** 'On-site | Online': every delivery mode the class uses, in-person first. */
 const modesLabel = (group: SectionGroup): string => [...new Set(group.schedules.map((schedule) => schedule.mode ?? "on-site"))]
   .sort((left, right) => (MODE_ORDER[left] ?? 3) - (MODE_ORDER[right] ?? 3))
   .map((mode) => MODE_LABELS[mode] ?? mode)
@@ -226,8 +190,6 @@ export default function AutoAssignModal({
   allowExternalInstructors = true,
 }: AutoAssignModalProps) {
   const { confirm } = useToast();
-  // The server scopes Program Heads too, but keep the modal fail-closed so a
-  // stale scheduler cache cannot expose another program's instructors.
   const faculties = useMemo(
     () => providedFaculties.filter((faculty) => (
       programId === null || Number(faculty.programId ?? 0) === Number(programId)
@@ -269,8 +231,6 @@ export default function AutoAssignModal({
     return [...map.values()]
       .map((group) => ({
         ...group,
-        // A split class can have one meeting block saved before another. Keep it
-        // assignable until every block has an instructor.
         assignedFacultyId: group.schedules.every((schedule) => Boolean(schedule.facultyId))
           ? group.schedules[0]?.facultyId ?? null
           : null,
@@ -283,8 +243,6 @@ export default function AutoAssignModal({
     return subjects.filter((subject) => ids.has(subject.id)).sort((left, right) => left.code.localeCompare(right.code));
   }, [groups, subjects, yearLevel]);
 
-  // The program(s) each course is offered to, for the Course picker: a major's
-  // own program, or for a GEC/minor the programs of the sections taking it.
   const courseProgramLabels = useMemo(() => {
     const programs = new Map<string, Set<string>>();
     groups
@@ -302,11 +260,6 @@ export default function AutoAssignModal({
 
   const facultyLoads = useMemo(() => {
     const loads = new Map<string, number>();
-    // Seeded from the server's own figure instead of by summing the visible
-    // groups: `assignedUnits` covers the whole semester, so a filtered view no
-    // longer under-reports a load, and the already-assigned groups are inside it
-    // already — adding them here counted them twice. Only queued rows, which
-    // nothing has written yet, are added on top.
     faculties.forEach((faculty) => {
       loads.set(faculty.id, faculty.assignedUnits ?? 0);
     });
@@ -316,13 +269,6 @@ export default function AutoAssignModal({
     return loads;
   }, [assignments, faculties]);
 
-  /**
-   * The list with each row's conflict worked out again from what is on it now.
-   * The flag stored at queue time only lands on the later of two clashing
-   * sections and goes stale when the other is removed; this marks both sides
-   * and clears once the clash is gone. Save uses it too, so the override flag
-   * matches what Review showed.
-   */
   const checkedAssignments = useMemo(() => {
     const scheduleById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
     const schedulesOf = (assignment: QueuedAssignment) => assignment.scheduleIds
@@ -345,8 +291,6 @@ export default function AutoAssignModal({
     });
   }, [assignments, checkFacultyConflict, schedules]);
 
-  // Reset once per opening (and department), not on every data refresh: removing an
-  // instructor reloads `groups`, which used to snap the picker back to the first course.
   const initializedForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isOpen) {
@@ -355,7 +299,6 @@ export default function AutoAssignModal({
     }
     const initKey = String(departmentId);
     if (initializedForRef.current === initKey) return;
-    // Wait for data so the first course can be chosen; don't lock in an empty state.
     if (groups.length > 0) initializedForRef.current = initKey;
     setStep(1);
     setAssignments([]);
@@ -390,8 +333,6 @@ export default function AutoAssignModal({
     const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
     if (!pendingSchedules.every(canManageScheduleFaculty)) return "Assigned teaching department only";
 
-    // A major is taught by its own department and, when the course names one, its
-    // own program — the save refuses anything else.
     if (selectedFaculty) {
       const subject = subjects.find((item) => item.id === group.courseId);
       const eligibility = facultyEligibilityForSubject(
@@ -401,20 +342,9 @@ export default function AutoAssignModal({
       );
       if (!eligibility.eligible) return eligibility.reason;
     }
-    // The instructor's own clashes are not listed here: they can be assigned
-    // over on purpose, so getConflict() labels them instead of blocking.
-    // Load is deliberately absent from this list. Assignment continues past Basic
-    // Load into the overload allowance and then pro bono -- with no ceiling -- so
-    // a heavy load is labelled beside the instructor and confirmed on save.
     return null;
   };
 
-  /**
-   * The instructor's own clash with this class -- already teaching at that time,
-   * outside a part-timer's availability, or overlapping another class queued or
-   * ticked for them. Unlike getIssue() it does not block: the class can still be
-   * picked, and is saved as a conflict override.
-   */
   const getConflictDetail = (group: SectionGroup, selectionKeys = selectedKeys): ConflictDetail | null => {
     if (group.assignedFacultyId || queuedKeys.has(group.key) || !facultyId) return null;
     const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
@@ -424,8 +354,6 @@ export default function AutoAssignModal({
     if (instructorClashes.length > 0) {
       return { message: instructorClashes[0].message, scheduleIds: new Set(instructorClashes.map((clash) => clash.schedule.id)), counterpartIds: [] };
     }
-    // Clashes with other classes on the list, then with other ticked sections:
-    // name the meeting so the row shows exactly which day and time collide.
     const others: { label: string; schedules: ScheduleItem[] }[] = [
       ...assignments
         .filter((assignment) => assignment.facultyId === facultyId)
@@ -458,8 +386,6 @@ export default function AutoAssignModal({
   const getConflictMeetings = (group: SectionGroup): Set<string> =>
     getConflictDetail(group)?.scheduleIds ?? new Set();
 
-  // The other side of each visible clash: meeting id -> the sections it blocks,
-  // so the ticked section that causes a conflict is marked too.
   const clashPartners = new Map<string, string[]>();
   courseGroups.forEach((group) => {
     if (getIssue(group)) return;
@@ -470,8 +396,6 @@ export default function AutoAssignModal({
 
   const selectedGroups = courseGroups.filter((group) => selectedKeys.includes(group.key));
   const selectedUnits = selectedGroups.reduce((total, group) => total + group.units, 0);
-  // Where ticking these sections would leave the instructor, so the band is
-  // visible before anything is queued — let alone saved.
   const projectedLoad = loadDisplay(selectedFaculty, currentLoad + selectedUnits);
   const isSaving = facultyActionSlotId === "bulk";
 
@@ -493,11 +417,6 @@ export default function AutoAssignModal({
     setSelectedKeys([]);
   };
 
-  /**
-   * Assigning over the instructor's own conflict is never a silent tick: the
-   * Assign button, or a click on the row, asks first, and only a confirmed
-   * section is selected -- and later saved as a conflict override.
-   */
   const confirmConflictOverride = async (group: SectionGroup) => {
     const conflict = getConflict(group);
     if (!conflict || !selectedFaculty || getIssue(group)) return;
@@ -529,7 +448,6 @@ export default function AutoAssignModal({
   const selectableCourseGroupKeys = (() => {
     const keys: string[] = [];
 
-    // "Select all" never ticks a conflict; overriding one is a deliberate click.
     courseGroups.forEach((group) => {
       if (getIssue(group) === null && getConflict(group, keys) === null) {
         keys.push(group.key);
@@ -576,7 +494,6 @@ export default function AutoAssignModal({
     setSelectedKeys([]);
   };
 
-  /** Why an assigned class cannot be cleared here, or null when it can. */
   const removalBlockedReason = (group: SectionGroup): string | null => {
     const assigned = group.schedules.filter((schedule) => schedule.facultyId);
     if (assigned.some((schedule) => schedule.status === "finalized")) return "A finalized schedule cannot be changed.";
@@ -603,8 +520,6 @@ export default function AutoAssignModal({
   const removeAssignment = (key: string) => setAssignments((current) => current.filter((assignment) => assignment.key !== key));
 
   const saveAssignments = async () => {
-    // Overrides travel in their own batch per instructor, so only the classes
-    // marked as conflicts are allowed through one.
     const byFaculty = new Map<string, AssignmentBatch>();
     checkedAssignments.forEach((assignment) => {
       const overrideConflicts = Boolean(assignment.conflict);
@@ -718,7 +633,6 @@ const EMPLOYMENT_FILTERS: [EmploymentFilter, string][] = [
   ["part-time", "Part-time"],
 ];
 
-/** Full-time first, then part-time, then instructors with no type on record. */
 const employmentRank = (faculty: Faculty): number =>
   faculty.employmentType === "full-time" ? 0 : faculty.employmentType === "part-time" ? 1 : 2;
 
@@ -727,9 +641,6 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [employment, setEmployment] = useState<EmploymentFilter>("all");
-  // Department ids arrive from the API as numbers in the type contract, but
-  // database-backed JSON responses may contain numeric strings. Normalize both
-  // sides so department instructors are not hidden by a strict type mismatch.
   const normalizedDepartmentId = departmentId === null ? null : Number(departmentId);
   const visibleFaculties = useMemo(
     () => faculties.filter((faculty) => {
@@ -741,7 +652,6 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
     }),
     [faculties, normalizedDepartmentId, tab],
   );
-  // Departments present in the "Other departments" tab, for the filter dropdown.
   const externalDepartments = useMemo(() => {
     const counts = new Map<string, { label: string; count: number }>();
     if (tab !== "external") return [];
@@ -755,8 +665,6 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [tab, visibleFaculties]);
   const activeDepartment = tab === "external" && externalDepartments.some((d) => d.value === departmentFilter) ? departmentFilter : "";
-  // Narrows the current tab by department, then by name, department or program,
-  // so a long roster does not have to be scrolled to find one instructor.
   const query = search.trim().toLowerCase();
   const searchedFaculties = useMemo(
     () => visibleFaculties.filter((faculty) => {
@@ -771,8 +679,6 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
     "full-time": searchedFaculties.filter((faculty) => faculty.employmentType === "full-time").length,
     "part-time": searchedFaculties.filter((faculty) => faculty.employmentType === "part-time").length,
   }), [searchedFaculties]);
-  // "All" keeps full-timers together ahead of part-timers (sort is stable, so
-  // name order holds within each group); the other chips show one type only.
   const matchingFaculties = useMemo(
     () => employment === "all"
       ? [...searchedFaculties].sort((a, b) => employmentRank(a) - employmentRank(b))
@@ -969,7 +875,6 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
       size: 48,
       enableSorting: false,
       cell: ({ row }) => {
-        // Taken already, or queued for an instructor: checked in grey, not pickable.
         const alreadyAssigned = !!row.original.assignedFacultyId || !!getIssue(row.original)?.startsWith("Queued");
         const selected = alreadyAssigned || selectedKeys.includes(row.original.key);
         return (
@@ -995,8 +900,6 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
       header: "Schedule",
       enableSorting: false,
       cell: ({ row }) => {
-        // The meetings the instructor clash lands on are marked red, so the row
-        // shows which day and time collide, not just that something does.
         const clashing = getIssue(row.original) ? new Set<string>() : getConflictMeetings(row.original);
         return (
           <span className="whitespace-nowrap text-xs font-medium text-slate-600">
@@ -1268,7 +1171,6 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
   );
 }
 
-/** How many of an instructor's queued sections clash; nothing when none do. */
 function ConflictCountBadge({ items, large = false }: { items: QueuedAssignment[]; large?: boolean }) {
   const count = items.filter((item) => item.conflict).length;
   if (count === 0) return null;
@@ -1279,7 +1181,6 @@ function ConflictCountBadge({ items, large = false }: { items: QueuedAssignment[
   );
 }
 
-/** One instructor's queued sections; shared by the Review and Confirm steps. */
 function AssignmentItemsTable({ items, onRemove, showTotal = false, className, scrollClassName }: { items: QueuedAssignment[]; onRemove?: (key: string) => void; showTotal?: boolean; className?: string; scrollClassName?: string }) {
   const columns = useMemo<ColumnDef<QueuedAssignment>[]>(() => [
     {
@@ -1336,7 +1237,6 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
     } satisfies ColumnDef<QueuedAssignment>] : []),
   ], [items, onRemove, showTotal]);
 
-  // The footer label spans the columns before Units, so it is set on the first column only.
   const withFooterLabel = showTotal
     ? columns.map((column, index) => (index === 0 ? { ...column, footer: () => <span className="text-slate-500">Units added</span> } : column))
     : columns;

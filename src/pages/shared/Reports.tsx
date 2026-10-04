@@ -48,7 +48,6 @@ interface PrintJob {
   data: SchedulerCacheData;
 }
 
-/** One printable row: a whole department, or one program inside it. */
 interface ReportRow {
   key: string;
   departmentId: number;
@@ -91,12 +90,6 @@ const TABS: { kind: ReportKind; label: string; description: string; icon: typeof
   },
 ];
 
-/**
- * One report per department, covering every program in it: a report is the
- * department's record, and an instructor or section belongs in it whichever
- * program they sit under. Only a Program Head, who may print nothing beyond
- * their own program, gets that program's row instead.
- */
 const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] => {
   const countOf = (item: { complete_section_count: number; instructor_count: number }) => {
     if (kind === 'schedule' || kind === 'approval') return item.complete_section_count;
@@ -147,7 +140,6 @@ interface ReportDetailModalProps {
 function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: ReportDetailModalProps) {
   const [query, setQuery] = useState('');
 
-  // Extract rooms (either from data.rooms or gathered from schedules)
   const roomList = useMemo(() => {
     if (data.rooms && data.rooms.length > 0) return data.rooms;
     const map = new Map<string, { id: number; roomCode: string; building?: string | null; roomType?: string }>();
@@ -165,7 +157,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
     return Array.from(map.values());
   }, [data.rooms, data.schedules]);
 
-  // Extract unique courses (either from data.subjects or gathered from schedules)
   const courseList = useMemo(() => {
     if (data.subjects && data.subjects.length > 0) return data.subjects;
     const map = new Map<string, { id: number; subjectCode: string; subjectName: string; units?: number; lectureHours?: number; labHours?: number }>();
@@ -185,7 +176,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
     return Array.from(map.values());
   }, [data.subjects, data.schedules]);
 
-  // Filtered lists based on in-modal query
   const q = query.trim().toLowerCase();
 
   const filteredSchedules = useMemo(() => {
@@ -225,7 +215,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
     >
       <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-        {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10] text-white shadow-sm">
@@ -268,7 +257,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           </div>
         </div>
 
-        {/* KPI Summary Chips */}
         <div className="grid grid-cols-2 gap-3 border-b border-slate-100 bg-white px-5 py-3 sm:grid-cols-4">
           {kind === 'schedule' && (
             <>
@@ -462,7 +450,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
         </div>
 
-        {/* Live Filter / Search within Detail */}
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/50 px-5 py-2.5">
           <div className="relative max-w-sm flex-1">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -483,7 +470,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           </span>
         </div>
 
-        {/* Scrollable Detailed Data Table */}
         <div className="flex-1 overflow-auto max-h-[52vh]">
           {kind === 'schedule' && (
             <table className="w-full text-left border-collapse text-xs">
@@ -789,7 +775,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
         </div>
 
-        {/* Modal Footer */}
         <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/80 px-5 py-3">
           <p className="text-[11px] font-medium text-slate-500">
             Source: Official VPAA validated academic repository &bull; Generated from live schedule data
@@ -807,13 +792,8 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
   );
 }
 
-/**
- * The college's official printouts and detailed report breakdowns,
- * connected directly to the dashboard cards.
- */
 export default function Reports() {
   const { toast } = useToast();
-  // Dashboard group: the same writes that move dashboard figures change readiness here.
   const cacheKey = `dashboard:reports:${getStoredUser()?.id ?? 'current'}`;
   const [overview, setOverview] = useState<ReportsOverview | null>(() => getCachedData<ReportsOverview>(cacheKey) ?? null);
   const [isLoading, setIsLoading] = useState(() => !hasCachedData(cacheKey));
@@ -1003,7 +983,6 @@ export default function Reports() {
 
   return (
     <div className="space-y-5">
-      {/* Workspace Sub-header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-600">
           <CalendarDays size={16} className="shrink-0 text-[#4e0a10]" />
@@ -1020,7 +999,6 @@ export default function Reports() {
         </button>
       </div>
 
-      {/* Executive Academic Intelligence KPI Strip connected to Dashboard Cards */}
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <DashboardMetricCard
           label="Approved Sections"
@@ -1045,7 +1023,6 @@ export default function Reports() {
         />
       </div>
 
-      {/* Report Kind Selector Tabs */}
       <div role="tablist" aria-label="Report type" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
         {TABS.map(({ kind: tabKind, label, description, icon: Icon }) => (
           <button
@@ -1109,7 +1086,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Main Report Directory Section */}
       <section
         id="report-directory"
         role="tabpanel"
@@ -1132,7 +1108,6 @@ export default function Reports() {
           )}
         </div>
 
-        {/* Filter Controls Bar */}
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5">
           <div className="relative min-w-0 flex-1 basis-56 sm:max-w-md">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1288,7 +1263,6 @@ export default function Reports() {
                         </div>
 
                         <div className="ml-auto flex items-center gap-2 shrink-0">
-                          {/* View Details Button */}
                           <button
                             type="button"
                             onClick={() => void openDetail(row)}
@@ -1301,7 +1275,6 @@ export default function Reports() {
                             <span>View Details</span>
                           </button>
 
-                          {/* Export CSV Button */}
                           <button
                             type="button"
                             onClick={() => void exportCsv(row)}
@@ -1314,7 +1287,6 @@ export default function Reports() {
                             <span className="hidden sm:inline">CSV</span>
                           </button>
 
-                          {/* Print PDF Button for schedule and load kinds */}
                           {(kind === 'schedule' || kind === 'load') && (
                             <button
                               type="button"
@@ -1347,7 +1319,6 @@ export default function Reports() {
         </div>
       </section>
 
-      {/* Detailed Modal Breakdown */}
       {detailData && (
         <ReportDetailModal
           row={detailData.row}
@@ -1359,7 +1330,6 @@ export default function Reports() {
         />
       )}
 
-      {/* Print PDF Component: Schedule */}
       {job?.kind === 'schedule' && (
         <PrintSchedule
           sections={job.data.sections}
@@ -1373,7 +1343,6 @@ export default function Reports() {
         />
       )}
 
-      {/* Print PDF Component: Teaching Load */}
       {job?.kind === 'load' && (
         <TeachingLoad
           faculties={job.data.faculties}

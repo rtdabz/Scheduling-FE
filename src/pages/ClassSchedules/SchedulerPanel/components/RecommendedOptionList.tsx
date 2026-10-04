@@ -3,36 +3,21 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 
 export interface RecommendedOptionItem {
   key: string;
-  /** What the option does: the placement rows, or a one-line summary. */
   body: ReactNode;
-  /** A short badge beside the heading, e.g. "Best match" or "Over Basic Load". */
   tag?: ReactNode;
-  /** Already applied to the form; shown as selected rather than offered again. */
   isApplied?: boolean;
-  /** Why this option cannot be used here; shown on its disabled button. */
   disabledLabel?: string | null;
 }
 
 interface RecommendedOptionListProps {
-  /** Accessible name for the list. */
   label: string;
   items: RecommendedOptionItem[];
   onApply: (key: string) => void;
   applyLabel?: string;
-  /** Any apply in flight: every button waits. */
   isBusy?: boolean;
-  /** The option being applied, which shows the spinner. */
   busyKey?: string | null;
 }
 
-/**
- * The ranked, conflict-free options offered for a placement.
- *
- * One component for both places a user is handed a fix: the Schedule
- * Builder's placement dialog, before a class is saved, and the conflict inbox,
- * after it is. Each option is already checked by the server, so the list only
- * presents them best first and applies the one chosen.
- */
 export default function RecommendedOptionList({
   label,
   items,

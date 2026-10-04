@@ -9,7 +9,6 @@ export interface CourseOption {
   units: number;
   lecture_hours: number;
   lab_hours: number;
-  /** Owning department: every course belongs to exactly one. */
   department_id?: number | null;
 }
 
@@ -82,7 +81,6 @@ export default function AddCourseForm({
   return (
     <div className="bg-[#4e0a10]/[0.02] border-t border-[#C9952A]/20 p-4 font-sans">
       <form onSubmit={handleSubmit} className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
-        {/* Optional Year Level & Semester Selectors */}
         {showYearSemesterSelectors && (
           <div className="flex items-center gap-2 flex-wrap">
             <select
@@ -108,7 +106,6 @@ export default function AddCourseForm({
           </div>
         )}
 
-        {/* Combobox Dropdown */}
         <div className="relative flex-1" ref={dropdownRef}>
           <div
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -181,7 +178,6 @@ export default function AddCourseForm({
           )}
         </div>
 
-        {/* Selected Course Units Preview */}
         {selectedCourse && (
           <div className="flex items-center gap-3 text-xs text-gray-600 px-2 py-1 bg-gray-100 rounded-lg shrink-0">
             <span>Lec: <strong>{selectedCourse.lecture_hours}</strong></span>
@@ -190,7 +186,6 @@ export default function AddCourseForm({
           </div>
         )}
 
-        {/* Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="submit"

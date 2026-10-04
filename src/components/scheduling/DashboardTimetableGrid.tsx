@@ -32,17 +32,6 @@ const dayIndex = (value: string) => {
   return FULL_DAY_NAMES.findIndex(day => day.slice(0, 3).toLowerCase() === short);
 };
 
-/**
- * Major/minor classification driving the maroon vs gold card treatment.
- *
- * The column is courses.course_category (subjects: subject_category) — the same
- * fields InstructorTimetableModal and GenerateScheduleModal read. Reading a bare
- * `category` matched nothing, so every card silently fell back to 'major' and
- * the gold Minor styling and its legend swatch were unreachable.
- *
- * Note this is a different axis from the course_categories table (GEC,
- * Laboratory, Field, Research, Other), which must not be used here.
- */
 const scheduleCategory = (schedule: DashboardSchedule) => (
   schedule.category
   ?? schedule.course?.course_category ?? schedule.course?.category
@@ -50,15 +39,6 @@ const scheduleCategory = (schedule: DashboardSchedule) => (
   ?? 'major'
 ).toLowerCase();
 
-/**
- * Delivery mode of a class: the `mode` column wins, the room's type is the
- * fallback for rows written before that column existed.
- *
- * Only `field` needs a card badge. On-site and online are already stated by the
- * header toggle, which is what the cards are filtered by — repeating it on
- * every card said nothing. Field is the exception: it is not online, so it
- * shows up under the on-site toggle, yet it occupies no room.
- */
 const isOnline = (schedule: DashboardSchedule) =>
   schedule.mode?.toLowerCase().includes('online') === true
   || (schedule.room?.room_type ?? '').toLowerCase().includes('online');
@@ -110,14 +90,6 @@ export default function DashboardTimetableGrid({
   const todayIndex = (new Date().getDay() + 6) % 7;
   const todayName = FULL_DAY_NAMES[todayIndex];
   const visibleSchedules = schedules.filter(schedule =>
-    // Dashboard timetables are published views. Draft, submitted, and
-    // dean-approved rows remain available in their workflow screens, but must
-    // not be plotted here until the VPAA approval transition is complete.
-    //
-    // That transition does not leave the row at 'approved' — VPAA approval
-    // writes 'faculty_assignment', and the row moves on to 'reassignment' and
-    // 'finalized' afterwards. Matching only 'approved' emptied every portal's
-    // grid, so ask the shared predicate instead.
     isVpaaApproved(schedule.status)
     && dayIndex(schedule.day) === todayIndex
     && (deliveryMode === 'online' ? isOnline(schedule) : !isOnline(schedule))

@@ -12,9 +12,7 @@ interface ScheduleCardProps {
   schedule: ScheduleItem;
   subject: Subject;
   conflict?: { conflictType: "room" | "faculty" | "section"; message: string } | null;
-  /** Validation flagged this class earlier and no longer does. */
   isResolved?: boolean;
-  /** Its instructor clash was allowed to stand, on the record, and still is. */
   isAllowed?: boolean;
   isEditable: boolean;
   isPhase2Active: boolean;
@@ -28,24 +26,12 @@ interface ScheduleCardProps {
   onDragEnd: () => void;
   onDelete: (id: string) => void;
   onCardClick: (id: string) => void;
-  /** Opens the edit dialog for the selected card. */
   onEdit?: () => void;
   slotHeight?: number;
   isWideView?: boolean;
   isReadOnlyViewer?: boolean;
 }
 
-/**
- * A placed class in the timetable grid.
- *
- * This used to hold two parallel ~200-line JSX trees selected by `isWideView`,
- * with the hover tooltip duplicated verbatim between them. The tooltip now comes
- * from the shared TimetableCardTooltip, and the layout differences are the
- * handful of conditionals below.
- *
- * The wide layout never uses the compact or medium density tiers, so those are
- * gated on `!isWideView` to keep rendering identical to the split version.
- */
 const ScheduleCard = memo(function ScheduleCard({
   rooms,
   schedule,
@@ -85,9 +71,6 @@ const ScheduleCard = memo(function ScheduleCard({
     : inferredMeetingType === "lecture"
     ? "LEC"
     : "";
-  // The badge is the meeting's own delivery. A hybrid course is not "online"
-  // as a whole: a Hybrid Split has one face-to-face lecture and one online
-  // lecture, so labelling every hybrid lecture Online showed both as Online.
   const displayModeLabel = meetingTypeLabel && schedule.mode === "on-site"
     ? `${modeLabel} ${meetingTypeLabel}`
     : modeLabel;
@@ -109,9 +92,8 @@ const ScheduleCard = memo(function ScheduleCard({
     rawRoomName.toLowerCase() === "unassigned room";
   const roomDisplayName = isRedundantRoomName ? "" : rawRoomName;
 
-  // Density tiers apply to the narrow layout only.
-  const isCompact = !isWideView && schedule.durationSlots <= 2; // 1 hour (38px)
-  const isMedium = !isWideView && schedule.durationSlots === 3; // 1.5 hours (57px)
+  const isCompact = !isWideView && schedule.durationSlots <= 2;
+  const isMedium = !isWideView && schedule.durationSlots === 3;
 
   const isShortWide = isWideView && schedule.durationSlots <= 3;
 
@@ -123,13 +105,9 @@ const ScheduleCard = memo(function ScheduleCard({
     ? `p-1.5 px-2 ${isAwaitingFaculty ? "pb-7" : ""}`
     : `p-2 px-2.5 ${isAwaitingFaculty ? "pb-7" : ""}`;
 
-  // A selected (armed-to-move) card pins its tooltip open with Edit / Remove.
   const showActions = isMoving && isEditable && !isPhase2Active;
   const isConfirmingDelete = showActions && deleteConfirmScheduleId === schedule.id;
 
-  // The tooltip is ~8 slots tall. Above needs that much room over the card or it
-  // slides under the sticky day header; a card too tall to leave room below
-  // (e.g. a 7 AM – 3 PM field class) gets the tooltip overlaid on its own top.
   const endSlot = schedule.startSlot + schedule.durationSlots;
   const tooltipAlign: "above" | "below" | "inside" =
     endSlot > 12 && schedule.startSlot >= 8
@@ -138,8 +116,6 @@ const ScheduleCard = memo(function ScheduleCard({
       ? "inside"
       : "below";
 
-  // One flag at most, strongest first: a live conflict (the red card) hides
-  // both, and an allowed clash is not the same as a fixed one.
   const showAllowed = isAllowed && !conflict;
   const showResolved = isResolved && !conflict && !showAllowed;
   const resolvedFlag = showAllowed ? (
@@ -219,7 +195,6 @@ const ScheduleCard = memo(function ScheduleCard({
           isConfirmingDelete ? (
             <div className="space-y-2 border-t border-slate-800 pt-2">
               <p className="text-[11px] font-semibold text-slate-200">
-                {/* A split class is removed as a whole group (see handleRemoveSchedule). */}
                 {schedule.splitGroupId || schedule.preferredPattern
                   ? `Remove ${subject.code} and all its linked split meetings from the timetable?`
                   : `Remove ${subject.code} from the timetable?`}
@@ -343,7 +318,6 @@ const ScheduleCard = memo(function ScheduleCard({
           </div>
 
           {isShortWide ? (
-            // 1.5h cards are too short to stack instructor and time: share a row.
             <div className="mt-auto flex min-w-0 items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium leading-none text-slate-500">
               {hasFaculty && schedule.facultyName ? (
                 <span className="min-w-0 flex-1 truncate font-bold text-emerald-800" title={schedule.facultyName}>

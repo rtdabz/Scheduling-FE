@@ -7,18 +7,12 @@ import {
   type DepartmentOverview,
 } from '../../hooks/useScheduleOverview';
 
-/** What a chip asks the drill-down to pre-filter on when it is clicked. */
 export type OverviewFocus = 'conflicts' | 'missing-faculty' | 'missing-room';
 
 interface Props {
   departments: DepartmentOverview[];
   departmentLogos?: Record<string, string | null | undefined>;
   isLoading: boolean;
-  /**
-   * `focus` carries the reason the user clicked, so opening a department from
-   * its "3 conflicts" chip lands on the conflicting sections rather than on an
-   * unfiltered list they have to narrow down again.
-   */
   onOpen: (departmentId: number, focus?: OverviewFocus) => void;
 }
 
@@ -76,9 +70,6 @@ function Chip({
 }) {
   const shared = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors';
 
-  // A zero chip has nothing to drill into. It stays visible so the three
-  // figures can be compared at a glance, but as plain text: a disabled button
-  // would swallow the click instead of letting it open the card behind it.
   if (count === 0) {
     return (
       <span className={`${shared} text-slate-400 bg-slate-50 border-slate-200`}>

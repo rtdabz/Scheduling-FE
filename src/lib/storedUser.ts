@@ -1,15 +1,3 @@
-/**
- * Single accessor for the signed-in user persisted by the login flow.
- *
- * The session blob lives in localStorage (remember me) or sessionStorage, and
- * every consumer used to re-read and re-parse it by hand. Most wrapped the
- * parse in a try/catch; useScheduler did not, so a truncated or malformed entry
- * threw during render and blanked the whole Schedule Builder with no in-app
- * recovery path.
- *
- * Parsing is always guarded here: a corrupt entry reads as "signed out" for the
- * purpose of UI gating, which the API still enforces server-side.
- */
 export interface StoredUser {
   id?: number;
   name?: string;
@@ -40,12 +28,10 @@ const readRawStoredUser = (): string | null => {
   try {
     return localStorage.getItem("user") || sessionStorage.getItem("user");
   } catch {
-    // Storage can throw in privacy modes or when disabled entirely.
     return null;
   }
 };
 
-/** Returns the stored user, or null when absent or unparseable. */
 export const getStoredUser = (): StoredUser | null => {
   const raw = readRawStoredUser();
   if (!raw) return null;
@@ -62,20 +48,8 @@ export const getStoredUser = (): StoredUser | null => {
   }
 };
 
-/** Lowercased role of the stored user, or "" when unknown. */
 export const getStoredUserRole = (): string => getStoredUser()?.role?.toLowerCase() ?? "";
 
-/**
- * Whether a department with no program of its own can exercise the capability.
- *
- * The server declares this per capability (config/capabilities.php) and ships
- * it on `capability_catalog`, so the two sides cannot drift. The client used to
- * withhold every `schedule.*` capability whenever `scheduling_ready` was false,
- * which locked modules the API would happily have served -- read-only ones, and
- * instructor assignment -- however much the VPAA had granted. The name-prefix
- * fallback only covers a session blob stored before the catalog carried the
- * flag.
- */
 export const requiresDepartmentProgram = (
   capability: string,
   catalog?: StoredUser['capability_catalog'],
@@ -85,7 +59,6 @@ export const requiresDepartmentProgram = (
   return capability.startsWith('schedule.') && capability !== 'schedule.view';
 };
 
-/** Returns true when the signed-in user has at least one requested capability. */
 export const hasStoredCapability = (capability: string | string[]): boolean => {
   const user = getStoredUser();
   const permissions = user?.permissions ?? [];
@@ -100,12 +73,6 @@ export const NO_PROGRAM_LOCK_MESSAGE =
   'Your department has no program yet, so this module is unavailable. Ask the VPAA to add a program to your department.';
 export const NOT_GRANTED_LOCK_MESSAGE = 'Your role does not include access to this module.';
 
-/**
- * Why a capability-gated module is locked. Access is decided by role alone, so
- * an account that holds the capability is only ever locked because its
- * department has no program yet -- the same distinction CapabilityMiddleware
- * draws server-side.
- */
 export const lockedModuleMessage = (capability?: string | string[]): string => {
   if (!capability) return NOT_GRANTED_LOCK_MESSAGE;
   const permissions = getStoredUser()?.permissions ?? [];
@@ -115,7 +82,6 @@ export const lockedModuleMessage = (capability?: string | string[]): string => {
     : NOT_GRANTED_LOCK_MESSAGE;
 };
 
-/** Numeric department id of the stored user, or null when unknown. */
 export const getStoredUserDepartmentId = (): number | null => {
   const departmentId = getStoredUser()?.department_id;
   if (departmentId == null) return null;

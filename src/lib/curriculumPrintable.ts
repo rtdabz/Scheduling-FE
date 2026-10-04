@@ -137,7 +137,6 @@ const trimImageWhitespace = (image: HTMLImageElement): HTMLImageElement | HTMLCa
 
     return trimmedCanvas;
   } catch {
-    // Cross-origin images without canvas permission still print untrimmed.
     return image;
   }
 };
@@ -382,7 +381,6 @@ const loadCurriculumPdf = async (options: PrintCurriculumOptions, autoPrint: boo
   return createCurriculumPdfDocument(PdfDocument, options, tccImage, municipalImage, departmentImage, autoPrint);
 };
 
-/** The printable as a blob, for embedding the exact print in a preview. */
 export const buildCurriculumPdf = async (options: PrintCurriculumOptions): Promise<Blob> =>
   (await loadCurriculumPdf(options, false)).output('blob');
 

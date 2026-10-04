@@ -101,14 +101,11 @@ interface RoomsPageData {
   departments: Department[];
   schedules?: Schedule[];
   activeSemester?: unknown;
-  /** True when the server's meeting cap cut the list short. */
   schedulesTruncated?: boolean;
 }
 
-/** The group for rooms with no building; it is not a building to rename or archive. */
 const UNASSIGNED_BUILDING = 'Other/Unassigned';
 
-/** The largest meeting list /initial-data serves in one response. */
 const SCHEDULE_LIMIT = 2000;
 
 const mapApiRoom = (r: ApiRoom): Room => ({
@@ -123,13 +120,6 @@ const mapApiRoom = (r: ApiRoom): Room => ({
   createdAt: r.created_at
 });
 
-/**
- * The room list for every portal. The VPAA owns the room inventory, so only
- * the VPAA sees add, edit and archive; the other roles browse their
- * department's rooms, check today's use and print a room timetable. This used
- * to be four near-identical copies, one per role, and fixes kept landing in
- * only one of them.
- */
 export default function Rooms() {
   const { toast } = useToast();
   const user = getStoredUser();
@@ -149,13 +139,8 @@ export default function Rooms() {
   const isVpaa = role === 'vpaa';
   const userDepartmentId = user?.department_id;
   const canManageRooms = isVpaa;
-  // The guided tour has only ever been offered to the secretary; keep it that
-  // way rather than auto-starting it for roles that never asked for it.
   const showGuide = role === 'secretary';
 
-  // A program head sees only the rooms the secretary gave their program: its
-  // own, the shared ones nobody owns, and field/online rooms. Rooms homed to
-  // another program stay hidden. null = not loaded (or not a program head).
   const isProgramHead = role === 'program_head';
   const userProgramId = user?.program_id ?? null;
   const [hiddenRoomIds, setHiddenRoomIds] = useState<Set<number> | null>(null);
@@ -190,7 +175,6 @@ export default function Rooms() {
       && !(isProgramHead && hiddenRoomIds?.has(Number(r.id))));
   }, [rooms, isVpaa, userDepartmentId, isProgramHead, hiddenRoomIds]);
 
-  // Card view and schedule details states
   const [globalFilter, setGlobalFilter] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
@@ -200,14 +184,12 @@ export default function Rooms() {
     location.state?.selectedBuilding ?? null
   );
 
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
 
-  // Form state
   const [roomCode, setRoomCode] = useState('');
   const [building, setBuilding] = useState('');
   const [roomType, setRoomType] = useState<'lecture' | 'laboratory' | 'online' | 'field'>('lecture');
@@ -216,11 +198,9 @@ export default function Rooms() {
   const [departmentId, setDepartmentId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Error states
   const [codeError, setCodeError] = useState('');
   const [buildingError, setBuildingError] = useState('');
 
-  // Building rename / archive: both act on every room that names the building.
   const [buildingToEdit, setBuildingToEdit] = useState<string | null>(null);
   const [buildingName, setBuildingName] = useState('');
   const [buildingNameError, setBuildingNameError] = useState('');
@@ -276,7 +256,6 @@ export default function Rooms() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // A second click while the first save is in flight would add it twice.
     if (isSubmitting) return;
 
     let hasError = false;
@@ -304,8 +283,6 @@ export default function Rooms() {
       setBuildingError('Building is required');
       hasError = true;
     } else if (addingBuilding && rooms.some((r) => r.building && sameText(r.building, trimmedBuilding))) {
-      // A building is the rooms that name it, so adding it again would only
-      // add another first room to the same building.
       setBuildingError('This building already exists. Open it to add rooms.');
       hasError = true;
     } else {
@@ -660,9 +637,6 @@ export default function Rooms() {
     };
   }, [isDetailModalOpen, printAfterOpen]);
 
-  // Adding and editing rooms is VPAA-only, so the secretary's tour stops at
-  // browsing. It used to walk on to the Add button, which a secretary never
-  // sees, and the tour aborted there.
   const roomGuideSteps = useMemo(() => [
     { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search by room or building. Use the type filter to narrow the list.', side: 'bottom' as const },
     { element: '[data-tour="building-card"]', waitFor: '#rooms-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a building to see its rooms.', title: 'Check room details', description: 'Select a building to see its rooms, status and today’s classes. Great work — that is the whole flow.', side: 'top' as const },
@@ -671,18 +645,14 @@ export default function Rooms() {
 
   return (
     <div id="rooms-page" className="space-y-6">
-      {/* Search and Filters Bar */}
       <div id="rooms-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
-        {/* Search */}
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search rooms or buildings..."
         />
 
-        {/* Dropdowns & Actions */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Department Filter (Only for VPAA) */}
           {isVpaa && (
             <div className="flex items-center gap-1.5">
               <Filter size={13} className="text-gray-400" />
@@ -699,7 +669,6 @@ export default function Rooms() {
             </div>
           )}
 
-          {/* Room Type Filter */}
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -713,7 +682,6 @@ export default function Rooms() {
             </select>
           </div>
 
-          {/* View Mode Toggle */}
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               onClick={() => setViewMode('grid')}
@@ -735,7 +703,6 @@ export default function Rooms() {
             </button>
           </div>
 
-          {/* Add button inside filter bar */}
           {canManageRooms && (
             <button
               id="rooms-add-button"
@@ -814,7 +781,6 @@ export default function Rooms() {
           </div>
         )
       ) : selectedBuilding === null ? (
-        /* Buildings Selection View */
         <div className="space-y-4">
           {buildings.length === 0 ? (
             <div className="py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white font-sans">
@@ -833,7 +799,6 @@ export default function Rooms() {
                     onClick={() => setSelectedBuilding(building.name)}
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    {/* Centered Background Department Watermark Logo */}
                     {bldgLogo && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                         <img
@@ -897,7 +862,6 @@ export default function Rooms() {
               })}
             </div>
           ) : (
-            /* Buildings List View */
             <BuildingsTable
               buildings={buildings}
               onSelect={(building) => setSelectedBuilding(building.name)}
@@ -908,7 +872,6 @@ export default function Rooms() {
           )}
         </div>
       ) : (
-        /* Drilled-Down Rooms View */
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -962,7 +925,6 @@ export default function Rooms() {
                     }}
                     className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    {/* Centered Background Department Watermark Logo */}
                     {deptLogo && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                         <img
@@ -989,7 +951,6 @@ export default function Rooms() {
                       </div>
                     </div>
 
-                    {/* Today's Schedule Overview */}
                     <div className="bg-gray-50/50 border border-gray-100 rounded-xl p-3.5 flex items-center gap-3 relative z-10">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 font-semibold mb-1">
@@ -1014,7 +975,6 @@ export default function Rooms() {
                       </div>
                     </div>
 
-                    {/* Actions Corner (Only if canManageRooms) */}
                     {canManageRooms && (
                       <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 relative z-10" onClick={e => e.stopPropagation()}>
                         <button
@@ -1038,7 +998,6 @@ export default function Rooms() {
               })}
             </div>
           ) : (
-            /* Rooms List View */
             <RoomsTable
               rooms={roomsInSelectedBuilding}
               getRoomStatusToday={getRoomStatusToday}
@@ -1056,7 +1015,6 @@ export default function Rooms() {
       )}
       </div>
 
-      {/* Create / Edit Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
@@ -1264,7 +1222,6 @@ export default function Rooms() {
         document.body
       )}
 
-      {/* Edit Building Modal */}
       {buildingToEdit !== null && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
           <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
@@ -1347,7 +1304,6 @@ export default function Rooms() {
         onConfirm={confirmDeleteRoom}
       />
 
-      {/* Classroom Detail Modal */}
       <RoomDetailModal
         isOpen={isDetailModalOpen}
         onClose={() => {

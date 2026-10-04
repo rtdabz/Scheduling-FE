@@ -4,21 +4,11 @@ import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import type { ActivityFeedItem } from '../overview';
 import Skeleton from '../ui/Skeleton';
 
-/**
- * Notification bell for the app shell: unread count on the badge, the recent
- * feed in a popover.
- *
- * Mounted once in AppLayout, which every role's routes render inside, so VPAA,
- * Dean, Secretary and Program Head share one implementation. /notifications is
- * scoped to the signed-in user server-side, so the bell needs no role handling
- * of its own.
- */
 export default function NotificationBell() {
   const { feedItems, unreadCount, isLoading, markAsRead, markAllAsRead } = useSystemNotifications();
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
 
-  // The two ways a popover is expected to close: a click outside it, and Escape.
   useEffect(() => {
     if (!open) return;
 
@@ -39,12 +29,9 @@ export default function NotificationBell() {
 
   const readItem = useCallback(async (item: ActivityFeedItem) => {
     if (!item.isUnread) return;
-    // A failed write is not worth interrupting the user for: the 15s poll
-    // reconciles the badge either way.
     try {
       await markAsRead(item.id);
     } catch {
-      /* ignored */
     }
   }, [markAsRead]);
 

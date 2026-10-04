@@ -1,13 +1,8 @@
 type EmploymentType = "full-time" | "part-time" | null | undefined;
 
-/** "Full-Time" / "Part-Time", or null when the record carries no type. */
 export const employmentLabel = (type: EmploymentType): string | null =>
   type === "part-time" ? "Part-Time" : type === "full-time" ? "Full-Time" : null;
 
-/**
- * Instructor option text for a native <select>, which cannot hold a badge:
- * "Name (Part-Time)", plus " - Conflict" when the assignment would clash.
- */
 export const instructorOptionLabel = (name: string, type: EmploymentType, conflict = false): string => {
   const label = employmentLabel(type);
   return `${name}${label ? ` (${label})` : ""}${conflict ? " - Conflict" : ""}`;

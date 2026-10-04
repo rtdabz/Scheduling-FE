@@ -16,12 +16,8 @@ const readTaskData = (step: TooltipRenderProps["step"]): JoyrideTaskData | null 
   };
 };
 
-/** What the status line says while a step is waiting on the user. */
 const waitingText = (task: JoyrideTaskData): string => {
   switch (task.satisfied) {
-    // The step asks for something that is already true, or for a control the
-    // page has disabled here. Say so and point at Next, rather than leaving
-    // the user hunting for an action that cannot be performed.
     case "value":
       return "Already set — continue, or change it to update.";
     case "unavailable":
@@ -31,17 +27,11 @@ const waitingText = (task: JoyrideTaskData): string => {
   }
 };
 
-/**
- * Game-style tooltip for task tours. Action steps never render a Next button
- * until the required action is detected; the footer always shows mission
- * progress ("Step X of Y") plus Back / Exit controls.
- */
 export default function TaskTooltip(props: TooltipRenderProps) {
   const { backProps, closeProps, continuous, index, isLastStep, primaryProps, size, skipProps, step, tooltipProps } = props;
   const task = readTaskData(step);
   const requiresAction = task !== null && task.action !== "complete";
   const completed = task?.completed === true;
-  // A step with nothing left to do still needs a way out of the mission.
   const satisfied = task?.satisfied != null;
   const canContinue = !requiresAction || completed || satisfied;
 

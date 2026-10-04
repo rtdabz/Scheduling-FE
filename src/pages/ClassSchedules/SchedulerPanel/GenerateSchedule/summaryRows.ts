@@ -1,7 +1,6 @@
 import { DAYS } from "../constants";
 import type { DeliveryMode } from "../types";
 
-/** One generated meeting, already resolved to display names. */
 export type SummaryMeeting = {
   sectionId: string;
   sectionName: string;
@@ -14,13 +13,10 @@ export type SummaryMeeting = {
   mode: DeliveryMode;
   room: string;
   meeting: string;
-  /** The `schedules` row, when the caller needs to open one. */
   id?: string;
-  /** Instructor name; meetings with different instructors stay separate parts. */
   faculty?: string;
 };
 
-/** Meetings of one class that share a time, room, mode and meeting type. */
 export type SummaryPart = {
   days: string[];
   dayLabel: string;
@@ -30,11 +26,9 @@ export type SummaryPart = {
   room: string;
   meeting: string;
   faculty?: string;
-  /** Ids of the meetings folded into this part, when the input carried them. */
   ids: string[];
 };
 
-/** One section's course, with every meeting folded into it. */
 export type SummaryClass = {
   key: string;
   sectionId: string;
@@ -43,7 +37,6 @@ export type SummaryClass = {
   courseCode: string;
   courseName: string;
   parts: SummaryPart[];
-  /** Distinct modes, on-site first. */
   modes: DeliveryMode[];
   meetingCount: number;
 };
@@ -55,18 +48,8 @@ const dayRank = (day: string) => {
   return index === -1 ? DAYS.length : index;
 };
 
-/** 'Tuesday' -> 'Tue'; unknown values pass through unchanged. */
 const shortDay = (day: string) => (DAYS.includes(day) ? day.slice(0, 3) : day);
 
-/**
- * Folds the generator's one-row-per-meeting output into one row per class.
- *
- * `schedules.day` is one row per meeting, so a Tue/Thu lecture arrives as two
- * rows that differ only by day. Those collapse into a single part. Meetings
- * that differ in time, room, mode or type (a lecture online and a lab in a
- * computer lab) stay separate parts of the same class, with in-person parts
- * listed before online ones.
- */
 export const buildSummaryClasses = (meetings: SummaryMeeting[]): SummaryClass[] => {
   const byClass = new Map<string, SummaryMeeting[]>();
   for (const meeting of meetings) {
@@ -118,7 +101,6 @@ export const buildSummaryClasses = (meetings: SummaryMeeting[]): SummaryClass[] 
     };
   });
 
-  // Within a section, classes follow the week: whichever meets first comes first.
   const firstMeeting = (item: SummaryClass) =>
     Math.min(...item.parts.flatMap((part) => part.days.map((day) => dayRank(day) * 10000 + Number(part.start.replace(":", "")))));
 
@@ -130,7 +112,6 @@ export const buildSummaryClasses = (meetings: SummaryMeeting[]): SummaryClass[] 
   );
 };
 
-/** '19:00'-'20:30' -> '7:00 - 8:30 PM'; the suffix repeats only when it changes. */
 export const timeRangeLabel = (start: string, end: string): string => {
   const parse = (value: string) => {
     const [hourText, minuteText] = value.split(":");

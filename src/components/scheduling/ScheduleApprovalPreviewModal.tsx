@@ -10,14 +10,10 @@ interface Props {
   title: string;
   status: PreviewStatus;
   statusLabel: string;
-  /** Exactly what Print receives, already narrowed to the submission under review. */
   printInput: SchedulePdfInput | null;
-  /** The meetings to show are still being fetched. */
   isLoading?: boolean;
   canAct: boolean;
-  /** Shown between the title and the document: the pre-approval check. */
   checks?: ReactNode;
-  /** Set while approval cannot go ahead; Approve is held and says why. */
   approveBlockedReason?: string | null;
   onApprove: () => void;
   onReject: () => void;
@@ -26,14 +22,6 @@ interface Props {
 
 type PdfState = { url: string | null; failed: boolean };
 
-/**
- * The approval preview is the printed schedule itself.
- *
- * It used to be an HTML imitation of the print that drifted from it: one row
- * per meeting instead of combined days, its own unit maths, and mis-encoded
- * dashes. Embedding the PDF that Print generates means an approver reviews the
- * same document that will be printed and signed.
- */
 export default function ScheduleApprovalPreviewModal({
   open, title, status, statusLabel, printInput, isLoading = false, canAct, checks, approveBlockedReason = null, onApprove, onReject, onClose,
 }: Props) {

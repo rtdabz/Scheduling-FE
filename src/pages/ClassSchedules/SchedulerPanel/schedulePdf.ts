@@ -14,12 +14,6 @@ import {
 } from "./printScheduleFormat";
 import { registerSystemPdfFonts } from "./fonts/systemPdfFonts";
 
-/**
- * The printed department class schedule, built as a PDF.
- *
- * Print opens the blob in a new tab; the Dean and VPAA approval previews embed
- * the same blob, so what an approver signs off on is the document that prints.
- */
 export interface SchedulePdfInput {
   sections: Section[];
   allSchedules: ScheduleItem[];
@@ -47,11 +41,6 @@ const PAGE_FOOTER_Y = 192;
 const CONTENT_BOTTOM_Y = 185;
 const MIN_SECTION_START_SPACE = 28;
 
-/**
- * Every name is read from a live record: the department's own accounts, the
- * VPAA account (so a change of VPAA reprints correctly without a code change),
- * and the President saved in Settings.
- */
 const buildSignatories = (
   settings: InstitutionSettings,
   preparedByName: string,
@@ -94,7 +83,6 @@ export async function buildSchedulePdf({
   const byRole = (role: string) =>
     users.find((user) => user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
 
-  // Determine target sections belonging to the same department as the active section
   const activeSemesterSections = activeSemester
     ? sections.filter((section) => Number(section.semesterId) === Number(activeSemester.id))
     : sections;
@@ -104,9 +92,6 @@ export async function buildSchedulePdf({
     ? activeSemesterSections.filter((section) => section.departmentId === activeSection.departmentId)
     : activeSemesterSections;
 
-  // Grouped by program first: a department schedules (and submits) each of
-  // its programs separately, so the print has to say which program a section
-  // belongs to.
   const programSortKey = (section: Section) => (section.programCode ?? section.programName ?? "").toUpperCase();
   const targetSections = [...unfilteredSections].sort((a, b) => {
     const programOrder = programSortKey(a).localeCompare(programSortKey(b));
@@ -129,15 +114,11 @@ export async function buildSchedulePdf({
     ).toUpperCase() || null;
   };
   const printedProgramIds = Array.from(new Set(targetSections.map((section) => section.programId ?? null)));
-  // One program on the page: it goes in the title block, and its own Program
-  // Head prepares it. Several (a secretary's multi-program print): each group
-  // gets its own program bar, and the secretary prepares the whole.
   const singleProgramId = printedProgramIds.length === 1 ? printedProgramIds[0] : null;
   const singleProgramTitle = singleProgramId !== null && targetSections[0] ? programTitleOf(targetSections[0]) : null;
   const programHead = singleProgramId !== null
     ? users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(singleProgramId))
     : undefined;
-  // A program without a Program Head is the secretary's to schedule.
   const preparer = programHead ?? byRole("secretary");
   const preparerRole = preparer?.role?.toLowerCase() === "secretary" ? "Department Secretary" : "Program Head";
   const departmentLogoUrl = activeDepartment?.logo || null;
@@ -146,8 +127,6 @@ export async function buildSchedulePdf({
     return /^college\s+of\s+/i.test(name) ? name.toUpperCase() : `COLLEGE OF ${name.toUpperCase()}`;
   })();
 
-  // fetchInstitutionSettings never rejects, so a signatory lookup failure
-  // still prints -- with the standing names.
   const [{ default: PdfDocument }, { default: table }, logoImg, muniImg, departmentImg, settings] = await Promise.all([
     import("jspdf"),
     import("jspdf-autotable"),
@@ -180,7 +159,6 @@ export async function buildSchedulePdf({
     }
   };
 
-  // ── 1. Letterhead ──
   let logoWidth = 22;
   let logoHeight = 22;
   if (logoImg) {
@@ -217,7 +195,7 @@ export async function buildSchedulePdf({
 
   setFont("bold", "display");
   doc.setFontSize(13);
-  doc.setTextColor(123, 12, 23); // #7b0c17
+  doc.setTextColor(123, 12, 23);
   doc.text("TAGOLOAN COMMUNITY COLLEGE", 148.5, 26.5, { align: "center" });
 
   setFont("bold", "sans");
@@ -227,7 +205,7 @@ export async function buildSchedulePdf({
 
   setFont("italic", "sans");
   doc.setFontSize(10);
-  doc.setTextColor(26, 86, 219); // #1a56db
+  doc.setTextColor(26, 86, 219);
   doc.text("tccadmin@tcc.edu.ph", 148.5, 35.5, { align: "center" });
 
   const linkWidth = doc.getTextWidth("tccadmin@tcc.edu.ph");
@@ -277,22 +255,19 @@ export async function buildSchedulePdf({
     doc.text("Dept\nLogo", 261, 22.5, { align: "center" });
   }
 
-  // Red line under letterhead
   doc.setDrawColor(123, 12, 23);
   doc.setLineWidth(0.8);
   doc.line(15, 46, 282, 46);
 
   let currentY = 49;
 
-  // ── 2. Title Block ──
   doc.setFillColor(123, 12, 23);
   doc.rect(15, currentY, 267, 7, "F");
 
-  // Draw borders for Title Block (left, right)
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.4);
-  doc.line(15, currentY, 15, currentY + 7);    // left border
-  doc.line(282, currentY, 282, currentY + 7);  // right border
+  doc.line(15, currentY, 15, currentY + 7);
+  doc.line(282, currentY, 282, currentY + 7);
 
   setFont("bold", "display");
   doc.setFontSize(13);
@@ -304,7 +279,6 @@ export async function buildSchedulePdf({
   doc.setLineWidth(0.4);
   currentY += 7;
 
-  // Program Bar: the program this schedule was prepared and submitted for.
   if (singleProgramTitle) {
     doc.setFillColor(255, 255, 255);
     doc.rect(15, currentY, 267, 6);
@@ -315,7 +289,6 @@ export async function buildSchedulePdf({
     currentY += 6;
   }
 
-  // AY Bar
   doc.setFillColor(255, 255, 255);
   doc.rect(15, currentY, 267, 6);
   setFont("bold", "sans");
@@ -331,13 +304,11 @@ export async function buildSchedulePdf({
     const startsProgramGroup = printedProgramIds.length > 1 && sectionProgramId !== previousProgramId;
     previousProgramId = sectionProgramId;
 
-    // Keep a section title with at least its table header and first rows.
     if (currentY + MIN_SECTION_START_SPACE + (startsProgramGroup ? 6 : 0) > CONTENT_BOTTOM_Y) {
       doc.addPage();
       currentY = PAGE_TOP_Y;
     }
 
-    // Draw Program Bar when a multi-program print moves to the next program.
     if (startsProgramGroup) {
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.4);
@@ -350,7 +321,6 @@ export async function buildSchedulePdf({
       currentY += 6;
     }
 
-    // Draw Section Bar
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.4);
     doc.setFillColor(255, 255, 255);
@@ -388,8 +358,6 @@ export async function buildSchedulePdf({
       return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
     });
 
-    // Grouped per subject, so a subject's row span counts printed lines
-    // rather than raw meeting rows.
     const groupsBySubject = new Map<string, PrintMeetingGroup[]>();
     for (const [key, subjectSchedules] of schedulesBySubject) {
       groupsBySubject.set(
@@ -505,7 +473,6 @@ export async function buildSchedulePdf({
     currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 4;
   });
 
-  // ── 4. Signature Block ──
   const sigHeight = 22;
   if (currentY + sigHeight > CONTENT_BOTTOM_Y) {
     doc.addPage();
@@ -543,13 +510,12 @@ export async function buildSchedulePdf({
     doc.text(sig.role, colCenter, currentY + 18.5, { align: "center" });
   });
 
-  // ── 5. Page-Anchored Document Footer ──
   const pageCount = (doc as JsPdfDocumentWithPageInfo).internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     
     const footerY = PAGE_FOOTER_Y;
-    doc.setFillColor(123, 12, 23); // #7b0c17
+    doc.setFillColor(123, 12, 23);
     doc.rect(15, footerY, 267, 1.5, "F");
 
     const tableStartY = footerY + 3.5;

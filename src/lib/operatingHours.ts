@@ -49,10 +49,6 @@ export const timeInputMinutes = (value: string): number | null => {
   return (hour * 60) + minute;
 };
 
-/**
- * Mirrors TimeslotController::validateClosingTime and ::validateFieldEndTime.
- * An empty field end time is left out of the save, so it is not an error.
- */
 export const operatingHoursError = (openingTime: string, closingTime: string, fieldEndTime = ''): string | null => {
   const openingMinutes = timeInputMinutes(openingTime);
   const closingMinutes = timeInputMinutes(closingTime);

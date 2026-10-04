@@ -8,25 +8,10 @@ interface TimetableCardTooltipProps {
   location: string;
   time: string;
   badge: string;
-  /**
-   * "side" floats the panel beside the card (the room/instructor timetables).
-   * "vertical" floats it above or below with a centred arrow, which is what the
-   * scheduler grid cards use — they sit inside a dense weekly grid where a side
-   * panel would fall outside the viewport.
-   */
   placement?: "side" | "vertical";
   align?: "left" | "right";
-  /**
-   * Only used with placement="vertical". "inside" overlays the top of a card
-   * too tall to leave room above or below it.
-   */
   verticalAlign?: "above" | "below" | "inside";
-  /** Extra rows rendered under the details, e.g. a conflict explanation. */
   children?: ReactNode;
-  /**
-   * Pins the panel open and makes it clickable, for when it carries actions
-   * (the scheduler's selected card). Otherwise it is a hover-only tooltip.
-   */
   open?: boolean;
 }
 

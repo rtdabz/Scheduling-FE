@@ -1,11 +1,3 @@
-/**
- * Draws one Individual Faculty Load Sheet onto a jsPDF page.
- *
- * Kept apart from the React component on purpose: nothing here touches the DOM
- * or the store, so the whole form can be rendered and inspected outside a
- * browser. `teachingLoadForm` owns the grid this draws on; every position below
- * is a spreadsheet cell address on that grid rather than a page coordinate.
- */
 import type jsPDF from "jspdf";
 import {
   BASIC_LINE_COUNT,
@@ -42,8 +34,6 @@ import {
   type Column,
 } from "./teachingLoadForm";
 
-/* ── Letterhead (form rows 1-5) ───────────────────────────────────────────── */
-
 const drawLetterhead = (
   doc: jsPDF,
   logoImg: HTMLImageElement | null,
@@ -51,9 +41,6 @@ const drawLetterhead = (
 ): void => {
   const centre = (left("A") + right("K")) / 2;
 
-  // Both seals are cell-anchored in the workbook -- the college mark over
-  // columns A-C, the municipal one over G-I -- so they are placed against those
-  // edges rather than against the page margin.
   const placeSeal = (img: HTMLImageElement | null, format: "JPEG" | "PNG", x: number, size: number) => {
     if (!img) return;
     const ratio = img.naturalWidth / img.naturalHeight;
@@ -107,28 +94,10 @@ const drawLetterhead = (
   );
 };
 
-/* ── Load tables (form rows 18-26 and 29-36) ──────────────────────────────── */
-
-/**
- * Columns B and C are merged on every line of both tables, so no rule is drawn
- * between them; every other column boundary carries a thin one.
- */
 const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 
-/**
- * Only two things are coloured on the sheet: pro bono subjects (grey) and
- * the meeting times that clash for the instructor (red). Basic Load and paid
- * Overload print in plain black. The row itself is not shaded; the colour is
- * on the letters.
- */
 const PROBONO_TEXT = [107, 114, 128] as const;
-/**
- * Only the clashing time ranges print in red -- the rest of the line keeps its
- * own colour, so a subject meeting at three times shows which one conflicts.
- * Conflict colour carries no printed label by design.
- */
 const CONFLICT_TEXT = [220, 38, 38] as const;
-/** Section C's deload figures print in red; their "Deload" heading stays black. */
 const DELOAD_TEXT = [220, 38, 38] as const;
 
 const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined =>
@@ -150,8 +119,6 @@ const drawTableHeader = (doc: jsPDF, firstRow: number): void => {
   drawText(doc, "Time", { from: "E", ...merged }, heading);
   drawText(doc, "Section", { from: "F", ...merged }, heading);
 
-  // These five are two-line labels rather than merged cells, which is why the
-  // header block carries no horizontal rule between its two rows.
   drawStackedText(doc, ["No. of", "Students"], { from: "G", ...merged }, heading);
   drawStackedText(doc, ["Units", "(lec)"], { from: "H", ...merged }, heading);
   drawStackedText(doc, ["Units", "(lab)"], { from: "I", ...merged }, heading);
@@ -159,16 +126,6 @@ const drawTableHeader = (doc: jsPDF, firstRow: number): void => {
   drawStackedText(doc, ["Total", "Hours"], { from: "K", ...merged }, heading);
 };
 
-/**
- * Draws every line of a table, ruled whether or not it carries a subject: the
- * blank lines are part of the form, kept for hand-written additions. Column G
- * ("No. of Students") is ruled and left empty by design -- enrolment is not
- * recorded in the system, so it is filled in by hand.
- *
- * Column E ("Time") is the one cell that can carry more than one line: a class
- * on a split day keeps its own range for each day, and the Day column stays a
- * single run of codes ("MTh") beside them.
- */
 const drawTableBody = (doc: jsPDF, firstRow: number, lineCount: number, lines: LoadLine[]): void => {
   for (let offset = 0; offset < lineCount; offset += 1) {
     const row = firstRow + offset;
@@ -199,18 +156,6 @@ const drawTableBody = (doc: jsPDF, firstRow: number, lineCount: number, lines: L
   }
 };
 
-/**
- * One of the three totals lines (basic, overload, grand total).
- *
- * The blank form rules a cell in both column J ("Total Units") and column K
- * ("Total Hours") on each of these rows and only ever fills K, which is why the
- * printed copy has always read as units-only against a label that says
- * "UNITS/HRS". Both cells are filled here, so the label matches the figures.
- *
- * No rule is drawn between the two. One label -- "UNITS/HRS" -- names both
- * figures, so they read as the single entry it describes rather than as two
- * cells that each want a heading of their own.
- */
 const drawTotalsRow = (
   doc: jsPDF,
   row: number,
@@ -227,13 +172,11 @@ const drawTotalsRow = (
   drawText(doc, formatQuantity(totals.hours), { from: "K", row }, value);
 };
 
-/** A caption on one row with the value written on the ruled cell beside it. */
 const drawDateSigned = (doc: jsPDF, row: number, caption: Column, from: Column, to: Column): void => {
   drawText(doc, "Date Signed:", { from: caption, row }, { size: SIZE.small });
   rule(doc, { from, to, row, edge: "bottom" });
 };
 
-/** A signatory: name on a ruled line, post underneath. */
 const drawSignatory = (
   doc: jsPDF,
   options: { name: string; title: string; row: number; from: Column; to: Column },
@@ -254,7 +197,6 @@ export interface SheetContext {
   givenName: string;
   middleInitial: string;
   isPartTime: boolean;
-  /** Held designations, in order. The form has two lines; the rest share line 2. */
   designations: HeldDesignation[];
   instructorName: string;
   preparedBy: string;
@@ -270,18 +212,14 @@ export interface SheetContext {
 }
 
 export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
-  // Before any row is addressed: every row below table B moves down by the
-  // overload lines this sheet adds past the form's six.
   setOverloadLineCount(ctx.overloadLines.length);
   const centre = (left("A") + right("K")) / 2;
 
-  // The whole sheet is one medium-ruled box; every rule below sits inside it.
   box(doc, { from: "A", to: "K", row: 1, throughRow: formRow(LAST_ROW) }, MEDIUM);
 
   drawLetterhead(doc, ctx.logoImg, ctx.muniImg);
   rule(doc, { from: "A", to: "K", row: 5, edge: "bottom" }, MEDIUM);
 
-  // Row 6 -- the college banner: white on the form's maroon.
   fill(doc, { from: "A", to: "K", row: 6 }, MAROON);
   rule(doc, { from: "A", to: "K", row: 6, edge: "bottom" }, MEDIUM);
   drawText(doc, `COLLEGE OF ${ctx.collegeName}`, { from: "A", to: "K", row: 6 }, {
@@ -299,8 +237,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     color: NAVY,
   });
 
-  // Row 8 -- "____ Semester Academic Year ____", built to the same proportions
-  // as the blanks on the printed form.
   doc.setFont("helvetica", "bold");
   doc.setFontSize(SIZE.label);
   const semesterCaption = "Semester Academic Year";
@@ -327,8 +263,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
   cursor += captionWidth + 2.5;
   stamp(cursor, yearRule, ctx.academicYear);
 
-  // Row 11 -- name blanks, sized in the same 29 : 34 : 8 proportion the form
-  // gives its three underscore runs.
   const nameFields = [
     { label: "Surname:", value: ctx.surname, weight: 29 },
     { label: "Given Name:", value: ctx.givenName, weight: 34 },
@@ -352,9 +286,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     });
   });
 
-  // Rows 12-15 -- employment status. The form offers four boxes; the system
-  // records only full-time and part-time, so the other two print empty for
-  // whoever fills the sheet in by hand.
   drawText(doc, "Employment Status: (Put X)", { from: "A", to: "C", row: 12 }, { size: SIZE.body, style: "bold" });
   const status = { size: SIZE.body, style: "bold" as const, padding: 1.6 };
   checkbox(doc, { column: "B", row: 13 }, !ctx.isPartTime);
@@ -373,28 +304,19 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     color: NAVY,
   });
 
-  // Rows 17-27 -- A. Basic Load.
   drawText(doc, "A. Basic Load/Built-In", { from: "A", to: "C", row: 17 }, { size: SIZE.label, style: "bold", padding: 1.6 });
   drawTableHeader(doc, 18);
   drawTableBody(doc, 20, BASIC_LINE_COUNT, ctx.basicLines);
   drawTotalsRow(doc, 27, "TOTAL NUMBER OF UNITS/HRS (BASIC) :", ctx.load.basicTotals, MEDIUM);
 
-  // Rows 28-38 -- B. Overload / Part Time Load.
   drawText(doc, "B. Overload/Part Time Load", { from: "A", to: "C", row: 28 }, { size: SIZE.label, style: "bold", padding: 1.6 });
-  // Pro bono subjects are still printed in grey, but the form carries no
-  // legend for it (nor for the red conflict text).
   drawTableHeader(doc, 29);
   drawTableBody(doc, 31, Math.max(OVERLOAD_LINE_COUNT, ctx.overloadLines.length), ctx.overloadLines);
   drawTotalsRow(doc, formRow(37), "TOTAL NUMBER OF UNITS / HRS (OVERLOAD)", ctx.load.overloadTotals, MEDIUM);
   drawTotalsRow(doc, formRow(38), "GRAND TOTAL NUMBER OF UNITS/HRS", ctx.load.grandTotals, THIN);
 
-  // Rows 39-41 -- C. Other Designation/Functions. Line 1 carries the first
-  // designation the instructor holds, line 2 the rest, shrunk to fit. Each line's deload sits in
-  // the units column, under the totals above it, headed "Deload" in the same
-  // style as the section's own heading.
   const sectionHeading = { size: SIZE.label, style: "bold" as const, padding: 1.6 };
   drawText(doc, "C. Other Designation/Functions", { from: "A", to: "D", row: formRow(39) }, sectionHeading);
-  // Wider than the units column at this size; the blank cells either side take the overrun.
   drawText(doc, "Deload", { from: "J", row: formRow(39) }, { ...sectionHeading, align: "center", fixedSize: true });
   rule(doc, { from: "A", to: "K", row: formRow(40), edge: "top" }, MEDIUM);
   rule(doc, { from: "A", to: "K", row: formRow(40), edge: "bottom" }, THIN);
@@ -409,8 +331,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     drawText(doc, formatQuantity(deload), { from: "J", row }, { size: SIZE.label, style: "bold", align: "center", color: DELOAD_TEXT });
   });
 
-  // Rows 44-52 -- the signature block. The form runs it as two open columns
-  // with no divider between them, only the rules each signatory signs on.
   drawText(doc, "Prepared :", { from: "A", to: "C", row: formRow(44) }, { size: SIZE.label, style: "bold", padding: 1.6 });
   drawText(doc, "Verified by:", { from: "G", to: "K", row: formRow(44) }, { size: SIZE.label, style: "bold", padding: 1.6 });
   drawSignatory(doc, {
@@ -443,9 +363,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
   drawDateSigned(doc, formRow(52), "A", "B", "C");
   drawDateSigned(doc, formRow(52), "G", "H", "J");
 
-  // Rows 53-55 -- the instructor's own acknowledgement. The form asks for a
-  // signature over the printed name, so the name is printed and the rule above
-  // it is what gets signed.
   drawText(doc, "Received:", { from: "A", to: "C", row: formRow(53) }, { size: SIZE.small, style: "bold", padding: 1.6 });
   rule(doc, { from: "A", to: "C", row: formRow(54), edge: "bottom" });
   drawText(doc, ctx.instructorName, { from: "A", to: "C", row: formRow(54) }, { size: SIZE.label, style: "bold", align: "center" });
@@ -455,7 +372,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     padding: 1.6,
   });
 
-  // Rows 56-58 -- the reminder and the closing bar.
   rule(doc, { from: "A", to: "K", row: formRow(56), edge: "top" }, MEDIUM);
   drawText(doc, "Reminder:", { from: "A", to: "C", row: formRow(56) }, { size: SIZE.body, style: "bold", padding: 1.6 });
   drawText(doc, "Submit corrected teaching load when there is/ are changes.", { from: "A", to: "G", row: formRow(57) }, {
@@ -467,13 +383,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
   rule(doc, { from: "A", to: "K", row: formRow(58), edge: "top" }, MEDIUM);
   rule(doc, { from: "A", to: "K", row: formRow(58), edge: "bottom" }, MEDIUM);
 
-  // Control footer, outside the form box: the document and revision numbers in
-  // their own ruled box rather than loose text under the closing bar.
-  //
-  // It runs as one row of label-and-value cells instead of stacking each value
-  // under its label. Only 8.4mm of page is left below the form, and a two-row
-  // box deep enough to read would put its bottom rule on the sheet's edge,
-  // inside the margin most printers refuse to reach.
   const CONTROL_ROW_HEIGHT = 3.6;
   const controlCells = [
     { text: "Document No.", width: 17 },
@@ -499,8 +408,6 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     controlX += cell.width;
   });
 
-  // Kept outside the box, on its baseline, so a two-sheet load still reads as
-  // one footer line.
   if (ctx.sheetCount > 1) {
     doc.text(`Sheet ${ctx.sheetNumber} of ${ctx.sheetCount}`, right("K"), controlBaseline, { align: "right" });
   }
