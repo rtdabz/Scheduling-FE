@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SetupCoursesStep from "./SetupCoursesStep";
 import type { Course, Section } from "../types";
+import { formatHours } from "./courseClassConfig";
+import { slotCount } from "../../../../lib/timeGrid";
 
 describe("SetupCoursesStep", () => {
   afterEach(cleanup);
@@ -481,7 +483,7 @@ describe("SetupCoursesStep", () => {
     }
   });
 
-  it("refuses a duration longer than the course carries", () => {
+  it("refuses a duration longer than the teaching day", () => {
     render(
       <SetupCoursesStep
         courses={mockCourses}
@@ -494,9 +496,12 @@ describe("SetupCoursesStep", () => {
     );
 
     fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[0]);
-    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "4" } });
+    // Eight hours straight is a valid single class; more than the day is not.
+    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "8" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "14" } });
 
-    expect(screen.getByRole("alert").textContent).toContain("at most 3h a week");
+    expect(screen.getByRole("alert").textContent).toContain(`at most ${formatHours(slotCount() / 2)} a week`);
     expect(
       (screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement).disabled,
     ).toBe(true);

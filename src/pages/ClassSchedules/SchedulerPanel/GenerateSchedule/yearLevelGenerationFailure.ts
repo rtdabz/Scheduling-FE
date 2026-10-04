@@ -14,6 +14,7 @@ export type AdjustmentType =
   | "disable_lecture_lab_split"
   | "disable_minor_split"
   | "enable_hybrid_split"
+  | "set_hybrid_split"
   | "disable_hybrid_split"
   | "disable_section_hybrid"
   | "enable_friday_saturday_split"
@@ -255,6 +256,7 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
     case "disable_minor_split":
       return `${course} in ${section}: Split Session turned off, one regular meeting`;
     case "enable_hybrid_split":
+    case "set_hybrid_split":
       return `${course} in ${section}: Hybrid Split turned on, one meeting online`;
     case "disable_hybrid_split":
       return `${course} in ${section}: Hybrid Split turned off, both meetings on-site`;
@@ -391,6 +393,20 @@ function applyOne<T extends AdjustableSectionConfig>(
       // Online pin would contradict the one-online, one-on-site shape.
       return {
         ...config,
+        hybridSplitCourseIds: [...hybridIds, courseKey],
+        modesByCourseId: { ...config.modesByCourseId, [courseKey]: "automatic" },
+      };
+    }
+    case "set_hybrid_split": {
+      // A regular course made a Hybrid Split in one step: it becomes a Split
+      // Session with one meeting online, which halves its room time.
+      const hybridIds = config.hybridSplitCourseIds ?? [];
+      if (hybridIds.includes(courseKey)) return null;
+      return {
+        ...config,
+        gecSplitCourseIds: config.gecSplitCourseIds.includes(courseKey)
+          ? config.gecSplitCourseIds
+          : [...config.gecSplitCourseIds, courseKey],
         hybridSplitCourseIds: [...hybridIds, courseKey],
         modesByCourseId: { ...config.modesByCourseId, [courseKey]: "automatic" },
       };

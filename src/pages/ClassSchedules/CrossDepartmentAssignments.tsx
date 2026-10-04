@@ -40,16 +40,24 @@ export default function CrossDepartmentAssignments() {
   const delegatedSchedules = useMemo(
     () => scheduler.schedules.filter((schedule) => {
       const subject = scheduler.subjects.find((item) => item.id === schedule.courseId);
-      return subject?.teachingDepartmentId !== null
-        && subject?.teachingDepartmentId !== undefined
-        && Number(subject.teachingDepartmentId) === Number(scheduler.userDepartmentId)
-        && Number(schedule.departmentId) !== Number(scheduler.userDepartmentId);
+      if (
+        subject?.teachingDepartmentId === null
+        || subject?.teachingDepartmentId === undefined
+        || Number(subject.teachingDepartmentId) !== Number(scheduler.userDepartmentId)
+      ) return false;
+      // Another college's class, or a course of this college handed to a sibling
+      // program (BSED-ENG Prof Ed taught by BEED), which never leaves the college.
+      if (Number(schedule.departmentId) !== Number(scheduler.userDepartmentId)) return true;
+      const handedToProgram = subject.teachingProgramId ?? null;
+      return handedToProgram !== null
+        && Number(subject.programId ?? 0) !== Number(handedToProgram)
+        && (scheduler.userProgramId === null || Number(handedToProgram) === Number(scheduler.userProgramId));
     }),
     [scheduler.schedules, scheduler.subjects, scheduler.userDepartmentId],
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
   const crossDepartmentGuideSteps = useMemo(() => [
-    { element: '[data-tour="department-card"]', waitFor: '#instructor-assignment-departments', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a department card to continue.', title: 'Choose a source department', description: 'Open the department that owns the course. With only one, it opens for you.', side: 'top' as const },
+    { element: '[data-tour="department-card"]', waitFor: '#instructor-assignment-departments', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a department card to continue.', title: 'Choose a source department', description: 'Open the department that owns the course.', side: 'top' as const },
     { element: '#assignment-status-filter', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose "Needs instructor" to continue.', title: 'Show only what is left', description: 'Narrow the list to classes that still have nobody assigned.', side: 'bottom' as const },
     { element: "#instructor-assignment-worklist select[id^='worklist-faculty-']:not([disabled])", waitFor: '#instructor-assignment-worklist', skipIfMissing: true, title: 'Assign an instructor', description: 'Pick an eligible instructor straight from the row — it saves as you choose.', side: 'top' as const },
   ], []);

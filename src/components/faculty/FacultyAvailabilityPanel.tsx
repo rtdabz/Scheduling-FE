@@ -129,7 +129,7 @@ export default function FacultyAvailabilityPanel({
           {byDay
             .filter(day => day.rows.length > 0)
             .map(day => (
-              <div key={day.dayIndex} className="flex items-start justify-between gap-3 p-3 text-xs">
+              <div key={day.dayIndex} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
                 <span className="font-bold text-gray-600">{day.label}</span>
                 <div className="flex flex-wrap justify-end gap-1.5">
                   {day.rows.map((row, index) => (

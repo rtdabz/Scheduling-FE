@@ -1,7 +1,8 @@
 // Inactivity policy for authenticated screens. A signed-in page left unattended
 // is a standing risk on shared office machines, so the shell stops the session
 // once no interaction has been seen for this long.
-export const IDLE_TIMEOUT_MS = 20 * 60 * 1000;
+// TEMPORARY: 1 hour for testing. Restore to 20 * 60 * 1000 (20 minutes).
+export const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 // Activity is shared through localStorage so that working in one tab keeps the
 // other tabs of the same session alive instead of expiring them behind the user.
@@ -51,8 +52,9 @@ export const clearLastActivity = (): void => {
 
 // Why the session stopped. The distinction only drives the wording of the
 // notice: an idle timeout is this app's own policy, whereas an expired token is
-// the server declining the credentials the page still holds.
-export type SessionEndedReason = 'idle' | 'expired';
+// the server declining the credentials the page still holds, and `replaced`
+// is a sign-in on another device ending this one (one active session per account).
+export type SessionEndedReason = 'idle' | 'expired' | 'replaced';
 
 export const SESSION_ENDED_EVENT = 'wicars:session-ended';
 

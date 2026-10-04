@@ -34,13 +34,17 @@ interface CourseRow {
   teaching_program_id?: number | null;
   teaching_program_code?: string | null;
   teaching_program_name?: string | null;
+  program_id?: number | null;
   program_code?: string | null;
   program_name?: string | null;
   program_major?: string | null;
+  curriculum_program_id?: number | null;
   curriculum_program_code?: string | null;
   curriculum_program_name?: string | null;
   curriculum_program_major?: string | null;
   delegable: boolean;
+  /** A major can only go to another program of the college that offers it. */
+  is_major?: boolean;
   /**
    * Classes this semester that already have an instructor. While any do, the
    * server refuses to change who teaches the course, so the page locks it too.
@@ -74,8 +78,8 @@ interface IndexResponse {
   programs?: PageData['programs'];
 }
 
-// v10 carries instructor_assigned_classes, which locks a course that is already being taught.
-const cacheKey = 'page:course-teaching-assignments:v10';
+// v11 lists majors (is_major) and the acting department's own programs as targets.
+const cacheKey = 'page:course-teaching-assignments:v11';
 
 const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
 const fullSemesterLabel = (semester: ActiveSemester | null) => (semester
@@ -188,28 +192,22 @@ export default function CourseTeachingAssignments() {
     ? departments.find((department) => department.id === selectedProgram.department_id) ?? targetDepartment
     : targetDepartment;
 
-  // The curriculum's courses, split the way the page acts on them: minors are
-  // selectable per year level, majors only get counted so their absence is explained.
+  // The curriculum's courses per year level. Minors and majors can go to any
+  // college; inside its own college a major needs a sibling program (statusOf()).
   // The year comes from the curriculum placement, so these tabs are this
   // department's — the same subject can sit in a different year for another college.
   const byYear = useMemo(() => {
-    const minors = new Map<number, CourseRow[]>();
-    const majors = new Map<number, number>();
+    const years = new Map<number, CourseRow[]>();
 
     courses.forEach((course) => {
       const year = yearOf(course);
       if (year < 1 || year > 4) return;
-
-      if (course.delegable) {
-        const bucket = minors.get(year) ?? [];
-        bucket.push(course);
-        minors.set(year, bucket);
-        return;
-      }
-      majors.set(year, (majors.get(year) ?? 0) + 1);
+      const bucket = years.get(year) ?? [];
+      bucket.push(course);
+      years.set(year, bucket);
     });
 
-    return { minors, majors };
+    return years;
   }, [courses]);
 
   const assignedCounts = useMemo(() => {
@@ -223,10 +221,9 @@ export default function CourseTeachingAssignments() {
 
   // Opens on the first year level that has something to assign, the way the
   // Auto-Assign wizard opens on the first year level with sections.
-  const firstPopulatedYear = YEAR_LEVELS.find((year) => (byYear.minors.get(year)?.length ?? 0) > 0) ?? 1;
+  const firstPopulatedYear = YEAR_LEVELS.find((year) => (byYear.get(year)?.length ?? 0) > 0) ?? 1;
   const activeYear = yearLevel ?? firstPopulatedYear;
-  const yearCourses = byYear.minors.get(activeYear) ?? [];
-  const hiddenMajors = byYear.majors.get(activeYear) ?? 0;
+  const yearCourses = byYear.get(activeYear) ?? [];
   const query = search.trim().toLowerCase();
   const visibleCourses = yearCourses.filter((course) => (
     (courseId === 'all' || String(course.id) === courseId)
@@ -242,6 +239,11 @@ export default function CourseTeachingAssignments() {
     }
     if (instructorClassesOf(course) > 0) return 'Has an instructor';
     if (!effectiveTargetDepartment) return 'Select a department or program';
+    // A major can go to any college; inside its own college it needs a sibling program.
+    if (course.is_major && course.department_id != null && Number(effectiveTargetDepartment.id) === Number(course.department_id)) {
+      if (!selectedProgram) return 'Select a program for majors';
+      if (selectedProgram.id === (course.curriculum_program_id ?? course.program_id)) return 'Already its program';
+    }
     return 'Available';
   };
 
@@ -298,6 +300,18 @@ export default function CourseTeachingAssignments() {
 
   const saveAssignments = async () => {
     if (!effectiveTargetDepartment || selectedCourses.length === 0) return;
+
+    const target = selectedProgram?.code ?? effectiveTargetDepartment.department_name ?? effectiveTargetDepartment.department_code;
+    const codes = selectedCourses.map((course) => course.course_code);
+    const listed = codes.length > 5 ? `${codes.slice(0, 5).join(', ')} and ${codes.length - 5} more` : codes.join(', ');
+    const confirmed = await confirm({
+      title: 'Confirm teaching assignment',
+      message: `Are you sure you want ${codes.length === 1 ? 'this course' : `these ${codes.length} courses`} (${listed}) to be taught by ${target}? Its instructors will handle ${codes.length === 1 ? 'it' : 'them'} until the assignment is removed.`,
+      eyebrow: 'Course Teaching',
+      confirmLabel: 'Assign',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
 
     setSaving(true);
     const savedIds: number[] = [];
@@ -370,7 +384,7 @@ export default function CourseTeachingAssignments() {
 
   const responsibleLabel = selectedProgram?.code ?? effectiveTargetDepartment?.department_code ?? null;
   const selectedUnits = selectedCourses.reduce((sum, course) => sum + unitsOf(course), 0);
-  const selectableVisible = visibleCourses.filter((course) => course.teaching_department_id === null && instructorClassesOf(course) === 0);
+  const selectableVisible = visibleCourses.filter((course) => ['Available', 'Selected'].includes(statusOf(course)));
   const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every((course) => selectedIds.includes(course.id));
   const toggleAllVisible = () => {
     const ids = selectableVisible.map((course) => course.id);
@@ -499,7 +513,7 @@ export default function CourseTeachingAssignments() {
               <h1 className="truncate text-base font-black text-slate-900">Course Teaching</h1>
               <p className="truncate text-xs text-slate-500">
                 {ownDepartment
-                  ? `Choose which college teaches the minor courses in the ${ownDepartment.department_code} curriculum.`
+                  ? `Choose which college or program teaches the courses in the ${ownDepartment.department_code} curriculum.`
                   : 'Choose which college teaches each minor course.'}
                 {activeSemester && <> &middot; {fullSemesterLabel(activeSemester)}</>}
               </p>
@@ -569,7 +583,7 @@ export default function CourseTeachingAssignments() {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex rounded-lg bg-slate-100 p-1" role="group" aria-label="Year level">
                   {YEAR_LEVELS.map((year) => {
-                    const count = byYear.minors.get(year)?.length ?? 0;
+                    const count = byYear.get(year)?.length ?? 0;
                     const selected = activeYear === year;
                     return (
                       <button
@@ -609,7 +623,7 @@ export default function CourseTeachingAssignments() {
             <section id="course-teaching-courses" className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <h3 className="text-sm font-black text-slate-900">{YEAR_LABELS[activeYear]} minor courses</h3>
+                  <h3 className="text-sm font-black text-slate-900">{YEAR_LABELS[activeYear]} courses</h3>
                   <p className="text-xs text-slate-500">Tick unassigned courses to give them to {responsibleLabel ?? 'the selected college'}.</p>
                 </div>
                 <label className="relative">
@@ -624,7 +638,7 @@ export default function CourseTeachingAssignments() {
                   variant="embedded"
                   isLoading={loading}
                   tableClassName="min-w-[900px]"
-                  ariaLabel={`${YEAR_LABELS[activeYear]} minor courses`}
+                  ariaLabel={`${YEAR_LABELS[activeYear]} courses`}
                   onRowClick={toggleCourse}
                   rowClassName={(course) => {
                     const status = statusOf(course);
@@ -640,7 +654,7 @@ export default function CourseTeachingAssignments() {
                         : yearCourses.length === 0
                           // The list is one semester's, so name it — otherwise an empty
                           // year reads as a curriculum that is missing courses.
-                          ? `No minor courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
+                          ? `No courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
                           : 'No courses match this filter.'}
                     </p>
                   }
@@ -652,10 +666,10 @@ export default function CourseTeachingAssignments() {
                 <div className="min-w-0 text-xs text-slate-600">
                   <span className="font-bold text-slate-900">{selectedIds.length} selected</span>
                   <span className="tabular-nums"> &middot; {selectedUnits} unit{selectedUnits === 1 ? '' : 's'}</span>
-                  {hiddenMajors > 0 && (
+                  {yearCourses.some((course) => course.is_major) && (
                     <span className="ml-2 inline-flex items-center gap-1 text-slate-500">
                       <Info className="h-3.5 w-3.5" />
-                      {hiddenMajors} major{hiddenMajors === 1 ? '' : 's'} hidden: a major stays with the college that offers it
+                      Within its own college, a major needs a specific program
                     </span>
                   )}
                 </div>

@@ -80,6 +80,13 @@ function HybridModalHarness({
   const [modalDay1Duration, setModalDay1Duration] = useState(splitEnabled ? 3 : 6);
   const [modalDay2StartSlot, setModalDay2StartSlot] = useState(2);
   const [modalDay2Duration, setModalDay2Duration] = useState(splitEnabled ? 3 : 0);
+  const [modalConsecutiveDays, setModalConsecutiveDays] = useState<number | null>(run?.dayCount ?? null);
+  // As useScheduler: the given rule while its length is kept, else plain runs.
+  const modalRun = !modalConsecutiveDays
+    ? null
+    : run && run.dayCount === modalConsecutiveDays
+      ? run
+      : { dayCount: modalConsecutiveDays, preferredStartDay: null, runs: consecutiveDayRuns(modalConsecutiveDays, false) };
 
   const setModalClassMode = (mode: DeliveryMode) => {
     setModalClassModeState(mode);
@@ -141,7 +148,9 @@ function HybridModalHarness({
       isModalLoading={false}
       setDropContext={setDropContext}
       handleModalConfirm={(event) => event.preventDefault()}
-      modalRun={run}
+      modalRun={modalRun}
+      modalConsecutiveDays={modalConsecutiveDays}
+      setModalConsecutiveDays={setModalConsecutiveDays}
       checkConflict={() => null}
     />
   );
@@ -171,14 +180,14 @@ describe("DropModal Integrated configuration", () => {
     expect(screen.queryByRole("heading", { name: "Laboratory Meeting" })).toBeNull();
     expect((screen.getByRole("button", { name: "Online" }) as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
 
     const laboratoryCard = screen.getByRole("heading", { name: "Laboratory Meeting" }).parentElement;
     const lectureCard = screen.getByRole("heading", { name: "Lecture Meeting" }).parentElement;
 
     expect(laboratoryCard).toBeTruthy();
     expect(lectureCard).toBeTruthy();
-    expect((screen.getByRole("checkbox", { name: /Integrated/i }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("radio", { name: /Integrated/i }).getAttribute("aria-checked")).toBe("true");
     expect((laboratoryCard?.querySelector('[aria-label="First meeting day"]') as HTMLSelectElement).value).toBe("3");
     expect((lectureCard?.querySelector('input[readonly]') as HTMLInputElement).value).toBe("Online");
     const laboratoryOnlineButton = Array.from(laboratoryCard?.querySelectorAll("button") ?? [])
@@ -192,7 +201,7 @@ describe("DropModal Integrated configuration", () => {
   it("keeps both Integrated meetings on site when the delivery is On-Site", () => {
     render(<HybridModalHarness />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
     const delivery = screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement;
     expect(delivery.value).toBe("hybrid");
 
@@ -209,28 +218,27 @@ describe("DropModal Integrated configuration", () => {
   it("lets the user set the Integrated lecture and laboratory lengths", async () => {
     render(<HybridModalHarness modalConflict="Room conflict" />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
 
+    // Typed in hours.
     const duration = (meeting: string) =>
-      screen.getByRole("combobox", { name: `${meeting} duration` }) as HTMLSelectElement;
+      screen.getByRole("spinbutton", { name: `${meeting} duration` }) as HTMLInputElement;
     // The course's own lengths to begin with -- three hours of laboratory for
     // its one laboratory unit, two of lecture for its two lecture units --
     // rather than a fixed 3 + 2 the user cannot move.
-    expect(duration("Laboratory Meeting").value).toBe("6");
-    expect(duration("Lecture Meeting").value).toBe("4");
+    expect(duration("Laboratory Meeting").value).toBe("3");
+    expect(duration("Lecture Meeting").value).toBe("2");
     // Each session is the user's own length: no unit-derived week caps the
     // pair, so the lecture grows past the 2 h its units give while the
-    // laboratory keeps its 3 h. Only the end of the teaching day bounds it.
-    expect(duration("Lecture Meeting").options.length).toBeGreaterThan(6);
+    // laboratory keeps its 3 h.
+    fireEvent.change(duration("Lecture Meeting"), { target: { value: "3" } });
 
-    fireEvent.change(duration("Lecture Meeting"), { target: { value: "6" } });
+    expect(duration("Lecture Meeting").value).toBe("3");
+    expect(duration("Laboratory Meeting").value).toBe("3");
 
-    expect(duration("Lecture Meeting").value).toBe("6");
-    expect(duration("Laboratory Meeting").value).toBe("6");
+    fireEvent.change(duration("Laboratory Meeting"), { target: { value: "4" } });
 
-    fireEvent.change(duration("Laboratory Meeting"), { target: { value: "8" } });
-
-    expect(duration("Laboratory Meeting").value).toBe("8");
+    expect(duration("Laboratory Meeting").value).toBe("4");
     // The length chosen is what the suggestions are asked for; without it
     // every option comes back in the shape the user has just changed.
     await waitFor(() => expect(slotCalls().at(-1)?.[1]).toMatchObject({ duration_slots: 8 }));
@@ -547,7 +555,7 @@ describe("DropModal manual placement support", () => {
       room_id: 10, room_code: "CompLab2", room_type: "laboratory",
     }]);
     render(<HybridModalHarness modalConflict="Online course conflict" />);
-    fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
 
     // The laboratory half: its own length, and named as a laboratory so the
     // server keeps it on-site.
@@ -576,7 +584,7 @@ describe("DropModal manual placement support", () => {
       room_id: null, room_code: "Online", room_type: "online",
     }]);
     render(<HybridModalHarness modalConflict="Online course conflict" />);
-    fireEvent.click(screen.getByRole("checkbox", { name: /Integrated/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Lecture Meeting" }));
     fireEvent.click(screen.getByRole("tab", { name: /Weekdays/ }));
@@ -657,15 +665,75 @@ describe("DropModal Consecutive Days", () => {
     render(<HybridModalHarness run={RUN} lectureOnly />);
 
     expect(screen.getByRole("heading", { name: "Each day of the run (3 days)" })).toBeDefined();
-    expect(screen.getByText(/Consecutive Days · 3 days · Thursday–Saturday/)).toBeDefined();
+    expect(screen.getByRole("radio", { name: "Consecutive Days" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/Meets on its ticked days, Thursday–Saturday/)).toBeDefined();
     expect(screen.getAllByText("Thursday–Saturday").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Split Session")).toBeNull();
+    // Ticked days fix the length.
+    expect((screen.getByLabelText("Number of days") as HTMLSelectElement).disabled).toBe(true);
 
     const startDay = screen.getByLabelText("Starting day") as HTMLSelectElement;
     expect((within(startDay).getByRole("option", { name: "Friday (runs past the week)" }) as HTMLOptionElement).disabled).toBe(true);
     // Its ticked days are Thursday-Saturday, so no other start is offered.
     expect((within(startDay).getByRole("option", { name: "Monday (not the ticked days)" }) as HTMLOptionElement).disabled).toBe(true);
     expect((within(startDay).getByRole("option", { name: "Thursday (Thursday–Saturday)" }) as HTMLOptionElement).disabled).toBe(false);
+  });
+
+  it("takes whole and half hours from one hour up, by typing or stepping", () => {
+    render(<HybridModalHarness lectureOnly />);
+
+    const duration = () => screen.getByRole("spinbutton", { name: "Meeting duration" }) as HTMLInputElement;
+    const endTime = () => (screen.getByLabelText("Meeting end time") as HTMLInputElement).value;
+    // A 3-unit lecture opens at its full 3 hours (8 AM start).
+    expect(duration().value).toBe("3");
+
+    fireEvent.change(duration(), { target: { value: "2" } });
+    expect(endTime()).toMatch(/^10(:00)? AM$/);
+
+    // Letters never get in.
+    fireEvent.change(duration(), { target: { value: "2h" } });
+    expect(duration().value).toBe("2");
+
+    // Not a half hour: snapped to the nearest one when the box is left.
+    fireEvent.change(duration(), { target: { value: "4.25" } });
+    fireEvent.blur(duration());
+    expect(duration().value).toBe("4.5");
+
+    // Under an hour: raised to one.
+    fireEvent.change(duration(), { target: { value: "0.5" } });
+    fireEvent.blur(duration());
+    expect(duration().value).toBe("1");
+    expect((screen.getByRole("button", { name: "Shorten Meeting by 30 minutes" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Lengthen Meeting by 30 minutes" }));
+    expect(duration().value).toBe("1.5");
+    expect(endTime()).toMatch(/^9:30 AM$/);
+  });
+
+  it("turns a single meeting into a run of the chosen length, and back", () => {
+    render(<HybridModalHarness lectureOnly />);
+
+    expect(screen.getByRole("radio", { name: "Single" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByLabelText("Starting day")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Consecutive Days" }));
+
+    // Two days by default, starting on the day it was dropped on (Thursday).
+    const days = screen.getByLabelText("Number of days") as HTMLSelectElement;
+    expect(days.value).toBe("2");
+    expect(screen.getByRole("heading", { name: "Each day of the run (2 days)" })).toBeDefined();
+    expect((screen.getByLabelText("Starting day") as HTMLSelectElement).value).toBe("3");
+    expect(screen.getAllByText("Thursday–Friday").length).toBeGreaterThan(0);
+
+    // Three days from Thursday ends Saturday; Monday-Saturday has six at most.
+    fireEvent.change(days, { target: { value: "3" } });
+    expect(screen.getAllByText("Thursday–Saturday").length).toBeGreaterThan(0);
+    expect(within(days).getAllByRole("option").map((option) => option.textContent)).toEqual(
+      ["2 days", "3 days", "4 days", "5 days", "6 days"],
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "Single" }));
+    expect(screen.queryByLabelText("Number of days")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Meeting" })).toBeDefined();
   });
 
   it("asks the slot list for whole runs", async () => {

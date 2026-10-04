@@ -79,10 +79,11 @@ import { configureLabRoomType, roomTypeSatisfies } from "../../../../lib/labRoom
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
-import { buildPreferredPattern, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
+import { buildPreferredPattern, consecutiveDayCount, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 import { isHybridSplitEligible, savedMeetingPairShape } from "../schedulingConfigurationEligibility";
 import { resolveManualOperationStatus } from "../manualScheduleOperation";
 import {
+  consecutiveDayRuns,
   consecutivePattern,
   consecutivePlacementFor,
   runStartForDay,
@@ -683,6 +684,11 @@ export const useScheduler = () => {
   const [modalDay2ClassMode, setModalDay2ClassMode] = useState<DeliveryMode>("on-site");
   const [modalIsHybrid, setModalIsHybrid] = useState<boolean>(false);
   const [modalSplitEnabled, setModalSplitEnabled] = useState<boolean>(false);
+  /**
+   * Consecutive Days for this placement only (2+ days), or null. Chosen in the
+   * dialog, like Generate's per-run rules: nothing is saved but the classes.
+   */
+  const [modalConsecutiveDays, setModalConsecutiveDays] = useState<number | null>(null);
   const [modalFieldEnabled, setModalFieldEnabled] = useState<boolean>(false);
   const [modalForceDayEnabled, setModalForceDayEnabled] = useState<boolean>(false);
   const [modalForcedDayIndex, setModalForcedDayIndex] = useState<number>(0);
@@ -1151,13 +1157,10 @@ export const useScheduler = () => {
         (rule) => Number(rule.course_id) === Number(subject?.id)
       )?.day;
       const forcedDayIndex = forcedDay ? FULL_DAY_NAMES.findIndex((day) => day === forcedDay) : -1;
-      const configuredField = Boolean(subject && manualSchedulingSettings?.field_course_codes?.some(
-        (code) => code.trim().toUpperCase() === subject.code.trim().toUpperCase()
-      ));
 
       setModalForceDayEnabled(forcedDayIndex >= 0);
       setModalForcedDayIndex(forcedDayIndex >= 0 ? forcedDayIndex : dropContext.dayIndex);
-      setModalFieldEnabled(isFieldSubject || configuredField);
+      setModalFieldEnabled(isFieldSubject);
       setModalSplitEnabled(false);
 
 
@@ -1308,14 +1311,22 @@ export const useScheduler = () => {
 
       // Consecutive Days: the course is placed as one run -- the first day,
       // one time and one room -- whatever the drop or the saved rows suggest.
+      // A run already placed (Generate writes `consecutive:N`) reopens as one.
+      const reopenedSchedule = dropContext.isRescheduling && dropContext.scheduleId
+        ? schedules.find((s) => s.id === dropContext.scheduleId)
+        : undefined;
+      const savedRunDays = consecutiveDayCount(reopenedSchedule?.preferredPattern);
       const run = subject
         ? consecutivePlacementFor(
             subject.id,
             selectedSectionId,
             manualSchedulingSettings?.consecutive_day_rules ?? [],
             Boolean(manualSchedulingSettings?.sunday_classes_enabled),
-          )
+          ) ?? (savedRunDays
+            ? { dayCount: savedRunDays, preferredStartDay: null, runs: consecutiveDayRuns(savedRunDays, Boolean(manualSchedulingSettings?.sunday_classes_enabled)) }
+            : null)
         : null;
+      setModalConsecutiveDays(run ? run.dayCount : null);
       if (run) {
         const savedRun = dropContext.isRescheduling
           ? schedules
@@ -1345,6 +1356,7 @@ export const useScheduler = () => {
       setModalClassMode("on-site");
       setModalIsHybrid(false);
       setModalSplitEnabled(false);
+      setModalConsecutiveDays(null);
       setModalFieldEnabled(false);
       setModalForceDayEnabled(false);
       setModalForcedDayIndex(0);
@@ -1456,16 +1468,20 @@ export const useScheduler = () => {
   }, [modalDay1StartSlot, isDay2ModifiedByUser]);
 
   /** The Consecutive Days run the course being placed follows here, if any. */
-  const modalRun = useMemo<ConsecutivePlacement | null>(() => (
-    dropContext
-      ? consecutivePlacementFor(
-          String(dropContext.subjectId),
-          selectedSectionId,
-          manualSchedulingSettings?.consecutive_day_rules ?? [],
-          Boolean(manualSchedulingSettings?.sunday_classes_enabled),
-        )
-      : null
-  ), [dropContext, selectedSectionId, manualSchedulingSettings]);
+  const modalRun = useMemo<ConsecutivePlacement | null>(() => {
+    if (!dropContext || !modalConsecutiveDays) return null;
+    const sundayEnabled = Boolean(manualSchedulingSettings?.sunday_classes_enabled);
+    // A saved rule of the same length keeps its ticked days.
+    const rule = consecutivePlacementFor(
+      String(dropContext.subjectId),
+      selectedSectionId,
+      manualSchedulingSettings?.consecutive_day_rules ?? [],
+      sundayEnabled,
+    );
+    return rule && rule.dayCount === modalConsecutiveDays
+      ? rule
+      : { dayCount: modalConsecutiveDays, preferredStartDay: null, runs: consecutiveDayRuns(modalConsecutiveDays, sundayEnabled) };
+  }, [dropContext, selectedSectionId, manualSchedulingSettings, modalConsecutiveDays]);
 
   /**
    * Conflict message for the placement currently described by the modal.
@@ -1510,7 +1526,8 @@ export const useScheduler = () => {
     if (!patternDays) {
       return checkConflict(
         courseId, selectedSectionId, null, modalRoomId,
-        modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern
+        // The length set in the dialog; the full class until one is set.
+        modalDay1Index, modalDay1StartSlot, modalDay1Duration > 0 ? modalDay1Duration : singleSlots, excludeIds, modalPreferredPattern
       )?.message ?? null;
     }
 
@@ -1748,6 +1765,8 @@ export const useScheduler = () => {
 
     const d1 = modalDay1Duration;
     const d2 = modalPreferredPattern ? modalDay2Duration : 0;
+    // A single meeting's length as set in the dialog; the full class until one is set.
+    const singleDuration = d1 > 0 ? d1 : singleSlots;
     const patternDays = parsePreferredPattern(modalPreferredPattern);
 
     // Consecutive Days: every day of the run, from the chosen starting day.
@@ -1800,7 +1819,7 @@ export const useScheduler = () => {
       const conflictDay2 = d2 > 0 ? checkConflict(subject.id, selectedSectionId, null, modalDay2RoomId, patternDays[1], day2StartSlot, d2, excludeIds, modalPreferredPattern) : null;
       if (conflictDay1 || conflictDay2) currentHasConflict = true;
     } else {
-      const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, modalDay1StartSlot, singleSlots, excludeIds, modalPreferredPattern);
+      const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, modalDay1StartSlot, singleDuration, excludeIds, modalPreferredPattern);
       if (conflict) currentHasConflict = true;
     }
 
@@ -1847,7 +1866,7 @@ export const useScheduler = () => {
           }
         }
       } else {
-        const maxDuration = singleSlots;
+        const maxDuration = singleDuration;
         if (maxSlots - maxDuration + 1 <= 0) {
           resolvedDay1StartSlot = -1;
           resolvedDay2StartSlot = -1;
@@ -1855,7 +1874,7 @@ export const useScheduler = () => {
           for (let offset = 0; offset < maxSlots; offset++) {
             const s = (modalDay1StartSlot + offset) % (maxSlots - maxDuration + 1);
             if (s + maxDuration > maxSlots) continue;
-            const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, s, singleSlots, excludeIds, modalPreferredPattern);
+            const conflict = checkConflict(subject.id, selectedSectionId, null, modalRoomId, modalDay1Index, s, singleDuration, excludeIds, modalPreferredPattern);
             if (conflict) continue;
 
             resolvedDay1StartSlot = s;
@@ -1912,13 +1931,14 @@ export const useScheduler = () => {
       if (d1 > 0) targetDays.push({ day: FULL_DAY_NAMES[patternDays[0]], startSlot: resolvedDay1StartSlot, duration: d1 });
       if (d2 > 0) targetDays.push({ day: FULL_DAY_NAMES[patternDays[1]], startSlot: resolvedDay2StartSlot, duration: d2 });
     } else {
-      targetDays.push({ day: FULL_DAY_NAMES[modalDay1Index], startSlot: resolvedDay1StartSlot, duration: singleSlots });
+      targetDays.push({ day: FULL_DAY_NAMES[modalDay1Index], startSlot: resolvedDay1StartSlot, duration: singleDuration });
     }
 
     setIsModalLoading(true);
     let shouldCloseModal = true;
-    // Force Day and Field Course are department settings, and the placement is
-    // validated against them, so they are saved first. When the placement is
+    // Force Day is a department setting, and the placement is validated
+    // against it, so it is saved first. (Field is not: one class meets in the
+    // field by its own delivery mode.) When the placement is
     // then refused, the department is put back as it was: a class that was
     // never placed must not change every other section's rules.
     let settingsBeforePlacement: ManualSchedulingSettings | null = null;
@@ -1932,26 +1952,15 @@ export const useScheduler = () => {
               { course_id: Number(subject.id), day: FULL_DAY_NAMES[modalForcedDayIndex] },
             ]
           : currentForcedRules.filter((rule) => Number(rule.course_id) !== Number(subject.id));
-        const currentFieldCodes = manualSchedulingSettings.field_course_codes ?? fieldCourseCodes;
-        const normalizedSubjectCode = subject.code.trim().toUpperCase();
-        const nextFieldCodes = modalFieldEnabled
-          ? Array.from(new Set([...currentFieldCodes, subject.code]))
-          : currentFieldCodes.filter((code) => code.trim().toUpperCase() !== normalizedSubjectCode);
-
-        const settingsChanged = JSON.stringify(nextForcedRules) !== JSON.stringify(currentForcedRules)
-          || JSON.stringify(nextFieldCodes) !== JSON.stringify(currentFieldCodes);
-        if (settingsChanged) {
+        if (JSON.stringify(nextForcedRules) !== JSON.stringify(currentForcedRules)) {
           const settingsResponse = await api.patch<ManualSchedulingSettings>("/scheduling-settings", {
             section_id: Number(selectedSectionId),
             forced_day_rules: nextForcedRules,
-            field_course_codes: nextFieldCodes,
           });
           settingsBeforePlacement = manualSchedulingSettings;
           setManualSchedulingSettings(settingsResponse.data);
-          setFieldCourseCodes(settingsResponse.data.field_course_codes ?? nextFieldCodes);
-          setFieldCourseAssignmentEnabled((settingsResponse.data.field_course_codes ?? nextFieldCodes).length > 0);
         }
-      } else if (modalForceDayEnabled || modalFieldEnabled !== dropSubjectIsField) {
+      } else if (modalForceDayEnabled) {
         setModalValidationError("Scheduling configurations are still loading. Close and reopen the placement dialog, then try again.");
         shouldCloseModal = false;
         return;
@@ -2117,20 +2126,16 @@ export const useScheduler = () => {
       if (restore !== null) {
         // Sent in the same shape as the save above, so the server applies the
         // exact inverse of it.
-        const restoredFieldCodes = restore.field_course_codes ?? fieldCourseCodes;
         try {
           const restored = await api.patch<ManualSchedulingSettings>("/scheduling-settings", {
             section_id: Number(selectedSectionId),
             forced_day_rules: restore.forced_day_rules ?? [],
-            field_course_codes: restoredFieldCodes,
           });
           setManualSchedulingSettings(restored.data);
-          setFieldCourseCodes(restored.data.field_course_codes ?? restoredFieldCodes);
-          setFieldCourseAssignmentEnabled((restored.data.field_course_codes ?? restoredFieldCodes).length > 0);
         } catch {
           toast.warning(
             "Department Settings Changed",
-            `The class was not placed, but the Force Day or Field Course change for ${subject.code} could not be undone. Review it in Scheduling Settings.`,
+            `The class was not placed, but the Force Day change for ${subject.code} could not be undone. Review it in Scheduling Settings.`,
           );
         }
       }
@@ -3368,6 +3373,8 @@ export const useScheduler = () => {
     refreshConflictCounts,
     modalWasConflicted,
     modalRun,
+    modalConsecutiveDays,
+    setModalConsecutiveDays,
     checkFacultyConflict,
     canManageScheduleFaculty,
     getFacultyRestrictionMessage,

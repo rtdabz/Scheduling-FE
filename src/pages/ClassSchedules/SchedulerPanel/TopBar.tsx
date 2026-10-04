@@ -580,7 +580,7 @@ export default function TopBar({
                 className={`${toolButtonClass} border-[#4e0a10] bg-[#4e0a10] text-white hover:bg-[#3a0809]`}
               >
                 <UserCheck className="h-3.5 w-3.5" />
-                <span>Auto-Assign</span>
+                <span>Assign</span>
               </button>
               {onClearInstructors && (
                 <button

@@ -332,6 +332,35 @@ export const fetchConflictRecommendations = async (
   return response.data.options ?? [];
 };
 
+/** A free, eligible instructor for one class, as ranked by the server. */
+export interface InstructorRecommendation {
+  faculty_id: number;
+  faculty_name: string;
+  employment_type: string | null;
+  reasons: string[];
+  score: number;
+  projected_units: number;
+  semesters_taught: number;
+  requires_overload_confirmation: boolean;
+}
+
+/**
+ * Instructors free for every meeting of a class, best first. Offered when the
+ * chosen instructor clashes, so the user can pick someone free instead of
+ * assigning over the conflict.
+ */
+export const fetchInstructorRecommendations = async (
+  scheduleId: number | string,
+  params: { limit?: number; signal?: AbortSignal } = {},
+): Promise<InstructorRecommendation[]> => {
+  const response = await api.get<{ options?: InstructorRecommendation[] }>(
+    `/instructor-assignments/${scheduleId}/recommendations`,
+    { signal: params.signal, params: { limit: params.limit } },
+  );
+
+  return response.data.options ?? [];
+};
+
 export const fetchResolvedConflicts = async (params: {
   semesterId?: number | null;
   departmentId?: number | null;

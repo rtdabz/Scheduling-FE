@@ -11,6 +11,7 @@ import {
 } from "../courseSlotPlan";
 import { DAYS } from "../constants";
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
+import { slotCount } from "../../../../lib/timeGrid";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
 
 export type ClassConfiguration = "regular" | "split" | "integrated";
@@ -347,11 +348,29 @@ export function defaultDurationMinutes(course: Course): number {
 /**
  * The longest weekly time the save will accept. A Split Session (and the
  * fixed Hybrid Split) is capped at the course's units
- * (`minor_split_duration`); a single meeting at the larger of the
- * Generator's two shapes (`class_duration`). Integrated's two sessions are
- * not capped by it: each takes the length the user sets.
+ * (`minor_split_duration`). A single meeting (each day's, for Consecutive
+ * Days) may run as long as the teaching day (`class_duration` raises the
+ * course's ceiling to it): some departments hold one eight-hour class.
+ * Integrated's two sessions are not capped by it: each takes the length the
+ * user sets.
  */
 export function maxDurationMinutes(
+  course: Course,
+  shape: DurationShape,
+  labSettings?: LaboratoryDurationSettings | null,
+): number {
+  const ceiling = courseCeilingMinutes(course, shape, labSettings);
+  if (shape === "split" || shape === "hybrid-split") return ceiling;
+  return Math.max(ceiling, slotCount() * SLOT_MINUTES);
+}
+
+/**
+ * The weekly time the course's own units carry: a Split at its units, a
+ * single meeting at the larger of the Generator's two shapes. Default
+ * Settings applies a department-wide length only within this, so a default
+ * never stretches a short course to a whole day.
+ */
+function courseCeilingMinutes(
   course: Course,
   shape: DurationShape,
   labSettings?: LaboratoryDurationSettings | null,
@@ -449,7 +468,7 @@ export function applyCourseDefaults(
   const fits =
     wanted !== null &&
     wanted > 0 &&
-    wanted <= maxDurationMinutes(course, shape, labSettings) &&
+    wanted <= courseCeilingMinutes(course, shape, labSettings) &&
     wanted % (SLOT_MINUTES * perMeeting) === 0;
   return {
     config: { ...config, durationMinutes: fits ? wanted : defaultDurationMinutes(course) },
@@ -573,16 +592,17 @@ const laboratoryServesLecture = (course: Course, room: PreferredRoomOption): boo
  * available or not reachable). The options come from the department's own
  * room list; nothing here names a room. An online class uses none.
  *
- * Field is chosen here, not by the course's name: a course that can meet in
- * the field is offered field rooms beside its classrooms, and picking one is
- * what makes it a field course. With no preference it is scheduled like any
- * other minor. Only a course whose record requires the field is limited to
+ * Field is chosen here, not by the course's name or kind: every face-to-face
+ * course, laboratory or lecture, is offered field rooms beside its own rooms,
+ * and picking one is what makes it a field course for this run (the server
+ * then accepts only a field room for it). With no preference it is scheduled
+ * as usual. Only a course whose record requires the field is limited to
  * field rooms.
  */
 export function compatibleRoomOptions(
   course: Course,
   config: Pick<CourseClassConfig, "configuration" | "delivery">,
-  isFieldCourse: boolean,
+  _isFieldCourse: boolean,
   options: PreferredRoomOption[],
 ): PreferredRoomOption[] {
   if (config.delivery === "online") return [];
@@ -593,24 +613,13 @@ export function compatibleRoomOptions(
   // allows: as one block, or as the on-site half of an Integrated Hybrid.
   const needsLaboratory =
     Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
-  if (needsLaboratory) {
-    return options.filter((room) => isLabMeetingRoomType(room.room_type));
-  }
-  const classrooms = options.filter(
-    (room) => room.room_type === "lecture" || laboratoryServesLecture(course, room),
-  );
-  return canMeetInField(course, isFieldCourse) ? [...classrooms, ...fieldRooms] : classrooms;
+  const ownRooms = needsLaboratory
+    ? options.filter((room) => isLabMeetingRoomType(room.room_type))
+    : options.filter(
+        (room) => room.room_type === "lecture" || laboratoryServesLecture(course, room),
+      );
+  return [...ownRooms, ...fieldRooms];
 }
-
-/**
- * Whether a field room may be offered: a course already on the department's
- * field list, or a lecture-only minor such as PATHFIT or NSTP.
- */
-export const canMeetInField = (course: Course, isFieldCourse: boolean): boolean =>
-  isFieldCourse ||
-  (course.category === "minor" &&
-    Number(course.labHours ?? 0) === 0 &&
-    course.roomTypeRequired !== "laboratory");
 
 /**
  * Infer the course-level configuration from course metadata and the section

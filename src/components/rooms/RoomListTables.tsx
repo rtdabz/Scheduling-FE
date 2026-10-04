@@ -40,10 +40,15 @@ const roomTypeBadge: Record<RoomListRow['room_type'], string> = {
 export function BuildingsTable<T extends BuildingListRow>({
   buildings,
   onSelect,
+  onEdit,
+  onArchive,
   rowTourId,
 }: {
   buildings: T[];
   onSelect: (building: T) => void;
+  /** Rename and archive actions; pages that cannot manage rooms omit them. */
+  onEdit?: (building: T) => void;
+  onArchive?: (building: T) => void;
   /** `data-tour` value on each building row, for the guided tour. */
   rowTourId?: string;
 }) {
@@ -78,14 +83,24 @@ export function BuildingsTable<T extends BuildingListRow>({
       enableSorting: false,
       meta: { align: 'right', cellClassName: 'whitespace-nowrap', stopRowClick: true },
       cell: ({ row }) => (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
           <TableActionButton label="View Rooms" variant="view" onClick={() => onSelect(row.original)}>
             <Eye size={17} />
           </TableActionButton>
+          {onEdit && (
+            <TableActionButton label="Edit Building" variant="edit" onClick={() => onEdit(row.original)}>
+              <Pencil size={15} />
+            </TableActionButton>
+          )}
+          {onArchive && (
+            <TableActionButton label="Archive Building" variant="archive" onClick={() => onArchive(row.original)}>
+              <Archive size={15} />
+            </TableActionButton>
+          )}
         </div>
       ),
     },
-  ], [onSelect]);
+  ], [onSelect, onEdit, onArchive]);
 
   const table = useDataTable<T>({ data: buildings, columns, pageSize: 10, getRowId: (building) => building.name });
 

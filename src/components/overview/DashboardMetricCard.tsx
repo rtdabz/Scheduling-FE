@@ -39,10 +39,37 @@ interface DashboardMetricCardProps {
   label: string;
   value: string | number;
   detail: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
+  /** 0-100. Draws a progress ring in the icon slot instead of the icon. */
+  progress?: number;
   tone?: DashboardMetricTone;
   onClick?: () => void;
   className?: string;
+}
+
+/** Same 36px footprint as the icon chip, so a ring card lines up with its row. */
+function ProgressRing({ progress }: { progress: number }) {
+  const radius = 15;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.min(100, Math.max(0, progress));
+  return (
+    <svg viewBox="0 0 36 36" className="h-9 w-9 shrink-0 -rotate-90" aria-hidden="true">
+      <circle cx="18" cy="18" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="4" />
+      {clamped > 0 && (
+        <circle
+          cx="18"
+          cy="18"
+          r={radius}
+          fill="none"
+          stroke="#16a36a"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - clamped / 100)}
+        />
+      )}
+    </svg>
+  );
 }
 
 export default function DashboardMetricCard({
@@ -50,15 +77,18 @@ export default function DashboardMetricCard({
   value,
   detail,
   icon: Icon,
+  progress,
   tone = 'brand',
   onClick,
   className = '',
 }: DashboardMetricCardProps) {
   const content = (
     <>
-      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}>
-        <Icon className="h-4 w-4" />
-      </span>
+      {progress !== undefined ? <ProgressRing progress={progress} /> : (
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}>
+          {Icon && <Icon className="h-4 w-4" />}
+        </span>
+      )}
       <span className="flex min-w-0 flex-1 flex-col text-left">
         <span className={`text-lg font-bold leading-5 ${VALUE_TONES[tone]}`}>{value}</span>
         <span className="mt-1 break-words text-[11px] font-bold leading-tight">{label}</span>

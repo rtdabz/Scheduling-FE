@@ -80,7 +80,7 @@ const TONES: Record<Tone, string> = {
 };
 
 const QUEUE_COLUMNS = 'minmax(0,1.25fr) minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr) 80px';
-const OVERVIEW_COLUMNS = 'minmax(0,1.4fr) 58px 62px 66px 62px';
+const OVERVIEW_COLUMNS = 'minmax(0,1.4fr) 54px 56px 60px 56px';
 
 const percent = (part:number, total:number) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
@@ -344,6 +344,9 @@ export default function DeanDashboardPage() {
     total: totals.total + item.total,
   }), { submitted: 0, awaitingReview: 0, returned: 0, total: 0 }), [packages]);
 
+  // The queue holds only packages with sections waiting on the Dean.
+  const queuedPackages = useMemo(() => packages.filter(item => item.awaitingReview > 0), [packages]);
+
   // ── Faculty workload ──
   const loads = useMemo(() => deptFaculties.map(f => {
     const assigned = f.assigned_units || 0;
@@ -508,14 +511,9 @@ export default function DeanDashboardPage() {
   const inventory: Tile[] = [
     { label: 'Sections', value: sectionTotal, detail: 'Department scope', icon: LayoutGrid, path: '/dean/sections', tone: 'brand' },
     { label: 'Instructors', value: deptFaculties.length, detail: 'Active instructors', icon: Users, path: '/dean/instructors', tone: 'accent' },
-    { label: 'Curriculums', value: deptSubjects.length, detail: 'Offered courses', icon: BookOpen, path: '/dean/curriculum', tone: 'good' },
+    { label: 'Courses', value: deptSubjects.length, detail: 'Offered courses', icon: BookOpen, path: '/dean/courses', tone: 'good' },
     { label: 'Rooms', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/facilities', tone: 'warn' },
   ];
-
-  const completionSlices = [
-    { key: 'done', value: Math.max(0, draftedCount), color: '#16a36a' },
-    { key: 'left', value: Math.max(0, sectionTotal - draftedCount), color: '#e2e8f0' },
-  ].filter(slice => slice.value > 0);
 
   /**
    * The timetable panel. Extracted so the same tree can be portalled to the body
@@ -614,7 +612,7 @@ export default function DeanDashboardPage() {
       The department has more class meetings than can be loaded at once, so the figures and timetable below may be missing classes.
     </TruncatedDataNotice>}
 
-    <section id="dashboard-metrics" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
       {kpis.map(({ label, value, detail, icon, path, tone }) => (
         <DashboardMetricCard
           key={label}
@@ -627,50 +625,15 @@ export default function DeanDashboardPage() {
         />
       ))}
 
-      <button
-        type="button"
+      <DashboardMetricCard
+        label="Scheduling Completion"
+        value={`${draftingProgress}%`}
+        detail={`${draftedCount} / ${sectionTotal} sections completed`}
+        progress={draftingProgress}
+        tone={draftingProgress === 100 ? 'good' : 'brand'}
         onClick={() => navigate('/dean/schedules')}
-        className="flex min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-primary/30 hover:shadow-md"
-      >
-        <div className="relative h-12 w-12 shrink-0 self-start">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={completionSlices.map(slice => ({ name: slice.key, value: slice.value }))}
-                dataKey="value"
-                innerRadius="67%"
-                outerRadius="100%"
-                startAngle={90}
-                endAngle={-270}
-                paddingAngle={1}
-                stroke="#ffffff"
-                strokeWidth={3}
-              >
-                {completionSlices.map(slice => <Cell key={slice.key} fill={slice.color} />)}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold leading-none tabular-nums text-primary">{draftingProgress}%</span>
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="break-words text-xs font-bold leading-tight">Scheduling Completion</div>
-          <div className="mt-1 h-7 min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={[{ readiness: draftingProgress, label: `${draftingProgress}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
-                <XAxis type="number" domain={[0, 100]} hide />
-                <YAxis type="category" hide />
-                <Bar dataKey="readiness" fill={draftingProgress === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
-                  <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-auto break-words pt-0.5 text-[11px] leading-tight text-slate-500">{draftedCount} / {sectionTotal} sections completed</div>
-        </div>
-      </button>
-    </section>
+      />
 
-    <section className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
       {inventory.map(({ label, value, detail, icon, path, tone }) => (
         <DashboardMetricCard
           key={label}
@@ -693,7 +656,7 @@ export default function DeanDashboardPage() {
         onAction={openApproval}
         className="xl:col-span-4"
       >
-        {packages.length ? <>
+        {queuedPackages.length ? <>
           <div className="min-w-0">
             <div className="grid gap-2 border-b border-slate-100 pb-2 text-[9px] font-bold uppercase leading-tight tracking-wide text-slate-400" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
               <span>Schedule Package</span>
@@ -703,7 +666,7 @@ export default function DeanDashboardPage() {
               <span className="text-right">Actions</span>
             </div>
             <ul className="divide-y divide-slate-100">
-              {packages.map(item => <li key={item.code} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
+              {queuedPackages.map(item => <li key={item.code} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: QUEUE_COLUMNS }}>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <FileText className="h-3.5 w-3.5 shrink-0 text-primary/70" />
                   <b className="truncate text-[11px] text-slate-700" title={`${item.code} Schedule`}>{item.code} Schedule</b>
@@ -735,7 +698,7 @@ export default function DeanDashboardPage() {
             <span className="flex items-center gap-1.5"><RotateCcw className="h-3 w-3 text-amber-600" /> Return for Revision</span>
             <span className="flex items-center gap-1.5"><X className="h-3 w-3 text-rose-600" /> Reject</span>
           </div>
-        </> : <p className="py-6 text-center text-[11px] italic text-slate-400">No schedule packages for this department yet.</p>}
+        </> : <p className="py-6 text-center text-[11px] italic text-slate-400">No schedule packages are waiting for your review.</p>}
       </Panel>
 
       <Panel
@@ -756,8 +719,8 @@ export default function DeanDashboardPage() {
         subtitle="Overview of submitted schedule packages."
         className="xl:col-span-4"
       >
-        {packages.length ? <div className="-mx-1 overflow-x-auto px-1">
-          <div className="min-w-[420px]">
+        {packages.length ? <div>
+          <div className="min-w-0">
             <div className="grid gap-2 border-b border-slate-100 pb-2 text-[9px] font-bold uppercase leading-tight tracking-wide text-slate-400" style={{ gridTemplateColumns: OVERVIEW_COLUMNS }}>
               <span>Schedule Package</span>
               <span className="text-right">Submitted</span>

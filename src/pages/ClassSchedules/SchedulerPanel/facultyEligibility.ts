@@ -19,15 +19,22 @@ const ELIGIBLE: FacultyEligibility = { eligible: true, reason: null };
 export const isMajorSubject = (subject?: Subject | null): boolean =>
   (subject?.category ?? "major") === "major";
 
-/** The department whose instructors may teach a major. */
+/** The department whose instructors may teach a major; a cross-assignment wins. */
 export const majorTeachingDepartmentId = (
   subject: Subject | null | undefined,
   scheduleDepartmentId: number | null
-): number | null => subject?.departmentId ?? scheduleDepartmentId;
+): number | null => subject?.teachingDepartmentId ?? subject?.departmentId ?? scheduleDepartmentId;
 
-/** The program an instructor must belong to, or null when the course has none. */
-export const requiredTeachingProgramId = (subject?: Subject | null): number | null =>
-  isMajorSubject(subject) ? subject?.programId ?? null : subject?.teachingProgramId ?? null;
+/**
+ * The program an instructor must belong to, or null when the course has none.
+ * An assigned teaching program wins (BSED-FIL Prof Ed taught by BEED); a major
+ * cross-assigned to a whole college is open to any of its programs.
+ */
+export const requiredTeachingProgramId = (subject?: Subject | null): number | null => {
+  if (subject?.teachingProgramId != null) return subject.teachingProgramId;
+  if (subject?.teachingDepartmentId != null) return null;
+  return isMajorSubject(subject) ? subject?.programId ?? null : null;
+};
 
 export const facultyEligibilityForSubject = (
   faculty: Faculty,
@@ -50,7 +57,9 @@ export const facultyEligibilityForSubject = (
     if (requiredProgramId !== null && Number(faculty.programId ?? 0) !== Number(requiredProgramId)) {
       return {
         eligible: false,
-        reason: subject?.programCode
+        reason: subject?.teachingProgramId
+          ? "Outside the teaching program for this course"
+          : subject?.programCode
           ? `Not in the ${subject.programCode} program`
           : "Not in this major's program"
       };

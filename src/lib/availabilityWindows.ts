@@ -21,3 +21,14 @@ export const coveredContinuously = (
 
   return false;
 };
+
+export const AVAILABILITY_WARNING_TITLE = "Availability Warning";
+
+const AVAILABILITY_WARNING_PREFIX = "This assignment is outside ";
+
+/** The message shown when a class falls outside a part-timer's availability. */
+export const availabilityWarningMessage = (instructorName: string): string =>
+  `${AVAILABILITY_WARNING_PREFIX}${instructorName}’s available time.`;
+
+export const isAvailabilityWarning = (message: string | null | undefined): boolean =>
+  Boolean(message?.startsWith(AVAILABILITY_WARNING_PREFIX));

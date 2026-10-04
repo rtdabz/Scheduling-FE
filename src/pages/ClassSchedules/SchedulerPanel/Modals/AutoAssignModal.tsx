@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -9,10 +9,11 @@ import ProfileAvatar from "../../../../components/ui/ProfileAvatar";
 import TableActionButton from "../../../../components/ui/TableActionButton";
 import { useToast } from "../../../../context/ToastContext";
 import { facultyEligibilityForSubject } from "../facultyEligibility";
+import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances } from "../../../../lib/facultyLoad";
 import type { LoadTier } from "../../../../lib/overloadConfirmation";
 import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
-import EmploymentBadge from "../EmploymentBadge";
+import EmploymentBadge, { employmentLabel } from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 
 /* Opening the wizard resets its local draft state. */
@@ -282,6 +283,23 @@ export default function AutoAssignModal({
     return subjects.filter((subject) => ids.has(subject.id)).sort((left, right) => left.code.localeCompare(right.code));
   }, [groups, subjects, yearLevel]);
 
+  // The program(s) each course is offered to, for the Course picker: a major's
+  // own program, or for a GEC/minor the programs of the sections taking it.
+  const courseProgramLabels = useMemo(() => {
+    const programs = new Map<string, Set<string>>();
+    groups
+      .filter((group) => group.yearLevel === Number(yearLevel))
+      .forEach((group) => {
+        const code = group.schedules[0]?.programCode;
+        if (!code) return;
+        programs.set(group.courseId, (programs.get(group.courseId) ?? new Set()).add(code));
+      });
+    return new Map(courseOptions.map((course) => {
+      const codes = course.programCode ? [course.programCode] : [...(programs.get(course.id) ?? [])].sort();
+      return [course.id, codes.join(", ")];
+    }));
+  }, [courseOptions, groups, yearLevel]);
+
   const facultyLoads = useMemo(() => {
     const loads = new Map<string, number>();
     // Seeded from the server's own figure instead of by summing the visible
@@ -483,10 +501,11 @@ export default function AutoAssignModal({
   const confirmConflictOverride = async (group: SectionGroup) => {
     const conflict = getConflict(group);
     if (!conflict || !selectedFaculty || getIssue(group)) return;
+    const availability = isAvailabilityWarning(conflict);
     const confirmed = await confirm({
-      title: "Instructor has a conflict",
+      title: availability ? AVAILABILITY_WARNING_TITLE : "Instructor has a conflict",
       message: `${conflict}\n\nAssign ${selectedFaculty.name} to ${group.courseCode} ${group.sectionName} anyway?`,
-      eyebrow: "Instructor conflict",
+      eyebrow: availability ? "Instructor availability" : "Instructor conflict",
       confirmLabel: "Assign anyway",
       variant: "warning",
     });
@@ -623,7 +642,10 @@ export default function AutoAssignModal({
               <section className="flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <div className="grid shrink-0 gap-3 border-b border-slate-100 p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                   <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
-                  <SelectField label="Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => ({ value: course.id, label: `${course.code} - ${course.name}` }))} placeholder="Select course" />
+                  <SelectField label="Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => {
+                    const programs = courseProgramLabels.get(course.id);
+                    return { value: course.id, label: `${course.code} - ${course.name}${programs ? ` (${programs})` : ""}` };
+                  })} placeholder="Select course" />
                 </div>
                 <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onOverride={confirmConflictOverride} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
                 <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
@@ -688,10 +710,23 @@ export default function AutoAssignModal({
   );
 }
 
+type EmploymentFilter = "all" | "full-time" | "part-time";
+
+const EMPLOYMENT_FILTERS: [EmploymentFilter, string][] = [
+  ["all", "All"],
+  ["full-time", "Full-time"],
+  ["part-time", "Part-time"],
+];
+
+/** Full-time first, then part-time, then instructors with no type on record. */
+const employmentRank = (faculty: Faculty): number =>
+  faculty.employmentType === "full-time" ? 0 : faculty.employmentType === "part-time" ? 1 : 2;
+
 function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect, allowExternalInstructors = true }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void; allowExternalInstructors?: boolean }) {
   const [tab, setTab] = useState<"department" | "external">("department");
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
+  const [employment, setEmployment] = useState<EmploymentFilter>("all");
   // Department ids arrive from the API as numbers in the type contract, but
   // database-backed JSON responses may contain numeric strings. Normalize both
   // sides so department instructors are not hidden by a strict type mismatch.
@@ -723,7 +758,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
   // Narrows the current tab by department, then by name, department or program,
   // so a long roster does not have to be scrolled to find one instructor.
   const query = search.trim().toLowerCase();
-  const matchingFaculties = useMemo(
+  const searchedFaculties = useMemo(
     () => visibleFaculties.filter((faculty) => {
       if (activeDepartment !== "" && String(faculty.departmentId ?? "none") !== activeDepartment) return false;
       return query === "" || [faculty.name, faculty.departmentCode, faculty.departmentName, faculty.programCode]
@@ -731,6 +766,21 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
     }),
     [activeDepartment, query, visibleFaculties],
   );
+  const employmentCounts = useMemo(() => ({
+    all: searchedFaculties.length,
+    "full-time": searchedFaculties.filter((faculty) => faculty.employmentType === "full-time").length,
+    "part-time": searchedFaculties.filter((faculty) => faculty.employmentType === "part-time").length,
+  }), [searchedFaculties]);
+  // "All" keeps full-timers together ahead of part-timers (sort is stable, so
+  // name order holds within each group); the other chips show one type only.
+  const matchingFaculties = useMemo(
+    () => employment === "all"
+      ? [...searchedFaculties].sort((a, b) => employmentRank(a) - employmentRank(b))
+      : searchedFaculties.filter((faculty) => faculty.employmentType === employment),
+    [employment, searchedFaculties],
+  );
+  const showEmploymentHeadings = employment === "all"
+    && new Set(matchingFaculties.map(employmentRank)).size > 1;
   const columns = useMemo<ColumnDef<Faculty>[]>(() => [
     {
       id: "instructorCard",
@@ -786,7 +836,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 text-sm font-black text-slate-900">
         <Users className="h-4 w-4 text-[#4e0a10]" /> Instructor
         <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
-          {query || activeDepartment ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
+          {query || activeDepartment || employment !== "all" ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
         </span>
       </div>
       {allowExternalInstructors && <div className="flex shrink-0 border-b border-slate-200 px-3">
@@ -850,21 +900,56 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
           </button>
         )}
       </div>
+      <div role="group" aria-label="Filter instructors by employment type" className="flex shrink-0 gap-1.5 px-3 pt-2.5">
+        {EMPLOYMENT_FILTERS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setEmployment(value)}
+            aria-pressed={employment === value}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+              employment === value
+                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
+                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+            <span className={`tabular-nums ${employment === value ? "text-white/75" : "text-slate-400"}`}>{employmentCounts[value]}</span>
+          </button>
+        ))}
+      </div>
       <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto overflow-x-hidden px-3 pb-2" style={{ contain: "layout paint" }}>
         <table className="w-full table-fixed border-separate border-spacing-y-2">
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-                ))}
-              </tr>
-            ))}
+            {table.getRowModel().rows.map((row, index, rows) => {
+              const rank = employmentRank(row.original);
+              const startsGroup = showEmploymentHeadings && (index === 0 || employmentRank(rows[index - 1].original) !== rank);
+              return (
+                <Fragment key={row.id}>
+                  {startsGroup && (
+                    <tr>
+                      <td className="px-1 pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {employmentLabel(row.original.employmentType) ?? "No employment type"}
+                      </td>
+                    </tr>
+                  )}
+                  <tr>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                    ))}
+                  </tr>
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
         {matchingFaculties.length === 0 && (
           <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">
-            {query && visibleFaculties.length > 0 ? `No instructor matches “${search.trim()}”.` : "No instructors in this group."}
+            {query && searchedFaculties.length === 0 && visibleFaculties.length > 0
+              ? `No instructor matches “${search.trim()}”.`
+              : employment !== "all" && searchedFaculties.length > 0
+                ? `No ${employment} instructors here.`
+                : "No instructors in this group."}
           </p>
         )}
       </div>
@@ -948,7 +1033,8 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
             <span className="inline-flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-orange-700" title={conflict}>
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
-                {selectedKeys.includes(row.original.key) ? "Conflict · confirmed" : "Conflict"}
+                {isAvailabilityWarning(conflict) ? AVAILABILITY_WARNING_TITLE : "Conflict"}
+                {selectedKeys.includes(row.original.key) && " · confirmed"}
               </span>
               <span className="whitespace-nowrap text-[11px] font-medium text-orange-600/90">{conflict}</span>
             </span>

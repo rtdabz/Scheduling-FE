@@ -13,13 +13,14 @@ const grantCache = new Map<number, RoomOccupancyBlock[]>();
  *
  * `ready` stays false until the first read for a room lands, letting a view
  * hold its timetable and draw classes and borrowed windows in one pass. The
- * occupancy read is gated on the room-request capabilities, so for anyone
+ * occupancy read is gated on the room-request and schedule-building
+ * capabilities, so for anyone
  * else the hook is immediately ready with no windows.
  */
 export function useRoomGrants(roomId: number | null): { grants: RoomOccupancyBlock[]; ready: boolean } {
   const [, setRevision] = useState(0);
   const liveRevision = useLiveRevision(['rooms']);
-  const canSeeGrants = hasStoredCapability(['room.request', 'room.review_requests']);
+  const canSeeGrants = hasStoredCapability(['room.request', 'room.review_requests', 'schedule.create']);
   const enabled = canSeeGrants && roomId !== null;
 
   useEffect(() => {

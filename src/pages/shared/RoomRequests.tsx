@@ -171,11 +171,11 @@ const formatDateCompact = (isoString?: string | null): string => {
 
 /**
  * Mirrors the server's assertLendable: only another department's available
- * lecture rooms and laboratories can be borrowed. Shared rooms are already
+ * lecture rooms can be borrowed; laboratories are never lent. Shared rooms are already
  * usable, so they are never requested.
  */
 const isLendable = (room: RoomRecord, departmentId: number | null) =>
-  (room.room_type === 'lecture' || room.room_type === 'laboratory')
+  room.room_type === 'lecture'
   && room.status === 'available'
   && room.department_id !== null
   && room.department_id !== departmentId;
@@ -746,8 +746,10 @@ export default function RoomRequests() {
       {showRequests && (
         <RequestsModal
           requests={requests}
+          departmentId={departmentId}
           onClose={() => setShowRequests(false)}
           onPreview={setPreviewRequest}
+          onChanged={replaceRequest}
         />
       )}
 
@@ -947,7 +949,7 @@ function RequestRoomModal({
             onChange={(event) => setPurpose(event.target.value)}
             rows={3}
             maxLength={1000}
-            placeholder="e.g. IT 1A laboratory classes; our laboratories are fully booked."
+            placeholder="e.g. IT 1A lecture classes; our lecture rooms are fully booked."
             className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 outline-none focus:border-[#5A1220]"
           />
         </label>
@@ -956,15 +958,66 @@ function RequestRoomModal({
   );
 }
 
+/**
+ * The borrowing department withdraws a pending request or gives back an
+ * approved room, at any time. Classes it holds in the room under that grant
+ * become Room TBA (the server reports how many).
+ */
+function useGiveBack(onChanged: (request: RoomRequest) => void) {
+  const { toast, confirm } = useToast();
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const giveBack = async (request: RoomRequest) => {
+    if (busyId !== null) return;
+    const roomCode = request.room?.room_code ?? 'the room';
+    const isApproved = request.status === 'approved';
+    const confirmed = await confirm({
+      title: isApproved ? 'Give Back Room' : 'Cancel Request',
+      message: isApproved
+        ? `Your department will no longer be able to schedule into ${roomCode}. Classes you hold in it under this grant will become Room TBA.`
+        : `Withdraw your request for ${roomCode}?`,
+      eyebrow: 'Room Request',
+      confirmLabel: isApproved ? 'Give Back' : 'Cancel Request',
+      cancelLabel: 'Keep',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
+
+    setBusyId(request.id);
+    try {
+      const result = await cancelRoomRequest(request.id);
+      toast.success('Room Request', result.message);
+      onChanged(result.data);
+    } catch (error) {
+      toast.error('Action Failed', apiErrorMessage(error, 'The request could not be updated.'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return { giveBack, busyId };
+}
+
+const canGiveBack = (request: RoomRequest, departmentId: number | null): boolean =>
+  hasStoredCapability('room.request')
+  && departmentId !== null
+  && request.requesting_department?.id === departmentId
+  && (request.status === 'pending' || request.status === 'approved');
+
 function RequestsModal({
   requests,
+  departmentId,
   onClose,
   onPreview,
+  onChanged,
 }: {
   requests: RoomRequest[];
+  departmentId: number | null;
   onClose: () => void;
   onPreview: (request: RoomRequest) => void;
+  onChanged: (request: RoomRequest) => void;
 }) {
+  const { giveBack, busyId } = useGiveBack(onChanged);
   const rows = useMemo<RequestRow[]>(
     () =>
       requests
@@ -1024,20 +1077,38 @@ function RequestsModal({
         header: 'Actions',
         enableSorting: false,
         meta: { align: 'right', stopRowClick: true },
-        cell: ({ row }) => (
-          <TableActionButton
-            label={`View request for ${row.original.room}`}
-            variant="view"
-            onClick={() => onPreview(row.original.request)}
-            className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
-          >
-            <Eye size={15} />
-            View
-          </TableActionButton>
-        ),
+        cell: ({ row }) => {
+          const { request } = row.original;
+          const isApproved = request.status === 'approved';
+          return (
+            <div className="flex justify-end gap-1.5">
+              <TableActionButton
+                label={`View request for ${row.original.room}`}
+                variant="view"
+                onClick={() => onPreview(request)}
+                className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
+              >
+                <Eye size={15} />
+                View
+              </TableActionButton>
+              {canGiveBack(request, departmentId) && (
+                <TableActionButton
+                  label={isApproved ? `Give back ${row.original.room}` : `Cancel request for ${row.original.room}`}
+                  variant="remove"
+                  disabled={busyId !== null}
+                  onClick={() => void giveBack(request)}
+                  className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
+                >
+                  <Undo2 size={15} />
+                  {isApproved ? 'Give Back' : 'Cancel'}
+                </TableActionButton>
+              )}
+            </div>
+          );
+        },
       },
     ],
-    [onPreview],
+    [onPreview, departmentId, busyId, giveBack],
   );
 
   const table = useDataTable({ data: rows, columns, pageSize: false, getRowId: (row) => row.id });
@@ -1078,11 +1149,14 @@ function RequestPreviewModal({
 }) {
   const { toast, confirm } = useToast();
   const [remarks, setRemarks] = useState('');
+  const [remarksMissing, setRemarksMissing] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const remarksRef = useRef<HTMLTextAreaElement>(null);
 
   // Only the secretary of the department that owns the room decides; the VPAA only watches.
   const canReview = hasStoredCapability('room.review_requests') && departmentId !== null && getOwnerId(request) === departmentId;
-  const isOwn = hasStoredCapability('room.request') && departmentId !== null && request.requesting_department?.id === departmentId;
+  const isOwn = canGiveBack(request, departmentId);
+  const { giveBack, busyId } = useGiveBack(onChanged);
   const isPending = request.status === 'pending';
   const isApproved = request.status === 'approved';
   const needsRemarks = canReview && (isPending || isApproved);
@@ -1113,9 +1187,19 @@ function RequestPreviewModal({
     if (confirmed) await run(() => reviewRoomRequest(request.id, 'approve', remarks.trim()));
   };
 
-  // Rejecting and revoking are as final as approving, and used to act on the
-  // first click while approving asked first.
+  // Rejecting and revoking need a reason and ask for confirmation like
+  // approving. The buttons stay enabled so a click without a reason points at
+  // the remarks box instead of silently doing nothing.
+  const requireRemarks = (): boolean => {
+    if (remarks.trim() !== '') return true;
+    setRemarksMissing(true);
+    remarksRef.current?.focus();
+    remarksRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return false;
+  };
+
   const reject = async () => {
+    if (!requireRemarks()) return;
     const confirmed = await confirm({
       title: 'Reject Room Request',
       message: `${request.requesting_department?.code ?? 'The department'} will not be able to use ${roomCode} for these windows.`,
@@ -1127,28 +1211,15 @@ function RequestPreviewModal({
   };
 
   const revoke = async () => {
+    if (!requireRemarks()) return;
     const confirmed = await confirm({
       title: 'Revoke Room Grant',
-      message: `${request.requesting_department?.code ?? 'The department'} will lose access to ${roomCode}. This is refused while it still has classes in the room.`,
+      message: `${request.requesting_department?.code ?? 'The department'} will lose access to ${roomCode}. Its classes held in the room under this grant will become Room TBA.`,
       eyebrow: 'Room Request',
       confirmLabel: 'Revoke',
       variant: 'danger',
     });
     if (confirmed) await run(() => reviewRoomRequest(request.id, 'revoke', remarks.trim()));
-  };
-
-  const cancel = async () => {
-    const confirmed = await confirm({
-      title: isApproved ? 'Give Back Room' : 'Cancel Request',
-      message: isApproved
-        ? `Your department will no longer be able to schedule into ${roomCode}. Move any classes out of it first.`
-        : `Withdraw your request for ${roomCode}?`,
-      eyebrow: 'Room Request',
-      confirmLabel: isApproved ? 'Give Back' : 'Cancel Request',
-      cancelLabel: 'Keep',
-      variant: 'warning',
-    });
-    if (confirmed) await run(() => cancelRoomRequest(request.id));
   };
 
   const actionClass =
@@ -1157,17 +1228,17 @@ function RequestPreviewModal({
   return (
     <Modal isOpen onClose={onClose} title="Room Request" description={`${request.requesting_department?.code ?? 'Unknown'} requesting ${roomCode}`} size="sm" footer={
       <div className="flex w-full flex-wrap justify-end gap-2">
-        {isOwn && (isPending || isApproved) && (
-          <button type="button" disabled={isBusy} onClick={() => void cancel()} className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}><Trash2 size={15} /> {isApproved ? 'Give Back' : 'Cancel Request'}</button>
+        {isOwn && (
+          <button type="button" disabled={isBusy || busyId !== null} onClick={() => void giveBack(request)} className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}><Trash2 size={15} /> {isApproved ? 'Give Back' : 'Cancel Request'}</button>
         )}
         {canReview && isPending && (
           <>
-            <button type="button" disabled={isBusy || remarks.trim() === ''} onClick={() => void reject()} className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}><X size={15} /> Reject</button>
+            <button type="button" disabled={isBusy} onClick={() => void reject()} className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}><X size={15} /> Reject</button>
             <button type="button" disabled={isBusy} onClick={() => void approve()} className={`${actionClass} border-transparent bg-[#5A1220] text-white hover:bg-[#4e0a10]`}><Check size={15} /> Approve</button>
           </>
         )}
         {canReview && isApproved && (
-          <button type="button" disabled={isBusy || remarks.trim() === ''} onClick={() => void revoke()} className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}><Undo2 size={15} /> Revoke</button>
+          <button type="button" disabled={isBusy} onClick={() => void revoke()} className={`${actionClass} border-red-200 text-red-700 hover:bg-red-50`}><Undo2 size={15} /> Revoke</button>
         )}
         <button type="button" onClick={onClose} className={`${actionClass} border-gray-200 text-gray-700 hover:bg-gray-50`}>Close</button>
       </div>
@@ -1206,16 +1277,27 @@ function RequestPreviewModal({
             Remarks {isPending ? '(required to reject)' : '(required to revoke)'}
             {isApproved && (
               <span className="mt-1 block normal-case tracking-normal font-semibold text-orange-700">
-                A grant cannot be revoked while the department still has classes in the room.
+                Revoking moves the department's classes in this room to Room TBA.
               </span>
             )}
             <textarea
+              ref={remarksRef}
               value={remarks}
-              onChange={(event) => setRemarks(event.target.value)}
+              onChange={(event) => {
+                setRemarks(event.target.value);
+                if (event.target.value.trim() !== '') setRemarksMissing(false);
+              }}
               rows={3}
               maxLength={1000}
-              className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case tracking-normal text-gray-700 outline-none focus:border-[#5A1220]"
+              aria-invalid={remarksMissing}
+              placeholder={isPending ? 'Why is this request rejected?' : 'Why is this grant revoked?'}
+              className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm font-medium normal-case tracking-normal text-gray-700 outline-none focus:border-[#5A1220] ${remarksMissing ? 'border-red-400' : 'border-gray-200'}`}
             />
+            {remarksMissing && (
+              <span className="mt-1 block normal-case tracking-normal font-semibold text-red-600">
+                Enter a reason to {isPending ? 'reject this request' : 'revoke this grant'}.
+              </span>
+            )}
           </label>
         )}
       </div>

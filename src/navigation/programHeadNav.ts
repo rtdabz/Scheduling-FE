@@ -6,7 +6,7 @@ const toProgramHeadPath = (path: string): string => path.replace('/secretary/', 
 // Secretary-only screens. Their capability cannot be granted to a program head
 // (config/capabilities.php), so mapping them would only show a permanently
 // locked item pointing at a route that does not exist.
-const SECRETARY_ONLY_PATHS = new Set(['/secretary/program-rooms']);
+const SECRETARY_ONLY_PATHS = new Set(['/secretary/program-rooms', '/secretary/room-requests']);
 
 const mapItems = (items: NavItem[]): NavItem[] => items
   .filter((item) => !item.path || !SECRETARY_ONLY_PATHS.has(item.path))

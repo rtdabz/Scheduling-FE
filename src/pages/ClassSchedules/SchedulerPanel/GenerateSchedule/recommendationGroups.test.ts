@@ -89,6 +89,29 @@ describe("describeOption", () => {
   });
 });
 
+describe("room-time options", () => {
+  it("lists Hybrid Split and Online as choices of one fix, named by their own effect", () => {
+    const acrossSections = (type: string, value: string | null) => [1, 2].flatMap((sectionId) =>
+      [5, 6].map((courseId) => adjustment({ type, value, section_id: sectionId, course_id: courseId })));
+    const hybrid = recommendation("room-capacity-hybrid_split", acrossSections("set_hybrid_split", null), {
+      title: "Hybrid Split",
+      suggested_adjustment: "GEC 1, GEC 2 meet once on campus and once online in every section: frees 12 room-slots (6 needed).",
+    });
+    const online = recommendation("room-capacity-online", acrossSections("set_delivery_mode", "online"), {
+      title: "Online",
+      suggested_adjustment: "GEC 1, GEC 2 meet online in every section: frees 24 room-slots (6 needed).",
+    });
+
+    const { groups } = groupRecommendations([hybrid, online]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].target).toBe("Free Room Time for This Year Level");
+    expect(groups[0].options.map((option) => option.action)).toEqual(["Apply Hybrid Split", "Apply Online"]);
+    // The effect names the courses; it is not suffixed with a class count.
+    expect(groups[0].options[0].effect).toBe(hybrid.suggested_adjustment);
+  });
+});
+
 describe("groupRecommendations", () => {
   const hybrid = recommendation("recommend-hybrid-split-1-5", [adjustment({ type: "enable_hybrid_split" })]);
   const online = recommendation("recommend-online-split-1-5", [adjustment({ type: "set_delivery_mode", value: "online" })]);

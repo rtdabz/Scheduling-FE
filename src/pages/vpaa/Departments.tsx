@@ -65,43 +65,14 @@ const getDepartmentColor = (name: string) => {
   };
 };
 
-/**
- * The code is no longer typed in here — the logo took its place on this page.
- * It is still derived from the name and saved, because Faculty, Rooms,
- * Curriculum, the sidebar and the notification feed all label departments by
- * code. "College of Computing Studies" becomes CCS, the convention the seeded
- * departments already follow.
- */
-const CODE_STOPWORDS = new Set(['of', 'and', 'the', 'for', 'in', 'a', 'an']);
 const CODE_MAX_LENGTH = 20; // departments.department_code is validated max:20
 
-const deriveDepartmentCode = (departmentName: string): string => {
-  const words = departmentName.replace(/[^a-zA-Z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
-  const significant = words.filter(word => !CODE_STOPWORDS.has(word.toLowerCase()));
-  const initials = (significant.length > 0 ? significant : words)
-    .map(word => word[0])
-    .join('')
-    .toUpperCase();
-
-  return initials.slice(0, CODE_MAX_LENGTH) || 'DEPT';
-};
-
-/** The derived code, or the first free variant of it: CCS, then CCS2, CCS3… */
-const firstFreeDepartmentCode = (base: string, taken: Set<string>): string => {
-  if (!taken.has(base)) return base;
-
-  for (let suffix = 2; suffix <= 99; suffix += 1) {
-    const suffixText = String(suffix);
-    const candidate = `${base.slice(0, CODE_MAX_LENGTH - suffixText.length)}${suffixText}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-
-  return base;
-};
+/** Shown for the `laboratory_enabled` profile; the stored value is unchanged. */
+const SPECIALIZED_PROFILE_LABEL = 'Specialized rooms';
 
 interface Department {
   id: number;
-  code: string;          // derived from the name, e.g. "CCS" — no longer user-editable
+  code: string;          // e.g. "CIT"
   name: string;          // e.g. "College of Computing Studies"
   dean: string | null;   // e.g. "Dr. Juan dela Cruz" or null
   secretary: string | null;
@@ -229,12 +200,13 @@ export default function Departments() {
   
   // Form state
   const [name, setName] = useState('');
-  const [editingName, setEditingName] = useState('');
+  const [code, setCode] = useState('');
   const [logo, setLogo] = useState<string | null>(null);
-  const [schedulingProfile, setSchedulingProfile] = useState<'standard' | 'laboratory_enabled'>('standard');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [nameError, setNameError] = useState('');
+  const [codeError, setCodeError] = useState('');
   const [newProgram, setNewProgram] = useState({ major: '', code: '', name: '' });
   const [programFormError, setProgramFormError] = useState('');
   const [isSavingProgram, setIsSavingProgram] = useState(false);
@@ -492,52 +464,40 @@ export default function Departments() {
       return;
     }
 
+    const trimmedCode = code.trim().toUpperCase();
+
+    if (!trimmedCode) {
+      setCodeError('Department code is required');
+      return;
+    }
+
+    if (trimmedCode.length > CODE_MAX_LENGTH) {
+      setCodeError(`Department code must not exceed ${CODE_MAX_LENGTH} characters`);
+      return;
+    }
+
+    const codeDuplicate = departments.find(
+      (dept) => dept.id !== editingId && (dept.code || '').toUpperCase() === trimmedCode
+    );
+    if (codeDuplicate) {
+      setCodeError(`${trimmedCode} is already used by ${codeDuplicate.name}.`);
+      return;
+    }
+
     setNameError('');
+    setCodeError('');
     setIsSubmitting(true);
 
-    // Derive on create, and again on rename so the code keeps tracking the name.
-    // A logo-only edit leaves it alone, so a hand-picked code (CED for College of
-    // Education) is not quietly rewritten to CE.
-    const needsCode = !isEditMode || trimmedName !== editingName;
-    const baseCode = deriveDepartmentCode(trimmedName);
-    const takenCodes = new Set(
-      departments
-        .filter(dept => dept.id !== editingId)
-        .map(dept => (dept.code || '').toUpperCase())
-        .filter(Boolean)
-    );
-
     try {
-      let saved: ApiDepartment | null = null;
-      let lastError: unknown = null;
-
-      // `unique:departments,department_code` also counts soft-deleted rows, so a
-      // department deleted and re-added under the same name still clashes. The
-      // code is not on the form any more, so there is nothing for the user to
-      // correct — take the next free variant instead of dead-ending on a 422.
-      for (let attempt = 0; attempt < 5 && saved === null; attempt += 1) {
-        const departmentCode = firstFreeDepartmentCode(baseCode, takenCodes);
-        const payload = {
-          department_name: trimmedName,
-          logo: logo,
-          scheduling_profile: schedulingProfile,
-          ...(needsCode ? { department_code: departmentCode } : {}),
-        };
-
-        try {
-          const response = isEditMode && editingId !== null
-            ? await api.patch<ApiDepartment>(`/departments/${editingId}`, payload)
-            : await api.post<ApiDepartment>('/departments', payload);
-          saved = response.data;
-        } catch (err) {
-          lastError = err;
-          if (!needsCode || !apiFieldErrors(err).department_code) throw err;
-          takenCodes.add(departmentCode);
-        }
-      }
-
-      if (saved === null) throw lastError;
-      const savedDepartment = saved;
+      const payload = {
+        department_name: trimmedName,
+        department_code: trimmedCode,
+        logo: logo,
+      };
+      const response = isEditMode && editingId !== null
+        ? await api.patch<ApiDepartment>(`/departments/${editingId}`, payload)
+        : await api.post<ApiDepartment>('/departments', payload);
+      const savedDepartment = response.data;
 
       if (isEditMode && editingId !== null) {
         setDepartments(prev => {
@@ -558,14 +518,19 @@ export default function Departments() {
       }
 
       setName('');
-      setEditingName('');
+      setCode('');
       setLogo(null);
-      setSchedulingProfile('standard');
       setNameError('');
+      setCodeError('');
       setIsModalOpen(false);
       setIsEditMode(false);
       setEditingId(null);
     } catch (err) {
+      // Archived departments still reserve their code, so the API can reject
+      // one the list above does not show.
+      const fieldErrors = apiFieldErrors(err);
+      if (fieldErrors.department_code) setCodeError(fieldErrors.department_code);
+      if (fieldErrors.department_name) setNameError(fieldErrors.department_name);
       toast.error('Error', apiErrorMessage(err, 'Failed to save department.'));
     } finally {
       setIsSubmitting(false);
@@ -574,13 +539,36 @@ export default function Departments() {
 
   const handleEditClick = (dept: Department) => {
     setName(dept.name);
-    setEditingName(dept.name);
+    setCode(dept.code || '');
     setLogo(dept.logo || null);
-    setSchedulingProfile(dept.schedulingProfile);
     setEditingId(dept.id);
     setNameError('');
+    setCodeError('');
     setIsEditMode(true);
     setIsModalOpen(true);
+  };
+
+  /** The details toggle saves on its own; the API refuses Standard while lab courses remain. */
+  const toggleSpecializedRooms = async (dept: Department) => {
+    const nextProfile = dept.schedulingProfile === 'laboratory_enabled' ? 'standard' : 'laboratory_enabled';
+    setIsSavingProfile(true);
+    try {
+      const response = await api.patch<ApiDepartment>(`/departments/${dept.id}`, { scheduling_profile: nextProfile });
+      const saved = mapDepartment(response.data);
+      setDepartments(prev => {
+        const nextDepartments = prev.map(entry => (entry.id === dept.id ? saved : entry));
+        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
+        return nextDepartments;
+      });
+      setSelectedDeptForDetail(current => (current && current.id === dept.id ? { ...current, schedulingProfile: saved.schedulingProfile } : current));
+      toast.success('Success', nextProfile === 'laboratory_enabled'
+        ? `${dept.name} can now use specialized rooms.`
+        : `${dept.name} now uses standard scheduling.`);
+    } catch (err) {
+      toast.error('Error', apiErrorMessage(err, 'Failed to update the scheduling profile.'));
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const archiveProgram = async (program: Program) => {
@@ -666,7 +654,7 @@ export default function Departments() {
             <span className={`inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${profile === 'laboratory_enabled'
               ? 'bg-amber-50 border-amber-200 text-amber-800'
               : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
-              {profile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard'}
+              {profile === 'laboratory_enabled' ? SPECIALIZED_PROFILE_LABEL : 'Standard'}
             </span>
           );
         },
@@ -851,10 +839,10 @@ export default function Departments() {
                 setIsEditMode(false);
                 setEditingId(null);
                 setName('');
-                setEditingName('');
+                setCode('');
                 setLogo(null);
-                setSchedulingProfile('standard');
                 setNameError('');
+                setCodeError('');
                 setIsModalOpen(true);
               }}
               className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
@@ -1158,19 +1146,28 @@ export default function Departments() {
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Scheduling Profile
+                  Department Code <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={schedulingProfile}
-                  onChange={(event) => setSchedulingProfile(event.target.value as 'standard' | 'laboratory_enabled')}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white transition-all"
-                >
-                  <option value="standard">Standard</option>
-                  <option value="laboratory_enabled">Laboratory-enabled</option>
-                </select>
-                <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
-                  Choose Laboratory-enabled for departments whose active curriculum contains laboratory courses.
-                </p>
+                <input
+                  type="text"
+                  value={code}
+                  maxLength={CODE_MAX_LENGTH}
+                  onChange={(e) => {
+                    setCode(e.target.value.toUpperCase());
+                    setCodeError('');
+                  }}
+                  placeholder="e.g. CIT"
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white uppercase transition-all ${
+                    codeError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                  }`}
+                />
+                {codeError ? (
+                  <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>
+                ) : (
+                  <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
+                    Short label used across schedules, rooms and reports.
+                  </p>
+                )}
               </div>
               <div className="flex gap-3 pt-3">
                 <button 
@@ -1240,10 +1237,7 @@ export default function Departments() {
                     {[
                       { label: 'Instructors', value: `${selectedDeptForDetail.facultyCount ?? 0} Instructors` },
                       { label: 'Sections', value: `${selectedDeptForDetail.sectionsCount ?? 0} Sections` },
-                      {
-                        label: 'Scheduling profile',
-                        value: selectedDeptForDetail.schedulingProfile === 'laboratory_enabled' ? 'Laboratory-enabled' : 'Standard',
-                      },
+                      { label: 'Department code', value: selectedDeptForDetail.code || '-' },
                       {
                         label: 'Date created',
                         value: selectedDeptForDetail.createdAt
@@ -1257,6 +1251,42 @@ export default function Departments() {
                       </div>
                     ))}
                   </div>
+
+                  {(() => {
+                    const specialized = selectedDeptForDetail.schedulingProfile === 'laboratory_enabled';
+                    return (
+                      <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-white px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Scheduling profile</p>
+                          <p className="mt-1 text-sm font-semibold text-gray-800">
+                            {specialized ? SPECIALIZED_PROFILE_LABEL : 'Standard scheduling'}
+                          </p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-gray-500">
+                            {specialized
+                              ? 'Can use laboratories and other specialized rooms (e.g. kitchens, clinics, studios).'
+                              : 'Classes use regular lecture rooms only.'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={specialized}
+                          aria-label="Use specialized rooms"
+                          disabled={!canManageDepartments || isSavingProfile}
+                          onClick={() => toggleSpecializedRooms(selectedDeptForDetail)}
+                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer ${
+                            specialized ? 'bg-[#4e0a10]' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                              specialized ? 'translate-x-5' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">

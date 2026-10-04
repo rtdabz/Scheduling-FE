@@ -4,6 +4,9 @@ import { AlertTriangle, CalendarDays, ChevronDown, Clock, MapPin, User, UserChec
 import { getCategoryStyles } from "../constants";
 import EmploymentBadge, { instructorOptionLabel } from "../EmploymentBadge";
 import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "../facultyEligibility";
+import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
+import type { InstructorRecommendation } from "../../../../lib/conflicts";
+import RecommendedOptionList from "../components/RecommendedOptionList";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
@@ -21,6 +24,11 @@ interface FacultyModalProps {
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   subjects: Subject[];
   faculties: Faculty[];
+  /**
+   * Free instructors to offer when the selected one clashes; null while they
+   * load. Left out where the page offers none.
+   */
+  recommendedInstructors?: InstructorRecommendation[] | null;
 }
 
 export default function FacultyModal({
@@ -37,7 +45,8 @@ export default function FacultyModal({
   getFacultyRestrictionMessage,
   checkFacultyConflict,
   subjects,
-  faculties
+  faculties,
+  recommendedInstructors,
 }: FacultyModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -268,13 +277,56 @@ export default function FacultyModal({
             <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-xl text-orange-800">
               <AlertTriangle className="w-4 h-4 shrink-0 text-orange-600 mt-0.5" />
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-orange-900">Conflict found</div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-orange-900">{isAvailabilityWarning(popupConflictWarning) ? AVAILABILITY_WARNING_TITLE : "Conflict found"}</div>
                 <div className="text-[10px] font-semibold mt-0.5 leading-relaxed">{popupConflictWarning}</div>
                 <div className="text-[10px] font-semibold mt-1 leading-relaxed">
-                  You can still assign this instructor. Assign will ask you to confirm.
+                  {recommendedInstructors === undefined
+                    ? "You can still assign this instructor. Assign will ask you to confirm."
+                    : "Pick a free instructor below, or assign this one anyway. Assign will ask you to confirm."}
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Stays up after a pick clears the warning, so the choice shows as selected. */}
+          {recommendedInstructors !== undefined && canManageFaculty && (popupConflictWarning
+            || recommendedInstructors?.some((option) => String(option.faculty_id) === facultyAssignmentPopup.facultyId)) && (
+            <section className="space-y-2" aria-busy={recommendedInstructors === null}>
+              <div className="text-xs font-bold uppercase tracking-wide text-gray-700">Free instructors</div>
+              {recommendedInstructors === null ? (
+                <p className="text-xs font-semibold text-gray-500">Finding instructors free at this time…</p>
+              ) : recommendedInstructors.length === 0 ? (
+                <p className="text-xs font-semibold text-gray-500">
+                  No eligible instructor is free for every meeting of this class. Move the class in the Schedule Builder, or assign anyway.
+                </p>
+              ) : (
+                <RecommendedOptionList
+                  label="Free instructors"
+                  applyLabel="Select"
+                  isBusy={isSavingFaculty}
+                  items={recommendedInstructors.map((option, index) => ({
+                    key: String(option.faculty_id),
+                    isApplied: facultyAssignmentPopup.facultyId === String(option.faculty_id),
+                    tag: option.requires_overload_confirmation ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Over Basic Load</span>
+                    ) : index === 0 ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Best match</span>
+                    ) : null,
+                    body: (
+                      <div>
+                        <p className="text-sm font-bold text-gray-800">{option.faculty_name}</p>
+                        <ul className="mt-1 flex flex-wrap gap-1">
+                          {option.reasons.map((reason) => (
+                            <li key={reason} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ),
+                  }))}
+                  onApply={handlePopupFacultyChange}
+                />
+              )}
+            </section>
           )}
 
           {popupValidationError && (

@@ -127,6 +127,17 @@ const ScheduleCard = memo(function ScheduleCard({
   const showActions = isMoving && isEditable && !isPhase2Active;
   const isConfirmingDelete = showActions && deleteConfirmScheduleId === schedule.id;
 
+  // The tooltip is ~8 slots tall. Above needs that much room over the card or it
+  // slides under the sticky day header; a card too tall to leave room below
+  // (e.g. a 7 AM – 3 PM field class) gets the tooltip overlaid on its own top.
+  const endSlot = schedule.startSlot + schedule.durationSlots;
+  const tooltipAlign: "above" | "below" | "inside" =
+    endSlot > 12 && schedule.startSlot >= 8
+      ? "above"
+      : schedule.durationSlots >= 10
+      ? "inside"
+      : "below";
+
   // One flag at most, strongest first: a live conflict (the red card) hides
   // both, and an allowed clash is not the same as a fixed one.
   const showAllowed = isAllowed && !conflict;
@@ -182,7 +193,7 @@ const ScheduleCard = memo(function ScheduleCard({
     >
       <TimetableCardTooltip
         placement="vertical"
-        verticalAlign={(schedule.startSlot + schedule.durationSlots) > 12 ? "above" : "below"}
+        verticalAlign={tooltipAlign}
         code={subject.code}
         name={subject.name}
         badge={`${subject.units} Units`}

@@ -17,7 +17,17 @@ import {
   balancedSplitSettingsOf,
   isBalancedSplitSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
-import { runLabel, runStartingOn, tickedRun, type ConsecutivePlacement } from "../GenerateSchedule/courseClassConfig";
+import {
+  consecutiveDayRuns,
+  DEFAULT_CONSECUTIVE_DAYS,
+  MIN_CONSECUTIVE_DAYS,
+  runLabel,
+  runStartForDay,
+  runStartingOn,
+  teachingWeek,
+  tickedRun,
+  type ConsecutivePlacement,
+} from "../GenerateSchedule/courseClassConfig";
 import PlacementAlternatives from "./PlacementAlternatives";
 import MeetingCard from "./MeetingCard";
 import {
@@ -72,6 +82,7 @@ interface DropModalProps {
     lecture_lab_schedule_override_enabled?: boolean;
     gec_split_schedule_override_enabled?: boolean;
     major_lecture_split_schedule_override_enabled?: boolean;
+    sunday_classes_enabled?: boolean;
   }) | null;
   modalPreferredPattern: string | null;
   setModalPreferredPattern: (value: string | null) => void;
@@ -102,6 +113,13 @@ interface DropModalProps {
    * class is placed as one run -- a starting day, one time and one room.
    */
   modalRun?: ConsecutivePlacement | null;
+  /**
+   * Consecutive Days chosen in this dialog (2+ days), or null. For this
+   * placement only, like Generate's per-run rules. Without the setter the
+   * option is not offered.
+   */
+  modalConsecutiveDays?: number | null;
+  setModalConsecutiveDays?: (value: number | null) => void;
   checkConflict: (
     subjectId: string,
     sectionId: string,
@@ -174,6 +192,7 @@ export default function DropModal({
   setDropContext,
   handleModalConfirm,
   modalRun = null,
+  setModalConsecutiveDays,
 }: DropModalProps) {
   const isSummerSemester = activeSemester?.semester === "summer";
   const availableDays = isSummerSemester ? DAYS.slice(0, 5) : DAYS;
@@ -588,7 +607,6 @@ export default function DropModal({
     updateTwoMeetingPattern(modalDay1Index, nextDayIndex);
   };
 
-  const courseMaxSlots = isTwoMeetingPattern ? Math.max(modalDay1Duration, modalDay2Duration) : totalSlots;
 
   const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
@@ -725,6 +743,63 @@ export default function DropModal({
     }
   };
 
+  const sundayEnabled = Boolean(manualSchedulingSettings?.sunday_classes_enabled);
+  const maxConsecutiveDays = teachingWeek(sundayEnabled).length;
+
+  /** A run is a Regular class repeated: every day meets for its full length. */
+  const handleConsecutiveDaysChange = (dayCount: number) => {
+    if (!setModalConsecutiveDays) return;
+    setModalIsHybrid(false);
+    setModalSplitEnabled(false);
+    setModalForceDayEnabled(false);
+    setModalPreferredPattern(null);
+    setIsDay2ModifiedByUser(false);
+    setModalDay2Duration(0);
+    if (!modalRun) setModalDay1Duration(getCourseSlotPlan(dropSubject).singleBlockSlots || totalSlots);
+    // Keep the start where it is when a run can begin there, else the nearest
+    // run that still covers the chosen day.
+    setModalDay1Index(runStartForDay(
+      { dayCount, preferredStartDay: null, runs: consecutiveDayRuns(dayCount, sundayEnabled) },
+      modalDay1Index,
+    ));
+    setModalConsecutiveDays(dayCount);
+    setModalValidationError("");
+  };
+
+  type MeetingShape = "single" | "integrated" | "split" | "consecutive";
+  const meetingShape: MeetingShape = modalRun
+    ? "consecutive"
+    : modalIsHybrid
+      ? "integrated"
+      : modalSplitEnabled
+        ? "split"
+        : "single";
+  const meetingShapeOptions: Array<{ value: MeetingShape; label: string; hint: string }> = [
+    { value: "single", label: "Single", hint: "One meeting on one day." },
+    ...(hybridEligible || meetingShape === "integrated"
+      ? [{ value: "integrated" as const, label: "Integrated", hint: "Lecture and laboratory as two separate meetings." }]
+      : []),
+    ...(splitEligible || meetingShape === "split"
+      ? [{ value: "split" as const, label: "Split Session", hint: "Two balanced meetings, MW or TTh, at one time." }]
+      : []),
+    ...(setModalConsecutiveDays || meetingShape === "consecutive"
+      ? [{ value: "consecutive" as const, label: "Consecutive Days", hint: "The full class repeated on back-to-back days, at one time and room." }]
+      : []),
+  ];
+
+  const handleMeetingShapeChange = (next: MeetingShape) => {
+    if (next === meetingShape) return;
+    if (meetingShape === "consecutive") setModalConsecutiveDays?.(null);
+    if (next === "integrated") return handleIntegratedToggle(true);
+    if (next === "split") return handleSplitToggle(true);
+    if (next === "consecutive") return handleConsecutiveDaysChange(DEFAULT_CONSECUTIVE_DAYS);
+    // Back to one meeting.
+    if (meetingShape === "integrated") handleIntegratedToggle(false);
+    else if (meetingShape === "split") handleSplitToggle(false);
+    else setModalDay1Duration(totalSlots);
+    setModalValidationError("");
+  };
+
   /**
    * Integrated's delivery, the same two choices Generate Schedule offers: the
    * laboratory is always on site, so only the lecture meeting moves.
@@ -808,21 +883,23 @@ export default function DropModal({
   // The grid window is configurable, so the latest start is derived from it
   // rather than the 24-slot day these selects used to assume.
   const gridSlotCount = slotCount();
-  const clampMeetingDuration = (startSlot: number, duration: number): number => {
-    const capped = Math.min(duration, courseMaxSlots);
-    return startSlot + capped > gridSlotCount ? Math.max(1, gridSlotCount - startSlot) : capped;
-  };
 
   /**
-   * Integrated's two sessions open at the course's own lengths -- one hour per
-   * lecture unit, and three hours per laboratory unit unless the department
-   * set a Custom Lab Duration -- but those are a starting point, not the
-   * shape. They are the user's to change here exactly as they are in Setup
-   * Courses, and each is used as set: no unit-derived total caps the pair
-   * (`class_duration` judges each session on its own). All a session may not
-   * cross is the end of the teaching day.
+   * Every meeting's length is typed in and never capped here: a length the
+   * rules refuse -- past the end of the teaching day, or over what the course
+   * carries (`class_duration`; an Integrated session is judged on its own) --
+   * is reported by the conflict check or the save. A same-time pair shares
+   * one length.
    */
-  const integratedMaxSlots = (startSlot: number): number => Math.max(1, gridSlotCount - startSlot);
+  const handleMeetingDurationChange = (isSecondMeeting: boolean, slots: number): void => {
+    if (isSameTimePair) {
+      setModalDay1Duration(slots);
+      setModalDay2Duration(slots);
+    } else {
+      (isSecondMeeting ? setModalDay2Duration : setModalDay1Duration)(slots);
+    }
+    setModalValidationError("");
+  };
 
   /** One session's length. It changes what the suggestions are asked for. */
   const handleIntegratedDurationChange = (isSecondMeeting: boolean, slots: number): void => {
@@ -830,14 +907,6 @@ export default function DropModal({
     setModalValidationError("");
   };
 
-  const optionTileClass = (checked: boolean, disabled = false) => `flex items-start gap-2.5 rounded-lg border p-3 transition-colors ${
-    disabled
-      ? "cursor-not-allowed border-slate-200 bg-slate-50"
-      : checked
-        ? "cursor-pointer border-[#4e0a10]/40 bg-[#4e0a10]/[0.04]"
-        : "cursor-pointer border-slate-200 bg-white hover:border-slate-300"
-  }`;
-  const checkboxClass = "mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-[#4e0a10]";
   const roomMissing = (roomId: string) => Boolean(modalValidationError) && !roomId;
   const firstMeetingTitle = modalIsHybrid ? "Laboratory Meeting" : isTwoMeetingPattern ? "First Meeting" : "Meeting";
   const secondMeetingTitle = modalIsHybrid ? "Lecture Meeting" : "Second Meeting";
@@ -999,86 +1068,106 @@ export default function DropModal({
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Scheduling options</h4>
+            <h4 id="meeting-pattern-label" className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Meeting pattern</h4>
+            <div
+              role="radiogroup"
+              aria-labelledby="meeting-pattern-label"
+              className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1"
+            >
+              {meetingShapeOptions.map((option) => {
+                const checked = option.value === meetingShape;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    title={option.hint}
+                    onClick={() => handleMeetingShapeChange(option.value)}
+                    className={`min-w-[7rem] flex-1 rounded-md px-3 py-1.5 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4e0a10]/40 ${
+                      checked ? "bg-white text-[#4e0a10] shadow-sm ring-1 ring-[#4e0a10]/20" : "text-slate-600 hover:bg-white/60 hover:text-slate-800"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {modalRun && (
-                <div className={`${optionTileClass(true)} sm:col-span-2`}>
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-800">
-                      Consecutive Days · {modalRun.dayCount} days
-                      {preferredRun ? ` · ${runLabel(preferredRun)}` : ""}
-                    </span>
-                    <span className="block text-[11px] leading-snug text-slate-500">
-                      {preferredRun
-                        ? "One class on its ticked days, at one time and room. Set in Generate Schedule › Setup Courses."
-                        : "One class on back-to-back days at one time and room. Pick the starting day; the other days follow. Set in Generate Schedule › Setup Courses."}
-                    </span>
+            <p className="mt-2 text-[11px] leading-snug text-slate-500">
+              {meetingShape === "consecutive" && preferredRun
+                ? `Meets on its ticked days, ${runLabel(preferredRun)}, at one time and room.`
+                : meetingShapeOptions.find((option) => option.value === meetingShape)?.hint}
+            </p>
+
+            {(meetingShape === "consecutive" || isIntegrated || modalSplitEnabled) && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3">
+                {meetingShape === "consecutive" && modalRun && (
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                    Number of days
+                    <select
+                      value={modalRun.dayCount}
+                      disabled={!setModalConsecutiveDays || Boolean(preferredRun)}
+                      onChange={(event) => handleConsecutiveDaysChange(Number(event.target.value))}
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15 disabled:cursor-not-allowed disabled:bg-slate-50"
+                    >
+                      {Array.from(
+                        { length: Math.max(maxConsecutiveDays, modalRun.dayCount) - MIN_CONSECUTIVE_DAYS + 1 },
+                        (_, index) => index + MIN_CONSECUTIVE_DAYS,
+                      ).map((count) => (
+                        <option key={count} value={count}>{count} days</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {meetingShape === "consecutive" && currentRun && (
+                  <span className="text-xs font-semibold text-slate-500">
+                    Meets <span className="font-bold text-slate-800">{runLabel(currentRun)}</span>
                   </span>
-                </div>
-              )}
-              {hybridEligible && !modalRun && (
-                <label className={optionTileClass(modalIsHybrid)}>
-                  <input type="checkbox" checked={modalIsHybrid} onChange={(event) => handleIntegratedToggle(event.target.checked)} className={checkboxClass} />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-800">Integrated</span>
-                    <span className="block text-[11px] leading-snug text-slate-500">Lecture and laboratory as two meetings.</span>
-                  </span>
-                </label>
-              )}
-              {splitEligible && !modalRun && (
-                <label className={optionTileClass(modalSplitEnabled)}>
-                  <input type="checkbox" checked={modalSplitEnabled} onChange={(event) => handleSplitToggle(event.target.checked)} className={checkboxClass} />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-800">Split Session</span>
-                    <span className="block text-[11px] leading-snug text-slate-500">Two balanced MW or TTh meetings.</span>
-                  </span>
-                </label>
-              )}
-            </div>
-            {isIntegrated && (
-              <label className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
-                Delivery mode
-                <select
-                  value={isIntegratedOnSite ? "onsite" : "hybrid"}
-                  onChange={(event) => handleIntegratedDeliveryChange(event.target.value as "onsite" | "hybrid")}
-                  className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15"
-                >
-                  <option value="onsite">On-Site — lecture and laboratory on campus</option>
-                  <option value="hybrid">Hybrid — online lecture, on-site laboratory</option>
-                </select>
-              </label>
-            )}
-            {modalSplitEnabled && (
-              <label className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
-                Split pattern
-                <select value={modalPreferredPattern ?? "MW"} onChange={(event) => {
-                  const pattern = event.target.value;
-                  const [firstDay, secondDay] = parsePreferredPattern(pattern) ?? FIXED_SPLIT_PATTERNS.MW.days;
-                  setModalPreferredPattern(pattern);
-                  setModalDay1Index(firstDay);
-                  setModalDay2Index(secondDay);
-                }} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15">
-                  {Object.entries(FIXED_SPLIT_PATTERNS).map(([value, { label }]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {modalSplitEnabled && (offersHybridSplit || offersOnlineSplit) && (
-              <label className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
-                Delivery mode
-                <select
-                  value={splitDelivery}
-                  onChange={(event) => handleSplitDeliveryChange(event.target.value as SplitDelivery)}
-                  className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15"
-                >
-                  <option value="onsite">On-Site — both meetings on campus</option>
-                  {offersHybridSplit && <option value="hybrid">Hybrid — one meeting online, one on campus</option>}
-                  {offersOnlineSplit && <option value="online">Online — both meetings online</option>}
-                </select>
-              </label>
+                )}
+                {isIntegrated && (
+                  <label className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
+                    Delivery mode
+                    <select
+                      value={isIntegratedOnSite ? "onsite" : "hybrid"}
+                      onChange={(event) => handleIntegratedDeliveryChange(event.target.value as "onsite" | "hybrid")}
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15"
+                    >
+                      <option value="onsite">On-Site — lecture and laboratory on campus</option>
+                      <option value="hybrid">Hybrid — online lecture, on-site laboratory</option>
+                    </select>
+                  </label>
+                )}
+                {modalSplitEnabled && (
+                  <label className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
+                    Split pattern
+                    <select value={modalPreferredPattern ?? "MW"} onChange={(event) => {
+                      const pattern = event.target.value;
+                      const [firstDay, secondDay] = parsePreferredPattern(pattern) ?? FIXED_SPLIT_PATTERNS.MW.days;
+                      setModalPreferredPattern(pattern);
+                      setModalDay1Index(firstDay);
+                      setModalDay2Index(secondDay);
+                    }} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15">
+                      {Object.entries(FIXED_SPLIT_PATTERNS).map(([value, { label }]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {modalSplitEnabled && (offersHybridSplit || offersOnlineSplit) && (
+                  <label className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
+                    Delivery mode
+                    <select
+                      value={splitDelivery}
+                      onChange={(event) => handleSplitDeliveryChange(event.target.value as SplitDelivery)}
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15"
+                    >
+                      <option value="onsite">On-Site — both meetings on campus</option>
+                      {offersHybridSplit && <option value="hybrid">Hybrid — one meeting online, one on campus</option>}
+                      {offersOnlineSplit && <option value="online">Online — both meetings online</option>}
+                    </select>
+                  </label>
+                )}
+              </div>
             )}
           </section>
 
@@ -1118,19 +1207,13 @@ export default function DropModal({
               })}
               onDayChange={(dayIndex) => (isTwoMeetingPattern ? handleDay1Change(dayIndex) : setModalDay1Index(dayIndex))}
               startSlot={modalDay1StartSlot}
-              startOptionCount={isTwoMeetingPattern ? gridSlotCount : gridSlotCount - (modalRun ? modalDay1Duration : totalSlots) + 1}
-              onStartChange={(startSlot) => {
-                setModalDay1StartSlot(startSlot);
-                if (isTwoMeetingPattern) setModalDay1Duration(clampMeetingDuration(startSlot, modalDay1Duration));
-              }}
+              startOptionCount={gridSlotCount}
+              onStartChange={setModalDay1StartSlot}
               durationSlots={modalDay1Duration}
-              onDurationChange={isIntegrated
+              onDurationChange={isIntegrated || modalRun
                 ? (slots) => handleIntegratedDurationChange(false, slots)
-                : modalRun
-                  ? (slots) => handleIntegratedDurationChange(false, slots)
-                  : undefined}
-              maxDurationSlots={integratedMaxSlots(modalDay1StartSlot)}
-              endLabelSuffix={isTwoMeetingPattern ? undefined : modalRun ? "(each day)" : "(auto)"}
+                : (slots) => handleMeetingDurationChange(false, slots)}
+              endLabelSuffix={modalRun ? "(each day)" : undefined}
             />
 
             {isTwoMeetingPattern && (
@@ -1169,11 +1252,11 @@ export default function DropModal({
                 onStartChange={(startSlot) => {
                   setModalDay2StartSlot(startSlot);
                   setIsDay2ModifiedByUser(true);
-                  setModalDay2Duration(clampMeetingDuration(startSlot, modalDay2Duration));
                 }}
                 durationSlots={modalDay2Duration}
-                onDurationChange={isIntegrated ? (slots) => handleIntegratedDurationChange(true, slots) : undefined}
-                maxDurationSlots={integratedMaxSlots(modalDay2StartSlot)}
+                onDurationChange={isIntegrated
+                  ? (slots) => handleIntegratedDurationChange(true, slots)
+                  : (slots) => handleMeetingDurationChange(true, slots)}
               />
             )}
           </div>

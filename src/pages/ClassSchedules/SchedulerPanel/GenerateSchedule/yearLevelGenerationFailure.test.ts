@@ -160,6 +160,20 @@ describe("applyAdjustments", () => {
     ).toEqual([]);
   });
 
+  it("makes a regular course a Hybrid Split in one step, to free room time", () => {
+    const { configs: next, applied } = applyAdjustments(
+      { "5": config({ modesByCourseId: { "31": "on-site" } }) },
+      [adjustment({ type: "set_hybrid_split", course_id: 31, value: null })],
+    );
+
+    expect(applied).toHaveLength(1);
+    expect(next["5"].gecSplitCourseIds).toContain("31");
+    expect(next["5"].hybridSplitCourseIds).toEqual(["31"]);
+    expect(next["5"].modesByCourseId["31"]).toBe("automatic");
+    // Already a Hybrid Split: nothing changes.
+    expect(applyAdjustments(next, [adjustment({ type: "set_hybrid_split", course_id: 31, value: null })]).applied).toEqual([]);
+  });
+
   it("turns Hybrid Split off, back to an On-site Split Session", () => {
     const { configs: next, applied } = applyAdjustments(
       { "5": config({ hybridSplitCourseIds: ["11"] }) },

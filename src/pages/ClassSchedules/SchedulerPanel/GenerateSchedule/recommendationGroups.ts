@@ -67,10 +67,21 @@ const unique = <T,>(values: T[]): T[] => Array.from(new Set(values));
 const find = (recommendation: GenerationRecommendation, type: string): GenerationAdjustment | undefined =>
   recommendation.adjustments.find((adjustment) => adjustment.type === type);
 
+/**
+ * A way to close a year level's room-time shortfall (Hybrid Split, Online),
+ * changing several courses in every section. Its options are alternatives of
+ * one fix, so they share a group.
+ */
+const isRoomCapacityOption = (recommendation: GenerationRecommendation): boolean =>
+  recommendation.id.startsWith("room-capacity-");
+
 /** Name, button and effect for one recommendation, read from what it changes. */
 function optionText(recommendation: GenerationRecommendation): Omit<RecommendationOption, "recommendation" | "triedAlone"> {
   const apply = (label: string, effect: string) => ({ label, action: `Apply ${label}`, effect });
   const verb = (label: string, effect: string) => ({ label, action: label, effect });
+
+  // A year-level room-time option names its courses in its own effect line.
+  if (isRoomCapacityOption(recommendation)) return apply(recommendation.title, recommendation.suggested_adjustment);
 
   const mode = find(recommendation, "set_delivery_mode");
   const pattern = find(recommendation, "set_pattern");
@@ -111,7 +122,9 @@ export function describeOption(
   return {
     recommendation,
     ...text,
-    effect: classes.length > 1 && !yearLevel ? `${text.effect} (${classes.length} courses)` : text.effect,
+    effect: classes.length > 1 && !yearLevel && !isRoomCapacityOption(recommendation)
+      ? `${text.effect} (${classes.length} courses)`
+      : text.effect,
     triedAlone: attempts.some(
       (attempt) => `strategy-${attempt.strategy}` === recommendation.id && attempt.outcome === "failed",
     ),
@@ -123,6 +136,7 @@ function targetOf(recommendation: GenerationRecommendation): { key: string; targ
   const adjustments = recommendation.adjustments;
   const first = adjustments[0];
   if (adjustments.every(isYearLevelAdjustment)) return { key: "year-level", target: "Year level" };
+  if (isRoomCapacityOption(recommendation)) return { key: "room-capacity", target: "Free Room Time for This Year Level" };
 
   const classes = unique(adjustments.map((adjustment) => `${adjustment.section_id}|${adjustment.course_id}`));
   const sectionName = recommendation.section_name || first.section_name || `Section ${first.section_id}`;
@@ -221,6 +235,7 @@ const decision = (adjustment: GenerationAdjustment): string => {
       return "pattern";
     case "set_delivery_mode":
     case "enable_hybrid_split":
+    case "set_hybrid_split":
     case "disable_hybrid_split":
       return "delivery";
     case "disable_minor_split":

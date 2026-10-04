@@ -208,7 +208,16 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
         publishLiveTopics(topics);
       });
 
-      pusher.subscribe(`private-App.Models.User.${userId}`).bind('notifications.changed', () => {
+      const userChannel = pusher.subscribe(`private-App.Models.User.${userId}`);
+      // The account signed in on another device. Any tab not holding the new
+      // token makes one request, whose 401 runs the normal sign-out and notice.
+      userChannel.bind('session.replaced', (payload: { token_id?: unknown }) => {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+        if (token.split('|')[0] !== String(payload?.token_id)) {
+          api.get('/me').catch(() => undefined);
+        }
+      });
+      userChannel.bind('notifications.changed', () => {
         publishLiveTopics(['notifications']);
       });
     } catch {

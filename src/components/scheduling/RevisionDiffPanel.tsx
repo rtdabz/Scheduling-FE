@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 import { GitCompare } from 'lucide-react';
+import DataTable from '../ui/DataTable';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import Modal from '../ui/Modal';
+import { useDataTable } from '../ui/useDataTable';
 import api from '../../lib/api';
 import { formatTime12h } from '../../lib/timeGrid';
 
@@ -53,6 +57,65 @@ const previousLabel = (status: string): string => (
   status === 'rejected_by_dean' || status === 'rejected_by_vpaa' ? 'returned' : 'recalled'
 );
 
+/** One line of the details table: a single class meeting change. */
+interface DiffDetailRow {
+  key: string;
+  section: string;
+  change: string;
+  classLabel: string;
+  before: string;
+  after: string;
+}
+
+const toDetailRows = (sections: SectionDiff[]): DiffDetailRow[] => sections.flatMap((section) => (
+  section.changes.map((change, index) => ({
+    key: `${section.section_id}-${index}`,
+    section: section.section_name ?? 'Section',
+    change: CHANGE_STYLES[change.change].label,
+    classLabel: (change.after ?? change.before)?.course?.course_code ?? 'Class',
+    before: meeting(change.before) || '—',
+    after: meeting(change.after) || '—',
+  }))
+));
+
+const detailColumns: ColumnDef<DiffDetailRow>[] = [
+  { accessorKey: 'section', header: 'Section', meta: { cellClassName: 'whitespace-nowrap' } },
+  { accessorKey: 'change', header: 'Change', meta: { cellClassName: 'whitespace-nowrap' } },
+  { accessorKey: 'classLabel', header: 'Class', meta: { cellClassName: 'whitespace-nowrap' } },
+  { accessorKey: 'before', header: 'Before' },
+  { accessorKey: 'after', header: 'After' },
+];
+
+function DiffDetailsModal({ sections, isOpen, onClose }: { sections: SectionDiff[]; isOpen: boolean; onClose: () => void }) {
+  const data = useMemo(() => toDetailRows(sections), [sections]);
+  const table = useDataTable<DiffDetailRow>({
+    data,
+    columns: detailColumns,
+    pageSize: 25,
+    getRowId: (row) => row.key,
+  });
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="xl"
+      title="Changes from the previous version"
+      description="Every class that differs from the recalled or returned version. Instructor changes are not listed."
+    >
+      <DataTable
+        table={table}
+        variant="embedded"
+        density="compact"
+        totalLabel="changes"
+        ariaLabel="Changes from the previous version"
+        emptyTitle="No class changes."
+        emptyDescription="This version has the same classes as the one before it."
+      />
+    </Modal>
+  );
+}
+
 /**
  * What a resubmitted (Modified) version changed from the recalled or returned
  * version before it, so a reviewer sees the difference instead of a badge.
@@ -61,6 +124,7 @@ const previousLabel = (status: string): string => (
 export default function RevisionDiffPanel({ submissionId }: { submissionId: number }) {
   const [sections, setSections] = useState<SectionDiff[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,12 +149,24 @@ export default function RevisionDiffPanel({ submissionId }: { submissionId: numb
 
   return (
     <section aria-label="Changes from the previous version" className="max-h-56 space-y-2 overflow-y-auto px-5 py-2.5">
-      <p className="flex items-center gap-2 text-xs font-bold text-violet-700">
-        <GitCompare className="h-4 w-4" />
-        {total === 0
-          ? 'No class changes from the previous version (instructor changes are not listed).'
-          : `Changes from the previous version (${total} class${total === 1 ? '' : 'es'})`}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-xs font-bold text-violet-700">
+          <GitCompare className="h-4 w-4" />
+          {total === 0
+            ? 'No class changes from the previous version (instructor changes are not listed).'
+            : `Changes from the previous version (${total} class${total === 1 ? '' : 'es'})`}
+        </p>
+        {total > 0 && (
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+          >
+            View details
+          </button>
+        )}
+      </div>
+      <DiffDetailsModal sections={sections} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)} />
       {sections.map((section) => (
         <div key={section.section_id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <p className="font-bold text-slate-800">

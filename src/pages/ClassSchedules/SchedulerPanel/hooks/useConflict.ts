@@ -5,7 +5,7 @@ import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, type Laborat
 import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
-import { coveredContinuously } from "../../../../lib/availabilityWindows";
+import { AVAILABILITY_WARNING_TITLE, availabilityWarningMessage, coveredContinuously } from "../../../../lib/availabilityWindows";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string; title?: string } | null;
 
@@ -481,7 +481,8 @@ export const useConflict = ({
       if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot, durationSlots)) {
         return {
           conflictType: "faculty",
-          message: `Part-time availability: The assignment falls outside the availability window for ${faculty?.name ?? "Selected faculty"}.`
+          title: AVAILABILITY_WARNING_TITLE,
+          message: availabilityWarningMessage(faculty?.name ?? "the selected instructor")
         };
       }
     }
@@ -593,14 +594,18 @@ export const useConflict = ({
           && String(s.courseId ?? s.subjectId ?? "") === String(subjectId)
         );
         const before = sameCourse.reduce((sum, s) => sum + s.durationSlots, 0);
-        const total = sameCourse
-          .filter((s) => !ignored?.has(s.id))
-          .reduce((sum, s) => sum + s.durationSlots, 0) + durationSlots;
-        if (total > ceilingSlots && total > before) {
+        const kept = sameCourse.filter((s) => !ignored?.has(s.id));
+        const total = kept.reduce((sum, s) => sum + s.durationSlots, 0) + durationSlots;
+        // One class may run as long as the teaching day, like the server
+        // (SchedulingPolicy::classDurationAllowanceMinutes); a duplicate still
+        // adds up past its longest meeting.
+        const longest = Math.max(durationSlots, ...kept.map((s) => s.durationSlots));
+        const allowedSlots = Math.max(ceilingSlots, Math.min(longest, slotCount()));
+        if (total > allowedSlots && total > before) {
           const hours = (slots: number) => `${slots * SLOT_MINUTES / 60} ${slots * SLOT_MINUTES === 60 ? "hour" : "hours"}`;
           return {
             conflictType: "section",
-            message: `${subject.code ?? "This class"} would meet ${hours(total)} a week for this section, but the course carries at most ${hours(ceilingSlots)}.`
+            message: `${subject.code ?? "This class"} would meet ${hours(total)} a week for this section, but the course carries at most ${hours(allowedSlots)}.`
           };
         }
       }
@@ -663,7 +668,7 @@ export const useConflict = ({
     if (!target) return null;
     const targetFaculty = faculties.find((f) => String(f.id) === String(facultyId));
     if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot, target.durationSlots)) {
-      return `Part-time availability: The assignment falls outside the availability window for ${targetFaculty?.name ?? facultyId}.`;
+      return availabilityWarningMessage(targetFaculty?.name ?? "the selected instructor");
     }
 
     const endSlot = target.startSlot + target.durationSlots;
@@ -711,7 +716,11 @@ export const useConflict = ({
         };
       }
       const runIds = run.map((item) => item.id);
-      for (const item of run) {
+      // The moved meeting first: a time-of-day failure (closing time, field end)
+      // hits every day of the run alike, and the message should name the day
+      // the user dropped on, not whichever meeting happened to be stored first.
+      const ordered = [schedule, ...run.filter((item) => item.id !== schedule.id)];
+      for (const item of ordered) {
         const conflict = checkConflict(
           courseId, item.sectionId, item.facultyId ?? null, item.roomId,
           item.dayIndex + shift, startSlot, item.durationSlots, runIds, null

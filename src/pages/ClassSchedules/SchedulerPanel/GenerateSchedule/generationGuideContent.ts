@@ -77,7 +77,7 @@ export const GENERATION_GUIDE: GuideChapter[] = [
         meaning:
           "A department setting. While it is off, neither generation nor manual scheduling places a class on Sunday.",
         notes: [
-          "Only the department secretary can turn it on, after the dean approves Sunday classes.",
+          "Only the department secretary can turn it on.",
           "Turning it off keeps the classes already on Sunday. It only stops new ones.",
         ],
       },

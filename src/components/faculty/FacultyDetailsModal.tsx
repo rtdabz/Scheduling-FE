@@ -97,7 +97,7 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
         role="dialog"
         aria-modal="true"
         aria-labelledby="faculty-details-title"
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl motion-safe:animate-modalIn"
+        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col md:max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl motion-safe:animate-modalIn"
       >
         <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-5 py-4 text-white">
           {faculty.profile_picture ? (
@@ -125,104 +125,112 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-parchment px-5 py-5">
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teaching load this semester</p>
-                <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">
-                  {assigned}
-                  <span className="text-base font-semibold text-slate-400"> / {ceiling} units</span>
-                </p>
-              </div>
-              <span className={`rounded-md border px-2 py-1 text-xs font-bold ${tier ? LOAD_TIER_BADGE_CLASSES[tier] : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
-                {tier ? LOAD_TIER_LABELS[tier] : 'No load recorded'}
-              </span>
-            </div>
-            <SegmentedLoadBar
-              className="mt-3"
-              assignedUnits={assigned}
-              maxUnits={faculty.max_units}
-              deloadUnits={faculty.deload_units}
-              overloadUnits={faculty.overload_units}
-              showLegend
-            />
-            <p className="mt-1.5 text-xs text-slate-500">
-              {basicLoad <= 0
-                ? 'No Basic Load is configured for this instructor.'
-                : remaining > 0
-                  ? `${remaining} unit${remaining === 1 ? '' : 's'} left before Basic Load.`
-                  : remaining === 0
-                    ? 'Basic Load is exactly met.'
-                    : `${breakdown} units.`}
-            </p>
-
-            <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 sm:grid-cols-5">
-              {allowances.map(({ label, value, hint }) => (
-                <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
-                  <dt className="truncate text-[11px] font-semibold text-slate-500">{label}</dt>
-                  <dd className="text-sm font-black tabular-nums text-slate-900">
-                    {value}
-                    {hint && <span className="ml-1 text-[10px] font-medium text-slate-400">{hint}</span>}
-                  </dd>
+        {/* Two columns from md up so the whole record fits without scrolling;
+            a phone still stacks them and scrolls. */}
+        <div className="min-h-0 flex-1 overflow-y-auto bg-parchment p-5">
+          <div className="grid gap-4 md:grid-cols-5">
+            <div className="space-y-4 md:col-span-3">
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Teaching load this semester</p>
+                    <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">
+                      {assigned}
+                      <span className="text-base font-semibold text-slate-400"> / {ceiling} units</span>
+                    </p>
+                  </div>
+                  <span className={`rounded-md border px-2 py-1 text-xs font-bold ${tier ? LOAD_TIER_BADGE_CLASSES[tier] : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
+                    {tier ? LOAD_TIER_LABELS[tier] : 'No load recorded'}
+                  </span>
                 </div>
-              ))}
-            </dl>
-
-            {aboveCeiling && (
-              <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Past the Basic Load and Overload allowances, so the extra units are pro bono.
-              </p>
-            )}
-          </section>
-
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-600">
-                <BookOpen size={14} className="text-slate-400" /> Teaching
-              </h3>
-              <span className="text-[11px] font-semibold text-slate-500">
-                {faculty.assigned_subjects.length} course{faculty.assigned_subjects.length === 1 ? '' : 's'}
-                {' · '}
-                {faculty.assigned_classes.length} section{faculty.assigned_classes.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            {faculty.assigned_subjects.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-4 text-center text-xs text-slate-500">
-                No classes assigned for this semester yet.
-              </p>
-            ) : (
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                <ul className="divide-y divide-slate-100">
-                  {faculty.assigned_subjects.map((subject) => (
-                    <li key={subject.id} className="flex items-center gap-3 px-3 py-2 text-xs">
-                      <span className="w-20 shrink-0 font-black text-slate-900">{subject.subject_code ?? subject.course_code ?? '—'}</span>
-                      <span className="min-w-0 flex-1 truncate text-slate-600" title={subject.subject_name ?? subject.course_name}>{subject.subject_name ?? subject.course_name}</span>
-                    </li>
+                <SegmentedLoadBar
+                  className="mt-3"
+                  assignedUnits={assigned}
+                  maxUnits={faculty.max_units}
+                  deloadUnits={faculty.deload_units}
+                  overloadUnits={faculty.overload_units}
+                  showLegend
+                />
+                <p className="mt-1.5 text-xs text-slate-500">
+                  {basicLoad <= 0
+                    ? 'No Basic Load is configured for this instructor.'
+                    : remaining > 0
+                      ? `${remaining} unit${remaining === 1 ? '' : 's'} left before Basic Load.`
+                      : remaining === 0
+                        ? 'Basic Load is exactly met.'
+                        : `${breakdown} units.`}
+                </p>
+    
+                <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 sm:grid-cols-5">
+                  {allowances.map(({ label, value, hint }) => (
+                    <div key={label} className="rounded-lg bg-slate-50 px-2.5 py-1.5">
+                      <dt className="truncate text-[11px] font-semibold text-slate-500">{label}</dt>
+                      <dd className="text-sm font-black tabular-nums text-slate-900">
+                        {value}
+                        {hint && <span className="block text-[10px] font-medium leading-3 text-slate-400">{hint}</span>}
+                      </dd>
+                    </div>
                   ))}
-                </ul>
-                {faculty.assigned_classes.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-slate-50/70 px-3 py-2">
-                    <span className="mr-1 text-[11px] font-semibold text-slate-500">Sections</span>
-                    {faculty.assigned_classes.map((section) => (
-                      <span key={section.id} className="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200">
-                        {section.section_name}
-                      </span>
-                    ))}
+                </dl>
+    
+                {aboveCeiling && (
+                  <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Past the Basic Load and Overload allowances, so the extra units are pro bono.
+                  </p>
+                )}
+              </section>
+    
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                    <BookOpen size={14} className="text-slate-400" /> Teaching
+                  </h3>
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    {faculty.assigned_subjects.length} course{faculty.assigned_subjects.length === 1 ? '' : 's'}
+                    {' · '}
+                    {faculty.assigned_classes.length} section{faculty.assigned_classes.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {faculty.assigned_subjects.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-4 text-center text-xs text-slate-500">
+                    No classes assigned for this semester yet.
+                  </p>
+                ) : (
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <ul className="divide-y divide-slate-100">
+                      {faculty.assigned_subjects.map((subject) => (
+                        <li key={subject.id} className="flex items-center gap-3 px-3 py-2 text-xs">
+                          <span className="w-20 shrink-0 font-black text-slate-900">{subject.subject_code ?? subject.course_code ?? '—'}</span>
+                          <span className="min-w-0 flex-1 truncate text-slate-600" title={subject.subject_name ?? subject.course_name}>{subject.subject_name ?? subject.course_name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {faculty.assigned_classes.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-slate-50/70 px-3 py-2">
+                        <span className="mr-1 text-[11px] font-semibold text-slate-500">Sections</span>
+                        {faculty.assigned_classes.map((section) => (
+                          <span key={section.id} className="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200">
+                            {section.section_name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-          </section>
+              </section>
+            </div>
 
-          <FacultyAvailabilityPanel
-            facultyId={faculty.id}
-            facultyName={name}
-            employmentType={faculty.employment_type}
-            canEdit={canEditAvailability}
-            onNotify={onNotify}
-          />
+            <div className="md:col-span-2">
+              <FacultyAvailabilityPanel
+                facultyId={faculty.id}
+                facultyName={name}
+                employmentType={faculty.employment_type}
+                canEdit={canEditAvailability}
+                onNotify={onNotify}
+              />
+            </div>
+          </div>
         </div>
 
         <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">

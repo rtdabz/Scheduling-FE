@@ -196,6 +196,7 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     laboratoryUnits: toNumber(item.course?.lab_hours ?? item.subject?.lab_hours),
     totalUnits: toNumber(item.course?.units ?? item.subject?.units),
     sectionName: item.section?.section_name ?? "",
+    programCode: (item.section?.program ?? item.program)?.code ?? null,
     roomName,
     // Long names throughout: DAYS is FULL_DAY_NAMES, so a short fallback would
     // put a foreign value into a long-name domain.

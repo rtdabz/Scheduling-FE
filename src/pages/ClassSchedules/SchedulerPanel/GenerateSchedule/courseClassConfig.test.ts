@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Course, Section } from "../types";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
+import { slotCount } from "../../../../lib/timeGrid";
 import {
   applyCourseDefaults,
   compatibleRoomOptions,
@@ -236,11 +237,12 @@ describe("courseClassConfig", () => {
     expect(config.requiredDay).toBe("Saturday");
   });
 
-  it("caps a Split at the course's units and a single block at the larger Generator shape", () => {
+  it("caps a Split at the course's units and lets a single class fill the teaching day", () => {
     expect(maxDurationMinutes(gecCourse, "split")).toBe(180);
-    expect(maxDurationMinutes(lectureCourse, "single")).toBe(180);
-    // 2 h lecture + 3 h laboratory is longer than the 3-unit block.
-    expect(maxDurationMinutes(integratedCourse, "single")).toBe(300);
+    // One class may run as long as the day (some departments hold an
+    // eight-hour class), whatever its units.
+    expect(maxDurationMinutes(lectureCourse, "single")).toBe(slotCount() * 30);
+    expect(maxDurationMinutes(integratedCourse, "single")).toBe(slotCount() * 30);
   });
 
   it("syncs Split configuration to all section configs correctly", () => {
@@ -352,8 +354,10 @@ describe("courseClassConfig", () => {
       { id: 4, room_code: "GYM", room_type: "field" },
     ];
 
-    expect(compatibleRoomOptions(lectureCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "LAB 2"]);
-    expect(compatibleRoomOptions(integratedCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LAB 1", "LAB 2"]);
+    // Any face-to-face course may pick a field room, laboratory included;
+    // picking one is what makes it a field course.
+    expect(compatibleRoomOptions(lectureCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "LAB 2", "GYM"]);
+    expect(compatibleRoomOptions(integratedCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LAB 1", "LAB 2", "GYM"]);
     expect(compatibleRoomOptions(lectureCourse, { ...baseConfig, delivery: "online" }, false, rooms)).toEqual([]);
     // A course already on the field list keeps its classrooms: clearing the
     // field room is how it goes back to being a regular class.
@@ -363,13 +367,11 @@ describe("courseClassConfig", () => {
       compatibleRoomOptions({ ...gecCourse, roomTypeRequired: "field" }, baseConfig, false, rooms).map((r) => r.room_code),
     ).toEqual(["GYM"]);
     // A minor may never use a laboratory, even one flagged for lecture use.
-    // A lecture-only minor (PATHFIT, NSTP) may pick a field room, which makes
-    // it a field course; with no preference it is a regular minor.
     expect(compatibleRoomOptions(gecCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "GYM"]);
     // Integrated Hybrid's only face-to-face session is its laboratory.
     expect(
       compatibleRoomOptions(integratedCourse, { configuration: "integrated", delivery: "hybrid" }, false, rooms).map((r) => r.room_code),
-    ).toEqual(["LAB 1", "LAB 2"]);
+    ).toEqual(["LAB 1", "LAB 2", "GYM"]);
   });
 
   it("derives Integrated Hybrid lengths from any course, not a fixed 2h + 3h", () => {

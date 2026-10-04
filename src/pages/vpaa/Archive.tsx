@@ -32,7 +32,7 @@ const typeLabels: Record<string, string> = {
 };
 
 const restoreNotes: Record<string, string> = {
-  users: 'The account can sign in again (it returns inactive if another account now holds the role).',
+  users: 'The account can sign in again (it stays archived while another active account holds the role).',
   schedules: 'The class returns to the live timetable and is refused if it now clashes with another class.',
   'schedule-splits': 'The meeting returns to the live timetable.',
   faculties: 'The instructor becomes available for assignment again.',
@@ -105,16 +105,11 @@ export default function Archive() {
     const key = `${record.type}:${record.id}`;
     setRestoringKey(key);
     try {
-      const response = await api.post<{ message?: string }>(`/archives/${record.type}/${record.id}/restore`);
+      await api.post(`/archives/${record.type}/${record.id}/restore`);
       setRecords((current) => current.filter((item) => `${item.type}:${item.id}` !== key));
       setCounts((current) => ({ ...current, [record.type]: Math.max(0, (current[record.type] ?? 1) - 1) }));
       clearDataCache();
-      // The server says when the record came back switched off; don't claim it is active.
-      if (response.data.message?.includes('inactive')) {
-        toast.warning('Restored as inactive', response.data.message);
-      } else {
-        toast.success('Restored', `${record.label} is active again.`);
-      }
+      toast.success('Restored', `${record.label} is active again.`);
     } catch (requestError) {
       toast.error('Restore failed', apiErrorMessage(requestError, 'The record could not be restored.'));
     } finally {

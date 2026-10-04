@@ -36,19 +36,20 @@ describe('DashboardSkeleton', () => {
     expect(dashboard.container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
   });
 
-  it('gives the dean two metric rows: decision KPIs then the inventory strip', () => {
+  it('gives the dean one metric strip: decision KPI, completion, then inventory', () => {
     const { container } = render(<DashboardSkeleton variant="dean" />);
-    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(7);
+    expect(container.querySelector('[data-skeleton="metrics"]')!.children).toHaveLength(6);
   });
 
-  it('gives the vpaa two metric rows: decision KPIs then the inventory strip', () => {
+  it('gives the vpaa one metric strip: decision KPI, completion, then inventory', () => {
     const { container } = render(<DashboardSkeleton variant="vpaa" />);
-    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(8);
+    expect(container.querySelector('[data-skeleton="metrics"]')!.children).toHaveLength(7);
   });
 
-  it('gives the secretary two metric rows: decision KPIs then the inventory strip', () => {
+  it('gives the secretary one metric strip of DashboardMetricCard-sized tiles', () => {
     const { container } = render(<DashboardSkeleton variant="secretary" />);
-    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(7);
+    // Every tile in the strip, completion included, shares DashboardMetricCard's box.
+    expect(container.querySelectorAll('.min-h-\\[90px\\]').length).toBe(6);
   });
 
   describe('secretary layout', () => {
@@ -60,12 +61,9 @@ describe('DashboardSkeleton', () => {
       readinessCheckCount: 6,
     };
 
-    it('reserves the unified decision and inventory metric rows', () => {
+    it('reserves the unified metric strip', () => {
       const { container } = render(<DashboardSkeleton variant="secretary" secretaryLayout={fullLayout} />);
-      const metrics = container.querySelector('[data-skeleton="metrics"]')!;
-      const inventory = container.querySelector('[data-skeleton="inventory"]')!;
-      expect(metrics.children).toHaveLength(3);
-      expect(inventory.children).toHaveLength(4);
+      expect(container.querySelector('[data-skeleton="metrics"]')!.children).toHaveLength(6);
     });
 
     it('draws one queue line per queue row', () => {

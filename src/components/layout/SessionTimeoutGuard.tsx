@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Clock, ShieldAlert } from 'lucide-react';
+import { Clock, MonitorSmartphone, ShieldAlert } from 'lucide-react';
 import { useIdleSession } from '../../hooks/useIdleSession';
 import { logoutCurrentSession } from '../../lib/authSession';
 import {
@@ -14,14 +14,20 @@ const NOTICE: Record<SessionEndedReason, { eyebrow: string; title: string; body:
   idle: {
     eyebrow: 'Session Timed Out',
     title: 'You have been signed out',
-    body: `For your security, this session ended after ${IDLE_MINUTES} minutes of inactivity. Any unsaved work on this page was not submitted.`,
+    body: `You were inactive for ${IDLE_MINUTES} minutes.`,
     Icon: Clock,
   },
   expired: {
     eyebrow: 'Session Expired',
     title: 'Your session is no longer valid',
-    body: 'Your sign-in has expired or was ended elsewhere, so the server declined the last request. Any unsaved work on this page was not submitted.',
+    body: 'Your sign-in has expired.',
     Icon: ShieldAlert,
+  },
+  replaced: {
+    eyebrow: 'Signed In Elsewhere',
+    title: 'You have been signed out',
+    body: 'Your account was signed in on another device.',
+    Icon: MonitorSmartphone,
   },
 };
 
@@ -84,7 +90,7 @@ export default function SessionTimeoutGuard() {
             {title}
           </h2>
           <p id="session-timeout-description" className="text-xs leading-relaxed text-slate-600">
-            {body} Please sign in again to continue.
+            {body} Please sign in again.
           </p>
         </div>
         <div className="border-t border-slate-200 p-4">

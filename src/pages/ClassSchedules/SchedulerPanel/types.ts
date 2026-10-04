@@ -233,6 +233,8 @@ export interface ScheduleItem {
   laboratoryUnits: number;
   totalUnits: number;
   sectionName: string;
+  /** The section's program code (e.g. BSIT), for labels. */
+  programCode?: string | null;
   roomName: string;
   day: string;
   startTime: string;
@@ -488,7 +490,10 @@ export interface ApiScheduleRecord {
   } | null;
   section?: {
     section_name?: string;
+    program?: { code?: string | null } | null;
   } | null;
+  /** The meeting's own program; endpoints that skip `section.program` still load it. */
+  program?: { code?: string | null } | null;
   faculty?: {
     id?: number | string;
     first_name?: string;

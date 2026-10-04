@@ -1,6 +1,6 @@
 import { getPhilippineNowParts } from '../../lib/philippineTime';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BuildingsTable, RoomsTable } from '../../components/rooms/RoomListTables';
 import { useLocation } from 'react-router-dom';
@@ -104,6 +104,9 @@ interface RoomsPageData {
   /** True when the server's meeting cap cut the list short. */
   schedulesTruncated?: boolean;
 }
+
+/** The group for rooms with no building; it is not a building to rename or archive. */
+const UNASSIGNED_BUILDING = 'Other/Unassigned';
 
 /** The largest meeting list /initial-data serves in one response. */
 const SCHEDULE_LIMIT = 2000;
@@ -216,6 +219,13 @@ export default function Rooms() {
   // Error states
   const [codeError, setCodeError] = useState('');
   const [buildingError, setBuildingError] = useState('');
+
+  // Building rename / archive: both act on every room that names the building.
+  const [buildingToEdit, setBuildingToEdit] = useState<string | null>(null);
+  const [buildingName, setBuildingName] = useState('');
+  const [buildingNameError, setBuildingNameError] = useState('');
+  const [isRenamingBuilding, setIsRenamingBuilding] = useState(false);
+  const [buildingToArchive, setBuildingToArchive] = useState<string | null>(null);
 
   const liveRoomCodeDuplicate = useMemo(() => {
     const trimmed = roomCode.trim().toUpperCase();
@@ -410,6 +420,86 @@ export default function Rooms() {
     }
   };
 
+  const openBuildingEdit = useCallback((name: string) => {
+    if (name === UNASSIGNED_BUILDING) return;
+    setBuildingToEdit(name);
+    setBuildingName(name);
+    setBuildingNameError('');
+  }, []);
+
+  const openBuildingArchive = useCallback((name: string) => {
+    if (name === UNASSIGNED_BUILDING) return;
+    setBuildingToArchive(name);
+  }, []);
+
+  const handleRenameBuilding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isRenamingBuilding || buildingToEdit === null) return;
+
+    const from = buildingToEdit;
+    const to = buildingName.trim().replace(/\s+/g, ' ');
+    if (!to) {
+      setBuildingNameError('Building name is required');
+      return;
+    }
+    if (to.length > 100) {
+      setBuildingNameError('Building name must not exceed 100 characters');
+      return;
+    }
+    if (rooms.some((r) => r.building && r.building.trim() !== from && r.building.trim().toLowerCase() === to.toLowerCase())) {
+      setBuildingNameError(`A building named "${to}" already exists.`);
+      return;
+    }
+    if (to === from) {
+      setBuildingToEdit(null);
+      return;
+    }
+
+    setIsRenamingBuilding(true);
+    try {
+      const res = await api.put<{ building: string; rooms: ApiRoom[] }>('/buildings', { building: from, name: to });
+      const updated = new Map(res.data.rooms.map((r) => [r.id, mapApiRoom(r)]));
+      setRooms(prev => {
+        const nextRooms = prev.map(r => updated.get(r.id) ?? r);
+        invalidateCacheGroups('rooms', 'schedules', 'dashboards');
+        setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
+        return nextRooms;
+      });
+      if (selectedBuilding === from) setSelectedBuilding(res.data.building);
+      setBuildingToEdit(null);
+      toast.success('Success', 'Building renamed successfully');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      const message = err?.response?.data?.message || 'Failed to rename building';
+      setBuildingNameError(message);
+      toast.error('Error', message);
+    } finally {
+      setIsRenamingBuilding(false);
+    }
+  };
+
+  const confirmArchiveBuilding = async () => {
+    if (buildingToArchive === null) return;
+    const name = buildingToArchive;
+    try {
+      const res = await api.post<{ archived_room_ids: number[] }>('/buildings/archive', { building: name });
+      const archived = new Set(res.data.archived_room_ids);
+      setRooms(prev => {
+        const nextRooms = prev.filter(r => !archived.has(r.id));
+        invalidateCacheGroups('rooms', 'schedules', 'dashboards');
+        setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
+        return nextRooms;
+      });
+      if (selectedBuilding === name) setSelectedBuilding(null);
+      toast.success('Archived', 'Building archived successfully');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error('Error', err?.response?.data?.message || 'Failed to archive building');
+    } finally {
+      setBuildingToArchive(null);
+    }
+  };
+
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '';
     const parts = timeStr.split(':');
@@ -501,7 +591,7 @@ export default function Rooms() {
   const buildings = useMemo(() => {
     const map = new Map<string, Room[]>();
     searchedRooms.forEach(room => {
-      const b = room.building || 'Other/Unassigned';
+      const b = room.building || UNASSIGNED_BUILDING;
       if (!map.has(b)) {
         map.set(b, []);
       }
@@ -520,8 +610,8 @@ export default function Rooms() {
         };
       })
       .sort((a, b) => {
-        if (a.name === 'Other/Unassigned') return 1;
-        if (b.name === 'Other/Unassigned') return -1;
+        if (a.name === UNASSIGNED_BUILDING) return 1;
+        if (b.name === UNASSIGNED_BUILDING) return -1;
         return a.name.localeCompare(b.name);
       });
   }, [searchedRooms]);
@@ -529,7 +619,7 @@ export default function Rooms() {
   const roomsInSelectedBuilding = useMemo(() => {
     if (!selectedBuilding) return [];
     return searchedRooms
-      .filter(r => (r.building || 'Other/Unassigned') === selectedBuilding)
+      .filter(r => (r.building || UNASSIGNED_BUILDING) === selectedBuilding)
       .sort((a, b) => a.room_code.localeCompare(b.room_code, undefined, { numeric: true, sensitivity: 'base' }));
   }, [searchedRooms, selectedBuilding]);
 
@@ -783,13 +873,38 @@ export default function Rooms() {
                         />
                       </div>
                     </div>
+
+                    {canManageRooms && building.name !== UNASSIGNED_BUILDING && (
+                      <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 relative z-10" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => openBuildingEdit(building.name)}
+                          className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                        >
+                          <Pencil size={13} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => openBuildingArchive(building.name)}
+                          className="flex items-center gap-1 rounded-xl border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-200"
+                        >
+                          <Archive size={13} />
+                          <span>Archive</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           ) : (
             /* Buildings List View */
-            <BuildingsTable buildings={buildings} onSelect={(building) => setSelectedBuilding(building.name)} rowTourId="building-card" />
+            <BuildingsTable
+              buildings={buildings}
+              onSelect={(building) => setSelectedBuilding(building.name)}
+              onEdit={canManageRooms ? (building) => openBuildingEdit(building.name) : undefined}
+              onArchive={canManageRooms ? (building) => openBuildingArchive(building.name) : undefined}
+              rowTourId="building-card"
+            />
           )}
         </div>
       ) : (
@@ -1148,6 +1263,78 @@ export default function Rooms() {
         </div>,
         document.body
       )}
+
+      {/* Edit Building Modal */}
+      {buildingToEdit !== null && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
+          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
+              <h2 className="text-lg font-bold text-white font-display">Edit Building</h2>
+              <button
+                type="button"
+                onClick={() => setBuildingToEdit(null)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleRenameBuilding} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                  Building Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={buildingName}
+                  autoFocus
+                  onChange={(e) => {
+                    setBuildingName(e.target.value);
+                    setBuildingNameError('');
+                  }}
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                    buildingNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
+                  }`}
+                />
+                {buildingNameError ? (
+                  <p className="text-xs text-red-500 mt-1 font-semibold">{buildingNameError}</p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">Every room in {buildingToEdit} moves to the new name.</p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setBuildingToEdit(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRenamingBuilding}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
+                >
+                  {isRenamingBuilding && <LoadingSpinner size={16} className="animate-spin" />}
+                  {isRenamingBuilding ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      <ConfirmModal
+        isOpen={buildingToArchive !== null}
+        eyebrow="Archive Record"
+        title="Archive Building"
+        message={`Every room in ${buildingToArchive ?? 'this building'} will be hidden from active lists; each can be restored from the Archive. A building with classes scheduled in any of its rooms cannot be archived.`}
+        confirmLabel="Archive"
+        variant="danger"
+        onCancel={() => setBuildingToArchive(null)}
+        onConfirm={confirmArchiveBuilding}
+      />
 
       <ConfirmModal
         isOpen={isDeleteModalOpen}

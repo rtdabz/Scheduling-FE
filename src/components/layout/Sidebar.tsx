@@ -109,7 +109,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
   const [pendingRoomCount, setPendingRoomCount] = useState(0);
 
   useEffect(() => {
-    if (role !== 'secretary' && role !== 'program_head') {
+    if (role !== 'secretary') {
       return;
     }
 

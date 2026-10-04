@@ -114,7 +114,7 @@ describe('DeanDashboardPage', () => {
       expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1));
 
     // KPI row.
-    ['Sections', 'Instructors', 'Curriculums', 'Rooms',
+    ['Sections', 'Instructors', 'Courses', 'Rooms',
       'Scheduling Completion', 'Awaiting Your Approval'].forEach(label =>
       expect(screen.getByText(label)).toBeTruthy());
   });
@@ -123,8 +123,10 @@ describe('DeanDashboardPage', () => {
     renderPage();
 
     // "BSIT 1A" + "BSIT 2A" collapse into one BSIT package; "ACT 1A" is its own.
+    // Both appear in the overview, but only BSIT is waiting in the review queue —
+    // ACT was returned for revision, so nothing of it awaits the Dean.
     await waitFor(() => expect(screen.getAllByText('BSIT Schedule').length).toBe(2));
-    expect(screen.getAllByText('ACT Schedule').length).toBe(2);
+    expect(screen.getAllByText('ACT Schedule').length).toBe(1);
   });
 
   it('names the user who actually submitted each package', async () => {

@@ -16,8 +16,11 @@ interface TimetableCardTooltipProps {
    */
   placement?: "side" | "vertical";
   align?: "left" | "right";
-  /** Only used with placement="vertical". */
-  verticalAlign?: "above" | "below";
+  /**
+   * Only used with placement="vertical". "inside" overlays the top of a card
+   * too tall to leave room above or below it.
+   */
+  verticalAlign?: "above" | "below" | "inside";
   /** Extra rows rendered under the details, e.g. a conflict explanation. */
   children?: ReactNode;
   /**
@@ -42,7 +45,9 @@ export default function TimetableCardTooltip({
 }: TimetableCardTooltipProps) {
   const isVertical = placement === "vertical";
   const positionClasses = isVertical
-    ? `left-1/2 -translate-x-1/2 ${verticalAlign === "above" ? "bottom-full mb-2" : "top-full mt-2"}`
+    ? `left-1/2 -translate-x-1/2 ${
+        verticalAlign === "above" ? "bottom-full mb-2" : verticalAlign === "inside" ? "top-10" : "top-full mt-2"
+      }`
     : align === "right"
       ? "right-full mr-2 top-0"
       : "left-full ml-2 top-0";
@@ -59,7 +64,7 @@ export default function TimetableCardTooltip({
         isVertical ? "space-y-2 leading-snug" : ""
       } ${positionClasses}`}
     >
-      {isVertical && (
+      {isVertical && verticalAlign !== "inside" && (
         <div
           className={`absolute left-1/2 -translate-x-1/2 h-0 w-0 border-x-8 border-x-transparent ${
             verticalAlign === "above"

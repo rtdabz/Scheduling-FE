@@ -62,6 +62,7 @@ const departments = [
 ];
 
 const nameInput = () => screen.getByPlaceholderText('e.g. College of Computing Studies');
+const codeInput = () => screen.getByPlaceholderText('e.g. CIT');
 
 /** Reaches the edit form the way a user does: row -> detail modal -> Edit. */
 const openEditModalFor = async (departmentName: string) => {
@@ -97,25 +98,47 @@ describe('Departments management identifies departments by logo', () => {
     expect(screen.getByLabelText('College of Education — no logo uploaded')).toBeTruthy();
   });
 
-  it('reports the scheduling profile instead of the code in the detail modal', async () => {
+  it('shows the code and a specialized-rooms toggle in the detail modal', async () => {
     render(<Departments />);
 
     fireEvent.click(await screen.findByText('College of Information Technology'));
 
-    expect(screen.queryByText('Department Code')).toBeNull();
-    expect(screen.getAllByText('Scheduling Profile').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Laboratory-enabled').length).toBeGreaterThan(0);
+    expect(screen.getByText('Department code')).toBeTruthy();
+    expect(screen.getAllByText('Specialized rooms').length).toBeGreaterThan(0);
+    expect(screen.getByRole('switch', { name: 'Use specialized rooms' }).getAttribute('aria-checked')).toBe('true');
   });
 });
 
-describe('Departments management derives the code that other pages still show', () => {
-  it('has no code input, and derives the code from the name on create', async () => {
+describe('Departments scheduling profile toggle', () => {
+  it('saves the profile straight from the detail modal', async () => {
+    render(<Departments />);
+
+    fireEvent.click(await screen.findByText('College of Education'));
+    fireEvent.click(screen.getByRole('switch', { name: 'Use specialized rooms' }));
+
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    expect(patch.mock.calls[0][0]).toBe('/departments/1');
+    expect(patch.mock.calls[0][1]).toEqual({ scheduling_profile: 'laboratory_enabled' });
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Use specialized rooms' }).getAttribute('aria-checked')).toBe('true'));
+  });
+
+  it('is no longer on the create form', async () => {
     render(<Departments />);
 
     fireEvent.click(await screen.findByText('Add Department'));
-    expect(screen.queryByPlaceholderText('e.g. CCS')).toBeNull();
+    expect(screen.queryByDisplayValue('Standard')).toBeNull();
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+});
 
+describe('Departments management takes a typed department code', () => {
+  it('sends the typed code, upper-cased, on create', async () => {
+    render(<Departments />);
+
+    fireEvent.click(await screen.findByText('Add Department'));
     fireEvent.change(nameInput(), { target: { value: 'College of Computing Studies' } });
+    fireEvent.change(codeInput(), { target: { value: 'ccs' } });
     fireEvent.click(screen.getByText('Create Department'));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
@@ -125,59 +148,55 @@ describe('Departments management derives the code that other pages still show', 
     });
   });
 
-  it('sidesteps a code already in use', async () => {
-    get.mockResolvedValue({
-      data: [...departments, apiDepartment({ id: 3, department_code: 'CCS', department_name: 'Center for Community Service' })],
-    });
+  it('requires a code', async () => {
     render(<Departments />);
 
     fireEvent.click(await screen.findByText('Add Department'));
     fireEvent.change(nameInput(), { target: { value: 'College of Computing Studies' } });
     fireEvent.click(screen.getByText('Create Department'));
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post.mock.calls[0][1]).toMatchObject({ department_code: 'CCS2' });
+    expect(await screen.findByText('Department code is required')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
   });
 
-  it('retries when the API rejects the derived code, which soft-deleted rows still reserve', async () => {
+  it('blocks a code another department already uses', async () => {
+    render(<Departments />);
+
+    fireEvent.click(await screen.findByText('Add Department'));
+    fireEvent.change(nameInput(), { target: { value: 'College of Computing Studies' } });
+    fireEvent.change(codeInput(), { target: { value: 'CIT' } });
+    fireEvent.click(screen.getByText('Create Department'));
+
+    expect(await screen.findByText('CIT is already used by College of Information Technology.')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('shows the API error when an archived department still holds the code', async () => {
     post.mockRejectedValueOnce({
-      response: { status: 422, data: { errors: { department_code: ['The department code has already been taken.'] } } },
+      response: { status: 422, data: { errors: { department_code: ['This code belongs to an existing or archived department.'] } } },
     });
     render(<Departments />);
 
     fireEvent.click(await screen.findByText('Add Department'));
     fireEvent.change(nameInput(), { target: { value: 'College of Computing Studies' } });
+    fireEvent.change(codeInput(), { target: { value: 'CCS' } });
     fireEvent.click(screen.getByText('Create Department'));
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
-    expect(post.mock.calls[0][1]).toMatchObject({ department_code: 'CCS' });
-    expect(post.mock.calls[1][1]).toMatchObject({ department_code: 'CCS2' });
+    expect(await screen.findByText('This code belongs to an existing or archived department.')).toBeTruthy();
+    expect(post).toHaveBeenCalledTimes(1);
   });
 
-  it('re-derives the code when the department is renamed', async () => {
+  it('prefills the code when editing and saves changes to it', async () => {
     render(<Departments />);
     await openEditModalFor('College of Education');
 
-    fireEvent.change(nameInput(), { target: { value: 'College of Engineering' } });
+    expect((codeInput() as HTMLInputElement).value).toBe('CED');
+    fireEvent.change(codeInput(), { target: { value: 'COE' } });
     fireEvent.click(screen.getByText('Save Changes'));
 
     await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
-    expect(patch.mock.calls[0][1]).toMatchObject({
-      department_name: 'College of Engineering',
-      department_code: 'CE',
-    });
-  });
-
-  it('leaves a hand-picked code alone when the name is untouched', async () => {
-    render(<Departments />);
-    await openEditModalFor('College of Education');
-
-    fireEvent.change(screen.getByDisplayValue('Standard'), { target: { value: 'laboratory_enabled' } });
-    fireEvent.click(screen.getByText('Save Changes'));
-
-    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
-    expect(patch.mock.calls[0][1]).toMatchObject({ scheduling_profile: 'laboratory_enabled' });
-    expect(patch.mock.calls[0][1]).not.toHaveProperty('department_code');
+    expect(patch.mock.calls[0][1]).toMatchObject({ department_name: 'College of Education', department_code: 'COE' });
+    expect(patch.mock.calls[0][1]).not.toHaveProperty('scheduling_profile');
   });
 
   it('does not assign a secretary user as the dean when no dean is assigned', async () => {

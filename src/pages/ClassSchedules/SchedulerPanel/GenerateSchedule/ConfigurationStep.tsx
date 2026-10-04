@@ -338,7 +338,7 @@ export default function ConfigurationStep({
                   {sundayClassesEnabled
                     ? "On. Generation and manual scheduling may use Sunday."
                     : canManageSundayClasses
-                      ? "Off. Turn on after the dean approves Sunday classes for this department."
+                      ? "Off. Turn on to let generation and manual scheduling use Sunday."
                       : "Off. Only the department secretary can turn on Sunday classes."}
                 </p>
               </div>

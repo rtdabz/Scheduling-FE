@@ -149,7 +149,8 @@ api.interceptors.response.use(
 
             // The shell explains the expiry and offers the way back; without a
             // shell on screen there is nothing to explain it, so leave directly.
-            if (!announceSessionEnded('expired')) {
+            const reason = error.response.data?.reason === 'session_replaced' ? 'replaced' : 'expired';
+            if (!announceSessionEnded(reason)) {
                 window.location.href = '/';
             }
             return new Promise(() => undefined);

@@ -17,7 +17,13 @@ import api from "../../lib/api";
 import { yearLevelLabel } from "../../lib/semesterLabel";
 import { useToast } from "../../context/ToastContext";
 import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt } from "../../lib/conflictOverride";
-import { fetchConflicts, fetchResolvedConflicts, type ConflictRule } from "../../lib/conflicts";
+import {
+  fetchConflicts,
+  fetchInstructorRecommendations,
+  fetchResolvedConflicts,
+  type ConflictRule,
+  type InstructorRecommendation,
+} from "../../lib/conflicts";
 import ResolveConflictModal from "./SchedulerPanel/Modals/ResolveConflictModal";
 
 /** Module scope so the prop identity is stable across renders. */
@@ -29,7 +35,7 @@ import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { publishLiveTopics } from "../../lib/liveUpdates";
 import { apiErrorMessage } from "../../lib/apiError";
 import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
-import { coveredContinuously } from "../../lib/availabilityWindows";
+import { availabilityWarningMessage, coveredContinuously } from "../../lib/availabilityWindows";
 import type { LoadTier, OverloadConfirmation } from "../../lib/overloadConfirmation";
 import OverloadConfirmationModal from "../../components/faculty/OverloadConfirmationModal";
 import ConfirmModal from "../../components/ui/ConfirmModal";
@@ -167,7 +173,17 @@ interface ApiIncomingCourse {
   units?: number | null;
   year_level?: number | null;
   department?: ApiDepartment | null;
+  /** The program that handed the course over ("BSED" + "English"). */
+  teaching_source_program?: { id?: number; code?: string | null; major?: string | null } | null;
 }
+
+/** "BSED-English", or "BEED" for a program without a major — matches Program::shortLabel(). */
+const sourceProgramLabel = (program?: ApiIncomingCourse['teaching_source_program']): string | null => {
+  const code = program?.code?.trim();
+  if (!code) return null;
+  const major = program?.major?.trim();
+  return major ? `${code}-${major}` : code;
+};
 
 interface AssignmentResponse {
   active_semester: ApiSemester | null;
@@ -437,6 +453,22 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "assigned">("all");
   const [facultyAssignmentPopup, setFacultyAssignmentPopup] = useState<FacultyAssignmentPopupState | null>(null);
+  // A clash the server reported for an instructor picked in the worklist. The
+  // local check only sees this page's classes, so the dialog it opens shows
+  // the server's words when the local check finds nothing.
+  const [refusedConflict, setRefusedConflict] = useState<{
+    scheduleId: string;
+    facultyId: string;
+    message: string;
+  } | null>(null);
+  // Free instructors for the class in the dialog, fetched the first time its
+  // chosen instructor clashes.
+  const [instructorRecommendations, setInstructorRecommendations] = useState<{
+    scheduleId: string;
+    options: InstructorRecommendation[];
+    failed: boolean;
+  } | null>(null);
+  const recommendationsForRef = useRef<string | null>(null);
   // The assignment the server is asking about, kept whole so confirming replays
   // exactly what the user reviewed.
   const [overloadPrompt, setOverloadPrompt] = useState<{
@@ -580,6 +612,16 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     return [{ ...schedule, subject, department }];
   }), [currentDepartmentId, departmentMap, schedules, subjectMap]);
 
+  // Incoming courses with no approved class yet. Listed even when the page has
+  // other timetables: a course handed over by a sibling program shares this
+  // college's card, so "no cards" was never a reliable sign of what is waiting.
+  const awaitingIncomingCourses = useMemo(
+    () => incomingCourses.filter((course) => !assignmentSchedules.some(
+      (schedule) => Number(schedule.course_id ?? schedule.subject_id ?? 0) === Number(course.id),
+    )),
+    [assignmentSchedules, incomingCourses],
+  );
+
   const offeringDepartments = useMemo(() => departments
     .map((department) => ({
       department,
@@ -591,11 +633,17 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       Number(item.department.id) !== Number(currentDepartmentId)
       && item.schedules.length > 0
     )), [assignmentSchedules, currentDepartmentId, departments]);
+  // The header totals follow the department table: this department's own
+  // sections are staffed in Schedule Builder, not here.
+  const offeredSchedules = useMemo(
+    () => offeringDepartments.flatMap((item) => item.schedules),
+    [offeringDepartments],
+  );
 
   /**
-   * The department cards are a choice only when there is a choice. With one
-   * department offering work, the landing screen was a single card standing
-   * between the user and the timetable, so it opens itself.
+   * The page always lands on the department list, even with a single
+   * department, so its totals are seen first. Only a `?department=` deep link
+   * (e.g. from a notification) opens a department directly.
    */
   useEffect(() => {
     // Auto-open only once, otherwise Back (which clears the selection) would
@@ -608,11 +656,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     if (deepLinked) {
       autoOpenedRef.current = true;
       setSelectedDepartmentId(Number(deepLinked.department.id));
-      return;
-    }
-    if (offeringDepartments.length === 1) {
-      autoOpenedRef.current = true;
-      setSelectedDepartmentId(Number(offeringDepartments[0].department.id));
     }
   }, [assignmentLocked, isLoading, offeringDepartments, selectedDepartmentId]);
   const selectedDepartment = selectedDepartmentId
@@ -813,8 +856,16 @@ const selectedSchedule = assignmentSchedules.find(
     setSelectedSection("all");
   };
 
+  /** Conflict help belongs to one visit of the dialog. */
+  const resetConflictHelp = () => {
+    setRefusedConflict(null);
+    setInstructorRecommendations(null);
+    recommendationsForRef.current = null;
+  };
+
   const openAssignment = (schedule: AssignmentSchedule) => {
     if (assignmentLocked || schedule.status === "finalized" || Boolean(schedule.faculty_assignment_done)) return;
+    resetConflictHelp();
     setFacultyAssignmentPopup({
       scheduleId: String(schedule.id),
       facultyId: schedule.faculty_id ? String(schedule.faculty_id) : "",
@@ -826,6 +877,7 @@ const selectedSchedule = assignmentSchedules.find(
   const closeAssignment = () => {
     if (isSaving) return;
     setFacultyAssignmentPopup(null);
+    resetConflictHelp();
   };
 
   /**
@@ -882,6 +934,7 @@ const selectedSchedule = assignmentSchedules.find(
       invalidateAssignmentDependents();
       setOverloadPrompt(null);
       setFacultyAssignmentPopup(null);
+      resetConflictHelp();
       toast.success(
         facultyId === null ? "Instructor Removed" : "Instructor Assigned",
         facultyId === null
@@ -903,6 +956,18 @@ const selectedSchedule = assignmentSchedules.find(
       if (question && facultyId !== null) {
         setIsSaving(false);
         setSavingScheduleId(null);
+        // Picked from the worklist: open the class's dialog on the clash
+        // instead, where free instructors are offered beside assigning anyway.
+        if (facultyAssignmentPopup?.scheduleId !== String(schedule.id)) {
+          resetConflictHelp();
+          setRefusedConflict({
+            scheduleId: String(schedule.id),
+            facultyId: String(facultyId),
+            message: question.details.join(" ") || question.message,
+          });
+          setFacultyAssignmentPopup({ scheduleId: String(schedule.id), facultyId: String(facultyId) });
+          return;
+        }
         const proceed = await confirm({
           title: "Instructor has a conflict",
           message: conflictOverridePrompt(question),
@@ -1039,7 +1104,7 @@ const selectedSchedule = assignmentSchedules.find(
     if (!faculty || !schedule) return null;
 
     if (isPartTimeOutsideAvailability(faculty, schedule)) {
-      return `Outside the instructor's availability on ${schedule.day}.`;
+      return availabilityWarningMessage(`${faculty.first_name} ${faculty.last_name}`.trim());
     }
 
     const start = timeToMinutes(schedule.start_time);
@@ -1121,6 +1186,45 @@ const selectedSchedule = assignmentSchedules.find(
     // visibleSchedules dependency already tracks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignmentLocked, modalFaculties, modalSubjects, visibleSchedules]);
+
+  const popupConflictWarning = facultyAssignmentPopup?.facultyId
+    ? checkModalFacultyConflict(facultyAssignmentPopup.facultyId, facultyAssignmentPopup.scheduleId)
+      ?? (refusedConflict?.scheduleId === facultyAssignmentPopup.scheduleId
+        && refusedConflict.facultyId === facultyAssignmentPopup.facultyId
+        ? refusedConflict.message
+        : "")
+    : "";
+  const recommendationScheduleId = facultyAssignmentPopup && popupConflictWarning
+    ? facultyAssignmentPopup.scheduleId
+    : null;
+
+  /**
+   * Free instructors for a class whose chosen instructor clashes. Fetched once
+   * per dialog visit: the list does not depend on who is selected, and a pick
+   * from it clears the warning without needing a new list.
+   */
+  useEffect(() => {
+    if (recommendationScheduleId === null || recommendationsForRef.current === recommendationScheduleId) return;
+    const scheduleId = recommendationScheduleId;
+    // Until the list lands the dialog shows it as loading: the stored list is
+    // for no class, or for another one.
+    recommendationsForRef.current = scheduleId;
+
+    // Not aborted on cleanup: picking a free instructor clears the warning,
+    // and the list should still arrive for the dialog it was asked for.
+    void fetchInstructorRecommendations(scheduleId)
+      .then((options) => {
+        if (recommendationsForRef.current === scheduleId) {
+          setInstructorRecommendations({ scheduleId, options, failed: false });
+        }
+      })
+      // Without a list the dialog falls back to the plain "assign anyway" note.
+      .catch(() => {
+        if (recommendationsForRef.current === scheduleId) {
+          setInstructorRecommendations({ scheduleId, options: [], failed: true });
+        }
+      });
+  }, [recommendationScheduleId]);
 
   if (isLoading && selectedDepartmentId !== null) {
     return (
@@ -1205,13 +1309,13 @@ const selectedSchedule = assignmentSchedules.find(
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
               <p className="text-[9px] font-black uppercase tracking-wider text-amber-600">Pending</p>
               <p className="mt-1 text-lg font-black text-amber-700">
-                {assignmentSchedules.filter((schedule) => !schedule.faculty_id).length}
+                {offeredSchedules.filter((schedule) => !schedule.faculty_id).length}
               </p>
             </div>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
               <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Assigned</p>
               <p className="mt-1 text-lg font-black text-emerald-700">
-                {assignmentSchedules.filter((schedule) => schedule.faculty_id).length}
+                {offeredSchedules.filter((schedule) => schedule.faculty_id).length}
               </p>
             </div>
           </div>
@@ -1256,23 +1360,24 @@ const selectedSchedule = assignmentSchedules.find(
             <span className="whitespace-nowrap text-xs font-bold text-slate-500">{offeringDepartments.length} departments</span>
           </div>
 
-          {offeringDepartments.length === 0 ? (
-            <div className="py-10 text-center">
-              {incomingCourses.length > 0 ? (
-                <div className="mx-auto max-w-3xl text-left">
+          {awaitingIncomingCourses.length > 0 && (
+                <div className={`text-left ${offeringDepartments.length === 0 ? 'mx-auto max-w-3xl py-10' : 'mb-3'}`}>
                   <h3 className="text-sm font-black text-[#4e0a10]">Incoming courses awaiting schedules</h3>
                   <p className="mt-1 text-xs font-medium text-slate-500">These courses were assigned to your department, but no approved schedule exists yet. Create the section schedule in Schedule Builder first; it will then appear here for instructor assignment.</p>
                   <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                    {incomingCourses.map((course) => (
+                    {awaitingIncomingCourses.map((course) => (
                       <div key={course.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-                        <div><p className="text-sm font-black text-slate-900">{course.course_code} · {course.course_name}</p><p className="text-xs text-slate-500">Source: {course.department?.department_code ?? course.department?.department_name ?? 'Shared'} · {course.units ?? 0} units · {yearLevelLabel(course.year_level)}</p></div>
+                        <div><p className="text-sm font-black text-slate-900">{course.course_code} · {course.course_name}</p><p className="text-xs text-slate-500">Source: {sourceProgramLabel(course.teaching_source_program) ?? course.department?.department_code ?? course.department?.department_name ?? 'Shared'} · {course.units ?? 0} units · {yearLevelLabel(course.year_level)}</p></div>
                         <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Schedule required</span>
                       </div>
                     ))}
                   </div>
                 </div>
-              ) : <><h3 className="text-sm font-black text-[#4e0a10]">No incoming courses or approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">Assigned courses will appear here after a schedule is created and approved.</p></>}
-            </div>
+          )}
+          {offeringDepartments.length === 0 ? (
+            awaitingIncomingCourses.length === 0 && (
+              <div className="py-10 text-center"><h3 className="text-sm font-black text-[#4e0a10]">No incoming courses or approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">Assigned courses will appear here after a schedule is created and approved.</p></div>
+            )
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full min-w-[34rem] text-left text-sm">
@@ -1340,18 +1445,16 @@ const selectedSchedule = assignmentSchedules.find(
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              {/* Only a way back when there is somewhere to go: with a single
-                  offering department the card screen is a dead end. */}
-              {offeringDepartments.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDepartmentId(null)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:border-[#C9952A] hover:text-[#4e0a10]"
-                  aria-label="Back to departments"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-              )}
+              {/* Always offered: the department list is the landing screen. */}
+              <button
+                type="button"
+                onClick={() => setSelectedDepartmentId(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:border-[#C9952A] hover:text-[#4e0a10]"
+                aria-label="Back to departments"
+                title="Back to departments"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
               <div>
                 <h2 className="flex items-center gap-2 text-base font-black text-[#4e0a10]">
                   <CalendarDays className="h-4 w-4 text-[#C9952A]" />
@@ -1564,9 +1667,12 @@ const selectedSchedule = assignmentSchedules.find(
         facultyAssignmentPopup={facultyAssignmentPopup}
         facultyActionSlotId={isSaving && facultyAssignmentPopup ? facultyAssignmentPopup.scheduleId : null}
         schedules={modalSchedules}
-        popupConflictWarning={facultyAssignmentPopup?.facultyId
-          ? checkModalFacultyConflict(facultyAssignmentPopup.facultyId, facultyAssignmentPopup.scheduleId) ?? ""
-          : ""}
+        popupConflictWarning={popupConflictWarning}
+        recommendedInstructors={instructorRecommendations?.failed
+          ? undefined
+          : instructorRecommendations?.scheduleId === facultyAssignmentPopup?.scheduleId
+            ? instructorRecommendations?.options ?? null
+            : null}
         popupValidationError={error}
         setFacultyAssignmentPopup={(value) => {
           if (isSaving) return;

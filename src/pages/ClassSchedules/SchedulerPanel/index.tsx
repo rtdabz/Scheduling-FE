@@ -37,7 +37,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const facultyAssignmentGuideSteps = useMemo(() => [
     { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose an approved section", description: "Select a section with classes that need instructors.", side: "bottom" as const, align: "start" as const },
     { element: "#schedule-builder-workflow", title: "Check the current step", description: "Instructor Assignment means the timetable is ready for instructors.", side: "bottom" as const },
-    { element: "#schedule-builder-auto-assign", action: "click" as const, skipIfMissing: true, taskHint: "Click Auto-Assign to continue.", title: "Use Auto-Assign", description: "Review automatic instructor suggestions, then apply the ones you want.", side: "bottom" as const, align: "end" as const },
+    { element: "#schedule-builder-auto-assign", action: "click" as const, skipIfMissing: true, taskHint: "Click Assign to continue.", title: "Assign instructors", description: "Review automatic instructor suggestions, then apply the ones you want.", side: "bottom" as const, align: "end" as const },
     { element: '[data-tour="unassigned-class"]', waitFor: "#schedule-builder-timetable", action: "click" as const, skipIfMissing: true, taskHint: "Click a highlighted class that needs an instructor.", title: "Open an unassigned class", description: "Select a class without an instructor to see eligible faculty and conflicts.", side: "top" as const },
   ], []);
   const reviewGuideSteps = useMemo(() => [
@@ -89,6 +89,20 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const { reloadSchedulingSettings } = scheduler;
   // Unknown profile (department not loaded) keeps the laboratory options shown.
   const generatorLaboratoryEnabled = generatorDepartment?.scheduling_profile !== 'standard';
+
+  // Instructor Assignment lists only this department's own program sections,
+  // taught by this department. Another department's section (even one delegated
+  // here) and a course taught by another college belong to Cross-Department.
+  const assignDepartmentId = selectedSection?.departmentId ?? null;
+  const ownDepartmentSchedules = useMemo(() => {
+    if (assignDepartmentId === null) return scheduler.schedules;
+    const teachingDepartmentByCourse = new Map(scheduler.subjects.map((subject) => [subject.id, subject.teachingDepartmentId ?? null]));
+    return scheduler.schedules.filter((schedule) => {
+      if (schedule.departmentId != null && Number(schedule.departmentId) !== Number(assignDepartmentId)) return false;
+      const teachingDepartmentId = teachingDepartmentByCourse.get(schedule.courseId) ?? null;
+      return teachingDepartmentId === null || Number(teachingDepartmentId) === Number(assignDepartmentId);
+    });
+  }, [assignDepartmentId, scheduler.schedules, scheduler.subjects]);
 
   useEffect(() => {
     if (!isGeneratorOpen) return;
@@ -223,10 +237,10 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       <AutoAssignModal
         isOpen={isAutoAssignOpen}
         onClose={() => setIsAutoAssignOpen(false)}
-        schedules={scheduler.schedules}
+        schedules={ownDepartmentSchedules}
         subjects={scheduler.subjects}
         faculties={scheduler.faculties}
-        departmentId={selectedSection?.departmentId ?? null}
+        departmentId={assignDepartmentId}
         programId={scheduler.userProgramId}
         facultyActionSlotId={scheduler.facultyActionSlotId}
         canManageScheduleFaculty={scheduler.canManageScheduleFaculty}

@@ -63,7 +63,7 @@ registerPagePrefetch([
   [VpaaUsers, ['/users']],
   [Departments, ['/departments', '/dean/departments', '/secretary/departments', '/program_head/departments']],
   [Reports, ['/reports', '/dean/reports', '/secretary/reports', '/program_head/reports']],
-  [RoomRequests, ['/secretary/room-requests', '/program_head/room-requests']],
+  [RoomRequests, ['/secretary/room-requests']],
   [VpaaActivityLog, ['/activity-log']],
   [VpaaScheduleHistory, ['/schedule-history', '/dean/schedule-history', '/secretary/schedule-history', '/program_head/schedule-history']],
   [VpaaArchive, ['/archive']],
@@ -294,7 +294,6 @@ export default function App() {
             <Route path="/program_head/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><ProgramHeadSectionTimetables /></CapabilityRoute>} />
             <Route path="/program_head/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
             <Route path="/program_head/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facility"><Rooms /></CapabilityRoute>} />
-            <Route path="/program_head/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
 
             <Route path="/program_head/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/program_head/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
