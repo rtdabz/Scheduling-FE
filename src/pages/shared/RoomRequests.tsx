@@ -25,6 +25,7 @@ import TableActionButton from '../../components/ui/TableActionButton';
 import { useToast } from '../../context/ToastContext';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import api from '../../lib/api';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { apiErrorMessage } from '../../lib/apiError';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import {
@@ -104,6 +105,14 @@ interface ScheduleRecord {
     last_name: string;
     middle_name?: string | null;
   } | null;
+}
+
+interface RoomRequestsPageData {
+  departments: DepartmentRecord[];
+  rooms: RoomRecord[];
+  schedules: ScheduleRecord[];
+  requests: RoomRequest[];
+  timeGrid: InitialDataResponse['time_grid'];
 }
 
 interface InitialDataResponse {
@@ -200,11 +209,19 @@ export default function RoomRequests() {
   const departmentId = getStoredUserDepartmentId();
   const mountedRef = useRef(true);
 
-  const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
-  const [rooms, setRooms] = useState<RoomRecord[]>([]);
-  const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
-  const [requests, setRequests] = useState<RoomRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Rooms group, so room and room-request writes invalidate it. A cached copy
+  // paints on a revisit while the mount fetch below replaces it.
+  const cacheKey = `page:rooms:room-requests:${departmentId ?? 'all'}`;
+  const [cached] = useState(() => {
+    const data = getCachedData<RoomRequestsPageData>(cacheKey);
+    if (data?.timeGrid) configureTimeGrid(data.timeGrid);
+    return data;
+  });
+  const [departments, setDepartments] = useState<DepartmentRecord[]>(cached?.departments ?? []);
+  const [rooms, setRooms] = useState<RoomRecord[]>(cached?.rooms ?? []);
+  const [schedules, setSchedules] = useState<ScheduleRecord[]>(cached?.schedules ?? []);
+  const [requests, setRequests] = useState<RoomRequest[]>(cached?.requests ?? []);
+  const [isLoading, setIsLoading] = useState(!cached);
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [globalFilter, setGlobalFilter] = useState('');
@@ -216,7 +233,7 @@ export default function RoomRequests() {
   const [previewRequest, setPreviewRequest] = useState<RoomRequest | null>(null);
 
   const loadData = useCallback(async (silent = false) => {
-    if (!silent) setIsLoading(true);
+    if (!silent && !hasCachedData(cacheKey)) setIsLoading(true);
     try {
       const [departmentResponse, roomResponse, initialResponse] = await Promise.all([
         api.get<DepartmentRecord[]>('/departments'),
@@ -237,12 +254,19 @@ export default function RoomRequests() {
       // The department's own requests and the ones for its rooms.
       const requestData = await fetchRoomRequests();
       if (mountedRef.current) setRequests(requestData);
+      setCachedData<RoomRequestsPageData>(cacheKey, {
+        departments: departmentData,
+        rooms: roomData,
+        schedules: initialData.schedules ?? [],
+        requests: requestData,
+        timeGrid: initialData.time_grid,
+      });
     } catch (error) {
       toast.error('Room Requests Unavailable', apiErrorMessage(error, 'The department and room workspace could not be loaded.'));
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [toast]);
+  }, [cacheKey, toast]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -602,7 +626,7 @@ export default function RoomRequests() {
 
         <button
           type="button"
-          onClick={() => void loadData()}
+          onClick={() => { setIsLoading(true); void loadData(); }}
           disabled={isLoading}
           aria-label="Refresh"
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-extrabold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-60 cursor-pointer"

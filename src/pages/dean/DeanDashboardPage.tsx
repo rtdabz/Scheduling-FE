@@ -507,9 +507,9 @@ export default function DeanDashboardPage() {
 
   const inventory: Tile[] = [
     { label: 'Sections', value: sectionTotal, detail: 'Department scope', icon: LayoutGrid, path: '/dean/sections', tone: 'brand' },
-    { label: 'Instructors', value: deptFaculties.length, detail: 'Active instructors', icon: Users, path: '/dean/faculty', tone: 'accent' },
+    { label: 'Instructors', value: deptFaculties.length, detail: 'Active instructors', icon: Users, path: '/dean/instructors', tone: 'accent' },
     { label: 'Curriculums', value: deptSubjects.length, detail: 'Offered courses', icon: BookOpen, path: '/dean/curriculum', tone: 'good' },
-    { label: 'Rooms', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/rooms', tone: 'warn' },
+    { label: 'Rooms', value: assignableRooms.length, detail: 'Total rooms', icon: Building2, path: '/dean/facilities', tone: 'warn' },
   ];
 
   const completionSlices = [
@@ -797,7 +797,7 @@ export default function DeanDashboardPage() {
           title="Instructor Workload"
           subtitle="Teaching load overview for all active instructors."
           action="Instructor workload by %"
-          onAction={() => navigate('/dean/faculty')}
+          onAction={() => navigate('/dean/instructors')}
           className="flex flex-col"
         >
         <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
@@ -842,7 +842,7 @@ export default function DeanDashboardPage() {
         </div> : <p className="mt-2 py-3 text-center text-[11px] italic text-slate-400">No rooms available to this department.</p>}
 
         <div className="mt-auto flex items-baseline justify-between gap-2 pt-3">
-          <button type="button" onClick={() => navigate('/dean/rooms')} className="text-[11px] font-bold text-primary hover:underline">Go to Room Management <ArrowRight className="inline h-3 w-3" /></button>
+          <button type="button" onClick={() => navigate('/dean/facilities')} className="text-[11px] font-bold text-primary hover:underline">Go to Facility <ArrowRight className="inline h-3 w-3" /></button>
           {roomUsage.length > 5 && <span className="text-[10px] text-slate-400">+{roomUsage.length - 5} more</span>}
         </div>
         </Panel>

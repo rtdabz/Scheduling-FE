@@ -37,6 +37,7 @@ import type { InitialDataResponse, SchedulerCacheData } from "./initialDataMappe
 import {
   generatedScheduleSectionId,
   hasUsableSchedulerCache,
+  mapApiCourse,
   mapApiFaculty,
   mapApiScheduleToItem,
   mapApiSections,
@@ -70,7 +71,7 @@ import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
 import { fetchConflicts, fetchResolvedConflicts, resolvedScheduleIds } from "../../../../lib/conflicts";
-import { getCachedData, loadCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
+import { getCachedData, loadCachedData, patchCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
 import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
 import { roomGrantFits } from "../../../../lib/roomRequests";
@@ -515,14 +516,7 @@ export const useScheduler = () => {
       const signature = scheduleSignature(mapped);
       if (signature === scheduleSignature(schedulesRef.current)) return;
       setSchedules(mapped);
-      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
-      if (cachedData) {
-        setCachedData<SchedulerCacheData>(schedulerCacheKey, {
-          ...cachedData,
-          schedules: mapped,
-          schedulesTruncated: res.data.schedules_truncated === true,
-        });
-      }
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: mapped, schedulesTruncated: res.data.schedules_truncated === true });
     } catch {
       // A failed refresh used to be swallowed entirely, leaving the grid showing
       // stale rows with no indication. It is not fatal — the local state is still
@@ -549,13 +543,7 @@ export const useScheduler = () => {
             }
           );
           const updated = [...filtered, ...mapped];
-          const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
-          if (cachedData) {
-            setCachedData<SchedulerCacheData>(schedulerCacheKey, {
-              ...cachedData,
-              schedules: updated,
-            });
-          }
+          patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: updated });
           return updated;
         });
         setSelectedSectionId((currentSectionId) =>
@@ -609,10 +597,7 @@ export const useScheduler = () => {
       if (!Array.isArray(response.data.faculties)) return;
       const fresh = response.data.faculties.map(mapApiFaculty);
       setFaculties(fresh);
-      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
-      if (cachedData) {
-        setCachedData<SchedulerCacheData>(schedulerCacheKey, { ...cachedData, faculties: fresh });
-      }
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { faculties: fresh });
     } catch {
       // Loads are advisory here; the save itself already succeeded.
     }
@@ -631,12 +616,27 @@ export const useScheduler = () => {
       if (!Array.isArray(response.data.sections)) return;
       const fresh = mapApiSections(response.data.sections, response.data.active_semester ?? null);
       setSections(fresh);
-      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
-      if (cachedData) {
-        setCachedData<SchedulerCacheData>(schedulerCacheKey, { ...cachedData, sections: fresh });
-      }
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { sections: fresh });
     } catch {
       // Loads are advisory here; the local list is still usable.
+    }
+  }, [schedulerCacheKey]);
+
+  /**
+   * Refetches only the course list. Each course carries its teaching college,
+   * which decides who may assign its instructor; a teaching assignment added or
+   * removed on Course Teaching otherwise kept reading "Only X Department can
+   * assign instructors" in an already-open builder until a full reload.
+   */
+  const refreshSubjects = useCallback(async () => {
+    try {
+      const response = await api.get<Pick<InitialDataResponse, "courses">>('/initial-data', { params: { include: 'courses' } });
+      if (!Array.isArray(response.data.courses)) return;
+      const fresh = response.data.courses.map(mapApiCourse);
+      setSubjects(fresh);
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { subjects: fresh });
+    } catch {
+      // Advisory; the local list is still usable.
     }
   }, [schedulerCacheKey]);
 
@@ -645,6 +645,7 @@ export const useScheduler = () => {
   // before replacing state, so an unrelated department's change re-renders nothing.
   useLiveRefresh(["schedules", "approvals"], () => { void refreshSchedules(); });
   useLiveRefresh(["faculty", "assignments"], () => { void refreshFaculties(); });
+  useLiveRefresh(["courses", "assignments"], () => { void refreshSubjects(); });
   useLiveRefresh(["sections"], () => { void refreshSections(); });
 
   const applyUpdatedSchedules = useCallback((updatedSchedules: ScheduleItem[]) => {
@@ -658,13 +659,7 @@ export const useScheduler = () => {
       const nextSchedules = previousSchedules.map((schedule) =>
         updatedScheduleMap.get(schedule.id) ?? schedule
       );
-      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
-      if (cachedData) {
-        setCachedData<SchedulerCacheData>(schedulerCacheKey, {
-          ...cachedData,
-          schedules: nextSchedules,
-        });
-      }
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: nextSchedules });
       return nextSchedules;
     });
   }, [refreshFaculties, schedulerCacheKey]);
@@ -2298,13 +2293,7 @@ export const useScheduler = () => {
     // Optimistic UI update: immediately clear local state & update local storage cache
     setSchedules((prev) => {
       const updated = prev.filter((schedule) => !selectedIds.has(schedule.sectionId));
-      const cachedData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
-      if (cachedData) {
-        setCachedData<SchedulerCacheData>(schedulerCacheKey, {
-          ...cachedData,
-          schedules: updated,
-        });
-      }
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: updated });
       return updated;
     });
 
@@ -2371,6 +2360,16 @@ export const useScheduler = () => {
       return;
     }
 
+    const submitCount = submissionReadySections.length;
+    const confirmedSubmit = await confirm({
+      title: "Submit Schedule",
+      message: `${submitCount} section${submitCount === 1 ? "" : "s"} will be sent to the Dean for review and locked from editing until approved, returned, or recalled.`,
+      eyebrow: "Schedule Submission",
+      confirmLabel: "Submit",
+      variant: "maroon",
+    });
+    if (!confirmedSubmit) return;
+
     try {
       setIsSubmittingSchedule(true);
       const submittedSectionIds = submissionReadySections.map((item) => Number(item.sectionId));
@@ -2423,6 +2422,19 @@ export const useScheduler = () => {
       toast.error("Select Sections", "Choose at least one section to unlock for revision.");
       return;
     }
+
+    const recallCount = sectionIds.length;
+    const confirmedRecall = await confirm({
+      title: "Recall Schedule",
+      message: (departmentWithdrawalStage === "vpaa_approved"
+        ? `VPAA approval will be revoked for ${recallCount} section${recallCount === 1 ? "" : "s"} and they will return to revision.`
+        : `${recallCount} section${recallCount === 1 ? "" : "s"} will be pulled back from ${departmentWithdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review and returned to revision.`)
+        + " They must be submitted again for approval.",
+      eyebrow: "Schedule Submission",
+      confirmLabel: "Recall",
+      variant: "warning",
+    });
+    if (!confirmedRecall) return;
 
     try {
       setIsWithdrawingSubmission(true);

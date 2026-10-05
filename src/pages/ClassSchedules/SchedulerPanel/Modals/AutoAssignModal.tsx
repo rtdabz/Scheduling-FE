@@ -84,9 +84,6 @@ const overlaps = (left: ScheduleItem, right: ScheduleItem): boolean =>
 
 const QUEUED_ISSUE = "Queued for assignment";
 
-const groupsOverlap =(left: SectionGroup, right: SectionGroup): boolean =>
-  left.schedules.some((leftSchedule) => right.schedules.some((rightSchedule) => overlaps(leftSchedule, rightSchedule)));
-
 /**
  * An instructor's load bands. Basic Load is what the server calls
  * `required_units` (max_units - deload_units); the fallback recomputes it from
@@ -169,7 +166,7 @@ const MODE_LABELS: Record<string, string> = { "on-site": "On-site", field: "Fiel
  * meeting, so meetings at the same time and mode fold into one entry, and
  * in-person entries come before online ones.
  */
-const scheduleLabel = (group: SectionGroup): string => {
+const scheduleEntries = (group: SectionGroup): { label: string; scheduleIds: string[] }[] => {
   const entries = new Map<string, ScheduleItem[]>();
   group.schedules
     .slice()
@@ -182,10 +179,21 @@ const scheduleLabel = (group: SectionGroup): string => {
     .sort((left, right) => (MODE_ORDER[left[0].mode ?? ""] ?? 3) - (MODE_ORDER[right[0].mode ?? ""] ?? 3))
     .map((meetings) => {
       const days = meetings.length === 1 ? meetings[0].day : meetings.map((meeting) => meeting.day.slice(0, 3)).join("/");
-      return `${days} ${meetings[0].startTime}-${meetings[0].endTime}`;
-    })
-    .join(" | ");
+      return { label: `${days} ${meetings[0].startTime}-${meetings[0].endTime}`, scheduleIds: meetings.map((meeting) => meeting.id) };
+    });
 };
+
+const scheduleLabel = (group: SectionGroup): string => scheduleEntries(group).map((entry) => entry.label).join(" | ");
+
+const meetingLabel = (schedule: ScheduleItem): string => `${schedule.day} ${schedule.startTime}-${schedule.endTime}`;
+
+/** An instructor clash and the meetings of the class it lands on. */
+interface ConflictDetail {
+  message: string;
+  scheduleIds: Set<string>;
+  /** The other class's meetings it collides with (none for the instructor's saved load). */
+  counterpartIds: string[];
+}
 
 /** 'On-site | Online': every delivery mode the class uses, in-person first. */
 const modesLabel = (group: SectionGroup): string => [...new Set(group.schedules.map((schedule) => schedule.mode ?? "on-site"))]
@@ -389,29 +397,58 @@ export default function AutoAssignModal({
    * ticked for them. Unlike getIssue() it does not block: the class can still be
    * picked, and is saved as a conflict override.
    */
-  const getConflict = (group: SectionGroup, selectionKeys = selectedKeys): string | null => {
+  const getConflictDetail = (group: SectionGroup, selectionKeys = selectedKeys): ConflictDetail | null => {
     if (group.assignedFacultyId || queuedKeys.has(group.key) || !facultyId) return null;
     const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
-    for (const schedule of pendingSchedules) {
-      const conflict = checkFacultyConflict(facultyId, schedule.id);
-      if (conflict) return conflict;
+    const instructorClashes = pendingSchedules
+      .map((schedule) => ({ schedule, message: checkFacultyConflict(facultyId, schedule.id) }))
+      .filter((clash): clash is { schedule: ScheduleItem; message: string } => !!clash.message);
+    if (instructorClashes.length > 0) {
+      return { message: instructorClashes[0].message, scheduleIds: new Set(instructorClashes.map((clash) => clash.schedule.id)), counterpartIds: [] };
     }
-    const queuedFacultySchedules = assignments
-      .filter((assignment) => assignment.facultyId === facultyId)
-      .flatMap((assignment) => assignment.scheduleIds)
-      .map((scheduleId) => schedules.find((schedule) => schedule.id === scheduleId))
-      .filter((schedule): schedule is ScheduleItem => !!schedule);
-    if (pendingSchedules.some((schedule) => queuedFacultySchedules.some((queued) => overlaps(schedule, queued)))) {
-      return "Overlaps a class already on the list for this instructor";
-    }
-    const otherSelected = groups.filter((selectedGroup) =>
-      selectedGroup.key !== group.key && selectionKeys.includes(selectedGroup.key),
-    );
-    if (otherSelected.some((selectedGroup) => groupsOverlap(selectedGroup, group))) {
-      return "Overlaps another selected section";
+    // Clashes with other classes on the list, then with other ticked sections:
+    // name the meeting so the row shows exactly which day and time collide.
+    const others: { label: string; schedules: ScheduleItem[] }[] = [
+      ...assignments
+        .filter((assignment) => assignment.facultyId === facultyId)
+        .map((assignment) => ({
+          label: `${assignment.courseCode} ${assignment.sectionName} on the list`,
+          schedules: assignment.scheduleIds
+            .map((scheduleId) => schedules.find((schedule) => schedule.id === scheduleId))
+            .filter((schedule): schedule is ScheduleItem => !!schedule),
+        })),
+      ...groups
+        .filter((selectedGroup) => selectedGroup.key !== group.key && selectionKeys.includes(selectedGroup.key))
+        .map((selectedGroup) => ({ label: selectedGroup.sectionName, schedules: selectedGroup.schedules })),
+    ];
+    for (const other of others) {
+      const clashing = pendingSchedules.filter((schedule) => other.schedules.some((theirs) => overlaps(schedule, theirs)));
+      if (clashing.length > 0) {
+        return {
+          message: `Overlaps ${other.label} · ${clashing.map(meetingLabel).join(", ")}`,
+          scheduleIds: new Set(clashing.map((schedule) => schedule.id)),
+          counterpartIds: other.schedules
+            .filter((theirs) => clashing.some((schedule) => overlaps(schedule, theirs)))
+            .map((theirs) => theirs.id),
+        };
+      }
     }
     return null;
   };
+  const getConflict = (group: SectionGroup, selectionKeys = selectedKeys): string | null =>
+    getConflictDetail(group, selectionKeys)?.message ?? null;
+  const getConflictMeetings = (group: SectionGroup): Set<string> =>
+    getConflictDetail(group)?.scheduleIds ?? new Set();
+
+  // The other side of each visible clash: meeting id -> the sections it blocks,
+  // so the ticked section that causes a conflict is marked too.
+  const clashPartners = new Map<string, string[]>();
+  courseGroups.forEach((group) => {
+    if (getIssue(group)) return;
+    getConflictDetail(group)?.counterpartIds.forEach((id) => {
+      clashPartners.set(id, [...(clashPartners.get(id) ?? []), group.sectionName]);
+    });
+  });
 
   const selectedGroups = courseGroups.filter((group) => selectedKeys.includes(group.key));
   const selectedUnits = selectedGroups.reduce((total, group) => total + group.units, 0);
@@ -588,7 +625,7 @@ export default function AutoAssignModal({
                   <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
                   <SelectField label="Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => ({ value: course.id, label: `${course.code} - ${course.name}` }))} placeholder="Select course" />
                 </div>
-                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} onToggle={toggleGroup} onOverride={confirmConflictOverride} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
+                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onOverride={confirmConflictOverride} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
                 <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
                   {selectedFaculty ? (
                     <div className="mr-auto min-w-0 text-xs text-slate-600">
@@ -839,7 +876,7 @@ function SelectField({ label, value, onChange, options, placeholder, allValue }:
   return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
 }
 
-function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, onOverride, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; onToggle: (group: SectionGroup) => void; onOverride: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
+function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflictMeetings, clashPartners, onToggle, onOverride, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; getConflictMeetings: (group: SectionGroup) => Set<string>; clashPartners: Map<string, string[]>; onToggle: (group: SectionGroup) => void; onOverride: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
   const columns = useMemo<ColumnDef<SectionGroup>[]>(() => [
     {
       id: "selected",
@@ -872,7 +909,27 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, o
       id: "schedule",
       header: "Schedule",
       enableSorting: false,
-      cell: ({ row }) => <span className="whitespace-nowrap text-xs font-medium text-slate-600">{scheduleLabel(row.original)}</span>,
+      cell: ({ row }) => {
+        // The meetings the instructor clash lands on are marked red, so the row
+        // shows which day and time collide, not just that something does.
+        const clashing = getIssue(row.original) ? new Set<string>() : getConflictMeetings(row.original);
+        return (
+          <span className="whitespace-nowrap text-xs font-medium text-slate-600">
+            {scheduleEntries(row.original).map((entry, index) => {
+              const partners = [...new Set(entry.scheduleIds.flatMap((id) => clashPartners.get(id) ?? []))];
+              const red = partners.length > 0 || entry.scheduleIds.some((id) => clashing.has(id));
+              return (
+                <span key={entry.label}>
+                  {index > 0 && " | "}
+                  {red
+                    ? <span className="rounded bg-rose-100 px-1 py-0.5 font-bold text-rose-700 ring-1 ring-rose-200" title={partners.length ? `Conflicts with ${partners.join(", ")}` : "Conflicts for this instructor"}>{entry.label}</span>
+                    : entry.label}
+                </span>
+              );
+            })}
+          </span>
+        );
+      },
     },
     {
       accessorKey: "units",
@@ -897,10 +954,14 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, o
             </span>
           );
         }
+        const blocks = issue ? [] : [...new Set(row.original.schedules.flatMap((schedule) => clashPartners.get(schedule.id) ?? []))];
         return (
-          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${issue ? "text-slate-500" : "text-emerald-700"}`}>
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${issue ? "bg-amber-400" : "bg-emerald-500"}`} />
-            {issue ?? "Available"}
+          <span className="inline-flex min-w-0 flex-col gap-0.5">
+            <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${issue ? "text-slate-500" : "text-emerald-700"}`}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${issue ? "bg-amber-400" : "bg-emerald-500"}`} />
+              {issue ?? "Available"}
+            </span>
+            {blocks.length > 0 && <span className="whitespace-nowrap text-[11px] font-medium text-rose-600">Conflicts with {blocks.join(", ")}</span>}
           </span>
         );
       },
@@ -947,7 +1008,7 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, onToggle, o
         );
       },
     } satisfies ColumnDef<SectionGroup>,
-  ], [busy, getConflict, getIssue, onOverride, onRemove, removalBlockedReason, selectedKeys]);
+  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onOverride, onRemove, removalBlockedReason, selectedKeys]);
 
   const table = useDataTable({
     data: groups,

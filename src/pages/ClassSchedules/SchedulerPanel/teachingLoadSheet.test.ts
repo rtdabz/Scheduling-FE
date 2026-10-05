@@ -256,7 +256,7 @@ describe("drawSheet pro bono text", () => {
 });
 
 describe("drawSheet instructor conflict text", () => {
-  it("prints conflict overrides in red while keeping pro bono grey, with no conflict label", () => {
+  it("prints an override's times in red, leaving the rest of the line its own colour, with no conflict label", () => {
     // All three bands have an override; pro bono must retain its grey text.
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
     const { fills, texts } = recordColours(doc);
@@ -273,12 +273,45 @@ describe("drawSheet instructor conflict text", () => {
       load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
     });
 
-    expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe(CONFLICT_TEXT);
-    expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe(CONFLICT_TEXT);
+    // No meeting on the sheet explains the override, so each subject's times carry it.
+    expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe("0,0,0");
+    expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe("0,0,0");
     expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
+    expect(texts.filter((entry) => entry.text.includes("–")).map((entry) => entry.color))
+      .toEqual([CONFLICT_TEXT, CONFLICT_TEXT, CONFLICT_TEXT]);
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
     expect(texts.some((entry) => /override|conflict/i.test(entry.text))).toBe(false);
     expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
+  });
+});
+
+describe("drawSheet clashing times", () => {
+  it("reds only the time ranges that overlap, not the whole line", () => {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
+    const { texts } = recordColours(doc);
+
+    // BSIT 1D meets W 3-5 PM and Th 10 AM-1 PM; BSIT 1B meets Th 10 AM-1 PM and F 5-7 PM.
+    const schedules = [
+      meeting({ id: "1", courseId: "c1", courseCode: "IT 101", sectionId: "d", sectionName: "BSIT 1D", day: "wednesday", dayIndex: 2, startTime: "15:00", endTime: "17:00", startSlot: 16, durationSlots: 4 }),
+      meeting({ id: "2", courseId: "c1", courseCode: "IT 101", sectionId: "d", sectionName: "BSIT 1D", day: "thursday", dayIndex: 3, startTime: "10:00", endTime: "13:00", startSlot: 6, durationSlots: 6, facultyConflictOverride: true }),
+      meeting({ id: "3", courseId: "c1", courseCode: "IT 101", sectionId: "b", sectionName: "BSIT 1B", day: "thursday", dayIndex: 3, startTime: "10:00", endTime: "13:00", startSlot: 6, durationSlots: 6, facultyConflictOverride: true }),
+      meeting({ id: "4", courseId: "c1", courseCode: "IT 101", sectionId: "b", sectionName: "BSIT 1B", day: "friday", dayIndex: 4, startTime: "17:00", endTime: "19:00", startSlot: 20, durationSlots: 4 }),
+    ];
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 24, overloadUnits: 0, probonoUnits: 0 } as Faculty;
+    const load = classifyLoad(faculty, schedules);
+    drawSheet(doc, {
+      logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
+      surname: "Cruz", givenName: "A", middleInitial: "B", isPartTime: false, designations: [],
+      instructorName: "A B CRUZ", preparedBy: "", verifiedBy: "", vpaaName: "", presidentName: "", presidentTitle: "",
+      load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
+    });
+
+    const colourOf = (text: string) => texts.filter((entry) => entry.text === text).map((entry) => entry.color);
+    expect(colourOf("10:00 AM – 1:00 PM")).toEqual([CONFLICT_TEXT, CONFLICT_TEXT]);
+    expect(colourOf("3:00 PM – 5:00 PM")).toEqual(["0,0,0"]);
+    expect(colourOf("5:00 PM – 7:00 PM")).toEqual(["0,0,0"]);
+    expect(colourOf("IT 101")).toEqual(["0,0,0", "0,0,0"]);
+    expect(colourOf("BSIT 1D")).toEqual(["0,0,0"]);
   });
 });
 

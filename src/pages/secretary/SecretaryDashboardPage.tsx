@@ -118,18 +118,18 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const paths = isProgramHead
     ? {
         sections: '/program_head/sections',
-        schedules: '/program_head/schedule-builder',
-        instructors: '/program_head/faculty',
-        courses: '/program_head/course-list',
-        rooms: '/program_head/rooms',
+        schedules: '/program_head/schedule-management',
+        instructors: '/program_head/instructors',
+        courses: '/program_head/courses',
+        rooms: '/program_head/facilities',
         crossDepartment: '/program_head/cross-department-assignments',
       }
     : {
         sections: '/secretary/sections',
-        schedules: '/secretary/schedule-builder',
+        schedules: '/secretary/schedule-management',
         instructors: '/secretary/instructors',
-        courses: '/secretary/course-list',
-        rooms: '/secretary/rooms',
+        courses: '/secretary/courses',
+        rooms: '/secretary/facilities',
         crossDepartment: '/secretary/cross-department-assignments',
       };
   // Rooms are assigned to classes in Schedule Management; without schedule

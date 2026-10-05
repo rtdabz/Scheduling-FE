@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearDataCache } from '../../lib/dataCache';
 import ScheduleApprovalPage from './ScheduleApprovalPage';
 
 const mocks = vi.hoisted(() => ({
@@ -78,6 +79,7 @@ describe('ScheduleApprovalPage', () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
+    clearDataCache();
     vi.clearAllMocks();
     mocks.user = { role: 'vpaa', department_id: undefined };
   });

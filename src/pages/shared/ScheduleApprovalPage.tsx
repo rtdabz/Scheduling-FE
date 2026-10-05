@@ -23,6 +23,7 @@ import { apiErrorMessage } from '../../lib/apiError';
 import { programLabel } from '../../lib/programLabel';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { getStoredUser } from '../../lib/storedUser';
+import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import {
   scheduleStatusesForSubmission,
   splitSubmission,
@@ -261,19 +262,31 @@ const STAGE_ENDPOINT: Record<ApprovalStage, { approve: string; reject: string }>
   vpaa: { approve: 'approve-by-vpaa', reject: 'return-by-vpaa' },
 };
 
+interface ApprovalQueueCache {
+  entries: ScheduleApproval[];
+  rawSchedules: RawSchedule[];
+  departments: RawDepartment[];
+  printSource: SchedulerCacheData | null;
+  isTruncated: boolean;
+}
+
 export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }) {
   const { toast, confirm } = useToast();
   const user = useMemo(() => getStoredUser(), []);
   // A Dean reviews one department; the VPAA reviews them all.
   const scopeDepartmentId = stage === 'dean' ? user?.department_id ?? null : null;
 
-  const [entries, setEntries] = useState<ScheduleApproval[]>([]);
-  const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>([]);
-  const [departments, setDepartments] = useState<RawDepartment[]>([]);
-  const [printSource, setPrintSource] = useState<SchedulerCacheData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Schedules group (approval signals invalidate it too). A cached queue paints
+  // on a revisit while the mount fetch below replaces it.
+  const cacheKey = `page:approval-queue:${stage}:${scopeDepartmentId ?? 'all'}`;
+  const [cached] = useState(() => getCachedData<ApprovalQueueCache>(cacheKey));
+  const [entries, setEntries] = useState<ScheduleApproval[]>(cached?.entries ?? []);
+  const [rawSchedules, setRawSchedules] = useState<RawSchedule[]>(cached?.rawSchedules ?? []);
+  const [departments, setDepartments] = useState<RawDepartment[]>(cached?.departments ?? []);
+  const [printSource, setPrintSource] = useState<SchedulerCacheData | null>(cached?.printSource ?? null);
+  const [isLoading, setIsLoading] = useState(!cached);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isTruncated, setIsTruncated] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(cached?.isTruncated ?? false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [selectedQueueTab, setSelectedQueueTab] = useState<QueueTab>('pending');
@@ -305,7 +318,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     let active = true;
     const load = async () => {
       // A live refresh keeps the queue on screen while it reloads.
-      if (liveRevision === 0 && reloadKey === 0) setIsLoading(true);
+      if (liveRevision === 0 && reloadKey === 0 && !hasCachedData(cacheKey)) setIsLoading(true);
       setLoadError(null);
       try {
         // The VPAA portal is otherwise limited to approved meetings; this screen
@@ -378,14 +391,22 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
             };
           });
 
-        setPrintSource(mapInitialData(data as unknown as InitialDataResponse, {
+        const nextPrintSource = mapInitialData(data as unknown as InitialDataResponse, {
           isVpaa: stage === 'vpaa',
           userDepartmentId: scopeDepartmentId,
-        }));
+        });
+        setPrintSource(nextPrintSource);
         setDepartments(data.departments ?? []);
         setRawSchedules(schedules);
         setEntries(mapped);
         setIsTruncated(data.schedules_truncated === true);
+        setCachedData<ApprovalQueueCache>(cacheKey, {
+          entries: mapped,
+          rawSchedules: schedules,
+          departments: data.departments ?? [],
+          printSource: nextPrintSource,
+          isTruncated: data.schedules_truncated === true,
+        });
       } catch (error) {
         if (!active) return;
         // An empty queue after a failed load reads as "nothing to approve",
@@ -399,7 +420,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     };
     void load();
     return () => { active = false; };
-  }, [liveRevision, reloadKey, scopeDepartmentId, stage, toast]);
+  }, [cacheKey, liveRevision, reloadKey, scopeDepartmentId, stage, toast]);
 
   const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
 

@@ -39,7 +39,49 @@ export type ReviewCourseRow = {
   preferredRoom?: string | null;
 };
 
-const elapsedLabel = (ms: number) => {
+/** A rule the engine enforces: always ("core") or because Setup chose it. */
+export type ReviewRule = {
+  label: string;
+  detail: string;
+  kind: "core" | "setup";
+};
+
+/** One group of the Rules applied panel. */
+function RuleGroup({
+  title,
+  rules,
+  tone,
+}: {
+  title: string;
+  rules: ReviewRule[];
+  tone: string;
+}) {
+  return (
+    <div>
+      <p className="px-1 pb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">
+        {title}
+      </p>
+      <ul className="space-y-1">
+        {rules.map((rule) => (
+          <li
+            key={rule.label}
+            className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-2 py-1.5"
+          >
+            <CheckCircle2 className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${tone}`} />
+            <span className="min-w-0">
+              <span className="block text-xs font-black text-slate-800">{rule.label}</span>
+              <span className="block text-[11px] font-semibold leading-snug text-slate-500">
+                {rule.detail}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const elapsedLabel =(ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -253,7 +295,7 @@ function GeneratingView({
     {
       key: "validating",
       label: "Checking every rule",
-      note: "Rooms, faculty, conflicts and required days",
+      note: "Rooms, conflicts and required days",
       done: false,
       active: false,
     },
@@ -370,11 +412,13 @@ export default function ReviewGenerateStep({
   /** Consecutive Days rules; each section follows its own, else the course-wide one. */
   consecutiveDayRules?: ConsecutiveDayRule[];
   fieldCourseCodes: string[];
-  activeRules: string[];
+  activeRules: ReviewRule[];
   generating: boolean;
   blockedReason: string | null;
   yearState?: YearLevelScheduleState | null;
 }) {
+  const coreRules = activeRules.filter((rule) => rule.kind === "core");
+  const setupRules = activeRules.filter((rule) => rule.kind === "setup");
   const hybridCourses = courseRows.filter((row) => row.hybrid);
   const splitCourses = courseRows.filter((row) => row.split);
   const fieldCodes = new Set(fieldCourseCodes);
@@ -563,19 +607,26 @@ export default function ReviewGenerateStep({
                 icon={ShieldCheck}
                 title="Rules applied"
                 meta={`${activeRules.length}`}
-                className="shrink-0"
+                className="flex-1"
               >
-                <ul className="flex flex-wrap gap-1 p-2.5">
-                  {activeRules.map((rule) => (
-                    <li
-                      key={rule}
-                      className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700"
-                    >
-                      <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                      {rule}
-                    </li>
-                  ))}
-                </ul>
+                <div className="min-h-0 flex-1 space-y-3 overflow-auto p-2.5">
+                  <RuleGroup
+                    title="Always enforced"
+                    rules={coreRules}
+                    tone="text-emerald-600"
+                  />
+                  {setupRules.length > 0 ? (
+                    <RuleGroup
+                      title="From your setup"
+                      rules={setupRules}
+                      tone="text-[#4e0a10]"
+                    />
+                  ) : (
+                    <p className="px-1 text-[11px] font-semibold text-slate-400">
+                      No course rules were set in Setup.
+                    </p>
+                  )}
+                </div>
               </Panel>
             </div>
           </div>

@@ -1,13 +1,7 @@
 import type { NavItem, NavSection } from './types';
 import { secretaryNav } from './secretaryNav';
 
-const toProgramHeadPath = (path: string): string => {
-  const pathAliases: Record<string, string> = {
-    '/secretary/instructors': '/program_head/faculty',
-  };
-
-  return pathAliases[path] ?? path.replace('/secretary/', '/program_head/');
-};
+const toProgramHeadPath = (path: string): string => path.replace('/secretary/', '/program_head/');
 
 // Secretary-only screens. Their capability cannot be granted to a program head
 // (config/capabilities.php), so mapping them would only show a permanently

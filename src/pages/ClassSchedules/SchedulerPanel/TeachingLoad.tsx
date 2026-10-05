@@ -18,6 +18,7 @@ import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib
 import { BASIC_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
 import { formPageSize } from "./teachingLoadForm";
+import { facultyNameParts } from "./teachingLoadName";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -46,33 +47,6 @@ const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   secretary: "Department Secretary",
   program_head: "Program Head",
   vpaa: "Vice President for Academic Affairs",
-};
-
-/** "CBA" / "secretary demo" -> "Cba" / "Secretary Demo": first letter of each word only. */
-const capitalizeWords = (text: string) =>
-  text.toLowerCase().replace(/(^|\s)(\S)/g, (_, gap: string, letter: string) => gap + letter.toUpperCase());
-
-const parseFacultyName = (name: string) => {
-  const parts = name.trim().split(/\s+/);
-  let surname = "";
-  let givenName = "";
-  let mi = "";
-
-  if (parts.length > 0) {
-    surname = parts[parts.length - 1];
-    if (parts.length > 1) {
-      const secondToLast = parts[parts.length - 2];
-      const hasPeriod = secondToLast.endsWith(".");
-      const isShort = secondToLast.length <= 2;
-      if (hasPeriod || isShort) {
-        mi = secondToLast;
-        givenName = parts.slice(0, parts.length - 2).join(" ");
-      } else {
-        givenName = parts.slice(0, parts.length - 1).join(" ");
-      }
-    }
-  }
-  return { surname, givenName, mi };
 };
 
 const semesterLabel = (semester?: string): string => {
@@ -181,7 +155,7 @@ export default function TeachingLoad({
     let doc: jsPDF | null = null;
 
     for (const faculty of targetFaculties) {
-      const { surname, givenName, mi } = parseFacultyName(faculty.name);
+      const { surname, givenName, middleInitial, fullName } = facultyNameParts(faculty);
       const department = departments.find((d) => Number(d.id) === Number(faculty.departmentId));
       const collegeName = (
         department?.department_name ||
@@ -196,8 +170,18 @@ export default function TeachingLoad({
       const deptId = faculty.departmentId?.toString();
       const byRole = (role: string) =>
         users.find((u) => u.role?.toLowerCase() === role && u.department_id?.toString() === deptId);
-      // The form's line covers both posts, so either may sign it.
-      const preparer = byRole("program_head") ?? byRole("secretary");
+      // The form's line covers both posts, so either may sign it. A department
+      // report spans every program, so it is the instructor's own Program Head,
+      // or the only one there is -- never whichever of several comes first.
+      // Otherwise the Secretary signs.
+      const programHeads = users.filter((u) => u.role?.toLowerCase() === "program_head" && u.department_id?.toString() === deptId);
+      const ownProgramHead = faculty.programId == null
+        ? undefined
+        : programHeads.find((u) => Number(u.program_id) === Number(faculty.programId));
+      const preparer = ownProgramHead
+        ?? (programHeads.length === 1 ? programHeads[0] : undefined)
+        ?? byRole("secretary")
+        ?? programHeads[0];
 
       const load = classifyLoad(faculty, assignedSchedules.filter((s) => s.facultyId === faculty.id));
 
@@ -219,16 +203,16 @@ export default function TeachingLoad({
           collegeName,
           semester: semesterLabel(activeSemester?.semester),
           academicYear: activeSemester?.academic_year || "",
-          surname: capitalizeWords(surname),
-          givenName: capitalizeWords(givenName),
-          middleInitial: mi,
+          surname,
+          givenName,
+          middleInitial,
           isPartTime: faculty.employmentType === "part-time",
           designations: faculty.designations?.length
             ? faculty.designations
             : faculty.administrativeRole
               ? [{ label: DESIGNATION_LABELS[faculty.administrativeRole], deloadUnits: faculty.deloadUnits ?? 0 }]
               : [],
-          instructorName: capitalizeWords(faculty.name),
+          instructorName: fullName,
           preparedBy: preparer?.name ?? "",
           verifiedBy: byRole("dean")?.name ?? "",
           // Left blank rather than defaulting to a past VPAA: a stale name on

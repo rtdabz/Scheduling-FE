@@ -549,9 +549,9 @@ export default function VpaaDashboardPage() {
 
   const inventory: Tile[] = [
     { label: 'Departments', value: grouped(departments.length), detail: 'Academic units', icon: Landmark, path: '/departments', tone: 'brand' },
-    { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/faculty', tone: 'accent' },
+    { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/instructors', tone: 'accent' },
     { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'good' },
-    { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/rooms', tone: 'warn' },
+    { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/facilities', tone: 'warn' },
     { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/calendar', tone: 'info' },
   ];
 
@@ -836,7 +836,7 @@ export default function VpaaDashboardPage() {
       <BuildingUtilizationPanel
         insights={insights}
         loading={insightsLoading}
-        onOpenRooms={() => navigate('/rooms')}
+        onOpenRooms={() => navigate('/facilities')}
         className="xl:col-span-6"
       />
     </section>
@@ -852,7 +852,7 @@ export default function VpaaDashboardPage() {
           slices={facultySlices}
           total={faculties.length}
           overloaded={overloadedFaculty}
-          onOpen={() => navigate('/faculty')}
+          onOpen={() => navigate('/instructors')}
         />
 
         <Panel

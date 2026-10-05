@@ -34,6 +34,7 @@ export const CACHE_GROUPS = {
   schedules: [
     'scheduler:',
     'page:dean-schedules:',
+    'page:approval-queue:',
     'page:schedule-viewer:',
     'page:vpaa-calendar:',
     'page:schedule-overview',

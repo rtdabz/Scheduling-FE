@@ -117,24 +117,22 @@ const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 
 /**
  * Only two things are coloured on the sheet: pro bono subjects (grey) and
- * subjects assigned over an instructor conflict (red). Basic Load and paid
+ * the meeting times that clash for the instructor (red). Basic Load and paid
  * Overload print in plain black. The row itself is not shaded; the colour is
  * on the letters.
  */
 const PROBONO_TEXT = [107, 114, 128] as const;
 /**
- * A subject assigned over an instructor conflict prints in red text.
- * Pro bono remains grey; conflict colour carries no printed label by design.
+ * Only the clashing time ranges print in red -- the rest of the line keeps its
+ * own colour, so a subject meeting at three times shows which one conflicts.
+ * Conflict colour carries no printed label by design.
  */
 const CONFLICT_TEXT = [220, 38, 38] as const;
 /** Section C's deload figures print in red; their "Deload" heading stays black. */
 const DELOAD_TEXT = [220, 38, 38] as const;
 
-const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined => {
-  if (line.band === "probono") return PROBONO_TEXT;
-  if (line.overridden) return CONFLICT_TEXT;
-  return undefined;
-};
+const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined =>
+  line.band === "probono" ? PROBONO_TEXT : undefined;
 
 const drawTableHeader = (doc: jsPDF, firstRow: number): void => {
   const lastRow = firstRow + 1;
@@ -191,6 +189,7 @@ const drawTableBody = (doc: jsPDF, firstRow: number, lineCount: number, lines: L
       padding: 0.25,
       separator: "cellRule",
       fixedSize: true,
+      lineColors: line.times.map((time) => (line.conflictTimes?.includes(time) ? CONFLICT_TEXT : cell.color)),
     });
     drawText(doc, line.section, { from: "F", row }, cell);
     drawText(doc, formatQuantity(line.lectureUnits), { from: "H", row }, cell);

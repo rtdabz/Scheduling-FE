@@ -308,6 +308,10 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
 export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Faculty => ({
   id: f.id.toString(),
   name: `${f.first_name} ${f.last_name}`,
+  firstName: f.first_name,
+  middleName: f.middle_name ?? null,
+  lastName: f.last_name,
+  suffix: f.suffix ?? null,
   profilePicture: f.profile_picture ?? null,
   employmentType: f.employment_type,
   administrativeRole: normalizeAdministrativePost(f.administrative_role),
