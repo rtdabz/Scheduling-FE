@@ -900,11 +900,11 @@ export default function Departments() {
                   >
                     {/* Centered Background Department Watermark Logo */}
                     {dept.logo && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
                         <img
                           src={dept.logo}
                           alt="Department Watermark"
-                          className="w-48 h-48 object-contain opacity-[0.20]"
+                          className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
                         />
                       </div>
                     )}
@@ -1270,116 +1270,6 @@ export default function Departments() {
                     </div>
                   </div>
 
-                  {/* Faculty Directory Section */}
-                  <section className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <GraduationCap size={18} className="text-[#4e0a10]" />
-                          <h3 className="text-sm font-bold text-gray-900 font-sans">Instructor Directory</h3>
-                        </div>
-                        <p className="mt-0.5 text-xs text-gray-500 font-sans">
-                          Instructors assigned to this department, grouped by employment status.
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
-                        <button
-                          type="button"
-                          onClick={() => setActiveFacultyTab('full-time')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            activeFacultyTab === 'full-time'
-                              ? 'bg-[#4e0a10] text-white shadow-xs'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          Full-Time ({fullTimeFaculty.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveFacultyTab('part-time')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            activeFacultyTab === 'part-time'
-                              ? 'bg-[#4e0a10] text-white shadow-xs'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          Part-Time ({partTimeFaculty.length})
-                        </button>
-                      </div>
-                    </div>
-
-                    {isLoadingFaculties ? (
-                      <div className="py-6 text-center text-xs text-gray-400 animate-pulse">
-                        Loading instructors...
-                      </div>
-                    ) : (activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
-                        <UserRound className="mx-auto mb-2 text-gray-300" size={24} />
-                        <p className="text-xs font-bold text-gray-600">
-                          No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors assigned.
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-gray-400">
-                          Instructors can be assigned to this department in the Instructor Management section.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {(activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).map((faculty) => {
-                          const fullName = `${faculty.first_name}${faculty.middle_name ? ' ' + faculty.middle_name[0] + '.' : ''} ${faculty.last_name}${faculty.suffix ? ' ' + faculty.suffix : ''}`;
-                          const designationsList = (faculty.designations ?? []).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
-
-                          return (
-                            <div
-                              key={faculty.id}
-                              className="flex items-center gap-3 rounded-xl border border-gray-200/80 bg-gray-50/40 p-3 shadow-2xs hover:bg-white hover:border-[#C9952A]/40 transition-all"
-                            >
-                              {faculty.profile_picture ? (
-                                <img
-                                  src={faculty.profile_picture}
-                                  alt={fullName}
-                                  className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0"
-                                />
-                              ) : (
-                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 text-slate-500 shrink-0">
-                                  <UserRound size={18} />
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs font-bold text-gray-900 truncate">{fullName}</p>
-                                  <span
-                                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                      faculty.employment_type === 'full-time'
-                                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                        : 'bg-purple-50 text-purple-700 border border-purple-200'
-                                    }`}
-                                  >
-                                    {faculty.employment_type}
-                                  </span>
-                                </div>
-
-                                {designationsList.length > 0 ? (
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    {designationsList.map((desigText, i) => (
-                                      <span
-                                        key={i}
-                                        className="inline-flex items-center rounded-md bg-[#C9952A]/10 px-2 py-0.5 text-[10px] font-bold text-[#7b5c18]"
-                                      >
-                                        {desigText}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="mt-0.5 text-[10px] font-medium text-gray-400">No designation</p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </section>
                 </>
               )}
 
@@ -1548,6 +1438,118 @@ export default function Departments() {
                   )}
                 </div>
               </section>
+
+              {!showProgramForm && (
+                <section className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <GraduationCap size={18} className="text-[#4e0a10]" />
+                        <h3 className="text-sm font-bold text-gray-900 font-sans">Instructor Directory</h3>
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-500 font-sans">
+                        Instructors assigned to this department, grouped by employment status.
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setActiveFacultyTab('full-time')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          activeFacultyTab === 'full-time'
+                            ? 'bg-[#4e0a10] text-white shadow-xs'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Full-Time ({fullTimeFaculty.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveFacultyTab('part-time')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          activeFacultyTab === 'part-time'
+                            ? 'bg-[#4e0a10] text-white shadow-xs'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Part-Time ({partTimeFaculty.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {isLoadingFaculties ? (
+                    <div className="py-6 text-center text-xs text-gray-400 animate-pulse">
+                      Loading instructors...
+                    </div>
+                  ) : (activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
+                      <UserRound className="mx-auto mb-2 text-gray-300" size={24} />
+                      <p className="text-xs font-bold text-gray-600">
+                        No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors assigned.
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-gray-400">
+                        Instructors can be assigned to this department in the Instructor Management section.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {(activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).map((faculty) => {
+                        const fullName = `${faculty.first_name}${faculty.middle_name ? ' ' + faculty.middle_name[0] + '.' : ''} ${faculty.last_name}${faculty.suffix ? ' ' + faculty.suffix : ''}`;
+                        const designationsList = (faculty.designations ?? []).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
+
+                        return (
+                          <div
+                            key={faculty.id}
+                            className="flex items-center gap-3 rounded-xl border border-gray-200/80 bg-gray-50/40 p-3 shadow-2xs hover:bg-white hover:border-[#C9952A]/40 transition-all"
+                          >
+                            {faculty.profile_picture ? (
+                              <img
+                                src={faculty.profile_picture}
+                                alt={fullName}
+                                className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0"
+                              />
+                            ) : (
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 text-slate-500 shrink-0">
+                                <UserRound size={18} />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-bold text-gray-900 truncate">{fullName}</p>
+                                <span
+                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                    faculty.employment_type === 'full-time'
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  }`}
+                                >
+                                  {faculty.employment_type}
+                                </span>
+                              </div>
+
+                              {designationsList.length > 0 ? (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {designationsList.map((desigText, i) => (
+                                    <span
+                                      key={i}
+                                      className="inline-flex items-center rounded-md bg-[#C9952A]/10 px-2 py-0.5 text-[10px] font-bold text-[#7b5c18]"
+                                    >
+                                      {desigText}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-0.5 text-[10px] font-medium text-gray-400">No designation</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
 
             {/* Action Buttons */}
