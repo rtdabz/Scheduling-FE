@@ -21,6 +21,7 @@ export const secretaryNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
+      { label: 'Departments', path: '/secretary/departments', icon: Building2, id: 'sidebar-departments', requiredCapability: 'schedule.view' },
       {
         label: 'Facility',
         icon: DoorOpen,
@@ -47,7 +48,7 @@ export const secretaryNav: NavSection[] = [
         id: 'sidebar-schedules',
         requiredCapability: ['schedule.view', 'schedule.create', 'schedule.assign_instructor'],
         children: [
-          { label: 'Schedule Management', path: '/secretary/schedule-builder', icon: CalendarRange, id: 'sidebar-schedule-builder', requiredCapability: 'schedule.create' },
+          { label: 'Schedule Builder', path: '/secretary/schedule-builder', icon: CalendarRange, id: 'sidebar-schedule-builder', requiredCapability: 'schedule.create' },
           { label: 'Schedules', path: '/secretary/schedules', icon: CalendarDays, id: 'sidebar-section-timetables', requiredCapability: 'schedule.view' },
         ],
       },
@@ -57,7 +58,7 @@ export const secretaryNav: NavSection[] = [
         id: 'sidebar-cross-department',
         requiredCapability: 'schedule.assign_instructor_cross_department',
         children: [
-          { label: 'Course Assignment', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
+          { label: 'Cross-Department Request', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
           { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
         ],
       },

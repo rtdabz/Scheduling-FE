@@ -18,6 +18,7 @@ export const deanNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dean/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
+      { label: 'Departments', path: '/dean/departments', icon: Building2, id: 'sidebar-departments', requiredCapability: 'schedule.view' },
       { label: 'Facility', path: '/dean/rooms', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
       {
         label: 'Instructors',
@@ -42,7 +43,7 @@ export const deanNav: NavSection[] = [
         requiredCapability: 'schedule.view',
       },
       {
-        label: 'Schedules',
+        label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         requiredCapability: ['schedule.view', 'schedule.approve_dean'],

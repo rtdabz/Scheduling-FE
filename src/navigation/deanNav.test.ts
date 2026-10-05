@@ -15,6 +15,7 @@ describe('deanNav structure for monitoring', () => {
     deanNav.forEach((section) => collectPaths(section.items));
 
     expect(allPaths).toContain('/dean/dashboard');
+    expect(allPaths).toContain('/dean/departments');
     expect(allPaths).toContain('/dean/schedules/approval');
     expect(allPaths).toContain('/dean/schedules');
     expect(allPaths).toContain('/dean/courses');

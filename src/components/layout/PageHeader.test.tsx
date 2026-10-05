@@ -21,7 +21,7 @@ describe('PageHeader', () => {
   });
 
   it('still titles the sibling page itself', () => {
-    renderAt('/schedules', vpaaNav);
+    renderAt('/dean/schedules', deanNav);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('All Schedules');
   });
 });

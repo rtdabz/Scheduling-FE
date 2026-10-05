@@ -21,10 +21,10 @@ export const vpaaNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
-      { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
+      { label: 'Users', path: '/users', icon: Users, id: 'sidebar-users' },
+      { label: 'Departments', path: '/departments', icon: Building2, id: 'sidebar-departments' },
       // Room borrowing is between departments; the VPAA has no Room Requests page.
-      { label: 'Facility Management', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Facilities', path: '/rooms', icon: DoorOpen, id: 'sidebar-rooms' },
       {
         label: 'Instructors',
         path: '/faculty',
@@ -34,7 +34,7 @@ export const vpaaNav: NavSection[] = [
       { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
       { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
       {
-        label: 'Schedule Review',
+        label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         children: [
@@ -42,11 +42,6 @@ export const vpaaNav: NavSection[] = [
             label: 'Schedule Approval',
             path: '/schedules/approval',
             id: 'sidebar-schedule-approval'
-          },
-          {
-            label: 'All Schedules',
-            path: '/schedules',
-            id: 'sidebar-all-schedules'
           },
           {
             label: 'Master Calendar',

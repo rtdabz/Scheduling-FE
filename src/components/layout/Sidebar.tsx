@@ -343,28 +343,26 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                         className={`
                           w-full flex items-center h-10 rounded-lg
                           transition-all duration-300 ease-in-out cursor-pointer text-left overflow-hidden
-                          ${isOpen ? 'gap-3 px-3 justify-between' : 'justify-center px-0'}
+                          ${isOpen ? 'gap-3 px-3' : 'justify-center px-0'}
                           ${hasActiveChild ? 'sidebar-parent-active' : 'sidebar-item-hover text-[#E8D5C4]'}
                           ${item.isLocked ? 'opacity-50' : ''}
                         `}
                         aria-expanded={expanded}
                         title={item.isLocked ? `Locked: Requires permission` : item.label}
                       >
-                        <div className="flex items-center min-w-0">
-                          <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-                            {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
-                            {!isOpen && showNotif && (
-                              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
-                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
-                              </span>
-                            )}
-                          </div>
-                          <span className={`whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[210px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
-                            {item.label}
-                          </span>
+                        <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
+                          {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
+                          {!isOpen && showNotif && (
+                            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
+                            </span>
+                          )}
                         </div>
-                        <div className={`flex items-center gap-2 transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[70px] opacity-100' : 'max-w-0 opacity-0 pointer-events-none'}`}>
+                        <span className={`whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[210px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
+                          {item.label}
+                        </span>
+                        <div className={`flex items-center gap-2 transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[70px] opacity-100 ml-auto' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
                           {showNotif && (
                             notifCount > 0 ? (
                               <span
