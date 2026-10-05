@@ -131,26 +131,21 @@ export default function ActivityLog() {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [semesters, setSemesters] = useState<Semester[]>([]);
-  const [users, setUsers] = useState<Actor[]>([]);
   const [selected, setSelected] = useState<ActivityEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<ActivityResponse['meta']>({ current_page: 1, per_page: 25, total: 0, last_page: 1 });
-  const [filters, setFilters] = useState({ search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ search: '', category: '', status: '', department_id: '', from: '', to: '' });
   const [applied, setApplied] = useState(filters);
 
   useEffect(() => {
     Promise.all([
       api.get<Department[]>('/departments'),
       api.get<Semester[]>('/semesters'),
-      api.get<{ data?: Actor[] } | Actor[]>('/user'),
-    ]).then(([departmentResponse, semesterResponse, userResponse]) => {
+    ]).then(([departmentResponse, semesterResponse]) => {
       setDepartments(departmentResponse.data);
       setSemesters(semesterResponse.data);
-      const rawUsers = userResponse.data;
-      const userList = Array.isArray(rawUsers) ? rawUsers : rawUsers.data ?? [];
-      setUsers(userList);
     }).catch(() => {});
   }, []);
 
@@ -177,24 +172,6 @@ export default function ActivityLog() {
 
   const departmentMap = useMemo(() => new Map(departments.map(department => [department.id, department])), [departments]);
   const semesterMap = useMemo(() => new Map(semesters.map(semester => [semester.id, semester])), [semesters]);
-
-  const availableEvents = useMemo(() => {
-    const all = Object.entries(EVENT_DETAILS);
-    const filtered = filters.category
-      ? all.filter(([, info]) => info.category === filters.category)
-      : all;
-
-    const seenLabels = new Set<string>();
-    return filtered
-      .filter(([, info]) => {
-        if (seenLabels.has(info.label)) {
-          return false;
-        }
-        seenLabels.add(info.label);
-        return true;
-      })
-      .sort(([, a], [, b]) => a.label.localeCompare(b.label));
-  }, [filters.category]);
 
   const columns = useMemo<ColumnDef<ActivityEntry>[]>(() => [
     { id: 'occurred_at', header: 'Date and time', meta: { cellClassName: 'whitespace-nowrap font-medium text-gray-600' }, cell: ({ row }) => formatDate(row.original.occurred_at) },
@@ -233,7 +210,7 @@ export default function ActivityLog() {
   };
 
   const clearFilters = () => {
-    const empty = { search: '', category: '', event: '', status: '', department_id: '', actor_id: '', semester_id: '', from: '', to: '' };
+    const empty = { search: '', category: '', status: '', department_id: '', from: '', to: '' };
     setFilters(empty);
     setApplied(empty);
     setPage(1);
@@ -273,23 +250,11 @@ export default function ActivityLog() {
             <select
               aria-label="Category"
               value={filters.category}
-              onChange={event => setFilters(current => ({ ...current, category: event.target.value, event: '' }))}
+              onChange={event => setFilters(current => ({ ...current, category: event.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
             >
               <option value="">All categories</option>
               {categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
-            <select
-              aria-label="Event"
-              value={filters.event}
-              onChange={event => setFilters(current => ({ ...current, event: event.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
-            >
-              <option value="">All events</option>
-              {availableEvents.map(([value, info]) => <option key={value} value={value}>{info.label}</option>)}
             </select>
           </div>
 
@@ -302,30 +267,6 @@ export default function ActivityLog() {
             >
               <option value="">All departments</option>
               {departments.map(department => <option key={department.id} value={department.id}>{department.department_code} — {department.department_name}</option>)}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
-            <select
-              aria-label="Actor"
-              value={filters.actor_id}
-              onChange={event => setFilters(current => ({ ...current, actor_id: event.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
-            >
-              <option value="">All actors / users</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-0.5 min-w-[140px] max-w-[200px] flex-1">
-            <select
-              aria-label="Academic term"
-              value={filters.semester_id}
-              onChange={event => setFilters(current => ({ ...current, semester_id: event.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
-            >
-              <option value="">All academic terms</option>
-              {semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.academic_year} · {semester.semester}</option>)}
             </select>
           </div>
 
