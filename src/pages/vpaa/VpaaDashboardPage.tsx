@@ -552,7 +552,7 @@ export default function VpaaDashboardPage() {
     { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/faculty', tone: 'accent' },
     { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'good' },
     { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/rooms', tone: 'warn' },
-    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules', tone: 'info' },
+    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/calendar', tone: 'info' },
   ];
 
   const completionSlices = [
