@@ -58,11 +58,7 @@ export const secretaryNav: NavSection[] = [
         id: 'sidebar-cross-department',
         requiredCapability: 'schedule.assign_instructor_cross_department',
         children: [
-<<<<<<< HEAD
-          { label: 'Cross-Department Request', path: '/secretary/course-teaching-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
-=======
           { label: 'Course Assignment', path: '/secretary/course-assignments', icon: Building2, id: 'sidebar-course-teaching-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
->>>>>>> 363c03a6e84ab97d92f4edf4be77c7716131c4c4
           { label: 'Cross-Department', path: '/secretary/cross-department-assignments', icon: UserRoundCheck, id: 'sidebar-cross-department-assignments', requiredCapability: 'schedule.assign_instructor_cross_department' },
         ],
       },
