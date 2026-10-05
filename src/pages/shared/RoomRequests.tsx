@@ -15,6 +15,7 @@ import {
   Trash2,
   Undo2,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import DataTable from '../../components/ui/DataTable';
 import Modal from '../../components/ui/Modal';
@@ -230,6 +231,7 @@ export default function RoomRequests() {
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
   const [requestRoom, setRequestRoom] = useState<RoomRecord | null>(null);
   const [showRequests, setShowRequests] = useState(false);
+  const [requestsModalTab, setRequestsModalTab] = useState<'all' | 'requester' | 'requestor'>('all');
   const [previewRequest, setPreviewRequest] = useState<RoomRequest | null>(null);
 
   const loadData = useCallback(async (silent = false) => {
@@ -284,9 +286,19 @@ export default function RoomRequests() {
   const replaceRequest = (updated: RoomRequest) =>
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
 
-  const pendingFromOthers = useMemo(
-    () => requests.filter((request) => request.status === 'pending' && request.requesting_department?.id !== departmentId).length,
+  const pendingOwnRequests = useMemo(
+    () => requests.filter((request) => request.status === 'pending' && request.requesting_department?.id === departmentId).length,
     [departmentId, requests],
+  );
+
+  const pendingFromOthers = useMemo(
+    () => requests.filter((request) => request.status === 'pending' && (request.requesting_department?.id !== departmentId || getOwnerId(request) === departmentId)).length,
+    [departmentId, requests],
+  );
+
+  const pendingTotal = useMemo(
+    () => pendingOwnRequests + pendingFromOthers,
+    [pendingOwnRequests, pendingFromOthers],
   );
 
   const sortedDepartments = useMemo(() => {
@@ -363,7 +375,7 @@ export default function RoomRequests() {
     {
       id: 'actions',
       header: 'Actions',
-      size: 100,
+      size: 60,
       enableSorting: false,
       meta: { align: 'right', stopRowClick: true, cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
@@ -371,10 +383,8 @@ export default function RoomRequests() {
           label={`View ${row.original.department_code} rooms`}
           variant="view"
           onClick={() => openDepartment(row.original)}
-          className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
         >
           <Eye size={15} />
-          View
         </TableActionButton>
       ),
     },
@@ -581,7 +591,16 @@ export default function RoomRequests() {
         placeholder={selectedDepartment ? 'Search rooms...' : 'Search departments...'}
       />
       <div className="flex flex-wrap items-center gap-3">
-        <RequestsButton count={pendingFromOthers} onClick={() => setShowRequests(true)} />
+        <RequestsButton
+          label="Requests"
+          icon={ClipboardList}
+          title="View room requests"
+          count={pendingTotal}
+          onClick={() => {
+            setRequestsModalTab('all');
+            setShowRequests(true);
+          }}
+        />
         {selectedDepartment && (
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
@@ -746,6 +765,8 @@ export default function RoomRequests() {
       {showRequests && (
         <RequestsModal
           requests={requests}
+          departmentId={departmentId}
+          initialTab={requestsModalTab}
           onClose={() => setShowRequests(false)}
           onPreview={setPreviewRequest}
         />
@@ -776,15 +797,28 @@ export default function RoomRequests() {
 }
 
 
-function RequestsButton({ count, onClick }: { count: number; onClick: () => void }) {
+function RequestsButton({
+  label = 'Requests',
+  icon: Icon = ClipboardList,
+  count,
+  onClick,
+  title,
+}: {
+  label?: string;
+  icon?: LucideIcon;
+  count: number;
+  onClick: () => void;
+  title?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
       className="inline-flex items-center gap-2 rounded-lg border border-[#5A1220]/20 bg-[#5A1220]/[0.04] px-3 py-2 text-xs font-extrabold text-[#5A1220] transition hover:bg-[#5A1220]/[0.1] cursor-pointer"
     >
-      <ClipboardList size={15} />
-      Requests
+      <Icon size={14} />
+      {label}
       <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] ${count > 0 ? 'bg-[#C9952A] text-white font-extrabold' : 'bg-gray-200 text-gray-600 font-bold'}`}>
         {count}
       </span>
@@ -958,27 +992,52 @@ function RequestRoomModal({
 
 function RequestsModal({
   requests,
+  departmentId,
+  initialTab = 'all',
   onClose,
   onPreview,
 }: {
   requests: RoomRequest[];
+  departmentId: number | null;
+  initialTab?: 'all' | 'requester' | 'requestor';
   onClose: () => void;
   onPreview: (request: RoomRequest) => void;
 }) {
+  const [filterTab, setFilterTab] = useState<'all' | 'requester' | 'requestor'>(initialTab);
+
+  const activeRequests = useMemo(
+    () => requests.filter((request) => request.status === 'pending' || request.status === 'approved'),
+    [requests],
+  );
+
+  const requesterRequests = useMemo(
+    () => activeRequests.filter((r) => departmentId == null || r.requesting_department?.id === departmentId),
+    [activeRequests, departmentId],
+  );
+
+  const requestorRequests = useMemo(
+    () => activeRequests.filter((r) => departmentId == null || getOwnerId(r) === departmentId || r.requesting_department?.id !== departmentId),
+    [activeRequests, departmentId],
+  );
+
+  const filteredRequests = useMemo(() => {
+    if (filterTab === 'requester') return requesterRequests;
+    if (filterTab === 'requestor') return requestorRequests;
+    return activeRequests;
+  }, [filterTab, requesterRequests, requestorRequests, activeRequests]);
+
   const rows = useMemo<RequestRow[]>(
     () =>
-      requests
-        .filter((request) => request.status === 'pending' || request.status === 'approved')
-        .flatMap((request) =>
-          request.windows.map((window, index) => ({
-            id: `${request.id}-${index}`,
-            room: request.room?.room_code ?? 'Room unavailable',
-            day: window.day,
-            time: `${formatTime12h(window.start_time)} - ${formatTime12h(window.end_time)}`,
-            request,
-          })),
-        ),
-    [requests],
+      filteredRequests.flatMap((request) =>
+        request.windows.map((window, index) => ({
+          id: `${request.id}-${index}`,
+          room: request.room?.room_code ?? 'Room unavailable',
+          day: window.day,
+          time: `${formatTime12h(window.start_time)} - ${formatTime12h(window.end_time)}`,
+          request,
+        })),
+      ),
+    [filteredRequests],
   );
 
   const columns = useMemo<ColumnDef<RequestRow>[]>(
@@ -987,52 +1046,63 @@ function RequestsModal({
         id: 'room',
         accessorKey: 'room',
         header: 'Room',
-        cell: ({ getValue }) => <span className="font-mono font-bold text-[#4e0a10]">{getValue<string>()}</span>,
+        size: 110,
+        meta: { cellClassName: 'whitespace-nowrap font-mono font-bold text-[#4e0a10]' },
+        cell: ({ getValue }) => <span>{getValue<string>()}</span>,
       },
       {
         id: 'requester',
         accessorFn: (row) => row.request.requesting_department?.code ?? '',
         header: 'Requested By',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
+        size: 120,
+        meta: { cellClassName: 'whitespace-nowrap font-semibold text-gray-700' },
+        cell: ({ getValue }) => <span>{getValue<string>() || '-'}</span>,
       },
       {
         id: 'owner',
         accessorFn: (row) => row.request.owner_department?.code ?? '',
         header: 'Room Owner',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
+        size: 120,
+        meta: { cellClassName: 'whitespace-nowrap font-semibold text-gray-700' },
+        cell: ({ getValue }) => <span>{getValue<string>() || '-'}</span>,
       },
       {
         id: 'day',
         accessorKey: 'day',
         header: 'Day',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>()}</span>,
+        size: 90,
+        meta: { cellClassName: 'whitespace-nowrap font-semibold text-gray-700' },
+        cell: ({ getValue }) => <span>{getValue<string>()}</span>,
       },
       {
         id: 'time',
         accessorKey: 'time',
         header: 'Time',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>()}</span>,
+        size: 140,
+        meta: { cellClassName: 'whitespace-nowrap font-semibold text-gray-700 text-xs' },
+        cell: ({ getValue }) => <span>{getValue<string>()}</span>,
       },
       {
         id: 'status',
         accessorFn: (row) => row.request.status,
         header: 'Status',
+        size: 90,
+        meta: { cellClassName: 'whitespace-nowrap' },
         cell: ({ row }) => <StatusBadge status={row.original.request.status} />,
       },
       {
         id: 'actions',
         header: 'Actions',
         enableSorting: false,
-        meta: { align: 'right', stopRowClick: true },
+        size: 50,
+        meta: { align: 'right', stopRowClick: true, cellClassName: 'whitespace-nowrap' },
         cell: ({ row }) => (
           <TableActionButton
             label={`View request for ${row.original.room}`}
             variant="view"
             onClick={() => onPreview(row.original.request)}
-            className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
           >
             <Eye size={15} />
-            View
           </TableActionButton>
         ),
       },
@@ -1048,17 +1118,72 @@ function RequestsModal({
       onClose={onClose}
       title="Room Requests"
       description="Pending and approved room requests sent to or from your department."
-      size="lg"
+      size="xl"
+      className="max-w-4xl sm:max-w-5xl w-full"
     >
-      <div className="p-5 font-sans">
+      <div className="p-5 font-sans space-y-4">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-150 pb-3">
+          <button
+            type="button"
+            onClick={() => setFilterTab('all')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterTab === 'all'
+                ? 'bg-[#5A1220] text-white shadow-sm'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            All
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterTab === 'all' ? 'bg-white/20 text-white font-extrabold' : 'bg-gray-100 text-gray-600 font-bold'}`}>
+              {activeRequests.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('requester')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterTab === 'requester'
+                ? 'bg-[#5A1220] text-white shadow-sm'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Send size={12} />
+            Requester
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterTab === 'requester' ? 'bg-white/20 text-white font-extrabold' : 'bg-gray-100 text-gray-600 font-bold'}`}>
+              {requesterRequests.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('requestor')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterTab === 'requestor'
+                ? 'bg-[#5A1220] text-white shadow-sm'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Building2 size={12} />
+            Requestor
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterTab === 'requestor' ? 'bg-white/20 text-white font-extrabold' : 'bg-gray-100 text-gray-600 font-bold'}`}>
+              {requestorRequests.length}
+            </span>
+          </button>
+        </div>
+
         <DataTable
           table={table}
           showPagination={false}
           totalLabel="requests"
           ariaLabel="Room requests"
           emptyTitle="No active requests"
-          emptyDescription="New room requests will appear here."
+          emptyDescription={
+            filterTab === 'requester'
+              ? 'No active requests sent by your department.'
+              : filterTab === 'requestor'
+                ? 'No active requests received from other departments.'
+                : 'New room requests will appear here.'
+          }
           density="compact"
+          scrollClassName="overflow-x-auto lg:overflow-x-visible"
         />
       </div>
     </Modal>
