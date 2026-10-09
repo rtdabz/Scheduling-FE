@@ -43,7 +43,7 @@ export const deanNav: NavSection[] = [
         requiredCapability: 'schedule.view',
       },
       {
-        label: 'Schedules',
+        label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         requiredCapability: ['schedule.view', 'schedule.approve_dean'],

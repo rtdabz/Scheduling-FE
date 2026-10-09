@@ -15,6 +15,7 @@ import {
   Trash2,
   Undo2,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import DataTable from '../../components/ui/DataTable';
 import Modal from '../../components/ui/Modal';
@@ -188,6 +189,7 @@ export default function RoomRequests() {
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
   const [requestRoom, setRequestRoom] = useState<RoomRecord | null>(null);
   const [showRequests, setShowRequests] = useState(false);
+  const [requestsModalTab, setRequestsModalTab] = useState<'all' | 'requester' | 'requestor'>('all');
   const [previewRequest, setPreviewRequest] = useState<RoomRequest | null>(null);
 
   const loadData = useCallback(async (silent = false) => {
@@ -283,9 +285,19 @@ export default function RoomRequests() {
   const replaceRequest = (updated: RoomRequest) =>
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
 
-  const pendingFromOthers = useMemo(
-    () => requests.filter((request) => request.status === 'pending' && request.requesting_department?.id !== departmentId).length,
+  const pendingOwnRequests = useMemo(
+    () => requests.filter((request) => request.status === 'pending' && request.requesting_department?.id === departmentId).length,
     [departmentId, requests],
+  );
+
+  const pendingFromOthers = useMemo(
+    () => requests.filter((request) => request.status === 'pending' && (request.requesting_department?.id !== departmentId || getOwnerId(request) === departmentId)).length,
+    [departmentId, requests],
+  );
+
+  const pendingTotal = useMemo(
+    () => pendingOwnRequests + pendingFromOthers,
+    [pendingOwnRequests, pendingFromOthers],
   );
 
   const sortedDepartments = useMemo(() => {
@@ -361,7 +373,7 @@ export default function RoomRequests() {
     {
       id: 'actions',
       header: 'Actions',
-      size: 100,
+      size: 60,
       enableSorting: false,
       meta: { align: 'right', stopRowClick: true, cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
@@ -369,10 +381,8 @@ export default function RoomRequests() {
           label={`View ${row.original.department_code} rooms`}
           variant="view"
           onClick={() => openDepartment(row.original)}
-          className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
         >
           <Eye size={15} />
-          View
         </TableActionButton>
       ),
     },
@@ -445,11 +455,11 @@ export default function RoomRequests() {
             onClick={() => openDepartment(department)}
           >
             {department.logo && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
                 <img
                   src={department.logo}
                   alt="Department Watermark"
-                  className="w-48 h-48 object-contain opacity-[0.20]"
+                  className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
                 />
               </div>
             )}
@@ -525,11 +535,11 @@ export default function RoomRequests() {
                 className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
               >
                 {deptLogo && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
                     <img
                       src={deptLogo}
                       alt="Department Watermark"
-                      className="w-48 h-48 object-contain opacity-[0.20]"
+                      className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
                     />
                   </div>
                 )}
@@ -762,15 +772,28 @@ export default function RoomRequests() {
 }
 
 
-function RequestsButton({ count, onClick }: { count: number; onClick: () => void }) {
+function RequestsButton({
+  label = 'Requests',
+  icon: Icon = ClipboardList,
+  count,
+  onClick,
+  title,
+}: {
+  label?: string;
+  icon?: LucideIcon;
+  count: number;
+  onClick: () => void;
+  title?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
       className="inline-flex items-center gap-2 rounded-lg border border-[#5A1220]/20 bg-[#5A1220]/[0.04] px-3 py-2 text-xs font-extrabold text-[#5A1220] transition hover:bg-[#5A1220]/[0.1] cursor-pointer"
     >
-      <ClipboardList size={15} />
-      Requests
+      <Icon size={14} />
+      {label}
       <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] ${count > 0 ? 'bg-[#C9952A] text-white font-extrabold' : 'bg-gray-200 text-gray-600 font-bold'}`}>
         {count}
       </span>
@@ -1148,8 +1171,15 @@ function RequestsModal({
           totalLabel="requests"
           ariaLabel="Room requests"
           emptyTitle="No active requests"
-          emptyDescription="New room requests will appear here."
+          emptyDescription={
+            filterTab === 'requester'
+              ? 'No active requests sent by your department.'
+              : filterTab === 'requestor'
+                ? 'No active requests received from other departments.'
+                : 'New room requests will appear here.'
+          }
           density="compact"
+          scrollClassName="overflow-x-auto lg:overflow-x-visible"
         />
       </div>
     </Modal>

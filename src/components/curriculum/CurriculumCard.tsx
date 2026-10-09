@@ -50,11 +50,11 @@ export default function CurriculumCard({
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative overflow-hidden ${GRID_CARD_HOVER}`}>
       {deptLogo && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
           <img
             src={deptLogo}
             alt="Department Watermark"
-            className="w-48 h-48 object-contain opacity-[0.20]"
+            className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
           />
         </div>
       )}

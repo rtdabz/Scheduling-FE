@@ -50,6 +50,7 @@ interface Room {
   status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
+  home_program_id?: number | null;
   createdAt?: string;
 }
 
@@ -62,6 +63,7 @@ interface ApiRoom {
   status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
+  home_program_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,12 +84,14 @@ interface Schedule {
   section?: {
     id: number;
     section_name: string;
+    program_id?: number | null;
   } | null;
   course?: {
     id: number;
     course_code: string;
     course_name: string;
     units?: number | string | null;
+    program_id?: number | null;
   } | null;
   faculty?: {
     id: number;
@@ -95,6 +99,14 @@ interface Schedule {
     last_name: string;
     middle_name?: string | null;
   } | null;
+}
+
+interface ProgramOption {
+  id: number;
+  code: string;
+  name: string | null;
+  major?: string | null;
+  department_id?: number;
 }
 
 interface RoomsPageData {
@@ -118,6 +130,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
   status: r.status,
   department_id: r.department_id,
   department: r.department,
+  home_program_id: r.home_program_id ?? null,
   createdAt: r.created_at
 });
 
@@ -146,26 +159,70 @@ export default function Rooms() {
   const userProgramId = user?.program_id ?? null;
   const [hiddenRoomIds, setHiddenRoomIds] = useState<Set<number> | null>(null);
 
+  // Card view, search, and filter states
+  const location = useLocation();
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [roomTypeFilter, setRoomTypeFilter] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
+    location.state?.selectedBuilding ?? null
+  );
+
+  const [programs, setPrograms] = useState<ProgramOption[]>([]);
+  const [programRoomsMap, setProgramRoomsMap] = useState<Map<number, { home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }>>(new Map());
+
   useEffect(() => {
-    if (!isProgramHead) return;
     let cancelled = false;
-    api.get<{ data?: { rooms?: { id: number; home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }[] } }>('/program-rooms')
+
+    api.get<ProgramOption[]>('/programs')
       .then((res) => {
-        if (cancelled) return;
-        const hidden = new Set<number>();
-        for (const room of res.data?.data?.rooms ?? []) {
-          const mine = room.home_program_id === null
-            || Number(room.home_program_id) === Number(userProgramId)
-            || Object.values(room.days ?? {}).some((d) => d.program_id !== null && Number(d.program_id) === Number(userProgramId));
-          if (!mine) hidden.add(Number(room.id));
+        if (!cancelled && Array.isArray(res.data)) {
+          setPrograms(res.data);
         }
-        setHiddenRoomIds(hidden);
       })
-      .catch(() => {
-        if (!cancelled) toast.error('Error', 'Failed to load the rooms assigned to your program.');
-      });
+      .catch(() => {});
+
+    if (userDepartmentId) {
+      api.get<{ data?: { rooms?: { id: number; home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }[] } }>('/program-rooms')
+        .then((res) => {
+          if (cancelled) return;
+          const map = new Map<number, { home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }>();
+          const hidden = new Set<number>();
+          for (const room of res.data?.data?.rooms ?? []) {
+            map.set(Number(room.id), {
+              home_program_id: room.home_program_id !== null && room.home_program_id !== undefined ? Number(room.home_program_id) : null,
+              days: room.days ?? null,
+            });
+            if (isProgramHead) {
+              const daysList = room.days && typeof room.days === 'object' ? Object.values(room.days) : [];
+              const mine = room.home_program_id === null
+                || Number(room.home_program_id) === Number(userProgramId)
+                || daysList.some((d) => d && d.program_id !== null && d.program_id !== undefined && Number(d.program_id) === Number(userProgramId));
+              if (!mine) hidden.add(Number(room.id));
+            }
+          }
+          setProgramRoomsMap(map);
+          if (isProgramHead) setHiddenRoomIds(hidden);
+        })
+        .catch(() => {
+          if (!cancelled && isProgramHead) toast.error('Error', 'Failed to load the rooms assigned to your program.');
+        });
+    }
+
     return () => { cancelled = true; };
-  }, [isProgramHead, userProgramId, toast]);
+  }, [userDepartmentId, isProgramHead, userProgramId, toast]);
+
+  const availablePrograms = useMemo(() => {
+    if (isVpaa && departmentFilter) {
+      return programs.filter((p) => String(p.department_id) === departmentFilter);
+    }
+    if (userDepartmentId) {
+      return programs.filter((p) => !p.department_id || Number(p.department_id) === Number(userDepartmentId));
+    }
+    return programs;
+  }, [programs, isVpaa, departmentFilter, userDepartmentId]);
 
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
@@ -588,6 +645,31 @@ export default function Rooms() {
       result = result.filter(r => r.room_type === roomTypeFilter);
     }
 
+    if (programFilter) {
+      const targetProgId = Number(programFilter);
+      result = result.filter((r) => {
+        if (r.home_program_id !== undefined && r.home_program_id !== null && Number(r.home_program_id) === targetProgId) {
+          return true;
+        }
+        const pr = programRoomsMap.get(Number(r.id));
+        if (pr) {
+          if (pr.home_program_id !== null && Number(pr.home_program_id) === targetProgId) {
+            return true;
+          }
+          if (pr.days && typeof pr.days === 'object') {
+            const daysList = Object.values(pr.days);
+            if (daysList.some((d) => d && d.program_id !== null && d.program_id !== undefined && Number(d.program_id) === targetProgId)) {
+              return true;
+            }
+          }
+        }
+        if (Array.isArray(schedules) && schedules.some((s) => s && Number(s.room_id) === Number(r.id) && ((s.section?.program_id != null && Number(s.section.program_id) === targetProgId) || (s.course?.program_id != null && Number(s.course.program_id) === targetProgId)))) {
+          return true;
+        }
+        return false;
+      });
+    }
+
     return result;
   }, [filteredRooms, globalFilter, departmentFilter, roomTypeFilter, selectedBuilding]);
 
@@ -698,6 +780,8 @@ export default function Rooms() {
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
+              id="rooms-type-filter"
+              aria-label="Filter by Room Type"
               value={roomTypeFilter}
               onChange={(e) => setRoomTypeFilter(e.target.value)}
               className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
@@ -817,7 +901,9 @@ export default function Rooms() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buildings.map((building) => {
                 const percent = Math.round((building.availableCount / building.totalCount) * 100);
-                const bldgLogo = (userDepartmentId ? departments.find((d) => d.id === userDepartmentId)?.logo : null) || null;
+                const bldgLogo = (userDepartmentId ? departments.find((d) => d.id === userDepartmentId)?.logo : null)
+                  || building.rooms.map(r => r.department?.logo || (r.department_id ? departments.find(d => d.id === r.department_id)?.logo : null)).find(Boolean)
+                  || null;
                 return (
                   <div
                     key={building.name}
@@ -826,11 +912,11 @@ export default function Rooms() {
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
                     {bldgLogo && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
                         <img
                           src={bldgLogo}
                           alt="Department Watermark"
-                          className="w-48 h-48 object-contain opacity-[0.20]"
+                          className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
                         />
                       </div>
                     )}
@@ -952,11 +1038,11 @@ export default function Rooms() {
                     className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
                     {deptLogo && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
                         <img
                           src={deptLogo}
                           alt="Department Watermark"
-                          className="w-48 h-48 object-contain opacity-[0.20]"
+                          className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
                         />
                       </div>
                     )}
