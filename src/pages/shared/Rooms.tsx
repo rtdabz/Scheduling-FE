@@ -101,14 +101,6 @@ interface Schedule {
   } | null;
 }
 
-interface ProgramOption {
-  id: number;
-  code: string;
-  name: string | null;
-  major?: string | null;
-  department_id?: number;
-}
-
 interface RoomsPageData {
   rooms: Room[];
   departments: Department[];
@@ -159,70 +151,35 @@ export default function Rooms() {
   const userProgramId = user?.program_id ?? null;
   const [hiddenRoomIds, setHiddenRoomIds] = useState<Set<number> | null>(null);
 
-  // Card view, search, and filter states
   const location = useLocation();
   const [globalFilter, setGlobalFilter] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
-  const [programFilter, setProgramFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
     location.state?.selectedBuilding ?? null
   );
 
-  const [programs, setPrograms] = useState<ProgramOption[]>([]);
-  const [programRoomsMap, setProgramRoomsMap] = useState<Map<number, { home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }>>(new Map());
-
   useEffect(() => {
+    if (!isProgramHead) return;
     let cancelled = false;
-
-    api.get<ProgramOption[]>('/programs')
+    api.get<{ data?: { rooms?: { id: number; home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }[] } }>('/program-rooms')
       .then((res) => {
-        if (!cancelled && Array.isArray(res.data)) {
-          setPrograms(res.data);
+        if (cancelled) return;
+        const hidden = new Set<number>();
+        for (const room of res.data?.data?.rooms ?? []) {
+          const mine = room.home_program_id === null
+            || Number(room.home_program_id) === Number(userProgramId)
+            || Object.values(room.days ?? {}).some((d) => d.program_id !== null && Number(d.program_id) === Number(userProgramId));
+          if (!mine) hidden.add(Number(room.id));
         }
+        setHiddenRoomIds(hidden);
       })
-      .catch(() => {});
-
-    if (userDepartmentId) {
-      api.get<{ data?: { rooms?: { id: number; home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }[] } }>('/program-rooms')
-        .then((res) => {
-          if (cancelled) return;
-          const map = new Map<number, { home_program_id: number | null; days: Record<string, { program_id: number | null }> | null }>();
-          const hidden = new Set<number>();
-          for (const room of res.data?.data?.rooms ?? []) {
-            map.set(Number(room.id), {
-              home_program_id: room.home_program_id !== null && room.home_program_id !== undefined ? Number(room.home_program_id) : null,
-              days: room.days ?? null,
-            });
-            if (isProgramHead) {
-              const daysList = room.days && typeof room.days === 'object' ? Object.values(room.days) : [];
-              const mine = room.home_program_id === null
-                || Number(room.home_program_id) === Number(userProgramId)
-                || daysList.some((d) => d && d.program_id !== null && d.program_id !== undefined && Number(d.program_id) === Number(userProgramId));
-              if (!mine) hidden.add(Number(room.id));
-            }
-          }
-          setProgramRoomsMap(map);
-          if (isProgramHead) setHiddenRoomIds(hidden);
-        })
-        .catch(() => {
-          if (!cancelled && isProgramHead) toast.error('Error', 'Failed to load the rooms assigned to your program.');
-        });
-    }
-
+      .catch(() => {
+        if (!cancelled) toast.error('Error', 'Failed to load the rooms assigned to your program.');
+      });
     return () => { cancelled = true; };
-  }, [userDepartmentId, isProgramHead, userProgramId, toast]);
-
-  const availablePrograms = useMemo(() => {
-    if (isVpaa && departmentFilter) {
-      return programs.filter((p) => String(p.department_id) === departmentFilter);
-    }
-    if (userDepartmentId) {
-      return programs.filter((p) => !p.department_id || Number(p.department_id) === Number(userDepartmentId));
-    }
-    return programs;
-  }, [programs, isVpaa, departmentFilter, userDepartmentId]);
+  }, [isProgramHead, userProgramId, toast]);
 
   const filteredRooms = useMemo(() => {
     if (isVpaa) return rooms;
@@ -233,14 +190,6 @@ export default function Rooms() {
       && !(isProgramHead && hiddenRoomIds?.has(Number(r.id))));
   }, [rooms, isVpaa, userDepartmentId, isProgramHead, hiddenRoomIds]);
 
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [roomTypeFilter, setRoomTypeFilter] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
-  const location = useLocation();
-  const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
-    location.state?.selectedBuilding ?? null
-  );
   const openBuilding = (name: string | null) => {
     setSelectedBuilding(name);
     setGlobalFilter('');
@@ -643,31 +592,6 @@ export default function Rooms() {
 
     if (roomTypeFilter) {
       result = result.filter(r => r.room_type === roomTypeFilter);
-    }
-
-    if (programFilter) {
-      const targetProgId = Number(programFilter);
-      result = result.filter((r) => {
-        if (r.home_program_id !== undefined && r.home_program_id !== null && Number(r.home_program_id) === targetProgId) {
-          return true;
-        }
-        const pr = programRoomsMap.get(Number(r.id));
-        if (pr) {
-          if (pr.home_program_id !== null && Number(pr.home_program_id) === targetProgId) {
-            return true;
-          }
-          if (pr.days && typeof pr.days === 'object') {
-            const daysList = Object.values(pr.days);
-            if (daysList.some((d) => d && d.program_id !== null && d.program_id !== undefined && Number(d.program_id) === targetProgId)) {
-              return true;
-            }
-          }
-        }
-        if (Array.isArray(schedules) && schedules.some((s) => s && Number(s.room_id) === Number(r.id) && ((s.section?.program_id != null && Number(s.section.program_id) === targetProgId) || (s.course?.program_id != null && Number(s.course.program_id) === targetProgId)))) {
-          return true;
-        }
-        return false;
-      });
     }
 
     return result;

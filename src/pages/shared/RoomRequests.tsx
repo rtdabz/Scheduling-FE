@@ -189,7 +189,6 @@ export default function RoomRequests() {
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
   const [requestRoom, setRequestRoom] = useState<RoomRecord | null>(null);
   const [showRequests, setShowRequests] = useState(false);
-  const [requestsModalTab, setRequestsModalTab] = useState<'all' | 'requester' | 'requestor'>('all');
   const [previewRequest, setPreviewRequest] = useState<RoomRequest | null>(null);
 
   const loadData = useCallback(async (silent = false) => {
@@ -285,19 +284,9 @@ export default function RoomRequests() {
   const replaceRequest = (updated: RoomRequest) =>
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
 
-  const pendingOwnRequests = useMemo(
-    () => requests.filter((request) => request.status === 'pending' && request.requesting_department?.id === departmentId).length,
-    [departmentId, requests],
-  );
-
   const pendingFromOthers = useMemo(
     () => requests.filter((request) => request.status === 'pending' && (request.requesting_department?.id !== departmentId || getOwnerId(request) === departmentId)).length,
     [departmentId, requests],
-  );
-
-  const pendingTotal = useMemo(
-    () => pendingOwnRequests + pendingFromOthers,
-    [pendingOwnRequests, pendingFromOthers],
   );
 
   const sortedDepartments = useMemo(() => {
@@ -1172,11 +1161,9 @@ function RequestsModal({
           ariaLabel="Room requests"
           emptyTitle="No active requests"
           emptyDescription={
-            filterTab === 'requester'
+            tab === 'requester'
               ? 'No active requests sent by your department.'
-              : filterTab === 'requestor'
-                ? 'No active requests received from other departments.'
-                : 'New room requests will appear here.'
+              : 'No active requests received from other departments.'
           }
           density="compact"
           scrollClassName="overflow-x-auto lg:overflow-x-visible"

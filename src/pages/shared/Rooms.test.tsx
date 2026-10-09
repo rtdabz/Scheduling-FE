@@ -51,13 +51,6 @@ describe('Rooms component', () => {
     }));
 
     get.mockImplementation((url: string) => {
-      if (url === '/programs') {
-        return Promise.resolve({
-          data: [
-            { id: 1, code: 'BSIT', name: 'Information Technology', department_id: 1 },
-          ],
-        });
-      }
       if (url === '/program-rooms') {
         return Promise.resolve({
           data: {
@@ -98,9 +91,8 @@ describe('Rooms component', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByPlaceholderText(/Search rooms or buildings/i)).toBeDefined();
+    expect(await screen.findByPlaceholderText(/Search buildings/i)).toBeDefined();
     expect(screen.getByText('All Types')).toBeDefined();
-    expect(await screen.findByText('All Programs')).toBeDefined();
     expect(await screen.findByText('Main Bldg')).toBeDefined();
   });
 });

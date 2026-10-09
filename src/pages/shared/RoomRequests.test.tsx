@@ -104,20 +104,19 @@ describe('RoomRequests component', () => {
     });
   });
 
-  it('renders a single Requests button with pending badge in filter bar', async () => {
+  it('renders a single Requests button with the pending-from-others badge in filter bar', async () => {
     render(
       <MemoryRouter>
         <RoomRequests />
       </MemoryRouter>
     );
 
-    // Single Requests button should exist in the filter bar with total pending badge (2)
     const requestsBtn = await screen.findByRole('button', { name: /Requests/i });
     expect(requestsBtn).toBeDefined();
-    await waitFor(() => expect(requestsBtn.textContent).toContain('2'));
+    await waitFor(() => expect(requestsBtn.textContent).toContain('1'));
   });
 
-  it('opens RequestsModal and filters by Requester and Requestor with icon-only actions', async () => {
+  it('opens RequestsModal on Requestor and switches between Requester and Requestor tabs', async () => {
     render(
       <MemoryRouter>
         <RoomRequests />
@@ -127,28 +126,19 @@ describe('RoomRequests component', () => {
     const requestsBtn = await screen.findByRole('button', { name: /Requests/i });
     fireEvent.click(requestsBtn);
 
-    // Modal should be open
     expect(await screen.findByText('Pending and approved room requests sent to or from your department.')).toBeDefined();
 
-    // Default tab is All: both requests are shown
-    expect(screen.getByText('BUILDING 9-101')).toBeDefined();
-    expect(screen.getByText('NEE 201')).toBeDefined();
-
-    // Click Requester tab inside modal: only CAS (requester) request shown
-    const requesterTab = screen.getByRole('button', { name: /Requester/i });
-    fireEvent.click(requesterTab);
-    expect(screen.getByText('BUILDING 9-101')).toBeDefined();
-    expect(screen.queryByText('NEE 201')).toBeNull();
-
-    // Click Requestor tab inside modal: only NEE 201 (requested from CAS by CCJPS) shown
-    const requestorTab = screen.getByRole('button', { name: /Requestor/i });
-    fireEvent.click(requestorTab);
     expect(screen.getByText('NEE 201')).toBeDefined();
     expect(screen.queryByText('BUILDING 9-101')).toBeNull();
 
-    // Actions button should be icon-only (has aria-label / title, but does not display text "View")
-    const viewBtn = screen.getByRole('button', { name: /View request for NEE 201/i });
-    expect(viewBtn).toBeDefined();
-    expect(viewBtn.textContent?.trim()).toBe('');
+    fireEvent.click(screen.getByRole('tab', { name: /Requester/i }));
+    expect(screen.getByText('BUILDING 9-101')).toBeDefined();
+    expect(screen.queryByText('NEE 201')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Requestor/i }));
+    expect(screen.getByText('NEE 201')).toBeDefined();
+    expect(screen.queryByText('BUILDING 9-101')).toBeNull();
+
+    expect(screen.getByRole('button', { name: /View request for NEE 201/i })).toBeDefined();
   });
 });
